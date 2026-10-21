@@ -4,7 +4,7 @@
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/messaging/CallMobility.h"
+#include "domain/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
@@ -150,6 +150,10 @@ int main(int argc, char** argv) {
   }
 
   app.Store().Initialize(std::move(bootstrap_result.value()));
+  // A PIN given at bootstrap unlocked the vault before the store existed: pick up the typed keys now.
+  if (auto applied = app.Store().ApplyConfigSecrets(); !applied) {
+    root.warning << "config secrets not applied: " << applied.error().message;
+  }
   pbr::StartupMark("after_session_store");
 
   pbr::MaybeUploadPendingCrashReport(app.Store().Snapshot().data_dir,

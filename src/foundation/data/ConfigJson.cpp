@@ -4,7 +4,9 @@
 #include "common/ValueJson.h"
 
 #include <limits>
+#include <string_view>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -35,14 +37,14 @@ McpConfig ParseMcpObject(const Object& mcp_object) {
   return mcp;
 }
 
-Object RelayPricingToObject(const RelayPricingConfig& pricing) {
+Object RelayPricingToObject(const mesh::RelayPricingConfig& pricing) {
   Object object;
   object.set("mode", pricing.mode);
   object.set("rate", pricing.rate);
   return object;
 }
 
-void RelayPricingFromObject(const Object& object, RelayPricingConfig& pricing) {
+void RelayPricingFromObject(const Object& object, mesh::RelayPricingConfig& pricing) {
   if (auto mode = object.getString("mode")) {
     pricing.mode = *mode;
   }
@@ -53,19 +55,19 @@ void RelayPricingFromObject(const Object& object, RelayPricingConfig& pricing) {
   }
 }
 
-Object MeshPricingToObject(const MeshPricingConfig& pricing) {
+Object MeshPricingToObject(const mesh::MeshPricingConfig& pricing) {
   Object object;
   object.set("media_relay", RelayPricingToObject(pricing.media_relay));
   return object;
 }
 
-void MeshPricingFromObject(const Object& object, MeshPricingConfig& pricing) {
+void MeshPricingFromObject(const Object& object, mesh::MeshPricingConfig& pricing) {
   if (const Object* media_relay = object.getObject("media_relay")) {
     RelayPricingFromObject(*media_relay, pricing.media_relay);
   }
 }
 
-Object MediaRelayBudgetToObject(const MediaRelayBudgetConfig& budget) {
+Object MediaRelayBudgetToObject(const mesh::MediaRelayBudgetConfig& budget) {
   auto set_bps = [](Object& object, const char* key, int64_t value) {
     if (value <= 0) {
       object.set(key, Null{});
@@ -83,7 +85,7 @@ Object MediaRelayBudgetToObject(const MediaRelayBudgetConfig& budget) {
   return object;
 }
 
-Object MediaRelayVideoToObject(const MediaRelayVideoConfig& video) {
+Object MediaRelayVideoToObject(const mesh::MediaRelayVideoConfig& video) {
   std::vector<Value> levels;
   for (const int level : video.serve_levels) {
     levels.emplace_back(int64_t{level});
@@ -95,7 +97,7 @@ Object MediaRelayVideoToObject(const MediaRelayVideoConfig& video) {
   return object;
 }
 
-void MediaRelayVideoFromObject(const Object& object, MediaRelayVideoConfig& video) {
+void MediaRelayVideoFromObject(const Object& object, mesh::MediaRelayVideoConfig& video) {
   if (const Array* levels = object.getArray("serve_levels")) {
     video.serve_levels.clear();
     for (const Value& row : levels->elements) {
@@ -112,7 +114,7 @@ void MediaRelayVideoFromObject(const Object& object, MediaRelayVideoConfig& vide
   }
 }
 
-void MediaRelayBudgetFromObject(const Object& object, MediaRelayBudgetConfig& budget) {
+void MediaRelayBudgetFromObject(const Object& object, mesh::MediaRelayBudgetConfig& budget) {
   auto read_bps = [&](const char* key, int64_t& out) {
     if (!object.contains(key) || object.isNull(key)) {
       return;
@@ -254,6 +256,20 @@ ToolPermissionsPrefs ToolPermissionsFromObject(const Object& object) {
 
 } // namespace
 
+bool IsApiKeyEnvName(const std::string& name) {
+  constexpr std::string_view kSuffix = "_API_KEY";
+  if (name.size() <= kSuffix.size() || name.compare(name.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
+    return false;
+  }
+  for (const char c : name) {
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
 Object LlmConfigToObject(const LlmConfig& config) {
   Object object;
   object.set("base_url", config.base_url);
@@ -263,9 +279,7 @@ Object LlmConfigToObject(const LlmConfig& config) {
   if (!config.preset.empty()) {
     object.set("preset", config.preset);
   }
-  if (!config.api_key.empty()) {
-    object.set("api_key", config.api_key);
-  }
+  // No api_key: a typed key lives in the profile's secrets.enc, never in config.json.
   return object;
 }
 
@@ -278,9 +292,6 @@ void LlmConfigFromObject(const Object& object, LlmConfig& config) {
   }
   if (auto preset = object.getString("preset")) {
     config.preset = *preset;
-  }
-  if (auto api_key = object.getString("api_key")) {
-    config.api_key = *api_key;
   }
   if (auto require_api_key = object.getIf<bool>("require_api_key")) {
     config.require_api_key = *require_api_key;
@@ -323,18 +334,12 @@ void ContextBudgetFromObject(const Object& object, ContextBudget& budget) {
 Object SearchConfigToObject(const SearchConfig& config) {
   Object object;
   object.set("provider", config.provider);
-  if (!config.api_key.empty()) {
-    object.set("api_key", config.api_key);
-  }
   return object;
 }
 
 void SearchConfigFromObject(const Object& object, SearchConfig& config) {
   if (auto provider = object.getString("provider")) {
     config.provider = *provider;
-  }
-  if (auto api_key = object.getString("api_key")) {
-    config.api_key = *api_key;
   }
 }
 
@@ -393,7 +398,7 @@ void DirectoryConfigFromObject(const Object& object, DirectoryConfig& config) {
   NormalizeDirectoryConfig(config);
 }
 
-Object MeshCapabilitiesToObject(const MeshCapabilities& caps) {
+Object MeshCapabilitiesToObject(const mesh::MeshCapabilities& caps) {
   Object object;
   object.set("circuit_relay", caps.circuit_relay);
   object.set("media_relay", caps.media_relay);
@@ -402,7 +407,7 @@ Object MeshCapabilitiesToObject(const MeshCapabilities& caps) {
   return object;
 }
 
-void MeshCapabilitiesFromObject(const Object& object, MeshCapabilities& caps) {
+void MeshCapabilitiesFromObject(const Object& object, mesh::MeshCapabilities& caps) {
   if (auto circuit_relay = object.getIf<bool>("circuit_relay")) {
     caps.circuit_relay = *circuit_relay;
   }
@@ -417,7 +422,7 @@ void MeshCapabilitiesFromObject(const Object& object, MeshCapabilities& caps) {
   }
 }
 
-Object MeshDhtConfigToObject(const MeshDhtConfig& config) {
+Object MeshDhtConfigToObject(const mesh::MeshDhtConfig& config) {
   Object object;
   object.set("record_ttl_seconds", static_cast<int64_t>(config.record_ttl_seconds));
   object.set("find_peer_timeout_ms", static_cast<int64_t>(config.find_peer_timeout_ms));
@@ -433,7 +438,7 @@ Object MeshDhtConfigToObject(const MeshDhtConfig& config) {
   return object;
 }
 
-void MeshDhtConfigFromObject(const Object& object, MeshDhtConfig& config) {
+void MeshDhtConfigFromObject(const Object& object, mesh::MeshDhtConfig& config) {
   if (auto ttl = object.getNonNegInt("record_ttl_seconds")) {
     config.record_ttl_seconds = static_cast<int>(*ttl);
   }
@@ -478,7 +483,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("advertise_multiaddrs", makeArray(std::move(advertise)));
   object.set("mesh_publish", config.mesh_publish);
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
-  object.set("direct_connections", DirectAudienceName(config.direct_connections));
+  object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
@@ -521,7 +526,7 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
     config.trusted_relays_only = *trusted;
   }
   if (auto audience = object.getString("direct_connections")) {
-    if (auto parsed = DirectAudienceFromName(*audience)) {
+    if (auto parsed = mesh::DirectAudienceFromName(*audience)) {
       config.direct_connections = *parsed;
     }
   }
@@ -603,7 +608,6 @@ Object AppConfigToObject(const AppConfig& config) {
   Object llm = LlmConfigToObject(config.llm);
   if (!config.llm_api_key_env.empty()) {
     llm.set("api_key_env", config.llm_api_key_env);
-    llm.erase("api_key");
   }
   object.set("llm", llm);
   object.set("search", SearchConfigToObject(config.search));
@@ -640,9 +644,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
       config.llm_api_key_env = *api_key_env;
       config.llm.api_key.clear();
       config.llm.require_api_key = true;
-    } else if (auto api_key = llm->getString("api_key")) {
-      config.llm.api_key = *api_key;
-      config.llm_api_key_env.clear();
     }
   }
   if (const Object* promoted_mcp = object.getObject("promoted_mcp")) {
@@ -668,9 +669,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* search = object.getObject("search")) {
     SearchConfigFromObject(*search, config.search);
-    if (auto api_key_env = search->getString("api_key_env")) {
-      config.search.api_key = ICredentialStore::Instance().Get(*api_key_env);
-    }
   }
   if (auto data_dir = object.getString("data_dir")) {
     config.data_dir = *data_dir;
@@ -742,6 +740,8 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("group_invite_policy", prefs.group_invite_policy);
   object.set("call_invite_policy", prefs.call_invite_policy);
   object.set("attachment_download_policy", prefs.attachment_download_policy);
+  object.set("show_advanced_settings", prefs.show_advanced_settings);
+  object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -806,6 +806,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   } else {
     prefs.attachment_download_policy = "smart";
   }
+  prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
+  prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {
@@ -860,7 +862,7 @@ AppConfig MergeConfig(const AppConfig& defaults, const Object& overlay) {
 }
 
 void ResolveConfigCredentials(AppConfig& config) {
-  if (!config.llm_api_key_env.empty() && config.llm.api_key.empty()) {
+  if (!config.llm_api_key_env.empty() && config.llm.api_key.empty() && IsApiKeyEnvName(config.llm_api_key_env)) {
     config.llm.api_key = ICredentialStore::Instance().Get(config.llm_api_key_env);
     config.llm.require_api_key = true;
   }
@@ -869,17 +871,6 @@ void ResolveConfigCredentials(AppConfig& config) {
 Object ConfigToObject(const AppConfig& config, int config_version) {
   Object root = AppConfigToObject(config);
   root.set("config_version", static_cast<int64_t>(config_version));
-  if (const Object* llm_ptr = root.getObject("llm")) {
-    Object llm = *llm_ptr;
-    if (!config.llm.api_key.empty()) {
-      llm.set("api_key", config.llm.api_key);
-      llm.erase("api_key_env");
-    } else if (!config.llm_api_key_env.empty()) {
-      llm.set("api_key_env", config.llm_api_key_env);
-      llm.erase("api_key");
-    }
-    root.set("llm", llm);
-  }
   return root;
 }
 

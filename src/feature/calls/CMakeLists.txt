@@ -19,6 +19,7 @@ pp_browser_add_feature_library(pp_feature_calls
     LiveCall.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp
+  CallControlFamily.cpp
     CallMediaKeyExchange.cpp
     CallInitiationBilling.cpp
     CallReachSignals.cpp
@@ -29,8 +30,12 @@ pp_browser_add_feature_library(pp_feature_calls
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging
+    pp_domain_broadcast
+    pp_domain_pricing
+    pp_domain_calls
     pp_amp_link
-    pp_domain_mesh
+    pp_mesh
+    pp_feature_call_media
     pp_domain_people
     pp_foundation_runtime_core
     pp_foundation_runtime)

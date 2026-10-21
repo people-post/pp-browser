@@ -60,6 +60,17 @@ bool AttachmentPlaintextMemoryCache::TryGet(const std::string& content_hash_hex,
   return true;
 }
 
+void AttachmentPlaintextMemoryCache::Erase(const std::string& content_hash_hex) {
+  std::lock_guard lock(mutex_);
+  auto found = map_.find(content_hash_hex);
+  if (found == map_.end()) {
+    return;
+  }
+  total_bytes_ -= found->second.bytes.size();
+  order_.erase(found->second.order_it);
+  map_.erase(found);
+}
+
 void AttachmentPlaintextMemoryCache::Clear() {
   std::lock_guard lock(mutex_);
   map_.clear();

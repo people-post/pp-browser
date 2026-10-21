@@ -1,11 +1,13 @@
 #include "feature/conversations/AmpChatBlobTransport.h"
 
-#include "domain/mesh/l4/shared/InboundReply.h"
+#include "mesh/l4/shared/InboundReply.h"
 
 #include "foundation/crypto/CryptoConstants.h"
+#include "domain/content/CasLibrary.h"
 #include "domain/messaging/ChatBlobResponder.h"
+#include "feature/conversations/AttachmentContent.h"
 #include "common/chat/MessagingJson.h"
-#include "domain/mesh/l4/shared/ProductChannelPolicies.h"
+#include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/LinkIdentity.h"
 
@@ -19,8 +21,9 @@
 #include <vector>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "mesh/shared/AmpParkUntil.h"
+#include "common/Lifetime.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -101,14 +104,14 @@ struct AmpChatBlobTransport::Impl {
   std::string profile_id;
   ByteVector dek;
   mutable std::mutex dek_mutex;
-  IChatPeerLinks* links = nullptr;
+  mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
-  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
-  DeferredSelf deferred;
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
+  pp::Lifetime deferred;
   ByteVector CopyDek() const {
     std::lock_guard lock(dek_mutex);
     if (dek.size() != kDataEncryptionKeySize) {
@@ -155,7 +158,7 @@ struct AmpChatBlobTransport::Impl {
                       }
 
                       // Keep the channel open for the worker (InboundReply.h); `reply` closes it.
-                      auto reply = MakeInboundReply(session, post_io);
+                      auto reply = mesh::MakeInboundReply(session, post_io);
                       RunWorker(post_worker, [this, reply, request = *request]() mutable {
                         if (stopped.load(std::memory_order_acquire)) {
                           reply->Close();
@@ -167,9 +170,19 @@ struct AmpChatBlobTransport::Impl {
                           return;
                         }
                         const ByteVector dek_copy = CopyDek();
-                        const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
+                        ChatBlobContentSource content;
+                        if (!dek_copy.empty() && !profile_id.empty()) {
+                          content.private_plaintext = [&](const std::vector<uint8_t>& content_hash) {
+                            return LoadAttachmentPlaintext(profile_data_dir, profile_id, content_hash, dek_copy);
+                          };
+                        }
+                        if (!profile_id.empty()) {
+                          content.pinned_public = [&](const ByteVector& content_id) {
+                            return LoadPinnedPublicCasBytes(profile_data_dir, profile_id, content_id);
+                          };
+                        }
                         auto ciphertext = ChatBlobResponder::ServeFetch(
-                            store, request, local_identity->relay_user_id, profile_data_dir, dek_ptr, profile_id);
+                            store, request, local_identity->relay_user_id, profile_data_dir, content);
                         if (ciphertext) {
                           reply->Send(std::move(*ciphertext));
                         } else {
@@ -184,7 +197,7 @@ struct AmpChatBlobTransport::Impl {
 
                     const ChatBlobRequest request = **pending_push;
                     pending_push->reset();
-                    auto reply = MakeInboundReply(session, post_io);
+                    auto reply = mesh::MakeInboundReply(session, post_io);
                     RunWorker(post_worker, [this, reply, request, ciphertext = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
                         reply->Close();
@@ -209,7 +222,7 @@ struct AmpChatBlobTransport::Impl {
   }
 };
 
-AmpChatBlobTransport::AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
+AmpChatBlobTransport::AmpChatBlobTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                        IdentityStore& identity, WorkerPost post_worker, IoPost post_io,
                                        IoAfter post_after)
     : impl_(std::make_unique<Impl>(store, identity)), links_(links), io_pump_(std::move(io_pump)),
@@ -321,14 +334,14 @@ void AmpChatBlobTransport::FetchChatBlobAsync(const ChatBlobRequest& request,
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session_holder, deadline,
-                                      read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
+                                      read_timeout](mesh::IChatPeerLinks::LinkRoe assoc) mutable {
     if (!assoc) {
       finish(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(peer_key, kChatBlobProtocolId, pp::amp::BulkChannelPolicy(/*read_once=*/true),
                        [this, peer_key, request_json, finish, settled, session_holder, deadline,
-                        read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
+                        read_timeout](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
                            finish(Error(channel.error().message));
                            return;
@@ -373,7 +386,7 @@ void AmpChatBlobTransport::FetchChatBlobAsync(const ChatBlobRequest& request,
                                  return;
                                }
 
-                               AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                               mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                  finish(Error("amp chat-blob fetch timed out"));
                                },
                                                       post_after_);
@@ -393,7 +406,7 @@ Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequ
     } catch (const std::future_error&) {
     }
   });
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+  mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp chat-blob fetch timed out");
@@ -444,7 +457,7 @@ void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
 
   links_.EnsureAssociation(
       peer_key, [this, peer_key, request_json, ciphertext, finish, settled, session_holder, deadline,
-                 read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
+                 read_timeout](mesh::IChatPeerLinks::LinkRoe assoc) mutable {
         if (!assoc) {
           finish(Error(assoc.error().message));
           return;
@@ -452,7 +465,7 @@ void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
         links_.OpenChannel(
             peer_key, kChatBlobProtocolId, pp::amp::BulkChannelPolicy(/*read_once=*/true),
             [this, peer_key, request_json, ciphertext, finish, settled, session_holder, deadline,
-             read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
+             read_timeout](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
               if (!channel) {
                 finish(Error(channel.error().message));
                 return;
@@ -501,7 +514,7 @@ void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
                       return;
                     }
 
-                    AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                    mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                       finish(Error("amp chat-blob push timed out"));
                     },
                                            post_after_);
@@ -522,7 +535,7 @@ Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
     } catch (const std::future_error&) {
     }
   });
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+  mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp chat-blob push timed out");

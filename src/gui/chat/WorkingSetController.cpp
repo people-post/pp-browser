@@ -5,6 +5,7 @@
 #include "gui/shell/DataModelHost.h"
 
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

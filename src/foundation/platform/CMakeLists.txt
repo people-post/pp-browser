@@ -11,10 +11,9 @@ set(_pp_platform_core_sources
   ICredentialStore.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp
-  os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
-  os/OsLocale_Posix.cpp
+  os/OsLocaleTags.cpp
   CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
@@ -32,7 +31,6 @@ set(_pp_platform_gui_sources
   IosPathProvider.cpp
   IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
-  NativeFileDialog.cpp
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
@@ -64,14 +62,20 @@ if(PP_BROWSER_IS_ANDROID)
     os/OsTlsCaPath_Android.cpp
   )
 elseif(PP_BROWSER_IS_IOS)
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp)
+  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp IosBackupExclusion_Ios.mm)
 else()
   list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
 endif()
 
+# Uninstall-surviving blob store (local account backup): iOS Keychain; everywhere else a stub.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
+endif()
+
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
-    os/OsFile_Win32.cpp
     os/OsThreadName_Win32.cpp
     os/OsProcess_Win32.cpp
     os/OsLocale_Win32.cpp
@@ -84,12 +88,15 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     desktop/LocalNotifier_Win32.cpp
     NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
+    PlatformShare_Default.cpp
+    NativeFileDialog_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
+    os/OsLocale_Darwin.mm
     os/OsProcessStats_Default.cpp
-    os/OsThreadStackDump_Default.cpp
+    os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
   )
   list(APPEND _pp_platform_gui_sources
@@ -98,9 +105,12 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     NetworkMonitor_Darwin.mm
   )
   if(NOT PP_BROWSER_IS_IOS)
-    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm)
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
+         NativeFileDialog_Default.cpp)
   else()
-    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp)
+    # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
+         NativeFileDialog_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -112,7 +122,14 @@ else()
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Linux.cpp
     VideoPosterExtractor_Default.cpp
+    PlatformShare_Default.cpp
+    NativeFileDialog_Default.cpp
   )
+  if(PP_BROWSER_IS_ANDROID)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
+  else()
+    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
+  endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp)
   endif()
@@ -219,13 +236,19 @@ if(PP_BROWSER_IS_IOS)
     OpenSSL::SSL
     OpenSSL::Crypto
     "-framework Security"
-    "-framework CoreFoundation")
+    "-framework CoreFoundation"
+    "-framework Foundation")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL
     OpenSSL::Crypto
     "-framework Security"
     "-framework CoreFoundation")
+endif()
+
+# macOS: OsLocale_Darwin.mm (platform_core, also linked by pp-node) needs Foundation; iOS adds it above.
+if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
+  target_link_libraries(pp_foundation_platform_core PUBLIC "-framework Foundation")
 endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
@@ -235,7 +258,22 @@ if(PP_BROWSER_IS_ANDROID)
 endif()
 
 if(PP_BROWSER_IS_IOS)
-  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Ios.mm)
+  target_sources(pp_foundation_platform PRIVATE
+    NetworkConnectivity_Ios.mm
+    IosPushDeviceRegistrar.mm
+    IosApnsAppDelegate.mm)
+  target_link_libraries(pp_foundation_platform PUBLIC
+    "-framework UserNotifications"
+    "-framework UIKit"
+    "-framework PhotosUI"
+    "-framework UniformTypeIdentifiers")
+endif()
+
+# On-screen keyboard height: only iOS needs it (its safe area leaves the keyboard out).
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Ios.mm)
+else()
+  target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Default.cpp)
 endif()
 
 # Desktop macOS: UNUserNotificationCenter for local banners.

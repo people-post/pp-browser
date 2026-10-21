@@ -3,6 +3,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/ContactsStore.h"
+#include "common/MeshAlias.h"
 
 #include <optional>
 #include <string>
@@ -17,7 +18,7 @@ bool IsRelayUserIdValue(const std::string& value);
 std::optional<std::string> RelayUserIdFromContact(const Contact& contact);
 
 /** First non-empty RelayUser id on a directory hit (PrimaryRelayIdFromHit). */
-std::optional<std::string> RelayUserIdFromDirectoryHit(const DirectoryHit& hit);
+std::optional<std::string> RelayUserIdFromDirectoryHit(const mesh::DirectoryHit& hit);
 
 /**
  * Brief delivery route for a direct thread: contact RelayUser, else learned

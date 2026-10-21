@@ -70,7 +70,9 @@ flowchart TB
   ConversationsHub --> Libp2p
   ConversationsHub --> IdentityStore
   ConversationsHub --> ThreadStore
-  ConversationsHub -->|owns unique_ptr, forwards Calls/Lifecycle| CallStack
+  ProductStack -->|owns| ConversationsHub
+  ProductStack -->|owns, registers as HubParticipant| CallStack
+  ProductStack -->|owns, registers as HubParticipant| BroadcastHub
   CallStack --> CallMediaEngine
   ShellHost --> RmlUi
   ChatController --> RmlUi
@@ -103,7 +105,7 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["ConversationsHub<br/><small>feature/conversations/</small>"]
-    Mesh["MeshHost<br/><small>domain/mesh/ — shared w/ pp-node</small>"]
+    Mesh["MeshHost<br/><small>pp-cpp-mesh — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>domain/ui/</small>"]
@@ -175,7 +177,7 @@ flowchart LR
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
   Shell -->|MessagingShellPorts mesh reads via MeshHost| Hub
   Call -->|CallFunctionalPorts / CallUiBackend → CallStack| Hub
-  App -->|owns CallUiBackend bound to Hub::CallStackRef| Call
+  App -->|owns ProductStack; CallUiBackend bound to its CallStack| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
@@ -283,7 +285,7 @@ flowchart TB
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `foundation/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **Amp MeshPump** | `MeshHost` | `domain/mesh/host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
+| **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
 | **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `domain/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
 | **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread (speaker lease) |
@@ -294,7 +296,7 @@ flowchart TB
 - **UI** owns RmlUi and controller mutations. `AppRuntime::PostUI` from pool/coordinator.
 - **Worker pool** runs blocking HTTP, LLM, relay orchestration. `PostTaskAndReply` is pool → UI.
 - **Coordinator** runs fast policy only; posts blocking steps to pool (not Amp UDP).
-- **MeshHost** owns the Amp pump; L4 inbound work goes to the worker pool (`MakeL4WorkerPost`); nothing waits on the mesh on a thread.
+- **MeshHost** owns the Amp pump; L4 work leaves the IO strand through the executors it is built with (`MeshExecutors`: `AppRuntimeMeshExecutors` maps them onto the worker pool); nothing waits on the mesh on a thread.
 - **Pause/resume:** `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` pauses coordinator + general pool only (mesh/media follow their own lifetime).
 
 Full model: [THREADING.md](THREADING.md).
@@ -303,12 +305,13 @@ Full model: [THREADING.md](THREADING.md).
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub, `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns the `ProductStack` (hub + participants), `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
-| **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
-| **MeshHost** | `domain/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
-| **CallStack** | `feature/conversations/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` |
+| **ProductStack** | `feature/product/` | The app's feature-level composition: owns `ConversationsHub` and the features riding it as `HubParticipant`s — `CallsParticipant` (owns `CallStack`) and `BroadcastParticipant` (owns `BroadcastHub`); the only feature module that sees conversations, calls and broadcast |
+| **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` and the neutral mesh objects; drives its `HubParticipant`s (calls, broadcast) through its lifecycle without naming them; nested network/policy slices |
+| **MeshHost** | pp-cpp-mesh `mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **CallStack** | `feature/calls/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; owned by `CallsParticipant` |
 | **ConversationsFacade** | `feature/conversations/` | Non-owning wrapper over `ConversationsHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `gui/` | Relay client-compat check; app-owned; deferred startup |
@@ -335,5 +338,5 @@ Full model: [THREADING.md](THREADING.md).
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
-| **Libp2pHost** | `domain/mesh/` | Vendored host + asio IO thread |
+| **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `domain/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

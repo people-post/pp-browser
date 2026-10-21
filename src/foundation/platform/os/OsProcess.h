@@ -22,6 +22,9 @@ public:
 
   int Write(const void* data, size_t size);
   int Read(void* buffer, size_t size);
+  /** Like Read, but gives up after `timeout_ms` with kReadTimedOut when nothing arrived (0 at EOF, -1 on error). */
+  int Read(void* buffer, size_t size, int timeout_ms);
+  static constexpr int kReadTimedOut = -2;
 
 private:
   bool active_ = false;

@@ -60,10 +60,14 @@ struct AgentEvent {
 /** Prefix of a stored user message that carried an image; later history sends it as plain text. */
 inline constexpr const char* kAiImageTurnMarker = "[Image] ";
 
-/** One image sent with a question. `message_id` (optional) is the id the user message is stored under. */
+/**
+ * One image sent with a question. `message_id` (optional) is the id the user message is stored under;
+ * `ai_image_json` (optional) is stored on that message so the GUI can show the image again later.
+ */
 struct AgentImageTurn {
   BriefAiImage image;
   std::string message_id;
+  std::string ai_image_json;
 };
 
 class AgentSession {
@@ -158,6 +162,7 @@ private:
 
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);
+  static ToolMeta MetaForTool(const std::shared_ptr<Impl>& state, const std::string& name);
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                const std::string& status);
   static void PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,

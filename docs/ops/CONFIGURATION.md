@@ -26,7 +26,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | Variable | Maps to | Notes |
 |----------|---------|--------|
 | `PP_BROWSER_PIN` | profile unlock | Required (or `--pin`). Secret — never bake into images. |
-| `PP_BROWSER_CONFIG` | config file path | Or `--config` |
+| `PP_BROWSER_CONFIG` | config file path | Or `--config`. Without either, pp-node runs on defaults and these overlays — it never reads the desktop app's config file of the same user (`~/.config/pp-browser/config.json` and the like) |
 | `PP_NODE_DATA_DIR` | `data_dir` | Volume mount path |
 | `PP_NODE_AMP_UDP_PORT` | `libp2p.amp_udp_port` | Org seed should pin **443** to match default ADP bootstrap |
 | `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/1.0.0/p2p/…`) |
@@ -41,6 +41,9 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
 | `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for `/healthz`, `/status` and `/metrics` |
+| `PP_NODE_LOG_LEVEL` | log level | Or `--log-level`: `debug` \| `info` (default) \| `warning` \| `error`; `--debug` = `debug`. A server's log: unlike the desktop app's quiet default, startup, listen address, ledger role and shutdown show at `info` |
+| `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
+| `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/develop/docs/architecture/PLATFORM_INTEGRATION.md)) |
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
@@ -186,9 +189,9 @@ Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mes
 | `mesh.dht.soft_reputation_penalty_threshold` | `3` | Bad FIND_PEER replies before cooldown. |
 | `mesh.dht.soft_reputation_cooldown_seconds` | `300` | Skip query peer after soft-reputation penalty. |
 
-DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
+DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md).
 
-Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
+Enter an **API key** directly in Me → Assistant (kept in the profile's `secrets.enc`, never in `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
 ### Direct connections (`mesh.direct_connections`)
 
@@ -262,4 +265,4 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 
-API keys can be set inline in Settings/config (`llm.api_key`) or via `api_key_env` resolved through `ICredentialStore`.
+API keys typed in Settings are kept in the profile's `secrets.enc` under the vault DEK; `config.json` neither reads nor writes an `api_key` field; `api_key_env` names an environment variable resolved through `ICredentialStore` instead. An `api_key_env` name must be an upper-case identifier ending in `_API_KEY` (e.g. `OPENAI_API_KEY`); any other name is ignored with a warning. A key resolved from a variable is never written back to `config.json`: saving keeps the `api_key_env` reference and omits the value. The client web search (`search.provider`) uses keyless sources only (DuckDuckGo, Google News RSS); the Tavily branch and `search.api_key` were removed. A key is sent only to an `https://` base URL or to this machine (`localhost`, `127.0.0.1`, `[::1]`) over plain http.

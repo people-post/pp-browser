@@ -1,7 +1,9 @@
 #include "foundation/data/ConfigJson.h"
 #include "common/ValueJson.h"
+#include "foundation/platform/ICredentialStore.h"
 
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 TEST(ConfigJsonTest, ParsesLegacyAndModernFields) {
   auto legacy = pbr::TryParseObject(R"({
@@ -61,7 +63,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.bootstrap_peers = {
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.mesh.prefer_contacts_for_routing = false;
-  config.mesh.direct_connections = pbr::DirectAudience::Friendly;
+  config.mesh.direct_connections = pp::mesh::DirectAudience::Friendly;
   config.mesh.trusted_relays_only = true;
   config.mesh.mesh_enabled = false;
   config.mesh.amp_udp_port = 18518;
@@ -107,7 +109,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   ASSERT_EQ(parsed.mesh.bootstrap_peers.size(), 1u);
   EXPECT_EQ(parsed.mesh.bootstrap_peers[0], config.mesh.bootstrap_peers[0]);
   EXPECT_FALSE(parsed.mesh.prefer_contacts_for_routing);
-  EXPECT_EQ(parsed.mesh.direct_connections, pbr::DirectAudience::Friendly);
+  EXPECT_EQ(parsed.mesh.direct_connections, pp::mesh::DirectAudience::Friendly);
   EXPECT_TRUE(parsed.mesh.trusted_relays_only);
   EXPECT_FALSE(parsed.mesh.mesh_enabled);
   EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);
@@ -162,8 +164,10 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_EQ(loaded.sidebar_width_dp, 240);
   EXPECT_FALSE(loaded.sidebar_collapsed);
   EXPECT_EQ(loaded.auxiliary_width_dp, 320);
+  EXPECT_FALSE(loaded.show_advanced_settings) << "technical options stay hidden unless the user opted in";
 
   pbr::ProfilePreferences edited;
+  edited.show_advanced_settings = true;
   edited.sidebar_width_dp = 320;
   edited.sidebar_collapsed = true;
   edited.auxiliary_width_dp = 400;
@@ -172,4 +176,85 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_EQ(parsed.sidebar_width_dp, 320);
   EXPECT_TRUE(parsed.sidebar_collapsed);
   EXPECT_EQ(parsed.auxiliary_width_dp, 400);
+  EXPECT_TRUE(parsed.show_advanced_settings);
+}
+
+namespace {
+
+// Answers every lookup, so the test sees which names the config layer is willing to ask for.
+class RecordingCredentialStore final : public pbr::ICredentialStore {
+public:
+  std::string Get(const std::string& key) const override {
+    asked.push_back(key);
+    return "value-of-" + key;
+  }
+  mutable std::vector<std::string> asked;
+};
+
+} // namespace
+
+// PB-035: `api_key_env` names an API-key variable, nothing else. A config file must not be able to read an
+// arbitrary environment variable (a cloud secret, a session token) and send it as the bearer key.
+TEST(ConfigJsonTest, ApiKeyEnvOnlyReadsApiKeyVariables) {
+  RecordingCredentialStore store;
+  pbr::ICredentialStore::SetInstance(&store);
+
+  EXPECT_TRUE(pbr::IsApiKeyEnvName("OPENAI_API_KEY"));
+  EXPECT_TRUE(pbr::IsApiKeyEnvName("BRAVE_SEARCH_API_KEY"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("AWS_SECRET_ACCESS_KEY"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("HOME"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("_API_KEY"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("openai_api_key"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("X_API_KEY "));
+
+  auto bad = pbr::TryParseObject(R"({
+    "llm": { "api_key_env": "AWS_SECRET_ACCESS_KEY" }
+  })");
+  ASSERT_TRUE(bad.has_value());
+  pbr::AppConfig config;
+  pbr::AppConfigFromObject(*bad, config);
+  pbr::ResolveConfigCredentials(config);
+  EXPECT_TRUE(config.llm.api_key.empty());
+  EXPECT_TRUE(store.asked.empty()) << "a rejected name must not even be looked up";
+
+  auto good = pbr::TryParseObject(R"({
+    "llm": { "api_key_env": "OPENAI_API_KEY" }
+  })");
+  ASSERT_TRUE(good.has_value());
+  pbr::AppConfig ok;
+  pbr::AppConfigFromObject(*good, ok);
+  pbr::ResolveConfigCredentials(ok);
+  EXPECT_EQ(ok.llm.api_key, "value-of-OPENAI_API_KEY");
+
+  pbr::ICredentialStore::SetInstance(nullptr);
+}
+
+// PB-037: a key that came from an environment variable is never written back to config.json. Saving keeps
+// the `api_key_env` reference and omits the resolved value.
+TEST(ConfigJsonTest, SavingKeepsEnvReferencesAndNeverWritesResolvedKeys) {
+  RecordingCredentialStore store;
+  pbr::ICredentialStore::SetInstance(&store);
+
+  auto parsed = pbr::TryParseObject(R"({
+    "llm": { "api_key_env": "OPENAI_API_KEY" }
+  })");
+  ASSERT_TRUE(parsed.has_value());
+  pbr::AppConfig config;
+  pbr::AppConfigFromObject(*parsed, config);
+  pbr::ResolveConfigCredentials(config);
+  ASSERT_EQ(config.llm.api_key, "value-of-OPENAI_API_KEY");
+
+  const std::string saved = pbr::DumpJson(pbr::ConfigToObject(config, 1));
+  EXPECT_EQ(saved.find("value-of-"), std::string::npos) << saved;
+  EXPECT_NE(saved.find("OPENAI_API_KEY"), std::string::npos) << saved;
+
+  // A key the user typed never reaches config.json either: it belongs to the profile's secrets.enc.
+  pbr::AppConfig typed;
+  typed.llm.api_key = "sk-typed";
+  typed.llm_api_key_env.clear();
+  const std::string typed_saved = pbr::DumpJson(pbr::ConfigToObject(typed, 1));
+  EXPECT_EQ(typed_saved.find("sk-typed"), std::string::npos) << typed_saved;
+  EXPECT_EQ(typed_saved.find("\"api_key\""), std::string::npos) << typed_saved;
+
+  pbr::ICredentialStore::SetInstance(nullptr);
 }

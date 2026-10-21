@@ -2,15 +2,16 @@
 #include "amp/L1/OsUdpDatagramIo.h"
 #include "amp/L1/Types.h"
 #include "foundation/crypto/MlDsa.h"
-#include "domain/mesh/l4/shared/ProductChannelPolicies.h"
+#include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
-#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
-#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
+#include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "mesh/l4/media_relay/MediaRelayTypes.h"
+#include "amp/link/PeerId.h"
+#include "crypto/PeerId.h"
 
 #include "common/Logger.h"
 
@@ -213,13 +214,7 @@ std::string RewriteListenHost(std::string multiaddr, const std::string& host) {
 
 pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
   pp::amp::PeerLinkConfig config;
-  config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
-    auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
-    if (!peer_id) {
-      return {};
-    }
-    return *peer_id;
-  };
+  config.peer_id_from_identity = pp::amp::PeerIdFromIdentityKey;
   return config;
 }
 
@@ -267,7 +262,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   if (!keys) {
     return keys.error();
   }
-  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   if (!peer_id) {
     return peer_id.error();
   }
@@ -392,7 +387,7 @@ int RunReserve(const std::string& hop_ma) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
-  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*client)->Runtime());
   circuit->Start();
 
   const std::vector<AmpPeer*> pumps = {client->get()};
@@ -420,7 +415,7 @@ int RunReserve(const std::string& hop_ma) {
   }
 
   {
-    AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+    AsyncWait<pp::mesh::CircuitTunnelBridgeResult> wait;
     auto tunnel_id = circuit->StartReserve("hop", wait.Fn(), 15000);
     if (!tunnel_id) {
       std::cerr << "error: StartReserve rejected locally\n";
@@ -468,8 +463,8 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
     return 1;
   }
 
-  auto media = std::make_unique<pbr::MediaRelayClientCoordinator>((*client)->Runtime());
-  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
+  auto media = std::make_unique<pp::mesh::MediaRelayClientCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*client)->Runtime());
   media->Start();
   circuit->Start();
 
@@ -479,10 +474,10 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
   std::cout << "pp-node L1 probe target advertise=" << target_ma << "\n";
 
   {
-    pbr::MediaRelayQuoteRequest qreq;
+    pp::mesh::MediaRelayQuoteRequest qreq;
     qreq.session_id = "pp-node-probe";
     qreq.participants = 1;
-    AsyncWait<pbr::MediaRelayQuote> wait;
+    AsyncWait<pp::mesh::MediaRelayQuote> wait;
     if (!media->StartQuote("hop", qreq, wait.Fn(), 8000)) {
       std::cerr << "error: media_relay quote start failed\n";
       return 1;
@@ -501,12 +496,12 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
   }
 
   {
-    pbr::CircuitBridgeTarget bridge_target;
+    pp::mesh::CircuitBridgeTarget bridge_target;
     bridge_target.target_peer_id = (*target)->peer_id;
     bridge_target.target_multiaddr = target_ma;
     bridge_target.target_protocol = kProbeBridgeProtocol;
 
-    AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+    AsyncWait<pp::mesh::CircuitTunnelBridgeResult> wait;
     auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 10000);
     if (!tunnel_id) {
       std::cerr << "error: circuit_relay bridge start failed\n";
@@ -578,21 +573,21 @@ int RunMediaFanout(const std::string& hop_ma) {
     return 1;
   }
 
-  auto a_relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*a)->Runtime());
-  auto b_relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*b)->Runtime());
+  auto a_relay = std::make_unique<pp::mesh::MediaRelayClientCoordinator>((*a)->Runtime());
+  auto b_relay = std::make_unique<pp::mesh::MediaRelayClientCoordinator>((*b)->Runtime());
   a_relay->Start();
   b_relay->Start();
 
   const std::vector<AmpPeer*> pumps = {a->get(), b->get()};
   const std::string call_id = "pp-node-fanout";
-  pbr::MediaRelayQuoteRequest qreq;
+  pp::mesh::MediaRelayQuoteRequest qreq;
   qreq.session_id = call_id;
   qreq.participants = 2;
 
   std::cout << "pp-node N-FANOUT probe hop=" << hop_ma << "\n";
 
-  AsyncWait<pbr::MediaRelayQuote> qa;
-  AsyncWait<pbr::MediaRelayQuote> qb;
+  AsyncWait<pp::mesh::MediaRelayQuote> qa;
+  AsyncWait<pp::mesh::MediaRelayQuote> qb;
   if (!a_relay->StartQuote("hop", qreq, qa.Fn(), 8000) || !b_relay->StartQuote("hop", qreq, qb.Fn(), 8000)) {
     std::cerr << "error: quote start failed\n";
     return 1;
@@ -610,18 +605,18 @@ int RunMediaFanout(const std::string& hop_ma) {
   std::cout << "ok  quotes a=" << qa.result->quote_id << " b=" << qb.result->quote_id << "\n";
 
   std::atomic<bool> got{false};
-  pbr::MediaDataFrame received;
+  pp::mesh::MediaDataFrame received;
 
-  AsyncWait<pbr::MediaRelayAttachResult> attach_a;
-  AsyncWait<pbr::MediaRelayAttachResult> attach_b;
-  if (!a_relay->StartAttach("hop", qa.result->quote_id, call_id, call_id, [](pbr::MediaDataFrame) {},
+  AsyncWait<pp::mesh::MediaRelayAttachResult> attach_a;
+  AsyncWait<pp::mesh::MediaRelayAttachResult> attach_b;
+  if (!a_relay->StartAttach("hop", qa.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {},
                             attach_a.Fn(), 8000)) {
     std::cerr << "error: client-a attach start failed\n";
     return 1;
   }
   if (!b_relay->StartAttach(
           "hop", qb.result->quote_id, call_id, call_id,
-          [&](pbr::MediaDataFrame frame) {
+          [&](pp::mesh::MediaDataFrame frame) {
             received = std::move(frame);
             got.store(true, std::memory_order_release);
           },
@@ -652,10 +647,10 @@ int RunMediaFanout(const std::string& hop_ma) {
     PumpPeers(pumps);
   }
 
-  pbr::MediaDataFrame sent;
+  pp::mesh::MediaDataFrame sent;
   sent.stream_id = 1;
   sent.channel_id = 0;
-  sent.channel_type = pbr::MediaChannelType::LatestLossy;
+  sent.channel_type = pp::mesh::MediaChannelType::LatestLossy;
   sent.payload = {'f', 'a', 'n', 'o', 'u', 't'};
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
   uint32_t seq = 1;
@@ -688,7 +683,7 @@ int RunMediaFanout(const std::string& hop_ma) {
 
 struct CapClient {
   std::unique_ptr<AmpPeer> peer;
-  std::unique_ptr<pbr::MediaRelayClientCoordinator> relay;
+  std::unique_ptr<pp::mesh::MediaRelayClientCoordinator> relay;
 };
 
 struct MediaCapResult {
@@ -737,7 +732,7 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
     }
     c->peer = std::move(*peer);
     pumps.push_back(c->peer.get());
-    c->relay = std::make_unique<pbr::MediaRelayClientCoordinator>(c->peer->Runtime());
+    c->relay = std::make_unique<pp::mesh::MediaRelayClientCoordinator>(c->peer->Runtime());
     c->relay->Start();
     if (auto reg = c->peer->Links().RegisterEndpoint("hop", hop_ma); !reg) {
       std::cerr << "error: client-" << i << " register hop: " << reg.error().message << "\n";
@@ -751,11 +746,11 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
     }
 
     const auto t0 = std::chrono::steady_clock::now();
-    pbr::MediaRelayQuoteRequest qreq;
+    pp::mesh::MediaRelayQuoteRequest qreq;
     qreq.session_id = call_id;
     qreq.participants = attachers;
 
-    AsyncWait<pbr::MediaRelayQuote> quote_wait;
+    AsyncWait<pp::mesh::MediaRelayQuote> quote_wait;
     if (!c->relay->StartQuote("hop", qreq, quote_wait.Fn(), 8000)) {
       ++transport_fails;
       clients.push_back(std::move(c));
@@ -772,9 +767,9 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
       continue;
     }
 
-    AsyncWait<pbr::MediaRelayAttachResult> attach_wait;
+    AsyncWait<pp::mesh::MediaRelayAttachResult> attach_wait;
     if (!c->relay->StartAttach("hop", quote_wait.result->quote_id, call_id, call_id,
-                               [](pbr::MediaDataFrame) {}, attach_wait.Fn(), 8000)) {
+                               [](pp::mesh::MediaDataFrame) {}, attach_wait.Fn(), 8000)) {
       ++transport_fails;
       clients.push_back(std::move(c));
       continue;
@@ -865,7 +860,7 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
     std::cerr << "error: circuit-cap client amp start: " << client.error().message << "\n";
     return 1;
   }
-  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*client)->Runtime());
   circuit->Start();
   if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
@@ -893,12 +888,12 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
 
   int ok = 0;
   for (int i = 0; i < bridges; ++i) {
-    pbr::CircuitBridgeTarget bridge_target;
+    pp::mesh::CircuitBridgeTarget bridge_target;
     bridge_target.target_peer_id = targets[static_cast<size_t>(i)]->peer->peer_id;
     bridge_target.target_multiaddr = targets[static_cast<size_t>(i)]->advertise_ma;
     bridge_target.target_protocol = kProbeBridgeProtocol;
 
-    AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+    AsyncWait<pp::mesh::CircuitTunnelBridgeResult> wait;
     auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 10000);
     if (!tunnel_id || !wait.PumpUntilDone(pumps, 12000) || !wait.result || !wait.result->ok ||
         !wait.result->session) {
@@ -1122,19 +1117,19 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file, c
     return 1;
   }
 
-  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*client)->Runtime());
   circuit->Start();
   const std::vector<AmpPeer*> pumps = {client->get()};
 
   std::cout << "pp-node bridge-via-hop hop=" << hop_ma << " target=" << target_peer
             << (peer_id_only ? " peer-id-only=1" : "") << "\n";
 
-  pbr::CircuitBridgeTarget bridge_target;
+  pp::mesh::CircuitBridgeTarget bridge_target;
   bridge_target.target_peer_id = target_peer;
   bridge_target.target_multiaddr = target_ma;
   bridge_target.target_protocol = kProbeBridgeProtocol;
 
-  AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+  AsyncWait<pp::mesh::CircuitTunnelBridgeResult> wait;
   auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 15000);
   if (!tunnel_id) {
     std::cerr << "error: circuit_relay bridge start failed\n";
@@ -1230,14 +1225,14 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
-  auto relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*peer)->Runtime());
+  auto relay = std::make_unique<pp::mesh::MediaRelayClientCoordinator>((*peer)->Runtime());
   relay->Start();
   const std::vector<AmpPeer*> pumps = {peer->get()};
 
-  pbr::MediaRelayQuoteRequest qreq;
+  pp::mesh::MediaRelayQuoteRequest qreq;
   qreq.session_id = call_id;
   qreq.participants = 2;
-  AsyncWait<pbr::MediaRelayQuote> quote;
+  AsyncWait<pp::mesh::MediaRelayQuote> quote;
   if (!relay->StartQuote("hop", qreq, quote.Fn(), 10000)) {
     std::cerr << "error: media-recv quote start failed\n";
     return 1;
@@ -1249,11 +1244,11 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
   }
 
   std::atomic<bool> got{false};
-  pbr::MediaDataFrame received;
-  AsyncWait<pbr::MediaRelayAttachResult> attach;
+  pp::mesh::MediaDataFrame received;
+  AsyncWait<pp::mesh::MediaRelayAttachResult> attach;
   if (!relay->StartAttach(
           "hop", quote.result->quote_id, call_id, call_id,
-          [&](pbr::MediaDataFrame frame) {
+          [&](pp::mesh::MediaDataFrame frame) {
             received = std::move(frame);
             got.store(true, std::memory_order_release);
           },
@@ -1308,14 +1303,14 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
-  auto relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*peer)->Runtime());
+  auto relay = std::make_unique<pp::mesh::MediaRelayClientCoordinator>((*peer)->Runtime());
   relay->Start();
   const std::vector<AmpPeer*> pumps = {peer->get()};
 
-  pbr::MediaRelayQuoteRequest qreq;
+  pp::mesh::MediaRelayQuoteRequest qreq;
   qreq.session_id = call_id;
   qreq.participants = 2;
-  AsyncWait<pbr::MediaRelayQuote> quote;
+  AsyncWait<pp::mesh::MediaRelayQuote> quote;
   if (!relay->StartQuote("hop", qreq, quote.Fn(), 10000)) {
     std::cerr << "error: media-send quote start failed\n";
     return 1;
@@ -1325,8 +1320,8 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
               << (quote.result ? quote.result->error : quote.result.error().message) << "\n";
     return 1;
   }
-  AsyncWait<pbr::MediaRelayAttachResult> attach;
-  if (!relay->StartAttach("hop", quote.result->quote_id, call_id, call_id, [](pbr::MediaDataFrame) {},
+  AsyncWait<pp::mesh::MediaRelayAttachResult> attach;
+  if (!relay->StartAttach("hop", quote.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {},
                           attach.Fn(), 10000)) {
     std::cerr << "error: media-send attach start failed\n";
     return 1;
@@ -1339,10 +1334,10 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
   relay->StartClientFrameReader();
   std::cout << "pp-node media-send attached call_id=" << call_id << "\n";
 
-  pbr::MediaDataFrame sent;
+  pp::mesh::MediaDataFrame sent;
   sent.stream_id = 1;
   sent.channel_id = 0;
-  sent.channel_type = pbr::MediaChannelType::LatestLossy;
+  sent.channel_type = pp::mesh::MediaChannelType::LatestLossy;
   sent.payload = {'f', 'a', 'n', 'o', 'u', 't'};
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(std::max(5, hold_seconds));

@@ -246,11 +246,11 @@ AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b6
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `annotation_type` | **LenUtf8** — `reaction` (add) or `reaction_clear` (remove); other types reserved |
+| `annotation_type` | **LenUtf8** — `reaction` (add), `reaction_clear` (remove), or `retract` ("delete for everyone": the sender withdraws their own `target_message_id`; `value` empty; D104); other types reserved |
 | `target_message_id` | **LenUtf8** (UUID of target message) |
 | `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
 
-Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`, empty for `retract`). A receiver applies `retract` only when its sender is the target's sender and the target is a message (not an annotation or a system line): the target becomes a local tombstone (D103) and its bytes are deleted; a target arriving after its retract is stored as a tombstone. `retract` is exempt from the per-target annotation cap. **Chat history** (`ChatHistoryResponder`) serves annotation rows as annotations on E2E channels (left out on plaintext ones), and serves a message deleted on the sender's device as a **placeholder**: same `message_id` / seq, annotation `retract` whose `target_message_id` is its own `message_id`; the requester stores it as a tombstone, which fills the seq so its gap closes. See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
 
 **`content_type = attachment` (relay blob upload a1):**
 
@@ -404,7 +404,7 @@ Chat-shaped response (libp2p / documentation):
 
 ## `PeerAnnounceTip` (`/pp-browser/rpc/peer-announce/1.0.0`, `schema_version: 1`)
 
-A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/domain/messaging/PeerAnnounceCodec.cpp`.
+A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/domain/broadcast/PeerAnnounceCodec.cpp`.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -426,7 +426,7 @@ A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine 
 
 ## `media_relay` control (`/pp-browser/datagram-relay/1.0.0`)
 
-JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: `src/domain/mesh/l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
+JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: pp-cpp-mesh `l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
 
 | `op` | Direction | Fields |
 |------|-----------|--------|

@@ -11,7 +11,7 @@
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/calls/CallControlInboundPorts.h"
+#include "common/chat/SystemControl.h"
 #include "common/Module.h"
 
 #include <optional>
@@ -21,9 +21,9 @@
 
 namespace pbr {
 
+class ControlLaneSeenStore;
+
 class GroupInviteGate;
-class InitiationBillingStore;
-class PaymentPromiseStore;
 
 struct RelayReceiveOutcome {
   bool persisted = false;
@@ -48,10 +48,27 @@ struct RelayReceiveOutcome {
    * thread to attach a local system line. `receive_failure_detail` is for logs.
    */
   std::optional<std::string> receive_failure_notice;
+  /**
+   * A "delete for everyone" from the sender: either the retract itself, or a message that arrived after its
+   * retract and was stored as a tombstone. No preview / unread bump, no attachment download.
+   */
+  bool deleted_by_sender = false;
   std::optional<std::string> receive_failure_thread_id;
   std::optional<std::string> receive_failure_sender;
   std::string receive_failure_detail;
 };
+
+/**
+ * How far a control-lane message's signed time may be from ours (devices' clocks drift); the
+ * seen-store keeps ids at least this long, so a replay inside it is a duplicate.
+ */
+inline constexpr int64_t kControlLaneSignedSkewMs = 60 * 60 * 1000;
+
+/**
+ * Whether a control-lane message may still apply: within the signed-time bound and, when it came
+ * through the relay, waiting there no longer than `max_age_ms` (relay clock).
+ */
+bool ControlLaneFresh(const RelayEnvelope& envelope, int64_t max_age_ms, int64_t now_ms);
 
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */
 class RelayReceivePipeline : public Module {
@@ -60,22 +77,38 @@ public:
                        IdentityStore& identity, GroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
-  void BindCallControlInbound(CallControlInboundPorts ports) { call_control_ = std::move(ports); }
-  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
-  void SetPaymentPromiseStore(PaymentPromiseStore* store) { payment_promises_ = store; }
+  /** The system-control families features bind (call control, …). Not owned; null: none. */
+  void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
+  /** Where control-lane ids are remembered (at most once per message); none: no dedupe. */
+  void SetControlLaneSeen(ControlLaneSeenStore* seen) { control_lane_seen_ = seen; }
   /**
    * projects/privacy T3: direct messages (chat and call control) from a Blocked sender are dropped
    * on receipt. Not owned; null = no blocking.
    */
   void SetContactTrust(IContactTrustAccess* trust) { contact_trust_ = trust; }
+  /** Called after a sender's retract wiped one of their messages here (`original` = the row before). */
+  void SetOnMessageRetracted(std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
+    on_message_retracted_ = std::move(callback);
+  }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
                                       MessageTransport transport = MessageTransport::Relay);
 
 private:
+  /** A retract from the target's own sender tombstones the target (when it is here already). */
+  void ApplyInboundRetract(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  /** A message whose retract arrived first is stored as a tombstone straight away. */
+  void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
+
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                             bool authorized_older_backfill, MessageTransport transport);
+  /**
+   * The control lane: verified, decrypted under the pair's e2e_public session, handed to the family
+   * that sends it on the lane while fresh and not seen before. Never stored.
+   */
+  RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   struct ReplayKey {
@@ -94,20 +127,24 @@ private:
   };
 
   Roe<bool> VerifySignature(const RelayEnvelope& envelope, const DirectChatTarget& target) const;
-  Roe<void> PersistDerivedAutoKeyPsk(const RelayEnvelope& envelope, const ChatTargetKey& target_key,
-                                     const ByteVector& master_psk) const;
   std::optional<std::string> FindMessageIdAtSeq(const std::string& thread_id, const uint32_t session_epoch,
                                                 const std::string& seq_owner_contact_id,
                                                 const uint64_t sender_seq) const;
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
   Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                           RelayReceiveOutcome* outcome) const;
-  Roe<void> ApplyInboundCallMessage(ThreadMessage& message, const std::string& actor_identity,
-                                    std::optional<int64_t> relay_created_at_ms = std::nullopt,
-                                    std::optional<int64_t> relay_server_time_ms = std::nullopt) const;
-  Roe<void> ApplyInboundBillingMessage(ThreadMessage& message, const std::string& actor_identity) const;
-  /** P003: stage remote payment-promise receipts; never auto-commit. */
-  Roe<void> ApplyInboundPaymentPromiseMessage(ThreadMessage& message) const;
+  /** A bound family's side effects for `message` (none when no family owns it). */
+  Roe<void> ApplyInboundControl(ThreadMessage& message, const RelayEnvelope& envelope,
+                                RelayReceiveOutcome* outcome_on_failure = nullptr,
+                                const std::string& thread_id = {}) const;
+  /** Membership updates apply out of order: they run even when the ordered stream drops the message
+   *  (authenticated, not in order). */
+  bool AppliesOutOfOrder(const ThreadMessage& message) const;
+  /** Apply what applies out of order; failures are logged, the message is not stored. */
+  void ApplyOutOfOrderControls(ThreadMessage& message, const RelayEnvelope& envelope, IngestDecision decision,
+                               RelayReceiveOutcome& outcome) const;
+  /** A quiet control message bumps no unread count, preview or notice. */
+  void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                  const ThreadMessage& message);
@@ -118,9 +155,9 @@ private:
   IdentityStore& identity_;
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
-  CallControlInboundPorts call_control_;
-  InitiationBillingStore* initiation_billing_ = nullptr;
-  PaymentPromiseStore* payment_promises_ = nullptr;
+  const SystemControlRegistry* controls_ = nullptr;
+  ControlLaneSeenStore* control_lane_seen_ = nullptr;
+
   IContactTrustAccess* contact_trust_ = nullptr;
   bool SenderBlocked(const std::string& sender) const;
   PublicPskLockCoordinator public_lock_;

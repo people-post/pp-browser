@@ -1,12 +1,12 @@
 #pragma once
 
-#include "domain/mesh/host/DisclosureGatedPeerLinks.h"
+#include "mesh/host/DisclosureGatedPeerLinks.h"
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/messaging/InitiationBillingStore.h"
-#include "domain/messaging/PaymentPromiseStore.h"
+#include "domain/pricing/InitiationBillingStore.h"
+#include "domain/pricing/PaymentPromiseStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
@@ -20,17 +20,11 @@
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 #include "domain/messaging/E2ePublicSessionLogic.h"
-#include "feature/calls/CallControlInboundPorts.h"
+#include "common/chat/SystemControl.h"
+#include "domain/messaging/ControlLaneSeenStore.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
-#include "domain/mesh/host/MeshPorts.h"
-#include "feature/conversations/AmpPeerAnnounceTransport.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
-#include "domain/messaging/PeerAnnounceFeed.h"
-#include "domain/messaging/PeerAnnouncePublisher.h"
-#include "domain/messaging/AnnounceNotificationInbox.h"
-#include "domain/messaging/AnnounceOverlayReply.h"
-#include "domain/messaging/PeerAnnounceRpcCodec.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClients.h"
 
 #include <atomic>
@@ -43,6 +37,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -66,7 +61,7 @@ enum class ThreadPeerPathKind {
 
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
-  MeshPeerLinkPhase phase = MeshPeerLinkPhase::Unavailable;
+  mesh::MeshPeerLinkPhase phase = mesh::MeshPeerLinkPhase::Unavailable;
   ThreadPeerPathKind path_kind = ThreadPeerPathKind::None;
   std::string status_label;
   std::string banner_message;
@@ -86,7 +81,7 @@ public:
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                       IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                      IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
+                      mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
                       std::function<void(std::function<void()>)> amp_post_io = {},
                       std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
@@ -105,6 +100,10 @@ public:
   /** D098 — append reaction / reaction_clear annotation on direct or group thread. */
   Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
                                   const std::string& emoji);
+  /** "Delete for everyone": tell the peer / group to delete our message `target_message_id`. */
+  Roe<ThreadMessage> SendRetract(const std::string& thread_id, const std::string& target_message_id);
+  /** A deleted message that has not gone out yet is not retried. */
+  void CancelPendingSend(const std::string& message_id);
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                    const std::string& emoji);
   void PollAndMerge();
@@ -123,14 +122,14 @@ public:
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
-  void BindCallControlInbound(CallControlInboundPorts ports);
+  /** The system-control families features bind (call control, …); passed on to the receive path. Not owned. */
+  void SetSystemControls(const SystemControlRegistry* controls);
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
-  void SetPaymentPromiseStore(PaymentPromiseStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /**
-   * Bind Amp chat/history/blob/announce/broadcast on an existing orchestrator.
+   * Bind Amp chat/history/blob on an existing orchestrator.
    * Prefer this over destroying/recreating the orchestrator after messaging is ready —
    * in-flight SyncInbox / PostWorker lambdas still hold `this`.
    */
@@ -138,8 +137,8 @@ public:
    * projects/privacy T1: chat, attachments and history dial only peers this gate allows (others over
    * a link that is already up, else the Brief relay). Set before AttachAmpTransports. Not owned.
    */
-  void SetAddressDisclosure(const AddressDisclosureGate* gate) { address_disclosure_ = gate; }
-  void AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
+  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
+  void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
                            std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
@@ -163,57 +162,6 @@ public:
                           const std::string& kem_public_key_b64, const std::string& source = "manual");
 
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
-  PeerAnnouncePublisher* PeerAnnouncePublisherOrNull() const { return peer_announce_publisher_.get(); }
-  AmpPeerAnnounceTransport* PeerAnnounceServiceOrNull() const { return peer_announce_.get(); }
-  AmpBroadcastTransport* BroadcastServiceOrNull() const { return broadcast_.get(); }
-  /**
-   * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
-   * Prefer Async when MeshPump is available; sync parks on PushTip.
-   * Requires Amp peer-announce service + device identity keys.
-   */
-  void PublishAndPushAnnounceAsync(const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft,
-                                   int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
-  Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
-                                                 const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
-  /**
-   * Spine B: reply to an announce publisher via DM (not in-topic speak).
-   * Resolves contact by tip PeerId when present; otherwise PeerId-keyed thread.
-   */
-  Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
-  /**
-   * Overlay (on-screen) reply request: DM body with intent=overlay.
-   * Publisher policy/rate limits decide whether to rebroadcast as live_chat.
-   */
-  Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
-                                            const std::string& text, const std::string& viewer_msg_id);
-  /** Publisher: sign+push a live_chat tip from a decoded overlay request. Prefer Async. */
-  void PublishLiveChatFromOverlayAsync(const std::string& peer_key, const std::string& topic_id,
-                                       const std::string& program_id, const std::string& join_handle,
-                                       const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
-                                       int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
-  Roe<PeerAnnounceTipAck> PublishLiveChatFromOverlay(const std::string& peer_key, const std::string& topic_id,
-                                                     const std::string& program_id, const std::string& join_handle,
-                                                     const std::string& viewer_peer_id,
-                                                     const AnnounceOverlayReplyBody& body, int64_t now_ms);
-  AnnounceNotificationInbox& AnnounceNotifications() { return announce_notifications_; }
-  const AnnounceNotificationInbox& AnnounceNotifications() const { return announce_notifications_; }
-  bool DismissAnnounceNotification(const std::string& key) { return announce_notifications_.Dismiss(key); }
-  bool DismissAnnounceLiveBanner(const std::string& key) { return announce_notifications_.DismissBanner(key); }
-  /**
-   * Spine C (slice 0): plan a live join from a tip (call_id = join_handle).
-   * Does not SoftMigrate or attach media yet.
-   */
-  /** Broadcaster (l5): the serving ticket side mints viewer tickets for this live program. */
-  Roe<void> PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
-                              AmpBroadcastTransport::LiveProgramKey key);
-  void ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle);
-  /** Sign and record a program tip in the local announce feed (followers pull / get pushed). */
-  Roe<PeerAnnounceTip> PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft);
-  /** Latest stored signed tip for a program (announce feed). */
-  std::optional<PeerAnnounceTip> LatestAnnounceTip(const std::string& peer_id, const std::string& topic_id,
-                                                   const std::string& program_id) const;
-  /** A publisher's ML-DSA public key for verifying its tips / tickets (self, pinned, or learned). */
-  std::optional<std::vector<uint8_t>> ResolveAnnouncePublisherKey(const std::string& peer_id) const;
 
 
   void MaybeTailSync(const std::string& thread_id);
@@ -252,7 +200,7 @@ public:
    * Brief route sources for Account→`relay:` (P001 strangers / non-contact calls).
    * Shadows: cached directory hits; directory: sync LookupByAccount on send miss.
    */
-  void SetPeerRouteSources(DirectoryShadowCache* shadows, IDirectoryClient* directory);
+  void SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory);
   /** Learn Account→`relay:` from inbound `sender_contact_id` + `sender_relay_id`. */
   void NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id);
   /** D052 — fetch one older-history page when scrolled to top. */
@@ -268,6 +216,14 @@ public:
    * Caller attaches `first_message_key_init_b64` on the outbound CallInvite send.
    */
   Roe<EnsuredE2ePublicSessionKey> EnsureE2ePublicSessionKey(const std::string& peer_identity);
+  /**
+   * Send `control` (an identified system message) to `peer_identity` on the control lane
+   * (kRelayRouteControl): E2E under the pair's e2e_public session (opened on first use; a
+   * `key_init_b64` the caller holds rides along), not sequenced, never stored. Queued on the
+   * critical lane — relay when a route is known (retried while fresh), else Amp.
+   */
+  Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
+                        const std::optional<std::string>& key_init_b64 = std::nullopt);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
@@ -286,6 +242,18 @@ private:
   std::optional<std::string> ResolvePeerRelayIdWithDirectory(const Thread& thread);
   void RememberRouteFromEnvelope(const RelayEnvelope& envelope);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
+  /** The pair's e2e_public session as the lane and media-key wraps use it. */
+  struct E2ePublicSession {
+    ChatTargetKey target_key;
+    uint32_t epoch = 1;
+    ByteVector master_psk;
+    /** Set when this call just opened the session (attach on the first send). */
+    std::optional<std::string> key_init_b64;
+  };
+  Roe<E2ePublicSession> ResolveE2ePublicSession(const std::string& peer_identity);
+  uint64_t NextControlOrderKey();
+  /** A control-lane send still unsent this long after it was made is dropped from the retry queue. */
+  static constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
   void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void NotifyRelayFallback(const std::string& thread_id);
@@ -303,7 +271,8 @@ private:
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;
   bool IsPskReadyToSend(const std::string& thread_id) const;
-  bool HasActiveLocalCall() const;
+  /** A family's live exchange (a call): no key rotation, no background history sync meanwhile. */
+  std::optional<std::string> LiveExchange() const;
   Roe<void> MaybeSendPublicAutoRekey(const std::string& thread_id);
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
@@ -326,29 +295,25 @@ private:
   GroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
-  PaymentPromiseStore* payment_promises_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
-  IChatPeerLinks* amp_links_ = nullptr;
-  const AddressDisclosureGate* address_disclosure_ = nullptr;
+  mesh::IChatPeerLinks* amp_links_ = nullptr;
+  const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
   /** `amp_links_` limited to the audience, for the people-facing transports (outlives them). */
-  std::unique_ptr<DisclosureGatedPeerLinks> people_links_;
+  std::unique_ptr<mesh::DisclosureGatedPeerLinks> people_links_;
+  /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
+  std::unique_ptr<ControlLaneSeenStore> control_lane_seen_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
-  std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
-  std::unique_ptr<AmpPeerAnnounceTransport> peer_announce_;
-  std::unique_ptr<AmpBroadcastTransport> broadcast_;
-  std::unique_ptr<PeerAnnouncePublisher> peer_announce_publisher_;
-  AnnounceNotificationInbox announce_notifications_;
   std::unique_ptr<ChatSyncWorkflow> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
-  CallControlInboundPorts call_control_;
+  const SystemControlRegistry* controls_ = nullptr;
   DirectoryShadowCache* directory_shadows_ = nullptr;
-  IDirectoryClient* directory_ = nullptr;
+  mesh::IDirectoryClient* directory_ = nullptr;
   std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
@@ -356,6 +321,7 @@ private:
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
   mutable std::mutex retry_mutex_;
   std::vector<PendingRelaySend> retry_queue_;
+  std::atomic<uint64_t> control_order_key_{0};
   mutable std::mutex link_ux_mutex_;
   mutable std::string relay_fallback_notice_thread_id_;
   mutable std::string relay_fallback_notice_text_;

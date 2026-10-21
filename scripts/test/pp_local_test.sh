@@ -11,6 +11,8 @@
 # --suite hard is Wave 1 forced-hop (isolated nets; separate compose/ports 18618).
 # --suite hard-w2 is Wave 2 netem/tbf (N-HARD-LOSSY / BW) on the same compose.
 # --suite hard-w3 is Wave 3 discovery (N-HARD-STALE-ADDR / SEED-ONLY).
+# --suite app is the app lab: scripted users on the real app stack (pp-app-probe) over the real
+#   relay (web2 www + messenger, PP_WEB2_ROOT) — glare, redial storms, restarts, a peer vanishing.
 #
 # See docs/ops/TEST_STRATEGY.md, packaging/pp-node/IMAGE_SMOKE.md, packaging/pp-node/HARD_LAB.md
 set -euo pipefail
@@ -52,7 +54,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|ledger|app|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -65,6 +67,8 @@ Environment:
   PP_NODE_PROBE_BRIDGES / PP_NODE_SOAK_SEC (default 120; weekly 3600)
   PP_MIX_BRIDGES (default 2) / PP_MIX_CALL_HOP_CYCLES (default 2)
   PP_HARD_COMPOSE_FILE / PP_HARD_STATUS_URL (default http://127.0.0.1:18618)
+  PP_LEDGER_ROOT / PP_LEDGER_BUILD_DIR (--suite ledger: a pp-ledger checkout with its apps built)
+  PP_WEB2_ROOT (--suite app: a web2 checkout; default ../web2 beside web3) / PP_APP_LAB_ARGS
 
 Examples:
   $(basename "$0") run --suite unit
@@ -302,6 +306,43 @@ run_call() {
   bash "${ROOT}/scripts/test/pp_call_direct_smoke.sh"
 }
 
+APP_LAB_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab.yml"
+
+app_lab_compose() {
+  need_cmd docker
+  PP_WEB2_ROOT="${PP_WEB2_ROOT:-$(cd "${ROOT}/../.." && pwd)/web2}" \
+    docker compose -p pp-app-lab -f "${APP_LAB_COMPOSE}" "$@"
+}
+
+run_app() {
+  need_cmd cmake
+  need_cmd python3
+  ensure_docker_context
+  stage_hop_binary_if_newer
+  cmake --build "${BUILD_DIR}" --target pp-app-probe -j
+  local args=(up -d)
+  if [[ "${COMPOSE_BUILD}" -eq 1 || "${HOP_NEEDS_REBUILD}" -eq 1 ]]; then
+    args+=(--build)
+  fi
+  app_lab_compose "${args[@]}"
+  local i
+  for i in $(seq 1 60); do
+    curl -fsS -m 2 http://127.0.0.1:18719/healthz >/dev/null 2>&1 &&
+      curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
+    sleep 1
+  done
+  echo "=== suite app (scripted users on pp-app-probe over the lab relay) ==="
+  # shellcheck disable=SC2086 # PP_APP_LAB_ARGS is a word list (e.g. "--only redial_storm --repeat 3")
+  python3 "${ROOT}/scripts/test/pp_app_lab.py" --probe "${BUILD_DIR}/src/app/node/pp-app-probe" ${PP_APP_LAB_ARGS:-}
+}
+
+run_ledger() {
+  need_cmd cmake
+  cmake --build "${BUILD_DIR}" --target pp-node -j
+  echo "=== suite ledger (N-LEDGER: pp-node as pp-ledger relay, then miner; local processes) ==="
+  PP_LOCAL_BUILD_DIR="${BUILD_DIR}" bash "${ROOT}/scripts/test/pp_node_ledger_smoke.sh" all
+}
+
 run_conflict() {
   cmake_build_probes
   echo "=== suite conflict (B-CONFLICT) ==="
@@ -464,6 +505,8 @@ cmd_run() {
     hard-w2) run_hard_w2 ;;
     hard-w3) run_hard_w3 ;;
     hard-w5) run_hard_w5 ;;
+    ledger) run_ledger ;;
+    app) run_app ;;
     all)
       run_unit
       run_call
@@ -471,10 +514,13 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|ledger|app|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
-    if [[ "${SUITE}" == "hard-w5" ]]; then
+    if [[ "${SUITE}" == "app" ]]; then
+      echo "app-lab compose stop project=pp-app-lab"
+      app_lab_compose stop || true
+    elif [[ "${SUITE}" == "hard-w5" ]]; then
       echo "hard-lab-cgnat compose stop project=pp-hard-lab-cgnat"
       docker compose -p pp-hard-lab-cgnat -f "${ROOT}/packaging/pp-node/docker-compose.hard-lab-cgnat.yml" stop || true
     elif [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" || "${SUITE}" == "hard-w3" ]]; then
@@ -485,6 +531,8 @@ cmd_run() {
     fi
   elif [[ "${SUITE}" =~ ^(node|cap|soak|chaos|call-hop|msg-call-hop|mix|all)$ ]]; then
     echo "hop left running; $(basename "$0") stop | clear when done"
+  elif [[ "${SUITE}" == "app" ]]; then
+    echo "app-lab left running; stop with: docker compose -p pp-app-lab -f ${APP_LAB_COMPOSE} stop"
   elif [[ "${SUITE}" == "hard-w5" ]]; then
     echo "hard-lab-cgnat left running; $(basename "$0") clear when done"
   elif [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" || "${SUITE}" == "hard-w3" ]]; then

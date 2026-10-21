@@ -146,7 +146,7 @@ expires_at
    - Config + Me → Network (Node / pp-node only) **only when** a stub or real gateway path exists (N008 — no inert checkbox); until then: config/env + docs only is OK
 2. Directory / Amp records may advertise the capability
 3. Hop policy: filter/collect candidates with `ledger_gateway` for a future `CollectLedgerGatewayCandidates` (can be unused by product until ledger transport lands)
-4. Align naming with [platform-integration](../../../pp-ledger/docs/platform-integration.md): opaque upstream, terminal beacon private
+4. Align naming with [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md): opaque upstream, terminal beacon private
 5. Explicit non-goals: embedding `pp-beacon`, ledger RPC dial, settle UI
 
 **Exit:** Capability bit and hop hook exist so chain enablement is “turn on transport + resolver backend,” not “redesign mesh_node.”

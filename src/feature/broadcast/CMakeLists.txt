@@ -1,9 +1,12 @@
 # Broadcast (media-client-layers L001 / B008): sibling of calls — viewer today, broadcaster in l5.
-# Shares only neutral layers (domain/mesh reach + media_relay attach, domain/media pipelines and
+# Shares only neutral layers (pp-cpp-mesh reach + media_relay attach, domain/media pipelines and
 # device leases); never links pp_feature_calls.
 pp_browser_add_feature_library(pp_feature_broadcast
   SOURCES
     AmpBroadcastRpcClient.cpp
+    AmpBroadcastTransport.cpp
+    AmpPeerAnnounceTransport.cpp
+    BroadcastServices.cpp
     BroadcastHub.cpp
     BroadcasterWorkflow.cpp
     BroadcastViewerWorkflow.cpp
@@ -11,7 +14,8 @@ pp_browser_add_feature_library(pp_feature_broadcast
     pp_amp_link
     pp_domain_media
     pp_domain_messaging
-    pp_domain_mesh
+    pp_domain_broadcast
+    pp_mesh
     pp_foundation_runtime_core
     pp_foundation_runtime)
 

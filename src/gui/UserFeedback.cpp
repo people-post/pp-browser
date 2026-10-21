@@ -34,9 +34,9 @@ std::string UserFeedback::FailFrom(const Error& err) {
   return display;
 }
 
-void UserFeedback::NeedsSetup(const std::string& message) {
+void UserFeedback::NeedsSetup(const std::string& message, const bool sticky) {
   if (ports_.show_banner) {
-    ports_.show_banner(message);
+    ports_.show_banner(message, sticky);
   }
 }
 

@@ -2,6 +2,7 @@
 
 #include "domain/people/ContactTypes.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/MeshAlias.h"
 
 #include <vector>
 
@@ -26,7 +27,7 @@ inline std::vector<PeopleDiscoveryContactView> ToPeopleDiscoveryContactViews(
   return views;
 }
 
-inline std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
+inline std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>& directory_hits,
                                                   const std::vector<Contact>& contacts,
                                                   const PeopleDiscoveryBuildOptions& options = {}) {
   return BuildPeopleDiscoveryBlocksJson(directory_hits, ToPeopleDiscoveryContactViews(contacts), options);

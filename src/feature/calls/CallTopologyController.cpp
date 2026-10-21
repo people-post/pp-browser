@@ -1,12 +1,12 @@
 #include "feature/calls/CallTopologyController.h"
-#include "common/media/MediaChannel.h"
-#include "domain/messaging/CallMediaPlannerSelectLogic.h"
-#include "domain/messaging/CallHopPlannerLogic.h"
+#include "mesh/types/MediaChannel.h"
+#include "domain/calls/CallMediaPlannerSelectLogic.h"
+#include "domain/calls/CallHopPlannerLogic.h"
 
 #include "domain/media/CallMediaAdaptation.h"
-#include "domain/messaging/CallHopPlan.h"
-#include "domain/messaging/CallHopAttachLogic.h"
-#include "domain/messaging/InitiationPricing.h"
+#include "domain/calls/CallHopPlan.h"
+#include "domain/calls/CallHopAttachLogic.h"
+#include "domain/pricing/InitiationPricing.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/MeshHopPolicy.h"
@@ -15,9 +15,9 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
-#include "common/directory/MeshHopDial.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
-#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "mesh/types/MeshHopDial.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
+#include "feature/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>
@@ -31,6 +31,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -118,11 +119,11 @@ void CallTopologyController::WatchRelayLoss() {
     return;
   }
   relay_loss_observer_ = relay_deps_.relay->AddClientTransportLostObserver(
-      [outbox = outbox_, watch = ++relay_watch_](MediaRelayClientLoss loss) {
+      [outbox = outbox_, watch = ++relay_watch_](mesh::MediaRelayClientLoss loss) {
         // Only a dead transport means reattach: our own hop migrations and leaves replace / detach
         // the session too. (Another feature taking the client is the call + broadcast case — see
         // media-client-layers PHASES "Allow call + broadcast at once".)
-        if (loss != MediaRelayClientLoss::TransportLost) {
+        if (loss != mesh::MediaRelayClientLoss::TransportLost) {
           return;
         }
         outbox.Emit(topology_event::RelayTransportLost{watch});  // edge: the relay's thread only reports
@@ -461,7 +462,16 @@ CallHopHealth CallTopologyController::HopHealth() const {
   if (!relay_deps_.relay || !sfu_.attached) {
     return {};
   }
-  return relay_deps_.relay->HealthSnapshot();
+  // The relay's session health, in the call's terms (Call details, media health).
+  const mesh::MediaRelayClientHealth relay = relay_deps_.relay->HealthSnapshot();
+  CallHopHealth hop;
+  hop.attached = relay.attached;
+  hop.link = CallLinkCounters{.available = relay.link_available,
+                              .link_id = relay.link_id,
+                              .reliable_sent = relay.reliable_sent,
+                              .retransmits = relay.retransmits,
+                              .srtt_ms = relay.srtt_ms};
+  return hop;
 }
 
 bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
@@ -651,8 +661,8 @@ void CallTopologyController::SubscribePublisherStream(uint32_t stream_id) {
     return;
   }
   // Calls send one video level (the default): audio + that video channel.
-  (void)relay_deps_.relay->Subscribe(stream_id, kMediaChannelAudio);
-  (void)relay_deps_.relay->Subscribe(stream_id, VideoChannel(kDefaultVideoLevel));
+  (void)relay_deps_.relay->Subscribe(stream_id, mesh::kMediaChannelAudio);
+  (void)relay_deps_.relay->Subscribe(stream_id, mesh::VideoChannel(mesh::kDefaultVideoLevel));
   MaybeRequestPublisherKeyframe(stream_id);
 }
 
@@ -1316,7 +1326,7 @@ bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string
 bool CallTopologyController::RefusePrivateHopMultiaddr(const std::string& call_id, const CallSfuAttachDetail& attach) {
   // Cross-net: PreferLocal often fans a private LAN MA. Fail fast and ask owner to re-pick a
   // shared public hop instead of waiting for media-relay timeout.
-  if (attach.hop_multiaddr.empty() || !MultiaddrHasPrivateIpv4Host(attach.hop_multiaddr)) {
+  if (attach.hop_multiaddr.empty() || !mesh::MultiaddrHasPrivateIpv4Host(attach.hop_multiaddr)) {
     return false;
   }
   const bool may_dial = GuestMayDialPrivateHopMa(attach.hop_multiaddr, ranking_.LocalAdvertiseMas());
@@ -1432,7 +1442,7 @@ void CallTopologyController::FlushPendingInboundSfuAttach() {
 
 std::vector<std::string> CallTopologyController::DialableHopPeerIds() const {
   std::vector<std::string> out;
-  for (const MeshHopCandidate& hop : ranking_.Ranked()) {
+  for (const mesh::MeshHopCandidate& hop : ranking_.Ranked()) {
     if (hop.peer_id.empty()) {
       continue;
     }

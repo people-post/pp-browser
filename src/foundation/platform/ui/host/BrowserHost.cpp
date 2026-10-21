@@ -1,4 +1,5 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
+#include "foundation/platform/ScreenKeyboard.h"
 #include "foundation/runtime/AppRuntime.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>
@@ -333,6 +334,10 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	data->glcontext = glcontext;
 
 	data->system_interface.SetWindow(window);
+	// iOS: the shell lifts its own layout above the keyboard (ShellHost::ReadSafeAreaFromSdl), so SDL must
+	// not also pan the view.
+	if (pbr::WatchScreenKeyboard([] { Backend::RequestForceFrame(); }))
+		data->system_interface.SetAppHandlesKeyboardInset(true);
 	data->render_interface.SetViewport(width, height);
 
 #if SDL_MAJOR_VERSION >= 3

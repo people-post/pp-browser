@@ -3,22 +3,24 @@
 #include "amp/L1/Clock.h"
 #include "amp/link/AmpStack.h"
 #include "domain/media/MediaDeviceArbiter.h"
-#include "common/privacy/AddressDisclosure.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/types/AddressDisclosure.h"
+#include "mesh/host/MeshHost.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/calls/CallControlInboundPorts.h"
-#include "domain/mesh/connectivity/MeshConnectivity.h"
-#include "domain/mesh/media_plane/MeshMediaRelay.h"
+#include "common/chat/SystemControl.h"
+#include "mesh/connectivity/MeshConnectivity.h"
+#include "mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/broadcast/BroadcastHub.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
+#include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
 #include "foundation/data/Config.h"
+#include "common/MeshAlias.h"
 
 #include <atomic>
 #include <chrono>
@@ -53,7 +55,7 @@ public:
 
   ~ProductStackHarness();
 
-  MeshHost& Host() { return *host_; }
+  mesh::MeshHost& Host() { return *host_; }
   CallUiBackend& Ui() { return *ui_; }
   CallStack& Stack() { return *stack_; }
   /** Capability-refresh rewire, same sequence as ConversationsHub (L015): detach → reset → wire → rebind. */
@@ -161,8 +163,8 @@ private:
 
   std::shared_ptr<pp::adp::Clock> clock_;
   /** Who may learn this probe's address, as in the product hub (projects/privacy T1); outlives host_. */
-  AddressDisclosureGate address_disclosure_;
-  std::unique_ptr<MeshHost> host_;
+  mesh::AddressDisclosureGate address_disclosure_;
+  std::unique_ptr<mesh::MeshHost> host_;
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
@@ -170,13 +172,15 @@ private:
   std::unique_ptr<SqlitePskSessionStore> psk_;
   AppConfig app_config_;
   // Outlives the call stack and broadcast (they borrow its objects).
-  std::unique_ptr<MeshConnectivity> mesh_connectivity_;
-  std::unique_ptr<MeshMediaRelay> mesh_media_relay_;  // built on connectivity (goes first)
+  std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;
+  std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_;  // built on connectivity (goes first)
+  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;  // pushes into connectivity (goes first)
+  /** The call stack binds its control family here and unbinds it on teardown: declared first. */
+  SystemControlRegistry controls_;
   std::unique_ptr<CallStack> stack_;
   /** k5: the container's network changes reach the mesh and calls as in the product hub. */
   std::unique_ptr<NetworkMonitor> network_monitor_;
   std::unique_ptr<CallUiBackend> ui_;
-  CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;
   std::unique_ptr<MediaDeviceArbiter> broadcast_devices_;
   std::unique_ptr<AmpBroadcastTransport> broadcast_server_;

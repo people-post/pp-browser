@@ -7,6 +7,7 @@
     public void showLocalNotification(java.lang.String, java.lang.String, java.lang.String);
     public void clearLocalNotification(java.lang.String);
     public java.lang.String getStableDeviceId();
+    public java.lang.String getPreferredLanguageTags();
     public boolean isActiveNetworkWifi();
     public void startNetworkMonitor();
     public void stopNetworkMonitor();

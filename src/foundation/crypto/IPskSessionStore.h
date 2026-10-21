@@ -39,6 +39,13 @@ struct PskSessionRecord {
   std::optional<int64_t> last_psk_rotate_at;
   uint32_t psk_rotate_msg_count = 0;
   std::optional<std::string> last_rotation_id;
+  /**
+   * e2e_public AutoKey: the session's id (hash of the key_init that opened it), and — while the peer
+   * has not yet been heard under a session we opened — that key_init, attached to every send until
+   * it has been.
+   */
+  std::optional<std::string> auto_key_session_id;
+  std::optional<std::string> auto_key_init_pending;
 };
 
 class IPskSessionStore {

@@ -1,21 +1,25 @@
 #include "feature/conversations/MessagingTools.h"
 
+#include "feature/conversations/ModelFacingJson.h"
+
 
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "domain/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 namespace {
 
+// Model-facing shapes (PB-057): names and ids only; see ModelFacingJson.h.
 Value ContactsToJson(const std::vector<Contact>& contacts) {
   std::vector<Value> out;
   out.reserve(contacts.size());
   for (const Contact& contact : contacts) {
-    out.push_back(ObjectValue(ContactToJson(contact)));
+    out.push_back(ObjectValue(ContactForModel(contact)));
   }
   return ArrayValue(std::move(out));
 }
@@ -24,7 +28,7 @@ Value ThreadsToJson(const std::vector<Thread>& threads) {
   std::vector<Value> out;
   out.reserve(threads.size());
   for (const Thread& thread : threads) {
-    out.push_back(ObjectValue(ThreadToJson(thread)));
+    out.push_back(ObjectValue(ThreadForModel(thread)));
   }
   return ArrayValue(std::move(out));
 }
@@ -85,7 +89,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            }
            std::vector<Value> out;
            out.reserve(hits->size());
-           for (const DirectoryHit& hit : *hits) {
+           for (const mesh::DirectoryHit& hit : *hits) {
              out.push_back(ObjectValue(DirectoryHitToJson(hit)));
            }
            return DumpJson(ArrayValue(std::move(out)));
@@ -121,12 +125,12 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            if (!directory_hit) {
              return Error("directory_hit required");
            }
-           const DirectoryHit hit = DirectoryHitFromJson(*directory_hit);
+           const mesh::DirectoryHit hit = DirectoryHitFromJson(*directory_hit);
            auto contact = messaging.AddContactFromDirectoryHit(hit);
            if (!contact) {
              return contact.error();
            }
-           return DumpJson(ContactToJson(*contact));
+           return DumpJson(ContactForModel(*contact));
          }));
   }
 
@@ -153,7 +157,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            if (!thread) {
              return thread.error();
            }
-           return DumpJson(ThreadToJson(*thread));
+           return DumpJson(ThreadForModel(*thread));
          }));
   }
 
@@ -169,7 +173,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            if (!thread) {
              return thread.error();
            }
-           return DumpJson(ThreadToJson(*thread));
+           return DumpJson(ThreadForModel(*thread));
          }));
   }
 
@@ -177,7 +181,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("nickname", StringProp("Optional nickname override"));
     tools.push_back(MakeTool(
-      ToolDefinition{"register_user", "Register this device on the network with Ed25519 identity.", ObjectSchema(std::move(properties))},
+      ToolDefinition{"register_user", "Register this device on the network with its identity.", ObjectSchema(std::move(properties))},
       Meta("identity", "write", true),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            auto identity = messaging.GetLocalIdentity();

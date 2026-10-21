@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/chat/SystemControl.h"
+
 #include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/SessionStore.h"
@@ -12,22 +14,25 @@
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
+#include "feature/conversations/HubParticipant.h"
+#include "feature/conversations/HubPolicyPrefs.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/messaging/InitiationBillingStore.h"
-#include "feature/broadcast/BroadcastHub.h"
-#include "foundation/runtime/DeferredSelf.h"
-#include "domain/mesh/connectivity/MeshConnectivity.h"
-#include "domain/mesh/media_plane/MeshMediaRelay.h"
-#include "feature/calls/CallStack.h"
+#include "domain/messaging/ThreadLocalPrefsStore.h"
+#include "domain/pricing/PaymentPromiseInbound.h"
+#include "domain/pricing/InitiationBillingStore.h"
+#include "common/Lifetime.h"
+#include "mesh/connectivity/MeshConnectivity.h"
+#include "mesh/media_plane/MeshMediaRelay.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
-#include "common/privacy/AddressDisclosure.h"
+#include "mesh/types/AddressDisclosure.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
@@ -37,18 +42,18 @@
 #include "domain/net/HttpBlobClient.h"
 #include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/IPushDeviceClient.h"
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/reachability/LanMdnsDiscovery.h"
-#include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/ReachabilityEngine.h"
-#include "domain/mesh/discovery/MeshDirectoryCache.h"
-#include "domain/mesh/discovery/NameDirectory.h"
-#include "domain/mesh/dht/DhtTypes.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/l4/circuit/CircuitRelayTypes.h"
+#include "mesh/reachability/LanMdnsDiscovery.h"
+#include "mesh/reachability/Reachability.h"
+#include "mesh/reachability/ReachabilityEngine.h"
+#include "mesh/discovery/MeshDirectoryCache.h"
+#include "mesh/discovery/NameDirectory.h"
+#include "mesh/dht/DhtTypes.h"
+#include "mesh/host/MeshHost.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "domain/messaging/PaymentPromiseStore.h"
-#include "domain/messaging/PaymentPromiseLifecycle.h"
-#include "domain/messaging/PaymentPromiseWireCodec.h"
+#include "domain/pricing/PaymentPromiseStore.h"
+#include "domain/pricing/PaymentPromiseLifecycle.h"
+#include "domain/pricing/PaymentPromiseWireCodec.h"
 
 #include <atomic>
 #include <cstdint>
@@ -59,6 +64,7 @@
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -75,10 +81,12 @@ class SqlitePskSessionStore;
  * - **ConversationsCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
  *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
  * - **MeshHost (`mesh_`):** shared with headless `pp-node` — Amp stack + L4 + reachability.
- * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, Amp media bridge,
- *   dial/hop helpers.
+ * - **Participants (`HubParticipant`):** features riding messaging and the mesh (calls, live
+ *   broadcast), owned and wired at the feature level (feature/product/ProductStack). The hub drives
+ *   their lifecycle and lends them its stores, messaging and neutral mesh objects; it never names
+ *   them.
  *
- * UI/tools talk through ConversationsFacade / CallUiBackend / ports — not Hub accessors.
+ * UI/tools talk through ConversationsFacade / ports — not Hub accessors.
  * Profile secrets + identity DEK registration remain injected (`BindSecrets`).
  */
 class ConversationsHub : public Module {
@@ -93,7 +101,7 @@ public:
     bool media_relay = true;
     bool dht = false;
     bool prefer_contacts_for_routing = true;
-    DirectAudience direct_connections = DirectAudience::Contacts;
+    mesh::DirectAudience direct_connections = mesh::DirectAudience::Contacts;
     bool trusted_relays_only = false;
 
     bool operator==(const NetworkConfig& other) const {
@@ -106,18 +114,8 @@ public:
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
 
-  /** Inbound group-invite + attachment download policy projected from ProfilePreferences. */
-  struct PolicyPrefs {
-    GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
-    AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
-    InboundAudience call_invite_policy = InboundAudience::Everyone;
+  using PolicyPrefs = HubPolicyPrefs;
 
-    bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy && call_invite_policy == other.call_invite_policy &&
-             attachment_download_policy == other.attachment_download_policy;
-    }
-    bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
-  };
 
   /** Push / OS notification preference projected from ProfilePreferences. */
   struct NotificationPrefs {
@@ -151,7 +149,8 @@ public:
    * Abort in-flight call-media Connect before joining the worker pool / destroying the hub.
    * Safe to call multiple times; no-op if media is not up.
    */
-  void AbortCallMediaForShutdown();
+  /** Participants unblock their waits (shutdown requested). Any thread. */
+  void AbortParticipantsForShutdown();
 
   /**
    * Mark app shutdown so an in-flight EnsureMessagingReady / StartMesh must not finish
@@ -184,25 +183,41 @@ public:
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
+  /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
+  ThreadLocalPrefsStore& ThreadPrefs();
   MeshDeliveryOrchestrator& MeshMessaging();
   GroupMembershipWorkflow& Groups();
-  /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
   /**
    * k5: the device's network changed (any thread; the OS monitor calls it, tests may too). The mesh
    * re-validates its links and addresses; calls re-anchor / retry their upgrade.
    */
   void OnLocalNetworkChanged(const NetworkChange& change);
 
-  CallStack& CallStackRef() { return *call_stack_; }
-  const CallStack& CallStackRef() const { return *call_stack_; }
-  CallSessionManager* Calls();
   /**
-   * Live broadcast viewer (sibling of calls, media-client-layers L013). Null while the mesh is down;
-   * rebuilt — and any watch stopped — whenever the media_relay plane is rewired. UI thread.
+   * Register a participant (non-owning) before Initialize; it must outlive the hub's Shutdown.
+   * The owner clears them after Shutdown, before they go.
    */
-  BroadcastHub* Broadcast() { return broadcast_.get(); }
-  /** Fires (UI thread) on every viewer status change, across hub rebuilds. */
-  void SetOnBroadcastChanged(std::function<void()> callback);
+  void AddParticipant(HubParticipant& participant);
+  void ClearParticipants();
+
+  // --- Lent to participants -------------------------------------------------
+  /** Null until a messaging stack is built (and after it is dropped). */
+  MeshDeliveryOrchestrator* MeshMessagingOrNull() { return mesh_messaging_.get(); }
+  SystemControlRegistry& SystemControls() { return system_controls_; }
+  SqlitePskSessionStore* PskSessions() { return psk_store_.get(); }
+  std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
+  const std::string& ProfileId() const { return profile_id_; }
+  const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
+  /** The neutral mesh objects (L015): outlive every participant; rewired between detach and rebind. */
+  mesh::MeshConnectivity& Connectivity() { return *mesh_connectivity_; }
+  mesh::MeshMediaRelay& MediaRelay() { return *mesh_media_relay_; }
+  /** What the mesh's reach reads (the mesh, directory / DHT nodes, seed probe, LAN notes). */
+  MeshConnectivityWiringInputs MeshInputs();
+  /** The mesh config as last published (immutable snapshot — read from any thread). */
+  std::shared_ptr<const MeshConfig> MeshConfigSnapshot() const;
+  void PrefetchPeerReachability(const std::string& identity);
+  /** Re-evaluate the mobile ephemeral listen (a participant's want changed). UI thread. */
+  void SyncMobileEphemeralListen();
   MessageRouter& Router();
   ContactActionDispatcher& Actions();
   bool HasRouter() const { return router_ != nullptr; }
@@ -211,7 +226,7 @@ public:
   IdentityStore& Identity();
   IPskSessionStore* PskStore();
   ProfileSecretsEngine* Secrets();
-  IDirectoryClient& Directory();
+  mesh::IDirectoryClient& Directory();
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
@@ -229,6 +244,8 @@ public:
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
+  /** Refresh the local account backup on a worker (registration, nickname, contacts). Best effort. */
+  void WriteLocalBackupAsync();
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
@@ -237,13 +254,21 @@ public:
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
+  /**
+   * "Delete for everyone": only our own message in a chat or group. Sends the retract, then deletes the
+   * message here like "delete for me", then (best effort) the uploaded copy on the relay. Blocking: call
+   * off the UI thread.
+   */
+  Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
   AttachmentFetchWorkflow& Attachments();
+  /** Our uploaded relay copy of an attachment message, if any; best effort. */
+  void DeleteUploadedCopy(const ThreadMessage& message);
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
-  void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
+  void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);
   void EnsureContactIconCached(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
   Roe<void> RotateBriefLlmKey();
@@ -277,10 +302,8 @@ public:
                                                        PaymentPromiseControlType type,
                                                        const PaymentPromise& promise,
                                                        const std::string& body_text);
-  /** Stage a remote signed receipt from an inbound control message (does not commit; P003). */
-  Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
 
-  ReachabilitySnapshot Reachability() const;
+  mesh::ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   void TickReachabilityUx();
@@ -294,14 +317,14 @@ public:
    * Shared Amp mesh composition root. Mesh UX (status chrome, reachability, relay load) should
    * read through here. Null before the stack is up; callers must degrade gracefully.
    */
-  MeshHost* Mesh() { return mesh_.get(); }
-  const MeshHost* Mesh() const { return mesh_.get(); }
+  mesh::MeshHost* Mesh() { return mesh_.get(); }
+  const mesh::MeshHost* Mesh() const { return mesh_.get(); }
 
   /**
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
    * Registers hop endpoints as needed; returns first successful Amp bridge.
    */
-  Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
+  Roe<mesh::CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
                                                               const std::string& target_multiaddr,
                                                               int timeout_ms = 8000);
 
@@ -325,38 +348,46 @@ public:
   bool IsContactReachable(const Contact& contact) const;
 
 private:
+  /** Bind the billing and payment-promise families (after the signing-key resolver exists). */
+  void BindPricingFamilies();
+  /** Account signing keys through the directory resolver (promise signatures). */
+  AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const AppConfig& config);
   void UpdateOrgBackendClients(const AppConfig& config);
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const AppConfig& config);
   void StopMesh();
   void PublishMeshConfig();
-  std::shared_ptr<const MeshConfig> MeshConfigSnapshot() const;
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
-  /** Drop the broadcast hub (stops a watch) — before anything rewires the plane it borrows from. */
-  void ResetBroadcast();
-  /** Build the broadcast hub from the current mesh + call plane objects (no-op while mesh is down). */
-  void RebuildBroadcast();
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
   /** The audience in force: the setting, or everyone in the Node role (P004). */
-  DirectAudience EffectiveDirectAudience() const;
+  mesh::DirectAudience EffectiveDirectAudience() const;
   void PublishNodeAdvertisedAddrs();
-  /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
-  CallStackDeps MakeCallStackDeps();
+  /** Point mesh connectivity and the hop-policy feed at the current messaging / mesh. */
+  void WireMeshConnectivity();
+  void NoteLanMdnsPeerId(const std::string& peer_id);
+  std::vector<HubParticipant*> Participants() const;
+  /** Participants in reverse registration order (the way down). */
+  std::vector<HubParticipant*> ParticipantsDown() const;
+  bool ParticipantsWantEphemeralListen() const;
+  void NotifyMessagingBuilt();
+  void NotifyPolicyPrefs(const PolicyPrefs& prefs);
   void RegisterContactEndpoints();
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
   void ConfigureAmpDhtProtocol();
   void ConfigureAmpDirectoryProtocol();
-  void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
-  /** Local (relay-capable) stack only — no StartMesh. */
+  void ApplyDhtFindPeerResult(const std::string& peer_id, const mesh::PeerRoutingRecord& record);
+  /** The messaging objects (orchestrator, groups, actions) over the open stores; participants told. */
+  void BuildMessagingObjects();
+  /** Unlock: the relay-capable stack ready to use (built at Initialize; rebuilt after a discard). */
   Roe<void> BuildLocalMessagingStack();
-  /** Rebuild orchestrator/call stack with Amp links from a running mesh_. */
+  /** Attach Amp links from a running mesh_ to the orchestrator. */
   Roe<void> AttachAmpMessagingStack();
   /** @deprecated Prefer BuildLocalMessagingStack + ScheduleMeshBringUp. Sync local+mesh. */
   Roe<void> BuildMessagingStack();
@@ -364,20 +395,18 @@ private:
   void NotifyMessagingReady();
   void NotifyMeshReady();
 
-  void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
+  void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
 
-  void SyncMobileEphemeralListen();
   void SyncLanMdnsAdvertisement();
-  void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
+  void OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer& peer);
   /** k5: OS network monitor lives with the mesh services (started / stopped with them). */
   void StartNetworkMonitor();
   void StopNetworkMonitor();
   /** k6: a reachability probe finished — a moved observed address is mobility churn. UI thread. */
   void NoteObservedAddress();
   void PublishMobileCallScopedAddrs();
-  void PrefetchPeerReachability(const std::string& identity);
   void StartCoordinatorTimers();
   void StopCoordinatorTimers();
 
@@ -388,7 +417,10 @@ private:
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
   /** Who may learn our address; read by mesh and call paths on any thread (outlives them all). */
-  AddressDisclosureGate address_disclosure_;
+  mesh::AddressDisclosureGate address_disclosure_;
+  /** System-control families features bind (call control): read by receive and delivery threads,
+   *  bound by the call stack — declared early, so it outlives them all. */
+  SystemControlRegistry system_controls_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;
@@ -403,9 +435,10 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
+  std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
-  std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
+  std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
@@ -419,13 +452,13 @@ private:
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
-  std::unique_ptr<IDirectoryClient> directory_owned_;
+  std::unique_ptr<mesh::IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
-  IDirectoryClient* directory_ = nullptr;
+  mesh::IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
@@ -433,24 +466,21 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
-  // --- Neutral mesh objects (L015) — lent to the call stack and broadcast; outlive both ---
+  // --- Neutral mesh objects (L015) — lent to participants; outlive them ---
   /** Reaching peers (dial registry, listen book, circuit reach, rendezvous, punch walk). */
-  std::unique_ptr<MeshConnectivity> mesh_connectivity_;
+  std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;
   /** The media_relay client, built on connectivity (declared after it: goes first). */
-  std::unique_ptr<MeshMediaRelay> mesh_media_relay_;
+  std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_;
+  /** Pushes the candidate policy into connectivity while the mesh runs (declared after it: goes first). */
+  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;
 
-  // --- CallStack (app-only) ------------------------------------------------
-  std::unique_ptr<CallStack> call_stack_;
+  /** Registered participants (calls, broadcast); read from any thread. */
+  mutable std::mutex participants_mu_;
+  std::vector<HubParticipant*> participants_;
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
-  std::unique_ptr<MeshHost> mesh_;
-  // Borrows mesh links, mesh_media_relay_'s relay client and mesh_messaging_ — declared after them so
-  // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
-  std::unique_ptr<BroadcastHub> broadcast_;
-  /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */
-  DeferredSelf broadcast_deferred_;
-  std::function<void()> on_broadcast_changed_;
-  std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
+  std::unique_ptr<mesh::MeshHost> mesh_;
+  std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<NetworkMonitor> network_monitor_;
   /** Last seed-observed public address (k6 churn). UI thread. */
   std::string last_observed_addr_;
@@ -478,7 +508,7 @@ private:
   std::string mobile_ephemeral_last_start_error_;
 };
 
-/** Preferred name for the app messaging assembler (holds MeshHost + CallStack). */
+/** Preferred name for the app messaging assembler (holds MeshHost; calls and broadcast participate). */
 using ConversationsCore = ConversationsHub;
 
 } // namespace pbr

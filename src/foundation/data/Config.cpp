@@ -1,7 +1,7 @@
 #include "foundation/data/Config.h"
 
 #include "foundation/data/AppPaths.h"
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "foundation/data/ConfigJson.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/LlmPreset.h"
@@ -98,7 +98,7 @@ AppConfig Config::DefaultAppConfig() {
   return config;
 }
 
-std::string Config::DiscoverConfigPath(int argc, char** argv) {
+std::string Config::DiscoverConfigPath(int argc, char** argv, const Fallback fallback) {
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       return argv[i + 1];
@@ -107,6 +107,9 @@ std::string Config::DiscoverConfigPath(int argc, char** argv) {
 
   if (const char* env = std::getenv("PP_BROWSER_CONFIG")) {
     return env;
+  }
+  if (fallback == Fallback::None) {
+    return {};
   }
 
   const std::string canonical = AppPaths::ConfigFilePath();
@@ -117,11 +120,11 @@ std::string Config::DiscoverConfigPath(int argc, char** argv) {
   return {};
 }
 
-Roe<AppConfig> Config::Load(int argc, char** argv) {
+Roe<AppConfig> Config::Load(int argc, char** argv, const Fallback fallback) {
   auto& logger = Instance().log();
   AppConfig config = DefaultAppConfig();
 
-  const std::string path = DiscoverConfigPath(argc, argv);
+  const std::string path = DiscoverConfigPath(argc, argv, fallback);
   if (path.empty()) {
     logger.info << "No config file found; using platform defaults (model: " << config.llm.model << ")";
     return config;
@@ -132,6 +135,10 @@ Roe<AppConfig> Config::Load(int argc, char** argv) {
     return loaded.error();
   }
 
+  if (!loaded->llm_api_key_env.empty() && !IsApiKeyEnvName(loaded->llm_api_key_env)) {
+    logger.warning << "llm.api_key_env '" << loaded->llm_api_key_env
+                   << "' ignored: only an upper-case name ending in _API_KEY is read";
+  }
   logger.info << "Loaded config from " << path << " (model: " << loaded->llm.model << ")";
   return loaded.value();
 }

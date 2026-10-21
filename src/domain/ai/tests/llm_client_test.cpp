@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace {
 
@@ -136,6 +137,29 @@ TEST(LlmClientTest, RequiresApiKeyWhenConfigured) {
   auto result = client.Complete("sys", "user");
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_NE(result.error().message.find("API key"), std::string::npos);
+}
+
+// PB-035: the user's key travels only over https or to the local machine. A custom base_url on plain
+// http gets a clear configuration error before any request is made.
+TEST(LlmClientTest, KeyIsNotSentOverPlainHttp) {
+  pbr::LlmConfig config;
+  config.api_key = "sk-secret";
+  config.base_url = "http://203.0.113.5/v1";
+  pbr::LlmClient client(config);
+  auto result = client.Complete("sys", "user");
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("https"), std::string::npos) << result.error().message;
+  EXPECT_EQ(result.error().message.find("sk-secret"), std::string::npos) << "the key itself must not be echoed";
+}
+
+TEST(LlmClientTest, KeyMayGoToLoopbackOverPlainHttp) {
+  pbr::LlmConfig config;
+  config.api_key = "sk-secret";
+  config.base_url = "http://127.0.0.1:9/v1"; // nothing listens: a transport error, not a config error
+  pbr::LlmClient client(config);
+  auto result = client.Complete("sys", "user");
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().message.find("https"), std::string::npos) << result.error().message;
 }
 
 TEST_F(LlmClientLimitsTest, AcceptsRequestAtConfiguredLimit) {

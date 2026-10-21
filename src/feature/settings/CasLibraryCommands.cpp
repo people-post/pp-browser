@@ -2,10 +2,11 @@
 
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ChatBlobTypes.h"
-#include "domain/messaging/CasLibrary.h"
+#include "domain/content/CasLibrary.h"
 #include "domain/net/OrgBackendClients.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -73,9 +74,9 @@ void FetchCasPublicTipForSettingsAsync(const std::string& profile_dir, const std
   }
   ChatBlobRequest request;
   request.op = ChatBlobOp::FetchPublic;
-  request.requester_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
   request.requester_identity_value = local_relay_user_id;
-  request.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  request.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
   request.peer_identity_value = peer_relay_user_id;
   request.content_hash_hex = BytesToHex(*content_id);
   request.channel = ThreadChannel::E2e;

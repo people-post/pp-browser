@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/SettingsController.h"
+#include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/LlmPreset.h"
@@ -23,6 +24,9 @@
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
+#include "foundation/platform/PlatformShare.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
+#include "gui/AccountInvite.h"
 
 #include <ui/dom/Context.h>
 #include <ui/Core.h>
@@ -36,7 +40,8 @@
 #include <filesystem>
 #include <functional>
 #include "common/PbrCompat.h"
-#include "domain/messaging/CasLibrary.h"
+#include "domain/content/CasLibrary.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -105,9 +110,9 @@ std::string ReachabilitySummary(const SettingsReachabilityView& view) {
 }
 
 std::string DirectConnectionsDisplayLabel(const std::string& audience) {
-  const auto parsed = DirectAudienceFromName(audience);
+  const auto parsed = mesh::DirectAudienceFromName(audience);
   return Tr(std::string("settings.network.direct_connections.") +
-            DirectAudienceName(parsed.value_or(DirectAudience::Contacts)));
+            mesh::DirectAudienceName(parsed.value_or(mesh::DirectAudience::Contacts)));
 }
 
 /** Anchor ShowActions float menus under the right side of a settings choice row. */
@@ -210,8 +215,12 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
+  const bool advanced = ui_state_.show_advanced_settings == "on";
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     const SettingsSectionListItem item = handler->ListItem();
+    if (item.advanced_only && !advanced) {
+      continue;
+    }
     sections_.push_back({.id = item.id.c_str(),
                          .title = item.title.c_str(),
                          .subtitle = item.subtitle.c_str(),
@@ -276,6 +285,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
+  ui_state_.show_advanced_settings = bindings_.show_advanced_settings.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.pin_protection_is_default = bindings_.pin_protection_is_default;
   ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
@@ -359,6 +369,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.call_diagnostics = ui_state_.call_diagnostics.c_str();
   bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
+  bindings_.show_advanced_settings = ui_state_.show_advanced_settings.c_str();
+  bindings_.advanced = ui_state_.show_advanced_settings == "on";
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -546,6 +558,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
+    ctor.Bind("show_advanced_settings", &controller.bindings_.show_advanced_settings);
+    ctor.Bind("advanced", &controller.bindings_.advanced);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -596,6 +610,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
+    ctor.BindEventCallback("toggle_show_advanced_settings",
+                           &SettingsController::ToggleShowAdvancedSettingsCallback);
     ctor.BindEventCallback("toggle_crash_reports", &SettingsController::ToggleCrashReportsCallback);
     ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
@@ -698,6 +714,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
   host.Dirty("settings", "crash_reports_enabled");
+  host.Dirty("settings", "show_advanced_settings");
+  host.Dirty("settings", "advanced");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -925,7 +943,7 @@ void SettingsController::SyncLayoutMode() {
   }
 }
 
-void SettingsController::MarkSectionDirty(const std::string& section_id) {
+void SettingsController::MarkSectionDirty(const std::string& section_id, const bool show_toast) {
   if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     log().info << "MarkSectionDirty(" << section_id << ") suppressed during UI transition";
     return;
@@ -937,12 +955,17 @@ void SettingsController::MarkSectionDirty(const std::string& section_id) {
   }
 
   dirty_sections_.insert(section_id);
+  if (show_toast) {
+    quiet_sections_.erase(section_id);
+  } else {
+    quiet_sections_.insert(section_id);
+  }
   if (handler->FlushMode() == SettingsFlushMode::Debounced) {
     debounce_deadline_ms_ = SDL_GetTicks() + kDebounceMs;
     return;
   }
 
-  FlushSection(section_id);
+  FlushSection(section_id, show_toast);
 }
 
 void SettingsController::FlushPending() {
@@ -986,6 +1009,9 @@ void SettingsController::Tick() {
 }
 
 bool SettingsController::FlushSection(const std::string& section_id, bool show_toast) {
+  if (quiet_sections_.erase(section_id) > 0) {
+    show_toast = false;
+  }
   if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     log().info << "FlushSection(" << section_id << ") suppressed during UI transition";
     return true;
@@ -1434,9 +1460,9 @@ void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
   const std::string current =
       bindings_.direct_connections.empty() ? "contacts" : std::string(bindings_.direct_connections.c_str());
   std::vector<ContextMenuAction> actions;
-  for (const DirectAudience audience :
-       {DirectAudience::Everyone, DirectAudience::Contacts, DirectAudience::Friendly, DirectAudience::Nobody}) {
-    const std::string id = DirectAudienceName(audience);
+  for (const mesh::DirectAudience audience :
+       {mesh::DirectAudience::Everyone, mesh::DirectAudience::Contacts, mesh::DirectAudience::Friendly, mesh::DirectAudience::Nobody}) {
+    const std::string id = mesh::DirectAudienceName(audience);
     actions.push_back({.id = id,
                        .label = DirectConnectionsDisplayLabel(id),
                        .enabled = {},
@@ -1643,8 +1669,8 @@ void SettingsController::PerformClearDownloadedAttachments() {
 }
 
 void SettingsController::RefreshLocalizedChrome() {
-  InitSections();
   SyncBindingsFromSession();
+  InitSections(); // after the sync: the advanced flag comes from the profile prefs
   ApplySupportDiscovery();
   if (!selected_id_.empty()) {
     if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
@@ -1743,7 +1769,7 @@ void SettingsController::ApplyReachability() {
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
     ui_state_.dht_enabled = cfg.capabilities.dht ? "on" : "off";
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
-    ui_state_.direct_connections = DirectAudienceName(cfg.direct_connections);
+    ui_state_.direct_connections = mesh::DirectAudienceName(cfg.direct_connections);
     ui_state_.trusted_relays_only = cfg.trusted_relays_only ? "on" : "off";
   }
   PushUiStateToBindings();
@@ -1815,7 +1841,7 @@ void SettingsController::ToggleNodeEnabledCallback(ui::DataModelHandle /*model*/
   }
   controller.bindings_.node_enabled = controller.bindings_.node_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.ApplyReachability();
   if (controller.commands_.refresh_nav_badges) {
     controller.commands_.refresh_nav_badges();
@@ -1868,7 +1894,7 @@ void SettingsController::ToggleCircuitRelayCallback(ui::DataModelHandle /*model*
   controller.bindings_.circuit_relay_enabled =
       controller.bindings_.circuit_relay_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1881,7 +1907,7 @@ void SettingsController::ToggleMediaRelayCallback(ui::DataModelHandle /*model*/,
   controller.bindings_.media_relay_enabled =
       controller.bindings_.media_relay_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1893,7 +1919,7 @@ void SettingsController::ToggleDhtCallback(ui::DataModelHandle /*model*/, ui::Ev
   }
   controller.bindings_.dht_enabled = controller.bindings_.dht_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1906,7 +1932,7 @@ void SettingsController::TogglePreferContactsCallback(ui::DataModelHandle /*mode
   controller.bindings_.prefer_contacts_for_routing =
       controller.bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1915,7 +1941,7 @@ void SettingsController::ToggleTrustedRelaysCallback(ui::DataModelHandle /*model
   auto& controller = Instance();
   controller.bindings_.trusted_relays_only = controller.bindings_.trusted_relays_only == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1931,7 +1957,7 @@ void SettingsController::ToggleShowNotificationsCallback(ui::DataModelHandle /*m
   controller.bindings_.show_notifications =
       controller.bindings_.show_notifications == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile");
+  controller.MarkSectionDirty("profile", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1941,7 +1967,7 @@ void SettingsController::ToggleReduceTransparencyCallback(ui::DataModelHandle /*
   controller.bindings_.reduce_transparency =
       controller.bindings_.reduce_transparency == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance");
+  controller.MarkSectionDirty("appearance", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1951,7 +1977,19 @@ void SettingsController::ToggleCallDiagnosticsCallback(ui::DataModelHandle /*mod
   controller.bindings_.call_diagnostics =
       controller.bindings_.call_diagnostics == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance");
+  controller.MarkSectionDirty("appearance", /*show_toast=*/false);
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleShowAdvancedSettingsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                            const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.show_advanced_settings =
+      controller.bindings_.show_advanced_settings == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("about", /*show_toast=*/false);
+  controller.InitSections(); // the advanced-only sections appear or go
+  controller.PushUiStateToBindings();
   controller.DirtyAll();
 }
 
@@ -1961,7 +1999,7 @@ void SettingsController::ToggleCrashReportsCallback(ui::DataModelHandle /*model*
   controller.bindings_.crash_reports_enabled =
       controller.bindings_.crash_reports_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("security");
+  controller.MarkSectionDirty("security", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1971,7 +2009,7 @@ void SettingsController::ToggleAutoRenewRegistrationCallback(ui::DataModelHandle
   controller.bindings_.auto_renew_registration =
       controller.bindings_.auto_renew_registration == "auto" ? "off" : "auto";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile");
+  controller.MarkSectionDirty("profile", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -2000,9 +2038,9 @@ void SettingsController::OnClearProfileIconCallback(ui::DataModelHandle /*model*
   Instance().OnClearProfileIcon();
 }
 
-void SettingsController::OnShareProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void SettingsController::OnShareProfileCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                 const ui::VariantList& /*args*/) {
-  Instance().OnShareProfile();
+  Instance().OnShareProfile(ShareAnchorFromEvent(ev));
 }
 
 void SettingsController::OnAddMcpServerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -2133,7 +2171,8 @@ void SettingsController::OnPickProfileIcon() {
         status_ = Tr("settings.profile.photo_uploading").c_str();
         BlobQuotaRecoveryFlow::RunVoidUpload(
             [this, path]() { return commands_.upload_profile_icon_file(path); },
-            [this](Roe<void> result) {
+            [this, path](Roe<void> result) {
+              ReleasePickedFile(path);
               ui_state_.profile_icon_uploading = false;
               if (!result) {
                 status_.clear();
@@ -2194,22 +2233,21 @@ void SettingsController::OnClearProfileIcon() {
   });
 }
 
-void SettingsController::OnShareProfile() {
-  const std::string peer_id = bindings_.profile_peer_id.c_str();
-  if (peer_id.empty()) {
+void SettingsController::OnShareProfile(const ShareAnchor anchor) {
+  // The account id is what friends type to find you; without one there is nothing to share yet.
+  const std::string account_id = bindings_.profile_relay_id.c_str();
+  if (account_id.empty()) {
     UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
-  const std::string nickname = bindings_.profile_nickname.c_str();
-  const std::string relay_id = bindings_.profile_relay_id.c_str();
-  std::string invite = nickname.empty() ? peer_id : (nickname + " (" + peer_id + ")");
-  if (!relay_id.empty()) {
-    invite += " [" + relay_id + "]";
-  }
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(invite.c_str());
-  }
-  UserFeedback::Ok(Tr("settings.profile.invite_copied"));
+  ShareInviteOrCopy(
+      AccountInviteText(bindings_.profile_nickname.c_str(), account_id),
+      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
+      anchor, [](const std::string& text) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(text.c_str());
+        }
+      });
 }
 
 void SettingsController::OnAddMcpServer() {

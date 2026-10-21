@@ -1,6 +1,7 @@
 #pragma once
 
-#include "common/directory/DirectoryTypes.h"
+#include "mesh/types/DirectoryTypes.h"
+#include "common/MeshAlias.h"
 
 #include <optional>
 #include <string>
@@ -19,12 +20,12 @@ struct ContactLocal {
 /** Last known directory/lookup snapshot. */
 struct ContactRemote {
   std::string nickname;
-  std::vector<ContactId> ids;
-  std::vector<DirectoryEndpoint> endpoints;
+  std::vector<mesh::ContactId> ids;
+  std::vector<mesh::DirectoryEndpoint> endpoints;
   std::vector<std::string> multiaddrs;
   /** Unix ms when remote was last refreshed; 0 = never synced. */
   int64_t fetched_at = 0;
-  std::optional<ProfileIconRef> icon;
+  std::optional<mesh::ProfileIconRef> icon;
 };
 
 /**
@@ -43,7 +44,7 @@ struct Contact {
   // Mirrors (kept in sync via SyncContactMirrors):
   std::string display_name;
   std::string server_nickname;
-  std::vector<ContactId> ids;
+  std::vector<mesh::ContactId> ids;
   TrustLevel trust = TrustLevel::Unknown;
   /** Dialable libp2p multiaddrs (must include /p2p/<PeerId>). */
   std::vector<std::string> multiaddrs;
@@ -51,7 +52,7 @@ struct Contact {
 
 /** Copy local/remote into flat mirror fields used by messaging/UI helpers. */
 inline void SyncContactMirrors(Contact& contact) {
-  FlattenDirectoryEndpoints(contact.remote.ids, contact.remote.multiaddrs, contact.remote.endpoints);
+  mesh::FlattenDirectoryEndpoints(contact.remote.ids, contact.remote.multiaddrs, contact.remote.endpoints);
   contact.display_name = contact.local.display_name;
   contact.server_nickname = contact.remote.nickname;
   contact.ids = contact.remote.ids;
@@ -82,18 +83,18 @@ inline std::string ContactEffectiveTitle(const Contact& contact) {
   if (!contact.remote.nickname.empty()) {
     return contact.remote.nickname;
   }
-  for (const ContactId& id : contact.remote.ids) {
-    if (id.kind == ContactIdKind::Account && id.primary && !id.value.empty()) {
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && id.primary && !id.value.empty()) {
       return id.value;
     }
   }
-  for (const ContactId& id : contact.remote.ids) {
-    if (id.kind == ContactIdKind::Account && !id.value.empty()) {
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
       return id.value;
     }
   }
-  for (const ContactId& id : contact.remote.ids) {
-    if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
       return id.value;
     }
   }

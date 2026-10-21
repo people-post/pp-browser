@@ -7,8 +7,8 @@
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/DeviceVitals.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/messaging/CallTypes.h"
-#include "domain/messaging/CallHopAttachLogic.h"
+#include "domain/calls/CallTypes.h"
+#include "domain/calls/CallHopAttachLogic.h"
 #include "domain/people/AvatarGlyph.h"
 #include "domain/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -16,7 +16,7 @@
 #include "gui/CallStatusHint.h"
 #include "domain/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
-#include "domain/messaging/CallLifecycleTypes.h"
+#include "domain/calls/CallLifecycleTypes.h"
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallMetricsTracker.h"
@@ -40,6 +40,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -456,7 +457,7 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
   if (identity.empty() || !call_ports_.find_contact_by_identity) {
     return {};
   }
-  if (auto contact = call_ports_.find_contact_by_identity(identity, ContactIdKind::Account)) {
+  if (auto contact = call_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -499,7 +500,7 @@ void CallController::RefreshPendingRing() {
   if (auto media_err = backend->TakeLastMediaError(); media_err && !media_err->empty()) {
     // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
     // users can read multi-hop diagnostics.
-    UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err));
+    UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err), /*sticky=*/true);
   }
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.
@@ -514,219 +515,180 @@ void CallController::RefreshPendingRing() {
     UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
   }
 
-  // Attach-wait / connect health are SM-owned timers (V039 pm3) — do not poll on UI tick.
+  // Attach-wait / connect health are SM-owned timers (V039 pm3) — do not poll on UI tick. The state
+  // steps a refresh owes the owner (invite seen / cleared, orphan leave) happen in Settle.
+  const CallUiBackend::Surface surface = backend->Settle();
+  using SurfaceKind = CallUiBackend::Surface::Kind;
 
-  auto top = backend->TopPendingInvite();
-  if (top && top->has_value()) {
-    const bool accept_in_flight = backend->ShouldSuppressRing((*top)->call_id);
-    auto active = backend->ActiveLocalCall();
-    const bool same_call_active =
-        active && active->has_value() && (*active)->call_id == (*top)->call_id;
-
-    // Accept in flight (CALLS.md): dismiss ring immediately; show Connecting bar so Accept
-    // does not look hung while AcceptInvite runs on the worker.
-    if (accept_in_flight && !same_call_active) {
-      ringing_call_id_ = (*top)->call_id;
-      ClearRing();
-      {
-        in_call_.active = true;
-        in_call_.call_id = (*top)->call_id;
-        in_call_.subtitle = Tr("call.status.connecting").c_str();
-        in_call_.title = (*top)->video_allowed ? Tr("call.title.video").c_str()
-                                               : Tr("call.title.voice").c_str();
-        const std::string caller = DisplayNameForIdentity((*top)->inviter_identity);
-        in_call_.peer_label = caller.empty() ? (*top)->inviter_identity.c_str() : caller.c_str();
-        // Answered with video: switch to the video stage right away (see kVideoStartMs).
-        const bool answered_video = auto_camera_pending_ && auto_camera_call_id_ == (*top)->call_id;
-        in_call_.stage_visible = answered_video;
-        in_call_.remote_video = false;
-        in_call_.remote_placeholder = answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
-      }
-      SyncShellState();
-      SyncRingtone();
-      return;
+  // Accept in flight (CALLS.md): dismiss ring immediately; show Connecting bar so Accept
+  // does not look hung while AcceptInvite runs on the worker.
+  if (surface.kind == SurfaceKind::Answering) {
+    const PendingCallInvite& top = *surface.invite;
+    ringing_call_id_ = top.call_id;
+    ClearRing();
+    {
+      in_call_.active = true;
+      in_call_.call_id = top.call_id;
+      in_call_.subtitle = Tr("call.status.connecting").c_str();
+      in_call_.title = top.video_allowed ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
+      const std::string caller = DisplayNameForIdentity(top.inviter_identity);
+      in_call_.peer_label = caller.empty() ? top.inviter_identity.c_str() : caller.c_str();
+      // Answered with video: switch to the video stage right away (see kVideoStartMs).
+      const bool answered_video = auto_camera_pending_ && auto_camera_call_id_ == top.call_id;
+      in_call_.stage_visible = answered_video;
+      in_call_.remote_video = false;
+      in_call_.remote_placeholder = answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
     }
-
-    // Same-call pending (duplicate invite / inbox race): keep in-call chrome; do not flip to ring.
-    if (same_call_active) {
-      // Fall through to in-call rendering below.
-    } else {
-      ringing_call_id_ = (*top)->call_id;
-      if (backend->Phase() == CallPhase::Idle) {
-        backend->Apply(CallLifecycleEvent::InviteSeen, ringing_call_id_);
-      }
-      if (ring_started_ms_ == 0) {
-        ring_started_ms_ = util::NowUnixMs();
-      }
-
-      const std::string caller_label = [&]() {
-        std::string name = DisplayNameForIdentity((*top)->inviter_identity);
-        if (name.empty()) {
-          name = (*top)->inviter_identity;
-        }
-        return name;
-      }();
-
-      bool has_conflict = false;
-      bool same_peer = false;
-      std::string active_peer_label;
-      if (active && active->has_value() && (*active)->call_id != (*top)->call_id) {
-        has_conflict = true;
-        active_call_id_ = (*active)->call_id;
-        if (auto peer = backend->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
-          active_peer_label = DisplayNameForIdentity(**peer);
-          if (active_peer_label.empty()) {
-            active_peer_label = **peer;
-          }
-          same_peer = (**peer == (*top)->inviter_identity);
-        }
-      }
-      // Do not clear active_call_id_ here — only Leave / no-active paths should.
-
-      const CallConflictCopy copy =
-          MakeCallConflictCopy(has_conflict, same_peer, caller_label, active_peer_label);
-
-      // Hide in-call bar while ringing a *different* call; keep active_call_id_ when conflicting.
-      HideInCallChrome();
-
-      const bool was_active = ring_.active;
-      ring_.active = true;
-      ring_.conflict = has_conflict;
-      ring_.call_id = (*top)->call_id;
-      ring_.caller_label = caller_label;
-      ring_.video_allowed = (*top)->video_allowed;
-      // M6: headline just says what kind of call this is; the voice-answer button covers the choice.
-      ring_.media_label = (*top)->video_allowed ? Tr("call.ring.incoming_video").c_str()
-                                                : Tr("call.ring.incoming_voice").c_str();
-      if (!was_active) {
-        log().warning
-            << "RefreshPendingRing activate call_id=" << ringing_call_id_;
-        const int64_t now = util::NowUnixMs();
-        EmitMetrics(metrics_.NoteRing(ringing_call_id_, (*top)->video_allowed, now, Vitals(now)));
-      }
-      ring_.eyebrow = copy.eyebrow;
-      ring_.conflict_hint = copy.hint;
-      ring_.accept_label = copy.accept_label;
-      ring_.decline_label = copy.decline_label;
-      // V035: video ring offers a voice-answer alternative; the primary button reads
-      // "Video answer" so it's clear Accept keeps the camera option (conflict wording unchanged).
-      if (ring_.video_allowed && !has_conflict) {
-        ring_.accept_label = Tr("call.ring.accept_video").c_str();
-      }
-
-      // P001: show waive / take-all when inviter offered a positive initiation amount.
-      const int64_t offer_minor = backend->InitiationOfferMinorForPeer((*top)->inviter_identity);
-      ring_.show_pricing = offer_minor > 0;
-      ring_.accept_charge_enabled = offer_minor > 0 && PaymentRailsAvailable();
-      if (ring_.show_pricing) {
-        const std::string amount = std::to_string(offer_minor);
-        ring_.pricing_label =
-            Tr("call.pricing.offer", {{"amount", amount}, {"currency", kPricingCurrencyDisplayName}})
-                .c_str();
-        ring_.accept_charge_label =
-            Tr("call.ring.accept_charge", {{"amount", amount}, {"currency", kPricingCurrencyDisplayName}})
-                .c_str();
-        ring_.accept_charge_hint = Tr("call.ring.accept_charge_disabled_hint").c_str();
-        if (!has_conflict) {
-          ring_.accept_label = Tr("call.ring.accept_free").c_str();
-        } else {
-          ring_.accept_label = Tr("call.ring.end_and_accept_free").c_str();
-        }
-      } else {
-        ring_.pricing_label.clear();
-        ring_.accept_charge_label.clear();
-        ring_.accept_charge_hint.clear();
-      }
-
-      // I2/M3: voice-answer button label — conflict wording wins over pricing when both apply.
-      if (has_conflict) {
-        ring_.voice_answer_label = Tr("call.ring.end_and_accept_voice").c_str();
-      } else if (ring_.show_pricing) {
-        ring_.voice_answer_label = Tr("call.ring.voice_answer_free").c_str();
-      } else {
-        ring_.voice_answer_label = Tr("call.ring.accept_voice").c_str();
-      }
-
-      // Short labels for the round icon buttons (WeChat-style ring redesign) — same
-      // conflict-wins-over-pricing precedence as the long labels above.
-      if (has_conflict) {
-        ring_.accept_short = Tr("call.ring.short.end_and_accept").c_str();
-        ring_.voice_short = Tr("call.ring.short.end_and_accept_voice").c_str();
-      } else if (ring_.show_pricing) {
-        ring_.accept_short = Tr("call.ring.short.accept_free").c_str();
-        ring_.voice_short = Tr("call.ring.short.voice_answer_free").c_str();
-      } else if (ring_.video_allowed) {
-        ring_.accept_short = Tr("call.ring.short.video").c_str();
-        ring_.voice_short = Tr("call.ring.short.voice").c_str();
-      } else {
-        ring_.accept_short = Tr("call.ring.short.accept").c_str();
-        ring_.voice_short = Tr("call.ring.short.voice").c_str();
-      }
-
-      if (pending_call_wake_notify_) {
-        pending_call_wake_notify_ = false;
-        const std::string body =
-            caller_label.empty()
-                ? Tr("call.notify.body_unknown")
-                : Tr("call.notify.body_named", {{"name", caller_label}});
-        ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
-      }
-      SyncShellState();
-      SyncRingtone();
-      return;
-    }
+    SyncShellState();
+    SyncRingtone();
+    return;
   }
 
-  if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
-    // LeaveClicked sets Idle before LeaveCall IO finishes — do not resurrect the panel from the
-    // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
-    if (backend->Phase() == CallPhase::Idle) {
-      if ((*active)->state == CallSessionState::Active && !backend->Media().IsActive() &&
-          !backend->MediaAttemptedThisProcess((*active)->call_id) && !backend->IsAwaitingSfuRecovery()) {
-        // True orphan after force-quit / process restart.
-        backend->LeaveCall((*active)->call_id, LiveCallEndReason::Orphaned);
-      }
-      active_call_id_.clear();
-      ClearInCall();
-      ClearRing();
-      SyncShellState();
-      return;
+  if (surface.kind == SurfaceKind::Ringing) {
+    const PendingCallInvite& top = *surface.invite;
+    ringing_call_id_ = top.call_id;
+    if (ring_started_ms_ == 0) {
+      ring_started_ms_ = util::NowUnixMs();
     }
 
-    active_call_id_ = (*active)->call_id;
+    const std::string caller_label = [&]() {
+      std::string name = DisplayNameForIdentity(top.inviter_identity);
+      if (name.empty()) {
+        name = top.inviter_identity;
+      }
+      return name;
+    }();
+
+    bool has_conflict = false;
+    bool same_peer = false;
+    std::string active_peer_label;
+    if (surface.active) {
+      has_conflict = true;
+      active_call_id_ = surface.active->call_id;
+      if (auto peer = backend->PeerIdentityForCall(surface.active->call_id); peer && peer->has_value()) {
+        active_peer_label = DisplayNameForIdentity(**peer);
+        if (active_peer_label.empty()) {
+          active_peer_label = **peer;
+        }
+        same_peer = (**peer == top.inviter_identity);
+      }
+    }
+    // Do not clear active_call_id_ here — only Leave / no-active paths should.
+
+    const CallConflictCopy copy =
+        MakeCallConflictCopy(has_conflict, same_peer, caller_label, active_peer_label);
+
+    // Hide in-call bar while ringing a *different* call; keep active_call_id_ when conflicting.
+    HideInCallChrome();
+
+    const bool was_active = ring_.active;
+    ring_.active = true;
+    ring_.conflict = has_conflict;
+    ring_.call_id = top.call_id;
+    ring_.caller_label = caller_label;
+    ring_.video_allowed = top.video_allowed;
+    // M6: headline just says what kind of call this is; the voice-answer button covers the choice.
+    ring_.media_label = top.video_allowed ? Tr("call.ring.incoming_video").c_str()
+                                              : Tr("call.ring.incoming_voice").c_str();
+    if (!was_active) {
+      log().warning
+          << "RefreshPendingRing activate call_id=" << ringing_call_id_;
+      const int64_t now = util::NowUnixMs();
+      EmitMetrics(metrics_.NoteRing(ringing_call_id_, top.video_allowed, now, Vitals(now)));
+    }
+    ring_.eyebrow = copy.eyebrow;
+    ring_.conflict_hint = copy.hint;
+    ring_.accept_label = copy.accept_label;
+    ring_.decline_label = copy.decline_label;
+    // V035: video ring offers a voice-answer alternative; the primary button reads
+    // "Video answer" so it's clear Accept keeps the camera option (conflict wording unchanged).
+    if (ring_.video_allowed && !has_conflict) {
+      ring_.accept_label = Tr("call.ring.accept_video").c_str();
+    }
+
+    // P001: show waive / take-all when inviter offered a positive initiation amount.
+    const int64_t offer_minor = backend->InitiationOfferMinorForPeer(top.inviter_identity);
+    ring_.show_pricing = offer_minor > 0;
+    ring_.accept_charge_enabled = offer_minor > 0 && PaymentRailsAvailable();
+    if (ring_.show_pricing) {
+      const std::string amount = std::to_string(offer_minor);
+      ring_.pricing_label =
+          Tr("call.pricing.offer", {{"amount", amount}, {"currency", kPricingCurrencyDisplayName}})
+              .c_str();
+      ring_.accept_charge_label =
+          Tr("call.ring.accept_charge", {{"amount", amount}, {"currency", kPricingCurrencyDisplayName}})
+              .c_str();
+      ring_.accept_charge_hint = Tr("call.ring.accept_charge_disabled_hint").c_str();
+      if (!has_conflict) {
+        ring_.accept_label = Tr("call.ring.accept_free").c_str();
+      } else {
+        ring_.accept_label = Tr("call.ring.end_and_accept_free").c_str();
+      }
+    } else {
+      ring_.pricing_label.clear();
+      ring_.accept_charge_label.clear();
+      ring_.accept_charge_hint.clear();
+    }
+
+    // I2/M3: voice-answer button label — conflict wording wins over pricing when both apply.
+    if (has_conflict) {
+      ring_.voice_answer_label = Tr("call.ring.end_and_accept_voice").c_str();
+    } else if (ring_.show_pricing) {
+      ring_.voice_answer_label = Tr("call.ring.voice_answer_free").c_str();
+    } else {
+      ring_.voice_answer_label = Tr("call.ring.accept_voice").c_str();
+    }
+
+    // Short labels for the round icon buttons (WeChat-style ring redesign) — same
+    // conflict-wins-over-pricing precedence as the long labels above.
+    if (has_conflict) {
+      ring_.accept_short = Tr("call.ring.short.end_and_accept").c_str();
+      ring_.voice_short = Tr("call.ring.short.end_and_accept_voice").c_str();
+    } else if (ring_.show_pricing) {
+      ring_.accept_short = Tr("call.ring.short.accept_free").c_str();
+      ring_.voice_short = Tr("call.ring.short.voice_answer_free").c_str();
+    } else if (ring_.video_allowed) {
+      ring_.accept_short = Tr("call.ring.short.video").c_str();
+      ring_.voice_short = Tr("call.ring.short.voice").c_str();
+    } else {
+      ring_.accept_short = Tr("call.ring.short.accept").c_str();
+      ring_.voice_short = Tr("call.ring.short.voice").c_str();
+    }
+
+    if (pending_call_wake_notify_) {
+      pending_call_wake_notify_ = false;
+      const std::string body =
+          caller_label.empty()
+              ? Tr("call.notify.body_unknown")
+              : Tr("call.notify.body_named", {{"name", caller_label}});
+      ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
+    }
+    SyncShellState();
+    SyncRingtone();
+    return;
+  }
+
+  if (surface.kind == SurfaceKind::InCall) {
+    active_call_id_ = surface.active->call_id;
     ClearRing();
-
-    // Outbound unanswered TTL → Leave lives in CallSessionManager::SweepExpiredInvites
-    // (CALLS design; Tick already sweeps). Do not duplicate LeaveClicked here.
-
-    // Direct connect failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
-    // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.
-    if (backend->Media().IsActive() && backend->Media().ActiveCallId() == active_call_id_) {
-      const std::string media_state = backend->Media().ConnectionState();
-      if (media_state == "failed" && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode() &&
-          !backend->IsP2pConnectFailed()) {
-        // State callback may not have marked yet (ordering); ensure UI can show Retry.
-        backend->PollP2pConnectHealth();
-      }
-    }
 
     auto& in_call = in_call_;
     in_call.active = true;
-    in_call.call_id = (*active)->call_id;
+    in_call.call_id = surface.active->call_id;
     in_call.muted = backend->Media().IsMuted();
     in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
     in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
 
-    const bool is_video = (*active)->video_allowed;
+    const bool is_video = surface.active->video_allowed;
     int joined_count = 0;
     std::string local_identity;
     if (call_ports_.local_relay_identity) {
       local_identity = call_ports_.local_relay_identity().value_or(std::string{});
     }
-    if (auto participants = backend->ListJoinedParticipants((*active)->call_id); participants) {
+    if (auto participants = backend->ListJoinedParticipants(surface.active->call_id); participants) {
       joined_count = static_cast<int>(participants->size());
       in_call.participant_count = joined_count;
-      in_call.show_roster = joined_count > 2 || (*active)->origin_group_id.has_value();
+      in_call.show_roster = joined_count > 2 || surface.active->origin_group_id.has_value();
       in_call.show_invite = true;
       in_call.roster.clear();
       in_call.roster.reserve(participants->size());
@@ -764,10 +726,10 @@ void CallController::RefreshPendingRing() {
     }
 
     // V031: pick default once per call; preserve user mode across ticks.
-    if (chrome_mode_call_id_ != (*active)->call_id) {
+    if (chrome_mode_call_id_ != surface.active->call_id) {
       chrome_mode_ = DefaultCallChromeMode(in_call.show_roster);
       restore_mode_ = chrome_mode_;
-      chrome_mode_call_id_ = (*active)->call_id;
+      chrome_mode_call_id_ = surface.active->call_id;
     }
     ApplyChromeModeToState(in_call);
 
@@ -778,7 +740,7 @@ void CallController::RefreshPendingRing() {
     }
 
     std::string peer_label = Tr("call.label.them");
-    if (auto peer = backend->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
+    if (auto peer = backend->PeerIdentityForCall(surface.active->call_id); peer && peer->has_value()) {
       const std::string name = DisplayNameForIdentity(**peer);
       if (!name.empty()) {
         peer_label = name;
@@ -787,7 +749,7 @@ void CallController::RefreshPendingRing() {
     in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
 
     const bool mesh_messaging_failed = backend->IsP2pConnectFailed();
-    const bool group_call_context = (*active)->origin_group_id.has_value() || joined_count > 2 ||
+    const bool group_call_context = surface.active->origin_group_id.has_value() || joined_count > 2 ||
                                     backend->IsAwaitingSfuRecovery() || backend->Media().IsSfuMode();
     in_call.show_retry = mesh_messaging_failed && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode();
 
@@ -952,11 +914,9 @@ void CallController::RefreshPendingRing() {
     return;
   }
 
+  active_call_id_.clear();
   ClearInCall();
   ClearRing();
-  if (backend->Phase() == CallPhase::Ringing) {
-    backend->Apply(CallLifecycleEvent::InviteCleared, {});
-  }
   SyncShellState();
 }
 

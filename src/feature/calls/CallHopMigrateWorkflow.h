@@ -3,21 +3,20 @@
 #include "domain/media/CallMediaEngine.h"
 #include "feature/calls/CallMediaCoordinator.h"
 #include "feature/calls/SharedPorts.h"
-#include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/CallHopPlan.h"
-#include "domain/messaging/CallHopPlannerLogic.h"
-#include "domain/messaging/CallSessionStore.h"
-#include "domain/messaging/CallTypes.h"
-#include "domain/messaging/SoftMigrateLogic.h"
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "domain/calls/CallControlCodec.h"
+#include "domain/calls/CallHopPlan.h"
+#include "domain/calls/CallHopPlannerLogic.h"
+#include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallTypes.h"
+#include "domain/calls/SoftMigrateLogic.h"
+#include "domain/calls/CallMediaKeyStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -33,6 +32,7 @@
 #include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -189,7 +189,7 @@ public:
     std::function<void(CallHopPlannerEvent ev, const std::string& call_id)> apply;
     std::function<void(const std::string& call_id)> sync_sfu_subscriptions;
     std::function<void(const std::string& call_id)> refresh_adaptation;
-    std::function<std::vector<MeshHopCandidate>()> ranked_media_hop_candidates;
+    std::function<std::vector<mesh::MeshHopCandidate>()> ranked_media_hop_candidates;
     std::function<std::string(const std::string& hop_peer_id)> resolve_hop_multiaddr;
     std::function<std::string(const std::string& local_peer_id)> resolve_local_advertise_ma;
     std::function<CallHopScope(const std::string& call_id, const std::string& local_identity)>
@@ -267,7 +267,7 @@ private:
   bool HasDurableMediaRelayHop() const;
   /** Re-pick while attached: true when settled on the current hop, false after detaching to re-pick. */
   bool SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id);
-  std::vector<MeshHopCandidate> RankHopsForSoftMigrate(HopPick& pick, const std::string& prefer_hop_peer_id);
+  std::vector<mesh::MeshHopCandidate> RankHopsForSoftMigrate(HopPick& pick, const std::string& prefer_hop_peer_id);
   void TryPickHop(std::shared_ptr<HopPick> pick, size_t index);
   void FailHopPick(HopPick& pick);
   void AttachPickedHop(std::shared_ptr<HopPick> pick, size_t index);
@@ -283,7 +283,7 @@ private:
   std::function<void(Roe<void>)> ReleaseHopAttachFlightOnError(const std::string& call_id, const std::string& hop,
                                                                std::function<void(Roe<void>)> on_done);
   Roe<void> LoadHopMediaKey(HopAttach& at) const;
-  std::function<void(MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
+  std::function<void(mesh::MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
   void AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done);
   void AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done);
   /** Calls owner: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
@@ -301,7 +301,7 @@ private:
   /** Run `step` as the next event (never inside the caller). */
   void Defer(std::function<void()> step);
   uint64_t StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, bool guest);
-  std::function<void(Roe<MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
+  std::function<void(Roe<mesh::MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
   void OnRelayAttached(const hop_migrate_event::RelayAttached& answer);
   void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);
@@ -309,11 +309,11 @@ private:
   void StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
                           std::function<void(Roe<void>)> on_done);
   Roe<void> CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps);
-  /** media_relay attach mechanism (domain/mesh MediaRelayAttach) over this workflow's relay deps. */
-  MediaRelayAttachPorts RelayAttachPorts() const;
+  /** media_relay attach mechanism (pp-cpp-mesh MediaRelayAttach) over this workflow's relay deps. */
+  mesh::MediaRelayAttachPorts RelayAttachPorts() const;
   /** Call policy for a relay attach: session id / auth = call id; quote sized by roster + video. */
-  MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
-  static std::function<Roe<void>(const MediaRelayQuote&)> RelayQuotePricingGate();
+  mesh::MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
+  static std::function<Roe<void>(const mesh::MediaRelayQuote&)> RelayQuotePricingGate();
 
   CallSessionStore& sessions_;
   CallMediaEngine& media_;

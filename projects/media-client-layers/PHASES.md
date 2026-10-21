@@ -70,7 +70,7 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 ### l4a — Neutral frame crypto + viewer ladder (done)
 
 - [x] `MediaRelayFrameCrypto` (`domain/mesh/l4/media_relay`): seal / open with a feature-owned AAD context; call SFU framing delegates (bytes unchanged — cross-open test)
-- [x] `BroadcastMediaFrameContext`, `BroadcastPublisherStreamId` (`domain/messaging/BroadcastMedia.h`)
+- [x] `BroadcastMediaFrameContext`, `BroadcastPublisherStreamId` (`domain/broadcast/BroadcastMedia.h`)
 - [x] `BroadcastViewerLadder` (`domain/messaging`): client side of B007 — admit / redirect (budget, path stamp) / refuse / no-admission-service / attach-failed; gtests
 
 ### l4b — `feature/broadcast` viewer workflow + hub (done)

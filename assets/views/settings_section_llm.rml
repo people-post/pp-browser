@@ -1,4 +1,6 @@
       <div class="settings-section stack">
+        <p class="text" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
+        <div class="stack" data-if="advanced">
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.llm.preset}}</span>
           <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
@@ -20,7 +22,7 @@
         <div class="settings-field stack" data-if="llm_preset == 'brief'">
           <span class="settings-label">{{i18n:settings.llm.brief_key}}</span>
           <p class="text muted" data-if="brief_llm_key_masked != ''">
-            <span data-rml="brief_llm_key_masked"></span> {{i18n:settings.llm.brief_key_rotate_hint}}
+            <span>{{brief_llm_key_masked}}</span> {{i18n:settings.llm.brief_key_rotate_hint}}
           </p>
           <p class="text muted" data-if="brief_llm_key_masked == ''">
             {{i18n:settings.llm.brief_key_auto}}
@@ -37,6 +39,7 @@
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
+        </div>
         </div>
       </div>
 

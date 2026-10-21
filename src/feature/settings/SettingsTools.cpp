@@ -11,6 +11,7 @@
 #include <string_view>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -465,7 +466,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          out.set("amp_udp_port", static_cast<int64_t>(mesh_cfg.amp_udp_port));
          out.set("mesh_enabled", mesh_cfg.mesh_enabled);
          out.set("prefer_contacts_for_routing", mesh_cfg.prefer_contacts_for_routing);
-         out.set("direct_connections", DirectAudienceName(mesh_cfg.direct_connections));
+         out.set("direct_connections", mesh::DirectAudienceName(mesh_cfg.direct_connections));
          out.set("circuit_relay", mesh_cfg.capabilities.circuit_relay);
          out.set("media_relay", mesh_cfg.capabilities.media_relay);
          return DumpJson(out);
@@ -741,7 +742,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          const auto dht = BoolFromArgs(arguments, {"dht"});
          const auto prefer = BoolFromArgs(arguments, {"prefer_contacts_for_routing"});
          const std::string audience_name = FirstStringArg(arguments, {"direct_connections"});
-         const auto audience = DirectAudienceFromName(audience_name);
+         const auto audience = mesh::DirectAudienceFromName(audience_name);
          if (!audience_name.empty() && !audience) {
            return Error("direct_connections must be everyone, contacts, friendly, or nobody");
          }
@@ -781,7 +782,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          ok.set("media_relay", config.mesh.capabilities.media_relay);
          ok.set("dht", config.mesh.capabilities.dht);
          ok.set("prefer_contacts_for_routing", config.mesh.prefer_contacts_for_routing);
-         ok.set("direct_connections", DirectAudienceName(config.mesh.direct_connections));
+         ok.set("direct_connections", mesh::DirectAudienceName(config.mesh.direct_connections));
          ok.set("trusted_relays_only", config.mesh.trusted_relays_only);
          return DumpJson(OkJson(std::move(ok)));
        }));

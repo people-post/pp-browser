@@ -1,17 +1,16 @@
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallControlClient.h"
-#include "domain/messaging/CallListenAddrsLogic.h"
-#include "domain/messaging/CallAnswererKickLogic.h"
-#include "domain/messaging/CallMediaPlannerSelectLogic.h"
+#include "domain/calls/CallListenAddrsLogic.h"
+#include "domain/calls/CallAnswererKickLogic.h"
+#include "domain/calls/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/media/CallMediaAdaptation.h"
-#include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/BroadcastJoinTicket.h"
+#include "domain/calls/CallSessionLogic.h"
+#include "domain/broadcast/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
-#include "domain/messaging/CallControlThreadLogic.h"
-#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/calls/PeerCapsLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactIdentity.h"
 #include "domain/people/ContactJson.h"
@@ -26,6 +25,7 @@
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -45,7 +45,7 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
   }
   std::vector<std::string> peer_ids = PeerIdsFromListenMultiaddrs(listen_multiaddrs);
   if (peer_ids.empty() && !identity.empty()) {
-    if (auto found = contacts.FindByIdentity(identity, ContactIdKind::Account);
+    if (auto found = contacts.FindByIdentity(identity, mesh::ContactIdKind::Account);
         found && found->has_value()) {
       const std::string peer_id = PeerIdFromContact(**found);
       if (!peer_id.empty()) {
@@ -72,14 +72,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     : contacts_(contacts), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),
-      control_(store, contacts, identity, sessions, psk_store, delivery_,
-               [this]() -> std::optional<std::string> {
-                 auto active = ActiveLocalCall();
-                 if (active && *active && (*active)->origin_thread_id) {
-                   return *(*active)->origin_thread_id;
-                 }
-                 return std::nullopt;
-               }),
+      control_(store, identity, sessions, psk_store, delivery_),
       key_exchange_(sessions, media_keys, control_), billing_(identity), reach_signals_(control_),
       workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
@@ -141,7 +134,6 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
                              const std::string& display) {
     return control_.SendDirect(peer, type, detail, display);
   };
-  ports.ensure_control_thread = [this](const std::string& peer) { return control_.EnsureCallControlThread(peer); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return control_.FanOutToJoined(call_id, type, detail, display, skip);
@@ -151,9 +143,23 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
                                             const std::string& skip) {
     return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
-  ports.append_origin_history = [this](const std::string& thread_id, CallControlType type,
-                                       const std::string& text, const std::string& detail) {
-    return control_.AppendOriginHistory(thread_id, type, text, detail);
+  ports.send_summary = [this](const std::string& thread_id, const CallSummaryDetail& summary, bool local_only) {
+    return control_.SendSummary(thread_id, summary, local_only);
+  };
+  ports.resolve_call_thread = [this](const std::string& inviter,
+                                     const std::optional<std::string>& group_id) -> std::optional<std::string> {
+    if (group_id && !group_id->empty()) {
+      return delivery_.resolve_group_thread ? delivery_.resolve_group_thread(*group_id) : std::nullopt;
+    }
+    if (!delivery_.resolve_peer_thread) {
+      return std::nullopt;
+    }
+    auto thread = delivery_.resolve_peer_thread(inviter);
+    if (!thread) {
+      log().warning << "no thread for the call from " << inviter << ": " << thread.error().message;
+      return std::nullopt;
+    }
+    return *thread;
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
@@ -352,6 +358,13 @@ void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
   }
   if (AcceptingCallId() == call_id) {
     log().info << "AcceptClicked already in flight call_id=" << call_id;
+    NotifyCallStateChanged();
+    return;
+  }
+  // Already answered (a double tap: the accept no longer waits for the park, so the first one may
+  // have gone through by the second) — not a second accept.
+  if (const LiveCall* call = live_calls_.Find(call_id); call && call->State() == LiveCallState::Joined) {
+    log().info << "AcceptClicked ignored (already joined) call_id=" << call_id;
     NotifyCallStateChanged();
     return;
   }
@@ -583,7 +596,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
   if (!direct_path_ || direct_transport_ != deps.transport) {
     DropDirectPath();
     direct_path_ = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *deps.transport,
-                                                     deps.dial, deps.circuit_reach);
+                                                     deps.Reach());
     direct_transport_ = deps.transport;
     const uint64_t generation = ++direct_path_generation_;
     direct_path_->SetOutbox(outbox_.For<DirectPathEvent>([generation](DirectPathEvent event) {
@@ -591,7 +604,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     }));
     log().info << "1:1 path built";
   } else {
-    direct_path_->SetReachDeps(deps.dial, deps.circuit_reach);
+    direct_path_->SetReachDeps(deps.Reach());
   }
   CallMediaBridge& path = *direct_path_;
   path.SetSeedWarm(std::move(deps.seed_warm));
@@ -606,7 +619,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
 
 void CallSessionManager::DetachDirectPathReach() {
   if (direct_path_) {
-    direct_path_->SetReachDeps(nullptr, nullptr);
+    direct_path_->SetReachDeps({});
   }
 }
 
@@ -1004,6 +1017,22 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
 
 Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
+  // Calling someone whose call is ringing here is answering it (they got there first).
+  if (invitee_identities.size() == 1) {
+    if (auto pending = workflow_.TopPendingInvite(); pending && pending->has_value() &&
+        (*pending)->inviter_identity == invitee_identities.front() &&
+        !((*pending)->origin_group_id && !(*pending)->origin_group_id->empty())) {
+      const std::string call_id = (*pending)->call_id;
+      log().info << "StartCall to " << invitee_identities.front() << " while their call rings — answering call_id="
+                 << call_id;
+      workflow_.SetPendingAcceptVoiceOnly(!video_allowed);
+      ClickAccept(call_id);
+      if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+        return **session;
+      }
+      return Error("Call session not found");
+    }
+  }
   auto started = workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
   if (started) {
     // Circuit path often chooses R1 before Invite (product-stack / hard-w5); flush wire announce.
@@ -1247,7 +1276,14 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms,
                                                   const std::string& local_identity) {
-  return workflow_.HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms, local_identity);
+  auto answer = workflow_.HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms, local_identity);
+  if (!answer) {
+    return answer.error();
+  }
+  if (*answer) {
+    ClickAccept(**answer);  // calling each other: theirs won, ours gave way
+  }
+  return {};
 }
 
 
@@ -1306,11 +1342,11 @@ Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
 
 bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
   switch (inbound_call_audience_) {
-  case InboundAudience::Everyone:
+  case mesh::InboundAudience::Everyone:
     return true;
-  case InboundAudience::Nobody:
+  case mesh::InboundAudience::Nobody:
     return false;
-  case InboundAudience::ContactsOnly:
+  case mesh::InboundAudience::ContactsOnly:
     // No gate wired (tests, tools): nothing to judge by — let it ring.
     return !address_disclosure_ || address_disclosure_->Snapshot()->contacts.contains(caller);
   }
@@ -1339,7 +1375,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallInvite:
     if (!AllowsInboundCall(sender_identity)) {
       // Silent: a decline would tell the caller we exist and are online.
-      log().info << "call invite dropped (who can call me: " << InboundAudienceName(inbound_call_audience_)
+      log().info << "call invite dropped (who can call me: " << mesh::InboundAudienceName(inbound_call_audience_)
                  << ") from=" << sender_identity;
       return {};
     }
@@ -1377,8 +1413,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return reach_signals_.HandleInboundPunchAnswer(detail_json);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
-  case CallControlType::CallStarted:
-    return {};
+  case CallControlType::CallSummary:
+    return {};  // history in the chat stream, not signaling
   }
   return {};
 }

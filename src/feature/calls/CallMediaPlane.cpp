@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -26,7 +27,7 @@ void CallMediaPlane::SetDeps(CallMediaPlaneDeps deps) {
 }
 
 void CallMediaPlane::OnMeshStarted() {
-  MeshHost* m = mesh();
+  mesh::MeshHost* m = mesh();
   if (!m || !m->IsRunning()) {
     return;
   }
@@ -57,14 +58,15 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   if (!connectivity_ || !media_relay_) {
     return deps;
   }
-  MeshHost* m = mesh();
+  mesh::MeshHost* m = mesh();
   const bool use_amp_relay = media_relay_->AmpRelayAvailable();
-  const MediaRelayAttachPorts ports = media_relay_->RelayAttachPorts();
+  const mesh::MediaRelayAttachPorts ports = media_relay_->RelayAttachPorts();
   deps.relay = ports.relay;
   deps.dial = ports.dial;
   deps.circuit_reach = ports.service_reach;
   deps.objects_alive = ports.objects_alive;
   deps.objects_snap = ports.objects_snap;
+  deps.work = ports.work;
   const auto snapshot = mesh_config();
   MeshConfig mesh_cfg = *snapshot;
   NormalizeMeshConfig(mesh_cfg);
@@ -87,7 +89,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.resolve_local_advertise = deps_.local_listen_multiaddrs;
   deps.peer_has_media_relay = deps_.peer_has_media_relay;
   deps.list_media_relay_peers = deps_.list_media_relay_peers;
-  MeshConnectivity* connectivity = connectivity_;
+  mesh::MeshConnectivity* connectivity = connectivity_;
   deps.resolve_remote_listen_by_peer = [connectivity]() { return *connectivity->PeerListenBook(); };
   deps.peer_lan_confirmed = [connectivity](const std::string& peer_id) {
     return connectivity->PeerLanConfirmed(peer_id);
@@ -107,7 +109,8 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   }
   deps.dial = connectivity_->Dial();
   deps.circuit_reach = connectivity_->CircuitReach();
-  CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
+  deps.lane = connectivity_->Lane();
+  mesh::CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
   deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
   deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };
   deps.seed_park_await = [rendezvous](std::function<void(bool)> done, int timeout_ms) {
@@ -128,7 +131,7 @@ void CallMediaPlane::FinishMeshStop() {
 }
 
 void CallMediaPlane::DetachRelayClient() {
-  if (IMediaRelayClient* relay = media_relay_ ? media_relay_->RelayClient() : nullptr) {
+  if (mesh::IMediaRelayClient* relay = media_relay_ ? media_relay_->RelayClient() : nullptr) {
     relay->Detach();
   }
 }

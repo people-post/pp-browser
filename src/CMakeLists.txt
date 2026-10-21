@@ -1,11 +1,11 @@
 # Source layers: common → foundation → domain → feature → gui → app.
-# Convenience INTERFACE `pp_base` = foundation + Amp + domain (feature/app link).
+# Convenience INTERFACE `pp_base` = foundation + Amp + mesh + domain (feature/app link).
 add_subdirectory(common)
 add_subdirectory(foundation)
 add_subdirectory(domain)
 
 # Product-stack convenience (legacy name). Prefer linking specific pp_foundation_* /
-# pp_domain_* / pp_amp_* targets when a narrower dependency is enough.
+# pp_domain_* / pp_amp_* / pp_mesh_* targets when a narrower dependency is enough.
 add_library(pp_base INTERFACE)
 target_link_libraries(pp_base INTERFACE
   pp_foundation
@@ -13,12 +13,14 @@ target_link_libraries(pp_base INTERFACE
   pp_amp_l2
   pp_amp_l3
   pp_amp_link
+  pp_mesh
   pp_domain
 )
 
 # Headless feature modules: built in every configuration (pp-node links them without pp_base).
 add_subdirectory(feature/registration)
 add_subdirectory(feature/node)
+add_subdirectory(feature/call_media)
 
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)

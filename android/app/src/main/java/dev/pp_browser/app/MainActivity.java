@@ -701,6 +701,11 @@ public class MainActivity extends SDLActivity {
         NotificationManagerCompat.from(this).cancel(req);
     }
 
+    /** Ordered BCP-47 tags from Settings → System → Languages, comma-separated (B80: PP follows the first one it ships). */
+    public String getPreferredLanguageTags() {
+        return android.os.LocaleList.getDefault().toLanguageTags();
+    }
+
     public String getStableDeviceId() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String id = prefs.getString("device_id", null);

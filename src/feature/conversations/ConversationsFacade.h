@@ -5,6 +5,7 @@
 #include "domain/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/SendRelayOptions.h"
+#include "domain/messaging/ThreadLocalPrefsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/OrgBackendClients.h"
@@ -13,8 +14,8 @@
 #include "common/directory/IdentityTypes.h"
 #include "domain/people/ProfileIdentityView.h"
 #include "domain/ui/ChatWidgetTypes.h"
-#include "domain/messaging/PaymentPromiseLifecycle.h"
-#include "domain/messaging/PaymentPromiseWireCodec.h"
+#include "domain/pricing/PaymentPromiseLifecycle.h"
+#include "domain/pricing/PaymentPromiseWireCodec.h"
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/AgentInboundPorts.h"
@@ -22,11 +23,9 @@
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/messaging/CallTypes.h"
-#include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PskSessionCoordinator.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 
 #include <cstdint>
 #include <functional>
@@ -34,6 +33,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -62,6 +62,10 @@ public:
   Roe<void> SyncPushDevices(bool show_notifications);
   Roe<std::string> ExportLinkDevice();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
+  /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
+  Roe<std::optional<std::string>> LocalBackupNickname();
+  Roe<void> RestoreLocalBackup(const std::string& pin);
+  Roe<void> DeleteLocalBackup();
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------
@@ -70,12 +74,23 @@ public:
   Roe<std::vector<Thread>> ListThreads();
   /** True when an active local call is for this thread (origin / peer / group). */
   bool ThreadHasActiveCall(const std::string& thread_id);
+  /** Calls answer ThreadHasActiveCall (feature-level wiring sets it; none: never). */
+  void SetActiveCallQuery(std::function<bool(const Thread& thread)> query);
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
+  Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
+  Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
+  /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
+  Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  void MarkThreadRead(const std::string& thread_id);
+  /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
+  Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();
+  Roe<ThreadLocalPrefs> GetThreadLocalPrefs(const std::string& thread_id);
+  Roe<void> SetThreadLocalPrefs(const ThreadLocalPrefs& prefs);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */
@@ -139,7 +154,9 @@ public:
                               const std::string& source);
   void RegisterPeerKemKey(const std::string& kind, const std::string& value, const std::string& key_b64,
                           const std::string& source);
-  Roe<Contact> AddContactFromDirectoryHit(const DirectoryHit& hit);
+  Roe<Contact> AddContactFromDirectoryHit(const mesh::DirectoryHit& hit);
+  /** Block / unblock / trust from wherever the person is shown (chat row menu, contact detail). */
+  Roe<void> SetContactTrust(const std::string& contact_id, TrustLevel level);
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
 
   // --- Groups ---------------------------------------------------------------
@@ -157,9 +174,11 @@ public:
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();
-  Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, ContactIdKind kind);
+  Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, mesh::ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
-  std::optional<DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
+  std::optional<mesh::DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
+  /** Start a directory lookup for `peer_id` if none is cached or in flight; the result lands in the shadow cache. */
+  void EnsureDirectoryLookup(const std::string& peer_id);
 
   // --- Actions --------------------------------------------------------------
   Roe<std::optional<std::string>> DispatchAction(const std::string& payload_json);
@@ -197,7 +216,6 @@ public:
                                                        PaymentPromiseControlType type,
                                                        const PaymentPromise& promise,
                                                        const std::string& body_text);
-  Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
   void MarkSharedAiConfirmed(const std::string& thread_id);
@@ -221,8 +239,18 @@ public:
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
                                                            const std::string& message_id);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
+  struct StoredAiImage {
+    std::vector<uint8_t> content_hash;
+    std::string view_path;
+  };
+  /** An image the user sends to the AI: private CAS + this thread's view file. Fails while locked. */
+  Roe<StoredAiImage> StoreAiImage(const std::string& thread_id, const std::vector<uint8_t>& bytes,
+                                  const std::string& mime);
+  /** View file of a stored AI image, materialized from the CAS when missing; nullopt while locked or gone. */
+  std::optional<std::string> AiImageViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                             const std::string& mime);
   Roe<void> RotateBriefLlmKey();
-  ReachabilitySnapshot Reachability();
+  mesh::ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   std::string LastMeshError();
@@ -230,43 +258,26 @@ public:
   bool IsHelpNetworkEnabled();
 
   // --- Messaging tools helpers ----------------------------------------------
-  Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query);
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query);
   Roe<std::vector<Contact>> SearchLocalContacts(const std::string& query);
   Roe<LocalIdentity> GetLocalIdentity();
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
+  /** #328: take this account off the directory (profile reset / delete account). */
+  Roe<void> RevokeRegistration();
 
   /**
    * Escape hatch for lifecycle / bridges that legitimately need the hub
    * (e.g. ConfigApplyBridge Apply slices). Prefer facade methods otherwise.
    */
 
-  // --- Live broadcast viewer (feature/broadcast — not a call; media-client-layers L013) ---
-  /**
-   * Listen to the live program a signed tip announces (replaces any current watch). UI thread;
-   * the broadcast owner answers through `on_done`, on UI.
-   */
-  void WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done);
-  /** Same, from the latest stored tip of that program. */
-  void WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
-                               const std::string& program_id, std::function<void(Roe<void>)> on_done);
-  void StopWatchingBroadcast();
-  /** Current watch (phase, hop, error); nullopt while broadcast viewing is unavailable. */
-  std::optional<BroadcastViewerWorkflow::Status> BroadcastWatchStatus();
-
-  /** Publish a program live through `hops` (media_relay nodes, preference order). UI thread; `on_done` on UI. */
-  void GoLive(const std::string& topic_id, const std::string& program_id, std::vector<std::string> hops,
-              std::function<void(Roe<void>)> on_done);
-  void EndLive();
-  /** Current show (phase, join handle, hop, frames sent); nullopt while broadcasting is unavailable. */
-  std::optional<BroadcasterWorkflow::Status> BroadcastLiveStatus();
-
   ConversationsHub& Hub() { return hub_; }
 
 private:
   ConversationsHub& hub_;
   std::function<void(std::vector<MessageDisplayRow>&)> display_row_decorator_;
+  std::function<bool(const Thread& thread)> active_call_query_;
 };
 
 } // namespace pbr

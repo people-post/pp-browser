@@ -1,9 +1,10 @@
 #pragma once
 
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 
 #include <cstdint>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -18,7 +19,7 @@ struct VideoLevelProfile {
 };
 
 inline VideoLevelProfile ProfileForVideoLevel(const uint8_t level) {
-  if (level <= kDefaultVideoLevel) {
+  if (level <= mesh::kDefaultVideoLevel) {
     return {640, 360, 400'000};
   }
   if (level == 2) {

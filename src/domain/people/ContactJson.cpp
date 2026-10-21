@@ -1,6 +1,7 @@
 #include "domain/people/ContactJson.h"
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -28,18 +29,18 @@ TrustLevel TrustLevelFromString(const std::string& value) {
 
 namespace {
 
-bool HasRelayUserId(const std::vector<ContactId>& ids, const std::string& relay_user_id) {
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::RelayUser && id.value == relay_user_id) {
+bool HasRelayUserId(const std::vector<mesh::ContactId>& ids, const std::string& relay_user_id) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && id.value == relay_user_id) {
       return true;
     }
   }
   return false;
 }
 
-bool HasPeerId(const std::vector<ContactId>& ids, const std::string& peer_id) {
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::PeerId && id.value == peer_id) {
+bool HasPeerId(const std::vector<mesh::ContactId>& ids, const std::string& peer_id) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && id.value == peer_id) {
       return true;
     }
   }
@@ -125,16 +126,16 @@ Contact ContactFromJson(const Object& json) {
   AppendContactIdsFromJson(json, contact.remote.ids);
   if (auto relay_user_id = json.getString("relay_user_id")) {
     if (!relay_user_id->empty() && !HasRelayUserId(contact.remote.ids, *relay_user_id)) {
-      contact.remote.ids.push_back({ContactIdKind::RelayUser, *relay_user_id, true});
+      contact.remote.ids.push_back({mesh::ContactIdKind::RelayUser, *relay_user_id, true});
     }
   } else if (auto relay_id = json.getString("relay_id")) {
     if (!relay_id->empty() && !HasRelayUserId(contact.remote.ids, *relay_id)) {
-      contact.remote.ids.push_back({ContactIdKind::RelayUser, *relay_id, true});
+      contact.remote.ids.push_back({mesh::ContactIdKind::RelayUser, *relay_id, true});
     }
   }
   if (auto peer_id = json.getString("peer_id")) {
     if (!peer_id->empty() && !HasPeerId(contact.remote.ids, *peer_id)) {
-      contact.remote.ids.push_back({ContactIdKind::PeerId, *peer_id, contact.remote.ids.empty()});
+      contact.remote.ids.push_back({mesh::ContactIdKind::PeerId, *peer_id, contact.remote.ids.empty()});
     }
   }
   if (const Array* multiaddrs = json.getArray("multiaddrs")) {

@@ -132,7 +132,10 @@ std::string BuildArticleFeedBlocksJson(const std::string& raw_json, const Articl
     if (!meta.empty()) {
       item.set("meta", meta);
     }
+    // What the item menu copies, shares or asks the AI about: the article as the user reads it.
+    item.set("share_text", title.empty() || content.empty() ? (title.empty() ? content : title) : title + "\n" + content);
     if (IsHttpsUrl(link)) {
+      item.set("share_url", link);
       Object open_payload;
       open_payload.set("type", "open_url");
       open_payload.set("url", link);

@@ -16,6 +16,7 @@
 #include <thread>
 #include "foundation/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -51,26 +52,26 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
   }
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
   request.requester_identity_value = local_identity->relay_user_id;
   // History/stream routing stays on Brief relay ids (M010); thread peer is Account ID.
   std::string peer_relay;
   if (!thread.participant_contact_ids.empty()) {
     if (auto contact = contacts_.Get(thread.participant_contact_ids.front()); contact && *contact) {
-      for (const ContactId& id : (*contact)->ids) {
-        if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+      for (const mesh::ContactId& id : (*contact)->ids) {
+        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
           peer_relay = id.value;
           break;
         }
       }
     }
   }
-  if (peer_relay.empty() && thread.peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) &&
+  if (peer_relay.empty() && thread.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) &&
       !thread.peer_identity_value.empty()) {
-    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, ContactIdKind::Account);
+    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, mesh::ContactIdKind::Account);
     if (by_account && by_account->has_value()) {
-      for (const ContactId& id : (**by_account).ids) {
-        if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+      for (const mesh::ContactId& id : (**by_account).ids) {
+        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
           peer_relay = id.value;
           break;
         }
@@ -80,7 +81,7 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
   if (peer_relay.empty()) {
     return Error("Direct thread missing peer relay route for history");
   }
-  request.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  request.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
   request.peer_identity_value = peer_relay;
   request.channel = thread.channel;
   request.session_epoch = session_epoch;
@@ -173,7 +174,7 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;
-      if (!outcome.thread_id.empty()) {
+      if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
         inbox_.OnInboundMessagePersisted(outcome.thread_id);
         if (attachment_downloads_) {
           if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {

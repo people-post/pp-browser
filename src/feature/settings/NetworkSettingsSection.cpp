@@ -6,6 +6,7 @@
 #include "foundation/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -30,7 +31,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.media_relay_enabled = bootstrap.config.mesh.capabilities.media_relay ? "on" : "off";
   state.dht_enabled = bootstrap.config.mesh.capabilities.dht ? "on" : "off";
   state.prefer_contacts_for_routing = bootstrap.config.mesh.prefer_contacts_for_routing ? "on" : "off";
-  state.direct_connections = DirectAudienceName(bootstrap.config.mesh.direct_connections);
+  state.direct_connections = mesh::DirectAudienceName(bootstrap.config.mesh.direct_connections);
   state.trusted_relays_only = bootstrap.config.mesh.trusted_relays_only ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
   // amp_listen_multiaddr is filled by SettingsController from ConversationsHub runtime.
@@ -48,7 +49,7 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
          circuit_on == config.mesh.capabilities.circuit_relay &&
          media_on == config.mesh.capabilities.media_relay && dht_on == config.mesh.capabilities.dht &&
          prefer_contacts == config.mesh.prefer_contacts_for_routing &&
-         state.direct_connections == DirectAudienceName(config.mesh.direct_connections) &&
+         state.direct_connections == mesh::DirectAudienceName(config.mesh.direct_connections) &&
          (state.trusted_relays_only == "on") == config.mesh.trusted_relays_only;
 }
 
@@ -71,7 +72,7 @@ void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   state.media_relay_enabled = defaults.mesh.capabilities.media_relay ? "on" : "off";
   state.dht_enabled = defaults.mesh.capabilities.dht ? "on" : "off";
   state.prefer_contacts_for_routing = defaults.mesh.prefer_contacts_for_routing ? "on" : "off";
-  state.direct_connections = DirectAudienceName(defaults.mesh.direct_connections);
+  state.direct_connections = mesh::DirectAudienceName(defaults.mesh.direct_connections);
   state.trusted_relays_only = defaults.mesh.trusted_relays_only ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
   state.mesh_status_message.clear();

@@ -1,6 +1,6 @@
 #include "domain/people/ContactsStore.h"
 
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "domain/people/ContactJson.h"
 #include "common/PlatformLimits.h"
 #include "common/Utilities.h"
@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -173,7 +174,7 @@ Roe<std::optional<Contact>> ContactsStore::Get(const std::string& contact_id) co
 }
 
 Roe<std::optional<Contact>> ContactsStore::FindByIdentity(const std::string& identity_value,
-                                                          const std::optional<ContactIdKind> kind) const {
+                                                          const std::optional<mesh::ContactIdKind> kind) const {
   if (identity_value.empty()) {
     return Roe<std::optional<Contact>>(std::optional<Contact>{});
   }
@@ -183,7 +184,7 @@ Roe<std::optional<Contact>> ContactsStore::FindByIdentity(const std::string& ide
     return load.error();
   }
   for (const Contact& contact : contacts_) {
-    for (const ContactId& id : contact.ids) {
+    for (const mesh::ContactId& id : contact.ids) {
       if (id.value != identity_value) {
         continue;
       }
@@ -264,7 +265,7 @@ Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) c
       out.push_back(contact);
       continue;
     }
-    for (const ContactId& id : contact.ids) {
+    for (const mesh::ContactId& id : contact.ids) {
       if (ContainsInsensitive(id.value, query)) {
         out.push_back(contact);
         break;
@@ -274,14 +275,14 @@ Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) c
   return out;
 }
 
-Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const DirectoryHit& hit) {
+Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const mesh::DirectoryHit& hit) {
   std::string account_id;
   if (hit.account_id && !hit.account_id->empty()) {
     account_id = *hit.account_id;
   }
   if (account_id.empty()) {
-    for (const ContactId& id : hit.ids) {
-      if (id.kind == ContactIdKind::Account && !id.value.empty()) {
+    for (const mesh::ContactId& id : hit.ids) {
+      if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
         account_id = id.value;
         if (id.primary) {
           break;
@@ -293,7 +294,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const DirectoryHit& hi
     return Error("Directory hit missing Account ID");
   }
 
-  auto existing = FindByIdentity(account_id, ContactIdKind::Account);
+  auto existing = FindByIdentity(account_id, mesh::ContactIdKind::Account);
   if (!existing) {
     return existing.error();
   }
@@ -309,8 +310,8 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const DirectoryHit& hi
   contact.remote.nickname = hit.nickname;
   contact.remote.ids = hit.ids;
   bool has_account = false;
-  for (ContactId& id : contact.remote.ids) {
-    if (id.kind == ContactIdKind::Account && id.value == account_id) {
+  for (mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && id.value == account_id) {
       id.primary = true;
       has_account = true;
     } else {
@@ -318,7 +319,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const DirectoryHit& hi
     }
   }
   if (!has_account) {
-    contact.remote.ids.insert(contact.remote.ids.begin(), {ContactIdKind::Account, account_id, true});
+    contact.remote.ids.insert(contact.remote.ids.begin(), {mesh::ContactIdKind::Account, account_id, true});
   }
   contact.remote.endpoints = hit.endpoints;
   contact.remote.multiaddrs = hit.multiaddrs;
@@ -328,7 +329,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const DirectoryHit& hi
   return UpsertUnnotified(contact);
 }
 
-Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const DirectoryHit& hit,
+Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
                                                 const int64_t fetched_at_ms) {
   auto loaded = Get(contact_id);
   if (!loaded) {
@@ -357,7 +358,7 @@ Roe<Contact> ContactsStore::AddEmptyUnnotified() {
 }
 
 Roe<bool> ContactsStore::IsAccountBlocked(const std::string& account_id) const {
-  auto hit = FindByIdentity(account_id, ContactIdKind::Account);
+  auto hit = FindByIdentity(account_id, mesh::ContactIdKind::Account);
   if (!hit || !hit->has_value()) {
     return false;
   }
@@ -366,7 +367,7 @@ Roe<bool> ContactsStore::IsAccountBlocked(const std::string& account_id) const {
 }
 
 Roe<void> ContactsStore::BlockAccountIfPresentUnnotified(const std::string& account_id) {
-  auto hit = FindByIdentity(account_id, ContactIdKind::Account);
+  auto hit = FindByIdentity(account_id, mesh::ContactIdKind::Account);
   if (!hit) {
     return hit.error();
   }
@@ -415,7 +416,7 @@ Roe<bool> ContactsStore::Remove(const std::string& contact_id) {
   return result;
 }
 
-Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
+Roe<Contact> ContactsStore::AddFromDirectoryHit(const mesh::DirectoryHit& hit) {
   auto result = AddFromDirectoryHitUnnotified(hit);
   if (result) {
     NotifyChanged();
@@ -423,7 +424,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   return result;
 }
 
-Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit, const int64_t fetched_at_ms) {
+Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, const int64_t fetched_at_ms) {
   auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms);
   if (result) {
     NotifyChanged();

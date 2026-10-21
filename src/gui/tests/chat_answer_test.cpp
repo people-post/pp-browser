@@ -19,6 +19,20 @@ TEST(ChatAnswerTest, UrlHostDropsUserinfoPortAndPath) {
   EXPECT_EQ(UrlHost("https://example.com:8443/x"), "example.com");
   EXPECT_EQ(UrlHost("https://good.com@evil.com/x"), "evil.com");
   EXPECT_EQ(UrlHost("http://example.com"), "");
+  // Browsers treat a backslash like a slash in http(s) URLs: the host ends there (PB-072).
+  EXPECT_EQ(UrlHost("https://evil.com\\@good.com/x"), "evil.com");
+  EXPECT_EQ(UrlHost("https://evil.com\\good.com"), "evil.com");
+}
+
+// PB-072: only a clean https URL may be handed to the OS; control characters (a newline, a NUL, an
+// escape) have no place in a link and could smuggle a second URL or terminal noise into the handoff.
+TEST(ChatAnswerTest, OnlyCleanHttpsUrlsAreOpenable) {
+  EXPECT_TRUE(IsOpenableUrl("https://example.com/a?b=c#d"));
+  EXPECT_FALSE(IsOpenableUrl("http://example.com/"));
+  EXPECT_FALSE(IsOpenableUrl("https://example.com/a\nhttps://evil.com"));
+  EXPECT_FALSE(IsOpenableUrl(std::string("https://example.com/a\0b", 22)));
+  EXPECT_FALSE(IsOpenableUrl("https://example.com/\x1b[31m"));
+  EXPECT_FALSE(IsOpenableUrl("https://example.com/\x7f"));
 }
 
 TEST(ChatAnswerTest, DetailsLinkPointsAtFirstHttpsSource) {

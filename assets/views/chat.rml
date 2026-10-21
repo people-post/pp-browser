@@ -20,9 +20,9 @@
           <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
         </div>
         <button class="chat-header-title chat-header-title-btn" type="button"
-                data-if="show_peer_sheet" data-rml="thread_title"
-                data-event-click="open_peer_sheet()"></button>
-        <h1 class="chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
+                data-if="show_peer_sheet"
+                data-event-click="open_peer_sheet()">{{thread_title}}</button>
+        <h1 class="chat-header-title" data-if="!show_peer_sheet">{{thread_title}}</h1>
       </div>
       <div class="chat-header-meta-row">
         <div class="chat-peer-path" data-if="show_peer_link"
@@ -42,9 +42,9 @@
           <div class="chat-peer-path-icon" data-if="peer_link_via_relay">
             <svg src="../icons/status-relay.svg" width="12" height="12" crop-to-content="true"></svg>
           </div>
-          <p class="text-xs chat-peer-link" data-rml="peer_link_status"></p>
+          <p class="text-xs chat-peer-link">{{peer_link_status}}</p>
         </div>
-        <p class="text-xs muted chat-header-subtitle" data-rml="thread_subtitle"></p>
+        <p class="text-xs muted chat-header-subtitle">{{thread_subtitle}}</p>
       </div>
     </div>
     <div class="chat-header-actions row">
@@ -59,7 +59,7 @@
     </div>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
-    <p class="text muted" data-rml="peer_link_banner"></p>
+    <p class="text muted">{{peer_link_banner}}</p>
     <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">{{i18n:chat.link.retry}}</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
@@ -78,8 +78,8 @@
   <div class="chat-gap-banner stack" data-if="show_psk_setup_banner && !sync_in_progress">
     <p class="text muted" data-if="!psk_has_key">{{i18n:chat.banner.psk_share}}</p>
     <p class="text muted" data-if="psk_has_key && !psk_verified">{{i18n:chat.banner.psk_compare}}</p>
-    <p class="text muted" data-if="psk_fingerprint != ''">{{i18n:chat.banner.fingerprint_label}} <span data-rml="psk_fingerprint"></span></p>
-    <p class="text muted" data-if="psk_export_b64 != ''">{{i18n:chat.banner.key_label}} <span data-rml="psk_export_b64"></span></p>
+    <p class="text muted" data-if="psk_fingerprint != ''">{{i18n:chat.banner.fingerprint_label}} <span>{{psk_fingerprint}}</span></p>
+    <p class="text muted" data-if="psk_export_b64 != ''">{{i18n:chat.banner.key_label}} <span>{{psk_export_b64}}</span></p>
     <button class="chat-suggestion" data-if="psk_has_key" data-event-click="copy_psk_key()">{{i18n:chat.banner.copy_key}}</button>
     <button class="chat-suggestion" data-if="psk_has_key && !psk_verified" data-event-click="verify_psk()">{{i18n:chat.banner.verified}}</button>
     <button class="chat-suggestion" data-event-click="toggle_psk_import()">{{i18n:chat.banner.import_key}}</button>
@@ -105,7 +105,7 @@
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
            data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
-          <span data-rml="row.sender_label"></span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span data-rml="row.transport_badge"></span></span>
+          <span>{{row.sender_label}}</span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span>{{row.transport_badge}}</span></span>
         </p>
         <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
       </div>
@@ -121,9 +121,9 @@
       </div>
     </div>
     <p class="text muted thinking" data-if="loading && status == ''">{{i18n:chat.thinking}}</p>
-    <p class="text muted thinking" data-if="loading && status != ''" data-rml="status"></p>
+    <p class="text muted thinking" data-if="loading && status != ''">{{status}}</p>
   </div>
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"
-          data-event-click="jump_to_latest()" data-rml="jump_to_latest_label"></button>
+          data-event-click="jump_to_latest()">{{jump_to_latest_label}}</button>
   </div>
 </div>

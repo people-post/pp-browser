@@ -1,10 +1,11 @@
 #pragma once
 
-#include "common/privacy/AddressDisclosure.h"
+#include "mesh/types/AddressDisclosure.h"
 #include "domain/people/ContactTypes.h"
 
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -13,6 +14,6 @@ namespace pbr {
  * contact's device PeerIds and identity values (account ids) go to `contacts`, and to `friendly` when
  * marked Friendly — or only to `blocked` when Blocked.
  */
-AddressDisclosurePolicy BuildAddressDisclosurePolicy(DirectAudience audience, const std::vector<Contact>& contacts);
+mesh::AddressDisclosurePolicy BuildAddressDisclosurePolicy(mesh::DirectAudience audience, const std::vector<Contact>& contacts);
 
 } // namespace pbr

@@ -151,6 +151,17 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ShellFeedback::DismissBanner(toast_state);
   EXPECT_TRUE(toast_state.banner_message.empty());
 
+  // Banners take themselves down after kBannerTtlMs (Kenneth 2026-10-19: nobody wants to hunt for the ×),
+  // and the idle loop must know when to wake for that.
+  ShellFeedback::ShowBanner(toast_state, "Offline", 1000.f);
+  EXPECT_FALSE(ShellFeedback::ExpireBanner(toast_state, 1000.f + ShellFeedback::kBannerTtlMs - 1.f));
+  EXPECT_FALSE(toast_state.banner_message.empty());
+  EXPECT_GT(ShellFeedback::SecondsUntilNextFeedbackExpiry(toast_state, 1000.f), 0.0);
+  EXPECT_TRUE(ShellFeedback::ExpireBanner(toast_state, 1000.f + ShellFeedback::kBannerTtlMs));
+  EXPECT_TRUE(toast_state.banner_message.empty());
+  EXPECT_FALSE(ShellFeedback::ExpireBanner(toast_state, 1e9f));
+  EXPECT_LT(ShellFeedback::SecondsUntilNextFeedbackExpiry(toast_state, 1000.f), 0.0);
+
   const ShellConfig config{};
   const CompactChromeLayout no_inset = ShellLayout::ComputeCompactChromeLayout(config, 0, 0);
   EXPECT_FLOAT_EQ(no_inset.shell_top_dp, 0.f);

@@ -1,6 +1,7 @@
 #include "domain/people/MeshHopPolicy.h"
 
 #include "foundation/data/MeshRole.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -8,21 +9,21 @@
 namespace pbr {
 namespace {
 
-double MediaHopScore(const MeshHopCandidate& c, bool prefer_contacts) {
+double MediaHopScore(const mesh::MeshHopCandidate& c, bool prefer_contacts) {
   double score = c.residual_capacity * 100.0;
   if (prefer_contacts) {
-    if (c.affinity == MeshHopAffinity::Contact) {
+    if (c.affinity == mesh::MeshHopAffinity::Contact) {
       score += 25.0;
-    } else if (c.affinity == MeshHopAffinity::DirectoryNode || c.affinity == MeshHopAffinity::DhtDiscovered ||
-               c.affinity == MeshHopAffinity::OrgSeed) {
+    } else if (c.affinity == mesh::MeshHopAffinity::DirectoryNode || c.affinity == mesh::MeshHopAffinity::DhtDiscovered ||
+               c.affinity == mesh::MeshHopAffinity::OrgSeed) {
       score += 10.0;
     }
   } else {
-    if (c.affinity == MeshHopAffinity::OrgSeed || c.affinity == MeshHopAffinity::DirectoryNode) {
+    if (c.affinity == mesh::MeshHopAffinity::OrgSeed || c.affinity == mesh::MeshHopAffinity::DirectoryNode) {
       score += 25.0;
-    } else if (c.affinity == MeshHopAffinity::DhtDiscovered) {
+    } else if (c.affinity == mesh::MeshHopAffinity::DhtDiscovered) {
       score += 15.0;
-    } else if (c.affinity == MeshHopAffinity::Contact) {
+    } else if (c.affinity == mesh::MeshHopAffinity::Contact) {
       score += 10.0;
     }
   }
@@ -32,8 +33,8 @@ double MediaHopScore(const MeshHopCandidate& c, bool prefer_contacts) {
   return score;
 }
 
-const RelayScope kEscalateOrder[] = {RelayScope::Link, RelayScope::Site, RelayScope::Social, RelayScope::Org,
-                                     RelayScope::Public};
+const mesh::RelayScope kEscalateOrder[] = {mesh::RelayScope::Link, mesh::RelayScope::Site, mesh::RelayScope::Social, mesh::RelayScope::Org,
+                                     mesh::RelayScope::Public};
 
 std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& peer_id) {
   std::vector<std::string> matching;
@@ -43,52 +44,52 @@ std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& pee
     }
   }
   if (!matching.empty()) {
-    return PreferredDialMultiaddr(matching);
+    return mesh::PreferredDialMultiaddr(matching);
   }
-  return PreferredDialMultiaddr(contact.multiaddrs);
+  return mesh::PreferredDialMultiaddr(contact.multiaddrs);
 }
 
 } // namespace
 
-RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
+mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
-  RelayScopeMask mask = 0;
-  if (candidate.affinity == MeshHopAffinity::OrgSeed ||
-      candidate.affinity == MeshHopAffinity::DirectoryNode) {
-    return static_cast<RelayScopeMask>(RelayScope::Org);
+  mesh::RelayScopeMask mask = 0;
+  if (candidate.affinity == mesh::MeshHopAffinity::OrgSeed ||
+      candidate.affinity == mesh::MeshHopAffinity::DirectoryNode) {
+    return static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Org);
   }
-  if (candidate.affinity != MeshHopAffinity::Contact) {
+  if (candidate.affinity != mesh::MeshHopAffinity::Contact) {
     return mask;
   }
-  mask = static_cast<RelayScopeMask>(RelayScope::Social);
+  mask = static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Social);
   if (candidate.multiaddr.empty()) {
     return mask;
   }
-  if (MultiaddrHasPrivateIpv4Host(candidate.multiaddr)) {
-    mask |= static_cast<RelayScopeMask>(RelayScope::Site);
+  if (mesh::MultiaddrHasPrivateIpv4Host(candidate.multiaddr)) {
+    mask |= static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Site);
   }
-  if (!local_listen_multiaddr.empty() && IsSameIpv4Subnet24(candidate.multiaddr, local_listen_multiaddr)) {
-    mask |= static_cast<RelayScopeMask>(RelayScope::Link);
+  if (!local_listen_multiaddr.empty() && mesh::IsSameIpv4Subnet24(candidate.multiaddr, local_listen_multiaddr)) {
+    mask |= static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Link);
   }
   return mask;
 }
 
-RelayScopeMask ProviderServeScopeMask(MeshReachabilityClass reachability, bool node_enabled) {
+mesh::RelayScopeMask ProviderServeScopeMask(mesh::MeshReachabilityClass reachability, bool node_enabled) {
   if (!node_enabled) {
     return 0;
   }
   switch (reachability) {
-  case MeshReachabilityClass::Blocked:
-  case MeshReachabilityClass::OutboundOnly:
-  case MeshReachabilityClass::Reachable:
-  case MeshReachabilityClass::Unknown:
+  case mesh::MeshReachabilityClass::Blocked:
+  case mesh::MeshReachabilityClass::OutboundOnly:
+  case mesh::MeshReachabilityClass::Reachable:
+  case mesh::MeshReachabilityClass::Unknown:
   default:
-    return kRelayScopeVolunteerServe;
+    return mesh::kRelayScopeVolunteerServe;
   }
 }
 
-std::vector<MeshHopCandidate> CollectContactHopCandidates(const std::vector<Contact>& contacts) {
-  std::vector<MeshHopCandidate> out;
+std::vector<mesh::MeshHopCandidate> CollectContactHopCandidates(const std::vector<Contact>& contacts) {
+  std::vector<mesh::MeshHopCandidate> out;
   std::unordered_set<std::string> seen;
   for (const Contact& contact : contacts) {
     if (contact.trust == TrustLevel::Blocked) {
@@ -98,47 +99,47 @@ std::vector<MeshHopCandidate> CollectContactHopCandidates(const std::vector<Cont
     if (peer_id.empty() || !seen.insert(peer_id).second) {
       continue;
     }
-    MeshHopCandidate c;
+    mesh::MeshHopCandidate c;
     c.peer_id = peer_id;
     c.multiaddr = FirstMultiaddrForPeer(contact, peer_id);
-    c.affinity = MeshHopAffinity::Contact;
+    c.affinity = mesh::MeshHopAffinity::Contact;
     out.push_back(std::move(c));
   }
   return out;
 }
 
-std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::string>& bootstrap_peers) {
-  std::vector<MeshHopCandidate> out;
+std::vector<mesh::MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::string>& bootstrap_peers) {
+  std::vector<mesh::MeshHopCandidate> out;
   std::unordered_set<std::string> seen;
   for (const std::string& ma : bootstrap_peers) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || !seen.insert(peer_id).second) {
       continue;
     }
-    MeshHopCandidate c;
+    mesh::MeshHopCandidate c;
     c.peer_id = peer_id;
     c.multiaddr = ma;
-    c.affinity = MeshHopAffinity::OrgSeed;
+    c.affinity = mesh::MeshHopAffinity::OrgSeed;
     out.push_back(std::move(c));
   }
   return out;
 }
 
 std::string PreferredDirectoryMultiaddr(const std::vector<std::string>& multiaddrs) {
-  return PreferredDialMultiaddr(multiaddrs);
+  return mesh::PreferredDialMultiaddr(multiaddrs);
 }
 
-std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
-  std::vector<MeshHopCandidate> out;
+std::vector<mesh::MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<mesh::MeshDirectoryNode>& nodes) {
+  std::vector<mesh::MeshHopCandidate> out;
   std::unordered_set<std::string> seen;
-  for (const MeshDirectoryNode& node : nodes) {
+  for (const mesh::MeshDirectoryNode& node : nodes) {
     if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
       continue;
     }
-    MeshHopCandidate c;
+    mesh::MeshHopCandidate c;
     c.peer_id = node.peer_id;
     c.multiaddr = PreferredDirectoryMultiaddr(node.multiaddrs);
-    c.affinity = MeshHopAffinity::DirectoryNode;
+    c.affinity = mesh::MeshHopAffinity::DirectoryNode;
     c.advertises_media_relay = node.media_relay;
     c.advertises_circuit_relay = node.circuit_relay;
     out.push_back(std::move(c));
@@ -146,10 +147,10 @@ std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<Me
   return out;
 }
 
-std::vector<MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
-  std::vector<MeshDirectoryNode> filtered;
+std::vector<mesh::MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vector<mesh::MeshDirectoryNode>& nodes) {
+  std::vector<mesh::MeshDirectoryNode> filtered;
   filtered.reserve(nodes.size());
-  for (const MeshDirectoryNode& node : nodes) {
+  for (const mesh::MeshDirectoryNode& node : nodes) {
     if (node.ledger_gateway) {
       filtered.push_back(node);
     }
@@ -157,23 +158,23 @@ std::vector<MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vecto
   return CollectDirectoryHopCandidates(filtered);
 }
 
-std::vector<MeshHopCandidate> CollectDhtHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
+std::vector<mesh::MeshHopCandidate> CollectDhtHopCandidates(const std::vector<mesh::MeshDirectoryNode>& nodes) {
   auto out = CollectDirectoryHopCandidates(nodes);
-  for (MeshHopCandidate& c : out) {
-    c.affinity = MeshHopAffinity::DhtDiscovered;
+  for (mesh::MeshHopCandidate& c : out) {
+    c.affinity = mesh::MeshHopAffinity::DhtDiscovered;
   }
   return out;
 }
 
-std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
-                                               std::vector<MeshHopCandidate> directory,
-                                               std::vector<MeshHopCandidate> dht,
-                                               std::vector<MeshHopCandidate> seeds,
+std::vector<mesh::MeshHopCandidate> OrderCircuitHops(std::vector<mesh::MeshHopCandidate> contacts,
+                                               std::vector<mesh::MeshHopCandidate> directory,
+                                               std::vector<mesh::MeshHopCandidate> dht,
+                                               std::vector<mesh::MeshHopCandidate> seeds,
                                                bool prefer_contacts) {
-  std::vector<MeshHopCandidate> out;
+  std::vector<mesh::MeshHopCandidate> out;
   std::unordered_set<std::string> seen;
-  auto append = [&](std::vector<MeshHopCandidate>& list) {
-    for (MeshHopCandidate& c : list) {
+  auto append = [&](std::vector<mesh::MeshHopCandidate>& list) {
+    for (mesh::MeshHopCandidate& c : list) {
       if (c.peer_id.empty() || !seen.insert(c.peer_id).second) {
         continue;
       }
@@ -194,25 +195,25 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
   return out;
 }
 
-std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
-                                                  const std::vector<MeshDirectoryNode>& directory_nodes,
-                                                  const std::vector<MeshDirectoryNode>& dht_nodes,
+std::vector<mesh::MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
+                                                  const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+                                                  const std::vector<mesh::MeshDirectoryNode>& dht_nodes,
                                                   const std::vector<std::string>& bootstrap_peers,
                                                   const bool prefer_contacts, const bool include_seeds) {
   auto contact_hops = CollectContactHopCandidates(contacts);
   auto directory_hops = CollectDirectoryHopCandidates(directory_nodes);
   auto dht_hops = CollectDhtHopCandidates(dht_nodes);
-  auto seed_hops = include_seeds ? CollectSeedHopCandidates(bootstrap_peers) : std::vector<MeshHopCandidate>{};
+  auto seed_hops = include_seeds ? CollectSeedHopCandidates(bootstrap_peers) : std::vector<mesh::MeshHopCandidate>{};
   return OrderCircuitHops(std::move(contact_hops), std::move(directory_hops), std::move(dht_hops),
                           std::move(seed_hops), prefer_contacts);
 }
 
-std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,
+std::vector<mesh::MeshHopCandidate> RankMediaHops(std::vector<mesh::MeshHopCandidate> candidates,
                                             bool prefer_contacts) {
-  std::vector<MeshHopCandidate> filtered;
+  std::vector<mesh::MeshHopCandidate> filtered;
   filtered.reserve(candidates.size());
-  for (MeshHopCandidate& c : candidates) {
-    if (c.affinity == MeshHopAffinity::Other) {
+  for (mesh::MeshHopCandidate& c : candidates) {
+    if (c.affinity == mesh::MeshHopAffinity::Other) {
       continue;
     }
     if (!c.dialable || c.recently_failed) {
@@ -224,34 +225,34 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
     filtered.push_back(std::move(c));
   }
   std::stable_sort(filtered.begin(), filtered.end(),
-                   [prefer_contacts](const MeshHopCandidate& a, const MeshHopCandidate& b) {
+                   [prefer_contacts](const mesh::MeshHopCandidate& a, const mesh::MeshHopCandidate& b) {
                      return MediaHopScore(a, prefer_contacts) > MediaHopScore(b, prefer_contacts);
                    });
   return filtered;
 }
 
-std::vector<MeshHopCandidate> RankMediaHopsEscalating(
-    std::vector<MeshHopCandidate> candidates, bool prefer_contacts,
-    const std::string& local_listen_multiaddr, RelayScopeMask consumer_scopes) {
-  std::vector<MeshHopCandidate> result;
+std::vector<mesh::MeshHopCandidate> RankMediaHopsEscalating(
+    std::vector<mesh::MeshHopCandidate> candidates, bool prefer_contacts,
+    const std::string& local_listen_multiaddr, mesh::RelayScopeMask consumer_scopes) {
+  std::vector<mesh::MeshHopCandidate> result;
   std::unordered_set<std::string> picked;
-  for (RelayScope band : kEscalateOrder) {
-    if (!RelayScopeMaskHas(consumer_scopes, band)) {
+  for (mesh::RelayScope band : kEscalateOrder) {
+    if (!mesh::RelayScopeMaskHas(consumer_scopes, band)) {
       continue;
     }
-    std::vector<MeshHopCandidate> band_candidates;
+    std::vector<mesh::MeshHopCandidate> band_candidates;
     band_candidates.reserve(candidates.size());
-    for (const MeshHopCandidate& c : candidates) {
+    for (const mesh::MeshHopCandidate& c : candidates) {
       if (picked.count(c.peer_id) > 0) {
         continue;
       }
-      const RelayScopeMask scopes = CandidateRelayScopes(c, local_listen_multiaddr);
-      if (!RelayScopeMaskHas(scopes, band)) {
+      const mesh::RelayScopeMask scopes = CandidateRelayScopes(c, local_listen_multiaddr);
+      if (!mesh::RelayScopeMaskHas(scopes, band)) {
         continue;
       }
       band_candidates.push_back(c);
     }
-    for (MeshHopCandidate& ranked : RankMediaHops(std::move(band_candidates), prefer_contacts)) {
+    for (mesh::MeshHopCandidate& ranked : RankMediaHops(std::move(band_candidates), prefer_contacts)) {
       if (picked.insert(ranked.peer_id).second) {
         result.push_back(std::move(ranked));
       }
@@ -268,14 +269,14 @@ std::vector<std::string> PeerIdsFromContact(const Contact& contact) {
     }
     out.push_back(peer_id);
   };
-  if (const DirectoryEndpoint* preferred = PreferredDirectoryEndpoint(contact.remote.endpoints)) {
+  if (const mesh::DirectoryEndpoint* preferred = mesh::PreferredDirectoryEndpoint(contact.remote.endpoints)) {
     add(preferred->peer_id);
   }
-  for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
+  for (const mesh::DirectoryEndpoint& endpoint : contact.remote.endpoints) {
     add(endpoint.peer_id);
   }
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId) {
       add(id.value);
     }
   }
@@ -293,7 +294,7 @@ std::string PeerIdFromContact(const Contact& contact) {
   return ids.front();
 }
 
-std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
+std::vector<mesh::MeshHopCandidate> ExcludeSelfHop(std::vector<mesh::MeshHopCandidate> candidates,
                                              const std::string& local_peer_id) {
   if (local_peer_id.empty()) {
     return candidates;
@@ -301,14 +302,14 @@ std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candi
   return ExcludePeerIds(std::move(candidates), {local_peer_id});
 }
 
-std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candidates,
+std::vector<mesh::MeshHopCandidate> ExcludePeerIds(std::vector<mesh::MeshHopCandidate> candidates,
                                              const std::unordered_set<std::string>& excluded) {
   if (excluded.empty()) {
     return candidates;
   }
-  std::vector<MeshHopCandidate> out;
+  std::vector<mesh::MeshHopCandidate> out;
   out.reserve(candidates.size());
-  for (MeshHopCandidate& c : candidates) {
+  for (mesh::MeshHopCandidate& c : candidates) {
     if (excluded.count(c.peer_id) > 0) {
       continue;
     }
@@ -317,16 +318,16 @@ std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candi
   return out;
 }
 
-std::vector<MeshHopCandidate> PreferInCallMediaHops(
-    std::vector<MeshHopCandidate> ranked, const std::unordered_set<std::string>& in_call_peer_ids) {
+std::vector<mesh::MeshHopCandidate> PreferInCallMediaHops(
+    std::vector<mesh::MeshHopCandidate> ranked, const std::unordered_set<std::string>& in_call_peer_ids) {
   if (in_call_peer_ids.empty() || ranked.empty()) {
     return ranked;
   }
-  std::vector<MeshHopCandidate> in_call;
-  std::vector<MeshHopCandidate> rest;
+  std::vector<mesh::MeshHopCandidate> in_call;
+  std::vector<mesh::MeshHopCandidate> rest;
   in_call.reserve(ranked.size());
   rest.reserve(ranked.size());
-  for (MeshHopCandidate& c : ranked) {
+  for (mesh::MeshHopCandidate& c : ranked) {
     if (!c.multiaddr.empty() && in_call_peer_ids.count(c.peer_id) > 0) {
       in_call.push_back(std::move(c));
     } else {
@@ -368,7 +369,7 @@ std::vector<std::string> ContactPeerIds(const std::vector<Contact>& contacts) {
 std::unordered_set<std::string> TrustedRelayPeerIds(const std::vector<Contact>& contacts,
                                                     const std::vector<std::string>& org_seed_multiaddrs) {
   std::unordered_set<std::string> trusted;
-  for (const MeshHopCandidate& seed : CollectSeedHopCandidates(org_seed_multiaddrs)) {
+  for (const mesh::MeshHopCandidate& seed : CollectSeedHopCandidates(org_seed_multiaddrs)) {
     trusted.insert(seed.peer_id);
   }
   for (const Contact& contact : contacts) {
@@ -383,9 +384,9 @@ std::unordered_set<std::string> TrustedRelayPeerIds(const std::vector<Contact>& 
   return trusted;
 }
 
-std::vector<MeshHopCandidate> KeepTrustedRelays(std::vector<MeshHopCandidate> hops,
+std::vector<mesh::MeshHopCandidate> KeepTrustedRelays(std::vector<mesh::MeshHopCandidate> hops,
                                                 const std::unordered_set<std::string>& trusted) {
-  std::erase_if(hops, [&trusted](const MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
+  std::erase_if(hops, [&trusted](const mesh::MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
   return hops;
 }
 

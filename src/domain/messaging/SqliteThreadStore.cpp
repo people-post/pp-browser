@@ -7,7 +7,6 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "domain/messaging/ConversationSummaryCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
-#include "domain/messaging/CallSessionStore.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/SyncStateCodec.h"
@@ -104,7 +103,7 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
   if (!body) {
     return body.error();
   }
-  message.content_type = ContentTypeFromDb(SqlText(stmt, 4));
+  const ChatContentType row_type = ContentTypeFromDb(SqlText(stmt, 4));
   message.timestamp = sqlite3_column_int64(stmt, 6);
   message.relay_visible = sqlite3_column_int(stmt, 7) != 0;
   message.delivery = MessageDeliveryFromString(SqlText(stmt, 8));
@@ -121,8 +120,15 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
   message.generation = SqlTextOpt(stmt, 13);
   message.seq_owner_contact_id = SqlTextOpt(stmt, 14);
   message.ai_invoke_mode = SqlTextOpt(stmt, 15);
+  message.content_type = row_type;
   if (auto applied = TranscriptBodyCodec::ApplyToMessage(*body, message); !applied) {
     return applied.error();
+  }
+  // A tombstone's body decodes as empty text; the row's own type wins so readers see the deletion.
+  if (row_type == ChatContentType::Deleted) {
+    message.content_type = ChatContentType::Deleted;
+    message.text.clear();
+    message.payload_json.clear();
   }
   return message;
 }
@@ -791,7 +797,8 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   const char* sql =
       "UPDATE messages SET sender_contact_id = ?, content_enc = ?, content_type = ?, control_type = ?, timestamp = ?, "
       "relay_visible = ?, delivery = ?, transport = ?, sender_seq = ?, session_epoch = ?, target_message_id = ?, "
-      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ? WHERE id = ?;";
+      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ? WHERE id = ? "
+      "AND (content_type != 'deleted' OR ? = 'deleted');"; // a tombstone is final (a late send result cannot undo it)
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
   }
@@ -799,12 +806,90 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
     sqlite3_finalize(stmt);
     return bound.error();
   }
+  sqlite3_bind_text(stmt, 16, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {
     (void)RemoveOutboxRow(message.id);
   }
   return updated;
+}
+
+Roe<std::optional<ThreadMessage>> SqliteThreadStore::GetMessage(const std::string& thread_id,
+                                                                const std::string& message_id) const {
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const std::string sql =
+      std::string("SELECT ") + kSqliteThreadMessageSelectColumns + " FROM messages WHERE id = ? LIMIT 1;";
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare message lookup");
+  }
+  sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    sqlite3_finalize(stmt);
+    return std::optional<ThreadMessage>();
+  }
+  auto message = ReadMessageRow(thread_id, stmt);
+  sqlite3_finalize(stmt);
+  if (!message) {
+    return message.error();
+  }
+  message->thread_id = thread_id;
+  return std::optional<ThreadMessage>(std::move(*message));
+}
+
+Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetAnnotationsForTarget(const std::string& thread_id,
+                                                                         const std::string& target_message_id) const {
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
+                          " FROM messages WHERE content_type = 'annotation' AND target_message_id = ? "
+                          "ORDER BY display_order ASC;";
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare annotation lookup");
+  }
+  sqlite3_bind_text(stmt, 1, target_message_id.c_str(), -1, SQLITE_TRANSIENT);
+  std::vector<ThreadMessage> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (auto message = ReadMessageRow(thread_id, stmt)) {
+      message->thread_id = thread_id;
+      out.push_back(std::move(*message));
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
+  auto message = GetMessage(thread_id, message_id);
+  if (!message) {
+    return message.error();
+  }
+  if (!message->has_value()) {
+    return false;
+  }
+  if ((*message)->content_type == ChatContentType::Deleted) {
+    return true;
+  }
+  // Same row, same id / seq / order: only the content goes.
+  ThreadMessage tombstone = **message;
+  tombstone.thread_id = thread_id;
+  tombstone.content_type = ChatContentType::Deleted;
+  tombstone.text.clear();
+  tombstone.payload_json.clear();
+  tombstone.content_rml.reset();
+  tombstone.chat_actions.clear();
+  tombstone.working_set_json.reset();
+  tombstone.ai_image_json.reset();
+  tombstone.ai_invoke_mode.reset();
+  tombstone.target_message_id.reset();
+  return UpdateMessage(tombstone);
 }
 
 Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const std::string& message_id) const {
@@ -1199,13 +1284,12 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::ExportMessagesUpTo(
   if (!messages) {
     return messages.error();
   }
-  if (!max_message_id) {
-    return *messages;
-  }
-  std::vector<ThreadMessage> exported;
+  std::vector<ThreadMessage> exported; // a deleted message is not exported, but still ends the range
   for (const ThreadMessage& message : *messages) {
-    exported.push_back(message);
-    if (message.id == *max_message_id) {
+    if (message.content_type != ChatContentType::Deleted) {
+      exported.push_back(message);
+    }
+    if (max_message_id && message.id == *max_message_id) {
       break;
     }
   }

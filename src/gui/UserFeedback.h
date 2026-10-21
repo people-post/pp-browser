@@ -22,7 +22,8 @@ struct UserFeedback {
   static void Fail(const std::string& message);
   /** Toast AppError::Display; returns that string for status_ binding. */
   static std::string FailFrom(const Error& err);
-  static void NeedsSetup(const std::string& message);
+  /** Banner. Gone after 5 s unless `sticky` (something the user must act on). */
+  static void NeedsSetup(const std::string& message, bool sticky = false);
   static void Alert(const std::string& title, const std::string& message, std::function<void()> on_ok = {},
                     const std::string& ok_label = {});
   static void Confirm(const std::string& title, const std::string& message,

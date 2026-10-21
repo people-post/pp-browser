@@ -59,8 +59,8 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_dht_store_rejected_total` | counter | | |
 | `pp_dht_lookups_total` | counter | | `find_peer` lookups issued |
 
-Owner names: `pp-media-sess`, `pp-connectivity`. Histogram buckets (seconds): 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5.
+Owner names: `pp-media-sess` (`pp-connectivity` until 2026-10: mesh control moved onto the mesh's io lane). Histogram buckets (seconds): 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5.
 
-Code: `common/metrics/MetricsRegistry.*` (registry + rendering), `app/node/NodeMetrics.*` (scrape-time collectors).
+Code: pp-cpp-common `common/metrics/MetricsRegistry.*` (registry + rendering), `app/node/NodeMetrics.*` (scrape-time collectors). The mesh records into the registry its `MeshHost` is given; pp-node gives it the process registry (`MetricsRegistry::Global()`), the one `/metrics` renders.
 
 Grafana dashboard on these series (and the collector labels it expects): [`packaging/pp-node/monitoring/`](../../packaging/pp-node/monitoring/README.md). Keep it in step when a series is added or renamed.

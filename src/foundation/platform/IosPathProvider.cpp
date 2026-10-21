@@ -1,6 +1,7 @@
 #include "foundation/platform/IosPathProvider.h"
 
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/IosBackupExclusion.h"
 
 #include <filesystem>
 #include <string>
@@ -26,6 +27,9 @@ std::string RootDir() {
   if (char* pref = SDL_GetPrefPath("dev.pp-browser", ProductDirBasename())) {
     const std::string path(pref);
     SDL_free(pref);
+    // SDL puts this under Library/Application Support, which iOS backs up by default (PB-040).
+    static const bool excluded = ExcludeDirFromIosBackup(path);
+    (void)excluded;
     return path;
   }
 #endif

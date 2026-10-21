@@ -15,7 +15,8 @@
 ## p2 — Relay provider gateway
 
 - [x] Device register / unregister HTTP contract consumed by client
-- [x] Provider best-effort FCM data send on message accept (out of client tree)
+- [x] Provider best-effort FCM data send on message accept (www `FcmPushSender`)
+- [x] Provider best-effort APNs silent send on message accept (www `ApnsPushSender`, `platform=ios`)
 
 ## p3 — BackgroundSyncScheduler
 
@@ -48,6 +49,13 @@
 - [x] SERVICE_ENDPOINTS.md devices section
 - [x] PLATFORMS.md background poll + WorkManager
 - [x] Refresh CURRENT_STATE / README status
+
+## p8 — iOS / APNs
+
+- [x] `IosPushDeviceRegistrar` + SDLUIKitDelegate subclass (`IosApnsAppDelegate.mm`)
+- [x] Token → `/v1/devices/register` via existing `PushDeviceCoordinator`
+- [x] Silent remote notification → `RequestWakeSync` / `RequestCallWakeSync`
+- [x] www `ApnsPushSender` + `BRF_WWW_APNS_*` config
 
 ## Later — call ring wake
 

@@ -79,14 +79,11 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_base
   pp_pbr_common
   pp_domain_ui
-  pp_domain_mesh
+  pp_mesh
   ui::core
   CURL::libcurl
   Threads::Threads
 )
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE OpenSSL::Crypto)
-endif()
 
 option(PPBROWSER_ENABLE_DEBUGGER "Link RmlUi debugger" ${PPBROWSER_ENABLE_DEBUGGER_DEFAULT})
 option(PPBROWSER_LOCAL_LLM "Enable local LLM backend (not implemented)" OFF)

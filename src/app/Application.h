@@ -11,6 +11,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/product/ProductStack.h"
 
 #include <memory>
 #include <optional>
@@ -26,6 +27,8 @@ class Context;
 namespace pbr {
 
 class ActionRouter;
+class OnboardingController;
+class ConfigSecretsStore;
 class BadgeAggregator;
 class CallController;
 class CallUiBackend;
@@ -83,7 +86,12 @@ private:
   bool initialized_ = false;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
-  std::unique_ptr<ConversationsHub> messaging_;
+  /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */
+  std::unique_ptr<ConfigSecretsStore> config_secrets_;
+  /** The hub with calls and broadcast riding it (feature-level composition). */
+  std::unique_ptr<ProductStack> product_;
+  /** product_'s hub (non-owning; null once the stack is gone). */
+  ConversationsHub* messaging_ = nullptr;
   std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ActionRouter> action_router_;
@@ -105,6 +113,7 @@ private:
   std::unique_ptr<EmojiPickerController> emoji_picker_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
+  std::unique_ptr<OnboardingController> onboarding_;
   std::optional<AgentSession> agent_session_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };

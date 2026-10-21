@@ -78,6 +78,8 @@ public:
     ui::String subtitle;
     ui::String display_name;
     ui::String nickname;
+    /** Placeholder of the remark field: the directory nickname, else the generic "Name". */
+    ui::String name_placeholder;
     ui::String relay_id;
     ui::String peer_id;
     ui::String multiaddrs_text;
@@ -102,10 +104,15 @@ public:
   void SyncLayoutMode();
   /** Reload list from store (e.g. after AI add_contact while tab is open). */
   void Refresh();
+  /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
+  void SetShowAdvanced(bool advanced);
   void Tick();
   void FlushPending();
   void OnSelectContact(const std::string& contact_id);
   void OnDetailDismissed();
+
+  /** Contacts → find people; also the first-run wizard's "Find friends". */
+  void OnFindSomeone();
 
 private:
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -117,6 +124,9 @@ private:
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ShareContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SetTrustCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleTrustFriendlyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void BlockContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void UnblockContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void RemoveContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -132,7 +142,6 @@ private:
   void OnSecureMessage();
   void OnAddContactMenu(ui::Event& ev);
   void OnAddContact();
-  void OnFindSomeone();
   void OnCopyId();
   void OnShareContact();
   void OnSetTrust(const std::string& trust);
@@ -156,6 +165,7 @@ private:
   std::vector<ContactListRow> contacts_;
   ui::String search_query_;
   bool compact_layout_ = false;
+  bool advanced_ = false;
   ContactDetail selected_;
   ui::Context* context_ = nullptr;
   bool contact_dirty_ = false;

@@ -10,6 +10,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 PRODUCT_SLUG="${PP_BROWSER_PRODUCT_SLUG:-pp-browser}"
 DEFAULT_ENTITLEMENTS="${ROOT}/packaging/ios/${PRODUCT_SLUG}.entitlements"
+# Match ios_build.sh layout (override with IOS_OUT_DIR / IOS_DIST_DIR).
+IOS_OUT_DIR="${IOS_OUT_DIR:-${ROOT}/out-ios}"
+IOS_DIST_DIR="${IOS_DIST_DIR:-${IOS_OUT_DIR}/dist}"
 
 usage() {
   cat <<EOF
@@ -17,7 +20,7 @@ Usage: $(basename "$0") <command> [path]
 
 Commands:
   sign-app <PP.app>     Code-sign an iOS .app (development or distribution)
-  export-ipa <PP.app>   Sign + produce dist-ios/*.ipa for TestFlight / install
+  export-ipa <PP.app>   Sign + produce out-ios/dist/*.ipa for TestFlight / install
   upload-ipa <file.ipa> Upload IPA to App Store Connect (altool + ASC API key)
   verify <PP.app>       Verify codesign on an iOS app bundle
 
@@ -57,13 +60,13 @@ Optional:
 Local development:
   source packaging/ios/signing.env
   ./scripts/platform/ios_build.sh device
-  ./scripts/platform/ios_sign.sh sign-app install-ios/PP.app
+  ./scripts/platform/ios_sign.sh sign-app out-ios/install/PP.app
 
 TestFlight IPA:
   source packaging/ios/signing.env   # with IOS_EXPORT_METHOD=app-store + Distribution vars
   CMAKE_BUILD_TYPE=Release ./scripts/platform/ios_build.sh device
-  ./scripts/platform/ios_sign.sh export-ipa install-ios/PP.app
-  ./scripts/platform/ios_sign.sh upload-ipa dist-ios/pp-browser.ipa
+  ./scripts/platform/ios_sign.sh export-ipa out-ios/install/PP.app
+  ./scripts/platform/ios_sign.sh upload-ipa out-ios/dist/pp-browser.ipa
 EOF
 }
 
@@ -247,6 +250,81 @@ stamp_bundle_versions() {
   fi
 }
 
+# Ninja/CMake bundles lack Xcode-injected DT* keys; ASC rejects uploads without them.
+plist_set_string() {
+  local plist="$1" key="$2" value="$3"
+  /usr/libexec/PlistBuddy -c "Set :${key} ${value}" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :${key} string ${value}" "$plist" 2>/dev/null \
+    || plutil -replace "$key" -string "$value" "$plist"
+}
+
+stamp_xcode_build_keys() {
+  local app_path="$1"
+  local plist="${app_path}/Info.plist"
+  [[ -f "$plist" ]] || return 0
+
+  local sdk_name sdk_version platform_version xcode_ver xcode_build
+  sdk_name="$(xcrun --sdk iphoneos --show-sdk-build-version 2>/dev/null || true)"
+  sdk_version="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+  platform_version="${sdk_version}"
+  # Avoid `awk …; exit` under pipefail — early close SIGPIPEs xcodebuild (exit 141).
+  local xcode_out=""
+  xcode_out="$(xcodebuild -version 2>/dev/null || true)"
+  xcode_ver="$(printf '%s\n' "$xcode_out" | awk '/^Xcode/{print $2; found=1} END{exit 0}')"
+  xcode_build="$(printf '%s\n' "$xcode_out" | awk '/^Build/{print $3; found=1} END{exit 0}')"
+
+  # Prefer DTSDKName like iphoneos26.0 from the SDKSettings if available.
+  local sdk_root dtsdkname="iphoneos"
+  sdk_root="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
+  if [[ -n "$sdk_version" ]]; then
+    dtsdkname="iphoneos${sdk_version}"
+  fi
+  if [[ -f "${sdk_root}/SDKSettings.plist" ]]; then
+    local canonical
+    canonical="$(/usr/libexec/PlistBuddy -c 'Print :CanonicalName' "${sdk_root}/SDKSettings.plist" 2>/dev/null || true)"
+    [[ -n "$canonical" ]] && dtsdkname="$canonical"
+  fi
+
+  plist_set_string "$plist" DTPlatformName iphoneos
+  [[ -n "$platform_version" ]] && plist_set_string "$plist" DTPlatformVersion "$platform_version"
+  plist_set_string "$plist" DTSDKName "$dtsdkname"
+  [[ -n "$sdk_name" ]] && plist_set_string "$plist" DTSDKBuild "$sdk_name"
+  [[ -n "$xcode_ver" ]] && plist_set_string "$plist" DTXcode "$(printf '%s' "$xcode_ver" | tr -d '.')"
+  [[ -n "$xcode_build" ]] && plist_set_string "$plist" DTXcodeBuild "$xcode_build"
+  plist_set_string "$plist" DTCompiler com.apple.compilers.llvm.clang.1_0
+  log "Stamped DT* keys (DTSDKName=${dtsdkname})"
+
+  # ASC 90562: single-platform array (device IPA → iPhoneOS).
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleSupportedPlatforms" "$plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms array" "$plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms:0 string iPhoneOS" "$plist" 2>/dev/null \
+    || plutil -replace CFBundleSupportedPlatforms -json '["iPhoneOS"]' "$plist"
+
+  # ASC requires CFBundleIconName when shipping an Assets.car AppIcon catalog.
+  plist_set_string "$plist" CFBundleIconName AppIcon
+  # Portrait-only product: opt out of iPad multitasking (all-orientation rule).
+  /usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen true" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool true" "$plist" 2>/dev/null \
+    || plutil -replace UIRequiresFullScreen -bool true "$plist"
+
+  if [[ -n "${IOS_EXPORT_COMPLIANCE_CODE:-}" ]]; then
+    # Non-exempt path with Apple-issued code after documentation review.
+    /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption true" "$plist" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool true" "$plist" 2>/dev/null \
+      || plutil -replace ITSAppUsesNonExemptEncryption -bool true "$plist"
+    plist_set_string "$plist" ITSEncryptionExportComplianceCode "$IOS_EXPORT_COMPLIANCE_CODE"
+    log "ITSEncryptionExportComplianceCode set from env"
+  else
+    # Default for open-source / industry-standard crypto with no ASC encryption docs:
+    # declare exempt from documentation so uploads are not blocked by a stale code.
+    /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$plist" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$plist" 2>/dev/null \
+      || plutil -replace ITSAppUsesNonExemptEncryption -bool false "$plist"
+    /usr/libexec/PlistBuddy -c "Delete :ITSEncryptionExportComplianceCode" "$plist" 2>/dev/null || true
+    plutil -remove ITSEncryptionExportComplianceCode "$plist" 2>/dev/null || true
+  fi
+}
+
 # Extract entitlements from the active provisioning profile; strip get-task-allow for distribution.
 extract_profile_entitlements() {
   local profile_src="$1"
@@ -368,6 +446,12 @@ EOF
       || plutil -replace CFBundleIdentifier -string "$bundle_id" "${app_path}/Info.plist"
   fi
   stamp_bundle_versions "$app_path"
+  stamp_xcode_build_keys "$app_path"
+
+  # App Store requires Assets.car + CFBundleIconName (actool from 1024 master PNG).
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    "${ROOT}/scripts/platform/ios_prepare_app_icons.sh" "$app_path"
+  fi
 
   # Drop Finder/zip junk that can break device / ASC verification.
   rm -rf "${app_path}/META-INF" "${app_path}/.DS_Store"
@@ -446,12 +530,12 @@ cmd_export_ipa() {
 
   log "Creating IPA from ${app_path}"
   (cd "$payload_dir" && zip -qr "${ipa_name}" Payload)
-  mkdir -p "${ROOT}/dist-ios"
-  mv "${payload_dir}/${ipa_name}" "${ROOT}/dist-ios/${ipa_name}"
+  mkdir -p "${IOS_DIST_DIR}"
+  mv "${payload_dir}/${ipa_name}" "${IOS_DIST_DIR}/${ipa_name}"
   # Stable symlink for upload scripts / docs.
-  ln -sfn "${ipa_name}" "${ROOT}/dist-ios/${PRODUCT_SLUG}.ipa"
-  log "Wrote ${ROOT}/dist-ios/${ipa_name}"
-  log "Also: ${ROOT}/dist-ios/${PRODUCT_SLUG}.ipa → ${ipa_name}"
+  ln -sfn "${ipa_name}" "${IOS_DIST_DIR}/${PRODUCT_SLUG}.ipa"
+  log "Wrote ${IOS_DIST_DIR}/${ipa_name}"
+  log "Also: ${IOS_DIST_DIR}/${PRODUCT_SLUG}.ipa → ${ipa_name}"
   rm -rf "$payload_dir"
 }
 
@@ -471,7 +555,10 @@ prepare_asc_key() {
       echo "error: ASC .p8 not found: ${IOS_ASC_P8_PATH}" >&2
       exit 1
     fi
-    cp "$IOS_ASC_P8_PATH" "$dest"
+    # Skip when already at altool's expected path (cp fails on identical paths).
+    if [[ ! "$IOS_ASC_P8_PATH" -ef "$dest" ]]; then
+      cp "$IOS_ASC_P8_PATH" "$dest"
+    fi
     return
   fi
 
@@ -486,10 +573,36 @@ prepare_asc_key() {
   exit 1
 }
 
+# Resolve symlinks; altool reports symlink IPAs as empty packages.
+resolve_ipa_path() {
+  local path="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$path"
+    return
+  fi
+  if [[ -L "$path" ]]; then
+    local dir target
+    dir="$(cd "$(dirname "$path")" && pwd)"
+    target="$(readlink "$path")"
+    if [[ "$target" != /* ]]; then
+      printf '%s\n' "${dir}/${target}"
+    else
+      printf '%s\n' "$target"
+    fi
+    return
+  fi
+  printf '%s\n' "$path"
+}
+
 cmd_upload_ipa() {
   local ipa_path="$1"
   if [[ ! -f "$ipa_path" ]]; then
     echo "error: IPA not found: ${ipa_path}" >&2
+    exit 1
+  fi
+  ipa_path="$(resolve_ipa_path "$ipa_path")"
+  if [[ ! -f "$ipa_path" ]]; then
+    echo "error: IPA not found after resolving path: ${ipa_path}" >&2
     exit 1
   fi
 
@@ -506,11 +619,24 @@ cmd_upload_ipa() {
   log "Uploading ${ipa_path} to App Store Connect"
   log "ASC key: ${IOS_ASC_KEY_ID}"
   # altool resolves AuthKey_<id>.p8 under ~/.appstoreconnect/private_keys
+  # Note: altool may exit 0 even when ASC validation fails — capture output.
+  local upload_log
+  upload_log="$(mktemp "${TMPDIR:-/tmp}/frame-altool.XXXXXX")"
+  set +e
   xcrun altool --upload-app \
     --type ios \
     --file "$ipa_path" \
     --apiKey "$IOS_ASC_KEY_ID" \
-    --apiIssuer "$IOS_ASC_ISSUER_ID"
+    --apiIssuer "$IOS_ASC_ISSUER_ID" \
+    2>&1 | tee "$upload_log"
+  local altool_rc=${PIPESTATUS[0]}
+  set -e
+  if [[ "$altool_rc" -ne 0 ]] || grep -q "UPLOAD FAILED" "$upload_log"; then
+    rm -f "$upload_log"
+    echo "error: App Store Connect upload failed" >&2
+    exit 1
+  fi
+  rm -f "$upload_log"
   log "Upload submitted — wait for processing in App Store Connect, then answer export compliance"
 }
 

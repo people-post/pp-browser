@@ -20,15 +20,6 @@ std::string HttpFailureMessage(const HttpResponse& response) {
   return "HTTP request failed with status " + std::to_string(response.status_code);
 }
 
-Roe<void> ExpectSuccess(const HttpResponse& response) {
-  if (response.status_code >= 200 && response.status_code < 300) {
-    return Roe<void>{};
-  }
-  if (response.status_code == 429) {
-    return AppError::Blob(Err::Blob::QuotaExceeded, HttpFailureMessage(response));
-  }
-  return Error(HttpFailureMessage(response));
-}
 
 RelayBlobRecord ParseBlobRecord(const Object& item) {
   RelayBlobRecord record;
@@ -73,6 +64,21 @@ RelayBlobRecord ParseBlobRecord(const Object& item) {
 
 } // namespace
 
+Roe<void> CheckBlobResponse(const HttpResponse& response) {
+  if (response.status_code >= 200 && response.status_code < 300) {
+    return Roe<void>{};
+  }
+  const std::string detail = HttpFailureMessage(response);
+  if (response.status_code == 429) {
+    return AppError::Blob(Err::Blob::QuotaExceeded, detail);
+  }
+  // Gateway without an upload bucket answers 400 `{ "error": "Blob upload is not configured" }` (B77).
+  if (detail == "Blob upload is not configured") {
+    return AppError::Blob(Err::Blob::UploadNotConfigured, detail);
+  }
+  return AppError::Blob(Err::Blob::Generic, detail);
+}
+
 HttpBlobClient::HttpBlobClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
 Roe<std::string> HttpBlobClient::SignBytes(const std::vector<uint8_t>& sign_bytes) const {
@@ -114,7 +120,7 @@ Roe<BlobPresignResult> HttpBlobClient::Presign(const std::string& relay_user_id,
   if (!response) {
     return response.error();
   }
-  if (const auto ok = ExpectSuccess(response.value()); !ok) {
+  if (const auto ok = CheckBlobResponse(response.value()); !ok) {
     return ok.error();
   }
 
@@ -159,7 +165,7 @@ Roe<void> HttpBlobClient::Retain(const std::string& relay_user_id, const std::st
   if (!response) {
     return response.error();
   }
-  return ExpectSuccess(response.value());
+  return CheckBlobResponse(response.value());
 }
 
 Roe<void> HttpBlobClient::Delete(const std::string& relay_user_id, const std::string& blob_id) {
@@ -183,7 +189,7 @@ Roe<void> HttpBlobClient::Delete(const std::string& relay_user_id, const std::st
   if (!response) {
     return response.error();
   }
-  return ExpectSuccess(response.value());
+  return CheckBlobResponse(response.value());
 }
 
 Roe<BlobListResult> HttpBlobClient::List(const std::string& relay_user_id, const std::string& status_filter) {
@@ -209,7 +215,7 @@ Roe<BlobListResult> HttpBlobClient::List(const std::string& relay_user_id, const
   if (!response) {
     return response.error();
   }
-  if (const auto ok = ExpectSuccess(response.value()); !ok) {
+  if (const auto ok = CheckBlobResponse(response.value()); !ok) {
     return ok.error();
   }
 
@@ -268,7 +274,7 @@ Roe<void> HttpBlobClient::SetProfileIcon(const std::string& relay_user_id, const
   if (!response) {
     return response.error();
   }
-  return ExpectSuccess(response.value());
+  return CheckBlobResponse(response.value());
 }
 
 Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::string& content_type,

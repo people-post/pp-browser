@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -131,6 +132,11 @@ public:
   Roe<RegistrationResult> UpdateNickname(const std::string& /*new_nickname*/, const std::string& /*signature*/,
                                          int64_t /*timestamp*/, const std::string& /*relay_user_id*/) override {
     return Error("UpdateNickname not supported on pp-node thin client");
+  }
+
+  Roe<void> RevokeRegistration(const std::string& /*relay_user_id*/, const std::string& /*signature*/,
+                               int64_t /*timestamp*/) override {
+    return Error("RevokeRegistration not supported on pp-node thin client");
   }
 
 private:

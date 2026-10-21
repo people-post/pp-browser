@@ -2,9 +2,10 @@
 
 #include "foundation/data/Config.h"
 #include "domain/people/ContactTypes.h"
-#include "common/directory/MeshHopDial.h"
-#include "common/directory/MeshHopTypes.h"
-#include "common/directory/RelayScope.h"
+#include "mesh/types/MeshHopDial.h"
+#include "mesh/types/MeshHopTypes.h"
+#include "mesh/types/RelayScope.h"
+#include "common/MeshAlias.h"
 
 #include <cstdint>
 #include <string>
@@ -17,37 +18,37 @@ namespace pbr {
  * Collect contact PeerIds (+ first multiaddr) for closed-set hops.
  * Skips contacts without a PeerId identity.
  */
-std::vector<MeshHopCandidate> CollectContactHopCandidates(const std::vector<Contact>& contacts);
+std::vector<mesh::MeshHopCandidate> CollectContactHopCandidates(const std::vector<Contact>& contacts);
 
 /** Collect org seed peers from configured bootstrap multiaddrs. */
-std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::string>& bootstrap_peers);
+std::vector<mesh::MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::string>& bootstrap_peers);
 
 /** Collect infra mesh_node peers from directory cache (N027 / n-dir). */
-std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
+std::vector<mesh::MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<mesh::MeshDirectoryNode>& nodes);
 
 /**
  * Directory/DHT nodes advertising `ledger_gateway` (N029 Phase C prep).
  * Unused by product dial paths until ledger transport lands.
  */
-std::vector<MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
+std::vector<mesh::MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vector<mesh::MeshDirectoryNode>& nodes);
 
 /** Collect DHT-discovered infra peers (n2-caps); same node shape as directory. */
-std::vector<MeshHopCandidate> CollectDhtHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
+std::vector<mesh::MeshHopCandidate> CollectDhtHopCandidates(const std::vector<mesh::MeshDirectoryNode>& nodes);
 
 /**
  * Circuit hop order (nf / N014): contacts → directory → seeds when `prefer_contacts`;
  * directory → seeds → contacts when false. Dedupes by peer_id (earlier tier wins).
  */
-std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
-                                               std::vector<MeshHopCandidate> directory,
-                                               std::vector<MeshHopCandidate> dht,
-                                               std::vector<MeshHopCandidate> seeds,
+std::vector<mesh::MeshHopCandidate> OrderCircuitHops(std::vector<mesh::MeshHopCandidate> contacts,
+                                               std::vector<mesh::MeshHopCandidate> directory,
+                                               std::vector<mesh::MeshHopCandidate> dht,
+                                               std::vector<mesh::MeshHopCandidate> seeds,
                                                bool prefer_contacts = true);
 
 /** Collect + order circuit/media hop candidates (n-dir + n2-caps). Omits seeds when `include_seeds` is false. */
-std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
-                                                  const std::vector<MeshDirectoryNode>& directory_nodes,
-                                                  const std::vector<MeshDirectoryNode>& dht_nodes,
+std::vector<mesh::MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
+                                                  const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+                                                  const std::vector<mesh::MeshDirectoryNode>& dht_nodes,
                                                   const std::vector<std::string>& bootstrap_peers,
                                                   bool prefer_contacts, bool include_seeds = true);
 
@@ -57,7 +58,7 @@ std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& co
  * Higher score first. Affinity is a bonus; residual capacity matters.
  * When `prefer_contacts` is false, OrgSeed outranks Contact at equal capacity (seeds first).
  */
-std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,
+std::vector<mesh::MeshHopCandidate> RankMediaHops(std::vector<mesh::MeshHopCandidate> candidates,
                                             bool prefer_contacts = true);
 
 /**
@@ -65,24 +66,24 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
  * `local_listen_multiaddr` enables same-/24 link boost among eligible contacts only.
  * `consumer_scopes` defaults to short-term mask (no public).
  */
-std::vector<MeshHopCandidate> RankMediaHopsEscalating(
-    std::vector<MeshHopCandidate> candidates, bool prefer_contacts,
+std::vector<mesh::MeshHopCandidate> RankMediaHopsEscalating(
+    std::vector<mesh::MeshHopCandidate> candidates, bool prefer_contacts,
     const std::string& local_listen_multiaddr = {},
-    RelayScopeMask consumer_scopes = kRelayScopeShortTerm);
+    mesh::RelayScopeMask consumer_scopes = mesh::kRelayScopeShortTerm);
 
 /** Scope tags for a candidate (eligible closed-set peers only). */
-RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
+mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr = {});
 
 /** Provider advertisement cap from reachability (N023). */
-RelayScopeMask ProviderServeScopeMask(MeshReachabilityClass reachability, bool node_enabled);
+mesh::RelayScopeMask ProviderServeScopeMask(mesh::MeshReachabilityClass reachability, bool node_enabled);
 
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
-std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
+std::vector<mesh::MeshHopCandidate> ExcludeSelfHop(std::vector<mesh::MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);
 
 /** Drop hops whose peer_id is in `excluded`. */
-std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candidates,
+std::vector<mesh::MeshHopCandidate> ExcludePeerIds(std::vector<mesh::MeshHopCandidate> candidates,
                                              const std::unordered_set<std::string>& excluded);
 
 /**
@@ -90,7 +91,7 @@ std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candi
  * with Media relay), then remaining ranked hops (out-of-call Linux, org seed, …).
  * Peers without multiaddr stay in place but SoftMigrate will skip them quickly.
  */
-std::vector<MeshHopCandidate> PreferInCallMediaHops(std::vector<MeshHopCandidate> ranked,
+std::vector<mesh::MeshHopCandidate> PreferInCallMediaHops(std::vector<mesh::MeshHopCandidate> ranked,
                                                    const std::unordered_set<std::string>& in_call_peer_ids);
 
 /** Preferred PeerId from a contact (newest directory endpoint, else first PeerId / multiaddr). */
@@ -112,7 +113,7 @@ std::vector<std::string> ContactPeerIds(const std::vector<Contact>& contacts);
 std::unordered_set<std::string> TrustedRelayPeerIds(const std::vector<Contact>& contacts,
                                                     const std::vector<std::string>& org_seed_multiaddrs);
 /** `hops` without the ones outside `trusted` (order kept). */
-std::vector<MeshHopCandidate> KeepTrustedRelays(std::vector<MeshHopCandidate> hops,
+std::vector<mesh::MeshHopCandidate> KeepTrustedRelays(std::vector<mesh::MeshHopCandidate> hops,
                                                 const std::unordered_set<std::string>& trusted);
 
 } // namespace pbr

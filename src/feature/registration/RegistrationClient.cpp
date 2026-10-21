@@ -128,4 +128,21 @@ Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registrati
   return registration.UpdateNickname(nickname, *signature, timestamp, loaded->relay_user_id);
 }
 
+Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity) {
+  auto loaded = identity.Get();
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (!loaded->registered || loaded->relay_user_id.empty()) {
+    return {};
+  }
+  const int64_t timestamp = util::NowUnixMs();
+  const auto sign_bytes = BuildAccountRevokeSignBytes(loaded->relay_user_id, timestamp);
+  auto signature = identity.SignBytes(sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+  return registration.RevokeRegistration(loaded->relay_user_id, *signature, timestamp);
+}
+
 } // namespace pbr

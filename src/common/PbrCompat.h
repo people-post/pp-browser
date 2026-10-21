@@ -23,6 +23,11 @@
 #include "common/Value.h"
 #include "common/WorkerPool.h"
 #include "common/io/Json.h"
+#include "common/AtomicFileWrite.h"
+#include "common/CodedFailure.h"
+#include "common/SettledWait.h"
+#include "common/ValueJson.h"
+#include "common/metrics/MetricsRegistry.h"
 
 namespace pbr {
 
@@ -58,6 +63,38 @@ using ::pp::common::isObjectValue;
 using ::pp::common::isStringValue;
 using ::pp::common::makeArray;
 using ::pp::common::valueEqual;
+
+// JSON helpers (pp-cpp-common ValueJson).
+using ::pp::common::ArrayValue;
+using ::pp::common::DeepMergeObject;
+using ::pp::common::DumpJson;
+using ::pp::common::ObjectArray;
+using ::pp::common::ObjectBool;
+using ::pp::common::ObjectChild;
+using ::pp::common::ObjectInt64;
+using ::pp::common::ObjectNonNegInt;
+using ::pp::common::ObjectString;
+using ::pp::common::ObjectValue;
+using ::pp::common::ParseObject;
+using ::pp::common::ParseValue;
+using ::pp::common::TryParseObject;
+
+using ::pp::AtomicFileWrite;
+using ::pp::CodedFailure;
+using ::pp::CodedRoe;
+using ::pp::SettledWait;
+namespace detail {
+using ::pp::detail::AppendFrom;
+} // namespace detail
+
+using ::pp::FixedLabelCounts;
+using ::pp::MetricCounter;
+using ::pp::MetricGauge;
+using ::pp::MetricHistogram;
+using ::pp::MetricLabelKey;
+using ::pp::MetricLabels;
+using ::pp::MetricsRegistry;
+using ::pp::ScopedMetricsCollector;
 
 namespace logging = ::pp::logging;
 namespace util = ::pp::util;

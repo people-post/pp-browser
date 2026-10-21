@@ -6,6 +6,7 @@
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
 #include "gui/shell/ShellFeedbackPorts.h"
+#include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "common/Error.h"
@@ -160,6 +161,9 @@ private:
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
     ui::String crash_reports_enabled = "off";
+    ui::String show_advanced_settings = "off";
+    /** show_advanced_settings == "on"; templates gate technical rows on it. */
+    bool advanced = false;
     ui::String profile_label;
     ui::String config_dir;
     ui::String data_dir;
@@ -228,6 +232,8 @@ private:
   static void ToggleShowNotificationsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleReduceTransparencyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleCallDiagnosticsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleShowAdvancedSettingsCallback(ui::DataModelHandle model, ui::Event& ev,
+                                                 const ui::VariantList& args);
   static void ToggleCrashReportsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleAutoRenewRegistrationCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnIntegrationsFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -279,7 +285,8 @@ private:
   void OnBackToList();
   void OnResetSection(const std::string& section_id);
   void PerformResetSection(const std::string& section_id);
-  void MarkSectionDirty(const std::string& section_id);
+  /** `show_toast=false` for switches: the knob moving is the feedback (Kenneth 2026-10-14). */
+  void MarkSectionDirty(const std::string& section_id, bool show_toast = true);
   void FlushPending();
   void FlushAllDirty();
   bool FlushSection(const std::string& section_id, bool show_toast = true);
@@ -294,7 +301,7 @@ private:
   void OnCopyProfileId();
   void OnPickProfileIcon();
   void OnClearProfileIcon();
-  void OnShareProfile();
+  void OnShareProfile(ShareAnchor anchor = {});
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
@@ -338,6 +345,8 @@ private:
   /** Pane hydrate gate; also mirrored into UiEditSession remount depth. */
   bool suppress_auto_save_ = false;
   std::unordered_set<std::string> dirty_sections_;
+  /** Dirty sections whose next flush must not toast (switch toggles). */
+  std::unordered_set<std::string> quiet_sections_;
   uint64_t debounce_deadline_ms_ = 0;
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;

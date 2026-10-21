@@ -11,6 +11,7 @@
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/IosAssetLocator.h"
 #include "foundation/platform/IosPathProvider.h"
+#include "foundation/platform/IosPushDeviceRegistrar.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/SdlAssetFileInterface.h"
 
@@ -45,6 +46,13 @@ AndroidPushDeviceRegistrar& AndroidPushRegistrar() {
 }
 #endif
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+IosPushDeviceRegistrar& IosPushRegistrar() {
+  static IosPushDeviceRegistrar registrar;
+  return registrar;
+}
+#endif
+
 } // namespace
 
 void PlatformHooks::Register() {
@@ -68,6 +76,7 @@ void PlatformHooks::Register() {
 #if defined(__APPLE__) && TARGET_OS_IPHONE
     static SdlAssetFileInterface file_interface;
     g_packaged_file_interface = &file_interface;
+    IPushDeviceRegistrar::SetInstance(&IosPushRegistrar());
 #endif
     ILocalNotifier::SetInstance(&DesktopNotifier());
   } else {

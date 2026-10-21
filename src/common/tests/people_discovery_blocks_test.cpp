@@ -2,18 +2,20 @@
 
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace {
 
 using namespace pbr;
 
 TEST(PeopleDiscoveryBlocksTest, DirectoryHitUsesIdentityAndPrimaryAdd) {
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "hit_alice";
   hit.display_name = "Alice Example";
   hit.nickname = "alice";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:alice123456789", true},
-             {ContactIdKind::Account, "account:alice123", false}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123456789", true},
+             {mesh::ContactIdKind::Account, "account:alice123", false}};
 
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, {});
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);
@@ -44,17 +46,17 @@ TEST(PeopleDiscoveryBlocksTest, DirectoryHitUsesIdentityAndPrimaryAdd) {
 }
 
 TEST(PeopleDiscoveryBlocksTest, AlreadyContactPrefersMessageAndMeta) {
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "hit_bob";
   hit.display_name = "Bob";
   hit.nickname = "bob";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:bob1", true}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob1", true}};
 
   PeopleDiscoveryContactView local;
   local.id = "c_bob";
   local.display_name = "Bob";
   local.server_nickname = "bob";
-  local.ids = {{ContactIdKind::RelayUser, "relay:bob1", true}};
+  local.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob1", true}};
 
   PeopleDiscoveryBuildOptions options;
   options.known_local_identity_values.insert("relay:bob1");
@@ -68,13 +70,13 @@ TEST(PeopleDiscoveryBlocksTest, AlreadyContactPrefersMessageAndMeta) {
 }
 
 TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
-  std::vector<DirectoryHit> hits;
+  std::vector<mesh::DirectoryHit> hits;
   for (int i = 0; i < 15; ++i) {
-    DirectoryHit hit;
+    mesh::DirectoryHit hit;
     hit.hit_id = "hit_" + std::to_string(i);
     hit.display_name = "Person " + std::to_string(i);
     hit.nickname = "p" + std::to_string(i);
-    hit.ids = {{ContactIdKind::RelayUser, "relay:p" + std::to_string(i), true}};
+    hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:p" + std::to_string(i), true}};
     hits.push_back(std::move(hit));
   }
 
@@ -89,19 +91,19 @@ TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
 }
 
 TEST(PeopleDiscoveryBlocksTest, DropsSelfIdentityHits) {
-  DirectoryHit self_hit;
+  mesh::DirectoryHit self_hit;
   self_hit.hit_id = "hit_me";
   self_hit.display_name = "Me";
   self_hit.nickname = "me";
   self_hit.account_id = "account:me";
-  self_hit.ids = {{ContactIdKind::Account, "account:me", true},
-                  {ContactIdKind::RelayUser, "relay:me", false}};
+  self_hit.ids = {{mesh::ContactIdKind::Account, "account:me", true},
+                  {mesh::ContactIdKind::RelayUser, "relay:me", false}};
 
-  DirectoryHit other;
+  mesh::DirectoryHit other;
   other.hit_id = "hit_other";
   other.display_name = "Other";
   other.nickname = "other";
-  other.ids = {{ContactIdKind::RelayUser, "relay:other", true}};
+  other.ids = {{mesh::ContactIdKind::RelayUser, "relay:other", true}};
 
   PeopleDiscoveryBuildOptions options;
   options.self_identity_values = {"account:me", "relay:me"};
@@ -113,11 +115,11 @@ TEST(PeopleDiscoveryBlocksTest, DropsSelfIdentityHits) {
 }
 
 TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "hit_nested";
   hit.display_name = "Nested";
   hit.nickname = "nested";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:nested1", true}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:nested1", true}};
 
   const std::string contacts_json = R"([
     {
@@ -140,7 +142,7 @@ TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
   PeopleDiscoveryContactView local;
   local.id = "c_nested";
   local.display_name = "Nested";
-  local.ids = {{ContactIdKind::RelayUser, "relay:nested1", true}};
+  local.ids = {{mesh::ContactIdKind::RelayUser, "relay:nested1", true}};
   const std::string annotated = BuildPeopleDiscoveryBlocksJson({hit}, {local}, options);
   EXPECT_NE(annotated.find("In contacts"), std::string::npos);
   EXPECT_EQ(annotated.find("Add contact"), std::string::npos);

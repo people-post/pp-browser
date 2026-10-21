@@ -37,13 +37,15 @@ Top-level folders (+ calls band). Two sub-trees under `ai/`.
 src/feature/
 ├── registration/     Registration finish / renew / nickname (`pp_feature_registration`, headless — pp-node links it)
 ├── node/             Node-role mesh services (`pp_feature_node`, headless): hosting, DHT / directory, self row — pp-node + desktop Node
+├── call_media/       pp-browser's realtime protocol on the mesh (`pp_feature_call_media`, headless): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it
 ├── settings/         Config apply logic, section handlers + SettingsTools
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
 │   └── bindings/
 ├── calls/            Call session (`pp_feature_calls`)
 ├── broadcast/        Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
-└── conversations/    Conversations hub + delivery; ConversationsFacade
+├── conversations/    Conversations hub + delivery; ConversationsFacade; `HubParticipant` (what rides the hub)
+└── product/          `ProductStack` (`pp_feature_product`): the hub with calls and broadcast as its participants — the one module that sees all three; only app/ and gui/ include it
 ```
 
 Product UI: see [`src/gui/README.md`](../gui/README.md).
@@ -97,7 +99,7 @@ conversations → calls   (delivery / inbound ports; no reverse include)
 conversations → registration, node
 ```
 
-Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Conversations receive call-control via `CallControlInboundPorts`.
+Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Calls bind their control messages as a system-control family (`common/chat/SystemControl.h`, [P2P_MESSAGING § System-control families](../../docs/architecture/P2P_MESSAGING.md#system-control-families)): the receive path, delivery and the inbox route by the registry, not by call types.
 
 ### Guards
 

@@ -1,0 +1,1383 @@
+#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallsThread.h"
+#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/product/tests/calls_loopback_outbox.h"
+#include "feature/product/tests/calls_on_owner.h"
+#include "domain/calls/CallLifecycleTypes.h"
+
+#include "domain/media/CallMediaEngine.h"
+#include "domain/calls/CallMediaKeyStore.h"
+#include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallTypes.h"
+#include "domain/messaging/SqliteThreadStore.h"
+#include "feature/call_media/ICallMediaTransport.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "common/Utilities.h"
+
+#include <chrono>
+#include <filesystem>
+#include "feature/product/tests/call_media_inbound_fake.h"
+#include "common/MeshAlias.h"
+
+#include <gtest/gtest.h>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <atomic>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace pbr {
+namespace {
+
+ByteVector TestDek() {
+  ByteVector dek(kDataEncryptionKeySize);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xb0 + i);
+  }
+  return dek;
+}
+
+ByteVector TestMediaKey() {
+  ByteVector key(32);
+  for (size_t i = 0; i < key.size(); ++i) {
+    key[i] = static_cast<uint8_t>(0x10 + i);
+  }
+  return key;
+}
+
+/** The 1:1 arming / progress ports as CallSessionManager::DirectArmingPorts binds them. */
+CallDirectArmingPorts TestDirectArmingPorts(LiveCalls* live) {
+  CallDirectArmingPorts ports;
+  ports.direct_ops_allowed = [live]() { return live->AllowsDirectPath(); };
+  ports.request_direct_arming = [live](const std::string& call_id) { live->RequestDirectArming(call_id); };
+  ports.report_progress = [live](CallDirectPlannerPhase phase, const std::string& call_id) {
+    live->ReportDirectProgress(call_id, phase);
+  };
+  ports.on_connected = [live](const std::string& call_id) { live->NoteMediaConnected(call_id); };
+  ports.on_connect_failed = [live](const std::string& call_id) { live->NoteMediaFailed(call_id); };
+  ports.on_media_deferred = [live](const std::string& call_id) { live->NoteMediaDeferred(call_id); };
+  ports.on_media_key_ready = [live](const std::string& call_id) { live->NoteMediaKeyReady(call_id); };
+  ports.arming_debug_name = [live]() { return CallMediaStatusName(live->Status()); };
+  return ports;
+}
+
+class FakeMediaHost final : public CallMediaHost {
+public:
+  Roe<std::string> P2pLocalIdentity() const override { return std::string("account:local"); }
+  const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live.Find(call_id); }
+  /** Harness: every call the bridge drives is live here (the harness seeds store rows only). */
+  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override {
+    if (!live.Find(call_id)) {
+      live.AdmitPlaced(call_id, {"account:peer"});
+    }
+    return live.Media(call_id);
+  }
+  LiveCalls live;
+  Roe<void> P2pSendDirect(const std::string& /*peer*/, CallControlType /*type*/,
+                          const std::string& /*detail*/, const std::string& /*display*/) override {
+    return {};
+  }
+  void P2pNotifyRingChanged() override { ++ring_notifies; }
+  void P2pSetLastMediaError(std::string message) override { last_error = std::move(message); }
+  Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& /*call_id*/) const override {
+    return std::optional<std::string>("account:peer");
+  }
+  Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& /*call_id*/,
+                                                             const std::string& /*peer_id*/) const override {
+    return std::optional<std::string>("account:peer");
+  }
+  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override {
+    if (auto it = account_to_peer.find(account); it != account_to_peer.end()) {
+      return std::optional<std::string>{it->second};
+    }
+    return std::optional<std::string>{};
+  }
+  void P2pResendMediaKey(const std::string& /*call_id*/, const std::string& /*peer*/) override {
+    ++media_key_resends;
+  }
+  void P2pRequestInboxSync() override { ++inbox_syncs; }
+
+  std::unordered_map<std::string, std::string> account_to_peer;
+  int ring_notifies = 0;
+  int media_key_resends = 0;
+  int inbox_syncs = 0;
+  std::string last_error;
+};
+
+class FakeDialRegistry final : public mesh::IDialRegistry {
+public:
+  Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
+    endpoints[peer_key] = multiaddr;
+    return {};
+  }
+
+  bool IsDialable(const std::string& peer_key) const override {
+    return endpoints.find(peer_key) != endpoints.end() || force_dialable.count(peer_key) > 0;
+  }
+
+  bool IsConnected(const std::string& peer_key) const override {
+    return connected.count(peer_key) > 0 && connected.at(peer_key);
+  }
+
+  bool IsConnectedDirect(const std::string& peer_key) const override {
+    return IsConnected(peer_key) && carrier_only.count(peer_key) == 0;
+  }
+
+  void EnsureAssociation(const std::string& peer_key,
+                         std::function<void(Roe<void>)> on_done) override {
+    ++ensure_association_calls;
+    last_ensure_peer = peer_key;
+    if (on_done) {
+      if (ensure_result) {
+        on_done({});
+      } else {
+        on_done(Error(ensure_error));
+      }
+    }
+  }
+
+  std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
+    const auto it = endpoints.find(peer_key);
+    if (it != endpoints.end()) {
+      return it->second;
+    }
+    return std::nullopt;
+  }
+
+  void ClearDialBackoff(const std::string& peer_key) override {
+    ++clear_backoff_calls;
+    last_clear_backoff_peer = peer_key;
+  }
+  void AbortInflightDial(const std::string& peer_key) override {
+    ++abort_inflight_calls;
+    last_abort_peer = peer_key;
+  }
+  void DropLink(const std::string& peer_key) override {
+    ++drop_link_calls;
+    last_drop_link_peer = peer_key;
+    connected[peer_key] = false;
+  }
+  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
+
+  /** A circuit hop to the peer is its relay carrier link (beside any direct one). */
+  bool IsConnectedRelayed(const std::string& peer_key) const override {
+    return IsConnected(peer_key) && (carrier_only.count(peer_key) > 0 || HasPeerCircuitHop(peer_key));
+  }
+  bool HasPeerCircuitHop(const std::string& peer_key) const override {
+    return circuit_hops.count(peer_key) > 0 && circuit_hops.at(peer_key);
+  }
+
+  std::unordered_map<std::string, std::string> endpoints;
+  std::unordered_map<std::string, bool> force_dialable;
+  std::unordered_map<std::string, bool> connected;
+  std::unordered_map<std::string, bool> circuit_hops;
+  std::unordered_set<std::string> carrier_only;
+  int ensure_association_calls = 0;
+  int clear_backoff_calls = 0;
+  int abort_inflight_calls = 0;
+  int drop_link_calls = 0;
+  std::string last_ensure_peer;
+  std::string last_clear_backoff_peer;
+  std::string last_abort_peer;
+  std::string last_drop_link_peer;
+  bool ensure_result = true;
+  std::string ensure_error = "ensure association not available";
+};
+
+class FakeCircuitHopReach final : public mesh::ICircuitHopReach {
+public:
+  Roe<void> TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
+
+  Roe<void> TryEnsurePeerReachable(const std::string& peer_key) override {
+    ++call_media_ensure_calls;
+    last_peer = peer_key;
+    if (dial) {
+      dial->connected[peer_key] = true;
+      dial->circuit_hops[peer_key] = true;
+    }
+    return call_media_result ? Roe<void>() : Error(call_media_error);
+  }
+
+  void TryEnsurePeerReachableAsync(const std::string& peer_key,
+                                        std::function<void(Roe<void>)> on_done,
+                                        bool /*allow_circuit*/ = true) override {
+    // Runs on the reach's lane (PeerReachCoordinator) while the test thread reads the fields.
+    ++call_media_ensure_calls;
+    {
+      std::lock_guard lock(mu);
+      last_peer = peer_key;
+    }
+    if (dial) {
+      dial->connected[peer_key] = true;
+      dial->circuit_hops[peer_key] = true;
+    }
+    if (on_done) {
+      on_done(call_media_result ? Roe<void>() : Error(call_media_error));
+    }
+  }
+
+  FakeDialRegistry* dial = nullptr;
+  std::atomic<int> call_media_ensure_calls{0};
+  std::mutex mu;
+  std::string last_peer;
+  std::string LastPeer() {
+    std::lock_guard lock(mu);
+    return last_peer;
+  }
+  bool call_media_result = true;
+  std::string call_media_error = "circuit hop reach failed";
+
+  void TryUpgradeToDirectAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done) override {
+    {
+      std::lock_guard lock(mu);
+      last_upgrade_peer = peer_key;
+    }
+    ++upgrade_calls;
+    if (on_done) {
+      on_done(upgrade_result.load() ? Roe<void>() : Error("upgrade punch failed"));
+    }
+  }
+  std::string LastUpgradePeer() {
+    std::lock_guard lock(mu);
+    return last_upgrade_peer;
+  }
+  std::atomic<int> upgrade_calls{0};
+  std::atomic<bool> upgrade_result{false};
+  std::string last_upgrade_peer;
+};
+
+class FakeCallMediaTransport final : public ICallMediaTransport {
+public:
+  void Start() override { started = true; }
+  void Stop() override { started = false; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
+  bool IsActive() const override { return active || half_open; }
+  CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
+  std::string ActiveRemotePeerId() const override { return remote_peer_id; }
+  std::string remote_peer_id;
+  CallMediaSessionPhase Phase() const override {
+    if (active) {
+      return CallMediaSessionPhase::MediaReady;
+    }
+    return half_open ? CallMediaSessionPhase::HelloInbound : CallMediaSessionPhase::Idle;
+  }
+  CallMediaLinkKind ActiveLinkKind() const override { return link_kind; }
+  void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
+    ++migrate_calls;
+    if (!migrate_ok || (fail_first_n_migrates > 0 && fail_first_n_migrates-- > 0)) {
+      done(Error("call-media migrate: peer refused (busy)"));
+      return;
+    }
+    link_kind = kind;
+    if (last_callbacks.on_path_changed) {
+      last_callbacks.on_path_changed(kind);
+    }
+    done(Roe<void>());
+  }
+  CallMediaLinkKind StandbyLinkKind() const override { return standby_kind.load(); }
+  void SetAutoMigrateToDirect(bool allow) override { auto_migrate_to_direct = allow; }
+  std::atomic<bool> auto_migrate_to_direct{true};
+  void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
+    ++add_standby_calls;
+    if (!standby_ok) {
+      done(Error("call-media standby: peer refused"));
+      return;
+    }
+    standby_kind = kind;
+    done(Roe<void>());
+  }
+  std::atomic<int> add_standby_calls{0};
+  std::atomic<CallMediaLinkKind> standby_kind{CallMediaLinkKind::Unknown};
+  bool standby_ok = true;
+  std::atomic<int> migrate_calls{0};
+  bool migrate_ok = true;
+  int fail_first_n_migrates = 0;
+  void Detach() override {
+    active = false;
+    ++detach_calls;
+  }
+  void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+    ++connect_async_calls;
+    last_params = params;
+    if (hang_first_n_connects > 0) {
+      --hang_first_n_connects;
+      return;
+    }
+    if (fail_first_n_connects > 0) {
+      --fail_first_n_connects;
+      if (on_done) {
+        on_done(Error(connect_fail_message));
+      }
+      return;
+    }
+    active = true;
+    active_params = params;
+    last_callbacks = callbacks;
+    if (callbacks.on_connected) {
+      callbacks.on_connected();
+    }
+    if (on_done) {
+      on_done({});
+    }
+  }
+  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+                    int timeout_ms) override {
+    Roe<void> out;
+    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
+    return out;
+  }
+  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
+    return {};
+  }
+  Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/,
+                      uint8_t /*mark*/) override {
+    return {};
+  }
+
+  bool started = false;
+  bool active = false;
+  CallMediaLinkKind link_kind = CallMediaLinkKind::Unknown;
+  CallMediaDirectCallbacks last_callbacks;
+  int connect_async_calls = 0;
+  int detach_calls = 0;
+  int fail_first_n_connects = 0;
+  /** A bundle is mid-handshake (glare / loss): IsActive() true, phase not MediaReady. */
+  bool half_open = false;
+  int hang_first_n_connects = 0;
+  std::string connect_fail_message =
+      "amp link: transport failed [adp: adp udp: sendto dst=192.168.0.103:54410 errno=64]";
+  CallMediaDirectConnectParams last_params;
+  CallMediaDirectConnectParams active_params;
+  test::InboundHelloFake inbound;
+};
+
+class CallMediaBridgeAnswererStartTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::InitializeUI();
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_bridge_" + util::GenerateUuid());
+    std::filesystem::remove_all(data_dir_);
+    std::filesystem::create_directories(data_dir_);
+    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    ASSERT_TRUE(store_->ListThreads());
+    sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
+    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    ASSERT_TRUE(keys_->SetDek(TestDek()));
+    media_ = std::make_unique<CallMediaEngine>();
+    media_->SetSkipDeviceOpenForTest(true);
+    host_ = std::make_unique<FakeMediaHost>();
+    host_->live.BindMediaResources(media_.get(), nullptr);
+    dial_ = std::make_unique<FakeDialRegistry>();
+    circuit_ = std::make_unique<FakeCircuitHopReach>();
+    circuit_->dial = dial_.get();
+    transport_ = std::make_unique<FakeCallMediaTransport>();
+    bridge_ = std::make_unique<CallMediaBridge>(
+        *host_, *sessions_, *keys_, *media_, *transport_,
+        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
+    bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
+    bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
+    dial_->force_dialable["account:peer"] = true;
+    dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
+  }
+
+  void TearDown() override {
+    if (bridge_) {
+      OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+    }
+    // Join the worker pool before destroying objects a still-running task may touch
+    // (see call_session_inbound_compose_test.cpp TearDown).
+    AppRuntime::Shutdown();
+    // Stop capture before the bridge goes: the engine's send callback points into it.
+    if (media_) {
+      media_->Stop();
+    }
+    bridge_.reset();
+    transport_.reset();
+    circuit_.reset();
+    dial_.reset();
+    host_.reset();
+    // Always Stop (joins capture) before destroy — headless Windows OpenAudioDevices can
+    // still be failing when TearDown runs; budgeted detach previously UAF'd here.
+    if (media_) {
+      media_->Stop();
+    }
+    media_.reset();
+    if (keys_) {
+      keys_->ClearDek();
+    }
+    keys_.reset();
+    sessions_.reset();
+    store_.reset();
+    std::filesystem::remove_all(data_dir_);
+    AppRuntime::ShutdownUI();
+  }
+
+  /** Our accept of `call_id` landed (answerer): admitted invited, then joined. */
+  void Answered(const std::string& call_id) {
+    host_->live.AdmitInvited(call_id, {"account:peer"});
+    host_->live.MarkAccepting(call_id);
+    host_->live.MarkJoined(call_id);
+  }
+  /** We placed `call_id` (offerer). */
+  void Placed(const std::string& call_id) {
+    host_->live.AdmitPlaced(call_id, {"account:peer"});
+    host_->live.NoteOutboundStarted(call_id);
+  }
+
+  void SeedActiveCall(const std::string& call_id) {
+    CallSession session;
+    session.call_id = call_id;
+    session.origin_thread_id = "thread:1";
+    session.media_mode = CallMediaMode::Voice;
+    session.state = CallSessionState::Active;
+    session.created_at = 1;
+    session.media_epoch = 1;
+    session.media_key_id = "mk:1";
+    ASSERT_TRUE(sessions_->UpsertSession(session));
+    CallParticipant local;
+    local.call_id = call_id;
+    local.identity = "account:local";
+    local.state = CallParticipantState::Joined;
+    local.joined_at = 1;
+    ASSERT_TRUE(sessions_->UpsertParticipant(local));
+    CallParticipant peer;
+    peer.call_id = call_id;
+    peer.identity = "account:peer";
+    peer.state = CallParticipantState::Joined;
+    peer.joined_at = 2;
+    ASSERT_TRUE(sessions_->UpsertParticipant(peer));
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<CallSessionStore> sessions_;
+  std::unique_ptr<CallMediaKeyStore> keys_;
+  std::unique_ptr<CallMediaEngine> media_;
+  std::unique_ptr<FakeMediaHost> host_;
+  std::unique_ptr<FakeDialRegistry> dial_;
+  std::unique_ptr<FakeCircuitHopReach> circuit_;
+  std::unique_ptr<FakeCallMediaTransport> transport_;
+  std::unique_ptr<CallMediaBridge> bridge_;
+  CallsLoopbackOutbox<DirectPathEvent> bridge_events_{[this](DirectPathEvent& event) {
+    if (bridge_) {
+      bridge_->Handle(event);
+    }
+  }};
+};
+
+// Dogfood 2026-09-24: answerer showed "Punched" while its inbound leg rode a relay carrier.
+TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
+  transport_->active = true;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
+
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit");
+
+  transport_->active = false;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "stale bound kind must not label an idle transport";
+}
+
+// An inbound hello arrives on the transport's IO hop with the dialer's mesh PeerId. Nothing is
+// decided there: the calls owner answers (key + callbacks) and maps the PeerId to the roster
+// identity — bridge state is never written off the owner.
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloBindsPeerIdentityOnCallsOwner) {
+  const std::string call_id = "call:inbound-bind";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  // MediaPathKind reports "circuit" once the bound identity has a circuit hop — observable binding.
+  dial_->circuit_hops["account:peer"] = true;
+  ASSERT_TRUE(transport_->inbound.Installed());
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit");
+
+  CallMediaDirectConnectParams params;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  auto answer = transport_->inbound.Deliver(params);
+  ASSERT_TRUE(answer);
+  EXPECT_FALSE(test::InboundHelloFake::Answered(answer)) << "answered on the calls owner, not the IO hop";
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "binding waits for the calls owner";
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_TRUE(test::InboundHelloFake::Answered(answer));
+  params = answer->params;
+  CallMediaDirectCallbacks cbs = answer->cbs;
+
+  EXPECT_EQ(params.media_key, TestMediaKey()) << "accepted with the stored epoch key";
+  EXPECT_EQ(params.peer_key, "12D3KooWInboundDialer") << "bridge no longer rewrites the transport's peer";
+  EXPECT_TRUE(cbs.on_connected);
+  EXPECT_TRUE(cbs.on_media);
+  EXPECT_TRUE(cbs.on_failed);
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit") << "PeerId mapped to account:peer on the calls owner";
+}
+
+// 1:1 media is read on the transport's I/O, so the stream must be bound by the time the hello is
+// answered — the bundle's first frame must never see the previous call's stream.
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloIsBoundWhenAnswered) {
+  const std::string call_id = "call:inbound-bound-at-answer";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->circuit_hops["account:peer"] = true;  // "circuit" once the hello's peer is bound
+  CallMediaDirectConnectParams params;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  std::string kind_at_answer;
+  ASSERT_TRUE(transport_->inbound.DeliverThen(
+      params, [&](CallMediaDirectConnectParams, CallMediaDirectCallbacks) { kind_at_answer = bridge_->MediaPathKind(); }));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(kind_at_answer, "circuit") << "bound only after the hello was answered";
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
+  CallMediaDirectConnectParams params;
+  params.call_id = "call:no-such-session";
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  CallMediaDirectCallbacks cbs;
+  ASSERT_TRUE(transport_->inbound.DeliverAndWait(params, cbs)) << "answered (NACK)";
+  EXPECT_TRUE(params.media_key.empty());
+  EXPECT_FALSE(cbs.on_connected);
+}
+
+// k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
+TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStopsOnStop) {
+  std::atomic<int> reserves{0};
+  bridge_->SetSeedReserve([&] { reserves.fetch_add(1); });
+  bridge_->SetReserveRenewIntervalMsForTest(30);
+
+  const std::string call_id = "call:answerer-renew";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_GE(reserves.load(), 1) << "BeginSession parks once";
+
+  const auto pump_for = [](std::chrono::milliseconds span) {
+    const auto until = std::chrono::steady_clock::now() + span;
+    while (std::chrono::steady_clock::now() < until) {
+      AppRuntime::RunUIAndOwnerTasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  };
+  // Wait for renewals rather than counting them in a fixed window: coordinator timers are
+  // coarse on loaded CI runners (macOS saw the first 30 ms renewal after ~80 ms).
+  const auto renew_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (reserves.load() < 3 && std::chrono::steady_clock::now() < renew_deadline) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_GE(reserves.load(), 3) << "lease renewed while live";
+
+  OnCallsOwner([&] { return bridge_->StopMeshMedia(call_id); });
+  pump_for(std::chrono::milliseconds(50));
+  const int after_stop = reserves.load();
+  pump_for(std::chrono::milliseconds(200));
+  EXPECT_EQ(reserves.load(), after_stop) << "no renewals after StopMeshMedia";
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
+  // Product glue: ScheduleStartMediaAsAnswerer (Kick / Accept) → BeginSession StartSfu when key present.
+  const std::string call_id = "call:answerer-key";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  ASSERT_TRUE(host_->live.AllowsDirectPath());
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyDefersMediaPending) {
+  const std::string call_id = "call:answerer-nokey";
+  SeedActiveCall(call_id);
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
+  // Inbox poll is PostWorkerBackground — assert defer contract here; sync may land after RunUITasks.
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) {
+  // CALLS / CURRENT_STATE: deferred MediaKey exhaustion → ConnectFailed (not stuck MediaPending).
+  const std::string call_id = "call:answerer-key-timeout";
+  SeedActiveCall(call_id);
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  bridge_->SetMediaKeyInboxPollRoundsForTest(0);
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+  // Deferred first (MediaPending). With 0 poll rounds the exhaustion can land in the same drain,
+  // so the call may already be past it — the end state below is the oracle.
+  EXPECT_TRUE(host_->live.Phase() == CallPhase::MediaPending || host_->live.Phase() == CallPhase::ConnectFailed)
+      << "got phase=" << CallPhaseName(host_->live.Phase());
+
+  for (int i = 0; i < 500; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (host_->live.Phase() == CallPhase::ConnectFailed) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(host_->live.Phase(), CallPhase::ConnectFailed)
+      << "got phase=" << CallPhaseName(host_->live.Phase());
+  EXPECT_TRUE(bridge_->IsMeshConnectFailed());
+  EXPECT_FALSE(host_->last_error.empty());
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) {
+  const std::string call_id = "call:hop-blocks-direct";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  Answered(call_id);
+  host_->live.NoteMediaConnected(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::HopLive, "test");
+  ASSERT_FALSE(host_->live.AllowsDirectPath());
+  ASSERT_TRUE(host_->live.AllowsHopPath());
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  // InCall + HopLive: ScheduleStart must not re-arm Direct or StartSfu.
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::HopLive);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, OffererScheduleStartActivatesMedia) {
+  const std::string call_id = "call:offerer-key";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  ASSERT_TRUE(host_->live.AllowsDirectPath());
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  // Offerer Connect waits inbound grace before ConnectAsync — do not assert dial yet.
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, DeferredKeyThenOnMediaKeyReadyActivatesMedia) {
+  const std::string call_id = "call:deferred-key";
+  SeedActiveCall(call_id);
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
+  EXPECT_FALSE(media_->IsActive());
+
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  OnCallsOwner([&] { return bridge_->OnMediaKeyReady(call_id); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutStoppingEngine) {
+  const std::string call_id = "call:release-direct";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_TRUE(media_->IsActive());
+
+  const int detaches_before = transport_->detach_calls;
+  OnCallsOwner([&] { bridge_->ReleaseDirectTransport(); });
+
+  EXPECT_GT(transport_->detach_calls, detaches_before);
+  EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+}
+
+// Dogfood 2026-09-24: the answerer's only link to the caller was the relay carrier; the reach
+// loop still logged path=punched / direct before any media was bound.
+TEST_F(CallMediaBridgeAnswererStartTest, CarrierOnlyLinkIsNotLabelledDirect) {
+  const std::string call_id = "call:carrier-only-label";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->connected["account:peer"] = true;
+  dial_->carrier_only.insert("account:peer");
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (transport_->connect_async_calls > 0 || host_->live.Phase() == CallPhase::ConnectFailed) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  ASSERT_GT(transport_->connect_async_calls, 0) << "err=" << host_->last_error;
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureUsesCircuit) {
+  // Dogfood two-net answerer: peer dialable but EnsureAssociation → dial in backoff; circuit
+  // still marks Connected. Must not hammer EnsureAssociation every poll; Connect must succeed.
+  const std::string call_id = "call:dial-backoff-circuit";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  dial_->connected["account:peer"] = false;
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (transport_->connect_async_calls > 0 || host_->live.Phase() == CallPhase::ConnectFailed ||
+        host_->live.Phase() == CallPhase::InCall) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_GE(circuit_->call_media_ensure_calls, 1) << "circuit reach must run when ADP dial is in backoff";
+  EXPECT_LE(dial_->ensure_association_calls, 2)
+      << "must not hammer EnsureAssociation while dial in backoff (got "
+      << dial_->ensure_association_calls << ")";
+  EXPECT_GE(dial_->clear_backoff_calls, 1) << "Ensure miss must ClearDialBackoff for circuit pivot";
+  // AbortInflightDial before ConnectAsync is OK; EnsureAssociation *miss callback* must not Abort
+  // (dial already finished — double ScheduleDropLink AVs). Miss path only Clears backoff.
+  EXPECT_NE(host_->live.Phase(), CallPhase::ConnectFailed)
+      << "circuit Connected should prevent ConnectFailed; phase="
+      << CallPhaseName(host_->live.Phase()) << " err=" << host_->last_error;
+  EXPECT_GT(transport_->connect_async_calls, 0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed) {
+  // Dogfood: Connect give-up must stop StartSfu capture (no zombie TX) and Direct→Idle.
+  const std::string call_id = "call:circuit-miss-stop";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link manager: dial timeout [link: amp link: dial timeout]";
+  dial_->connected["account:peer"] = false;
+  circuit_->call_media_result = false;
+  circuit_->call_media_error = "circuit hop reach failed: relay !endpoint";
+  // FakeCircuit must not mark connected on miss.
+  circuit_->dial = nullptr;
+
+  bridge_->SetDialWaitBudgetMsForTest(400);
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_TRUE(media_->IsActive()) << "BeginSession starts engine before Ensure settles";
+
+  for (int i = 0; i < 300; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (host_->live.Phase() == CallPhase::ConnectFailed && !media_->IsActive()) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(host_->live.Phase(), CallPhase::ConnectFailed)
+      << "err=" << host_->last_error;
+  EXPECT_TRUE(bridge_->IsMeshConnectFailed());
+  EXPECT_FALSE(media_->IsActive()) << "ConnectFailed must StopMeshMedia (no zombie TX)";
+  EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// B44 (call-path-resilience k4): our attempts give up while the peer's own redial is mid-handshake.
+// The failure waits a short grace; the peer's hello completing in it keeps the call instead of
+// tearing down the path that just came back.
+TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHelloCompletes) {
+  const std::string call_id = "call:b44-recover";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->connected["account:peer"] = true;
+  transport_->fail_first_n_connects = 100;
+  transport_->half_open = true;  // the peer's inbound hello is in progress the whole time
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  const auto pump_until = [&](const std::function<bool()>& done, int rounds) {
+    for (int i = 0; i < rounds && !done(); ++i) {
+      AppRuntime::RunUIAndOwnerTasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return done();
+  };
+  ASSERT_TRUE(pump_until([&] { return !bridge_->IsConnectWorkerInflight() && transport_->connect_async_calls >= 5; },
+                         1500))
+      << "attempts=" << transport_->connect_async_calls;
+  EXPECT_NE(host_->live.Phase(), CallPhase::ConnectFailed) << "failure held for the in-progress hello";
+
+  transport_->half_open = false;
+  transport_->active = true;  // the peer's hello completed: direct media is up
+  pump_until([&] { return bridge_->DirectPlannerPhase() == CallDirectPlannerPhase::Live; }, 600);
+  EXPECT_NE(host_->live.Phase(), CallPhase::ConnectFailed);
+  EXPECT_FALSE(bridge_->IsMeshConnectFailed());
+  EXPECT_TRUE(media_->IsActive()) << "the recovered path keeps the call's media";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k3: an offerer Live on a relayed path keeps punching for a direct link (retrying a miss); once
+// the transport reports the call moved to a direct path, the attempts stop.
+// Hard-lab flip: after a path move the transport's peer_key is that link's dial key — a local
+// alias (amp:burst:…). Reach / circuit / upgrade must target the peer's authenticated PeerId.
+TEST_F(CallMediaBridgeAnswererStartTest, PathWorkTargetsThePeersPeerIdNotALinkAlias) {
+  const std::string call_id = "call:alias";
+  const std::string mesh_peer = "12D3KooWAliasTarget";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 100 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  transport_->active_params.peer_key = "amp:burst:0:12D3KooWAlia";  // the link the call moved onto
+  transport_->remote_peer_id = mesh_peer;
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(circuit_->upgrade_calls.load(), 1);
+  EXPECT_EQ(circuit_->LastUpgradePeer(), mesh_peer) << "not the link's dial alias";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUntilItMoves) {
+  const std::string call_id = "call:upgrade";
+  const std::string mesh_peer = "12D3KooWUpgradeTarget";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = mesh_peer;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(circuit_->upgrade_calls.load(), 2) << "a miss is retried";
+  EXPECT_EQ(circuit_->LastUpgradePeer(), mesh_peer) << "punch targets the mesh PeerId, not account:";
+
+  // The transport moved the call onto a direct path: no more attempts.
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  ASSERT_TRUE(transport_->last_callbacks.on_path_changed);
+  transport_->last_callbacks.on_path_changed(CallMediaLinkKind::Direct);
+  AppRuntime::RunUIAndOwnerTasks();
+  const int calls = circuit_->upgrade_calls.load();
+  for (int i = 0; i < 20; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(circuit_->upgrade_calls.load(), calls);
+  EXPECT_EQ(bridge_->MediaPathKind(), "punched") << "the label follows the path the call moved to";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k3-4: a TX-only call keeps running while a circuit is built under it, then moves onto it — no
+// Detach, no new session (the audio seq keeps counting), and it is connected again afterwards.
+TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutRestarting) {
+  const std::string call_id = "call:tx-only";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWTxOnlyPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(transport_->connect_async_calls, 1);
+  const int detaches = transport_->detach_calls;
+  const int ensures = circuit_->call_media_ensure_calls.load();
+
+  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  (void)ensures;  // reach settles on the circuit hop this fixture's first connect left, or builds one
+  EXPECT_EQ(transport_->migrate_calls.load(), 1);
+  EXPECT_EQ(transport_->detach_calls, detaches) << "the running call is not torn down";
+  EXPECT_EQ(transport_->connect_async_calls, 1) << "no new session";
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "connected again on the circuit";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k3-4 fallback: a TX-only call that cannot move (the peer refused) restarts via the circuit as before.
+TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCircuit) {
+  const std::string call_id = "call:tx-only-fallback";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWTxOnlyPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->migrate_ok = false;
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  const int detaches = transport_->detach_calls;
+
+  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->migrate_calls.load(), 1);
+  EXPECT_GT(transport_->detach_calls, detaches) << "break-before-make fallback";
+  EXPECT_GE(transport_->connect_async_calls, 2) << "a new session via the circuit";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k4: the transport lost the call's last path. The call is Reconnecting (not failed); the offerer
+// reaches the peer again and moves the call onto that link — retrying a failed move — and the call
+// is connected again.
+TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
+  const std::string call_id = "call:reconnect";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReconnectPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->fail_first_n_migrates = 1;
+  bridge_->SetReanchorRetryMsForTest(20);
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(host_->live.Status(), CallMediaStatus::DirectLive);
+  const int detaches = transport_->detach_calls;
+
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  bool saw_reconnecting = false;
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    saw_reconnecting |= host_->live.Status() == CallMediaStatus::Reconnecting;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(saw_reconnecting) << "the call shows Reconnecting, not failed";
+  EXPECT_EQ(transport_->migrate_calls.load(), 2) << "a failed move is retried";
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "connected again";
+  EXPECT_EQ(host_->live.Phase(), CallPhase::InCall);
+  EXPECT_EQ(transport_->detach_calls, detaches) << "the call was never torn down";
+  EXPECT_TRUE(media_->IsActive());
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k5: a relayed call that used up its direct-upgrade attempts on one network starts them over when
+// the device moves to another (the new NAT may be punchable).
+TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) {
+  const std::string call_id = "call:upgrade-netchange";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWUpgradeNetChange";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 3; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(circuit_->upgrade_calls.load(), 3);
+  for (int i = 0; i < 20; ++i) {  // the schedule is used up: no fourth attempt
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(circuit_->upgrade_calls.load(), 3);
+
+  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 4; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GE(circuit_->upgrade_calls.load(), 4) << "punching again on the new network";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k5: a reconnecting call waiting out its re-anchor backoff tries again as soon as the new
+// network's links have settled.
+TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCallAtOnce) {
+  const std::string call_id = "call:reconnect-netchange";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReconnectNetChange";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->fail_first_n_migrates = 1;
+  bridge_->SetReanchorRetryMsForTest(60'000);  // the retry would come far too late
+  bridge_->SetNetworkSettleMsForTest(20);
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(host_->live.Status(), CallMediaStatus::DirectLive);
+
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(transport_->migrate_calls.load(), 1) << "the first re-anchor failed; the next is a minute away";
+  ASSERT_EQ(host_->live.Status(), CallMediaStatus::Reconnecting);
+
+  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  for (int i = 0; i < 200 && host_->live.Status() != CallMediaStatus::DirectLive; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->migrate_calls.load(), 2);
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "reconnected on the new network";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k6: a pair with a mobile end anchors on the relay — a relayed offerer never punches for an
+// upgrade; when the class flips back (both stationary), the upgrade punches start.
+TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicyAllowsAnUpgrade) {
+  const std::string call_id = "call:mobile-anchor";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWMobileAnchor";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+  std::atomic<MobilityClass> remote{MobilityClass::Mobile};
+  bridge_->SetPathPolicyProvider([&](const std::string&) {
+    return DecideCallPathPolicy(MobilityClass::Stationary, remote.load());
+  });
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 40; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Live);
+  EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "the relay is the anchor";
+  EXPECT_FALSE(transport_->auto_migrate_to_direct.load())
+      << "nor may the transport move the call onto a direct link that happens to be up";
+
+  remote = MobilityClass::Stationary;  // the peer's caps_update
+  CallsThread::RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
+  for (int i = 0; i < 200 && circuit_->upgrade_calls.load() == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GE(circuit_->upgrade_calls.load(), 1) << "both stationary: punch for a direct path";
+  EXPECT_TRUE(transport_->auto_migrate_to_direct.load());
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k6: the answerer of a mobile pair waits for the offerer's circuit instead of punching.
+TEST_F(CallMediaBridgeAnswererStartTest, MobilePairAnswererDoesNotPunch) {
+  const std::string call_id = "call:mobile-await";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWMobileAwait";
+  dial_->endpoints.clear();
+  dial_->connected.clear();
+  dial_->force_dialable.clear();
+  bridge_->SetPathPolicyProvider(
+      [](const std::string&) { return DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Stationary); });
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  for (int i = 0; i < 100; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(circuit_->call_media_ensure_calls.load(), 0) << "no punch toward the peer";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k6 (K003): an offerer Live on a direct path builds a circuit under the call and adds it as the
+// relayed standby — retrying a refusal — then stops.
+TEST_F(CallMediaBridgeAnswererStartTest, DirectCallGetsARelayedStandby) {
+  const std::string call_id = "call:standby";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWStandbyPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->active = true;  // the call is bound on a direct link
+  transport_->standby_ok = false;  // the first add is refused (the relay was full)
+  bridge_->SetRelayStandbyDelayMsForTest(20);
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(transport_->add_standby_calls.load(), 1);
+  transport_->standby_ok = true;
+  for (int i = 0; i < 400 && transport_->standby_kind.load() != CallMediaLinkKind::Relayed; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->standby_kind.load(), CallMediaLinkKind::Relayed) << "retried after the refusal";
+  EXPECT_GE(circuit_->call_media_ensure_calls.load(), 1) << "a circuit was built under the call";
+  const int adds = transport_->add_standby_calls.load();
+  for (int i = 0; i < 20; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->add_standby_calls.load(), adds) << "done once it is up";
+  EXPECT_EQ(transport_->link_kind, CallMediaLinkKind::Direct) << "the call stayed on its path";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// Hard-lab FLIP race (2026-09-28): the call is bound on a direct (punched) link — the answerer's
+// hello won — while the offerer's own reach loop settled over the circuit. The bound link is the
+// path: the call must not be labelled "circuit" (which skipped the relay standby and ran a
+// pointless direct upgrade), and it gets its relayed standby like any direct call.
+TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStillGetsAStandby) {
+  const std::string call_id = "call:bound-direct";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWBoundDirectPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->active = true;  // bound on a direct link
+  // The standby fires after the reach loop settled over the circuit (the lab's order).
+  bridge_->SetRelayStandbyDelayMsForTest(300);
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  // Bound already: media starts on the existing stream (no ConnectAsync). Wait for exactly that —
+  // a wait that never ends outlasts the TX-only grace on slow runners (macOS CI), which then moves
+  // the call onto the circuit for a reason this test is not about.
+  for (int i = 0; i < 400 && !media_->IsActive(); ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(media_->IsActive());
+  CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(mesh::PeerLinkKind::Relayed); });  // reach loop: circuit
+  for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "a direct bound link is not a relayed path";
+  EXPECT_GE(transport_->add_standby_calls.load(), 1) << "the direct call gets its relayed standby";
+  EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "no direct upgrade for a call already on a direct link";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
+  // Hard-lab / dogfood: BeginSession peer is account:; circuit StartBridge needs Amp PeerId.
+  const std::string call_id = "call:account-to-peerid";
+  const std::string mesh_peer = "12D3KooWEnsurePeerIdTarget";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  host_->account_to_peer["account:peer"] = mesh_peer;
+  dial_->endpoints.clear();
+  dial_->connected.clear();
+  dial_->force_dialable.clear();
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (circuit_->call_media_ensure_calls > 0 || host_->live.Phase() == CallPhase::ConnectFailed ||
+        transport_->connect_async_calls > 0) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  ASSERT_GE(circuit_->call_media_ensure_calls, 1);
+  EXPECT_EQ(circuit_->LastPeer(), mesh_peer)
+      << "TryEnsurePeerReachable must use MeshPeerId, not account:";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed) {
+  // B39: amp still reports the old link Connected after the peer changed network — the first
+  // ConnectAsync hits a dead link ("transport failed"); the bridge must DropLink and redial
+  // instead of reusing the same stale link on every attempt.
+  const std::string call_id = "call:stale-link";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->connected["account:peer"] = true;
+  // After DropLink resets connected=false, the redial's Ensure should fall back to circuit fast
+  // (short budget) rather than loop the "ok but not connected" backoff.
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  bridge_->SetDialWaitBudgetMsForTest(300);
+  transport_->fail_first_n_connects = 1;
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  ASSERT_TRUE(host_->live.AllowsDirectPath());
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  for (int i = 0; i < 400; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (transport_->connect_async_calls >= 2) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(dial_->drop_link_calls, 1);
+  EXPECT_EQ(dial_->last_drop_link_peer, "account:peer");
+  EXPECT_EQ(transport_->connect_async_calls, 2);
+  // Answerer + private Preferred skips EnsureAssociation and goes straight to circuit (existing
+  // behavior) — the signal that attempt 2 actually redialed (rather than short-circuiting on the
+  // stale "connected" link) is that Ensure ran the reachability path again.
+  EXPECT_GE(circuit_->call_media_ensure_calls, 1)
+      << "second attempt must redial via Ensure, not short-circuit on the stale link";
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
+  // B42: the per-attempt ConnectAsync watchdog must fail only the stuck attempt, not the whole
+  // 5-attempt sequence — attempt 2 must still be dialed and allowed to succeed.
+  const std::string call_id = "call:watchdog-attempt";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  dial_->connected["account:peer"] = false;
+  bridge_->SetDialWaitBudgetMsForTest(300);
+  bridge_->SetConnectAttemptTimeoutMsForTest(200);
+  transport_->hang_first_n_connects = 1;
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  ASSERT_TRUE(host_->live.AllowsDirectPath());
+
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  // Watchdog margin (timeout + 1000ms) + 1500ms retry — allow generous wall-clock slack.
+  for (int i = 0; i < 500; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (transport_->connect_async_calls >= 2) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(transport_->connect_async_calls, 2)
+      << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
+  // Hard lab CGNAT stack, delay 80 ms + 1 % loss: a failed attempt while a glare bundle sat in
+  // hello was committed Live ("InCall", no media, no retry). Only MediaReady is connected.
+  const std::string call_id = "call:half-open";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  dial_->connected["account:peer"] = false;
+  bridge_->SetDialWaitBudgetMsForTest(300);
+  bridge_->SetConnectAttemptTimeoutMsForTest(200);
+  transport_->half_open = true;
+  transport_->fail_first_n_connects = 1;
+
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  AppRuntime::RunUIAndOwnerTasks();
+
+  for (int i = 0; i < 500 && transport_->connect_async_calls < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    if (transport_->connect_async_calls < 2) {  // attempt 2 may legitimately connect
+      EXPECT_NE(host_->live.Status(), CallMediaStatus::DirectLive) << "half-open bundle committed as Live";
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->connect_async_calls, 2) << "failed attempt must be retried, not taken as connected";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+} // namespace
+} // namespace pbr

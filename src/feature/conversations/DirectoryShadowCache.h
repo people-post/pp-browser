@@ -2,6 +2,7 @@
 
 #include "domain/net/OrgBackendClients.h"
 #include "domain/people/ContactTypes.h"
+#include "common/MeshAlias.h"
 
 #include <functional>
 #include <mutex>
@@ -15,14 +16,14 @@ namespace pbr {
 /** In-memory directory nicknames for stranger peers (no disk write). */
 class DirectoryShadowCache {
 public:
-  explicit DirectoryShadowCache(IDirectoryClient& directory);
+  explicit DirectoryShadowCache(mesh::IDirectoryClient& directory);
 
   void SetOnUpdated(std::function<void()> callback);
   /** Fired when a hit is cached (lookup or Put) — used to refresh initiation floors (P001). */
-  void SetOnHitCached(std::function<void(const DirectoryHit&)> callback);
+  void SetOnHitCached(std::function<void(const mesh::DirectoryHit&)> callback);
 
   /** Lookup by Account ID or `relay:` route id. */
-  std::optional<DirectoryHit> Get(const std::string& identity) const;
+  std::optional<mesh::DirectoryHit> Get(const std::string& identity) const;
 
   /**
    * Cache hit returns immediately. Otherwise schedules directory lookup on IO and refreshes UI.
@@ -30,15 +31,15 @@ public:
    */
   void EnsureLookup(const std::string& identity);
 
-  void Put(const DirectoryHit& hit);
+  void Put(const mesh::DirectoryHit& hit);
 
 private:
-  IDirectoryClient& directory_;
+  mesh::IDirectoryClient& directory_;
   mutable std::mutex mutex_;
-  std::unordered_map<std::string, DirectoryHit> by_id_;
+  std::unordered_map<std::string, mesh::DirectoryHit> by_id_;
   std::unordered_set<std::string> inflight_;
   std::function<void()> on_updated_;
-  std::function<void(const DirectoryHit&)> on_hit_cached_;
+  std::function<void(const mesh::DirectoryHit&)> on_hit_cached_;
 };
 
 } // namespace pbr

@@ -31,7 +31,8 @@ Roe<void> SqliteThreadConfigureDb(sqlite3* db) {
   if (auto result = SqliteThreadExecSql(db, "PRAGMA foreign_keys=ON;"); !result) {
     return result.error();
   }
-  // Sibling CallSessionStore / CallMediaKeyStore open short-lived connections to the same file.
+  // Sibling stores (calls' sessions and media keys) open short-lived connections to the same file
+  // and create their own tables.
   sqlite3_busy_timeout(db, 5000);
   return {};
 }

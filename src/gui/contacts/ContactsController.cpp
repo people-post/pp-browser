@@ -37,6 +37,7 @@
 #include <cctype>
 #include <sstream>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -69,17 +70,17 @@ bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
   return chrome.contact_detail_transient;
 }
 
-std::string IdentityKindLabel(const ContactIdKind kind) {
+std::string IdentityKindLabel(const mesh::ContactIdKind kind) {
   switch (kind) {
-  case ContactIdKind::Account:
+  case mesh::ContactIdKind::Account:
     return Tr("contacts.id_kind.account");
-  case ContactIdKind::RelayUser:
+  case mesh::ContactIdKind::RelayUser:
     return Tr("contacts.id_kind.relay");
-  case ContactIdKind::PeerId:
+  case mesh::ContactIdKind::PeerId:
     return Tr("contacts.id_kind.peer");
-  case ContactIdKind::Blockchain:
+  case mesh::ContactIdKind::Blockchain:
     return Tr("contacts.id_kind.blockchain");
-  case ContactIdKind::Custom:
+  case mesh::ContactIdKind::Custom:
     return Tr("contacts.id_kind.custom");
   }
   return Tr("contacts.id_kind.generic");
@@ -97,13 +98,13 @@ std::string TrustDisplayLabel(const TrustLevel level) {
   return Tr("contacts.trust.unknown");
 }
 
-std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
-  for (const ContactId& id : contact.ids) {
+std::string PrimaryIdOfKind(const Contact& contact, const mesh::ContactIdKind kind) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == kind && id.primary) {
       return id.value;
     }
   }
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == kind) {
       return id.value;
     }
@@ -112,16 +113,16 @@ std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
 }
 
 std::string PrimaryIdentityValue(const Contact& contact) {
-  if (const std::string account = PrimaryIdOfKind(contact, ContactIdKind::Account); !account.empty()) {
+  if (const std::string account = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account); !account.empty()) {
     return account;
   }
-  if (const std::string relay = PrimaryIdOfKind(contact, ContactIdKind::RelayUser); !relay.empty()) {
+  if (const std::string relay = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser); !relay.empty()) {
     return relay;
   }
-  if (const std::string peer = PrimaryIdOfKind(contact, ContactIdKind::PeerId); !peer.empty()) {
+  if (const std::string peer = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId); !peer.empty()) {
     return peer;
   }
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.primary) {
       return id.value;
     }
@@ -175,9 +176,9 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     }
   }
   {
-    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
-                                              PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
-                                              PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
+    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
     const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;
@@ -199,8 +200,10 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   detail.title = title.empty() ? Tr("people_picker.unnamed").c_str() : title.c_str();
   detail.display_name = contact.local.display_name.c_str();
   detail.nickname = contact.remote.nickname.c_str();
-  detail.relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser).c_str();
-  detail.peer_id = PrimaryIdOfKind(contact, ContactIdKind::PeerId).c_str();
+  detail.name_placeholder =
+      contact.remote.nickname.empty() ? Tr("contacts.name_placeholder").c_str() : contact.remote.nickname.c_str();
+  detail.relay_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).c_str();
+  detail.peer_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).c_str();
   detail.has_relay_id = !detail.relay_id.empty();
   if (!detail.relay_id.empty()) {
     detail.subtitle = ShortRelayId(detail.relay_id.c_str()).c_str();
@@ -217,9 +220,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     }
   }
   {
-    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
-                                              PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
-                                              PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
+    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
     const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
     detail.avatar_letter = glyph.letter.c_str();
     detail.avatar_tone = glyph.tone;
@@ -234,7 +237,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
 
   detail.identities.reserve(contact.ids.size());
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     ContactsController::ContactIdentityRow row;
     row.label = IdentityKindLabel(id.kind).c_str();
     row.value = id.value.c_str();
@@ -244,9 +247,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
 
   if (ports.snapshot && ports.snapshot().initialized) {
-    const std::string account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+    const std::string account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
     if (!account_id.empty() && ports.get_signing_key) {
-      if (auto key = ports.get_signing_key(ContactIdKindToString(ContactIdKind::Account), account_id)) {
+      if (auto key = ports.get_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), account_id)) {
         if (auto bytes = Base64Decode(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
             detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
@@ -309,7 +312,7 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
     }
     return;
   }
-  if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
+  if (target.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
     detail.can_message = false;
     detail.message_hint = Tr("contacts.hint.direct_no_relay").c_str();
     return;
@@ -384,9 +387,9 @@ ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
 ContactsSurfaceSnapshot ContactsController::BuildSurfaceSnapshot() const {
   ContactsSurfaceSnapshot snap;
   snap.detail_open = !selected_.id.empty();
-  for (const ContactListRow& row : contacts_) {
-    snap.contacts_unread += row.unread_count;
-  }
+  // The Contacts tab badge is reserved for the tab's own queues (docs/ui/WINDOW_SHELL.md); chat unread is
+  // the Sessions tab's badge. Summing the rows' unread here lit both tabs for every message (Kenneth,
+  // 2026-10-07). The per-contact count stays on the rows.
   return snap;
 }
 
@@ -475,6 +478,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("message_hint", &ContactDetail::message_hint);
       detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
       detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
+      detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
       detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
       detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
       detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
@@ -486,6 +490,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("search_query", &controller.search_query_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
+    ctor.Bind("advanced", &controller.advanced_);
     ctor.Bind("selected", &controller.selected_);
     ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
     ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
@@ -496,6 +501,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
     ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
     ctor.BindEventCallback("set_trust", &ContactsController::SetTrustCallback);
+    ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
+    ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
+    ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
     ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
     ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
@@ -506,11 +514,20 @@ bool ContactsController::RegisterModel(ui::Context* context) {
   return registered;
 }
 
+void ContactsController::SetShowAdvanced(const bool advanced) {
+  if (advanced_ == advanced) {
+    return;
+  }
+  advanced_ = advanced;
+  DataModelHost::Instance().Dirty("contacts", "advanced");
+}
+
 void ContactsController::DirtyAll() {
   auto& host = DataModelHost::Instance();
   host.Dirty("contacts", "contacts");
   host.Dirty("contacts", "search_query");
   host.Dirty("contacts", "compact_layout");
+  host.Dirty("contacts", "advanced");
   host.Dirty("contacts", "selected");
 }
 
@@ -640,6 +657,30 @@ void ContactsController::OnContactFieldChangedCallback(ui::DataModelHandle /*mod
 void ContactsController::SyncRemoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                             const ui::VariantList& /*args*/) {
   Instance().OnSyncRemote();
+}
+
+void ContactsController::ToggleTrustFriendlyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                     const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.OnSetTrust(controller.selected_.trust_key == "friendly" ? "unknown" : "friendly");
+}
+
+void ContactsController::BlockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  const std::string name = controller.selected_.title.empty() ? Tr("contacts.this_contact")
+                                                              : std::string(controller.selected_.title.c_str());
+  controller.ShowConfirm(Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+                         [](const bool ok) {
+                           if (ok) {
+                             Instance().OnSetTrust("blocked");
+                           }
+                         });
+}
+
+void ContactsController::UnblockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
+  Instance().OnSetTrust("unknown");
 }
 
 void ContactsController::CopyIdCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1040,7 +1081,7 @@ void ContactsController::OnSyncRemote() {
       UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
       return;
     }
-    contacts_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
+    contacts_ports_.register_peer_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), *hit->account_id,
                                               *hit->signing_public_key_b64, "directory");
   }
   if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
@@ -1048,7 +1089,7 @@ void ContactsController::OnSyncRemote() {
       UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
       return;
     }
-    contacts_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
+    contacts_ports_.register_peer_kem_key(ContactIdKindToString(mesh::ContactIdKind::Account), *hit->account_id,
                                           *hit->kem_public_key_b64, "directory");
   }
   auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());

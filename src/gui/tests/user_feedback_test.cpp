@@ -22,7 +22,7 @@ TEST_F(AppErrorTest, TypedFactoriesSetIntFields) {
   EXPECT_EQ(auth.code, static_cast<int32_t>(Err::Auth::Forbidden));
   EXPECT_EQ(auth.message, "HTTP 403");
   EXPECT_TRUE(auth.user.empty());
-  EXPECT_EQ(AppError::Display(auth), "Register or rotate your Brief API key in Me → Profile.");
+  EXPECT_EQ(AppError::Display(auth), "Set up your account in Me → Profile.");
 
   const Error with_user = AppError::Network(Err::Network::HttpError, "LLM HTTP 502").WithUser("Custom");
   EXPECT_EQ(AppError::Display(with_user), "Custom");
@@ -36,6 +36,20 @@ TEST_F(AppErrorTest, PinAndConfigDisplayFromCatalog) {
             "Unlock your profile PIN to continue.");
   EXPECT_EQ(AppError::Display(AppError::Config(Err::Config::MissingKey, "LLM not configured")),
             "Configure the assistant in Me → Assistant.");
-  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::Unreachable, "curl failed: timeout")),
-            "Can't reach the server — check network or Me → Network / Assistant.");
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::Unreachable, "curl failed: recv error")),
+            "Can't reach the server.");
+}
+
+TEST_F(AppErrorTest, NetworkDisplayNamesTheCause) {
+  using namespace pbr;
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::DnsFailed, "curl failed: resolve")),
+            "Can't find the server's address — the network may not be connected.");
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::ConnectFailed, "curl failed: connect")),
+            "Can't connect to the server — it may be down, or a firewall is blocking it.");
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::Timeout, "curl failed: timeout")),
+            "The server took too long to respond — the network is slow or the server isn't answering.");
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::TlsFailed, "curl failed: ssl")),
+            "Can't set up a secure connection — the network may be going through a proxy.");
+  EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfigured, "Blob upload is not configured")),
+            "Can't send pictures right now — the server hasn't enabled uploads.");
 }

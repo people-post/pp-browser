@@ -7,7 +7,6 @@
 #include "foundation/crypto/EncryptedPayload.h"
 #include "foundation/crypto/MessageCipher.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
-#include "domain/messaging/AutoKeyEnvelopeResolver.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/PbrCompat.h"
@@ -45,7 +44,9 @@ AadFields AadFromEncryptParams(const E2eEncryptParams& params) {
 }
 
 Roe<AadFields> ExpectedReceiveAad(const RelayEnvelope& envelope, const std::string& local_contact_id) {
-  if (envelope.sender_seq == 0 || envelope.session_epoch == 0) {
+  // The control lane is unsequenced (seq 0, bound into the AAD); a chat stream message never is.
+  const bool lane = envelope.route.kind == kRelayRouteControl;
+  if ((envelope.sender_seq == 0) != lane || envelope.session_epoch == 0) {
     return Error("Envelope missing seq fields for E2E decrypt");
   }
   AadFields fields;
@@ -133,84 +134,18 @@ Roe<E2eEncryptResult> E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(
   return result;
 }
 
-Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& envelope,
-                                                         const std::string& local_contact_id,
-                                                         const ChatTargetKey& target_key, IPskSessionStore& psk_store,
-                                                         const std::optional<ByteVector>& local_kem_private_key) {
-  if (envelope.body.e2e.payload_b64.empty()) {
-    return Error("Missing E2E payload");
-  }
+namespace {
 
-  auto expected_aad = ExpectedReceiveAad(envelope, local_contact_id);
-  if (!expected_aad) {
-    return expected_aad.error();
-  }
-
-  if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value()) {
-    auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store, *local_kem_private_key);
-    if (!master_psk) {
-      return master_psk.error();
-    }
-    if (master_psk->size() != kMasterPskSize) {
-      return Error("Invalid master PSK size");
-    }
-
-    auto session_key = SessionKeyDeriver::Derive(*master_psk, expected_aad->channel, envelope.session_epoch);
-    if (!session_key) {
-      return session_key.error();
-    }
-
-    auto blob_bytes = EncryptedPayload::DecodeBase64(envelope.body.e2e.payload_b64);
-    if (!blob_bytes) {
-      return blob_bytes.error();
-    }
-    auto blob = EncryptedPayload::DecodeBlob(*blob_bytes);
-    if (!blob) {
-      return blob.error();
-    }
-
-    auto aad = CanonicalAad::Build(*expected_aad);
-    if (!aad) {
-      return aad.error();
-    }
-
-    auto plaintext = MessageCipher::Decrypt(*session_key, *blob, *aad);
-    if (!plaintext) {
-      return plaintext.error();
-    }
-    if (plaintext->size() > kMaxE2ePlaintextBytes) {
-      return Error("Decrypted payload exceeds limit");
-    }
-
-    auto message = ChatPayloadValidator::DecodeValidated(*plaintext);
-    if (!message) {
-      return message.error();
-    }
-    ChatPayloadValidator::SanitizeInboundFields(*message);
-    return *message;
-  }
-
-  auto master_psk_b64 = psk_store.ResolveMasterPskForEpoch(target_key, envelope.session_epoch);
-  if (!master_psk_b64) {
-    return master_psk_b64.error();
-  }
-  if (!master_psk_b64->has_value()) {
-    return Error("No PSK for envelope session epoch");
-  }
-
-  auto master_psk = Base64Decode(**master_psk_b64);
-  if (!master_psk) {
-    return master_psk.error();
-  }
-  if (master_psk->size() != kMasterPskSize) {
+/** The envelope's payload opened under `master_psk` (session key for its channel and epoch). */
+Roe<ThreadMessage> DecryptUnder(const RelayEnvelope& envelope, const AadFields& expected_aad,
+                                const ByteVector& master_psk) {
+  if (master_psk.size() != kMasterPskSize) {
     return Error("Invalid master PSK size");
   }
-
-  auto session_key = SessionKeyDeriver::Derive(*master_psk, expected_aad->channel, envelope.session_epoch);
+  auto session_key = SessionKeyDeriver::Derive(master_psk, expected_aad.channel, envelope.session_epoch);
   if (!session_key) {
     return session_key.error();
   }
-
   auto blob_bytes = EncryptedPayload::DecodeBase64(envelope.body.e2e.payload_b64);
   if (!blob_bytes) {
     return blob_bytes.error();
@@ -219,12 +154,10 @@ Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& en
   if (!blob) {
     return blob.error();
   }
-
-  auto aad = CanonicalAad::Build(*expected_aad);
+  auto aad = CanonicalAad::Build(expected_aad);
   if (!aad) {
     return aad.error();
   }
-
   auto plaintext = MessageCipher::Decrypt(*session_key, *blob, *aad);
   if (!plaintext) {
     return plaintext.error();
@@ -232,13 +165,79 @@ Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& en
   if (plaintext->size() > kMaxE2ePlaintextBytes) {
     return Error("Decrypted payload exceeds limit");
   }
-
   auto message = ChatPayloadValidator::DecodeValidated(*plaintext);
   if (!message) {
     return message.error();
   }
   ChatPayloadValidator::SanitizeInboundFields(*message);
   return *message;
+}
+
+} // namespace
+
+Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& envelope,
+                                                         const std::string& local_contact_id,
+                                                         const ChatTargetKey& target_key, IPskSessionStore& psk_store,
+                                                         const std::optional<ByteVector>& local_kem_private_key,
+                                                         AutoKeyRead* read) {
+  if (envelope.body.e2e.payload_b64.empty()) {
+    return Error("Missing E2E payload");
+  }
+  auto expected_aad = ExpectedReceiveAad(envelope, local_contact_id);
+  if (!expected_aad) {
+    return expected_aad.error();
+  }
+
+  auto stored_b64 = psk_store.ResolveMasterPskForEpoch(target_key, envelope.session_epoch);
+  if (!stored_b64) {
+    return stored_b64.error();
+  }
+  std::optional<ByteVector> stored;
+  if (stored_b64->has_value()) {
+    auto decoded = Base64Decode(**stored_b64);
+    if (!decoded) {
+      return decoded.error();
+    }
+    stored = std::move(*decoded);
+  }
+
+  const bool auto_key = envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value();
+  Error failure("No PSK for envelope session epoch");
+  if (stored) {
+    auto message = DecryptUnder(envelope, *expected_aad, *stored);
+    if (message) {
+      if (read) {
+        read->master_psk = *stored;
+        read->via_key_init = false;
+      }
+      return message;
+    }
+    failure = message.error();
+  }
+  if (!auto_key) {
+    return failure;
+  }
+  // AutoKey: the session the envelope's key_init opens — the peer opened one we do not hold (both
+  // opened at once, our copy is stale, or we never got its first send).
+  if (!envelope.body.e2e.key_init_b64 || envelope.body.e2e.key_init_b64->empty()) {
+    return stored ? failure : Error("Missing key_init_b64 for auto-key decrypt");
+  }
+  auto derived = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(*local_kem_private_key, *envelope.body.e2e.key_init_b64);
+  if (!derived) {
+    return derived.error();
+  }
+  if (stored && *derived == *stored) {
+    return failure;
+  }
+  auto message = DecryptUnder(envelope, *expected_aad, *derived);
+  if (!message) {
+    return message.error();
+  }
+  if (read) {
+    read->master_psk = std::move(*derived);
+    read->via_key_init = true;
+  }
+  return message;
 }
 
 } // namespace pbr

@@ -56,6 +56,9 @@ public:
     std::vector<uint8_t> payload;
   };
   using SfuSendFn = std::function<void(const SfuPacket&)>;
+  /** Remote audio tracks (one Opus decoder + jitter buffer per publisher stream_id) kept at once; packets
+   *  for further stream ids are dropped (PB-051). Video decoders have their own cap of 4. */
+  static constexpr size_t kMaxRemoteAudioTracks = 8;
 
   /**
    * Which halves of a media session run (media-client-layers L003/L004). Calls are duplex; a

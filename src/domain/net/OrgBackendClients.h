@@ -2,9 +2,9 @@
 
 #include "common/chat/IDirectMessageClient.h"
 
-#include "common/directory/DirectoryTypes.h"
+#include "mesh/types/DirectoryTypes.h"
 #include "common/Error.h"
-#include "common/directory/IDirectoryClient.h"
+#include "mesh/types/IDirectoryClient.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/thread/ChatBlobTypes.h"
 #include "common/thread/ChatHistoryTypes.h"
@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -92,7 +93,7 @@ struct RegistrationPublishOpts {
   /** Empty → omit (server defaults person). Values: person | mesh_node. */
   std::string entity_kind;
   bool has_capabilities = false;
-  MeshCapabilitiesAd capabilities;
+  mesh::MeshCapabilitiesAd capabilities;
 };
 
 struct RegistrationResult {
@@ -135,6 +136,9 @@ public:
                                                      const RegistrationPublishOpts& publish = {}) = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                                  int64_t timestamp, const std::string& relay_user_id) = 0;
+  /** Remove this account's directory registration (#328; `BuildAccountRevokeSignBytes` + signature). */
+  virtual Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                                       int64_t timestamp) = 0;
 };
 
 } // namespace pbr

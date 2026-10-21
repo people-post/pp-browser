@@ -11,16 +11,14 @@ pp_browser_add_feature_library(pp_feature_conversations
     GroupMembershipWorkflow.cpp
     InboxController.cpp
     AmpDirectChatTransport.cpp
-    AmpPeerAnnounceTransport.cpp
-    AmpBroadcastTransport.cpp
     AmpChatHistoryTransport.cpp
     AmpChatBlobTransport.cpp
     MessageRouter.cpp
     MessagingTools.cpp
+    ModelFacingJson.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp
-    MakeCallFunctionalPorts.cpp
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
@@ -31,19 +29,23 @@ pp_browser_add_feature_library(pp_feature_conversations
     ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
+    LocalAccountBackup.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
+    AttachmentContent.cpp
+    MeshNetworkReaction.cpp
   PUBLIC_LIBS
     pp_feature_registration
     pp_feature_node
-    pp_feature_calls
-    pp_feature_broadcast
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging
+    pp_domain_content
+    pp_domain_pricing
+    pp_domain_calls
     pp_amp_link
-    pp_domain_mesh
+    pp_mesh
     pp_domain_net
     pp_domain_people
     pp_foundation_platform_core

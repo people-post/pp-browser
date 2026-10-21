@@ -4,12 +4,6 @@
 #include "feature/conversations/AmpChatBlobTransport.h"
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
-#include "feature/conversations/AmpPeerAnnounceTransport.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
-#include "domain/messaging/PeerAnnounceFeed.h"
-#include "domain/messaging/PeerAnnounceKeyResolve.h"
-#include "domain/messaging/AnnounceOverlayReply.h"
-#include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -19,21 +13,22 @@
 #include "common/Utilities.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/people/PeerDisplayLabel.h"
-#include "domain/messaging/InitiationBillingCodec.h"
-#include "domain/messaging/InitiationPricing.h"
+#include "domain/pricing/InitiationBillingCodec.h"
+#include "domain/pricing/InitiationPricing.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "domain/mesh/reachability/AmpObservedAddrs.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/AmpObservedAddrs.h"
+#include "mesh/reachability/Reachability.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/E2ePublicSessionLogic.h"
-#include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
+#include "domain/messaging/ControlLaneEnvelope.h"
 #include "domain/messaging/EnvelopeSigner.h"
+#include "domain/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "domain/messaging/ReactionTypes.h"
@@ -45,7 +40,7 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/people/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/RelayInboxCursor.h"
 #include "domain/people/ContactIdentity.h"
@@ -65,6 +60,7 @@
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -77,6 +73,10 @@ Roe<void> EnsureAnnotationCap(IThreadStore& store, const std::string& thread_id,
   const std::string target_id = message.target_message_id.value_or("");
   if (target_id.empty()) {
     return Error("Annotation missing target_message_id");
+  }
+  if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
+      fields && fields->annotation_type == kAnnotationTypeRetract) {
+    return {}; // the cap guards against reaction floods; it must never stop a delete
   }
   auto count = store.CountAnnotationsForTarget(thread_id, target_id);
   if (!count) {
@@ -112,7 +112,7 @@ constexpr const char* kMockPeerSigningPublicKeyB64 = "A6EHv/POEL4dcN0Y50vAmWfk1j
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
-  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target.peer_identity_value = envelope.sender_contact_id;
   target.channel = envelope.route.channel;
   return target;
@@ -126,7 +126,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
-                                         IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
+                                         mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post,
                                          std::function<void(std::function<void()>)> amp_post_io,
                                          std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
@@ -139,6 +139,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
+  // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
+  receive_pipeline_->SetOnMessageRetracted(
+      [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -164,207 +167,6 @@ void MeshDeliveryOrchestrator::RegisterPeerSigningKey(const std::string& peer_id
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
 }
 
-void MeshDeliveryOrchestrator::PublishAndPushAnnounceAsync(
-    const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft, const int64_t now_ms,
-    std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
-    return;
-  }
-  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
-  if (!tip) {
-    on_done(tip.error());
-    return;
-  }
-  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
-}
-
-Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishAndPushAnnounce(const std::string& peer_key,
-                                                                     const PeerAnnouncePublisher::Draft& draft,
-                                                                     const int64_t now_ms) {
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    return Error("peer-announce not ready (Amp or device identity missing)");
-  }
-  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
-  if (!tip) {
-    return tip.error();
-  }
-  return peer_announce_->PushTip(peer_key, *tip);
-}
-
-Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnouncePublisher(const std::string& tip_peer_id,
-                                                                  const std::string& text) {
-  if (tip_peer_id.empty()) {
-    return Error("Missing announce publisher peer_id");
-  }
-  if (text.empty()) {
-    return Error("Empty announce reply");
-  }
-
-  std::string contact_id;
-  std::string account_id;
-  std::string title = tip_peer_id;
-  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
-    if (*found) {
-      const Contact& contact = **found;
-      contact_id = contact.id;
-      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
-      title = FormatContactTitle(contact);
-      if (title.empty()) {
-        title = tip_peer_id;
-      }
-      RegisterContactDirectEndpoints(contact);
-    }
-  }
-
-  auto plan = PlanAnnounceDmReply(tip_peer_id, contact_id, account_id, title);
-  if (!plan) {
-    return plan.error();
-  }
-
-  auto thread = store_.FindOrCreateDirectThread(plan->target, plan->contact_id, plan->thread_title);
-  if (!thread) {
-    return thread.error();
-  }
-  WarmPeerForThread(thread->id);
-  return SendUserMessage(thread->id, text);
-}
-
-
-Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnounceOverlay(const std::string& tip_peer_id,
-                                                                const std::string& join_handle,
-                                                                const std::string& text,
-                                                                const std::string& viewer_msg_id) {
-  if (tip_peer_id.empty()) {
-    return Error("Missing announce publisher peer_id");
-  }
-  if (join_handle.empty() || viewer_msg_id.empty() || text.empty()) {
-    return Error("Overlay reply requires join_handle, viewer_msg_id, and text");
-  }
-
-  std::string contact_id;
-  std::string account_id;
-  std::string title = tip_peer_id;
-  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
-    if (*found) {
-      const Contact& contact = **found;
-      contact_id = contact.id;
-      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
-      title = FormatContactTitle(contact);
-      if (title.empty()) {
-        title = tip_peer_id;
-      }
-      RegisterContactDirectEndpoints(contact);
-    }
-  }
-
-  auto plan = PlanAnnounceOverlayReply(tip_peer_id, contact_id, account_id, title, join_handle, text, viewer_msg_id);
-  if (!plan) {
-    return plan.error();
-  }
-
-  auto thread = store_.FindOrCreateDirectThread(plan->dm.target, plan->dm.contact_id, plan->dm.thread_title);
-  if (!thread) {
-    return thread.error();
-  }
-  WarmPeerForThread(thread->id);
-  return SendUserMessage(thread->id, plan->message_body);
-}
-
-void MeshDeliveryOrchestrator::PublishLiveChatFromOverlayAsync(
-    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
-    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
-    const int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
-    return;
-  }
-  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
-  if (!draft) {
-    on_done(draft.error());
-    return;
-  }
-  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
-  if (!tip) {
-    on_done(tip.error());
-    return;
-  }
-  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
-  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
-}
-
-Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishLiveChatFromOverlay(
-    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
-    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
-    const int64_t now_ms) {
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    return Error("peer-announce not ready (Amp or device identity missing)");
-  }
-  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
-  if (!draft) {
-    return draft.error();
-  }
-  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
-  if (!tip) {
-    return tip.error();
-  }
-  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
-  return peer_announce_->PushTip(peer_key, *tip);
-}
-
-Roe<void> MeshDeliveryOrchestrator::PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
-                                                       AmpBroadcastTransport::LiveProgramKey key) {
-  if (!broadcast_) {
-    return Error("broadcast service not running (Amp mesh down)");
-  }
-  broadcast_->PutLiveProgramKey(program_id, join_handle, std::move(key));
-  return {};
-}
-
-void MeshDeliveryOrchestrator::ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle) {
-  if (broadcast_) {
-    broadcast_->ClearLiveProgramKey(program_id, join_handle);
-  }
-}
-
-Roe<PeerAnnounceTip> MeshDeliveryOrchestrator::PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft) {
-  if (!peer_announce_publisher_) {
-    return Error("peer-announce publisher unavailable (device identity missing)");
-  }
-  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             std::chrono::system_clock::now().time_since_epoch())
-                             .count();
-  return peer_announce_publisher_->Publish(draft, now_ms);
-}
-
-std::optional<PeerAnnounceTip> MeshDeliveryOrchestrator::LatestAnnounceTip(const std::string& peer_id,
-                                                                          const std::string& topic_id,
-                                                                          const std::string& program_id) const {
-  if (!peer_announce_feed_) {
-    return std::nullopt;
-  }
-  return peer_announce_feed_->Latest(peer_id, topic_id, program_id);
-}
-
-std::optional<std::vector<uint8_t>> MeshDeliveryOrchestrator::ResolveAnnouncePublisherKey(
-    const std::string& peer_id) const {
-    std::string local_peer_id;
-    std::vector<uint8_t> local_pk;
-    if (auto local_identity = identity_.Get()) {
-      local_peer_id = local_identity->peer_id;
-    }
-    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
-      local_pk = *pk;
-    }
-  return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
-}
-
 void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identity_kind,
                                            const std::string& peer_identity_value,
                                            const std::string& kem_public_key_b64, const std::string& source) {
@@ -375,7 +177,7 @@ void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identi
 }
 
 void MeshDeliveryOrchestrator::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
-  RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), peer_identity_value,
+  RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), peer_identity_value,
                          kMockPeerSigningPublicKeyB64, "mock_relay");
 }
 
@@ -401,22 +203,12 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
 
 void MeshDeliveryOrchestrator::SetInitiationBillingStore(InitiationBillingStore* store) {
   initiation_billing_ = store;
-  if (receive_pipeline_) {
-    receive_pipeline_->SetInitiationBillingStore(store);
-  }
 }
 
-void MeshDeliveryOrchestrator::SetPaymentPromiseStore(PaymentPromiseStore* store) {
-  payment_promises_ = store;
+void MeshDeliveryOrchestrator::SetSystemControls(const SystemControlRegistry* controls) {
+  controls_ = controls;
   if (receive_pipeline_) {
-    receive_pipeline_->SetPaymentPromiseStore(store);
-  }
-}
-
-void MeshDeliveryOrchestrator::BindCallControlInbound(CallControlInboundPorts ports) {
-  call_control_ = std::move(ports);
-  if (receive_pipeline_) {
-    receive_pipeline_->BindCallControlInbound(call_control_);
+    receive_pipeline_->SetSystemControls(controls_);
   }
 }
 
@@ -426,6 +218,10 @@ void MeshDeliveryOrchestrator::SetGroupMembership(GroupMembershipWorkflow* group
 
 void MeshDeliveryOrchestrator::SetProfileDataDir(std::string profile_data_dir) {
   profile_data_dir_ = std::move(profile_data_dir);
+  control_lane_seen_ = std::make_unique<ControlLaneSeenStore>(SqliteThreadProfileDbFile(profile_data_dir_));
+  if (receive_pipeline_) {
+    receive_pipeline_->SetControlLaneSeen(control_lane_seen_.get());
+  }
   if (peer_blob_) {
     peer_blob_->SetProfileDataDir(profile_data_dir_);
   }
@@ -458,9 +254,9 @@ void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& relay_user_
 
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
-  const bool is_adp = IsAdpMultiaddr(multiaddr);
+  const bool is_adp = mesh::IsAdpMultiaddr(multiaddr);
   // B6: never register undialable ADP hosts (0.0.0.0 / :: / link-local) into the dial book.
-  if (is_adp && !IsUsableAdpListen(multiaddr)) {
+  if (is_adp && !mesh::IsUsableAdpListen(multiaddr)) {
     return;
   }
   if (amp_links_ && is_adp) {
@@ -484,8 +280,8 @@ void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(
     if (ma.empty()) {
       continue;
     }
-    if (IsAdpMultiaddr(ma)) {
-      if (!IsUsableAdpListen(ma)) {
+    if (mesh::IsAdpMultiaddr(ma)) {
+      if (!mesh::IsUsableAdpListen(ma)) {
         continue;
       }
       usable.push_back(ma);
@@ -513,16 +309,16 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
   if (target.peer_identity_value.empty()) {
     return;
   }
-  const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
+  const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
   auto register_ranked = [&](const std::string& dial_key, const std::vector<std::string>& multiaddrs) {
     if (dial_key.empty() || multiaddrs.empty()) {
       return;
     }
-    RegisterPeerDirectEndpoints(dial_key, RankAmpDialMultiaddrs(multiaddrs, local_ctx));
+    RegisterPeerDirectEndpoints(dial_key, mesh::RankAmpDialMultiaddrs(multiaddrs, local_ctx));
   };
   if (!contact.remote.endpoints.empty()) {
-    for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
-      const auto ranked = RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
+    for (const mesh::DirectoryEndpoint& endpoint : contact.remote.endpoints) {
+      const auto ranked = mesh::RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
       RegisterPeerDirectEndpoints(endpoint.peer_id, ranked);
       RegisterPeerDirectEndpoints(target.peer_identity_value, ranked);
     }
@@ -541,7 +337,7 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
   }
 }
 
-void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, IDirectoryClient* directory) {
+void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory) {
   directory_shadows_ = shadows;
   directory_ = directory;
 }
@@ -556,11 +352,11 @@ void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_
     account_to_relay_[account_id] = relay_user_id;
   }
   if (directory_shadows_) {
-    DirectoryHit hit;
+    mesh::DirectoryHit hit;
     hit.hit_id = relay_user_id;
     hit.account_id = account_id;
-    hit.ids = {{ContactIdKind::Account, account_id, true},
-               {ContactIdKind::RelayUser, relay_user_id, false}};
+    hit.ids = {{mesh::ContactIdKind::Account, account_id, true},
+               {mesh::ContactIdKind::RelayUser, relay_user_id, false}};
     directory_shadows_->Put(hit);
   }
 }
@@ -668,7 +464,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
       MaybeRepairGap((*thread)->id, envelope);
     }
   }
-  if (outcome.persisted && !outcome.thread_id.empty()) {
+  if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
     std::optional<std::string> preview;
     if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
       preview = decoded->text;
@@ -715,44 +511,26 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   }
   amp_links_->MarkWarm(peer_key);
   if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
-    amp_links_->EnsureAssociation(peer_key, [](IChatPeerLinks::LinkRoe) {});
+    amp_links_->EnsureAssociation(peer_key, [](mesh::IChatPeerLinks::LinkRoe) {});
   }
 }
 
-Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
+Roe<MeshDeliveryOrchestrator::E2ePublicSession> MeshDeliveryOrchestrator::ResolveE2ePublicSession(
     const std::string& peer_identity) {
   if (peer_identity.empty()) {
     return Error("Peer identity required");
   }
-  std::optional<std::string> prefer;
-  if (call_control_.active_call_origin_thread_id) {
-    prefer = call_control_.active_call_origin_thread_id();
+  E2ePublicSession session;
+  session.target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  session.target_key.peer_identity_value = peer_identity;
+  session.target_key.channel = CryptoChannel::E2ePublic;
+  // The pair's session is the account pair's, not a thread's: its active epoch is the stored one.
+  auto record = psk_store_.Load(session.target_key);
+  if (!record) {
+    return record.error();
   }
-  std::string contact_id;
-  std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
-    if (*contact) {
-      contact_id = (*contact)->id;
-      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-      if (dm_title.empty()) {
-        dm_title = peer_identity;
-      }
-    }
-  }
-  auto thread_id = ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
-  if (!thread_id) {
-    return thread_id.error();
-  }
-  auto thread = store_.GetThread(*thread_id);
-  if (!thread || !*thread) {
-    return Error("Call control thread missing");
-  }
-  auto session_epoch = store_.GetChatTargetSessionEpoch(*thread_id);
-  if (!session_epoch) {
-    return session_epoch.error();
-  }
-  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
-  auto peer_kem = kem_key_resolver_.Resolve(target_key.peer_identity_kind, target_key.peer_identity_value);
+  session.epoch = record->has_value() && (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
+  auto peer_kem = kem_key_resolver_.Resolve(session.target_key.peer_identity_kind, peer_identity);
   if (!peer_kem) {
     return peer_kem.error();
   }
@@ -760,20 +538,120 @@ Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSession
   if (!peer_public) {
     return peer_public.error();
   }
-  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, target_key, *session_epoch, *peer_public);
+  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, session.target_key, session.epoch, *peer_public);
   if (!ensured) {
     return ensured.error();
   }
-  auto session_key = DeriveE2ePublicSessionKey(ensured->master_psk, *session_epoch);
+  session.master_psk = std::move(ensured->master_psk);
+  session.key_init_b64 = std::move(ensured->key_init_b64);
+  return session;
+}
+
+Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
+    const std::string& peer_identity) {
+  auto session = ResolveE2ePublicSession(peer_identity);
+  if (!session) {
+    return session.error();
+  }
+  auto session_key = DeriveE2ePublicSessionKey(session->master_psk, session->epoch);
   if (!session_key) {
     return session_key.error();
   }
   EnsuredE2ePublicSessionKey out;
   out.session_key = std::move(*session_key);
-  if (ensured->key_init_b64 && !ensured->key_init_b64->empty()) {
-    out.first_message_key_init_b64 = std::move(*ensured->key_init_b64);
+  if (session->key_init_b64 && !session->key_init_b64->empty()) {
+    out.first_message_key_init_b64 = std::move(*session->key_init_b64);
   }
   return out;
+}
+
+uint64_t MeshDeliveryOrchestrator::NextControlOrderKey() {
+  // Relay index within the lane's stream: unique and rising per sender (ms * 1000 + a counter).
+  const uint64_t floor = static_cast<uint64_t>(util::NowUnixMs()) * 1000;
+  uint64_t current = control_order_key_.load(std::memory_order_relaxed);
+  uint64_t next = 0;
+  do {
+    next = std::max(current + 1, floor);
+  } while (!control_order_key_.compare_exchange_weak(current, next, std::memory_order_relaxed));
+  return next;
+}
+
+Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
+                                                const std::optional<std::string>& key_init_b64) {
+  auto identity = identity_.Get();
+  if (!identity || identity->account_id.empty()) {
+    return Error("Local account identity unavailable");
+  }
+  auto session = ResolveE2ePublicSession(peer_identity);
+  if (!session) {
+    return session.error();
+  }
+  // A key_init the caller holds (its media-key wrap opened the session) rides this first send.
+  std::optional<std::string> key_init = session->key_init_b64;
+  if (!key_init && key_init_b64 && !key_init_b64->empty()) {
+    key_init = key_init_b64;
+  }
+
+  // Route as for a DM with the peer (contacts, learned routes, directory) — no thread needed.
+  Thread route_view;
+  route_view.kind = ThreadKind::Direct;
+  route_view.channel = ThreadChannel::E2ePublic;
+  route_view.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  route_view.peer_identity_value = peer_identity;
+  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account); contact && *contact) {
+    route_view.participant_contact_ids = {(*contact)->id};
+  }
+  const auto peer_relay_id = ResolvePeerRelayIdWithDirectory(route_view);
+  const bool amp_reachable = direct_chat_ && direct_chat_->IsPeerReachable(peer_identity);
+  if (!peer_relay_id && !amp_reachable) {
+    return Error("No route to the peer");
+  }
+
+  ControlLaneSendParams params;
+  params.sender_account_id = identity->account_id;
+  params.sender_relay_id = identity->relay_user_id;
+  params.peer_account_id = peer_identity;
+  params.route_party = peer_relay_id ? *peer_relay_id : peer_identity;
+  params.session_epoch = session->epoch;
+  params.master_psk = std::move(session->master_psk);
+  params.key_init_b64 = std::move(key_init);
+  params.order_key = NextControlOrderKey();
+  auto built = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) {
+    return identity_.SignBytes(bytes);
+  });
+  if (!built) {
+    return built.error();
+  }
+  RelayEnvelope envelope = std::move(*built);
+
+  // Off the caller's thread, on the critical lane (signaling must not queue behind inbox polls).
+  // Prefer the relay when a route is known: Amp's open + ack per message races media setup.
+  AppRuntime::PostWorkerCritical([this, envelope, peer_identity, peer_relay_id]() mutable {
+    auto via_relay = [this, envelope, peer_relay_id]() {
+      if (!peer_relay_id || !relay_) {
+        log().warning << "control lane: no relay route message_id=" << envelope.message_id;
+        return;
+      }
+      if (auto sent = relay_->Send(envelope); !sent) {
+        log().warning << "control lane relay send failed message_id=" << envelope.message_id
+                      << " err=" << sent.error().message << " (retrying while fresh)";
+        EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = envelope.message_id, .thread_id = {},
+                                      .attempt_count = 1});
+      }
+    };
+    const bool try_amp = !peer_relay_id && direct_chat_ && direct_chat_->IsPeerReachable(peer_identity);
+    if (!try_amp) {
+      via_relay();
+      return;
+    }
+    direct_chat_->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](Roe<void> direct) {
+      if (!direct) {
+        log().warning << "control lane Amp send failed message_id=" << envelope.message_id
+                      << " err=" << direct.error().message;
+      }
+    });
+  });
+  return {};
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {
@@ -786,13 +664,13 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   const std::string peer = (*thread)->peer_identity_value;
   view.relay_available = false;
   if (relay_ != nullptr &&
-      ((*thread)->peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) ||
+      ((*thread)->peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) ||
        (*thread)->peer_identity_kind == "account")) {
     if (!(*thread)->participant_contact_ids.empty()) {
       if (auto contact = contacts_.Get((*thread)->participant_contact_ids.front())) {
         if (*contact) {
-          for (const ContactId& id : (*contact)->ids) {
-            if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+          for (const mesh::ContactId& id : (*contact)->ids) {
+            if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
               view.relay_available = true;
               break;
             }
@@ -801,10 +679,10 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
       }
     }
     if (!view.relay_available) {
-      auto by_account = contacts_.FindByIdentity(peer, ContactIdKind::Account);
+      auto by_account = contacts_.FindByIdentity(peer, mesh::ContactIdKind::Account);
       if (by_account && by_account->has_value()) {
-        for (const ContactId& id : (**by_account).ids) {
-          if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+        for (const mesh::ContactId& id : (**by_account).ids) {
+          if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
             view.relay_available = true;
             break;
           }
@@ -814,7 +692,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
 
   if (peer.empty()) {
-    view.phase = MeshPeerLinkPhase::Unavailable;
+    view.phase = mesh::MeshPeerLinkPhase::Unavailable;
     view.path_kind = ThreadPeerPathKind::Failed;
     view.status_label = "Can't connect";
     view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
@@ -823,13 +701,13 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
 
   if (amp_links_) {
-    const MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+    const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
     view.phase = snap.phase;
     view.has_direct_endpoint = snap.has_endpoint;
     view.carrier_backed = snap.carrier_backed;
     view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
     switch (snap.phase) {
-    case MeshPeerLinkPhase::Connected:
+    case mesh::MeshPeerLinkPhase::Connected:
       if (snap.carrier_backed) {
         view.path_kind = ThreadPeerPathKind::ViaHop;
         view.status_label = "Via hop";
@@ -838,15 +716,15 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
         view.status_label = "Direct";
       }
       break;
-    case MeshPeerLinkPhase::Dialing:
-    case MeshPeerLinkPhase::Handshaking:
+    case mesh::MeshPeerLinkPhase::Dialing:
+    case mesh::MeshPeerLinkPhase::Handshaking:
       // Includes hole-punch burst dial — short-lived, never a settled badge.
       view.path_kind = ThreadPeerPathKind::Connecting;
       view.status_label = "Connecting…";
       view.banner_message = "Trying a direct link…";
       view.show_banner = true;
       break;
-    case MeshPeerLinkPhase::Backoff:
+    case mesh::MeshPeerLinkPhase::Backoff:
       view.path_kind = ThreadPeerPathKind::Degraded;
       view.status_label = view.backoff_seconds > 0
                               ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
@@ -860,11 +738,11 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
       view.show_banner = true;
       view.show_retry = true;
       break;
-    case MeshPeerLinkPhase::Idle:
+    case mesh::MeshPeerLinkPhase::Idle:
       view.path_kind = ThreadPeerPathKind::Ready;
       view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
       break;
-    case MeshPeerLinkPhase::Unavailable:
+    case mesh::MeshPeerLinkPhase::Unavailable:
     default:
       if (view.relay_available) {
         view.path_kind = ThreadPeerPathKind::ViaRelay;
@@ -885,7 +763,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
     return view;
   }
 
-  view.phase = MeshPeerLinkPhase::Unavailable;
+  view.phase = mesh::MeshPeerLinkPhase::Unavailable;
   if (view.relay_available) {
     view.path_kind = ThreadPeerPathKind::ViaRelay;
     view.status_label = "Via relay";
@@ -940,15 +818,12 @@ bool MeshDeliveryOrchestrator::IsPskReadyToSend(const std::string& thread_id) co
   return status && status->has_psk && status->verified;
 }
 
-bool MeshDeliveryOrchestrator::HasActiveLocalCall() const {
-  if (!call_control_.has_active_local_call) {
-    return false;
-  }
-  return call_control_.has_active_local_call();
+std::optional<std::string> MeshDeliveryOrchestrator::LiveExchange() const {
+  return controls_ ? controls_->LiveFamily() : std::nullopt;
 }
 
 Roe<void> MeshDeliveryOrchestrator::MaybeSendPublicAutoRekey(const std::string& thread_id) {
-  if (HasActiveLocalCall()) {
+  if (LiveExchange()) {
     return {};
   }
   auto should = public_lock_.ShouldAutoRekey(thread_id, util::NowUnixMs());
@@ -967,8 +842,8 @@ Roe<void> MeshDeliveryOrchestrator::MaybeSendPublicAutoRekey(const std::string& 
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::string& thread_id,
                                                            const PublicPskRotateKind kind) {
-  if (HasActiveLocalCall()) {
-    return Error("Finish the call first");
+  if (const auto live = LiveExchange()) {
+    return Error("Finish the " + *live + " first");
   }
   ByteVector peer_account_kem_pk;
   if (kind == PublicPskRotateKind::Lock) {
@@ -1320,8 +1195,8 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
     return;
   }
   // SoftMigrate / Accept must not sit behind history TailSync on the Normal worker + relay HTTP.
-  if (HasActiveLocalCall()) {
-    log().info << "MaybeTailSync deferred (active call) thread=" << thread_id;
+  if (const auto live = LiveExchange()) {
+    log().info << "MaybeTailSync deferred (live " << *live << ") thread=" << thread_id;
     return;
   }
   AppRuntime::PostWorkerNormal([this, thread_id]() {
@@ -1337,8 +1212,8 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   if (!chat_sync_ || !envelope.session_epoch) {
     return;
   }
-  if (HasActiveLocalCall()) {
-    log().info << "MaybeRepairGap deferred (active call) thread=" << thread_id;
+  if (const auto live = LiveExchange()) {
+    log().info << "MaybeRepairGap deferred (live " << *live << ") thread=" << thread_id;
     return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, envelope.session_epoch);
@@ -1362,6 +1237,9 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
 void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
                                           const std::string& error_message, MessageTransport transport,
                                           bool relay_after_direct_attempt) {
+  if (thread_id.empty()) {
+    return;  // a control-lane send: no transcript row to update
+  }
   auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
     return;
@@ -1542,9 +1420,15 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       master_psk = std::move(established->master_psk);
       key_init_b64 = std::move(established->key_init_b64);
       PskSessionRecord record;
+      if (auto existing = psk_store_.Load(target_key); existing && existing->has_value()) {
+        record = **existing;
+      }
       record.key = target_key;
       record.session_epoch = *message.session_epoch;
       record.master_psk_b64 = Base64Encode(master_psk);
+      // Ours until the peer is heard under it: every send carries the key_init (see EnsureE2ePublicMasterPsk).
+      record.auto_key_session_id = AutoKeySessionId(*key_init_b64);
+      record.auto_key_init_pending = key_init_b64;
       if (auto saved = psk_store_.Save(record); !saved) {
         appended->delivery = MessageDelivery::Failed;
         (void)store_.UpdateMessage(*appended);
@@ -1560,6 +1444,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       master_psk = std::move(*decoded);
       if (options.key_init_b64 && !options.key_init_b64->empty()) {
         key_init_b64 = options.key_init_b64;
+      } else if ((*thread)->channel == ThreadChannel::E2ePublic) {
+        // A session we opened that the peer has not been heard under yet: keep announcing it.
+        if (auto record = psk_store_.Load(target_key);
+            record && record->has_value() && (*record)->session_epoch == *message.session_epoch) {
+          key_init_b64 = (*record)->auto_key_init_pending;
+        }
       }
     }
     E2eEncryptParams params;
@@ -1735,13 +1625,13 @@ Roe<void> MeshDeliveryOrchestrator::SendChargeRequired(const std::string& peer_i
   const int64_t floor = floor_minor.value_or(identity->initiation_floor);
 
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -1948,8 +1838,9 @@ Roe<ThreadMessage> SendAnnotationReaction(MeshDeliveryOrchestrator& mesh_messagi
   if (target_message_id.empty()) {
     return Error("Missing target message");
   }
-  const std::string trimmed = NormalizeEmojiKey(emoji);
-  if (trimmed.empty()) {
+  const bool retract = std::string(annotation_type) == kAnnotationTypeRetract;
+  const std::string trimmed = retract ? std::string() : NormalizeEmojiKey(emoji);
+  if (trimmed.empty() && !retract) {
     return Error("Empty reaction");
   }
   auto has_target = store.HasMessageId(thread_id, target_message_id);
@@ -1993,6 +1884,16 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReactionClear);
 }
 
+Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
+                                                        const std::string& target_message_id) {
+  return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
+}
+
+void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) {
+  std::lock_guard lock(retry_mutex_);
+  std::erase_if(retry_queue_, [&](const PendingRelaySend& pending) { return pending.message_id == message_id; });
+}
+
 void MeshDeliveryOrchestrator::RetryFailedOutbound() {
   std::vector<PendingRelaySend> pending;
   {
@@ -2003,8 +1904,15 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
     return;
   }
 
+  const int64_t now_ms = util::NowUnixMs();
   pending.erase(std::remove_if(pending.begin(), pending.end(),
-                               [this](const PendingRelaySend& item) { return IsThreadCompromised(item.thread_id); }),
+                               [this, now_ms](const PendingRelaySend& item) {
+                                 if (item.thread_id.empty()) {
+                                   // Control lane: signaling past its use is not worth sending.
+                                   return now_ms - item.envelope.timestamp > kControlRetryWindowMs;
+                                 }
+                                 return IsThreadCompromised(item.thread_id);
+                               }),
                 pending.end());
   if (pending.empty()) {
     return;
@@ -2275,7 +2183,7 @@ void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* d
   }
 }
 
-void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
+void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                                    std::function<void(std::function<void()>)> amp_worker_post,
                                                    std::function<void(std::function<void()>)> amp_post_io,
                                                    std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after) {
@@ -2290,9 +2198,9 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   DetachAmpTransports();
   amp_links_ = amp_links;
   if (address_disclosure_) {
-    people_links_ = std::make_unique<DisclosureGatedPeerLinks>(*amp_links_, *address_disclosure_);
+    people_links_ = std::make_unique<mesh::DisclosureGatedPeerLinks>(*amp_links_, *address_disclosure_);
   }
-  IChatPeerLinks& people = people_links_ ? static_cast<IChatPeerLinks&>(*people_links_) : *amp_links_;
+  mesh::IChatPeerLinks& people = people_links_ ? static_cast<mesh::IChatPeerLinks&>(*people_links_) : *amp_links_;
 
   auto worker = std::move(amp_worker_post);
   if (!worker) {
@@ -2312,42 +2220,10 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   chat->Start();
   peer_history_ = std::move(history);
   direct_chat_ = std::move(chat);
-  peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
-  peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump, worker,
-                                                           AmpPeerAnnounceTransport::ResolvePublisherKey{},
-                                                           amp_post_io, amp_post_after);
-  peer_announce_->SetPublisherKeyResolver(
-      [this](const std::string& tip_peer_id) { return ResolveAnnouncePublisherKey(tip_peer_id); });
-  peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
-    const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
-    announce_notifications_.UpsertFromTip(tip, now_ms);
-  });
-  if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-    if (auto local_identity = identity_.Get(); local_identity && !local_identity->peer_id.empty()) {
-      peer_announce_publisher_ =
-          std::make_unique<PeerAnnouncePublisher>(local_identity->peer_id, *sk, peer_announce_feed_.get());
-    } else {
-      log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
-    }
-  } else {
-    log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
-  }
-  peer_announce_->Start();
-  broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io, amp_post_after);
-  broadcast_->SetPublisherKeyResolver(
-      [this](const std::string& peer_id) { return ResolveAnnouncePublisherKey(peer_id); });
-  broadcast_->SetPublisherSecretResolver([this]() -> std::optional<std::vector<uint8_t>> {
-    if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-      return *sk;
-    }
-    return std::nullopt;
-  });
-  broadcast_->Start();
-
   if (chat_sync_) {
     chat_sync_->SetPeerHistoryClient(peer_history_.get());
   }
-  log().info << "direct chat/history/blob/peer-announce/broadcast transport=amp";
+  log().info << "direct chat/history/blob transport=amp";
 }
 
 void MeshDeliveryOrchestrator::DetachAmpTransports() {
@@ -2355,10 +2231,6 @@ void MeshDeliveryOrchestrator::DetachAmpTransports() {
     chat_sync_->SetPeerHistoryClient(nullptr);
   }
   // Destructors call Stop() → RemoveProtocolHandler on PeerLinks; Amp must still be alive.
-  broadcast_.reset();
-  peer_announce_.reset();
-  peer_announce_publisher_.reset();
-  peer_announce_feed_.reset();
   direct_chat_.reset();
   peer_history_.reset();
   peer_blob_.reset();

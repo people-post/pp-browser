@@ -1,13 +1,14 @@
 #pragma once
 
-#include "common/directory/DirectoryTypes.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/types/DirectoryTypes.h"
+#include "mesh/host/MeshHost.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/data/Config.h"
 
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -24,29 +25,29 @@ namespace pbr {
  * capabilities and always serves the directory twin (N029 nd4); any other role hosts none.
  * Media relay budget and pricing ride along.
  */
-void ApplyNodeHosting(MeshHostConfig& cfg, const MeshConfig& mesh, bool node_role);
+void ApplyNodeHosting(mesh::MeshHostConfig& cfg, const MeshConfig& mesh, bool node_role);
 
 /** DHT / directory query peers: directory rows first (N027 L1), then bootstrap seeds; deduped. */
 std::vector<std::string> CollectNodeQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
-                                                  const std::vector<MeshDirectoryNode>& directory_nodes = {});
+                                                  const std::vector<mesh::MeshDirectoryNode>& directory_nodes = {});
 
 /** Amp DHT: participate (and publish relay records per capability) only as a node with `dht`. */
-void ConfigureNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
+void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
                          std::vector<std::string> query_peer_keys);
 
 /** Amp directory: query `query_peer_keys`; host the directory twin only as a node. */
-void ConfigureNodeAmpDirectory(MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys);
+void ConfigureNodeAmpDirectory(mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys);
 
 /** This node's directory row: identity, capabilities, advertised (then listen, then configured) addrs. */
-MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const MeshConfig& config);
+mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config);
 
 /** Org seed: admit strangers for circuit + media relay at short-term + public scope (N018). */
-void ApplyOrgSeedAdmission(MeshHost& mesh);
+void ApplyOrgSeedAdmission(mesh::MeshHost& mesh);
 
 /**
  * Org seed (`pp-node`) after the Amp stack is up: dial endpoints for the bootstrap seeds, DHT and
  * directory against them, a static self row in the directory, and open admission.
  */
-void StartOrgSeedServices(MeshHost& mesh, IdentityStore& identity, const MeshConfig& config);
+void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config);
 
 } // namespace pbr

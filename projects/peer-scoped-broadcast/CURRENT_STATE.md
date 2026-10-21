@@ -16,12 +16,12 @@
 
 | Piece | Path |
 |-------|------|
-| Types / caps / heartbeat constants | `src/domain/messaging/PeerAnnounceTypes.h` |
+| Types / caps / heartbeat constants | `src/domain/broadcast/PeerAnnounceTypes.h` |
 | Topic id, canonical sign bytes, JSON, **ML-DSA-65** sign/verify, heartbeat timing | `PeerAnnounceCodec.*` |
 | In-memory verify + seq/epoch dedup feed | `PeerAnnounceFeed.*` |
 | Local publisher (seq/epoch, go-live/end, live heartbeat) | `PeerAnnouncePublisher.*` |
 | Tip push/ack JSON + `/pp-browser/rpc/peer-announce/1.0.0` | `PeerAnnounceRpcCodec.*`, protocol id in DM client headers, L4 table |
-| Amp 1:1 tip transport | `feature/conversations/AmpPeerAnnounceTransport.*` |
+| Amp 1:1 tip transport | `feature/broadcast/AmpPeerAnnounceTransport.*` |
 | Mesh advertise | `MeshHost` includes peer-announce protocol id |
 | Device publisher + inbound key resolve | `PeerAnnounceKeyResolve.*`; `MeshDeliveryOrchestrator` wires IdentityStore device ML-DSA + `PeerSigningKeyStore` kind `peer_id`; `PublishAndPushAnnounce` |
 | DM reply path (no in-topic speak) | `AnnounceOverlayReply.*` (`PlanAnnounceDmReply`); `MeshDeliveryOrchestrator::ReplyToAnnouncePublisher` |
@@ -51,7 +51,7 @@
 | Broadcast RPC codec | `BroadcastRpcCodec.*` — ticket_request/response, viewer_attach(_result), relay_slot_win(_result); `/pp-browser/rpc/broadcast/1.0.0` |
 | Session shape | None — watching is not a call session. `CallSessionKind::Broadcast` is a legacy parsed value only; `AcceptInvite` refuses it |
 
-| Amp broadcast RPC | `feature/conversations/AmpBroadcastTransport.*` — ticket mint, viewer_attach, relay_slot_win over `/pp-browser/rpc/broadcast/1.0.0` |
+| Amp broadcast RPC | `feature/broadcast/AmpBroadcastTransport.*` — ticket mint, viewer_attach, relay_slot_win over `/pp-browser/rpc/broadcast/1.0.0` |
 | Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshDeliveryOrchestrator` starts service + device key resolvers |
 | Tests | `amp_broadcast_service_test.cpp` (ticket / admit / slot-win round-trips) |
 

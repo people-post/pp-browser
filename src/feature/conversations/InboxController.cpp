@@ -1,18 +1,21 @@
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/AttachmentContent.h"
+#include "foundation/runtime/AppRuntime.h"
 
-#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "domain/ai/StructuredTextParser.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/GroupMembershipCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/PskRotateCodec.h"
+#include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/PlainTextLinks.h"
+#include "domain/messaging/QuoteReply.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "domain/ui/ChatFormHelper.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -20,10 +23,12 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <map>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "common/ValueJson.h"
@@ -52,37 +57,6 @@ std::string HydrateChatActions(const std::string& body_rml, const std::vector<Tr
 
 std::string SystemLineRml(const std::string& text) {
   return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(text) + "</p></div>";
-}
-
-bool IsPlumbingCallControl(const CallControlType type) {
-  return CallControlCodec::IsPlumbingCallControl(type);
-}
-
-std::optional<std::string> CallDetailJson(const ThreadMessage& message) {
-  auto payload = TryParseObject(message.payload_json);
-  if (!payload) {
-    return std::nullopt;
-  }
-  return payload->getString("detail");
-}
-
-std::string FormatCallDurationMs(const int64_t duration_ms) {
-  if (duration_ms < 0) {
-    return {};
-  }
-  const int64_t total_sec = duration_ms / 1000;
-  const int64_t hours = total_sec / 3600;
-  const int64_t mins = (total_sec % 3600) / 60;
-  const int64_t secs = total_sec % 60;
-  char buf[32];
-  if (hours > 0) {
-    std::snprintf(buf, sizeof(buf), "%lld:%02lld:%02lld", static_cast<long long>(hours),
-                  static_cast<long long>(mins), static_cast<long long>(secs));
-  } else {
-    std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(mins),
-                  static_cast<long long>(secs));
-  }
-  return buf;
 }
 
 } // namespace
@@ -172,9 +146,17 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   }
 
   const bool was_active = active_thread_id_ == thread_id;
+  // Read what the thread refers to before its rows go; delete the bytes only once the thread is gone.
+  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   auto deleted = store_.DeleteThread(thread_id);
   if (!deleted || !*deleted) {
     return Error("Failed to delete thread");
+  }
+  if (attachment_downloads_) {
+    attachment_downloads_->ForgetThread(thread_id);
+    if (messages) {
+      attachment_downloads_->DeleteMessagesMedia(thread_id, *messages, {});
+    }
   }
 
   if (was_active) {
@@ -199,6 +181,83 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   return {};
 }
 
+Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
+  auto found = store_.GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!found->has_value()) {
+    return Error("Message not found");
+  }
+  if ((*found)->content_type == ChatContentType::Deleted) {
+    return {};
+  }
+  const ThreadMessage original = **found;
+  // The row first (the part that can fail); its bytes only once the content is gone for good.
+  auto deleted = store_.DeleteMessageContent(thread_id, message_id);
+  if (!deleted) {
+    return deleted.error();
+  }
+  if (!*deleted) {
+    return Error("Message not found");
+  }
+  AfterMessageDeleted(thread_id, original);
+  return {};
+}
+
+void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
+  const std::string& message_id = original.id;
+  if (attachment_downloads_ && (original.content_type == ChatContentType::Attachment || original.ai_image_json)) {
+    // The rest of the thread, so bytes another message here still shows are kept. Reading it decrypts the
+    // transcript: off the UI thread.
+    auto delete_media = [this, thread_id, original]() {
+      auto rest = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
+      attachment_downloads_->DeleteMessagesMedia(thread_id, {original}, rest ? *rest : std::vector<ThreadMessage>{});
+    };
+    if (AppRuntime::IsRunning()) {
+      AppRuntime::PostWorkerNormal(std::move(delete_media));
+    } else {
+      delete_media();
+    }
+  }
+  // A summary that already folded this message in still carries its words: forget it (it is rebuilt from
+  // what is left).
+  if (auto memory = store_.GetThreadMemory(thread_id); memory && *memory && (*memory)->compacted_through_display_order &&
+                                                       original.display_order <= *(*memory)->compacted_through_display_order) {
+    (void)store_.ClearThreadMemory(thread_id);
+  }
+  // The list preview shows the newest message: if that was this one, it must not keep showing its text.
+  auto page = store_.GetMessagesPage(thread_id, std::nullopt, 100);
+  if (!page) {
+    return;
+  }
+  const ThreadMessage* newest = nullptr;
+  for (const ThreadMessage& message : *page) {
+    if (message.content_type != ChatContentType::Annotation) {
+      newest = &message;
+    }
+  }
+  if (newest && newest->id == message_id) {
+    if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+      Thread updated = **thread;
+      updated.preview = Tr("chat.message.deleted");
+      (void)store_.UpsertThread(updated); // updated_at untouched: deleting does not move the chat up the list
+      // Reached from workers too (delete for everyone, a peer's retract): the UI refresh runs on the UI thread.
+      if (on_thread_changed_) {
+        if (AppRuntime::IsRunning()) {
+          AppRuntime::PostUI([this]() {
+            if (on_thread_changed_) {
+              on_thread_changed_();
+            }
+          });
+        } else {
+          on_thread_changed_();
+        }
+      }
+    }
+  }
+}
+
 Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
@@ -208,6 +267,7 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
     return Error("Thread not found");
   }
 
+  auto before = store_.GetMessagesPage(thread_id, std::nullopt, 10000); // what the bytes belong to
   if (attachment_downloads_) {
     if (auto prepared = attachment_downloads_->PrepareThreadHistoryClear(thread_id, store_); !prepared) {
       return prepared.error();
@@ -216,6 +276,9 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
 
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
     return cleared.error();
+  }
+  if (attachment_downloads_ && before) {
+    attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
   }
 
   Thread updated = **thread;
@@ -387,10 +450,6 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
-    // Public twin of a private DM — call/group control; never inflate the global badge.
-    if (HasPrivateE2eSibling(thread, *threads)) {
-      continue;
-    }
     total += thread.unread_count;
   }
   return total;
@@ -408,9 +467,6 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   for (const Thread& thread : *threads) {
     if (std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(), contact_id) ==
         thread.participant_contact_ids.end()) {
-      continue;
-    }
-    if (HasPrivateE2eSibling(thread, *threads)) {
       continue;
     }
     total += thread.unread_count;
@@ -525,160 +581,13 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
   return "<span class=\"chat-shared-badge muted\">" + Tr("chat.shared_badge") + "</span>";
 }
 
-std::string InboxController::FormatCallPeerLabel(const std::string& identity) const {
-  if (identity.empty()) {
-    return Tr("call.label.someone");
-  }
-  if (identity == kLocalSelfContactId) {
-    return Tr("call.label.you");
-  }
-  const std::string label = ResolveSenderLabel(identity);
-  return label.empty() ? Tr("call.label.someone") : label;
-}
-
-std::string InboxController::BuildCallHistoryRml(const ThreadMessage& message,
-                                                 const CallControlType type) const {
-  if (IsPlumbingCallControl(type)) {
-    return {};
-  }
-
-  const auto detail_json = CallDetailJson(message);
-  const bool outbound = message.sender_contact_id == kLocalSelfContactId;
-  std::string line;
-
-  switch (type) {
-  case CallControlType::CallStarted: {
-    CallMediaMode mode = CallMediaMode::Voice;
-    if (detail_json) {
-      if (auto started = CallControlCodec::DecodeStarted(*detail_json)) {
-        mode = started->media_mode;
-      }
-    }
-    line = mode == CallMediaMode::Video ? Tr("call.history.started_video") : Tr("call.history.started_voice");
-    break;
-  }
-  case CallControlType::CallInvite: {
-    CallMediaMode mode = CallMediaMode::Voice;
-    std::string peer;
-    if (detail_json) {
-      if (auto invite = CallControlCodec::DecodeInvite(*detail_json)) {
-        mode = invite->media_mode;
-        peer = outbound ? invite->invitee_identity : invite->inviter_identity;
-      }
-    }
-    if (peer.empty() && !outbound) {
-      peer = message.sender_contact_id;
-    }
-    const std::string name = FormatCallPeerLabel(peer);
-    if (outbound) {
-      line = mode == CallMediaMode::Video ? Tr("call.history.outgoing_video", {{"name", name}})
-                                          : Tr("call.history.outgoing_voice", {{"name", name}});
-    } else {
-      line = mode == CallMediaMode::Video ? Tr("call.history.incoming_video", {{"name", name}})
-                                          : Tr("call.history.incoming_voice", {{"name", name}});
-    }
-    break;
-  }
-  case CallControlType::CallAccept: {
-    std::string identity = message.sender_contact_id;
-    if (detail_json) {
-      if (auto accept = CallControlCodec::DecodeAccept(*detail_json)) {
-        if (!accept->identity.empty()) {
-          identity = accept->identity;
-        }
-      }
-    }
-    const std::string name = outbound ? Tr("call.label.you") : FormatCallPeerLabel(identity);
-    line = Tr("call.history.joined", {{"name", name}});
-    break;
-  }
-  case CallControlType::CallDecline: {
-    std::string identity = message.sender_contact_id;
-    if (detail_json) {
-      if (auto decline = CallControlCodec::DecodeDecline(*detail_json)) {
-        if (!decline->identity.empty()) {
-          identity = decline->identity;
-        }
-      }
-    }
-    const std::string name = outbound ? Tr("call.label.you") : FormatCallPeerLabel(identity);
-    line = Tr("call.history.declined", {{"name", name}});
-    break;
-  }
-  case CallControlType::CallLeave: {
-    std::string identity = message.sender_contact_id;
-    if (detail_json) {
-      if (auto leave = CallControlCodec::DecodeLeave(*detail_json)) {
-        if (!leave->identity.empty()) {
-          identity = leave->identity;
-        }
-      }
-    }
-    const std::string name = outbound ? Tr("call.label.you") : FormatCallPeerLabel(identity);
-    line = Tr("call.history.left", {{"name", name}});
-    break;
-  }
-  case CallControlType::CallEnded: {
-    std::optional<int64_t> duration_ms;
-    if (detail_json) {
-      if (auto ended = CallControlCodec::DecodeEnded(*detail_json)) {
-        duration_ms = ended->duration_ms;
-      }
-    }
-    if (duration_ms && *duration_ms >= 0) {
-      const std::string duration = FormatCallDurationMs(*duration_ms);
-      if (!duration.empty()) {
-        line = Tr("call.history.ended_duration", {{"duration", duration}});
-        break;
-      }
-    }
-    line = Tr("call.history.ended");
-    break;
-  }
-  case CallControlType::CallRoster: {
-    size_t count = 0;
-    if (detail_json) {
-      if (auto roster = CallControlCodec::DecodeRoster(*detail_json)) {
-        for (const CallRosterEntry& entry : roster->participants) {
-          if (entry.state == CallParticipantState::Joined || entry.state == CallParticipantState::Ringing ||
-              entry.state == CallParticipantState::Invited) {
-            ++count;
-          }
-        }
-        if (count == 0) {
-          count = roster->participants.size();
-        }
-      }
-    }
-    if (count == 0) {
-      return {};
-    }
-    line = Tr("call.history.roster", {{"count", std::to_string(count)}});
-    break;
-  }
-  case CallControlType::CallMediaKey:
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-  case CallControlType::CallSfuAttach:
-  case CallControlType::CallSfuAttachFailed:
-  case CallControlType::CallHopRefuse:
-  case CallControlType::CallVideoRefresh:
-  case CallControlType::CallCircuitR1:
-  case CallControlType::CallPunchOffer:
-  case CallControlType::CallPunchAnswer:
-  case CallControlType::CallCapsUpdate:
-    return {};
-  }
-
-  if (line.empty()) {
-    line = message.text.empty() ? Tr("call.history.ended") : message.text;
-  }
-  return SystemLineRml(line);
-}
-
 std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
-  if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {
-    return BuildCallHistoryRml(message, *call_type);
+  if (const auto family = controls_ ? controls_->Find(message) : std::nullopt) {
+    // A feature's message: its own line, names included, else the message's text.
+    SystemControlLabels labels;
+    labels.peer = [this](const std::string& identity) { return ResolveSenderLabel(identity); };
+    const auto line = family->line ? family->line(message, labels) : std::nullopt;
+    return SystemLineRml(line.value_or(message.text));
   }
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
@@ -822,7 +731,7 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
     state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
   } else if (!local_path.empty() ||
              (fields && !profile_data_dir_.empty() &&
-              AttachmentBlobExists(profile_data_dir_, message.thread_id, fields->content_hash))) {
+              AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
     state = AttachmentFetchWorkflow::DownloadState::Ready;
   }
 
@@ -885,6 +794,37 @@ std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*
          "message.</p></div>";
 }
 
+namespace {
+
+// Escaped text with its https links tappable. The click carries the message id and the link's index;
+// the handler finds the URL again in the stored text (PlainTextLinks.h), so none sits in the markup.
+// `text` must be the message text or a prefix of it, so the indexes agree.
+std::string LinkedTextRml(const std::string& text, const std::string& id_arg) {
+  const std::vector<PlainTextLink> links = FindPlainTextLinks(text);
+  if (links.empty() || id_arg.empty()) {
+    return StructuredTextParser::EscapeText(text);
+  }
+  std::string out;
+  size_t pos = 0;
+  for (size_t i = 0; i < links.size(); ++i) {
+    out += StructuredTextParser::EscapeText(text.substr(pos, links[i].begin - pos));
+    out += "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " + std::to_string(i) +
+           ")\">" + StructuredTextParser::EscapeText(links[i].display) + "</span>";
+    pos = links[i].end;
+  }
+  out += StructuredTextParser::EscapeText(text.substr(pos));
+  return out;
+}
+
+// A quote shows at most two lines: line breaks would waste them.
+std::string OneLine(std::string text) {
+  std::replace(text.begin(), text.end(), '\n', ' ');
+  std::replace(text.begin(), text.end(), '\r', ' ');
+  return text;
+}
+
+} // namespace
+
 std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -905,6 +845,12 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (message.content_type == ChatContentType::System) {
     return BuildSystemRml(message);
   }
+  if (message.content_type == ChatContentType::Deleted) {
+    // On the sender's side, small and grey, so it is clear whose message it was.
+    const std::string side = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
+    return "<div class=\"bubble " + side + " bubble-deleted\"><p class=\"bubble-deleted-text\">" +
+           StructuredTextParser::EscapeText(Tr("chat.message.deleted")) + "</p></div>";
+  }
   if (message.content_type == ChatContentType::ContactCard) {
     return BuildContactCardRml(message);
   }
@@ -919,13 +865,28 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   }
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
-      message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p>";
+      message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p class=\"bubble-text-peer\">";
   std::string badges = BuildSharedBadgeHtml(message);
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
   }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
-                     StructuredTextParser::EscapeText(message.text) + "</p></div>";
+  // Message ids are generated locally or validated on receive; still keep the click argument to id characters.
+  std::string id_arg;
+  for (const char ch : message.id) {
+    if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') {
+      id_arg.push_back(ch);
+    }
+  }
+  // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
+  std::string text_rml;
+  if (const auto parts = SplitQuoteReply(message.text)) {
+    text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
+               "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
+               paragraph + LinkedTextRml(parts->reply, id_arg) + "</p>";
+  } else {
+    text_rml = paragraph + LinkedTextRml(message.text, id_arg) + "</p>";
+  }
+  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.
@@ -989,7 +950,20 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
   std::vector<ThreadMessage> orphan_annotations;
   std::vector<ThreadMessage> pending_annotations;
 
+  std::string pending_ai_question;
+  // Messages deleted on this device: an id-only tombstone that shows as one line; what hung off them
+  // (reactions) is not shown.
+  std::unordered_set<std::string> deleted_ids;
   for (const ThreadMessage& message : messages) {
+    if (message.content_type == ChatContentType::Deleted) {
+      deleted_ids.insert(message.id);
+    }
+  }
+
+  for (const ThreadMessage& message : messages) {
+    if (message.target_message_id && deleted_ids.count(*message.target_message_id) != 0) {
+      continue;
+    }
     if (message.content_type == ChatContentType::Annotation) {
       pending_annotations.push_back(message);
       continue;
@@ -997,20 +971,20 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
         message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx &&
         message.content_type != ChatContentType::Attachment &&
-        message.content_type != ChatContentType::Unsupported) {
+        message.content_type != ChatContentType::Unsupported && message.content_type != ChatContentType::Deleted) {
       continue;
     }
-    if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {
-      if (IsPlumbingCallControl(*call_type)) {
-        continue;
-      }
+    const auto control = controls_ ? controls_->Find(message) : std::nullopt;
+    if (control && control->on_lane && control->on_lane(message)) {
+      continue;  // lane signaling is never a transcript row (an old store may still hold some)
     }
 
     MessageDisplayRow row;
     row.message_id = message.id.c_str();
     row.display_order = message.display_order;
-    // Call history lines already include names; skip the sender chip above the system line.
-    if (CallControlCodec::IsCallControlMessage(message)) {
+    row.ai_image_json = message.ai_image_json.value_or(std::string());
+    // A feature's control lines already include names; skip the sender chip above the system line.
+    if (control) {
       row.sender_label = "";
     } else {
       row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
@@ -1021,9 +995,24 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     }
     row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
     // Local is expected for AI/system-local rows — skip it to keep meta quiet.
-    if (!CallControlCodec::IsCallControlMessage(message) && message.transport &&
+    if (!control && message.transport &&
         *message.transport != MessageTransport::Local) {
       row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
+    }
+    // An "@ai" question and its answer: the answer shows what was asked on top, like a reply.
+    if (message.sender_contact_id == kLocalSelfContactId) {
+      const AtAiParseResult asked = ParseAtAiPrefix(message.text);
+      pending_ai_question.clear();
+      if (asked.is_ai_invoke) {
+        const auto parts = SplitQuoteReply(asked.prompt);
+        pending_ai_question = parts ? parts->reply : asked.prompt;
+      }
+    } else if (message.sender_contact_id == kAiAssistantContactId && !pending_ai_question.empty()) {
+      row.content_rml = ("<div class=\"chat-quote chat-quote--asked\"><p class=\"chat-quote-text\">" +
+                         StructuredTextParser::EscapeText(OneLine(pending_ai_question)) + "</p></div>" +
+                         std::string(row.content_rml.c_str()))
+                            .c_str();
+      pending_ai_question.clear();
     }
     row.has_content = true;
     row_index_by_id[message.id] = rows.size();
@@ -1054,6 +1043,10 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
   };
 
   for (const ThreadMessage& annotation : pending_annotations) {
+    if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
+        fields && fields->annotation_type == kAnnotationTypeRetract) {
+      continue; // applied to its target (or waiting for it); never shown
+    }
     const std::string target_id = annotation.target_message_id.value_or("");
     if (target_id.empty()) {
       orphan_annotations.push_back(annotation);
@@ -1147,7 +1140,8 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     std::ostringstream chip_rml;
-    chip_rml << "<div class=\"chat-reaction-row\">";
+    // menu-anchor-end: the message menu opens right under the bubble, over this row (ContextMenuHost).
+    chip_rml << "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">";
     for (const ChipAgg& chip : chips) {
       chip_rml << "<button class=\"chat-reaction-chip";
       if (chip.mine) {
@@ -1195,6 +1189,10 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     rows.push_back(std::move(row));
   }
 
+  // Orphan rows were appended last; put every row back where it belongs in time.
+  std::stable_sort(rows.begin(), rows.end(), [](const MessageDisplayRow& a, const MessageDisplayRow& b) {
+    return a.display_order < b.display_order;
+  });
   return rows;
 }
 

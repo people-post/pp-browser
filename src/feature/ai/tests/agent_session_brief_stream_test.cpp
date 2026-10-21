@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace {
 
@@ -144,7 +145,8 @@ public:
 
 AgentImageTurn TestImage(const std::string& message_id = {}) {
   return AgentImageTurn{.image = BriefAiImage{.mime = "image/jpeg", .data = {0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3}},
-                        .message_id = message_id};
+                        .message_id = message_id,
+                        .ai_image_json = message_id.empty() ? std::string() : R"({"content_hash":"ab"})"};
 }
 
 class AgentSessionBriefStreamTest : public ::testing::Test {
@@ -501,6 +503,9 @@ TEST_F(AgentSessionBriefStreamTest, ImageTurnSendsImageWithoutCapabilitiesAndStr
   ASSERT_GE(store.messages.size(), 2u);
   EXPECT_EQ(store.messages[0].text, std::string(kAiImageTurnMarker) + "What is this?");
   EXPECT_EQ(store.messages[0].id, "msg-1"); // the caller's id, so the GUI can pair its thumbnail
+  ASSERT_TRUE(store.messages[0].ai_image_json.has_value()); // the GUI's reference to the stored image
+  EXPECT_EQ(*store.messages[0].ai_image_json, R"({"content_hash":"ab"})");
+  EXPECT_FALSE(store.messages[1].ai_image_json.has_value()); // the answer carries none
 }
 
 // "@ai" in a chat goes to brief_AI too: the question only, no history, never handed back.

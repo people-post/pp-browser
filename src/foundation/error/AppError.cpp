@@ -76,11 +76,17 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     }
   case ErrorCategory::Network:
     switch (static_cast<Err::Network>(code)) {
-    case Err::Network::Unreachable:
     case Err::Network::Timeout:
-      return Tr("errors.network.unreachable");
+      return Tr("errors.network.timeout");
+    case Err::Network::DnsFailed:
+      return Tr("errors.network.dns");
+    case Err::Network::ConnectFailed:
+      return Tr("errors.network.connect");
+    case Err::Network::TlsFailed:
+      return Tr("errors.network.tls");
     case Err::Network::HttpError:
       return Tr("errors.network.http");
+    case Err::Network::Unreachable:
     case Err::Network::Generic:
     default:
       return Tr("errors.network.unreachable");
@@ -125,6 +131,8 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
       return Tr("errors.blob.quota_exceeded");
     case Err::Blob::NothingToDelete:
       return Tr("errors.blob.quota_nothing_to_delete");
+    case Err::Blob::UploadNotConfigured:
+      return Tr("errors.blob.not_configured");
     case Err::Blob::Generic:
     default:
       return Tr("errors.blob.failed");

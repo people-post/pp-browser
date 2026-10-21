@@ -18,7 +18,7 @@ Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This 
 1. **Design as oracle** — cases guard documented intent / purpose IDs, not the current call graph; see [TESTING.md § Design as oracle](../architecture/TESTING.md#design-as-oracle). Prefer narrowing or redesigning an over-wide case before heroic product fixes under harness constraints. Pre-existing cases may still mirror implementation — tighten them when spotted in the work at hand ([Legacy suites](../architecture/TESTING.md#legacy-suites)).
 2. **Purpose-first** — pick the question (cite a purpose ID or doc sentence), then the cheapest layer that can answer it.
 3. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
-4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
+4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
 5. **Promote failures downward** — if smoke/hard-lab finds a policy bug that gtest can reproduce, lock it below; see [TESTING.md § When a higher tier finds a bug](../architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 6. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
 7. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
@@ -146,10 +146,10 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_leg_coordinator_test` — [`src/domain/mesh/tests/call_media_leg_coordinator_test.cpp`](../../src/domain/mesh/tests/call_media_leg_coordinator_test.cpp) |
-| Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
-| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_media_relay_compose_test.cpp) |
+| Direct call-media | `call_media_leg_coordinator_test` — [`src/feature/call_media/tests/call_media_leg_coordinator_test.cpp`](../../src/feature/call_media/tests/call_media_leg_coordinator_test.cpp) |
+| Media relay fan-out | `media_relay_server_client_test` — pp-cpp-mesh [`tests/media_relay_server_client_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/media_relay_server_client_test.cpp) |
+| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/feature/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
+| Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/amp_circuit_media_relay_compose_test.cpp) |
 | AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key; **dialable+DialInBackoff still Connected via circuit** — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
 | Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |
@@ -189,12 +189,20 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/test/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
 ./scripts/test/pp_local_test.sh run --suite msg-call-hop  # same-session chat during hop call
 ./scripts/test/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
+./scripts/test/pp_local_test.sh run --suite ledger  # N-LEDGER, local processes (needs PP_LEDGER_ROOT built; not in all)
+./scripts/test/pp_local_test.sh run --suite app     # app lab: scripted users on pp-app-probe over the real relay (not in all)
 ./scripts/test/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/test/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/test/pp_local_test.sh clear               # down -v + ready-file
 ```
 
 `run` leaves the hop up unless `--down`. The hop image is built from `dist/pp-node/docker`; when that is missing (fresh checkout) `up` / `run` stage it from the desktop `build/src/app/node/pp-node`, and they restage whenever the desktop binary is newer. `scripts/platform/pp_node_package_linux.sh all` (stripped Ubuntu 24.04 build) still works and is what release CI uses.
+
+### App lab (`--suite app`)
+
+The other probes drive the call stack around the product's messaging; the app lab drives the app. [`pp-app-probe`](../../src/app/node/tools/app_probe/main.cpp) is the app with no GUI — the same `Bootstrap`, `ProductStack`, facade and `CallUiBackend` (incl. `Settle`) — one scripted user per process, its own profile dir, line-JSON commands on stdin (`register`, `open_chat`, `call`, `accept`, `leave`, `crash`, …). [`pp_app_lab.py`](../../scripts/test/pp_app_lab.py) runs the scenarios people hit when a call will not get through — first contact, both calling at once (and both answering), calling back while it rings, a redial storm, a restart while ringing, the caller's app dying mid-call and coming back, a peer vanishing mid-call, decline then call back — and checks the outcome: nobody stuck, one history entry per call, audio both ways, and times (ring, answer → audio, Reconnecting, failed).
+
+[`docker-compose.app-lab.yml`](../../packaging/pp-node/docker-compose.app-lab.yml) (project `pp-app-lab`) is the real relay — web2 `www` (gateway: registration, directory, signed requests, rate limits) + `messenger` + Mongo, built from `PP_WEB2_ROOT` — and the lab's own mesh seed. The seed sits on a TEST-NET-2 network (198.51.100.0/24): the product dials seeds only on public addresses. No fixed container names or Mongo host port, so it never meets a developer's own Brief stack. The relay allows 10 registrations per IP per hour; the driver restarts the gateway when a run has used them. The lab seed never dials the production seeds (`PP_NODE_BOOTSTRAP_PEERS` is an unroutable TEST-NET-3 address): when it did, their dial-backs held its pending-handshake slots and real hellos were dropped, which looked like 12–14 s answers. A call slower than 8 s from answer to audio fails the scenario. `seed_down` stops the lab seed after both users are online: the call must still connect within the 8 s bound (Accept does not wait for the seed park).
 
 Probes dial the hop at a **private / loopback** address from `/status` `listen_addrs` (its Docker network address) when the status URL is local: the hop ranks a public address learned from an internet seed first, which probes on the same host usually cannot reach (no NAT hairpin). Set `PP_NODE_HOP_MULTIADDR` to dial a specific hop address.
 
@@ -213,6 +221,7 @@ Probes dial the hop at a **private / loopback** address from `/status` `listen_a
 | **N-SOAK** | Long-run stability | hop + churning clients | T hours: 0 fatal; FD/RSS bounded; dials still accepted | Weekly / pre-release |
 | **N-CHAOS** | Process/network faults | kill/pause/restart | Survivors recover or fail cleanly; hop accepts new work | Manual / weekly |
 | **N-MIX** | Hop interference (existing smokes in parallel) | 1 hop + allowlisted children | Each child keeps its own criteria; hop `/healthz` after | Nightly |
+| **N-LEDGER** | pp-node runs a pp-ledger role on its mesh (pp-ledger platform-integration pi4) | Standalone beacon → pp-node relay → miner; beacon → relay → pp-node miner (local processes; pp-ledger's smoke library) | The tip advances after a transaction inject; the pp-node role serves `pp-client` on the node's address; it runs on the node's runtime | Before a ledger pin bump; manual |
 | **N-HARD-FORCE** | Forced hop: no A↔B route | A \| hop \| B isolated nets | Circuit + media via hop; direct fails | Nightly (when scaffolded) |
 | **N-HARD-LOSSY** | Forced hop + link impairment | Wave 1 + netem | Wave 1 still completes; no hop fatal | Nightly / weekly |
 | **N-HARD-ASYM** | Asymmetric / outbound-only path | Wave 1 + asym profile | Completes via circuit/dial-back story | Nightly / weekly |

@@ -77,7 +77,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   storage_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.data_dir, "/tmp/data");
   EXPECT_FALSE(state.profile_size_label.empty());
-  EXPECT_NE(state.profile_size_label.find("Profile uses ~"), std::string::npos);
+  EXPECT_NE(state.profile_size_label.find("use about"), std::string::npos) << state.profile_size_label;
   EXPECT_FALSE(state.attachment_cache_size_label.empty());
   EXPECT_TRUE(storage_section.IsWritable());
 
@@ -85,5 +85,25 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   about_section.SyncFromSession(bootstrap, state);
   EXPECT_FALSE(state.app_name.empty());
   EXPECT_FALSE(state.app_version.empty());
-  EXPECT_FALSE(about_section.IsWritable());
+  EXPECT_TRUE(about_section.IsWritable()) << "About owns the Show advanced settings switch";
+}
+
+// Me → About → "Show advanced settings": off for everyone by default. The Integrations (MCP) section is listed
+// only while it is on; the switch itself lives in the About section and persists to the profile prefs.
+TEST(SettingsSectionsTest, AdvancedSettingsSwitchAndAdvancedOnlySections) {
+  LoadLocales();
+  EXPECT_TRUE(pbr::IntegrationsSettingsSection().ListItem().advanced_only);
+  EXPECT_FALSE(pbr::AboutSettingsSection().ListItem().advanced_only);
+  EXPECT_FALSE(pbr::NetworkSettingsSection().ListItem().advanced_only);
+
+  pbr::BootstrapResult bootstrap;
+  pbr::SettingsUiState state;
+  pbr::AboutSettingsSection about;
+  about.SyncFromSession(bootstrap, state);
+  EXPECT_EQ(state.show_advanced_settings, "off");
+  EXPECT_TRUE(about.IsPersisted(state, bootstrap));
+  state.show_advanced_settings = "on";
+  EXPECT_FALSE(about.IsPersisted(state, bootstrap));
+  bootstrap.profile_prefs.show_advanced_settings = true;
+  EXPECT_TRUE(about.IsPersisted(state, bootstrap));
 }

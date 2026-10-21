@@ -24,6 +24,7 @@
 #include "foundation/data/SessionStore.h"
 #include "common/Module.h"
 #include "domain/ui/ChatWidgetTypes.h"
+#include "domain/ui/ContextMenuHost.h"
 
 #include <source_location>
 #include <ui/data/DataModelHandle.h>
@@ -35,6 +36,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -179,6 +181,9 @@ private:
     bool image_thumb_ready = false;
     ui::String image_thumb_src;
     ui::String image_draft_name;
+    /** A reply is being written to a quoted message: the bar above the composer input. */
+    bool quote_reply = false;
+    ui::String quote_reply_text;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -208,6 +213,10 @@ private:
 
   struct ShellState {
     std::vector<SessionRow> sessions;
+    /** Archived threads are kept out of the list; the entry row above it opens them. */
+    int archived_count = 0;
+    bool showing_archived = false;
+    ui::String archived_entry_label;
     bool working_set_active = false;
     ui::String working_set_title;
     ui::String working_set_subtitle;
@@ -246,7 +255,6 @@ private:
   static void StartCallCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenPeerSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SelectThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ClearHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ForgetMemoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SyncWithPeerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -273,6 +281,29 @@ private:
   void OnOpenPeerSheet(ui::Event& ev);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();
+  /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
+  void ClearHistoryOf(const std::string& thread_id);
+  void AfterHistoryCleared(const std::string& thread_id);
+  /** Context menu for a row in the sessions list (right-click / long-press); `position` anchors a second step. */
+  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
+  /** Second step of "Mute": 8 hours / 1 week / Always. */
+  void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
+  /**
+   * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store can
+   * be listed, then kept in step with every write. Empty, and read again next time, while it cannot.
+   */
+  const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
+  /** One thread's settings: from the cache, or from the store while the cache is unavailable; nullopt when
+   *  neither can be read. */
+  std::optional<ThreadLocalPrefs> ThreadPrefsOf(const std::string& thread_id);
+  /** Reads, changes and writes one thread's settings, then refreshes the list; tells the user when the
+   *  store refused. */
+  void UpdateThreadPrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
+  /** Writes the settings and the cache only; false when the store refused. */
+  bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
+  void OnToggleArchived();
+  static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> thread_prefs_;
   void OnForgetMemory();
   void OnSyncWithPeer();
   void OnRetryGapSync();
@@ -298,6 +329,8 @@ private:
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const;
   void OnAttachAiImage();
+  /** Phones: "Photo / File / Cancel" before a picker (both composers). */
+  void ShowAttachChoice(std::function<void()> photo, std::function<void()> file);
   void StartAiImagePrepare(std::string path);
   void OnRemoveImage();
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
@@ -309,7 +342,29 @@ private:
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
-  void OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position);
+  /** What the user reads in a message of the active thread ("" when not found). */
+  void OnDeleteMessage(const std::string& message_id, ui::Vector2i position);
+  void DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  bool CanDeleteForEveryone(const std::string& message_id) const;
+  bool IsDeletedMessage(const std::string& message_id) const;
+  std::string MessagePlainText(const std::string& message_id) const;
+  /**
+   * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
+   * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
+   */
+  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
+  void CancelQuoteReply();
+  /** Share: lists the direct chats (most recent first); picking one sends `text` there. */
+  void OpenShareTargets(const std::string& text, ui::Vector2i position);
+  /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
+  void JumpToQuotedMessage(const std::string& reply_message_id);
+  static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */
+  void OpenMessageLink(const std::string& message_id, int link_index);
+  static void OpenMessageLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  /** The message being replied to (full text); empty when no reply is pending. */
+  std::string quote_reply_source_;
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);
@@ -426,15 +481,8 @@ private:
     int width = 0;         // pixels of the prepared image
     int height = 0;
   };
-  struct AiImageView {
-    std::string file_path;
-    int width = 0;
-    int height = 0;
-  };
   std::optional<PendingAiImage> pending_image_;
   uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
-  /** Sent image question (user message id) -> its session thumbnail file; gone after a restart. */
-  std::map<std::string, AiImageView> ai_image_files_;
 
   /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
   struct StreamingRow {

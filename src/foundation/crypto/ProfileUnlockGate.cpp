@@ -101,6 +101,26 @@ void ProfileUnlockGate::RequestShowIdentityFork(std::function<void(bool)> done) 
   }
 }
 
+void ProfileUnlockGate::RequestShowFreshInstallEntry() {
+  std::optional<std::string> nickname;
+  if (ports_.local_backup_nickname) {
+    if (auto peeked = ports_.local_backup_nickname(); peeked) {
+      nickname = *peeked;
+    } else {
+      log().warning << "Local account backup unreadable, offering a new account: " << peeked.error().message;
+    }
+  }
+  if (nickname && ports_.ui.show_identity_restore) {
+    if (showing_) {
+      return;
+    }
+    showing_ = true;
+    ports_.ui.show_identity_restore(*nickname);
+    return;
+  }
+  RequestShowIdentityFork(nullptr);
+}
+
 void ProfileUnlockGate::RequestShowChooser(std::function<void(bool)> done) {
   if (done) {
     pending_.push_back(std::move(done));
@@ -258,8 +278,10 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
         on_done(work());
       }
     } else {
-      // No vault yet — leave locked until a feature calls EnsureUnlocked (identity fork).
-      DrainQueue(false);
+      // No vault yet (fresh install): go straight to "I'm new / I already have an account" (plus
+      // "Restore my account" when a local backup exists), so PIN creation and the first-run wizard
+      // follow the first frame instead of an empty home screen.
+      RequestShowFreshInstallEntry();
     }
     return;
   }
@@ -292,6 +314,49 @@ void ProfileUnlockGate::CompleteWithPin(const std::string& pin, const bool creat
 void ProfileUnlockGate::CompleteWithDefaultPin() {
   RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/true,
                          /*clear_default_pin=*/false);
+}
+
+void ProfileUnlockGate::CompleteRestoreBackup(const std::string& pin, const bool set_default_pin) {
+  if (unlock_in_progress_) {
+    return;
+  }
+  if (!ports_.restore_local_backup) {
+    ReportError("Account restore is not available");
+    return;
+  }
+  SetUnlockInProgress(true);
+  StartupMark("local_backup_restore_begin");
+
+  auto work = [this, pin]() -> Roe<void> {
+    if (auto restored = ports_.restore_local_backup(pin); !restored) {
+      return restored.error();
+    }
+    return UnlockAndReady(pin);
+  };
+  auto on_done = [this, set_default_pin](Roe<void> result) {
+    if (!result) {
+      StartupMark("local_backup_restore_fail");
+      ReportError(result.error().message);
+      return;
+    }
+    if (ports_.set_pin_is_default) {
+      ports_.set_pin_is_default(set_default_pin);
+    }
+    StartupMark("local_backup_restore_ok");
+    if (set_default_pin && ports_.ui.on_default_provisioned) {
+      ports_.ui.on_default_provisioned();
+    }
+    if (ports_.ui.on_link_imported) {
+      ports_.ui.on_link_imported(); // a restored account needs no wizard either
+    }
+    Finish(true);
+  };
+
+  if (ports_.run_heavy) {
+    ports_.run_heavy(std::move(work), std::move(on_done));
+    return;
+  }
+  on_done(work());
 }
 
 void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::string& bundle_json,
@@ -342,6 +407,13 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
 }
 
 void ProfileUnlockGate::Cancel() {
+  if (secrets_ && !Secrets().HasVault()) {
+    // No account yet: PP is not usable without one, so "back" on the PIN / paste page returns to
+    // the identity fork instead of dropping the user on an empty home screen (Kenneth 2026-10-13).
+    showing_ = false;
+    RequestShowFreshInstallEntry();
+    return;
+  }
   Finish(false);
 }
 

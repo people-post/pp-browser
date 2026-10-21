@@ -16,7 +16,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
 | **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |
 | **V038 rewrite debt** | N=2 = direct → punch → **circuit** call-media; SoftMigrate / `media_relay` = **N≥3 only** — [DECISIONS V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
-| **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
+| **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/domain/calls/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
 | **V039 planner FSMs** | **pm0–pm4 landed** — Direct/Hop `Apply` + logic gtests; health/attach-wait SM timers; CALLS race homes → planner phases — [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines) |
 | **V040 CallMediaPlane** | **Landed (cs0–cs2)** — `CallMediaPlane` owns Amp/dial/relay/hop/bridge/dial book; Lifecycle sole N025 desire; CALLS.md ownership promoted — [DECISIONS V040](DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane) |
 | **V041 Lifecycle ports** | **Landed (ci0–ci3)** — `CallLifecycleSignalingPorts`; Stack composition root; CALLS.md table — [DECISIONS V041](DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports) |
@@ -96,8 +96,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 | Gate | Purpose / evidence | Status |
 |------|-------------------|--------|
-| **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/domain/messaging/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
-| **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/domain/messaging/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
+| **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/domain/calls/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
+| **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/domain/calls/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
 | **D3 direct duplex** | `B-CALL-DIRECT`: Bridge + Kick + CSM compose + CallUiBackend + dual-stack (Invite/InCall/Leave + K-cycle + conflict) + `pp_call_direct_smoke` / `pp_call_conflict_smoke` | **Improved** (in-process product wire + K-cycle + conflict); Amp smokes green |
 | **D4 circuit duplex** | `B-CALL-HOP`: `AmpCircuitCallMediaComposeTest` + `pp_call_hop_smoke` | **PASS** loopback; smoke scaffold |
 | **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold / nightly — **replaces** “two NATed phones” as regression wall |
@@ -124,7 +124,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Reintroduce `call_hop_addrs` / app ICE gather | H007 — reachability **in** libp2p |
 | Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
-| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) |
+| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/domain/calls/CallMediaPlannerSelectLogic.h) |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
 | Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |

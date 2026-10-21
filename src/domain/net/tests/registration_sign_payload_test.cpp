@@ -35,6 +35,15 @@ TEST(RegistrationSignPayloadTest, BuildRegistrationSignBytesBindsKemKey) {
   EXPECT_NE(bytes, other_bytes);
 }
 
+// Same vector as app-static-api RelayApiAuthVerifier.test.ts ("buildAccountRevokeSignBytes matches ...").
+TEST(RegistrationSignPayloadTest, BuildAccountRevokeSignBytesMatchesGoldenVector) {
+  const auto bytes = BuildAccountRevokeSignBytes("relay:u1", 1700000000005);
+  ASSERT_FALSE(bytes.empty());
+  EXPECT_EQ(BytesToHex(bytes),
+            "70702d62726f777365723a72656c61792d7265766f6b652d76310001000000000000000872656c61793a7531"
+            "0000018bcfe56805");
+}
+
 TEST(RegistrationSignPayloadTest, BuildProfileUpdateSignBytesMatchesGoldenVector) {
   const auto bytes = BuildProfileUpdateSignBytes("relay:u1", "alice", 1700000000003);
   ASSERT_FALSE(bytes.empty());

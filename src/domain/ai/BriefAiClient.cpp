@@ -1,11 +1,14 @@
 #include "domain/ai/BriefAiClient.h"
 
+#include "domain/ai/BearerUrlPolicy.h"
+
 #include "common/ValueJson.h"
 #include "domain/ai/SseClient.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 
 #include <algorithm>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -20,11 +23,7 @@ std::string StringOrEmpty(const Object& json, const char* key) {
 }
 
 bool BearerAllowedFor(const std::string& url, const bool overridden) {
-  if (!overridden || url.rfind("https://", 0) == 0) {
-    return true;
-  }
-  return url.rfind("http://127.0.0.1", 0) == 0 || url.rfind("http://localhost", 0) == 0 ||
-         url.rfind("http://[::1]", 0) == 0;
+  return !overridden || BearerAllowedOnUrl(url);
 }
 
 bool IsTerminal(BriefAiEvent::Type type) {

@@ -5,7 +5,7 @@ set(_pp_node_tools_out "${CMAKE_BINARY_DIR}/src/app/node")
 
 # Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
 set(_pp_probe_libs
-  pp_domain_mesh
+  pp_mesh
   pp_amp_link
   pp_foundation_crypto
   pp_amp_l1
@@ -13,9 +13,6 @@ set(_pp_probe_libs
   Threads::Threads
   sodium
 )
-if(TARGET OpenSSL::Crypto)
-  list(APPEND _pp_probe_libs OpenSSL::Crypto)
-endif()
 
 add_executable(pp-node-probe probe/main.cpp)
 target_include_directories(pp-node-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -34,17 +31,18 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
   target_link_libraries(pp-call-probe PRIVATE
     ${_pp_probe_libs}
     pp_foundation_platform_core
+    pp_feature_call_media
   )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
   if(TARGET pp_feature_calls)
-    target_link_libraries(pp-call-probe PRIVATE pp_feature_calls)
+    target_link_libraries(pp-call-probe PRIVATE pp_feature_calls pp_feature_broadcast)
   endif()
   if(TARGET pp_feature_conversations)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_conversations)
   else()
     target_sources(pp-call-probe PRIVATE
       ${CMAKE_SOURCE_DIR}/src/feature/conversations/AmpDirectChatTransport.cpp)
-    target_link_libraries(pp-call-probe PRIVATE pp_domain_messaging)
+    target_link_libraries(pp-call-probe PRIVATE pp_domain_messaging pp_domain_calls pp_domain_broadcast pp_domain_pricing)
   endif()
   pp_browser_apply_warnings(pp-call-probe)
   set_target_properties(pp-call-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
@@ -61,6 +59,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
       ${_pp_probe_libs}
       pp_foundation_platform_core
       pp_feature_calls
+      pp_feature_broadcast
       pp_feature_conversations
       GTest::gtest
       GTest::gtest_main
@@ -69,4 +68,25 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
     include(PpBrowserTesting)
     pp_browser_add_gtest(pp_browser_call_probe_test)
   endif()
+endif()
+
+# pp-app-probe: the app with no GUI (same Bootstrap + ProductStack), one scripted user per process.
+# Desktop configure only (needs the product feature stack).
+if(TARGET pp_feature_product)
+  add_executable(pp-app-probe
+    app_probe/main.cpp
+    ${CMAKE_SOURCE_DIR}/src/app/Bootstrap.cpp
+  )
+  target_include_directories(pp-app-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  target_link_libraries(pp-app-probe PRIVATE
+    pp_feature_product
+    pp_feature
+    pp_base
+    pp_pbr_common
+    pp_mesh
+    CURL::libcurl
+    Threads::Threads
+  )
+  pp_browser_apply_warnings(pp-app-probe)
+  set_target_properties(pp-app-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
 endif()

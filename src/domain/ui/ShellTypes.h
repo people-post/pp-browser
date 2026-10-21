@@ -148,6 +148,8 @@ struct PinGateState {
   bool active = false;
   /** No vault yet: I'm new vs I already have an account. */
   bool identity_fork_mode = false;
+  /** Fork extra: "Restore my account: <nickname>" when a local backup exists; empty hides it. */
+  ui::String restore_label;
   bool chooser_mode = false;
   bool create_mode = false;
   /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
@@ -331,6 +333,8 @@ struct ShellState {
   ui::String primary_pane_key;
 
   ui::String banner_message;
+  /** Banners go away on their own (ShellFeedback::kBannerTtlMs); 0 = none showing. */
+  float banner_expires_at_ms = 0.f;
   std::vector<ToastEntry> toasts;
   DialogState dialog;
   PinGateState pin_gate;

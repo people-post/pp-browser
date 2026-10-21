@@ -1,9 +1,10 @@
 #pragma once
 
+#include "common/chat/SystemControl.h"
+
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/ui/ChatWidgetTypes.h"
-#include "domain/messaging/CallTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/DirectoryShadowCache.h"
@@ -29,6 +30,8 @@ public:
                   DirectoryShadowCache* shadows = nullptr);
 
   void SetGroupMembership(GroupMembershipWorkflow* groups);
+  /** The system-control families features bind: how their messages show (hidden, worded). Not owned. */
+  void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
 
   Roe<std::vector<Thread>> ListThreads();
   Roe<Thread> GetActiveThread() const;
@@ -50,6 +53,17 @@ public:
 
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
+  /**
+   * "Delete for me": the message's content and its attachment / image bytes are deleted from this device;
+   * an id-only tombstone stays so sync cannot bring it back, and the bubble shows "This message was deleted".
+   * Nothing is sent.
+   */
+  Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
+  /**
+   * After a message's row became a tombstone (here, or by its sender's retract): delete its bytes, forget a
+   * summary that folded it in, and stop the list preview from showing its text.
+   */
+  void AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
@@ -88,17 +102,16 @@ private:
   std::string ResolveRowClass(const std::string& sender_contact_id) const;
   std::string BuildMessageRml(const ThreadMessage& message) const;
   std::string BuildSystemRml(const ThreadMessage& message) const;
-  std::string BuildCallHistoryRml(const ThreadMessage& message, CallControlType type) const;
   std::string BuildContactCardRml(const ThreadMessage& message) const;
   std::string BuildCryptoTxRml(const ThreadMessage& message) const;
   std::string BuildAttachmentRml(const ThreadMessage& message) const;
   std::string BuildUnsupportedRml(const ThreadMessage& message) const;
   std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
-  std::string FormatCallPeerLabel(const std::string& identity) const;
 
   IThreadStore& store_;
   ContactsStore& contacts_;
   PeerDisplayResolver& labels_;
+  const SystemControlRegistry* controls_ = nullptr;
   DirectoryShadowCache* shadows_ = nullptr;
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;

@@ -1,21 +1,21 @@
 #pragma once
 
-#include "common/privacy/AddressDisclosure.h"
+#include "mesh/types/AddressDisclosure.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/media/CallMediaEngine.h"
-#include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/BroadcastJoinTicket.h"
-#include "domain/messaging/CallLifecycleTypes.h"
-#include "domain/messaging/CallSessionStore.h"
+#include "domain/calls/CallControlCodec.h"
+#include "domain/broadcast/BroadcastJoinTicket.h"
+#include "domain/calls/CallLifecycleTypes.h"
+#include "domain/calls/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
-#include "domain/messaging/InitiationBillingStore.h"
+#include "domain/pricing/InitiationBillingStore.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "domain/mesh/reach/PeerMediaRelayCaps.h"
+#include "mesh/reach/PeerMediaRelayCaps.h"
 #include "domain/people/PeerAccountBook.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
@@ -29,7 +29,6 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
 #include "feature/calls/SharedPorts.h"
-#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -41,6 +40,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -113,9 +113,9 @@ public:
    * projects/privacy T1: call signalling carries our listen addresses, and we answer a signalling
    * punch, only for peers this gate allows. Null = everyone. Not owned.
    */
-  void SetAddressDisclosure(const AddressDisclosureGate* gate) { address_disclosure_ = gate; }
+  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
   /** projects/privacy T3: who may call us; an invite from outside is dropped silently. Owner thread. */
-  void SetInboundCallAudience(InboundAudience audience) { inbound_call_audience_ = audience; }
+  void SetInboundCallAudience(mesh::InboundAudience audience) { inbound_call_audience_ = audience; }
   /** Whether an invite from `caller` may ring (the audience; contacts from the disclosure gate). */
   bool AllowsInboundCall(const std::string& caller) const;
   /** Local capability ads for invite/accept (V030). */
@@ -411,14 +411,14 @@ private:
   EnsureCircuitReadyFn ensure_circuit_ready_;
   ParkCircuitFn park_circuit_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
-  const AddressDisclosureGate* address_disclosure_ = nullptr;
-  InboundAudience inbound_call_audience_ = InboundAudience::Everyone;
+  const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
+  mesh::InboundAudience inbound_call_audience_ = mesh::InboundAudience::Everyone;
   LocalPeerCapsFn local_peer_caps_;
   CallPeerCapsSink call_peer_caps_sink_;
   LocalMeshPeerIdFn local_mesh_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   /** PeerId → advertised media_relay (V030). Unknown = fail closed. */
-  PeerMediaRelayCaps media_relay_caps_;
+  mesh::PeerMediaRelayCaps media_relay_caps_;
   /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
   PeerAccountBook peer_accounts_;
   std::optional<std::string> last_media_error_;

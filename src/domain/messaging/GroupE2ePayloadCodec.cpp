@@ -6,12 +6,13 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 ChatTargetKey GroupE2ePayloadCodec::PairTargetKey(const std::string& member_identity) {
   ChatTargetKey key;
-  key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   key.peer_identity_value = member_identity;
   key.channel = CryptoChannel::E2ePublic;
   return key;
@@ -115,7 +116,7 @@ Roe<ThreadMessage> GroupE2ePayloadCodec::DecryptForLocalMember(const RelayEnvelo
   direct_envelope.body.e2e.member_payloads = std::nullopt;
 
   ChatTargetKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target_key.peer_identity_value = envelope.sender_contact_id;
   target_key.channel = CryptoChannel::E2ePublic;
   return E2eRelayPayloadCodec::DecryptEnvelope(direct_envelope, local_contact_id, target_key, psk_store,

@@ -135,6 +135,16 @@ struct AgentSession::Impl : public Module {
   std::mutex park_mutex;
 };
 
+/** The registry's metadata for a tool; empty (never "Always", treated as read elsewhere) when unknown. */
+ToolMeta AgentSession::MetaForTool(const std::shared_ptr<Impl>& state, const std::string& name) {
+  for (const ToolDescriptor& tool : state->tools.Tools()) {
+    if (tool.definition.name == name) {
+      return tool.meta;
+    }
+  }
+  return {};
+}
+
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
   AppRuntime::PostUI([state, event = std::move(event)]() mutable {
     std::lock_guard lock(state->event_mutex);
@@ -261,7 +271,11 @@ void AgentSession::ParkForPermission(const std::shared_ptr<Impl>& state, TurnExe
   park.turn_mode = state->turn_mode;
 
   state->turn_trace.tools_executed = park.tools_executed;
-  const std::string blocks = BuildToolPermissionChoiceBlocks(park.id, park.offered_tools);
+  bool offer_allow_always = !park.offered_tools.empty();
+  for (const PlannedToolCall& tool : park.offered_tools) {
+    offer_allow_always = offer_allow_always && ToolPermissionPolicy::AllowAlwaysEligible(MetaForTool(state, tool.name));
+  }
+  const std::string blocks = BuildToolPermissionChoiceBlocks(park.id, park.offered_tools, offer_allow_always);
 
   {
     std::lock_guard lock(state->park_mutex);
@@ -355,7 +369,10 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
 
   if (decision == "allow_always") {
     for (const PlannedToolCall& tool : park.offered_tools) {
-      ToolPermissionPolicy::SetToolDecision(state->tool_permissions, tool.name, "allow");
+      // The prompt only offers Always when every tool is eligible; a stale or crafted decision is not trusted.
+      if (ToolPermissionPolicy::AllowAlwaysEligible(MetaForTool(state, tool.name))) {
+        ToolPermissionPolicy::SetToolDecision(state->tool_permissions, tool.name, "allow");
+      }
     }
     if (state->tool_permissions_saver) {
       if (auto saved = state->tool_permissions_saver(state->tool_permissions); !saved) {
@@ -1006,8 +1023,12 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
                           : util::GenerateUuid();
     user_message.thread_id = state->pending_thread_id;
     user_message.sender_contact_id = kLocalSelfContactId;
-    // Stored as text only: later history reads "[Image] <question>"; the bytes are never kept here.
+    // Stored as text: later history reads "[Image] <question>"; the bytes are never kept here. The GUI's
+    // reference to the stored image (private CAS) rides along so the bubble can show it after a restart.
     user_message.text = (state->pending_image ? std::string(kAiImageTurnMarker) : std::string()) + state->pending_user_text;
+    if (state->pending_image && !state->pending_image->ai_image_json.empty()) {
+      user_message.ai_image_json = state->pending_image->ai_image_json;
+    }
     user_message.timestamp = util::NowUnixMs();
     user_message.delivery = MessageDelivery::Local;
     user_message.transport = MessageTransport::Local;

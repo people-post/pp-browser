@@ -113,7 +113,7 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 | Sidebar preview | `transcript-preview\|{profile_id}\|{thread_id}\|1` |
 | Thread memory value | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
 
-Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
+Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`, optional `working_set_json`, optional `ai_image_json` = reference `{content_hash, mime, width, height}` to the private-CAS image of an AI question). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
 
 ### Attachment blob AEAD (a5 / C007 / C011)
 
@@ -130,3 +130,12 @@ Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore
 
 
 Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).
+
+## Local account backup (iOS)
+
+The Keychain item described in [DATA_LAYOUT.md](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir)
+holds the link-device bundle **in the clear** (it contains the DEK and the account secret keys), protected only by the
+Keychain / device passcode / Secure Enclave — the same trust as the "I already have an account" transfer code, but
+persistent. Restore on a fresh install creates a new vault under the user's new PIN and imports the bundle exactly
+like a pasted transfer code (`LinkDeviceCoordinator::Import`), then upserts the contacts. An attacker needs an
+unlocked device; the item never leaves it.

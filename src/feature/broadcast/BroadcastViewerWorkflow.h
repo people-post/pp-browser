@@ -1,11 +1,11 @@
 #pragma once
 
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 #include "domain/media/CallMediaEngine.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
-#include "domain/messaging/BroadcastRpcCodec.h"
-#include "domain/messaging/BroadcastViewerLadder.h"
-#include "domain/messaging/PeerAnnounceTypes.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
+#include "domain/broadcast/BroadcastRpcCodec.h"
+#include "domain/broadcast/BroadcastViewerLadder.h"
+#include "domain/broadcast/PeerAnnounceTypes.h"
 #include "foundation/runtime/OwnerOutbox.h"
 
 #include "common/Error.h"
@@ -20,6 +20,7 @@
 #include <variant>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -57,14 +58,14 @@ struct BroadcastViewerPorts {
                      std::function<void(Roe<BroadcastViewerAttachResult>)> on_done)>
       request_admission;
   /** media_relay client + dial registry + service reach (L008 / L009). */
-  MediaRelayAttachPorts relay;
+  mesh::MediaRelayAttachPorts relay;
   /** Dial hint for a hop (may return empty). */
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   /** Playback-only session target (owner for Start / Stop; OnSfuPacket any thread). */
   CallMediaEngine* engine = nullptr;
   std::function<int64_t()> now_ms;
   /** B009: the video level this viewer prefers; the nearest published one is taken (0 = no video). */
-  int preferred_video_level = kDefaultVideoLevel;
+  int preferred_video_level = mesh::kDefaultVideoLevel;
 };
 
 /** What the viewer reports to itself through its runner (BroadcastHub); `watch` names the watch. */
@@ -86,12 +87,12 @@ struct Admission {
 struct Attached {
   uint64_t watch = 0;
   std::string hop;
-  Roe<MediaRelayAttached> attached;
+  Roe<mesh::MediaRelayAttached> attached;
 };
 /** The relay client session ended (relay I/O). */
 struct SessionEnded {
   uint64_t watch = 0;
-  MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost;
+  mesh::MediaRelayClientLoss loss = mesh::MediaRelayClientLoss::TransportLost;
 };
 /** The back-off before re-admission ended. */
 struct ReadmitDue {
@@ -166,9 +167,9 @@ private:
   void AskAdmission(const std::string& hop);
   void OnAdmission(const std::string& hop, Roe<BroadcastViewerAttachResult> result);
   void Attach(const std::string& hop);
-  void OnAttached(const std::string& hop, Roe<MediaRelayAttached> attached);
+  void OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached);
   void StartListening(const std::string& hop);
-  void OnSessionEnded(MediaRelayClientLoss loss);
+  void OnSessionEnded(mesh::MediaRelayClientLoss loss);
   void Recover();
   BroadcastViewerLadder MakeLadder() const;
 

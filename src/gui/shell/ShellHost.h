@@ -23,6 +23,7 @@
 #include <functional>
 #include <optional>
 #include <source_location>
+#include <map>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -102,6 +103,8 @@ public:
   void RemountDialogChrome();
   /** Mount/clear PIN gate into #shell-pin-gate-mount (not full SyncLayout). */
   void RemountPinGateChrome();
+  /** Mount `body` into the overlay mount element `mount_id` (empty body clears). Deferred to the next UI turn. */
+  void MountOverlayBody(const std::string& mount_id, const std::string& body);
   void Update(ui::Context* context);
   /** Call after ui::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
   void NotifyFrameEnd(ui::Context* context);
@@ -231,6 +234,7 @@ public:
   static void PinGateUseDefaultCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void PinGateIdentityNewCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void PinGateIdentityLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateIdentityRestoreCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallAcceptCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallAcceptVoiceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallAcceptChargeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -305,6 +309,8 @@ private:
   void RemountDialogChromeNow();
   void FlushRemountDialogChrome();
   void RemountPinGateChromeNow();
+  /** SyncLayout rebuilt the DOM: put every MountOverlayBody body back into its (now empty) mount. */
+  void RemountOverlayBodiesNow();
   void FlushRemountPinGateChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
@@ -361,6 +367,8 @@ private:
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
+  /** Last body per overlay mount id (onboarding wizard); survives the full rebuild in SyncLayout. */
+  std::map<std::string, std::string> overlay_bodies_;
   /** True from first paint until SettleStartupCoverArm (deferred unlock decision). */
   bool startup_cover_armed_ = true;
   /** Cleared after cold-start prepare ends — blocks mid-session unlock from re-showing the logo. */

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -22,7 +23,7 @@ struct CallFunctionalPorts {
   std::function<bool()> initialized;
   std::function<CallUiBackend*()> backend;
   std::function<Roe<std::optional<Thread>>(const std::string& thread_id)> get_thread;
-  std::function<Roe<std::optional<Contact>>(const std::string& identity, ContactIdKind kind)>
+  std::function<Roe<std::optional<Contact>>(const std::string& identity, mesh::ContactIdKind kind)>
       find_contact_by_identity;
   std::function<std::string(const std::string& identity)> identity_icon_local_path;
   std::function<std::optional<std::string>()> local_relay_identity;

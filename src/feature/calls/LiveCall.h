@@ -1,7 +1,8 @@
 #pragma once
 
-#include "domain/messaging/CallLifecycleTypes.h"
-#include "domain/messaging/CallMediaStatusLogic.h"
+#include "domain/calls/CallLifecycleTypes.h"
+#include "domain/calls/CallMediaStatusLogic.h"
+#include "domain/calls/CallTypes.h"
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>
@@ -59,6 +60,8 @@ enum class LiveCallEndReason {
   Shutdown,
   /** Left over from before a restart. */
   Orphaned,
+  /** Both called each other at once: this call gave way to the other one (no history entry). */
+  Merged,
 };
 
 /** How a call's media is doing (V037 Status) and what it has reached — per call. */
@@ -72,6 +75,8 @@ struct LiveCallMediaProgress {
 
 const char* LiveCallStateName(LiveCallState state);
 const char* LiveCallEndReasonName(LiveCallEndReason reason);
+/** How a call went for its summary, from the starter's side: completed when someone answered, else by why it ended. */
+CallOutcome SummaryOutcome(bool answered, LiveCallEndReason reason);
 
 /**
  * One call as it lives on this device, from admission to close — the in-process counterpart of the

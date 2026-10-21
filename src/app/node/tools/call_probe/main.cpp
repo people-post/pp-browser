@@ -1,4 +1,4 @@
-#include "domain/messaging/CallMobility.h"
+#include "domain/calls/CallMobility.h"
 #include "app/node/tools/call_probe/ProductStackHarness.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "amp/L1/Clock.h"
@@ -9,14 +9,15 @@
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
 #include "common/chat/RelayEnvelope.h"
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
-#include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
-#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
-#include "domain/mesh/host/MeshPorts.h"
-#include "domain/messaging/CallTypes.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "mesh/l4/circuit/CircuitRelayTypes.h"
+#include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
+#include "feature/call_media/CallMediaLegCoordinator.h"
+#include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "feature/call_media/ICallMediaTransport.h"
+#include "mesh/host/MeshPorts.h"
+#include "domain/calls/CallTypes.h"
+#include "amp/link/PeerId.h"
+#include "crypto/PeerId.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/Utilities.h"
@@ -231,13 +232,7 @@ pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
   // keep NAT/mapping fresh so circuit StartBridge still finds the answerer on the hop.
   config.keepalive_hot_interval = std::chrono::milliseconds(2000);
   config.keepalive_warm_interval = std::chrono::milliseconds(2000);
-  config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
-    auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
-    if (!peer_id) {
-      return {};
-    }
-    return *peer_id;
-  };
+  config.peer_id_from_identity = pp::amp::PeerIdFromIdentityKey;
   return config;
 }
 
@@ -277,7 +272,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   if (!keys) {
     return keys.error();
   }
-  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   if (!peer_id) {
     return peer_id.error();
   }
@@ -370,16 +365,16 @@ bool SendProbeChat(pbr::AmpDirectChatTransport& chat, const std::string& peer_ke
   return true;
 }
 
-pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitClientCoordinator& circuit,
-                                     pbr::AmpCircuitHopRegistry& hops, const std::string& hop_key,
+pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pp::mesh::CircuitClientCoordinator& circuit,
+                                     pp::mesh::AmpCircuitHopRegistry& hops, const std::string& hop_key,
                                      const std::string& peer_id, const std::string& peer_ma) {
-  pbr::CircuitBridgeTarget target;
+  pp::mesh::CircuitBridgeTarget target;
   target.target_peer_id = peer_id;
   // Empty multiaddr = peer-id-only: hop must already know a dialable path (warm-hop / book).
   target.target_multiaddr = peer_ma;
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
-  AsyncWait<pbr::CircuitTunnelBridgeResult> bridge_wait;
+  AsyncWait<pp::mesh::CircuitTunnelBridgeResult> bridge_wait;
   auto tunnel_id = circuit.StartBridge(hop_key, target, {}, {}, bridge_wait.Fn(), 10000);
   if (!tunnel_id) {
     return pbr::Error("start bridge failed");
@@ -916,15 +911,15 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*peer)->Runtime());
   media->Start();
 
-  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*peer)->Runtime());
+  auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*peer)->Runtime());
   circuit->Start();
 
-  std::unique_ptr<pbr::IChatPeerLinks> chat_links;
+  std::unique_ptr<pp::mesh::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   std::atomic<int> chat_received{0};
   if (with_chat) {
     auto pump = [p = peer->get()]() { p->Pump(); };
-    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Runtime());
+    chat_links = pp::mesh::NewAmpChatPeerLinks((*peer)->Runtime());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
@@ -1044,18 +1039,18 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     return 1;
   }
 
-  auto hops = std::make_unique<pbr::AmpCircuitHopRegistry>();
-  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*offerer)->Runtime());
+  auto hops = std::make_unique<pp::mesh::AmpCircuitHopRegistry>();
+  auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*offerer)->Runtime());
   circuit->Start();
 
   auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*offerer)->Runtime());
   media->Start();
 
   auto pump = [p = offerer->get()]() { p->Pump(); };
-  std::unique_ptr<pbr::IChatPeerLinks> chat_links;
+  std::unique_ptr<pp::mesh::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   if (with_chat) {
-    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Runtime());
+    chat_links = pp::mesh::NewAmpChatPeerLinks((*offerer)->Runtime());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();

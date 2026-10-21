@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
+#include "feature/conversations/AiImageRef.h"
 #include "foundation/platform/AiImagePrep.h"
 
 #include <string>
@@ -65,8 +66,9 @@ inline std::pair<int, int> AiImageBubbleSize(const int width, const int height) 
 
 /**
  * Rewrites the bubble of a stored image question ("[Image] <question>", see kAiImageTurnMarker).
- * `image_src` non-empty: the marker becomes a thumbnail (`width` x `height` are the image's pixels) above the question. Empty (the session file is
- * gone, e.g. after a restart): the marker is shown as `marker_label`. Anything else is returned as is.
+ * `image_src` non-empty: the marker becomes a thumbnail (`width` x `height` are the image's pixels) above the
+ * question. Empty (no stored image, or the profile is locked): the marker is shown as `marker_label`.
+ * Anything else is returned as is.
  */
 inline std::string DecorateAiImageBubble(std::string rml, const std::string& image_src, const int width,
                                          const int height, const std::string& marker_label) {

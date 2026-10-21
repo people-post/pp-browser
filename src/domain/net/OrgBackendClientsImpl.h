@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/directory/DirectoryTypes.h"
+#include "mesh/types/DirectoryTypes.h"
 #include "domain/net/BlobClient.h"
 #include "domain/net/ClientCompat.h"
 #include "domain/net/IPushDeviceClient.h"
@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -48,15 +49,15 @@ private:
   uint32_t presign_call_count_ = 0;
 };
 
-class MockDirectoryClient : public IDirectoryClient {
+class MockDirectoryClient : public mesh::IDirectoryClient {
 public:
   void SetDefaultKemPublicKeyB64(std::string kem_public_key_b64) {
     default_kem_public_key_b64_ = std::move(kem_public_key_b64);
   }
 
-  Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
-  Roe<DirectoryHit> LookupByAccount(const std::string& account_id) override;
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
+  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
 
 private:
   std::string default_kem_public_key_b64_;
@@ -136,6 +137,8 @@ public:
                                              const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
+  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                               int64_t timestamp) override;
 };
 
 class HttpRelayClient : public IRelayClient {
@@ -171,29 +174,29 @@ private:
   RelayAuthSigner auth_signer_;
 };
 
-class HttpDirectoryClient : public IDirectoryClient {
+class HttpDirectoryClient : public mesh::IDirectoryClient {
 public:
   explicit HttpDirectoryClient(std::string base_url);
-  Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
-  Roe<DirectoryHit> LookupByAccount(const std::string& account_id) override;
-  Roe<std::vector<MeshNodeHit>> ListMeshNodes() override;
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
+  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
+  Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
 private:
   std::string base_url_;
 };
 
 /** Try each backend in order until one succeeds (N029 nd3). */
-class FailoverDirectoryClient : public IDirectoryClient {
+class FailoverDirectoryClient : public mesh::IDirectoryClient {
 public:
-  explicit FailoverDirectoryClient(std::vector<std::unique_ptr<IDirectoryClient>> backends);
-  Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
-  Roe<DirectoryHit> LookupByAccount(const std::string& account_id) override;
-  Roe<std::vector<MeshNodeHit>> ListMeshNodes() override;
+  explicit FailoverDirectoryClient(std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends);
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
+  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
+  Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
 private:
-  std::vector<std::unique_ptr<IDirectoryClient>> backends_;
+  std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends_;
 };
 
 class HttpRegistrationClient : public IRegistrationClient {
@@ -215,6 +218,8 @@ public:
                                              const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
+  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                               int64_t timestamp) override;
 
 private:
   std::string base_url_;

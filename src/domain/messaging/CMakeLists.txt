@@ -3,33 +3,19 @@ pp_browser_add_domain_library(pp_domain_messaging
     AttachmentCache.cpp
     AttachmentPlaintextMemoryCache.cpp
     AttachmentSuppressionStore.cpp
-    CasStore.cpp
-    CasLibrary.cpp
     ChatAttachmentPrepare.cpp
-    ObjectIndex.cpp
     AtAiParser.cpp
-    AutoKeyEnvelopeResolver.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
     ChatPayloadCodec.cpp
-    CallControlCodec.cpp
-    CallLifecycleTypes.cpp
-    CallMediaKeyStore.cpp
-    CallSessionLogic.cpp
-    CallSessionStore.cpp
-    CallTypes.cpp
-    SoftMigrateLogic.cpp
-    CallHopPlan.cpp
-    CallMobility.cpp
-    CallPathPolicy.cpp
-    CallHopAttachLogic.cpp
+    ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp
-    CallThreadPresenceLogic.cpp
-    CallControlThreadLogic.cpp
+    PeerThreadLogic.cpp
+    ControlLaneEnvelope.cpp
+    ControlLaneSeenStore.cpp
     E2ePublicSessionLogic.cpp
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp
-    PeerCapsLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
     E2eIngestClassifier.cpp
@@ -41,26 +27,6 @@ pp_browser_add_domain_library(pp_domain_messaging
     GroupMembershipCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
-    InitiationBillingCodec.cpp
-    InitiationBillingStore.cpp
-    PaymentPromiseAvoid.cpp
-    PaymentPromiseCodec.cpp
-    PaymentPromiseStore.cpp
-    PaymentPromiseLifecycle.cpp
-    PaymentPromiseWireCodec.cpp
-    PeerAnnounceCodec.cpp
-    PeerAnnounceFeed.cpp
-    PeerAnnouncePublisher.cpp
-    PeerAnnounceRpcCodec.cpp
-    PeerAnnounceKeyResolve.cpp
-    AnnounceOverlayReply.cpp
-    AnnounceNotificationInbox.cpp
-    BroadcastJoinTicket.cpp
-    BroadcastLadderLogic.cpp
-    BroadcastMedia.cpp
-    BroadcastViewerLadder.cpp
-    BroadcastRpcCodec.cpp
-    InitiationPricing.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp

@@ -66,6 +66,66 @@ TEST(SqliteThreadStoreTest, AiThreadSurvivesRestartAndClearHistory) {
   EXPECT_EQ(threads->front().unread_count, 0);
 }
 
+// "Delete for me": the content goes, the id stays (so a resend still dedupes), AI context and history
+// serving no longer see the row.
+TEST(SqliteThreadStoreTest, DeleteMessageContentKeepsAnIdOnlyTombstone) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_delete_test";
+  std::filesystem::remove_all(data_dir);
+  {
+    SqliteThreadStore store(data_dir.string());
+    AssertStoreUnlocked(store);
+    Thread thread;
+    thread.id = "thread-ai-del";
+    thread.kind = ThreadKind::Ai;
+    thread.title = "AI";
+    ASSERT_TRUE(store.UpsertThread(thread));
+    for (int i = 1; i <= 2; ++i) {
+      ThreadMessage message;
+      message.id = "msg-" + std::to_string(i);
+      message.thread_id = thread.id;
+      message.sender_contact_id = kLocalSelfContactId;
+      message.text = "secret " + std::to_string(i);
+      message.timestamp = i;
+      ASSERT_TRUE(store.AppendMessage(message));
+    }
+
+    auto deleted = store.DeleteMessageContent(thread.id, "msg-1");
+    ASSERT_TRUE(deleted);
+    EXPECT_TRUE(*deleted);
+    auto again = store.DeleteMessageContent(thread.id, "msg-1"); // idempotent
+    ASSERT_TRUE(again);
+    EXPECT_TRUE(*again);
+    auto unknown = store.DeleteMessageContent(thread.id, "msg-9");
+    ASSERT_TRUE(unknown);
+    EXPECT_FALSE(*unknown);
+
+    auto has = store.HasMessageId(thread.id, "msg-1");
+    ASSERT_TRUE(has);
+    EXPECT_TRUE(*has);
+    auto page = store.GetMessagesPage(thread.id, std::nullopt, 100);
+    ASSERT_TRUE(page);
+    ASSERT_EQ(page->size(), 2u);
+    EXPECT_EQ(page->front().id, "msg-1");
+    EXPECT_EQ(page->front().content_type, ChatContentType::Deleted);
+    EXPECT_TRUE(page->front().text.empty());
+    EXPECT_TRUE(page->front().payload_json.empty());
+    EXPECT_EQ(page->back().text, "secret 2");
+    auto eligible = store.CountContextEligibleMessagesAfter(thread.id, 0);
+    ASSERT_TRUE(eligible);
+    EXPECT_EQ(*eligible, 1);
+    auto exported = store.ExportMessagesUpTo(thread.id, std::nullopt);
+    ASSERT_TRUE(exported);
+    ASSERT_EQ(exported->size(), 1u);
+    EXPECT_EQ(exported->front().id, "msg-2");
+    auto bounded = store.ExportMessagesUpTo(thread.id, std::string("msg-1")); // the bound is the deleted one
+    ASSERT_TRUE(bounded);
+    EXPECT_TRUE(bounded->empty());
+    store.Flush();
+  }
+  std::filesystem::remove_all(data_dir);
+}
+
 TEST(SqliteThreadStoreTest, ThreadMemoryRoundTripAndForgetOnClear) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_memory_test";

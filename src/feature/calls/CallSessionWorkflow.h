@@ -1,12 +1,12 @@
 #pragma once
 
-#include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallControlCodec.h"
+#include "domain/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "domain/messaging/CallSessionStore.h"
+#include "domain/calls/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -36,17 +36,24 @@ public:
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display)>
         send_direct;
-    /** Pre-mint e2e_public control DM so SoftMigrate/roster fan-out does not race catalog create. */
-    std::function<Roe<std::string>(const std::string& peer)> ensure_control_thread;
     std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail,
                             const std::string& display, const std::string& skip)>
         fan_out_joined;
     std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail,
                             const std::string& display, const std::string& skip)>
         fan_out_joined_and_ringing;
-    std::function<Roe<void>(const std::string& thread_id, CallControlType type, const std::string& text,
-                            const std::string& detail)>
-        append_origin_history;
+    /**
+     * The call's history line: a summary into its thread (the starter's side writes it); `local_only`
+     * keeps it on this device (the app is going down: no sends).
+     */
+    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only)>
+        send_summary;
+    /**
+     * This device's thread for an inbound call: the group's (`group_id`), else the DM with `inviter`.
+     * Invites carry no thread id — the caller's is meaningless here.
+     */
+    std::function<std::optional<std::string>(const std::string& inviter, const std::optional<std::string>& group_id)>
+        resolve_call_thread;
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
     std::function<void()> sync_inbox_from_wake;
     std::function<void()> clear_media_activity;
@@ -164,9 +171,15 @@ public:
   /** No sweep, no writes (UI reads): expired invites are skipped instead. */
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
 
-  Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
-                                const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
-                                std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
+  /**
+   * A call invite. Returns the call to answer at once: the inviter and this device called each
+   * other at the same moment and the inviter's call won (CrossedCall), so ours gave way.
+   */
+  Roe<std::optional<std::string>> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
+                                                      const ThreadMessage& message,
+                                                      std::optional<int64_t> relay_created_at_ms,
+                                                      std::optional<int64_t> relay_server_time_ms,
+                                                      const std::string& local_identity);
   Roe<void> HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
                                 const std::string& local_identity);
   /**
@@ -209,7 +222,8 @@ private:
   Roe<void> PlaceCall(CallSession& session, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);
   /** "Call started" in the origin thread's history. */
-  Roe<void> AppendCallStarted(const CallSession& session);
+  /** The starter's summary of a call that just ended (no-op on an invitee's side). */
+  void SendSummary(const CallSession& session, LiveCallEndReason reason);
   /** Invite every invitee (control thread warmed first), then prefetch their reach. */
   Roe<void> InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);
@@ -227,6 +241,15 @@ private:
   /** The invite is on the wire: the invitee Ringing, its pending row, the offer booked, the LiveCall's peer. */
   Roe<void> RecordInviteSent(const CallSession& session, const CallInviteDetail& invite);
   // --- HandleInboundInvite steps ---
+  /**
+   * This device's own unanswered 1:1 call to `peer`, when `peer` just invited us to another one:
+   * both called each other at once. Both sides keep the call with the lower id (the same choice on
+   * each side, no message needed): the loser's side answers the winner and drops its own.
+   */
+  std::optional<CallSession> CrossedCall(const CallInviteDetail& invite, const std::string& peer,
+                                         const std::string& local_identity) const;
+  /** Our call won: their invite never rings, and a redelivery of it is ignored (Ended here). */
+  void SwallowCrossedInvite(const CallInviteDetail& invite, const std::string& inviter);
   /** Already joined / ended here, an offer below our floor (declined), or a stale replay. */
   bool ShouldIgnoreInvite(const CallInviteDetail& invite, const std::string& sender_identity,
                           const std::string& local_identity, std::optional<int64_t> relay_created_at_ms,

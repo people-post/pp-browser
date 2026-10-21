@@ -16,7 +16,7 @@
 
 | Piece | Path |
 |-------|------|
-| Types / realms | `src/domain/messaging/CasTypes.h` |
+| Types / realms | `src/domain/content/CasTypes.h` |
 | Index | `ObjectIndex.*` → `{profile}/object_index.db` |
 | Store | `CasStore.*` → `cas/{private\|public}/blocks/{aa}/{bb}/{content_id_hex}` (C010) |
 | Tests | `tests/cas_store_test.cpp` (5 cases) |
@@ -46,7 +46,7 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 
 | Now | Later |
 |-----|-------|
-| Implementation under `src/domain/messaging/` (`CasStore`, `ObjectIndex`, `AttachmentCache`, `AttachmentPlaintextMemoryCache`, …) | Peel to `src/domain/content/` at P3/P4 when public share/library/provide-fetch needs CAS without linking messaging |
+| Store in `src/domain/content/` (`CasStore`, `ObjectIndex`, `CasLibrary`, `PrivateContent`); chat attachment policy in `src/domain/messaging/` (`AttachmentCache`, `AttachmentPlaintextMemoryCache`) | Peeled 2026-10-20 (C012 update); features wire the two |
 | Chat-specific download/suppression/responders stay messaging/feature | Feature wires `common` contracts across peers |
 
 ## Pin / share / discovery (C013)

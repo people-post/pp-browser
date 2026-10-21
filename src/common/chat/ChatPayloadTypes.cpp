@@ -16,6 +16,8 @@ std::string ChatContentTypeToDb(const ChatContentType type) {
     return "attachment";
   case ChatContentType::Unsupported:
     return "unsupported";
+  case ChatContentType::Deleted:
+    return "deleted";
   case ChatContentType::Text:
   default:
     return "text";
@@ -40,6 +42,9 @@ ChatContentType ChatContentTypeFromDb(const std::string& value) {
   }
   if (value == "unsupported") {
     return ChatContentType::Unsupported;
+  }
+  if (value == "deleted") {
+    return ChatContentType::Deleted;
   }
   return ChatContentType::Text;
 }

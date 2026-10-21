@@ -213,6 +213,31 @@ std::optional<std::string> ParseOptionalButtonPayload(const Object& block) {
 
 constexpr const char* kInlineLinkActionStyle = "link";
 
+// From the model only two payload shapes may stay: `open_url` (the user confirms the host before it opens)
+// and a tool payload without a type (a feed's "load more"). Everything typed otherwise would reach
+// ConversationsFacade::DispatchAction as a privileged local action with no confirmation (PB-007).
+bool PayloadAllowedFromModel(const std::string& payload_json) {
+  const auto doc = TryParseObject(payload_json);
+  if (!doc) {
+    return false;
+  }
+  const auto type = doc->getString("type");
+  if (!type) {
+    return !doc->getString("tool").value_or("").empty();
+  }
+  return *type == "open_url";
+}
+
+std::optional<std::string> PayloadAllowedFor(ParseResult& parent, const std::optional<std::string>& payload) {
+  if (!payload || parent.payload_source != PayloadSource::Model || PayloadAllowedFromModel(*payload)) {
+    return payload;
+  }
+  const auto doc = TryParseObject(*payload);
+  const std::string type = doc ? doc->getString("type").value_or("?") : "?";
+  parent.warnings.push_back("button payload of type '" + type + "' dropped: not allowed from model output");
+  return std::nullopt;
+}
+
 ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label, const std::string& message,
                                    const std::optional<std::string>& payload,
                                    const std::string& style = {}) {
@@ -221,7 +246,8 @@ ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label
   }
 
   const int index = static_cast<int>(parent.chat_actions.size());
-  parent.chat_actions.push_back({label, message, payload});
+  const std::optional<std::string> allowed = PayloadAllowedFor(parent, payload);
+  parent.chat_actions.push_back({label, message, allowed});
 
   std::string classes = "chat-suggestion";
   if (style == "primary") {
@@ -381,9 +407,26 @@ ParseResult ParseQuoteBlock(const Object& block) {
   return result;
 }
 
+// The form id is substituted verbatim into data-form-id="…" and submit_form('…'): a plain token only (PB-016).
+bool IsPlainToken(const std::string& id) {
+  if (id.empty() || id.size() > 64) {
+    return false;
+  }
+  for (const char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
 ParseResult ParseFormBlock(const Object& block) {
   if (!block.getString("id")) {
     return BlockError("form block requires id");
+  }
+  if (!IsPlainToken(*block.getString("id"))) {
+    return BlockError("form id must be 1-64 characters of [A-Za-z0-9_-]");
   }
   if (!block.getArray("fields")) {
     return BlockError("form block requires fields array");
@@ -495,7 +538,15 @@ ParseResult RenderLongListItem(ParseResult& parent, const Object& item) {
   }
   ParseResult result;
   result.ok = true;
-  result.rml = "<div class=\"chat-long-list-item\">" + RenderLongListItemBody(item, inline_tail);
+  // An item the user can pass on (an article) carries its text and link, for the host's item menu.
+  std::string share_attrs;
+  if (const auto share_text = item.getString("share_text"); share_text && !share_text->empty()) {
+    share_attrs = " share-text=\"" + StructuredTextParser::EscapeText(*share_text) + "\"";
+    if (const auto share_url = item.getString("share_url"); share_url && !share_url->empty()) {
+      share_attrs += " share-url=\"" + StructuredTextParser::EscapeText(*share_url) + "\"";
+    }
+  }
+  result.rml = "<div class=\"chat-long-list-item\"" + share_attrs + ">" + RenderLongListItemBody(item, inline_tail);
   if (!row.empty()) {
     result.rml += "<div class=\"row chat-long-list-actions\">" + row + "</div>";
   }
@@ -596,6 +647,9 @@ std::string BuildArtifactRml(const Object& block, const WorkingSetKind kind, con
   }
   case WorkingSetKind::Form: {
     const std::string form_id = *block.getString("id");
+    if (!IsPlainToken(form_id)) { // ParseFormBlock already refused it; never substitute anything else
+      return inline_rml;
+    }
     return ReplaceAll(ReplaceAll(kFormPanelWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
   }
   case WorkingSetKind::Calendar:
@@ -918,7 +972,7 @@ std::string ToolNameFromBlock(const Object& block) {
 } // namespace
 
 ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const ResponseGoal goal,
-                                                  const RenderMode render_mode) {
+                                                  const RenderMode render_mode, const PayloadSource payload_source) {
   const std::string trimmed = TrimAsciiWhitespace(json);
   auto doc_opt = TryParseObject(trimmed);
   if (!doc_opt) {
@@ -940,6 +994,7 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const
 
   ParseResult result;
   result.ok = true;
+  result.payload_source = payload_source;
 
   int block_index = 0;
   for (const Value& block_value : doc.getArray("blocks")->elements) {
@@ -1184,19 +1239,19 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
   static const std::regex json_re(R"re(```json\s*([\s\S]*?)```)re", std::regex::icase);
   std::smatch match;
   if (std::regex_search(llm_output, match, json_re)) {
-    return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()), goal, render_mode);
+    return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()), goal, render_mode, PayloadSource::Model);
   }
 
   const std::string trimmed = TrimAsciiWhitespace(llm_output);
   if (!trimmed.empty() && trimmed.front() == '{') {
-    auto bare = ParseBlocksJson(trimmed, goal, render_mode);
+    auto bare = ParseBlocksJson(trimmed, goal, render_mode, PayloadSource::Model);
     if (bare.ok) {
       return bare;
     }
   }
 
   if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed, LocalizedPeopleDiscoveryLabels()); !blocks.empty()) {
-    return ParseBlocksJson(blocks, ResponseGoal::PeopleDiscovery, render_mode);
+    return ParseBlocksJson(blocks, ResponseGoal::PeopleDiscovery, render_mode, PayloadSource::Model);
   }
 
   return Fail("No ```json block found in LLM output");

@@ -1,6 +1,11 @@
 #include "feature/registration/RegistrationClient.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
+#include "domain/net/OrgBackendClientsImpl.h"
+#include "domain/people/IdentityStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+
+#include <filesystem>
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
@@ -70,6 +75,69 @@ TEST(RegistrationClientTest, MarkRegistrationExpired) {
   identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
   MarkRegistrationExpired(identity);
   EXPECT_EQ(ClassifyRegistration(identity, util::NowUnixMs()), RegistrationStatus::Expired);
+}
+
+// #328: records the revoke call; everything else is the mock's behaviour.
+class RecordingRegistrationClient : public MockRegistrationClient {
+public:
+  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                               const int64_t timestamp) override {
+    ++revoke_calls;
+    last_relay_user_id = relay_user_id;
+    last_signature = signature;
+    last_timestamp = timestamp;
+    return {};
+  }
+  int revoke_calls = 0;
+  std::string last_relay_user_id;
+  std::string last_signature;
+  int64_t last_timestamp = 0;
+};
+
+class RevokeRegistrationTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_revoke_registration_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    identity_ = std::make_unique<IdentityStore>(dir_.string(), "test-profile");
+    ASSERT_TRUE(static_cast<bool>(identity_->SetDek(ByteVector(kDataEncryptionKeySize, 7))));
+    auto created = identity_->LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
+  }
+  void TearDown() override {
+    identity_.reset();
+    std::filesystem::remove_all(dir_);
+  }
+  std::filesystem::path dir_;
+  std::unique_ptr<IdentityStore> identity_;
+  RecordingRegistrationClient client_;
+};
+
+TEST_F(RevokeRegistrationTest, UnregisteredIdentityIsANoOp) {
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_);
+  EXPECT_TRUE(static_cast<bool>(result));
+  EXPECT_EQ(client_.revoke_calls, 0);
+}
+
+TEST_F(RevokeRegistrationTest, RegisteredIdentitySignsAndCallsTheRelay) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  identity->relay_user_id = "relay:u1";
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  EXPECT_EQ(client_.revoke_calls, 1);
+  EXPECT_EQ(client_.last_relay_user_id, "relay:u1");
+  EXPECT_FALSE(client_.last_signature.empty());
+  EXPECT_GT(client_.last_timestamp, 0);
+  // The identity itself is untouched: the caller wipes it right after.
+  auto after = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(after));
+  EXPECT_TRUE(after->registered);
 }
 
 } // namespace

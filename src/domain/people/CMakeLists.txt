@@ -2,12 +2,12 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   DirectChatTargetFromContact.cpp
   AvatarGlyph.cpp
   ProfileIconCache.cpp
+  AccountBackupCodec.cpp
   ContactJson.cpp
   ContactIdentity.cpp
   ContactReachability.cpp
   ContactsStore.cpp
   ContactAddressDisclosure.cpp
-  Ed25519Signer.cpp
   IdentityStore.cpp
   LinkDeviceExchange.cpp
   MeshHopPolicy.cpp

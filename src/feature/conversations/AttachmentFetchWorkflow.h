@@ -61,6 +61,34 @@ public:
   Roe<std::string> EnsureLocalViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                        const std::string& mime, const std::string& filename);
 
+  struct StoredLocalImage {
+    std::vector<uint8_t> content_hash;
+    std::string view_path;
+  };
+  /**
+   * Keep an image this device produced (a question to the AI) like a received attachment: private CAS under
+   * the profile DEK, plus the thread's blobs_view file for display. No wire fields, nothing uploaded.
+   */
+  Roe<StoredLocalImage> StoreLocalImage(const std::string& thread_id, const ByteVector& plaintext,
+                                        const std::string& mime);
+  /**
+   * Remove the local bytes of this thread's media — attachment objects and AI images — from the private
+   * CAS, the view files and the RAM cache: run before the thread or its history is deleted. Objects are
+   * content-addressed, so identical bytes referenced from another thread are gone there too (an
+   * attachment shows "download" again; an AI image shows its marker).
+   */
+  Roe<void> DeleteThreadMedia(const std::string& thread_id, IThreadStore& store);
+  /**
+   * The same for messages already read by the caller (one message on "delete for me", a whole thread
+   * after its rows are gone). Their downloads in flight or queued are cancelled first, so a finishing
+   * fetch cannot put the bytes back. Bytes that a message in `kept` (the rest of the thread) still refers
+   * to stay. Identical bytes held by another thread are not checked: they show "download" again.
+   */
+  void DeleteMessagesMedia(const std::string& thread_id, const std::vector<ThreadMessage>& messages,
+                           const std::vector<ThreadMessage>& kept);
+  /** The thread is gone: cancel its downloads and drop its attachment suppression entries. */
+  void ForgetThread(const std::string& thread_id);
+
   /** Best-effort video poster under blobs_view (R012); ignores errors. */
   void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields);
 
@@ -82,6 +110,8 @@ private:
   void RunJobAsync(Job job, std::function<void()> on_done);
   void MarkFailed(const std::string& key);
   void MarkReady(const std::string& key);
+  /** Drop queued / in-flight jobs whose key matches; a finishing fetch for them then stores nothing. */
+  void CancelJobsLocked(const std::function<bool(const std::string& key)>& matches);
   void MarkPending(const std::string& key);
   void NotifyChanged();
   ByteVector CopyDekUnlocked() const;

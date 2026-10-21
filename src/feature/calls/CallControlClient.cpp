@@ -1,27 +1,24 @@
 #include "feature/calls/CallControlClient.h"
+#include "domain/calls/CallSessionLogic.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
-#include "domain/messaging/CallControlThreadLogic.h"
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "common/directory/DirectoryJson.h"
+#include "domain/calls/CallMediaKeyStore.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
-#include "domain/people/ContactIdentity.h"
-#include "domain/people/ContactJson.h"
-#include "domain/people/ContactTypes.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
 
 #include <utility>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
-CallControlClient::CallControlClient(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                     CallSessionStore& sessions, IPskSessionStore& psk_store,
-                                     const CallDeliveryPorts& delivery, PreferredThreadFn preferred_thread)
-    : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), psk_store_(psk_store),
-      delivery_(delivery), preferred_thread_(std::move(preferred_thread)) {
+CallControlClient::CallControlClient(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
+                                     IPskSessionStore& psk_store, const CallDeliveryPorts& delivery)
+    : store_(store), identity_(identity), sessions_(sessions), psk_store_(psk_store), delivery_(delivery) {
   redirectLogger("CallControlClient");
 }
 
@@ -33,69 +30,67 @@ Roe<std::string> CallControlClient::LocalRelayIdentity() const {
   return identity->account_id;
 }
 
-Roe<std::string> CallControlClient::EnsureCallControlThread(const std::string& peer_identity) {
-  const std::optional<std::string> prefer = preferred_thread_ ? preferred_thread_() : std::nullopt;
-  std::string contact_id;
-  std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
-    if (*contact) {
-      contact_id = (*contact)->id;
-      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-      if (dm_title.empty()) {
-        dm_title = peer_identity;
-      }
-    }
-  }
-  return ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
-}
-
 Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const CallControlType type,
-                                                    const std::string& detail_json, const std::string& display) {
-  auto thread_id = EnsureCallControlThread(peer_identity);
-  if (!thread_id) {
-    return thread_id.error();
+                                        const std::string& detail_json, const std::string& display) {
+  if (!delivery_.send_control) {
+    return Error("Call delivery not bound");
   }
-
-  SendRelayOptions opts;
-  opts.content_type = ChatContentType::System;
-  Object payload;
-  payload.set("control_type", CallControlTypeToWire(type));
-  payload.set("detail", detail_json);
-  opts.payload_json = DumpJson(payload);
-  opts.generation = "system";
-  opts.update_preview = false;
-  // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
-  opts.critical_lane = true;
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto control = CallControlCodec::BuildSystemMessage("", type, display, detail_json, *local);
+  if (!control) {
+    return control.error();
+  }
+  std::optional<std::string> key_init;
   {
     std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
     if (auto it = pending_key_init_.find(peer_identity); it != pending_key_init_.end()) {
-      opts.key_init_b64 = it->second;
+      key_init = it->second;
     }
   }
-  if (!delivery_.send_user_message) {
-    return Error("Call delivery not bound");
-  }
-  auto sent = delivery_.send_user_message(*thread_id, display, opts);
-  if (!sent) {
+  if (auto sent = delivery_.send_control(peer_identity, *control, key_init); !sent) {
     return sent.error();
   }
-  if (opts.key_init_b64) {
+  if (key_init) {
     std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
     pending_key_init_.erase(peer_identity);
   }
   return {};
 }
 
-Roe<void> CallControlClient::AppendOriginHistory(const std::string& thread_id, const CallControlType type,
-                                                  const std::string& text, const std::string& detail_json) {
+Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const CallSummaryDetail& summary,
+                                         const bool local_only) {
+  auto detail = CallControlCodec::EncodeSummary(summary);
+  if (!detail) {
+    return detail.error();
+  }
+  // The transcript shows the family's line; the text stands in where no line is drawn (previews).
+  const std::string text = summary.media_mode == CallMediaMode::Video ? "Video call" : "Voice call";
+  if (delivery_.send_to_thread && !local_only) {
+    SendRelayOptions opts;
+    opts.content_type = ChatContentType::System;
+    Object payload;
+    payload.set("control_type", CallControlTypeToWire(CallControlType::CallSummary));
+    payload.set("detail", *detail);
+    opts.payload_json = DumpJson(payload);
+    opts.generation = "system";
+    if (auto sent = delivery_.send_to_thread(thread_id, text, opts); sent) {
+      return {};
+    } else {
+      log().info << "call summary kept local thread=" << thread_id << " (" << sent.error().message << ")";
+    }
+  }
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
-  auto message = CallControlCodec::BuildSystemMessage(thread_id, type, text, detail_json, *local);
+  auto message = CallControlCodec::BuildSystemMessage(thread_id, CallControlType::CallSummary, text, *detail, *local);
   if (!message) {
     return message.error();
   }
+  message->sender_contact_id = kLocalSelfContactId;
   if (auto appended = store_.AppendMessage(*message); !appended) {
     return appended.error();
   }
@@ -148,7 +143,7 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
 
 Roe<ByteVector> CallControlClient::ResolvePeerSessionKey(const std::string& peer_identity) const {
   ChatTargetKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target_key.peer_identity_value = peer_identity;
   target_key.channel = CryptoChannel::E2ePublic;
 

@@ -26,7 +26,8 @@
 namespace {
 
 constexpr float kLoupeRadiusDp = 60.f;
-constexpr float kLoupeOffsetYDp = 55.f;
+// The anchor is the centre of the magnified line; the loupe (radius 60dp) sits clear above it.
+constexpr float kLoupeOffsetYDp = 80.f;
 constexpr float kLoupeZoom = 2.f;
 constexpr float kLoupeEdgeSoftness = 0.04f;
 

@@ -182,6 +182,11 @@ select selectbox option:hover {
   color: #dc2626;
 }
 
+/* "This message was deleted": a shade lighter than .muted (two classes, so it wins over .muted). */
+.bubble-deleted .bubble-deleted-text {
+  color: #a1a6b0;
+}
+
 .muted {
   color: #6b7280;
 }
@@ -1015,6 +1020,11 @@ select selectbox option:hover {
   border: 1dp #e5e7eb;
 }
 
+/* Before the active rules so the open thread keeps its highlight. */
+.sidebar-session--pinned {
+  background-color: #f9fafb;
+}
+
 .sidebar-session-active {
   background-color: #eef2ff;
   border-color: #c7d2fe;
@@ -1049,6 +1059,31 @@ select selectbox option:hover {
 
 .sidebar-session-title {
   color: #333333;
+}
+
+.sidebar-session-preview {
+  color: #6b7280;
+}
+
+.sidebar-session-icon {
+  background-color: #f3f4f6;
+}
+
+.sidebar-session-flag,
+.sidebar-archived-entry svg {
+  image-color: #6b7280;
+}
+
+.sidebar-archived-label {
+  color: #374151;
+}
+
+.sidebar-archived-entry:hover {
+  background-color: #f3f4f6;
+}
+
+.sidebar-unread-dot {
+  background-color: #3b82f6;
 }
 
 .sidebar-unread {

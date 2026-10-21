@@ -1,9 +1,9 @@
 #include "feature/calls/CallSessionWorkflow.h"
 
-#include "domain/messaging/CallListenAddrsLogic.h"
-#include "domain/messaging/CallMediaPlannerSelectLogic.h"
-#include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/calls/CallListenAddrsLogic.h"
+#include "domain/calls/CallMediaPlannerSelectLogic.h"
+#include "domain/calls/CallSessionLogic.h"
+#include "domain/calls/PeerCapsLogic.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
@@ -205,9 +205,6 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
 
 Roe<void> CallSessionWorkflow::PlaceCall(CallSession& session, const std::vector<std::string>& invitee_identities,
                                          const std::string& local_identity) {
-  if (auto noted = AppendCallStarted(session); !noted) {
-    return noted.error();
-  }
   // V050: plan the group hop from everyone invited (not attached until the third join).
   if (CountDistinctInvitees(invitee_identities, local_identity) >= 2 && host_.hop.plan_hop_for_invitees) {
     if (auto planned = host_.hop.plan_hop_for_invitees(invitee_identities, local_identity)) {
@@ -279,6 +276,7 @@ Roe<CallSession> CallSessionWorkflow::CreatePlacedSession(const Thread& thread, 
   CallSession session;
   session.call_id = call_id;
   session.origin_thread_id = thread.id;
+  session.initiator_identity = local_identity;
   if (thread.kind == ThreadKind::Group && thread.group_id) {
     session.origin_group_id = *thread.group_id;
   }
@@ -303,31 +301,11 @@ Roe<CallSession> CallSessionWorkflow::CreatePlacedSession(const Thread& thread, 
   return session;
 }
 
-Roe<void> CallSessionWorkflow::AppendCallStarted(const CallSession& session) {
-  CallStartedDetail started;
-  started.call_id = session.call_id;
-  started.media_mode = session.media_mode;
-  started.video_allowed = session.video_allowed;
-  auto detail = CallControlCodec::EncodeStarted(started);
-  if (!detail) {
-    return detail.error();
-  }
-  const std::string text = session.video_allowed ? "Video call started" : "Voice call started";
-  return host_.wire.append_origin_history(session.origin_thread_id.value_or(""), CallControlType::CallStarted,
-                                          text, *detail);
-}
-
 Roe<void> CallSessionWorkflow::InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                                          const std::string& local_identity) {
   for (const std::string& invitee : invitee_identities) {
     if (invitee.empty() || invitee == local_identity) {
       continue;
-    }
-    // Catalog warm before Invite / SoftMigrate fan-out (thread + directory create off the critical path).
-    if (host_.wire.ensure_control_thread) {
-      if (auto warmed = host_.wire.ensure_control_thread(invitee); !warmed) {
-        log().warning << "Call control thread warm failed peer=" << invitee << " err=" << warmed.error().message;
-      }
     }
     if (auto invited = InviteParticipant(call_id, invitee, invitee_identities); !invited) {
       return invited.error();
@@ -418,7 +396,6 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
   invite.invitee_identity = invitee_identity;
   invite.media_mode = session.media_mode;
   invite.video_allowed = session.video_allowed;
-  invite.origin_thread_id = session.origin_thread_id;
   invite.origin_group_id = session.origin_group_id;
   invite.sfu_hint = session.sfu_hint;
   invite.planned_hop = session.planned_hop;
@@ -431,13 +408,6 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
   AppendInvitedCoInvitees(invite.participants, co_invitees, local_identity);
   if (host_.reach.prefetch_reach) {
     host_.reach.prefetch_reach(invitee_identity);
-  }
-  // Catalog + AutoKey before media-key wrap so CallInvite can embed wrapped_key_b64.
-  if (host_.wire.ensure_control_thread) {
-    if (auto warmed = host_.wire.ensure_control_thread(invitee_identity); !warmed) {
-      log().warning << "CallInvite control thread warm failed peer=" << invitee_identity
-                    << " err=" << warmed.error().message;
-    }
   }
   // Embed epoch key in invite — separate CallMediaKey inbox rows are often ingested without
   // call-control side effects (BenignDuplicate / classifier), so Accept never sees the key.
@@ -533,20 +503,17 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
     }
     on_done(std::move(accepted));
   };
-  // Thin product gate: connectivity owns the park; the session waits for it before CallAccept —
-  // asynchronously, so the calls owner keeps serving inbound control / Leave meanwhile.
-  if (!host_.reach.park_circuit) {
-    on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
-    return;
+  // Park on the seeds so the caller's circuit can reach us — but CallAccept does not wait for it.
+  // It used to (≤ 12 s): a seed silently gone held every answer for the whole park. The caller only
+  // tries a circuit after our accept reaches it, and its StartBridge waits at the relay for us to
+  // register (within its 14 s envelope), so a park that lands a moment later still serves it.
+  if (host_.reach.park_circuit) {
+    host_.reach.park_circuit(12000, [call_id](bool ready) {  // may answer after this workflow is gone
+      logging::getLogger("CallSessionWorkflow").info << "AcceptInvite circuit park call_id=" << call_id
+                                                      << " ready=" << (ready ? 1 : 0);
+    });
   }
-  const uint64_t step = steps_.StoreFor<bool>(
-      [this, call_id, charge_decision, voice_only_accept, local = *local, on_done](bool ready) {
-        log().info << "AcceptInvite circuit park call_id=" << call_id << " ready=" << (ready ? 1 : 0);
-        on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, local));
-      });
-  host_.reach.park_circuit(12000, [outbox = outbox_, step](bool ready) {
-    outbox.Emit(workflow_event::Continue{OwnerStepReady{step, std::make_shared<std::any>(ready)}});
-  });
+  on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
 }
 
 Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_id,
@@ -626,6 +593,7 @@ CallSession CallSessionWorkflow::SessionRowForAccept(const PendingCallInvite& pe
   row.call_id = pending.call_id;
   row.origin_thread_id = pending.origin_thread_id;
   row.origin_group_id = pending.origin_group_id;
+  row.initiator_identity = pending.inviter_identity;
   row.media_mode = pending.media_mode;
   row.video_allowed = pending.video_allowed;
   row.state = CallSessionState::Ringing;
@@ -943,6 +911,71 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
   return {};
 }
 
+void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
+  if (reason == LiveCallEndReason::Merged) {
+    return;  // gave way to the call both sides are now in: that one is the history
+  }
+  if (!session.origin_thread_id || !host_.wire.send_summary) {
+    return;
+  }
+  auto local = host_.wire.local_relay_identity();
+  if (!local) {
+    return;
+  }
+  const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
+  const bool started = session.initiator_identity == *local;
+  if (!group && !started) {
+    return;  // 1:1: the starter reports the call; the other side reads its summary
+  }
+  CallSummaryDetail summary;
+  summary.call_id = session.call_id;
+  summary.media_mode = session.media_mode;
+  summary.group = group;
+  summary.started = started;
+
+  // 1:1: answered when the other side joined. Group: each device notes the call as it went for its
+  // own user — answered when we were in it with someone else; talk time from when both were.
+  std::optional<int64_t> self_joined;
+  std::optional<int64_t> other_joined;
+  if (auto participants = sessions_.ListParticipants(session.call_id)) {
+    for (const CallParticipant& participant : *participants) {
+      if (!participant.joined_at || *participant.joined_at <= 0) {
+        continue;
+      }
+      const bool self = participant.identity == *local;
+      if (!group && participant.identity == session.initiator_identity) {
+        continue;
+      }
+      auto& slot = self ? self_joined : other_joined;
+      slot = slot ? std::min(*slot, *participant.joined_at) : *participant.joined_at;
+    }
+  }
+  std::optional<int64_t> answered_at;
+  if (!group) {
+    answered_at = other_joined;
+  } else if (self_joined && other_joined) {
+    answered_at = std::max(*self_joined, *other_joined);
+  }
+  if (reason == LiveCallEndReason::Orphaned) {
+    answered_at.reset();  // ended by a restart, maybe hours later: no talk time to report
+  }
+  summary.outcome = SummaryOutcome(answered_at.has_value(), reason);
+  if (group && !answered_at && !started) {
+    // An invitee that never joined: it declined, or it missed the call.
+    summary.outcome = reason == LiveCallEndReason::Declined ? CallOutcome::Declined : CallOutcome::Missed;
+  }
+  if (answered_at) {
+    const int64_t ended_at = session.ended_at.value_or(util::NowUnixMs());
+    summary.duration_ms = std::max<int64_t>(0, ended_at - *answered_at);
+  }
+  // A group has no one view of a call: the summary stays on this device. 1:1 goes to both sides,
+  // unless the app is going down.
+  const bool local_only = group || reason == LiveCallEndReason::Shutdown;
+  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, summary, local_only); !sent) {
+    log().warning << "call summary not written call_id=" << session.call_id << " err=" << sent.error().message;
+  }
+}
+
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                           const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
@@ -952,15 +985,7 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
   if (auto saved = sessions_.UpsertSession(session); !saved) {
     return saved.error();
   }
-  if (session.origin_thread_id && host_.wire.append_origin_history) {
-    CallEndedDetail ended;
-    ended.call_id = session.call_id;
-    ended.duration_ms = duration_ms;
-    auto detail = CallControlCodec::EncodeEnded(ended);
-    if (detail) {
-      (void)host_.wire.append_origin_history(*session.origin_thread_id, CallControlType::CallEnded, "Call ended", *detail);
-    }
-  }
+  SendSummary(session, reason);
   if (host_.wire.notify_ring_changed) {
     host_.wire.notify_ring_changed();
   }
@@ -1160,20 +1185,28 @@ void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
   host_.wire.notify_ring_changed();
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_json,
-                                                  const std::string& sender_identity,
-                                                  const ThreadMessage& message,
-                                                  const std::optional<int64_t> relay_created_at_ms,
-                                                  const std::optional<int64_t> relay_server_time_ms,
-                                                  const std::string& local_identity) {
+Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_json,
+                                                                        const std::string& sender_identity,
+                                                                        const ThreadMessage& message,
+                                                                        const std::optional<int64_t> relay_created_at_ms,
+                                                                        const std::optional<int64_t> relay_server_time_ms,
+                                                                        const std::string& local_identity) {
+  using Answer = std::optional<std::string>;
   auto invite = CallControlCodec::DecodeInvite(detail_json);
   if (!invite) {
     return invite.error();
   }
   if (ShouldIgnoreInvite(*invite, sender_identity, local_identity, relay_created_at_ms, relay_server_time_ms)) {
-    return {};
+    return Answer{};
   }
   const std::string inviter = invite->inviter_identity.empty() ? sender_identity : invite->inviter_identity;
+  const std::optional<CallSession> crossed = CrossedCall(*invite, inviter, local_identity);
+  if (crossed && crossed->call_id < invite->call_id) {
+    log().info << "Calling each other: our call_id=" << crossed->call_id << " wins over call_id=" << invite->call_id
+               << " from " << inviter;
+    SwallowCrossedInvite(*invite, inviter);
+    return Answer{};
+  }
   auto session = StoreRingingInvite(*invite, inviter, message, local_identity);
   if (!session) {
     return session.error();
@@ -1194,8 +1227,72 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }
+  if (crossed) {
+    // Their call wins: ours gives way (no history entry) and theirs is answered as ours was placed.
+    log().info << "Calling each other: call_id=" << invite->call_id << " from " << inviter
+               << " wins over our call_id=" << crossed->call_id << " — answering it";
+    if (auto left = LeaveCall(crossed->call_id, LiveCallEndReason::Merged); !left) {
+      log().warning << "Calling each other: leaving call_id=" << crossed->call_id << " failed: " << left.error().message;
+    }
+    pending_accept_voice_only_ = !crossed->video_allowed;
+    host_.wire.notify_ring_changed();
+    return Answer{invite->call_id};
+  }
   host_.wire.notify_ring_changed();
-  return {};
+  return Answer{};
+}
+
+std::optional<CallSession> CallSessionWorkflow::CrossedCall(const CallInviteDetail& invite, const std::string& peer,
+                                                            const std::string& local_identity) const {
+  if (invite.origin_group_id && !invite.origin_group_id->empty()) {
+    return std::nullopt;
+  }
+  for (const CallRosterEntry& entry : invite.participants) {
+    if (entry.identity != peer && entry.identity != local_identity) {
+      return std::nullopt;  // more than the two of us
+    }
+  }
+  auto active = sessions_.ListActiveSessions();
+  if (!active) {
+    return std::nullopt;
+  }
+  for (const CallSession& session : *active) {
+    if (session.call_id == invite.call_id || session.initiator_identity != local_identity ||
+        (session.origin_group_id && !session.origin_group_id->empty())) {
+      continue;
+    }
+    auto participants = sessions_.ListParticipants(session.call_id);
+    if (!participants) {
+      continue;
+    }
+    bool peer_unanswered = false;
+    bool others = false;
+    for (const CallParticipant& participant : *participants) {
+      if (participant.identity == peer) {
+        peer_unanswered = participant.state == CallParticipantState::Invited ||
+                          participant.state == CallParticipantState::Ringing;
+      } else if (participant.identity != local_identity) {
+        others = true;
+      }
+    }
+    if (peer_unanswered && !others) {
+      return session;
+    }
+  }
+  return std::nullopt;
+}
+
+void CallSessionWorkflow::SwallowCrossedInvite(const CallInviteDetail& invite, const std::string& inviter) {
+  CallSession session;
+  session.call_id = invite.call_id;
+  session.initiator_identity = inviter;
+  session.media_mode = invite.media_mode;
+  session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
+  session.state = CallSessionState::Ended;
+  session.created_at = util::NowUnixMs();
+  session.ended_at = session.created_at;
+  session.media_epoch = invite.media_epoch > 0 ? invite.media_epoch : 1;
+  (void)sessions_.UpsertSession(session);
 }
 
 bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, const std::string& sender_identity,
@@ -1257,7 +1354,9 @@ Roe<CallSession> CallSessionWorkflow::StoreRingingInvite(const CallInviteDetail&
   pending.invitee_identity = local_identity;
   pending.media_mode = invite.media_mode;
   pending.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
-  pending.origin_thread_id = invite.origin_thread_id;
+  if (host_.wire.resolve_call_thread) {
+    pending.origin_thread_id = host_.wire.resolve_call_thread(inviter, invite.origin_group_id);
+  }
   pending.origin_group_id = invite.origin_group_id;
   pending.sfu_hint = invite.sfu_hint;
   pending.expires_at = now + kDefaultCallInviteTtlMs;
@@ -1268,7 +1367,8 @@ Roe<CallSession> CallSessionWorkflow::StoreRingingInvite(const CallInviteDetail&
   }
   CallSession session;
   session.call_id = invite.call_id;
-  session.origin_thread_id = invite.origin_thread_id;
+  session.origin_thread_id = pending.origin_thread_id;
+  session.initiator_identity = inviter;
   session.origin_group_id = invite.origin_group_id;
   session.media_mode = invite.media_mode;
   session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);

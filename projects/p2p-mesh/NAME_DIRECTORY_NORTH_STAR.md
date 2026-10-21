@@ -3,7 +3,7 @@
 **Status:** Accepted design (N029)  
 **Date:** 2026-09-02  
 **ADR:** [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now)  
-**Related:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md) (N027), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [MESH_DHT.md](../../docs/contracts/MESH_DHT.md) (N028), [platform-integration](../../../pp-ledger/docs/platform-integration.md)
+**Related:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md) (N027), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [MESH_DHT.md](../../docs/contracts/MESH_DHT.md) (N028), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md)
 
 ## North star (one paragraph)
 
@@ -38,7 +38,7 @@ brief.global / L0 seed / optional fog
                                             └─► (private) terminal pp-beacon
 ```
 
-- Terminal **ledger Beacon** stays scarce / often private ([platform-integration](../../../pp-ledger/docs/platform-integration.md)).
+- Terminal **ledger Beacon** stays scarce / often private ([platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md)).
 - Public edge is **pp-node** with capabilities — including future **`ledger_gateway`** (opaque upstream), same as circuit/media.
 - Fleet discovery for chain nodes stays **curated** (not mesh DHT). Mesh DHT remains **PeerId → multiaddr** only (N028).
 - On-chain **name registry** (final phase): users register / rotate PeerIds under easy unique names; chain is name truth; DHT/HTTP stay helpers.

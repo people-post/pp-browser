@@ -10,7 +10,7 @@
 - f5v1 / f7v1: `src/gui/`
 - f6 soft edge: `AgentInboundPorts`
 - F007 rename: `feature/conversations`
-- Call soft edges: `CallDeliveryPorts` + `CallControlInboundPorts`
+- Call soft edges: `CallDeliveryPorts` + the `call` system-control family (replaced `CallControlInboundPorts`)
 
 ## Paths today
 

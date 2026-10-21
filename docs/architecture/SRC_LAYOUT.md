@@ -77,7 +77,7 @@ Two buckets only:
 
 | Bucket | Examples | Not here |
 |--------|----------|----------|
-| **Basics** | `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat`, `ArgsText`, `AttachmentDownloadPolicy`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
+| **Basics** | `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat` (pp-cpp-common's `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` in `pbr`), `ArgsText`, `AttachmentDownloadPolicy`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
 | **Domain contracts** | Ports (`IThreadStore`-shaped APIs, blob/relay interfaces), shared ids/enums, narrow DTOs two+ peers must name | Full codecs, stores, hubs, UI ports |
 
 Guardrails:
@@ -113,16 +113,19 @@ crypto
 | `foundation/i18n/` | Localization catalogs |
 | `foundation/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `foundation/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
-| `foundation/identity/` | PeerId derivation (ML-DSA public key → PeerId) |
+| `foundation/identity/` | PeerId helpers for product code (`MultiaddrPeerId.h`); the derivation is pp-cpp-crypto's (`crypto/PeerId.h`) |
 
 ### Domain (strict peers)
 
 | Path | Contents |
 |------|----------|
 | `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; pure call planner gates (`Call*Logic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) over `domain/content` |
+| `domain/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec, session and media-key stores, pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
+| `domain/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
+| `domain/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
+| `domain/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`feature/conversations/AttachmentContent`, `ChatBlobContentSource`) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
-| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators; one `pp_domain_mesh_<folder>` library per folder, layered — [MESH.md § Folder libraries](MESH.md#folder-libraries) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
 | `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
@@ -133,7 +136,7 @@ Module maps: [`src/foundation/README.md`](../../src/foundation/README.md), [`src
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). Product mesh glue is `pp_domain_mesh` (an aggregate of its folder libraries). See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). The mesh on top of it — host, ports, reachability, L4 protocols — is FetchContent [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (`pp_mesh`, namespace `pp::mesh`, `#include "mesh/…"`), composed by `feature/` and `app/`. App code spells it `mesh::X` (`common/MeshAlias.h`); `common/` / `foundation/` / `domain/` may include only its vocabulary, `mesh/types/` (`pp_mesh_types`, via `pp_pbr_common`). See [MESH.md](MESH.md).
 
 ## Lib subtree (`src/lib/`)
 
@@ -151,13 +154,11 @@ Path constants: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake)
 | `foundation/platform/ui/gl/` | Mobile GL lifecycle helpers |
 | `foundation/platform/ui/renderer/` | Product overlays (loupe, call video tiles) |
 | `foundation/platform/ui/host/` | `BrowserHost` product `Backend::*` bootstrap |
-| `domain/mesh/` | `MeshHost`, reachability, L4 coordinators — see [MESH.md](MESH.md) |
 
 ```
 domain/render → pp-cpp-ui `pp_ui` / PP_LIB_RMLUI_INCLUDE
-domain/mesh → adp (+ mesh_identity)
 gui → domain/render (via platform / RmlUi)
-feature/conversations → domain/mesh
+feature/conversations → pp-cpp-mesh (→ pp-cpp-amp)
 ```
 
 Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) lives under `src/gui/shell/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
@@ -169,9 +170,10 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | Path | Contents |
 |------|----------|
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
-| `feature/conversations/` | Conversations hub + delivery |
+| `feature/conversations/` | Conversations hub + delivery; never includes calls / broadcast / call_media — they ride the hub as `HubParticipant`s |
+| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
-| `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer workflow; never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
+| `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 | `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
 | `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
@@ -227,7 +229,7 @@ Fork product profiles: `src/lib/pp_lib_paths.cmake`, pp-cpp-ui `PpCppUi.cmake`. 
 ## Test placement
 
 - Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` and run in that repo’s CI (`PP_UI_BUILD_TESTS`), not under pp-browser ctest.
-- Mesh glue tests live under [`src/domain/mesh/tests/`](../../src/domain/mesh/tests/).
+- Mesh tests live in pp-cpp-mesh (`tests/`, its CI); pp-browser's tests that drive the mesh use its harnesses (`pp_mesh_testing`, `mesh/testing/…`).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under the owning module’s `tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (foundation/domain tests must not depend on `pp_feature`).
 - Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on.
@@ -239,12 +241,12 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 ```cpp
 #include "common/ValueJson.h"
 #include "foundation/data/Config.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "domain/people/ContactsStore.h"
 #include "gui/chat/ChatController.h"
 #include "app/Application.h"
 ```
 
-Fork public APIs use their upstream include style (`<RmlUi/...>`, `<amp/...>`), with include roots from platform ui / Amp PUBLIC dirs.
+Fork public APIs use their upstream include style (`<RmlUi/...>`, `<amp/...>`), with include roots from platform ui / Amp PUBLIC dirs; sibling libraries use their prefix (`"common/…"`, `"crypto/…"`, `"amp/…"`, `"mesh/…"`).
 
 ### Prefer include over forward declaration
 
@@ -262,7 +264,7 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 ### L4 protocols: `serve/` and `client/`
 
-An Amp L4 protocol folder in `src/domain/mesh/` (`l4/<protocol>/`, `dht/`, `discovery/`, `reachability/dial_back/`, `reachability/punch/`) keeps **shared wire types and pure decisions at its root** and splits the two ends of the protocol into sub-folders, so node-side code is easy to tell from the attaching side:
+An Amp L4 protocol folder in pp-cpp-mesh (`l4/<protocol>/`, `dht/`, `discovery/`, `reachability/dial_back/`, `reachability/punch/`) keeps **shared wire types and pure decisions at its root** and splits the two ends of the protocol into sub-folders, so node-side code is easy to tell from the attaching side:
 
 | Folder | Holds | Naming |
 |--------|-------|--------|
@@ -283,7 +285,7 @@ Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `Cha
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_domain` in `domain/CMakeLists.txt`; `pp_base` convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; remaining: app-owned `CallStack`, optional gui bands, inbox presentation.
+5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; `CallStack` / `BroadcastHub` moved out of the hub to `feature/product` (participants); remaining: optional gui bands, inbox presentation.
 
 ## Related
 

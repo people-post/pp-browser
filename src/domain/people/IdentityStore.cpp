@@ -6,10 +6,10 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/IdentitySeedDeriver.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/error/AppError.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
@@ -122,7 +122,7 @@ Roe<void> DerivePeerId(LocalIdentity& identity) {
   if (!public_key) {
     return public_key.error();
   }
-  auto derived = PeerIdFromMlDsaPublicKey(*public_key);
+  auto derived = pp::PeerIdFromMlDsaPublicKey(*public_key);
   if (!derived) {
     return derived.error();
   }

@@ -13,6 +13,7 @@ on:
       - '.vscode/**'
       - 'LICENSE'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop, main]
     paths-ignore:
       - '**/*.md'
@@ -29,7 +30,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which jobs a PR needs (Kenneth 2026-10-20: every push ran all six jobs and queued behind each other).
+  # Drafts run nothing; marking "ready for review" runs the set below. Pushes to develop / main run everything.
+  changes:
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+      apple: ${{ steps.filter.outputs.apple }}
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src:
+              - 'src/**'
+              - 'cmake/**'
+              - 'CMakeLists.txt'
+              - 'third_party/**'
+              - 'scripts/**'
+              - 'packaging/**'
+              - 'android/**'
+              - '.github/workflows/build.yml'
+            apple:
+              - 'src/foundation/platform/**'
+              - 'src/**/*_Darwin.*'
+              - 'src/**/*_Ios.*'
+              - 'src/**/*_Apple.*'
+              - 'src/**/*.mm'
+              - 'src/**/CMakeLists.txt'
+              - 'cmake/**'
+              - 'CMakeLists.txt'
+              - 'third_party/**'
+              - 'packaging/ios/**'
+              - 'scripts/platform/ios*'
+              - '.github/workflows/build.yml'
+            android:
+              - 'android/**'
+              - 'src/**'
+              - 'cmake/**'
+              - 'CMakeLists.txt'
+              - 'third_party/**'
+              - '.github/workflows/build.yml'
+
   lint:
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -41,13 +90,15 @@ jobs:
         run: |
           ./scripts/check/check_base_includes.sh
           ./scripts/check/check_base_public_libs.sh
-          ./scripts/check/check_mesh_layers.sh
       - name: Owner runners
         run: ./scripts/check/check_owner_runners.sh
       - name: Platform ifdef locations
         run: ./scripts/check/check_platform_ifdefs.sh
+      - name: RML text bindings
+        run: ./scripts/check/check_rml_bindings.sh
 
   build:
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -55,45 +106,71 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     env:
+      # Asset-only PRs (locales, themes, views) still need the tests, which the Ubuntu build runs; the
+      # Windows and macOS builds add nothing for them. Pushes to develop / main always build everything.
+      PP_RUN_PLATFORM: ${{ github.event_name != 'pull_request' || needs.changes.outputs.src == 'true' || matrix.os == 'ubuntu-24.04' }}
       CCACHE_COMPRESSLEVEL: 5
 
     steps:
       - uses: actions/checkout@v7
-
-      - name: Free disk space
-        if: runner.os == 'Linux'
-        uses: ./.github/actions/free-disk-space
+        if: env.PP_RUN_PLATFORM == 'true'
 
       - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Windows')
 
       - name: Install Linux deps
-        if: runner.os == 'Linux'
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libdbus-1-dev libssl-dev libpulse-dev libasound2-dev xvfb
 
       - name: Install Windows deps
-        if: runner.os == 'Windows'
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Windows')
         run: |
+          # The Chocolatey community feed drops requests now and then ("Unable to find package 'nasm'",
+          # 2026-10-19 twice in a row); the step used to carry on and Configure then failed with
+          # "No CMAKE_ASM_NASM_COMPILER could be found". Retry, and fail here with the real reason.
+          $nasmDir = "C:\Program Files\NASM"
           choco install nasm --no-progress -y
-          echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          if (-not (Test-Path "$nasmDir\nasm.exe")) {
+            # Fallback: the official build from nasm.us (the feed was down for a whole afternoon once).
+            Write-Host "Chocolatey did not install nasm; downloading from nasm.us"
+            $ver = "2.16.03"
+            $zip = "$env:RUNNER_TEMP\nasm.zip"
+            Invoke-WebRequest -Uri "https://www.nasm.us/pub/nasm/releasebuilds/$ver/win64/nasm-$ver-win64.zip" -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\nasm" -Force
+            New-Item -ItemType Directory -Force -Path $nasmDir | Out-Null
+            Copy-Item "$env:RUNNER_TEMP\nasm\nasm-$ver\*" $nasmDir -Recurse -Force
+          }
+          if (-not (Test-Path "$nasmDir\nasm.exe")) { throw "nasm is not installed (Chocolatey and nasm.us both failed)" }
+          echo $nasmDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           choco install ccache --no-progress -y
+          if (-not (Get-Command ccache -ErrorAction SilentlyContinue)) {
+            # Same outage, same fallback: without ccache the Windows build takes ~25 min instead of ~3.
+            Write-Host "Chocolatey did not install ccache; downloading from GitHub releases"
+            $cver = "4.10.2"
+            $czip = "$env:RUNNER_TEMP\ccache.zip"
+            Invoke-WebRequest -Uri "https://github.com/ccache/ccache/releases/download/v$cver/ccache-$cver-windows-x86_64.zip" -OutFile $czip
+            Expand-Archive -Path $czip -DestinationPath "$env:RUNNER_TEMP\ccache" -Force
+            echo "$env:RUNNER_TEMP\ccache\ccache-$cver-windows-x86_64" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
 
       - name: Install macOS deps
-        if: runner.os == 'macOS'
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'macOS')
         run: |
           if ! command -v ccache >/dev/null 2>&1; then
             brew install ccache
           fi
 
       - name: Ensure ccache directory exists
+        if: env.PP_RUN_PLATFORM == 'true'
         shell: bash
         run: |
           mkdir -p .cache/ccache
           echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore ccache
+        if: env.PP_RUN_PLATFORM == 'true'
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -102,12 +179,14 @@ jobs:
             ${{ runner.os }}-ccache-v2-
 
       - name: ccache stats (pre-build)
+        if: env.PP_RUN_PLATFORM == 'true'
         shell: bash
         run: |
           ccache --zero-stats || true
           ccache --show-stats || true
 
       - name: Configure
+        if: env.PP_RUN_PLATFORM == 'true'
         shell: bash
         run: |
           generator=()
@@ -119,17 +198,19 @@ jobs:
             "${generator[@]}"
 
       - name: Build
+        if: env.PP_RUN_PLATFORM == 'true'
         shell: bash
         run: cmake --build build --config Release -j 4
 
       - name: Test
+        if: env.PP_RUN_PLATFORM == 'true'
         shell: bash
         env:
           TRACE_DEBUG: "1"
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Smoke run (Linux)
-        if: runner.os == 'Linux'
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Linux')
         run: |
           export DISPLAY=:99
           Xvfb :99 -screen 0 1280x720x24 &
@@ -143,11 +224,74 @@ jobs:
           test "$code" -eq 124
 
       - name: ccache stats (post-build)
-        if: always()
+        if: env.PP_RUN_PLATFORM == 'true' && (always())
         shell: bash
         run: ccache --show-stats || true
 
+  # iOS compile check (no signing, no device): the Apple-only sources (*_Ios.*, Objective-C++ without
+  # ARC, the iOS CMake branches) were invisible to CI; two iOS-only compile errors reached develop in
+  # October 2026. Mirrors `scripts/platform/ios_build.sh configure-device` + `build`, Ninja tree.
+  ios:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.apple == 'true'
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: true
+      CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESSLEVEL: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install deps
+        run: |
+          for tool in ccache ninja; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              brew install "$tool"
+            fi
+          done
+          mkdir -p "$CCACHE_DIR"
+
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: .cache/ccache
+          key: ${{ runner.os }}-ios-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-ccache-v1-
+
+      - name: ccache stats (pre-build)
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
+
+      - name: Configure (iphoneos SDK, Ninja)
+        run: |
+          cmake -S . -B out-ios/build/device -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DPP_BROWSER_IOS_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_PACKAGED_BUILD=ON \
+            -DPP_BROWSER_BUILD_TESTS=OFF \
+            -DPP_BROWSER_COMPILER_CACHE=ON
+
+      - name: Build pp-browser
+        run: cmake --build out-ios/build/device --config Release -j 4 --target pp-browser
+
+      - name: ccache stats (post-build)
+        if: always()
+        run: ccache --show-stats || true
+
   android:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     env:
       # Set before setup-java / Gradle daemon so native builds inherit ccache config.
@@ -156,7 +300,7 @@ jobs:
       CCACHE_NOHASHDIR: true
       CCACHE_COMPILERCHECK: string:android-ndk-r27.0.12077973
       CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
-      # Keep well under GitHub-hosted runner free disk (~14GB before cleanup).
+      # ubuntu-24.04 runners now have ~86 GB free out of the box; no cleanup step needed.
       CCACHE_MAXSIZE: 2G
       CCACHE_COMPRESSLEVEL: 5
       ORG_GRADLE_PROJECT_ppBrowserCompilerCache: ON
@@ -168,9 +312,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-
-      - name: Free disk space
-        uses: ./.github/actions/free-disk-space
 
       - uses: actions/setup-java@v6
         with:

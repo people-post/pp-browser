@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/net/HttpTransport.h"
 #include "domain/net/BlobClient.h"
 #include "domain/net/OrgBackendClients.h"
 
@@ -8,6 +9,12 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * Turn a blob-service HTTP response into a result. Server error text stays in the log detail; the
+ * user-facing message comes from the error catalog (quota full, upload not configured, ...).
+ */
+Roe<void> CheckBlobResponse(const HttpResponse& response);
 
 class HttpBlobClient : public IBlobClient {
 public:

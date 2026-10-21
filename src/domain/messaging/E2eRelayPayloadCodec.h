@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IPskSessionStore.h"
+#include "domain/messaging/E2ePublicSessionLogic.h"
 #include "common/thread/ThreadTypes.h"
 
 #include "common/Error.h"
@@ -47,9 +48,15 @@ public:
                                                              const std::vector<uint8_t>& plaintext,
                                                              const ByteVector& master_psk,
                                                              const std::optional<std::string>& key_init_b64 = std::nullopt);
+  /**
+   * e2e_public (with `local_kem_private_key`): read under the stored session for the envelope's
+   * epoch, else under the session its key_init opens; `read` (optional) says which. Persisting what
+   * that proves is the caller's (ReconcileE2ePublicSession — after the signature checked out).
+   */
   static Roe<ThreadMessage> DecryptEnvelope(const RelayEnvelope& envelope, const std::string& local_contact_id,
                                             const ChatTargetKey& target_key, IPskSessionStore& psk_store,
-                                            const std::optional<ByteVector>& local_kem_private_key = std::nullopt);
+                                            const std::optional<ByteVector>& local_kem_private_key = std::nullopt,
+                                            AutoKeyRead* read = nullptr);
 };
 
 } // namespace pbr

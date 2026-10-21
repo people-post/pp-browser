@@ -5,10 +5,11 @@
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
-#include "domain/mesh/tests/support/mesh_test_harness.h"
+#include "mesh/testing/mesh_test_harness.h"
 #include "domain/people/IdentityStore.h"
 
 #include "common/Utilities.h"
+#include "common/MeshAlias.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -115,7 +116,7 @@ protected:
     ASSERT_GE(sodium_init(), 0);
     data_ = std::make_unique<HistoryHarness>("svc");
 
-    auto created = pbr::test::AmpMeshHarness::Create();
+    auto created = mesh::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     mesh_ = std::move(*created);
 
@@ -142,7 +143,7 @@ protected:
   }
 
   std::unique_ptr<HistoryHarness> data_;
-  std::unique_ptr<pbr::test::AmpMeshHarness> mesh_;
+  std::unique_ptr<mesh::test::AmpMeshHarness> mesh_;
   std::unique_ptr<AmpChatHistoryTransport> responder_history_;
   std::unique_ptr<AmpChatHistoryTransport> client_history_;
 };

@@ -1,17 +1,18 @@
 #include "feature/calls/CallHopRanking.h"
 
-#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/calls/PeerCapsLogic.h"
 
 #include <unordered_map>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
-void CallHopRanking::FillDialInfo(std::vector<MeshHopCandidate>& ranked, const bool published_ma_is_dialable) const {
+void CallHopRanking::FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked, const bool published_ma_is_dialable) const {
   if (!deps_->dial) {
     return;
   }
-  for (MeshHopCandidate& hop : ranked) {
+  for (mesh::MeshHopCandidate& hop : ranked) {
     if (hop.multiaddr.empty()) {
       if (auto ma = deps_->dial->PreferredMultiaddr(hop.peer_id)) {
         hop.multiaddr = *ma;
@@ -21,8 +22,8 @@ void CallHopRanking::FillDialInfo(std::vector<MeshHopCandidate>& ranked, const b
     if (published_ma_is_dialable) {
       hop.dialable = hop.dialable || !hop.multiaddr.empty();
     } else if (!hop.dialable && !hop.multiaddr.empty() &&
-               (hop.affinity == MeshHopAffinity::OrgSeed || hop.affinity == MeshHopAffinity::DirectoryNode ||
-                hop.affinity == MeshHopAffinity::DhtDiscovered)) {
+               (hop.affinity == mesh::MeshHopAffinity::OrgSeed || hop.affinity == mesh::MeshHopAffinity::DirectoryNode ||
+                hop.affinity == mesh::MeshHopAffinity::DhtDiscovered)) {
       // Directory / bootstrap seeds with a published MA are SoftMigrate candidates even before
       // Amp address-book learn (cross-net PreferLocal fallback).
       hop.dialable = true;
@@ -30,7 +31,7 @@ void CallHopRanking::FillDialInfo(std::vector<MeshHopCandidate>& ranked, const b
   }
 }
 
-std::vector<MeshHopCandidate> CallHopRanking::Ranked() const {
+std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
   if (!deps_) {
     return {};
   }
@@ -38,10 +39,10 @@ std::vector<MeshHopCandidate> CallHopRanking::Ranked() const {
   if (auto listed = contacts_.List()) {
     contacts = std::move(*listed);
   }
-  const std::vector<MeshDirectoryNode> directory_nodes =
-      deps_->list_directory_nodes ? deps_->list_directory_nodes() : std::vector<MeshDirectoryNode>{};
-  const std::vector<MeshDirectoryNode> dht_nodes =
-      deps_->list_dht_nodes ? deps_->list_dht_nodes() : std::vector<MeshDirectoryNode>{};
+  const std::vector<mesh::MeshDirectoryNode> directory_nodes =
+      deps_->list_directory_nodes ? deps_->list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
+  const std::vector<mesh::MeshDirectoryNode> dht_nodes =
+      deps_->list_dht_nodes ? deps_->list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   const bool include_seeds = !deps_->seed_dial_ok || deps_->seed_dial_ok();
   auto merged = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, deps_->bootstrap_peers,
                                     deps_->prefer_contacts, include_seeds);
@@ -76,7 +77,7 @@ bool CallHopRanking::HasCandidates() const {
   if (deps_->prefer_local_as_hop && deps_->relay->IsStarted()) {
     return true;
   }
-  for (const MeshHopCandidate& hop : Ranked()) {
+  for (const mesh::MeshHopCandidate& hop : Ranked()) {
     if (hop.dialable) {
       return true;
     }
@@ -88,7 +89,7 @@ std::string CallHopRanking::HopMultiaddr(const std::string& hop_peer_id) const {
   if (hop_peer_id.empty()) {
     return {};
   }
-  for (const MeshHopCandidate& hop : Ranked()) {
+  for (const mesh::MeshHopCandidate& hop : Ranked()) {
     if (hop.peer_id == hop_peer_id && !hop.multiaddr.empty()) {
       return hop.multiaddr;
     }

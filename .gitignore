@@ -87,5 +87,6 @@ packaging/macos/signing.env
 packaging/ios/signing.env
 packaging/ios/ExportOptions.plist
 packaging/ios/*.mobileprovision
-dist-ios/
+# iOS local artifacts (see scripts/platform/ios_build.sh — IOS_OUT_DIR)
+out-ios/
 dist/

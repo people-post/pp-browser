@@ -45,7 +45,8 @@ const char* IntegrationsSettingsSection::Id() const {
 SettingsSectionListItem IntegrationsSettingsSection::ListItem() const {
   return {.id = Id(),
           .title = Tr("settings.integrations.title"),
-          .subtitle = Tr("settings.integrations.subtitle")};
+          .subtitle = Tr("settings.integrations.subtitle"),
+          .advanced_only = true};
 }
 
 SettingsFlushMode IntegrationsSettingsSection::FlushMode() const {

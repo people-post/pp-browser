@@ -1,4 +1,5 @@
 #include <chrono>
+#include <thread>
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/SessionListText.h"
+#include "gui/chat/SessionMenu.h"
 #include "gui/chat/BriefFeedIntent.h"
 #include "gui/chat/SuggestionPayload.h"
 #include "gui/chat/ChatWidgetHost.h"
@@ -22,9 +24,13 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "feature/conversations/DeleteForEveryone.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/PlainTextLinks.h"
+#include "domain/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 
@@ -48,7 +54,6 @@
 #include "domain/people/ContactJson.h"
 #include "feature/registration/RegistrationClient.h"
 #include "domain/messaging/AtAiParser.h"
-#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
@@ -68,7 +73,7 @@
 #include "domain/ui/PaymentFeedback.h"
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/data/SessionStore.h"
@@ -85,6 +90,7 @@
 #include "common/ValueJson.h"
 
 #include <ui/dom/Context.h>
+#include <ui/dom/SelectionController.h>
 #include <ui/Core.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Element.h>
@@ -98,8 +104,12 @@
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
+
+static_assert(kSessionMutedForever == kThreadMutedForever,
+              "SessionMenu.h and ThreadLocalPrefsStore.h must agree on \"always\"");
 
 namespace {
 
@@ -847,14 +857,6 @@ void ChatController::SelectThreadCallback(ui::DataModelHandle /*model*/, ui::Eve
   Instance().OnSelectThread(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::CloseThreadCallback(ui::DataModelHandle /*model*/, ui::Event& ev, const ui::VariantList& args) {
-  ev.StopPropagation();
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().OnCloseThread(std::string(args[0].Get<ui::String>().c_str()));
-}
-
 void ChatController::ClearHistoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                           const ui::VariantList& /*args*/) {
   Instance().OnClearHistory();
@@ -943,6 +945,11 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
     return;
   }
   if (facade_->OpenThread(thread_id)) {
+    // Opening a thread reads it: a dot set by "Mark as unread" goes with the unread count.
+    if (std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id); prefs && prefs->marked_unread) {
+      prefs->marked_unread = false;
+      (void)StoreThreadPrefs(*prefs);
+    }
     ILocalNotifier::Instance().ClearForThread(thread_id);
     facade_->MaybeTailSync(thread_id);
     ShellSetPrimaryPane("chat");
@@ -956,18 +963,26 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   }
 
   auto finish_close = [this, thread_id]() {
+    // Closing may change the active thread, so decide before it: a row closed from the sessions list
+    // may not be the open chat, and only the open chat has a draft, a reply in flight or widgets to drop.
+    const bool was_open = thread_id == ActiveThreadId();
     if (!facade_->CloseThread(thread_id)) {
       UserFeedback::Fail(Tr("chat.error.delete_failed"));
       NotifySurfaceChanged();
       return;
     }
-    chat_.draft = "";
-    chat_.status = "";
-    chat_.loading = false;
-    pending_reply_.reset();
-    working_set_.ClearAll();
-    widgets_.ClearAll();
-    chat_.turns.clear();
+    if (thread_prefs_) {
+      thread_prefs_->erase(thread_id);
+    }
+    if (was_open) {
+      chat_.draft = "";
+      chat_.status = "";
+      chat_.loading = false;
+      pending_reply_.reset();
+      working_set_.ClearAll();
+      widgets_.ClearAll();
+      chat_.turns.clear();
+    }
     RefreshFromMessaging();
     if (shell_.sessions.empty()) {
       ShellSelectNavTab(NavTab::Home);
@@ -1078,7 +1093,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           for (const GroupRosterMember& member : successors) {
             std::string label = member.member_identity;
             if (auto contact = facade_->FindContactByIdentity(member.member_identity,
-                                                                                  ContactIdKind::Account)) {
+                                                                                  mesh::ContactIdKind::Account)) {
               if (*contact) {
                 label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
                 if (label.empty()) {
@@ -1116,8 +1131,9 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     return;
   }
 
+  const bool is_ai = thread && *thread && (*thread)->kind == ThreadKind::Ai;
   ShowConfirm(Tr("chat.delete_conversation"),
-                             Tr("chat.delete_confirm"), [finish_close](bool ok) {
+                             Tr(is_ai ? "chat.delete_confirm_ai" : "chat.delete_confirm"), [finish_close](bool ok) {
                                if (!ok) {
                                  return;
                                }
@@ -1125,59 +1141,294 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                              });
 }
 
-void ChatController::OnClearHistory() {
-  if (!messaging_ready_) {
+const std::unordered_map<std::string, ThreadLocalPrefs>& ChatController::ThreadPrefs() {
+  static const std::unordered_map<std::string, ThreadLocalPrefs> kUnavailable;
+  if (!thread_prefs_) {
+    auto listed = facade_->ListThreadLocalPrefs();
+    if (!listed) {
+      // Not cached: an empty cache would make every thread look default, and the next write would put
+      // those defaults over the thread's stored row. Read again next time instead.
+      return kUnavailable;
+    }
+    thread_prefs_.emplace();
+    for (ThreadLocalPrefs& prefs : *listed) {
+      const std::string id = prefs.thread_id;
+      thread_prefs_->emplace(id, std::move(prefs));
+    }
+  }
+  return *thread_prefs_;
+}
+
+std::optional<ThreadLocalPrefs> ChatController::ThreadPrefsOf(const std::string& thread_id) {
+  const auto& all = ThreadPrefs();
+  if (!thread_prefs_) {
+    auto one = facade_->GetThreadLocalPrefs(thread_id);
+    if (!one) {
+      return std::nullopt;
+    }
+    return *one;
+  }
+  const auto it = all.find(thread_id);
+  if (it != all.end()) {
+    return it->second;
+  }
+  ThreadLocalPrefs prefs;
+  prefs.thread_id = thread_id;
+  return prefs;
+}
+
+bool ChatController::StoreThreadPrefs(const ThreadLocalPrefs& prefs) {
+  if (!facade_->SetThreadLocalPrefs(prefs)) {
+    return false;
+  }
+  if (thread_prefs_) {
+    (*thread_prefs_)[prefs.thread_id] = prefs;
+  }
+  return true;
+}
+
+void ChatController::UpdateThreadPrefs(const std::string& thread_id,
+                                       const std::function<void(ThreadLocalPrefs&)>& change) {
+  std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id);
+  if (prefs) {
+    change(*prefs);
+  }
+  if (!prefs || !StoreThreadPrefs(*prefs)) {
+    UserFeedback::Fail(Tr("sidebar.error.prefs_failed"));
+    NotifySurfaceChanged();
     return;
   }
-  const std::string thread_id = ActiveThreadId();
-  if (thread_id.empty()) {
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
+}
+
+void ChatController::OpenMuteMenu(const std::string& thread_id, const ui::Vector2i position) {
+  static constexpr std::pair<SessionMuteChoice, const char*> kChoices[] = {
+      {SessionMuteChoice::EightHours, "sidebar.menu.mute_8h"},
+      {SessionMuteChoice::OneWeek, "sidebar.menu.mute_1w"},
+      {SessionMuteChoice::Always, "sidebar.menu.mute_always"},
+  };
+  std::vector<ContextMenuAction> actions;
+  for (const auto& [choice, label_key] : kChoices) {
+    actions.push_back({
+        std::string("session_") + label_key,
+        Tr(label_key),
+        nullptr,
+        [this, thread_id, choice = choice]() {
+          UpdateThreadPrefs(thread_id, [choice](ThreadLocalPrefs& prefs) {
+            prefs.muted_until = MutedUntilFor(choice, util::NowUnixMs());
+          });
+        },
+    });
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OnToggleArchived() {
+  shell_.showing_archived = !shell_.showing_archived;
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
+}
+
+void ChatController::ToggleArchivedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
+  Instance().OnToggleArchived();
+}
+
+std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::string& thread_id,
+                                                                  const ui::Vector2i position) {
+  std::vector<ContextMenuAction> actions;
+  auto found = facade_->GetThread(thread_id);
+  if (!found || !*found) {
+    return actions;
+  }
+  const Thread& thread = **found;
+
+  // Same rule as the chat header's "View contact": the resolved contact, else the first saved participant.
+  std::optional<std::string> contact_id;
+  if (thread.kind == ThreadKind::Direct) {
+    contact_id = facade_->ResolveThreadLabel(thread).contact_id;
+    if (!contact_id && !thread.participant_contact_ids.empty() && !thread.participant_contact_ids.front().empty()) {
+      const std::string& candidate = thread.participant_contact_ids.front();
+      if (auto contact = facade_->GetContact(candidate); contact && *contact) {
+        contact_id = candidate;
+      }
+    }
+  }
+
+  SessionMenuState state;
+  state.kind = thread.kind == ThreadKind::Group ? SessionKind::Group
+               : thread.kind == ThreadKind::Direct ? SessionKind::Direct
+                                                   : SessionKind::Ai;
+  state.has_contact = contact_id.has_value();
+  if (contact_id) {
+    if (auto contact = facade_->GetContact(*contact_id); contact && *contact) {
+      state.blocked = (*contact)->local.trust == TrustLevel::Blocked;
+    }
+  }
+  const ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id).value_or(ThreadLocalPrefs{});
+  state.unread = SessionIsUnread(thread.unread_count, prefs.marked_unread);
+  state.pinned = prefs.pinned_at != 0;
+  state.muted = ThreadIsMuted(prefs.muted_until, util::NowUnixMs());
+  state.archived = prefs.archived;
+
+  for (const SessionMenuItem item : SessionMenuItems(state)) {
+    ContextMenuAction action;
+    action.danger = SessionMenuItemIsDestructive(item);
+    switch (item) {
+    case SessionMenuItem::MarkUnread:
+      action.id = "session_mark_unread";
+      action.label = Tr("sidebar.menu.mark_unread");
+      // A mark, not a message count: the row shows a dot and keeps its place in the list.
+      action.run = [this, thread_id]() {
+        UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = true; });
+      };
+      break;
+    case SessionMenuItem::MarkRead:
+      action.id = "session_mark_read";
+      action.label = Tr("sidebar.menu.mark_read");
+      action.run = [this, thread_id]() {
+        facade_->MarkThreadRead(thread_id);
+        UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = false; });
+      };
+      break;
+    case SessionMenuItem::Pin:
+    case SessionMenuItem::Unpin:
+      action.id = item == SessionMenuItem::Pin ? "session_pin" : "session_unpin";
+      action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
+      action.icon = "../icons/pin.svg";
+      action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
+        UpdateThreadPrefs(thread_id,
+                          [pin](ThreadLocalPrefs& prefs) { prefs.pinned_at = pin ? util::NowUnixMs() : 0; });
+      };
+      break;
+    case SessionMenuItem::Mute:
+      action.id = "session_mute";
+      action.label = Tr("sidebar.menu.mute");
+      action.icon = "../icons/bell-off.svg";
+      action.run = [this, thread_id, position]() { OpenMuteMenu(thread_id, position); };
+      break;
+    case SessionMenuItem::Unmute:
+      action.id = "session_unmute";
+      action.label = Tr("sidebar.menu.unmute");
+      action.icon = "../icons/bell-off.svg";
+      action.run = [this, thread_id]() {
+        UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.muted_until = 0; });
+      };
+      break;
+    case SessionMenuItem::Archive:
+    case SessionMenuItem::Unarchive:
+      action.id = item == SessionMenuItem::Archive ? "session_archive" : "session_unarchive";
+      action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
+      action.icon = "../icons/archive.svg";
+      action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
+        UpdateThreadPrefs(thread_id, [archive](ThreadLocalPrefs& prefs) { prefs.archived = archive; });
+      };
+      break;
+    case SessionMenuItem::ViewContact:
+      action.id = "session_view_contact";
+      action.label = Tr("chat.menu.view_contact");
+      action.icon = "../icons/contacts.svg";
+      action.run = [this, id = *contact_id]() {
+        if (contacts_notify_.select_contact) {
+          contacts_notify_.select_contact(id);
+        }
+      };
+      break;
+    case SessionMenuItem::Block:
+    case SessionMenuItem::Unblock: {
+      const bool block = item == SessionMenuItem::Block;
+      action.id = block ? "session_block" : "session_unblock";
+      action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
+      action.run = [this, id = *contact_id, block]() {
+        const auto apply = [this, id, block]() {
+          if (auto set = facade_->SetContactTrust(id, block ? TrustLevel::Blocked : TrustLevel::Unknown); !set) {
+            UserFeedback::Fail(Tr("contacts.err.trust"));
+            return;
+          }
+          if (contacts_notify_.refresh) {
+            contacts_notify_.refresh();
+          }
+          ShowToast(Tr(block ? "chat.menu.blocked_toast" : "chat.menu.unblocked_toast"));
+          NotifySurfaceChanged();
+        };
+        if (!block) {
+          apply();
+          return;
+        }
+        ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"), [apply](const bool ok) {
+          if (ok) {
+            apply();
+          }
+        });
+      };
+      break;
+    }
+    case SessionMenuItem::ClearChat:
+      action.id = "session_clear_chat";
+      action.label = Tr("chat.menu.clear_history");
+      action.run = [this, thread_id]() { ClearHistoryOf(thread_id); };
+      break;
+    case SessionMenuItem::Delete:
+      action.id = "session_delete";
+      action.label = Tr("sidebar.menu.delete");
+      action.icon = "../icons/trash.svg";
+      // The close flow asks before it deletes.
+      action.run = [this, thread_id]() { OnCloseThread(thread_id); };
+      break;
+    case SessionMenuItem::LeaveGroup:
+      action.id = "session_leave_group";
+      action.label = Tr("chat.group.leave_title");
+      // The close flow asks by itself and, for an owner, hands the group over first.
+      action.run = [this, thread_id]() { OnCloseThread(thread_id); };
+      break;
+    }
+    actions.push_back(std::move(action));
+  }
+  return actions;
+}
+
+void ChatController::OnClearHistory() { ClearHistoryOf(ActiveThreadId()); }
+
+void ChatController::ClearHistoryOf(const std::string& thread_id) {
+  if (!messaging_ready_ || thread_id.empty()) {
     return;
   }
 
-  auto thread = facade_->GetActiveThread();
+  std::optional<Thread> thread;
+  if (auto found = facade_->GetThread(thread_id); found && *found) {
+    thread = **found;
+  }
+  // Clearing is local only, like deleting. An AI thread has no other side: clearing it also forgets what
+  // the assistant learned in it, so nothing of the cleared chat lingers (Kenneth 2026-10-06: no checkbox).
   const bool is_ai = thread && thread->kind == ThreadKind::Ai;
-  std::string message = Tr("chat.clear_history.body");
-  if (is_ai) {
-    message += " " + Tr("chat.clear_history.body_ai");
-  } else if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
+  std::string message = Tr(is_ai ? "chat.clear_history.body_ai" : "chat.clear_history.body");
+  if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
     message += " " + Tr("chat.clear_history.body_secure");
   }
 
-  if (is_ai) {
-    ShowConfirmWithCheckbox(Tr("chat.clear_history"), message, Tr("chat.clear_history.forget_checkbox"), false,
-        [this, thread_id](bool ok, bool forget_memory) {
-          if (!ok) {
-            return;
-          }
-          if (!facade_->ClearThreadHistory(thread_id, forget_memory)) {
-            return;
-          }
-          chat_.draft = "";
-          chat_.status = "";
-          chat_.loading = false;
-          pending_reply_.reset();
-          widgets_.ClearAll();
-          RefreshFromMessaging();
-          NotifySurfaceChanged();
-        });
-  } else {
-    ShowConfirm(Tr("chat.clear_history"), message,
-                               [this, thread_id](bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 if (!facade_->ClearThreadHistory(thread_id, false)) {
-                                   return;
-                                 }
-                                 chat_.draft = "";
-                                 chat_.status = "";
-                                 chat_.loading = false;
-                                 pending_reply_.reset();
-                                 widgets_.ClearAll();
-                                 RefreshFromMessaging();
-                                 NotifySurfaceChanged();
-                               });
+  ShowConfirm(Tr("chat.clear_history"), message, [this, thread_id, is_ai](bool ok) {
+    if (!ok) {
+      return;
+    }
+    if (!facade_->ClearThreadHistory(thread_id, /*forget_memory=*/is_ai)) {
+      return;
+    }
+    AfterHistoryCleared(thread_id);
+  });
+}
+
+void ChatController::AfterHistoryCleared(const std::string& thread_id) {
+  // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
+  if (thread_id == ActiveThreadId()) {
+    chat_.draft = "";
+    chat_.status = "";
+    chat_.loading = false;
+    pending_reply_.reset();
+    widgets_.ClearAll();
   }
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnForgetMemory() {
@@ -1259,6 +1510,9 @@ void ChatController::RefreshFromMessaging() {
 void ChatController::OnProfileDataReset() {
   messaging_ready_ = false;
   mesh_ready_ = false;
+  // profile.db is recreated: nothing read from the old one may be written back into the new one.
+  thread_prefs_.reset();
+  shell_.showing_archived = false;
   working_set_.ClearAll();
   widgets_.ClearAll();
   pending_reply_.reset();
@@ -1280,32 +1534,54 @@ void ChatController::SyncShellSessions() {
   if (!threads) {
     return;
   }
+  const auto& prefs = ThreadPrefs();
+  const auto prefs_of = [&prefs](const Thread& thread) -> ThreadLocalPrefs {
+    const auto it = prefs.find(thread.id);
+    return it == prefs.end() ? ThreadLocalPrefs{} : it->second;
+  };
   std::vector<Thread> sorted_threads = *threads;
-  std::sort(sorted_threads.begin(), sorted_threads.end(),
-            [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  std::sort(sorted_threads.begin(), sorted_threads.end(), [&prefs_of](const Thread& a, const Thread& b) {
+    return SessionSortsBefore(prefs_of(a).pinned_at, a.updated_at, prefs_of(b).pinned_at, b.updated_at);
+  });
 
   const std::string active_id = ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
+  int archived_count = 0;
   for (const Thread& thread : sorted_threads) {
-    if (IsCallControlShadowThread(thread, sorted_threads)) {
+    if (prefs_of(thread).archived) {
+      ++archived_count;
+    }
+  }
+  shell_.archived_count = archived_count;
+  if (archived_count == 0) {
+    shell_.showing_archived = false; // the last archived thread left: back to the list
+  }
+  shell_.archived_entry_label = shell_.showing_archived
+                                    ? Tr("sidebar.archived.back").c_str()
+                                    : Tr("sidebar.archived.entry", {{"count", std::to_string(archived_count)}}).c_str();
+  for (const Thread& thread : sorted_threads) {
+    const ThreadLocalPrefs thread_prefs = prefs_of(thread);
+    if (thread_prefs.archived != shell_.showing_archived) {
       continue;
     }
     SessionRow row;
+    row.pinned = thread_prefs.pinned_at != 0;
+    row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
+    row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.id = thread.id.c_str();
-    row.title = facade_
-                    ? facade_->ResolveThreadLabel(thread).title.c_str()
-                    : thread.title.c_str();
+    std::string title = facade_ ? facade_->ResolveThreadLabel(thread).title : thread.title;
     // The stored default AI title is English; show it in the UI language.
-    if (thread.kind == ThreadKind::Ai && row.title == "New chat") {
-      row.title = Tr("chat.new_chat").c_str();
+    if (thread.kind == ThreadKind::Ai && title == "New chat") {
+      title = Tr("chat.new_chat");
     }
-    row.preview = thread.preview.c_str();
+    // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
+    row.title = title.c_str();
+    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(thread.preview)).c_str();
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
     row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
     row.date_label = SessionDateLabel(thread.updated_at, now_ms).c_str();
     row.active = thread.id == active_id;
-    row.closable = true;
     shell_.sessions.push_back(std::move(row));
   }
 }
@@ -1420,14 +1696,20 @@ void ChatController::OnAttachFile() {
     return;
   }
 
-  ShowOpenFileDialog(Backend::GetWindow(), [this, thread_id](std::vector<std::string> paths) {
+  auto on_picked = [this, thread_id](std::vector<std::string> paths) {
     AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
       if (paths.empty()) {
         return;
       }
       StartAttachmentUpload(std::move(paths.front()));
     });
-  });
+  };
+  if (!Platform::IsMobile()) {
+    ShowOpenFileDialog(Backend::GetWindow(), std::move(on_picked));
+    return;
+  }
+  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); },
+                   [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); });
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path) {
@@ -1450,7 +1732,8 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
       [this, thread_id, path](std::function<void(Roe<ThreadMessage>)> done) {
         facade_->SendAttachmentFromPathAsync(thread_id, path, std::move(done));
       },
-      [this](Roe<ThreadMessage> sent) {
+      [this, path](Roe<ThreadMessage> sent) {
+        ReleasePickedFile(path); // read (and kept as a CAS copy) by now
         chat_.attachment_uploading = false;
         chat_.attachment_draft_name = "";
         chat_.status = "";
@@ -1480,17 +1763,30 @@ bool ChatController::InAiComposerContext() const {
 }
 
 void ChatController::OnAttachAiImage() {
-  ShowOpenImageFileDialog(
-      Backend::GetWindow(),
-      [this](std::vector<std::string> paths) {
-        AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-          if (paths.empty()) {
-            return;
-          }
-          StartAiImagePrepare(std::move(paths.front()));
-        });
-      },
-      /*include_heic=*/true);
+  NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        return;
+      }
+      StartAiImagePrepare(std::move(paths.front()));
+    });
+  };
+  if (!Platform::IsMobile()) {
+    ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+    return;
+  }
+  // Same two ways as a chat; the assistant reads images only, so "File" offers image files.
+  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
+                   [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
+}
+
+void ChatController::ShowAttachChoice(std::function<void()> photo, std::function<void()> file) {
+  // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
 namespace {
@@ -1561,6 +1857,7 @@ void ChatController::StartAiImagePrepare(std::string path) {
   // Decoding and re-encoding a photo is blocking work: off the UI thread, reply on it.
   AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, generation, name = std::move(name)]() mutable {
     Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+    ReleasePickedFile(path); // the draft keeps its own copy
     AppRuntime::PostUI([this, generation, name = std::move(name), result = std::move(result)]() mutable {
       if (generation != image_prepare_generation_) {
         if (result) {
@@ -1641,9 +1938,6 @@ bool ChatController::SendImageQuestion(const std::string& text) {
   const std::string thread_id = ActiveThreadId();
   const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
   const std::string message_id = util::GenerateUuid();
-  if (!image.file_path.empty()) {
-    ai_image_files_[message_id] = AiImageView{image.file_path, image.width, image.height};
-  }
   widgets_.ExpireOpenForms();
   DirtyChatTurns();
   chat_.loading = true;
@@ -1652,8 +1946,35 @@ bool ChatController::SendImageQuestion(const std::string& text) {
   UpdateSidebarPreview(question);
   DirtyChatChrome();
   DirtyChatHeader();
-  log().info << "Submitting an image question to the agent session";
-  agent_ports_.submit_image_to_thread(thread_id, question, AgentImageTurn{.image = std::move(image.image), .message_id = message_id});
+  // The image is kept like a received attachment (private CAS + this thread's view file) and the message
+  // stores a reference to it, so the bubble can show it after a restart. Hashing, encrypting and writing
+  // ~1.5 MB is blocking work: off the UI thread, submit from the reply. If the store fails the question
+  // still goes out and the bubble shows only the marker.
+  ConversationsFacade* facade = facade_;
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, question, message_id, image = std::move(image)]() mutable {
+    auto stored = facade->StoreAiImage(thread_id, image.image.data, image.image.mime);
+    AppRuntime::PostUI([this, thread_id, question, message_id, image = std::move(image),
+                        stored = std::move(stored)]() mutable {
+      std::string ai_image_json;
+      if (stored) {
+        ai_image_json = AiImageRefToJson(AiImageRef{.content_hash = std::move(stored->content_hash),
+                                                    .mime = image.image.mime,
+                                                    .width = image.width,
+                                                    .height = image.height});
+      } else {
+        log().warning << "AI image not stored: " << AppError::Log(stored.error());
+      }
+      RemoveSessionFile(image.file_path); // the composer's preview; the thread's view file takes over
+      if (!agent_ports_.submit_image_to_thread) {
+        return;
+      }
+      log().info << "Submitting an image question to the agent session";
+      agent_ports_.submit_image_to_thread(thread_id, question,
+                                          AgentImageTurn{.image = std::move(image.image),
+                                                         .message_id = message_id,
+                                                         .ai_image_json = std::move(ai_image_json)});
+    });
+  });
   return true;
 }
 
@@ -1675,16 +1996,16 @@ void ChatController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) c
     if (rml.find(kAiImageTurnMarker) == std::string::npos) {
       continue;
     }
-    // The thumbnail is a session file: after a restart (or a vault lock) only the marker remains.
+    // The message references the stored image (private CAS); the view file is materialized on demand.
+    // Without a reference (older questions, a failed store) or while locked only the marker remains.
     std::string src;
     int width = 0;
     int height = 0;
-    if (const auto view = ai_image_files_.find(row.message_id.c_str()); view != ai_image_files_.end()) {
-      std::error_code ec;
-      if (std::filesystem::is_regular_file(view->second.file_path, ec)) {
-        src = StructuredTextParser::EscapeText(view->second.file_path);
-        width = view->second.width;
-        height = view->second.height;
+    if (const auto ref = AiImageRefFromJson(row.ai_image_json)) {
+      if (const auto view = facade_->AiImageViewPath(thread->id, ref->content_hash, ref->mime)) {
+        src = StructuredTextParser::EscapeText(*view);
+        width = ref->width;
+        height = ref->height;
       }
     }
     row.content_rml = DecorateAiImageBubble(std::move(rml), src, width, height, Tr("chat.image.marker")).c_str();
@@ -1770,6 +2091,7 @@ void ChatController::SyncDisplayFromThread() {
   }
   if (thread_changed) {
     DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
+    CancelQuoteReply();      // so does a pending reply
   }
 
   const std::string prev_tail_id =
@@ -1887,7 +2209,7 @@ void ChatController::OpenChatLink(const std::string& entry_id, const int link_in
 }
 
 void ChatController::ConfirmAndOpenUrl(const std::string& url) {
-  if (!IsHttpsUrl(url)) {
+  if (!IsOpenableUrl(url)) {
     return;
   }
   if (skip_link_confirm_this_run_) {
@@ -2033,6 +2355,16 @@ void ChatController::OnSendMessage() {
     return;
   }
 
+  // On a phone the on-screen keyboard stays up for as long as the composer has focus; sending is what closes it.
+  const auto close_keyboard = [this] {
+    if (!Platform::IsMobile() || !context_ || context_->GetNumDocuments() == 0) {
+      return;
+    }
+    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+      draft->Blur();
+    }
+  };
+
   if (!text.empty()) {
     if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
       ShowToast(Tr("chat.error.message_too_long"));
@@ -2046,12 +2378,20 @@ void ChatController::OnSendMessage() {
       chat_.draft = "";
       DirtyChatChrome();
       scroller_.RequestScrollToLatest();
+      close_keyboard();
     }
     return;
   }
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
+  close_keyboard();
+  if (!quote_reply_source_.empty()) {
+    const std::string quoted = ComposeQuoteReply(text, quote_reply_source_);
+    CancelQuoteReply();
+    SendUserText(quoted);
+    return;
+  }
   SendUserText(text);
 }
 
@@ -2086,6 +2426,17 @@ void ChatController::OnNewMessage() {
 namespace {
 
 const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
+
+/** The sessions-list row the pointer is on (`session-id` is set by sidebar.rml), or empty. */
+std::string FindSessionIdFromElement(ui::Element* element) {
+  for (ui::Element* cur = element; cur; cur = cur->GetParentNode()) {
+    if (cur->HasAttribute("session-id")) {
+      const ui::String value = cur->GetAttribute("session-id", ui::String());
+      return std::string(value.c_str());
+    }
+  }
+  return {};
+}
 
 std::string FindMessageIdFromElement(ui::Element* element) {
   for (ui::Element* cur = element; cur; cur = cur->GetParentNode()) {
@@ -2182,27 +2533,304 @@ void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
       });
 }
 
-void ChatController::OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position) {
-  if (message_id.empty()) {
+namespace {
+
+// What the user reads in a message.
+std::string PlainTextOf(const ThreadMessage& message) {
+  // Local-pipeline AI answers are stored as UI block documents.
+  if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
+    return *prose;
+  }
+  // A reply that quotes another message: only what this message itself says.
+  if (const auto parts = SplitQuoteReply(message.text)) {
+    return parts->reply;
+  }
+  return message.text;
+}
+
+} // namespace
+
+void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Vector2i position) {
+  if (!facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  auto delete_for_me = [this, thread_id, message_id]() {
+    if (!facade_) {
+      return;
+    }
+    if (auto deleted = facade_->DeleteMessageForMe(thread_id, message_id); !deleted) {
+      ShowToast(AppError::Display(deleted.error()));
+      return;
+    }
+    SyncDisplayFromThread();
+    DirtyChatTurns();
+    NotifySurfaceChanged();
+  };
+  auto thread = facade_->GetActiveThread();
+  const bool for_everyone = thread && thread->kind != ThreadKind::Ai && CanDeleteForEveryone(message_id);
+  if (!for_everyone) {
+    ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"), [delete_for_me](const bool ok) {
+      if (ok) {
+        delete_for_me();
+      }
+    });
     return;
   }
   std::vector<ContextMenuAction> actions;
-  for (const char* emoji : kReactionPresets) {
-    actions.push_back({
-        std::string("react_") + emoji,
-        emoji,
-        nullptr,
-        [this, message_id, emoji]() { ToggleReaction(message_id, emoji); },
-    });
-  }
-  actions.push_back({
-      "react_more",
-      Tr("chat.react.more"),
-      nullptr,
-      [this, message_id]() { ShowReactionMorePrompt(message_id); },
+  ContextMenuAction everyone{"delete_for_everyone", Tr("chat.menu.delete_for_everyone"), nullptr,
+                             [this, thread_id, message_id]() { DeleteMessageForEveryone(thread_id, message_id); }};
+  everyone.danger = true;
+  actions.push_back(std::move(everyone));
+  ContextMenuAction mine{"delete_for_me", Tr("chat.menu.delete_for_me"), nullptr, delete_for_me};
+  mine.danger = true;
+  actions.push_back(std::move(mine));
+  actions.push_back({"delete_cancel", Tr("common.cancel"), nullptr, []() {}});
+  // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
+  AppRuntime::PostUI([position, actions = std::move(actions)]() mutable {
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
   });
+}
+
+void ChatController::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
+  ConversationsFacade* facade = facade_;
+  if (!facade) {
+    return;
+  }
+  // Sends a message and may call the relay: off the UI thread, refresh from the reply.
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, message_id]() {
+    auto done = facade->DeleteMessageForEveryone(thread_id, message_id);
+    AppRuntime::PostUI([this, done = std::move(done)]() {
+      if (!done) {
+        ShowToast(AppError::Display(done.error()));
+        return;
+      }
+      SyncDisplayFromThread();
+      DirtyChatTurns();
+      NotifySurfaceChanged();
+    });
+  });
+}
+
+bool ChatController::CanDeleteForEveryone(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  if (!found || !found->has_value()) {
+    return false;
+  }
+  return pbr::CanDeleteForEveryone(**found);
+}
+
+bool ChatController::IsDeletedMessage(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  if (!found || !found->has_value()) {
+    return false;
+  }
+  const ThreadMessage& message = **found;
+  return message.content_type == ChatContentType::Deleted;
+}
+
+std::string ChatController::MessagePlainText(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return {};
+  }
+  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return {};
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id == message_id) {
+      return PlainTextOf(message);
+    }
+  }
+  return {};
+}
+
+void ChatController::StartQuoteReply(const std::string& text, const std::string& draft_prefix) {
+  if (chat_.compose_disabled || text.empty()) {
+    return;
+  }
+  quote_reply_source_ = text;
+  // One line in the bar, however long or multi-line the message is.
+  constexpr size_t kMaxPreviewChars = 120;
+  std::string preview;
+  size_t chars = 0;
+  for (const char ch : text) {
+    if ((static_cast<unsigned char>(ch) & 0xC0) != 0x80 && ++chars > kMaxPreviewChars) {
+      preview += "\xE2\x80\xA6";
+      break;
+    }
+    preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
+  }
+  chat_.quote_reply = true;
+  chat_.quote_reply_text = StructuredTextParser::EscapeText(preview).c_str(); // bound with data-rml
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  if (!draft_prefix.empty()) {
+    chat_.draft = draft_prefix.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+    draft->SetValue(draft_prefix.c_str());
+  }
+  draft->Focus();
+  if (!draft_prefix.empty()) {
+    const ui::String current = draft->GetValue();
+    const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
+    draft->SetSelectionRange(end, end);
+  }
+}
+
+void ChatController::CancelQuoteReply() {
+  if (!chat_.quote_reply && quote_reply_source_.empty()) {
+    return;
+  }
+  quote_reply_source_.clear();
+  chat_.quote_reply = false;
+  chat_.quote_reply_text = "";
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+}
+
+void ChatController::OpenShareTargets(const std::string& text, const ui::Vector2i position) {
+  if (!facade_ || text.empty()) {
+    return;
+  }
+  // One friend per share, no caption: the direct chats, most recent first.
+  constexpr size_t kMaxShareTargets = 30;
+  std::vector<Thread> targets;
+  if (auto threads = facade_->ListThreads()) {
+    for (const Thread& thread : *threads) {
+      if (thread.kind == ThreadKind::Direct && !(thread.local_title.empty() && thread.title.empty())) {
+        targets.push_back(thread);
+      }
+    }
+  }
+  std::sort(targets.begin(), targets.end(), [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  if (targets.size() > kMaxShareTargets) {
+    targets.resize(kMaxShareTargets);
+  }
+  if (targets.empty()) {
+    ShowToast(Tr("chat.share.no_friends"));
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  for (const Thread& thread : targets) {
+    const std::string name = thread.local_title.empty() ? thread.title : thread.local_title;
+    actions.push_back({"share_to_" + thread.id, name, nullptr, [this, thread_id = thread.id, name, text]() {
+                         SendRelayOptions opts;
+                         opts.update_preview = true;
+                         if (auto sent = facade_->SendUserMessage(thread_id, text, opts); !sent) {
+                           ShowToast(sent.error().message);
+                           return;
+                         }
+                         ShowToast(Tr("chat.share.sent", {{"name", name}}));
+                       }});
+  }
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
+
+void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
+  if (!facade_ || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return;
+  }
+  // The quote travels as text, so the original is found by its text: the nearest earlier message that
+  // starts with the quoted words.
+  std::string target_id;
+  for (size_t i = 0; i < page->size(); ++i) {
+    if ((*page)[i].id != reply_message_id) {
+      continue;
+    }
+    const auto parts = SplitQuoteReply((*page)[i].text);
+    if (!parts) {
+      return;
+    }
+    std::string needle = parts->quote;
+    if (needle.size() >= 3 && needle.compare(needle.size() - 3, 3, "\xE2\x80\xA6") == 0) {
+      needle.erase(needle.size() - 3); // the ellipsis of a cut quote
+    }
+    const int64_t reply_order = (*page)[i].display_order;
+    int64_t best_order = -1;
+    for (const ThreadMessage& candidate : *page) {
+      if (candidate.id == reply_message_id || candidate.display_order >= reply_order ||
+          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation) {
+        continue;
+      }
+      if (PlainTextOf(candidate).rfind(needle, 0) == 0) {
+        best_order = candidate.display_order;
+        target_id = candidate.id;
+      }
+    }
+    break;
+  }
+  ui::Element* row = target_id.empty() ? nullptr
+                                       : context_->GetDocument(0)->QuerySelector(("[message-id=\"" + target_id + "\"]").c_str());
+  if (!row) {
+    ShowToast(Tr("chat.quote.not_found"));
+    return;
+  }
+  row->ScrollIntoView(true);
+}
+
+void ChatController::OpenMessageLink(const std::string& message_id, const int link_index) {
+  if (!facade_ || link_index < 0) {
+    return;
+  }
+  auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id) {
+      continue;
+    }
+    // The same scan the bubble was rendered from; the URL comes from the stored text, never the markup.
+    const std::vector<PlainTextLink> links = FindPlainTextLinks(message.text);
+    if (static_cast<size_t>(link_index) < links.size()) {
+      ConfirmAndOpenUrl(links[static_cast<size_t>(link_index)].url); // https only, host confirmed first
+    }
+    return;
+  }
+}
+
+void ChatController::OpenMessageLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  const std::optional<int> link_index = EventArgAsInt(args, 1);
+  if (!link_index) {
+    return;
+  }
+  Instance().OpenMessageLink(std::string(args[0].Get<ui::String>().c_str()), *link_index);
+}
+
+void ChatController::JumpToQuoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  Instance().JumpToQuotedMessage(std::string(args[0].Get<ui::String>().c_str()));
+}
+
+void ChatController::CancelQuoteReplyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
+  Instance().CancelQuoteReply();
+}
+
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
   if (chat_.compose_disabled) {
@@ -2393,16 +3021,16 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
           Tr("chat.menu.add_to_contacts"),
           nullptr,
           [this, peer_id]() {
-            DirectoryHit hit;
+            mesh::DirectoryHit hit;
             if (auto shadow = facade_->GetDirectoryShadow(peer_id)) {
               hit = *shadow;
             } else {
               hit.hit_id = peer_id;
               if (peer_id.rfind("account:", 0) == 0) {
                 hit.account_id = peer_id;
-                hit.ids = {{ContactIdKind::Account, peer_id, true}};
+                hit.ids = {{mesh::ContactIdKind::Account, peer_id, true}};
               } else {
-                hit.ids = {{ContactIdKind::RelayUser, peer_id, false}};
+                hit.ids = {{mesh::ContactIdKind::RelayUser, peer_id, false}};
               }
             }
             auto created = facade_->AddContactFromDirectoryHit(hit);
@@ -2411,13 +3039,16 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
               NotifySurfaceChanged();
               return;
             }
+            if (hit.nickname.empty()) {
+              facade_->EnsureDirectoryLookup(peer_id); // the hit fills the nickname in when it arrives
+            }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
               if (!hit.account_id || hit.account_id->empty()) {
                 UserFeedback::Fail(Tr("chat.error.directory_missing_account"));
                 NotifySurfaceChanged();
                 return;
               }
-              facade_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+              facade_->RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), *hit.account_id,
                                               *hit.signing_public_key_b64, "directory");
             }
             if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
@@ -2426,7 +3057,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
                 NotifySurfaceChanged();
                 return;
               }
-              facade_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+              facade_->RegisterPeerKemKey(ContactIdKindToString(mesh::ContactIdKind::Account), *hit.account_id,
                                           *hit.kem_public_key_b64, "directory");
             }
             facade_->RegisterContactDirectEndpoints(*created);
@@ -2545,7 +3176,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
         }
         std::string name = unreachable_id;
         if (auto contact =
-                facade_->FindContactByIdentity(unreachable_id, ContactIdKind::Account)) {
+                facade_->FindContactByIdentity(unreachable_id, mesh::ContactIdKind::Account)) {
           if (*contact) {
             name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
             if (name.empty()) {
@@ -2604,7 +3235,7 @@ void ChatController::OnFindSomeone() {
   }
   OnNewChat();
   focus_draft_after_sync_ = true;
-  chat_.draft = "Find someone on the network";
+  chat_.draft = Tr("home.suggestion.find_someone_prompt");
   DirtyChatChrome();
 }
 
@@ -2975,6 +3606,8 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
 
     const std::string assistant_open =
         ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
+    // B81: a blank first line shows in assistant bubbles; log how the body starts to see what sits before the text.
+    log().debug << "assistant bubble markup head: " << hydrated.substr(0, 160);
 
     if (messaging_ready_) {
       if (message_exists) {
@@ -3152,12 +3785,11 @@ void ChatController::RefreshLlmSetupBanner() {
   const AppConfig& config = Store().Snapshot().config;
   use_llm_ = !config.llm.base_url.empty();
   const std::string kRegisterBriefHard = Tr("chat.hint.brief_register");
-  const std::string kGuestBriefSoft = Tr("chat.hint.brief_free_tier");
   const std::string kBriefUnavailable = Tr("chat.hint.brief_unavailable");
   const std::string kBriefUnavailableTemp = Tr("chat.hint.brief_unavailable_temp");
 
   if (!use_llm_) {
-    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"));
+    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"), /*sticky=*/true);
     return;
   }
   if (ResolvePreset(config) == "brief") {
@@ -3174,17 +3806,12 @@ void ChatController::RefreshLlmSetupBanner() {
     if (brief_key.empty()) {
       // The mint hint can be the server's own wording, so remember what was shown to dismiss it later.
       last_brief_banner_ = !brief_guest_mint_user_hint_.empty() ? brief_guest_mint_user_hint_ : kBriefUnavailable;
-      UserFeedback::NeedsSetup(last_brief_banner_);
-      return;
-    }
-    if (registered.empty() && !guest.empty()) {
-      last_brief_banner_ = kGuestBriefSoft;
-      UserFeedback::NeedsSetup(last_brief_banner_);
+      UserFeedback::NeedsSetup(last_brief_banner_, /*sticky=*/true);
       return;
     }
     const std::string& banner = ChromeSnapshot().banner_message;
     if ((!last_brief_banner_.empty() && banner == last_brief_banner_) || banner == kRegisterBriefHard ||
-        banner == kGuestBriefSoft || banner == kBriefUnavailable || banner == kBriefUnavailableTemp) {
+        banner == kBriefUnavailable || banner == kBriefUnavailableTemp) {
       last_brief_banner_.clear();
       if (shell_feedback_.dismiss_banner) {
         shell_feedback_.dismiss_banner();
@@ -3193,7 +3820,7 @@ void ChatController::RefreshLlmSetupBanner() {
     return;
   }
   if (config.llm.require_api_key && config.llm.api_key.empty()) {
-    UserFeedback::NeedsSetup(Tr("chat.hint.api_key_needed"));
+    UserFeedback::NeedsSetup(Tr("chat.hint.api_key_needed"), /*sticky=*/true);
   }
 }
 
@@ -3243,6 +3870,11 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  // Pre-send image previews are session files; a crash or a kill leaves them behind, so start clean.
+  if (const std::string profile_dir = facade_ ? facade_->ProfileDataDir() : std::string(); !profile_dir.empty()) {
+    std::error_code ec;
+    std::filesystem::remove_all(AttachmentViewRoot(profile_dir, kAiImageViewThread), ec);
+  }
   EnsureBriefGuestLlmKey();
   RefreshLlmSetupBanner();
   if (IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr) {
@@ -3267,7 +3899,37 @@ void ChatController::WireMessagingBindings() {
         if (!Store().Snapshot().profile_prefs.show_notifications) {
           return;
         }
-        ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+        // A muted thread still counts as unread in the list; it just does not notify.
+        const std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id);
+        if (prefs && ThreadIsMuted(prefs->muted_until, util::NowUnixMs())) {
+          return;
+        }
+        // A stranger's first message arrives before the directory answered, so the title would be a bare
+        // id. Give the lookup a moment and use whatever name is known by then.
+        bool bare_id = false;
+        if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+          bare_id = facade_->ResolveThreadLabel(**thread).trust == PeerLabelTrust::RawId;
+        }
+        if (!bare_id) {
+          ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+          return;
+        }
+        AppRuntime::PostWorkerAndReplyOnUI<int>(
+            WorkerLane::Normal,
+            []() {
+              std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+              return 0;
+            },
+            [this, body, thread_id, title](int) {
+              std::string resolved = title;
+              if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+                const std::string now = facade_->ResolveThreadLabel(**thread).title;
+                if (!now.empty()) {
+                  resolved = now;
+                }
+              }
+              ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id);
+            });
       });
   ILocalNotifier::Instance().SetActivationHandler([this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
@@ -3362,6 +4024,7 @@ bool ChatController::Setup(ui::Context* context) {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
+  thread_prefs_.reset();
   shell_.sessions = {{ui::String("Chat"), ui::String(Tr("chat.ai_thread.placeholder").c_str())}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
@@ -3438,6 +4101,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("image_thumb_ready", &controller.chat_.image_thumb_ready);
         ctor.Bind("image_thumb_src", &controller.chat_.image_thumb_src);
         ctor.Bind("image_draft_name", &controller.chat_.image_draft_name);
+        ctor.Bind("quote_reply", &controller.chat_.quote_reply);
+        ctor.Bind("quote_reply_text", &controller.chat_.quote_reply_text);
         ctor.Bind("attachment_uploading", &controller.chat_.attachment_uploading);
         ctor.Bind("attachment_draft_name", &controller.chat_.attachment_draft_name);
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
@@ -3470,6 +4135,9 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
         ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
+        ctor.BindEventCallback("cancel_quote_reply", &ChatController::CancelQuoteReplyCallback);
+        ctor.BindEventCallback("jump_to_quote", &ChatController::JumpToQuoteCallback);
+        ctor.BindEventCallback("open_message_link", &ChatController::OpenMessageLinkCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
         ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
@@ -3519,10 +4187,16 @@ bool ChatController::Setup(ui::Context* context) {
           session_handle.RegisterMember("unread_display", &ChatController::SessionRow::unread_display);
           session_handle.RegisterMember("date_label", &ChatController::SessionRow::date_label);
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
-          session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);
+          session_handle.RegisterMember("pinned", &ChatController::SessionRow::pinned);
+          session_handle.RegisterMember("muted", &ChatController::SessionRow::muted);
+          session_handle.RegisterMember("unread_dot", &ChatController::SessionRow::unread_dot);
         }
         ctor.RegisterArray<std::vector<ChatController::SessionRow>>();
         ctor.Bind("sessions", &controller.shell_.sessions);
+        ctor.Bind("archived_count", &controller.shell_.archived_count);
+        ctor.Bind("showing_archived", &controller.shell_.showing_archived);
+        ctor.Bind("archived_entry_label", &controller.shell_.archived_entry_label);
+        ctor.BindEventCallback("toggle_archived", &ChatController::ToggleArchivedCallback);
         ctor.Bind("working_set_active", &controller.shell_.working_set_active);
         ctor.Bind("working_set_title", &controller.shell_.working_set_title);
         ctor.Bind("working_set_subtitle", &controller.shell_.working_set_subtitle);
@@ -3532,7 +4206,6 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
         ctor.BindEventCallback("open_new_session_menu", &ChatController::OpenNewSessionMenuCallback);
         ctor.BindEventCallback("select_thread", &ChatController::SelectThreadCallback);
-        ctor.BindEventCallback("close_thread", &ChatController::CloseThreadCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
@@ -3549,21 +4222,103 @@ bool ChatController::Setup(ui::Context* context) {
 
   ContextMenuHost::Instance().RegisterProvider([this](const ContextMenuRequest& request) {
     std::vector<ContextMenuAction> actions;
-    if (!messaging_ready_ || chat_.compose_disabled) {
+    if (!messaging_ready_) {
       return actions;
     }
+    if (const std::string session_id = FindSessionIdFromElement(request.target); !session_id.empty()) {
+      return SessionMenuActions(session_id, request.position);
+    }
+    if (chat_.compose_disabled) {
+      return actions;
+    }
+    // An item the user can pass on (an article in a feed list): Ask AI / Copy / Share. The nearest of
+    // such an item and a message row wins.
+    for (ui::Element* cur = request.target; cur && !cur->HasAttribute("message-id"); cur = cur->GetParentNode()) {
+      if (!cur->HasAttribute("share-text")) {
+        continue;
+      }
+      std::string shared = cur->GetAttribute("share-text", ui::String()).c_str();
+      const std::string url = cur->GetAttribute("share-url", ui::String()).c_str();
+      if (!url.empty()) {
+        // "<label><url>": a PP bubble shows the label as the link (PlainTextLinks.h); pasted elsewhere it
+        // still reads as a label followed by the address.
+        shared += "\n" + Tr("feed.result.open") + url;
+      }
+      // In a direct chat the question needs the "@ai " prefix; an AI thread takes it as it is.
+      auto active = facade_ ? facade_->GetActiveThread() : Roe<Thread>(Error("no facade"));
+      const std::string prefix = active && active->kind == ThreadKind::Direct ? "@ai " : "";
+      // The list panel closes so the composer with the quote bar is what the user sees next.
+      actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr, [this, shared, prefix]() {
+                           AppRuntime::PostUI([this, shared, prefix]() {
+                             working_set_.Clear();
+                             StartQuoteReply(shared, prefix);
+                           });
+                         }});
+      actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() {
+                           if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                             system->SetClipboardText(shared);
+                           }
+                         }});
+      const ui::Vector2i position = request.position;
+      // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
+      actions.push_back({"share_item", Tr("chat.menu.share"), nullptr, [this, shared, position]() {
+                           AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
+                         }});
+      return actions;
+    }
+
     const std::string message_id = FindMessageIdFromElement(request.target);
-    if (message_id.empty()) {
-      return actions;
+    if (message_id.empty() || IsDeletedMessage(message_id)) {
+      return actions; // a deleted message takes no reaction, reply, copy or second delete
     }
-    const ui::Vector2i pos = request.position;
-    actions.push_back({
-        "react_message",
-        Tr("chat.react.menu"),
-        nullptr,
-        [this, message_id, pos]() { OpenReactPresetMenu(message_id, pos); },
-    });
+    // Reactions sit in the row above the message, the rest in the list below it.
+    for (const char* emoji : kReactionPresets) {
+      ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr,
+                              [this, message_id, emoji]() { ToggleReaction(message_id, emoji); }};
+      react.quick = true;
+      actions.push_back(std::move(react));
+    }
+    ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { ShowReactionMorePrompt(message_id); }};
+    more.quick = true;
+    actions.push_back(std::move(more));
+
+    // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
+    std::string text;
+    if (request.context) {
+      if (ui::SelectionController* selection = request.context->GetSelectionController()) {
+        text = selection->GetSelectedText();
+      }
+    }
+    if (text.empty()) {
+      text = MessagePlainText(message_id);
+    }
+    if (!text.empty()) {
+      // Reply: the message shows as a quote bar above the composer and is attached to the next send.
+      actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { StartQuoteReply(text); }});
+      actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() {
+                           if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                             system->SetClipboardText(text);
+                           }
+                         }});
+      // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
+      if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { StartQuoteReply(text, "@ai "); }});
+      }
+    }
+    // Delete: our own message in a chat offers "for everyone" too; anything else is "for me" only.
+    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr,
+                             [this, message_id, position = request.position]() { OnDeleteMessage(message_id, position); }};
+    remove.danger = true;
+    actions.push_back(std::move(remove));
     return actions;
+  });
+  ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
+    for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
+      if (cur->HasAttribute("message-id") || cur->HasAttribute("share-text")) {
+        return cur;
+      }
+    }
+    return nullptr;
   });
 
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.

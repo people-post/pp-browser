@@ -24,38 +24,6 @@ TEST(PairwiseFanoutLogicTest, SelectAppliesIncludePredicate) {
   EXPECT_EQ(out[1], "c");
 }
 
-TEST(PairwiseFanoutLogicTest, SelectCallJoinedOnly) {
-  std::vector<CallParticipant> rows(3);
-  rows[0].identity = "joined";
-  rows[0].state = CallParticipantState::Joined;
-  rows[1].identity = "ringing";
-  rows[1].state = CallParticipantState::Ringing;
-  rows[2].identity = "left";
-  rows[2].state = CallParticipantState::Left;
-
-  const auto out = SelectCallFanoutIdentities(rows, "", true, false);
-  ASSERT_EQ(out.size(), 1u);
-  EXPECT_EQ(out[0], "joined");
-}
-
-TEST(PairwiseFanoutLogicTest, SelectCallJoinedAndRingingInvited) {
-  std::vector<CallParticipant> rows(4);
-  rows[0].identity = "joined";
-  rows[0].state = CallParticipantState::Joined;
-  rows[1].identity = "ringing";
-  rows[1].state = CallParticipantState::Ringing;
-  rows[2].identity = "invited";
-  rows[2].state = CallParticipantState::Invited;
-  rows[3].identity = "skip-me";
-  rows[3].state = CallParticipantState::Joined;
-
-  const auto out = SelectCallFanoutIdentities(rows, "skip-me", true, true);
-  ASSERT_EQ(out.size(), 3u);
-  EXPECT_EQ(out[0], "joined");
-  EXPECT_EQ(out[1], "ringing");
-  EXPECT_EQ(out[2], "invited");
-}
-
 TEST(PairwiseFanoutLogicTest, BestEffortContinuesAfterFailure) {
   const std::vector<std::string> targets = {"ok1", "bad", "ok2"};
   std::vector<std::string> sent;

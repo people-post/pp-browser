@@ -241,6 +241,8 @@ std::string PromptBuilder::BuildSynthesisPrompt(const TurnPlan& plan) {
     out << "Planner hints: " << plan.synthesis_hints << "\n";
   }
   out << "- Tool results above are reference material; answer the user request directly.\n";
+  // Tool results are often English; without this a Chinese question got an English answer.
+  out << "- Write the reply in the language of the user request, whatever language the tool results are in.\n";
   return out.str();
 }
 

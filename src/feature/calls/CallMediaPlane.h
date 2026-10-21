@@ -2,21 +2,21 @@
 
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
-#include "domain/messaging/CallSessionStore.h"
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/mesh/connectivity/MeshConnectivity.h"
-#include "domain/mesh/media_plane/MeshMediaRelay.h"
+#include "mesh/connectivity/MeshConnectivity.h"
+#include "mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
-#include "domain/mesh/host/MeshHost.h"
-#include "common/directory/MeshHopTypes.h"
+#include "feature/call_media/CallMediaAmpTransport.h"
+#include "feature/call_media/ICallMediaTransport.h"
+#include "mesh/host/MeshHost.h"
+#include "mesh/types/MeshHopTypes.h"
 
 
 #include <chrono>
@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -38,10 +39,10 @@ namespace pbr {
  * callbacks.
  */
 struct CallMediaPlaneDeps {
-  std::function<MeshHost*()> mesh;
+  std::function<mesh::MeshHost*()> mesh;
   std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
-  std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
-  std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   std::function<bool()> seed_dial_ok;
   /** Stack computes advertise set (role + ephemeral desire + MeshHost). */
   std::function<std::vector<std::string>()> local_listen_multiaddrs;
@@ -60,7 +61,7 @@ public:
 
   void SetDeps(CallMediaPlaneDeps deps);
   /** Borrowed neutral mesh objects (outlive the plane; null = none). */
-  void SetMesh(MeshConnectivity* connectivity, MeshMediaRelay* media_relay) {
+  void SetMesh(mesh::MeshConnectivity* connectivity, mesh::MeshMediaRelay* media_relay) {
     connectivity_ = connectivity;
     media_relay_ = media_relay;
   }
@@ -88,14 +89,14 @@ public:
                                         const std::vector<std::string>& multiaddrs);
 
 private:
-  MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
+  mesh::MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   /** Mesh config snapshot (defaults when none is wired). */
   std::shared_ptr<const MeshConfig> mesh_config() const;
   ICallMediaTransport* Transport();
 
   CallMediaPlaneDeps deps_;
-  MeshConnectivity* connectivity_ = nullptr;
-  MeshMediaRelay* media_relay_ = nullptr;
+  mesh::MeshConnectivity* connectivity_ = nullptr;
+  mesh::MeshMediaRelay* media_relay_ = nullptr;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
 };

@@ -495,7 +495,7 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 
 **Alternatives rejected:** Unpinned DNS dial as product bootstrap; teaching users PeerIds; making DHT a name registry; putting terminal ledger Beacon on public bootstrap; shipping a divergent “display name” system for v1.
 
-**Cross-link:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [platform-integration](../../../pp-ledger/docs/platform-integration.md).
+**Cross-link:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md).
 
 ---
 

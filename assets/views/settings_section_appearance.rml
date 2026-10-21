@@ -3,7 +3,7 @@
                 data-event-click="on_choose_theme()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.theme.label}}</span>
           <span class="settings-choice-value row">
-            <span class="settings-choice-value-text" data-rml="appearance_label"></span>
+            <span class="settings-choice-value-text">{{appearance_label}}</span>
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>
@@ -12,7 +12,7 @@
                 data-event-click="on_choose_language()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.language.label}}</span>
           <span class="settings-choice-value row">
-            <span class="settings-choice-value-text" data-rml="language_label"></span>
+            <span class="settings-choice-value-text">{{language_label}}</span>
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>

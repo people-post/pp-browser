@@ -2,6 +2,13 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 
+#include "foundation/crypto/ConfigSecretsStore.h"
+#include "gui/onboarding/OnboardingController.h"
+#include "foundation/platform/os/OsThreadStackDump.h"
+#include "foundation/platform/PlatformShare.h"
+#include <atomic>
+#include <memory>
+#include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
@@ -34,7 +41,7 @@
 #include "foundation/platform/WindowIcon.h"
 #include "feature/ai/AgentUiPorts.h"
 #include "feature/conversations/AgentInboundPorts.h"
-#include "feature/conversations/MakeCallFunctionalPorts.h"
+#include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -89,7 +96,7 @@
 #include "domain/ui/Theme.h"
 #include "common/StartupTiming.h"
 #include "common/Metrics.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 
 #include <ui/dom/Context.h>
 #include <ui/Core.h>
@@ -109,6 +116,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -204,10 +212,25 @@ Application::Application() {
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
   secrets_ = std::make_unique<ProfileSecretsEngine>();
-  messaging_ = std::make_unique<ConversationsHub>();
+  // Registered before Bootstrap so a PIN-from-environment unlock reaches it too; main() applies the
+  // secrets once the SessionStore exists, and the callback covers every later unlock.
+  config_secrets_ = std::make_unique<ConfigSecretsStore>(*secrets_);
+  secrets_->RegisterDekConsumer(config_secrets_.get());
+  store_.SetConfigSecrets(config_secrets_.get());
+  config_secrets_->SetOnReady([this] {
+    if (!store_.IsInitialized()) {
+      return;
+    }
+    if (auto applied = store_.ApplyConfigSecrets(); !applied) {
+      log().warning << "config secrets not applied: " << applied.error().message;
+    }
+  });
+  product_ = std::make_unique<ProductStack>();
+  messaging_ = &product_->Hub();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
+  product_->BindFacade(*messaging_facade_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
@@ -217,7 +240,7 @@ Application::Application() {
   shell_ = std::make_unique<ShellHost>();
   ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
-  call_ui_ = std::make_unique<CallUiBackend>(messaging_->CallStackRef());
+  call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
@@ -233,6 +256,8 @@ Application::Application() {
   ChatController::InstallInstance(*chat_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
+  onboarding_ = std::make_unique<OnboardingController>();
+  OnboardingController::InstallInstance(*onboarding_);
   g_input_coordinator = input_.get();
 }
 
@@ -243,7 +268,8 @@ Application::~Application() {
   SettingsController::ClearInstance();
   Shutdown();
   messaging_facade_.reset();
-  messaging_.reset();
+  messaging_ = nullptr;
+  product_.reset();
 }
 
 ConversationsHub& Application::Conversations() {
@@ -283,6 +309,20 @@ Roe<void> Application::ResetActiveProfile() {
 
   log().info << "Resetting profile data at " << profile_dir;
 
+  // #328: take the registration off the directory before the local wipe, so the name does not
+  // linger in search until it expires. Best effort — a reset must still work offline.
+  if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
+    if (auto revoked = messaging_facade_->RevokeRegistration(); !revoked) {
+      log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
+    }
+  }
+  // Reset means "I do not want this account": drop the uninstall-surviving backup too.
+  if (messaging_facade_) {
+    if (auto dropped = messaging_facade_->DeleteLocalBackup(); !dropped) {
+      log().warning << "Local account backup not deleted: " << dropped.error().message;
+    }
+  }
+
   if (messaging_) {
     messaging_->RequestShutdown();
   }
@@ -312,6 +352,7 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
     return secrets.error();
   }
+  secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
   if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
     return hub.error();
@@ -578,7 +619,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (!facade.IsInitialized()) {
       return {};
     }
-    if (const MeshHost* mesh = facade.Hub().Mesh()) {
+    if (const mesh::MeshHost* mesh = facade.Hub().Mesh()) {
       const auto advertised = mesh->AdvertisedListenMultiaddrs();
       if (!advertised.empty()) {
         return advertised.front();
@@ -592,21 +633,21 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (!facade.IsInitialized()) {
       return view;
     }
-    const ReachabilitySnapshot snap = facade.Reachability();
+    const mesh::ReachabilitySnapshot snap = facade.Reachability();
     switch (snap.status) {
-    case ReachabilityStatus::Checking:
+    case mesh::ReachabilityStatus::Checking:
       view.status = SettingsReachabilityView::Status::Checking;
       break;
-    case ReachabilityStatus::Reachable:
+    case mesh::ReachabilityStatus::Reachable:
       view.status = SettingsReachabilityView::Status::Reachable;
       break;
-    case ReachabilityStatus::OutboundOnly:
+    case mesh::ReachabilityStatus::OutboundOnly:
       view.status = SettingsReachabilityView::Status::OutboundOnly;
       break;
-    case ReachabilityStatus::Blocked:
+    case mesh::ReachabilityStatus::Blocked:
       view.status = SettingsReachabilityView::Status::Blocked;
       break;
-    case ReachabilityStatus::Unknown:
+    case mesh::ReachabilityStatus::Unknown:
     default:
       view.status = SettingsReachabilityView::Status::Unknown;
       break;
@@ -614,7 +655,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.has_global_ipv6 = snap.signals.has_global_ipv6;
     view.dial_back_ok = snap.signals.dial_back_ok;
     view.upnp_mapped = snap.signals.upnp_mapped;
-    view.help_kind = ReachabilityHelpKey(snap.status);
+    view.help_kind = mesh::ReachabilityHelpKey(snap.status);
     return view;
   };
   settings_commands.refresh_nav_badges = [this]() {
@@ -655,7 +696,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       display_name = Tr("support.entry.title");
     }
 
-    auto found = facade.FindContactByIdentity(account_id, ContactIdKind::Account);
+    auto found = facade.FindContactByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!found) {
       return found.error();
     }
@@ -679,7 +720,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       contact.id = util::GenerateUuid();
       contact.local.display_name = display_name;
       contact.local.trust = TrustLevel::Unknown;
-      contact.remote.ids.push_back({ContactIdKind::Account, account_id, true});
+      contact.remote.ids.push_back({mesh::ContactIdKind::Account, account_id, true});
       SyncContactMirrors(contact);
       auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
@@ -765,7 +806,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  people_picker_->BindPickerPorts(MakeMessagingPeoplePickerPorts(messaging));
+  people_picker_->BindPickerPorts(product_->PeoplePickerPorts());
   people_picker_->BindShellNavigation(shell_navigation);
   people_picker_->BindShellFeedback(shared_feedback);
   people_picker_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "people_picker_chrome"));
@@ -813,8 +854,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
     }
     if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
-      const ReachabilitySnapshot snap = facade.Reachability();
-      const std::string status_key = ReachabilityStatusKey(snap.status);
+      const mesh::ReachabilitySnapshot snap = facade.Reachability();
+      const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
       inputs.me_attention = ReachabilityNudgeActive(
           true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
@@ -887,6 +928,9 @@ void Application::WireUnlockPinAndFlow() {
                                                 const bool set_default_pin) {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
+    gate_complete.complete_restore_backup = [this](const std::string& pin, const bool set_default_pin) {
+      unlock_gate_->CompleteRestoreBackup(pin, set_default_pin);
+    };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
@@ -906,9 +950,18 @@ void Application::WireUnlockPinAndFlow() {
     (void)store_.SaveProfilePrefs(prefs);
   };
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
+  unlock_ports.ui.show_identity_restore = [this](const std::string& nickname) {
+    pin_gate_->ShowIdentityRestore(nickname);
+  };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
-  unlock_ports.ui.dismiss = [this]() { pin_gate_->Dismiss(); };
+  unlock_ports.ui.dismiss = [this]() {
+    pin_gate_->Dismiss();
+    // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
+    if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
+      onboarding_->MaybeStart();
+    }
+  };
   unlock_ports.ui.set_unlock_in_progress = [this](const bool in_progress) {
     pin_gate_->SetUnlockInProgressUi(in_progress);
   };
@@ -920,7 +973,12 @@ void Application::WireUnlockPinAndFlow() {
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
+  unlock_ports.local_backup_nickname = [&facade]() { return facade.LocalBackupNickname(); };
+  unlock_ports.restore_local_backup = [&facade](const std::string& pin) { return facade.RestoreLocalBackup(pin); };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
+    if (onboarding_) {
+      onboarding_->MarkCompleted(); // an account brought over needs no wizard
+    }
     // Import runs before EnsureMessagingReady; push attach after the vault is open.
     AppRuntime::PostWorkerNormal([this, &facade]() {
       (void)facade.SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
@@ -938,6 +996,55 @@ void Application::WireUnlockPinAndFlow() {
     AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
   };
   unlock_gate_->BindPorts(std::move(unlock_ports));
+
+  {
+    OnboardingPorts onboarding_ports;
+    onboarding_ports.load_identity = [&facade]() { return facade.LoadProfileIdentityView(); };
+    onboarding_ports.register_identity = [this, &facade](const std::string& nickname) {
+      auto result = facade.RegisterIdentity(nickname);
+      if (result && chat_) {
+        chat_->ReloadAgentConfig();
+      }
+      return result;
+    };
+    onboarding_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
+    };
+    onboarding_ports.share_text = [](const std::string& text, const ShareAnchor anchor) {
+      return PlatformShareText(Backend::GetWindow(), text, anchor);
+    };
+    onboarding_ports.copy_text = [](const std::string& text) {
+      if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+        system->SetClipboardText(text.c_str());
+      }
+    };
+    onboarding_ports.find_friends = [this]() {
+      if (contacts_) {
+        contacts_->OnFindSomeone();
+      }
+    };
+    onboarding_ports.is_completed = [this]() {
+      return store_.IsInitialized() && store_.Snapshot().profile_prefs.onboarding_completed;
+    };
+    onboarding_ports.set_completed = [this](const bool completed) {
+      if (!store_.IsInitialized()) {
+        return;
+      }
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      if (prefs.onboarding_completed == completed) {
+        return;
+      }
+      prefs.onboarding_completed = completed;
+      prefs.schema_version = ProfilePreferences::kSchemaVersion;
+      (void)store_.SaveProfilePrefs(prefs);
+    };
+    onboarding_ports.mount = [this](const std::string& body) {
+      if (shell_) {
+        shell_->MountOverlayBody("shell-onboarding-mount", body);
+      }
+    };
+    onboarding_->BindPorts(std::move(onboarding_ports));
+  }
 
   {
     UnlockEnsurePorts unlock_ensure;
@@ -967,6 +1074,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
+    pin_actions.on_identity_restore = [this]() { pin_gate_->OnIdentityRestore(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
@@ -1020,6 +1128,9 @@ void Application::WireAgentAndConfig() {
       }
     });
   }
+  contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
+  store_.AddProfilePrefsListener(
+      [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
 }
 
 bool Application::MountPresenters(ui::Context* context) {
@@ -1040,6 +1151,10 @@ bool Application::MountPresenters(ui::Context* context) {
 
   if (!emoji_picker_->RegisterModel(context)) {
     log().error << "EmojiPickerController RegisterModel failed";
+    return false;
+  }
+  if (!onboarding_->RegisterModel(context)) {
+    log().error << "OnboardingController RegisterModel failed";
     return false;
   }
 
@@ -1143,6 +1258,9 @@ bool Application::MountPresenters(ui::Context* context) {
     if (pin_gate_) {
       pin_gate_->BindShellPinGate({});
       pin_gate_->BindGateComplete({});
+      if (onboarding_) {
+        onboarding_->BindPorts({});
+      }
     }
     if (call_) {
       call_->BindCallPorts({});
@@ -1234,8 +1352,8 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   });
   messaging.SetOnReachabilityUpdated([this]() {
     AppRuntime::PostUI([this]() {
-      const ReachabilitySnapshot snap = messaging_facade_->Reachability();
-      if (snap.status == ReachabilityStatus::Reachable) {
+      const mesh::ReachabilitySnapshot snap = messaging_facade_->Reachability();
+      if (snap.status == mesh::ReachabilityStatus::Reachable) {
         ProfilePreferences prefs = store_.Snapshot().profile_prefs;
         if (!prefs.reachability_nudge_acked_status.empty()) {
           prefs.reachability_nudge_acked_status.clear();
@@ -1354,6 +1472,17 @@ void Application::Run() {
 
   int skip_log_countdown = 0;
   bool logged_first_present = false;
+  // B79: a launch that never presents its first frame (black screen) left no trace. If nothing was
+  // presented 8 s after entering the loop, every thread prints its stack to stderr.
+  auto first_present_seen = std::make_shared<std::atomic<bool>>(false);
+  std::thread([first_present_seen]() {
+    std::this_thread::sleep_for(std::chrono::seconds(8));
+    if (first_present_seen->load()) {
+      return;
+    }
+    logging::getLogger("startup").error << "no first present 8 s after entering the run loop; dumping thread stacks";
+    os::DumpAllThreadStacks();
+  }).detach();
   constexpr int64_t kSlowFrameMs = 50; // three 60 Hz frames
   auto last_slow_frame_line = std::chrono::steady_clock::time_point{};
   int slow_frames_skipped = 0;
@@ -1413,6 +1542,7 @@ void Application::Run() {
       const auto draw_done = std::chrono::steady_clock::now();
       Backend::PresentFrame();
       if (!logged_first_present) {
+        first_present_seen->store(true);
         StartupMark("first_present");
         MetricsLine("app.start")
             .Add("first_present_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1470,9 +1600,9 @@ void Application::Shutdown() {
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
   {
     const bool call_active =
-        messaging_ != nullptr && messaging_->CallStackRef().HasActiveLocalCall();
+        product_ != nullptr && product_->Calls().Stack().HasActiveLocalCall();
     const bool connect_inflight =
-        messaging_ != nullptr && messaging_->CallStackRef().IsConnectWorkerInflight();
+        product_ != nullptr && product_->Calls().Stack().IsConnectWorkerInflight();
     const size_t worker_queued =
         AppRuntime::IsRunning() ? AppRuntime::WorkerTotalQueuedCount() : 0;
     StartupLog().info << "[startup] shutdown_context call_active=" << (call_active ? 1 : 0)
@@ -1631,7 +1761,7 @@ void Application::Shutdown() {
       // Work still running may touch messaging: persist, then keep it alive until exit.
       log().warning << "Shutdown: runtime work still running — skipping messaging teardown";
       messaging_->FlushForExit();
-      (void)messaging_.release();
+      (void)product_.release();
     }
     StartupMark("shutdown_stop_mesh_done");
     if (AppRuntime::IsRunning()) {
@@ -1676,7 +1806,7 @@ void Application::Shutdown() {
     }
     if (messaging_) {
       messaging_->RequestShutdown();
-      messaging_->AbortCallMediaForShutdown();
+      messaging_->AbortParticipantsForShutdown();
     }
     ShutdownMessaging();
     if (AppRuntime::IsRunning()) {

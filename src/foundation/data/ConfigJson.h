@@ -3,9 +3,16 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Value.h"
+
+#include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
+
+// `api_key_env` may name only an API-key variable: upper-case identifier ending in `_API_KEY` (PB-035). A
+// config file must not be able to read any other environment variable and send it as a bearer key.
+bool IsApiKeyEnvName(const std::string& name);
 
 pp::common::Object LlmConfigToObject(const LlmConfig& config);
 void LlmConfigFromObject(const pp::common::Object& object, LlmConfig& config);
@@ -23,12 +30,12 @@ void ServiceEndpointFromObject(const pp::common::Object& object,
 pp::common::Object DirectoryConfigToObject(const DirectoryConfig& config);
 void DirectoryConfigFromObject(const pp::common::Object& object, DirectoryConfig& config);
 
-pp::common::Object MeshCapabilitiesToObject(const MeshCapabilities& caps);
+pp::common::Object MeshCapabilitiesToObject(const mesh::MeshCapabilities& caps);
 void MeshCapabilitiesFromObject(const pp::common::Object& object,
-                                  MeshCapabilities& caps);
+                                  mesh::MeshCapabilities& caps);
 
-pp::common::Object MeshDhtConfigToObject(const MeshDhtConfig& config);
-void MeshDhtConfigFromObject(const pp::common::Object& object, MeshDhtConfig& config);
+pp::common::Object MeshDhtConfigToObject(const mesh::MeshDhtConfig& config);
+void MeshDhtConfigFromObject(const pp::common::Object& object, mesh::MeshDhtConfig& config);
 
 pp::common::Object MeshConfigToObject(const MeshConfig& config);
 void MeshConfigFromObject(const pp::common::Object& object, MeshConfig& config);

@@ -2,6 +2,7 @@
 
 #include "feature/conversations/ConversationsHub.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -30,8 +31,8 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   };
   ports.contact_icon_local_path = [&hub](const Contact& contact) { return hub.ContactIconLocalPath(contact); };
   ports.ensure_contact_icon_cached = [&hub](const Contact& contact) { hub.EnsureContactIconCached(contact); };
-  ports.ensure_directory_hit_icon_cached = [&hub](const DirectoryHit& hit) { hub.EnsureDirectoryHitIconCached(hit); };
-  ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const DirectoryHit& hit,
+  ports.ensure_directory_hit_icon_cached = [&hub](const mesh::DirectoryHit& hit) { hub.EnsureDirectoryHitIconCached(hit); };
+  ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const mesh::DirectoryHit& hit,
                                         const int64_t fetched_at_ms) {
     auto result = hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms);
     if (result) {

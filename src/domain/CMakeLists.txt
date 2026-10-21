@@ -2,25 +2,30 @@ include(PpBrowserBase)
 
 # Domain peers (strict independence).
 add_subdirectory(people)
-# net is available in headless too (mesh PRIVATE-links it; pp-node uses HTTP helpers).
+# net is available in headless too (pp-node uses HTTP helpers).
 add_subdirectory(net)
-# mesh is available in headless too (pp-node / dial / reachability).
-add_subdirectory(mesh)
 
 set(_pp_domain_peers
   pp_domain_people
   pp_domain_net
-  pp_domain_mesh
 )
 
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(messaging)
+  add_subdirectory(calls)
+  add_subdirectory(broadcast)
+  add_subdirectory(pricing)
+  add_subdirectory(content)
   add_subdirectory(ai)
   add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)
   list(APPEND _pp_domain_peers
     pp_domain_messaging
+    pp_domain_calls
+    pp_domain_broadcast
+    pp_domain_pricing
+    pp_domain_content
     pp_domain_ai
     pp_domain_ai_conversation
     pp_domain_ai_mcp

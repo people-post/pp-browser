@@ -1,7 +1,6 @@
 #include "domain/messaging/AttachmentCache.h"
 
 #include "domain/messaging/AttachmentPlaintextMemoryCache.h"
-#include "domain/messaging/CasStore.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 
@@ -131,9 +130,6 @@ Roe<void> WriteBytesAtomic(const std::filesystem::path& path, const ByteVector& 
 }
 
 
-ByteVector ContentIdFromHash(const std::vector<uint8_t>& content_hash) {
-  return ByteVector(content_hash.begin(), content_hash.end());
-}
 
 } // namespace
 
@@ -328,17 +324,6 @@ std::string FormatAttachmentByteSize(const uint64_t byte_length) {
   return std::to_string(byte_length / (1024 * 1024)) + " MiB";
 }
 
-bool AttachmentBlobExists(const std::string& profile_dir, const std::string& thread_id,
-                          const std::vector<uint8_t>& content_hash) {
-  (void)thread_id;
-  if (profile_dir.empty() || content_hash.size() != kAttachmentContentHashSize) {
-    return false;
-  }
-  const ByteVector content_id = ContentIdFromHash(content_hash);
-  CasStore cas(profile_dir, {});
-  return cas.Exists(CasRealm::Private, content_id);
-}
-
 std::string AttachmentLocalPath(const std::string& profile_dir, const std::string& thread_id,
                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
                                 const std::string& filename) {
@@ -352,81 +337,10 @@ std::string AttachmentLocalPath(const std::string& profile_dir, const std::strin
   return {};
 }
 
-Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
-                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                         const ByteVector& plaintext, const std::string& filename,
-                                         const ByteVector& dek, std::string_view profile_id) {
-  (void)thread_id;
-  if (profile_dir.empty()) {
-    return Error("Attachment cache profile directory is required");
-  }
-  if (profile_id.empty()) {
-    return Error("Attachment CAS save requires profile_id");
-  }
-  if (content_hash.size() != kAttachmentContentHashSize) {
-    return Error("Invalid attachment content hash");
-  }
-  if (plaintext.empty()) {
-    return Error("Attachment plaintext is empty");
-  }
-  if (dek.size() != kDataEncryptionKeySize) {
-    return Error("Invalid DEK size for attachment CAS save");
-  }
-  auto hash = AttachmentContentHash(plaintext);
-  if (!hash) {
-    return hash.error();
-  }
-  if (hash.value() != content_hash) {
-    return Error("Attachment plaintext hash mismatch");
-  }
-
-  const ByteVector content_id = ContentIdFromHash(content_hash);
-  CasStore cas(profile_dir, std::string(profile_id));
-  if (auto put = cas.PutPrivate(content_id, plaintext, dek, mime, filename); !put) {
-    return put.error();
-  }
-  AttachmentPlaintextMemoryCache::Instance().Put(AttachmentHashHex(content_hash), plaintext);
-  return cas.BlockPath(CasRealm::Private, content_id);
-}
-
-Roe<ByteVector> LoadAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
-                                        const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                        const std::string& filename, const ByteVector& dek,
-                                        std::string_view profile_id) {
-  (void)thread_id;
-  (void)mime;
-  (void)filename;
-  if (profile_dir.empty() || content_hash.size() != kAttachmentContentHashSize) {
-    return Error("Invalid attachment load lookup");
-  }
-  if (profile_id.empty()) {
-    return Error("Attachment CAS load requires profile_id");
-  }
-  if (dek.size() != kDataEncryptionKeySize) {
-    return Error("Invalid DEK size for attachment CAS load");
-  }
-  const std::string hash_hex = AttachmentHashHex(content_hash);
-  ByteVector cached;
-  if (AttachmentPlaintextMemoryCache::Instance().TryGet(hash_hex, cached)) {
-    return cached;
-  }
-  const ByteVector content_id = ContentIdFromHash(content_hash);
-  CasStore cas(profile_dir, std::string(profile_id));
-  if (!cas.Exists(CasRealm::Private, content_id)) {
-    return Error("Attachment not cached in private CAS");
-  }
-  auto plain = cas.GetPrivate(content_id, dek);
-  if (!plain) {
-    return plain.error();
-  }
-  AttachmentPlaintextMemoryCache::Instance().Put(hash_hex, *plain);
-  return plain;
-}
-
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                          const std::string& filename, const ByteVector& dek,
-                                          std::string_view profile_id) {
+                                          const std::string& filename,
+                                          const std::function<Roe<ByteVector>()>& load_plaintext) {
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment view lookup");
   }
@@ -436,7 +350,10 @@ Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const 
     return existing_view.string();
   }
 
-  auto plain = LoadAttachmentPlaintext(profile_dir, thread_id, content_hash, mime, filename, dek, profile_id);
+  if (!load_plaintext) {
+    return Error("No source for the attachment's plaintext");
+  }
+  auto plain = load_plaintext();
   if (!plain) {
     return plain.error();
   }
@@ -470,8 +387,9 @@ bool AttachmentPosterExists(const std::string& profile_dir, const std::string& t
 
 Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                        const std::string& filename, const ByteVector& dek,
-                                        std::string_view profile_id, const uint64_t known_byte_length) {
+                                        const std::string& filename,
+                                        const std::function<Roe<ByteVector>()>& load_plaintext,
+                                        const uint64_t known_byte_length) {
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment poster lookup");
   }
@@ -491,7 +409,7 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
     if (!AttachmentAllowsInlinePrivateView(mime, known_byte_length)) {
       return SoftVideoPosterJpeg();
     }
-    auto view = EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename, dek, profile_id);
+    auto view = EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename, load_plaintext);
     if (!view) {
       return view.error();
     }
@@ -516,30 +434,6 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
   }
   AttachmentPlaintextMemoryCache::Instance().Put(AttachmentHashHex(content_hash) + ".poster.jpg", bytes);
   return poster_path;
-}
-
-Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
-                                      const ChatAttachmentFields& fields, const std::string& source_path,
-                                      const ByteVector& dek, std::string_view profile_id) {
-  std::ifstream input(source_path, std::ios::binary);
-  if (!input) {
-    return Error("Could not read sent attachment file");
-  }
-  const ByteVector plaintext((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-  if (plaintext.empty()) {
-    return Error("Sent attachment file is empty");
-  }
-  if (auto saved = SaveAttachmentPlaintext(profile_dir, thread_id, fields.content_hash, fields.mime, plaintext,
-                                           fields.filename, dek, profile_id);
-      !saved) {
-    return saved.error();
-  }
-  if (AttachmentAllowsInlinePrivateView(fields.mime, fields.byte_length > 0 ? fields.byte_length
-                                                                            : plaintext.size())) {
-    (void)EnsureAttachmentViewPath(profile_dir, thread_id, fields.content_hash, fields.mime, fields.filename, dek,
-                                   profile_id);
-  }
-  return {};
 }
 
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id) {

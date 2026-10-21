@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Populate third_party/ with PeerId/wire deps for the in-tree libp2p fork (A017).
-# Safe to re-run when bumping versions.
+# Refresh the shared vendored trees in third_party/ (named after the retired libp2p fork, A017):
+# BoringSSL (curl's TLS), zlib, googletest. Asio is a standalone tree; curl, SQLite and Opus come
+# from vendor_import.sh. Safe to re-run when bumping versions.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -10,10 +11,6 @@ TMP="${ROOT}/.libp2p_vendor_import_tmp"
 # name|url|archive_type (git or tarball)
 declare -A LIBP2P_REPOS=(
   [boringssl]="https://github.com/qdrvm/boringssl/archive/refs/tags/qdrvm1.zip|tarball"
-  [fmt]="https://github.com/fmtlib/fmt/archive/refs/tags/10.1.1.tar.gz|tarball"
-  [yaml-cpp]="https://github.com/hunter-packages/yaml-cpp/archive/v0.6.2-0f9a586-p1.zip|tarball"
-  [soralog]="https://github.com/qdrvm/soralog/archive/refs/tags/v0.2.5.tar.gz|tarball"
-  [qtils]="https://github.com/qdrvm/qtils/archive/refs/tags/v0.1.1.tar.gz|tarball"
   [zlib]="https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz|tarball"
   [googletest]="https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz|tarball"
 )
@@ -43,7 +40,7 @@ import_tarball() {
   fi
 
   mkdir -p "${dest}"
-  # Drop upstream CI/hooks; soralog ships .github/aux/ which is invalid on Windows (reserved name).
+  # Drop upstream CI/hooks (some ship .github/aux/, a reserved name on Windows).
   rsync -a --delete \
     --exclude='.git' \
     --exclude='.github' \

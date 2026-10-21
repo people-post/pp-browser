@@ -1,5 +1,5 @@
       <div class="settings-section stack">
-        <div class="settings-toggle-row row" data-if="show_node_toggle">
+        <div class="settings-toggle-row row" data-if="advanced && show_node_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.help_network}}</span>
           <button class="settings-switch" type="button"
                   data-class-settings-switch--on="node_enabled == 'on'"
@@ -7,12 +7,12 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="show_node_toggle">{{i18n:settings.network.help_network_hint}}</p>
+        <p class="text muted settings-help" data-if="advanced && show_node_toggle">{{i18n:settings.network.help_network_hint}}</p>
 
         <div class="settings-subcard stack" data-if="show_connection_card">
           <p class="settings-label">{{i18n:settings.network.connection.title}}</p>
-          <p class="text"><span class="settings-chip" data-rml="reachability_status_label"></span></p>
-          <p class="text muted" data-rml="reachability_summary"></p>
+          <p class="text"><span class="settings-chip">{{reachability_status_label}}</span></p>
+          <p class="text muted">{{reachability_summary}}</p>
           <div class="settings-actions row">
             <button class="btn btn-secondary" type="button" data-event-click="retest_reachability()">
               {{i18n:settings.network.connection.retest}}
@@ -46,7 +46,7 @@
           </div>
         </div>
 
-        <div class="settings-toggle-row row" data-if="show_circuit_relay_toggle">
+        <div class="settings-toggle-row row" data-if="advanced && show_circuit_relay_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.circuit_relay}}</span>
           <button class="settings-switch" type="button"
                   data-class-settings-switch--on="circuit_relay_enabled == 'on'"
@@ -54,9 +54,9 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="show_circuit_relay_toggle">{{i18n:settings.network.circuit_relay_hint}}</p>
+        <p class="text muted settings-help" data-if="advanced && show_circuit_relay_toggle">{{i18n:settings.network.circuit_relay_hint}}</p>
 
-        <div class="settings-toggle-row row" data-if="show_media_relay_toggle">
+        <div class="settings-toggle-row row" data-if="advanced && show_media_relay_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.media_relay}}</span>
           <button class="settings-switch" type="button"
                   data-class-settings-switch--on="media_relay_enabled == 'on'"
@@ -64,9 +64,9 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
+        <p class="text muted settings-help" data-if="advanced && show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
 
-        <div class="settings-toggle-row row" data-if="show_dht_toggle">
+        <div class="settings-toggle-row row" data-if="advanced && show_dht_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.dht}}</span>
           <button class="settings-switch" type="button"
                   data-class-settings-switch--on="dht_enabled == 'on'"
@@ -74,9 +74,9 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="show_dht_toggle">{{i18n:settings.network.dht_hint}}</p>
+        <p class="text muted settings-help" data-if="advanced && show_dht_toggle">{{i18n:settings.network.dht_hint}}</p>
 
-        <div class="settings-toggle-row row" data-if="show_prefer_contacts_toggle">
+        <div class="settings-toggle-row row" data-if="advanced && show_prefer_contacts_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.prefer_contacts}}</span>
           <button class="settings-switch" type="button"
                   data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"
@@ -84,13 +84,13 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
+        <p class="text muted settings-help" data-if="advanced && show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
 
         <button class="settings-toggle-row settings-choice-row row" type="button"
                 data-event-click="on_choose_direct_connections()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.direct_connections}}</span>
           <span class="settings-choice-value row">
-            <span class="settings-choice-value-text" data-rml="direct_connections_label"></span>
+            <span class="settings-choice-value-text">{{direct_connections_label}}</span>
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>
@@ -106,12 +106,12 @@
         </div>
         <p class="text muted settings-help">{{i18n:settings.network.trusted_relays.help}}</p>
 
+        <div class="stack" data-if="advanced">
         <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
-          <p class="text muted" data-rml="amp_listen_multiaddr"></p>
+          <p class="text muted">{{amp_listen_multiaddr}}</p>
         </label>
-        <p class="text muted settings-help" data-if="mesh_status_message != ''"
-           data-rml="mesh_status_message"></p>
+        <p class="text muted settings-help" data-if="mesh_status_message != ''">{{mesh_status_message}}</p>
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.network.relay}}</span>
           <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
@@ -127,6 +127,7 @@
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
+        </div>
         </div>
       </div>
 

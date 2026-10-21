@@ -3,12 +3,13 @@
 #include "amp/link/Types.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/thread/ChatBlobTypes.h"
-#include "domain/mesh/dht/AmpDhtProtocol.h"
-#include "domain/mesh/discovery/DirectoryTypes.h"
-#include "domain/mesh/l4/shared/L4ProtocolIds.h"
-#include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/dial_back/DialBackTypes.h"
-#include "domain/mesh/reachability/punch/PunchTypes.h"
+#include "mesh/dht/AmpDhtProtocol.h"
+#include "mesh/discovery/DirectoryTypes.h"
+#include "common/media/CallMediaProtocol.h"
+#include "mesh/l4/shared/L4ProtocolIds.h"
+#include "mesh/reachability/Reachability.h"
+#include "mesh/reachability/dial_back/DialBackTypes.h"
+#include "mesh/reachability/punch/PunchTypes.h"
 #include "foundation/platform/os/OsProcessStats.h"
 #include "foundation/runtime/AppVersion.h"
 
@@ -17,6 +18,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -43,11 +45,11 @@ void CollectProcess(MetricsRegistry& r, const std::chrono::steady_clock::time_po
  * anything else is `other`: the label set stays fixed.
  */
 const std::vector<MetricLabelKey> kChannelProtocolLabels = {
-    {kDirectoryProtocolId, "directory"},
-    {kDhtProtocolId, "dht"},
-    {kReachProtocolId, "reach"},
-    {kAmpPunchProtocolId, "punch"},
-    {kCircuitProtocolId, "circuit"},
+    {mesh::kDirectoryProtocolId, "directory"},
+    {mesh::kDhtProtocolId, "dht"},
+    {mesh::kReachProtocolId, "reach"},
+    {mesh::kAmpPunchProtocolId, "punch"},
+    {mesh::kCircuitProtocolId, "circuit"},
     {pp::amp::kAmpCircuitCarrierProtocolId, "circuit_carrier"},
     {kRpcChatProtocolId, "rpc_chat"},
     {kRpcHistoryProtocolId, "rpc_history"},
@@ -55,7 +57,7 @@ const std::vector<MetricLabelKey> kChannelProtocolLabels = {
     {kRpcBroadcastProtocolId, "rpc_broadcast"},
     {kBlobProtocolId, "blob"},
     {kRealtimeProtocolId, "realtime"},
-    {kDatagramRelayProtocolId, "datagram_relay"},
+    {mesh::kDatagramRelayProtocolId, "datagram_relay"},
 };
 
 void CollectChannels(MetricsRegistry& r, pp::amp::MeshRuntime& runtime) {
@@ -67,7 +69,7 @@ void CollectChannels(MetricsRegistry& r, pp::amp::MeshRuntime& runtime) {
   }
 }
 
-void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
+void CollectMesh(MetricsRegistry& r, mesh::MeshHost& mesh) {
   const char* capability = "Services this node serves (1 = serving).";
   const bool circuit = mesh.AmpCircuitServer() && mesh.AmpCircuitServer()->IsStarted() &&
                        mesh.AmpCircuitServer()->ServeInbound();
@@ -78,15 +80,15 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
   r.Gauge("pp_node_capability", capability, {{"service", "media_relay"}}).Set(media ? 1 : 0);
   r.Gauge("pp_node_capability", capability, {{"service", "dht"}}).Set(dht ? 1 : 0);
 
-  const ReachabilitySnapshot reach = mesh.Reachability().Snapshot();
+  const mesh::ReachabilitySnapshot reach = mesh.Reachability().Snapshot();
   const char* status = "Reachability verdict (1 = current).";
-  for (const ReachabilityStatus s : {ReachabilityStatus::Unknown, ReachabilityStatus::Checking,
-                                     ReachabilityStatus::Reachable, ReachabilityStatus::OutboundOnly,
-                                     ReachabilityStatus::Blocked}) {
-    r.Gauge("pp_reachability_status", status, {{"status", ReachabilityStatusKey(s)}}).Set(reach.status == s ? 1 : 0);
+  for (const mesh::ReachabilityStatus s : {mesh::ReachabilityStatus::Unknown, mesh::ReachabilityStatus::Checking,
+                                     mesh::ReachabilityStatus::Reachable, mesh::ReachabilityStatus::OutboundOnly,
+                                     mesh::ReachabilityStatus::Blocked}) {
+    r.Gauge("pp_reachability_status", status, {{"status", mesh::ReachabilityStatusKey(s)}}).Set(reach.status == s ? 1 : 0);
   }
   const char* signal = "Reachability probe signals (1 = true).";
-  const ReachabilitySignals& sig = reach.signals;
+  const mesh::ReachabilitySignals& sig = reach.signals;
   r.Gauge("pp_reachability_signal", signal, {{"signal", "dial_back_ok"}}).Set(sig.dial_back_ok ? 1 : 0);
   r.Gauge("pp_reachability_signal", signal, {{"signal", "seed_dial_ok"}}).Set(sig.seed_dial_ok ? 1 : 0);
   r.Gauge("pp_reachability_signal", signal, {{"signal", "upnp_mapped"}}).Set(sig.upnp_mapped ? 1 : 0);
@@ -113,12 +115,12 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
     CollectChannels(r, amp->Runtime());
   }
 
-  if (CircuitClientCoordinator* client = mesh.AmpCircuitClient()) {
+  if (mesh::CircuitClientCoordinator* client = mesh.AmpCircuitClient()) {
     r.Gauge("pp_circuit_parked_relays", "Relays holding a reservation for this node (rendezvous parking).")
         .Set(static_cast<double>(client->ParkedRelayCount()));
   }
-  if (CircuitRelayServer* server = mesh.AmpCircuitServer()) {
-    const CircuitRelayRuntimeStats load = server->RuntimeStats();
+  if (mesh::CircuitRelayServer* server = mesh.AmpCircuitServer()) {
+    const mesh::CircuitRelayRuntimeStats load = server->RuntimeStats();
     const char* tunnels = "Circuit relay tunnels open, by state.";
     r.Gauge("pp_circuit_relay_tunnels", tunnels, {{"state", "bridged"}}).Set(static_cast<double>(load.active_bridges));
     r.Gauge("pp_circuit_relay_tunnels", tunnels, {{"state", "setup"}}).Set(static_cast<double>(load.pending_tunnels));
@@ -128,16 +130,16 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
         .Mirror(load.bytes_relayed);
   }
 
-  if (MediaRelayServer* server = mesh.AmpMediaRelayServer()) {
-    const MediaRelayRuntimeStats load = server->RuntimeStats();
+  if (mesh::MediaRelayServer* server = mesh.AmpMediaRelayServer()) {
+    const mesh::MediaRelayRuntimeStats load = server->RuntimeStats();
     r.Gauge("pp_media_relay_sessions", "Hosted media relay sessions with participants.")
         .Set(static_cast<double>(load.active_sessions));
     r.Gauge("pp_media_relay_participants", "Participants across hosted media relay sessions.")
         .Set(static_cast<double>(load.active_participants));
   }
 
-  if (AmpDhtProtocol* protocol = mesh.AmpDht()) {
-    const DhtOpsStats ops = protocol->Stats();
+  if (mesh::AmpDhtProtocol* protocol = mesh.AmpDht()) {
+    const mesh::DhtOpsStats ops = protocol->Stats();
     const char* inbound = "DHT requests served, by op.";
     r.Gauge("pp_dht_records", "DHT records cached.").Set(static_cast<double>(ops.cached_records));
     r.Counter("pp_dht_inbound_requests_total", inbound, {{"op", "find_peer"}}).Mirror(ops.inbound_find_peer);

@@ -84,6 +84,7 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`, optional `entity_kind` / `capabilities`) |
 | `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes; echoes **`account_id`** |
+| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328). Body `{ relay_user_id, timestamp, signature }`; signature over `pp-browser:relay-revoke-v1\0`, `u8 1`, `relay_user_id` (len-prefixed UTF-8), `i64 timestamp`, by the account key. Best effort on the client: a failure does not block the local reset |
 
 **Directory providers:** Brief HTTP is the default (`directory.base_url`). Clients should treat directory as pluggable (N027); bootstrap peers remain L0 cold-start / emergency dial, not the long-term sole mesh-service discovery path.
 
@@ -112,7 +113,7 @@ Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlob
 | `POST /v1/blobs/list` | Inventory + usage (quota UX) |
 | `POST /v1/profile/icon` | Attach hosted blob / external https, or clear |
 
-Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
+Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **400** `{ "error": "Blob upload is not configured" }` when the gateway has no upload bucket → client shows "uploads not enabled" (`Err::Blob::UploadNotConfigured`; exact text match). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
 
 Chat attachment **file bytes** prefer peer-direct `/pp-browser/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
 
@@ -141,7 +142,7 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 | `min_protocol_gen` | no | Global protocol floor (default 1) |
 | `upgrade_url` | no | Empty → GitHub Releases fallback |
 | `message` | no | Empty → client locale strings |
-| `crash_reports_url` | no | Absolute opt-in crash ingest URL; empty → `{relay.base_url}/v1/crash-reports` |
+| `crash_reports_url` | no | Absolute opt-in crash ingest URL, **https only** (anything else is ignored); empty → `{relay.base_url}/v1/crash-reports` |
 | `support` | no | Optional Support discovery block (`enabled`, `account_id`, `display_name`) |
 
 Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present.
@@ -151,7 +152,7 @@ Unknown keys are ignored. Network failure: fail open (no gate); use last good pr
 Unauthenticated public POST (same org backend family as client-compat; no vault unlock required). Client only sends when Me → Security **Send crash reports** is on.
 
 `POST {relay.base_url}/v1/crash-reports`  
-(or absolute `crash_reports_url` from a fresh client-compat cache)
+(or absolute https `crash_reports_url` from a fresh client-compat cache)
 
 ```json
 {
@@ -172,7 +173,7 @@ Unauthenticated public POST (same org backend family as client-compat; no vault 
 | `fingerprint` | Client FNV-1a of `version\|reason\|frames[]` for server clustering / dedupe |
 | `frames` | Raw addresses only (no symbols); capped |
 | `breadcrumb_tags` | Logger component names only — not chat content |
-| `sample` | Truncated local dump for triage |
+| `sample` | Truncated local dump for triage: metadata and frames only, cut before the breadcrumb lines |
 
 Server should cluster by `fingerprint` (+ version), keep a sample, increment counts. LLM summarization (if any) belongs server-side on new/growing clusters — not on the client crash path.
 
@@ -182,17 +183,22 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/devices/register` | Bind FCM token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` |
+| `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
 | `POST /v1/devices/unregister` | Remove device binding (alerts off / logout) |
 
-On `POST /v1/messages` accept, a conforming relay **best-effort** sends an FCM **data** message to registered device tokens for the recipient:
+On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
 
-| Condition | FCM data |
-|-----------|----------|
-| Ordinary message / default | `{ "type": "inbox_wake" }` |
-| Call-invite class system control (`control_type=call_invite`) or dedicated call-invite accept path | `{ "type": "call_wake" }` |
+| Condition | Opaque type |
+|-----------|-------------|
+| Ordinary message / default | `inbox_wake` |
+| Call-invite class system control (`control_type=call_invite`) or dedicated call-invite accept path | `call_wake` |
 
-Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
+| `platform` | Provider shape |
+|------------|----------------|
+| `android` | FCM **data** message `{ "type": "…" }` |
+| `ios` | APNs silent push (`content-available: 1`, `apns-push-type: background`) with custom `type` |
+
+Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 
 ## Native agent tools
 

@@ -12,7 +12,7 @@ Checklist for answering Apple App Store Connect / TestFlight **export compliance
 
 ## Short answer for this product
 
-PP ships **non–Apple-OS encryption** (libsodium AEAD, PIN vault, PQ KEM/signatures, libp2p TLS stacks). For App Store Connect:
+PP ships **non–Apple-OS encryption** (libsodium AEAD, PIN vault, PQ KEM/signatures, the Amp mesh transport, TLS for HTTPS). For App Store Connect:
 
 | Question theme | Expected answer |
 |----------------|-----------------|
@@ -45,7 +45,7 @@ License: **MIT** (`LICENSE`). Source is intended to be **publicly available** op
 | Session key derivation | HKDF-SHA256 | 256-bit output | libsodium |
 | Master PSK | CSPRNG | 32 bytes | libsodium `randombytes_buf` |
 | PSK fingerprint | BLAKE2b-256 | 32-byte digest | libsodium |
-| Relay envelope signature (legacy / transitional) | Ed25519 | 32-byte pk / 64-byte sig | OpenSSL EVP |
+| Relay envelope signature | ML-DSA-65 | FIPS 204; 3309-byte sig | `pp-cpp-crypto` / `mldsa-native` |
 | Public-tier auto-key (`e2e_public`) | ML-KEM-768 | FIPS 203; pk 1184 B, ct 1088 B, sk 2400 B | `pp-cpp-crypto` / `mlkem-native` |
 | Account / device signing (PQ path) | ML-DSA-65 | FIPS 204 | `pp-cpp-crypto` / `mldsa-native` |
 
@@ -65,8 +65,8 @@ Normative detail: [AT_REST_ENCRYPTION.md](../contracts/AT_REST_ENCRYPTION.md).
 
 | Role | Typical algorithms | Notes |
 |------|--------------------|--------|
-| HTTPS / TLS (curl, etc.) | Standard TLS cipher suites | May use system or vendored TLS |
-| libp2p Noise / TLS | Standard Noise/TLS constructions | In-tree libp2p + BoringSSL / deps under `third_party/` |
+| HTTPS / TLS (curl) | Standard TLS cipher suites | Vendored BoringSSL on Linux, Android and iOS; OS TLS on Windows (Schannel) and macOS (SecureTransport) |
+| Mesh transport (Amp, [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp)) | ML-KEM-768 + ML-DSA-65 handshake; HKDF-SHA256 session keys; XChaCha20-Poly1305 AEAD; HMAC-SHA256; SHA-256 | libsodium + `pp-cpp-crypto` (`mlkem-native`, `mldsa-native`) |
 
 These are still **industry-standard** crypto outside (or in addition to) Apple’s OS APIs — keep **“Apple OS only?” = No**.
 
@@ -129,10 +129,11 @@ License: MIT (open source)
 Encryption: Yes — not limited to Apple OS APIs
 Algorithms (industry standard / NIST):
   - XChaCha20-Poly1305 (AEAD, messages + at-rest)
-  - HKDF-SHA256, BLAKE2b-256, Argon2id
-  - Ed25519; ML-DSA-65 (FIPS 204); ML-KEM-768 (FIPS 203)
-Libraries: libsodium; OpenSSL/BoringSSL EVP; mlkem-native; mldsa-native
-Primary uses: E2E P2P messaging; PIN/DEK vault; PQ account keys; TLS/Noise transport
+  - HKDF-SHA256, HMAC-SHA256, SHA-256, BLAKE2b-256, Argon2id
+  - ML-DSA-65 (FIPS 204); ML-KEM-768 (FIPS 203)
+  - TLS (HTTPS)
+Libraries: libsodium; mlkem-native; mldsa-native; BoringSSL (curl's TLS only)
+Primary uses: E2E P2P messaging; PIN/DEK vault; PQ account keys; mesh transport; HTTPS
 Proprietary unpublished ciphers: No
 France App Store: [Yes → French declaration | No → N/A]
 US CCATS: Not expected for industry-standard path (confirm if questionnaire requires)
@@ -142,5 +143,5 @@ US CCATS: Not expected for industry-standard path (confirm if questionnaire requ
 
 ## Maintenance
 
-- When shipping a new crypto primitive or dropping Ed25519 entirely, update the inventory tables and the paste block.
+- When shipping a new crypto primitive or dropping one, update the inventory tables and the paste block. (Ed25519 is gone since the post-quantum hard cut: identities and relay envelopes sign with ML-DSA-65.)
 - After first successful Apple review, record the approved `ITSEncryptionExportComplianceCode` in the iOS/macOS bundle Info.plist (do not commit secrets; the Apple-issued code is an exemption identifier, not a signing secret).

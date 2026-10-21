@@ -2,8 +2,8 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/messaging/CallMediaKeyStore.h"
-#include "domain/messaging/CallSessionStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
+#include "domain/calls/CallSessionStore.h"
 #include "feature/calls/CallControlClient.h"
 
 #include <cstdint>

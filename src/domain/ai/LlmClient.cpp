@@ -1,8 +1,10 @@
 #include "domain/ai/LlmClient.h"
 
+#include "domain/ai/BearerUrlPolicy.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
+#include "foundation/error/CurlNetworkError.h"
 #include "foundation/platform/CurlSsl.h"
 
 #include <curl/curl.h>
@@ -206,6 +208,10 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   if (config_.require_api_key && config_.api_key.empty()) {
     return AppError::Config(Err::Config::MissingKey, "LLM API key not configured");
   }
+  if (!config_.api_key.empty() && !BearerAllowedOnUrl(config_.base_url)) {
+    return AppError::Config(Err::Config::Invalid,
+                            "LLM API key is only sent over https or to localhost; base_url is " + config_.base_url);
+  }
 
   const std::vector<ChatMessage> wire_messages = CoalesceLeadingSystemMessages(request.messages);
   std::vector<Value> messages;
@@ -276,7 +282,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 
   if (code != CURLE_OK) {
     log().error << "curl failed: " << curl_easy_strerror(code);
-    return AppError::Network(Err::Network::Unreachable, std::string("curl failed: ") + curl_easy_strerror(code));
+    return AppError::Network(NetworkCodeFromCurl(code), std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
   if (http_code >= 400) {

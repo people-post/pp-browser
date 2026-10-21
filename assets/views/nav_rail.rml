@@ -17,8 +17,7 @@
       <div class="shell-nav-tab-icon-wrap">
         <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
         <span class="badge-count badge-count--nav"
-              data-if="nav_sessions_unread > 0"
-              data-rml="nav_sessions_unread_display"></span>
+              data-if="nav_sessions_unread > 0">{{nav_sessions_unread_display}}</span>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.sessions}}</p>
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
@@ -29,8 +28,7 @@
       <div class="shell-nav-tab-icon-wrap">
         <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
         <span class="badge-count badge-count--nav"
-              data-if="nav_contacts_unread > 0"
-              data-rml="nav_contacts_unread_display"></span>
+              data-if="nav_contacts_unread > 0">{{nav_contacts_unread_display}}</span>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.contacts}}</p>
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>

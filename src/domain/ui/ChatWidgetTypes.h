@@ -71,6 +71,8 @@ struct MessageDisplayRow {
   ui::String transport_badge;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
   int64_t display_order = 0;
+  /** `ThreadMessage::ai_image_json` of an AI question that carried an image — not bound to RML. */
+  std::string ai_image_json;
   bool has_content = true;
   bool has_form = false;
   FormWidgetState form;
@@ -89,7 +91,11 @@ struct SessionDisplayRow {
   /** When the session was last active; format rules in gui/chat/SessionListText.h. */
   ui::String date_label;
   bool active = false;
-  bool closable = false;
+  /** Per-thread local settings (pin / mute); archived rows are listed separately. */
+  bool pinned = false;
+  bool muted = false;
+  /** Marked unread by hand and no real unread count: show a dot, not a number. */
+  bool unread_dot = false;
 };
 
 struct TurnWidgetState {

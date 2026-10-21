@@ -11,7 +11,6 @@ pp_browser_add_feature_library(pp_feature_ai
     ToolRegistryBuild.cpp
     TurnExecutor.cpp
     TurnPlanner.cpp
-    UiGenerator.cpp
   PUBLIC_LIBS
     pp_feature_ai_bindings
     pp_feature_ai_tools

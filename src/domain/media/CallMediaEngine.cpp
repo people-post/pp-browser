@@ -1,6 +1,6 @@
 #include "domain/media/CallMediaEngine.h"
 
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 #include "domain/media/VideoLevelProfile.h"
 
 #include "domain/media/CallAudioSession.h"
@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -104,7 +105,7 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> adaptation_camera_allowed{true};
   std::atomic<int64_t> adaptation_target_video_bps{0};
   /** The level outgoing video is sent at (docs/contracts/MEDIA_CHANNELS.md). */
-  std::atomic<uint8_t> video_level{kDefaultVideoLevel};
+  std::atomic<uint8_t> video_level{mesh::kDefaultVideoLevel};
   /** Set by SetVideoLevel: the level's profile sizes the encode and sets its bitrate (broadcast). */
   std::atomic<bool> video_level_profile{false};
 
@@ -170,6 +171,7 @@ struct CallMediaEngine::Impl {
   };
   /** Per publisher stream_id (V032). Guarded by mutex (decode + playout mix). */
   std::unordered_map<uint32_t, std::unique_ptr<RemoteAudioTrack>> audio_tracks;
+  bool audio_track_cap_logged = false;
   /** First OnSfuPacket log per stream; cleared on SoftMigrate send-swap / StartSfu. */
   std::mutex sfu_rx_log_mu;
   std::unordered_set<uint32_t> sfu_rx_logged_streams;
@@ -663,6 +665,15 @@ struct CallMediaEngine::Impl {
     if (it != audio_tracks.end() && it->second) {
       return it->second.get();
     }
+    if (audio_tracks.size() >= CallMediaEngine::kMaxRemoteAudioTracks) {
+      if (!audio_track_cap_logged) {
+        audio_track_cap_logged = true;
+        EngineLog().warning << "remote audio stream " << stream_id << " dropped: already "
+                            << audio_tracks.size() << " tracks (cap " << CallMediaEngine::kMaxRemoteAudioTracks
+                            << ")";
+      }
+      return nullptr;
+    }
     auto track = std::make_unique<RemoteAudioTrack>();
     int err = 0;
     track->decoder = opus_decoder_create(kSampleRate, kChannels, &err);
@@ -978,7 +989,7 @@ struct CallMediaEngine::Impl {
         }
         if (send_fn) {
           SfuPacket pkt;
-          pkt.channel_id = kMediaChannelAudio;
+          pkt.channel_id = mesh::kMediaChannelAudio;
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
@@ -1123,7 +1134,7 @@ struct CallMediaEngine::Impl {
       return;
     }
     SfuPacket pkt;
-    pkt.channel_id = VideoChannel(video_level.load(std::memory_order_relaxed));
+    pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = sfu_video_seq.fetch_add(1) + 1;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
@@ -1450,11 +1461,11 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
                  << " call=" << impl_->call_id;
     }
   }
-  if (IsAudioChannel(packet.channel_id)) {
+  if (mesh::IsAudioChannel(packet.channel_id)) {
     impl_->OnRemoteOpusFrame(packet.stream_id, packet.seq,
                              reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
-  } else if (IsVideoChannel(packet.channel_id)) {
+  } else if (mesh::IsVideoChannel(packet.channel_id)) {
     impl_->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
   }
@@ -1649,7 +1660,7 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rota
 }
 
 void CallMediaEngine::SetVideoLevel(const uint8_t level) {
-  if (!IsVideoLevel(level)) {
+  if (!mesh::IsVideoLevel(level)) {
     return;
   }
   impl_->video_level.store(level, std::memory_order_relaxed);

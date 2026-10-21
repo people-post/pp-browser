@@ -22,7 +22,7 @@ target_include_directories(pp-node PRIVATE
 target_link_libraries(pp-node PRIVATE
   pp_feature_registration
   pp_feature_node
-  pp_domain_mesh
+  pp_mesh
   pp_domain_people
   pp_domain_net
   pp_foundation_crypto
@@ -36,8 +36,8 @@ target_link_libraries(pp-node PRIVATE
   sodium
   CURL::libcurl
 )
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)
+if(TARGET pp_feature_node_ledger)
+  target_link_libraries(pp-node PRIVATE pp_feature_node_ledger)
 endif()
 pp_browser_apply_warnings(pp-node)
 # Fail configure / link if a PUBLIC_LIBS edge reintroduces SDL/RmlUi/GUI.

@@ -2,16 +2,18 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/messaging/InitiationPricing.h"
+#include "domain/pricing/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"
 #include "feature/conversations/LinkDeviceCoordinator.h"
+#include "feature/conversations/LocalAccountBackup.h"
+#include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 #include <unordered_set>
 
@@ -67,6 +69,23 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
+Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() {
+  return LocalAccountBackup::PeekNickname(OsSecureBlobStore());
+}
+
+Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
+      hub_.PskStore() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  return LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
+                                     *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin, util::NowUnixMs());
+}
+
+Roe<void> ConversationsFacade::DeleteLocalBackup() {
+  return LocalAccountBackup::Delete(OsSecureBlobStore());
+}
+
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
 
 // --- Inbox ------------------------------------------------------------------
@@ -78,31 +97,29 @@ Roe<Thread> ConversationsFacade::GetActiveThread() { return hub_.Inbox().GetActi
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
 
 bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
-  if (thread_id.empty()) {
-    return false;
-  }
-  auto* calls = hub_.Calls();
-  if (!calls) {
-    return false;
-  }
-  auto active = calls->ActiveLocalCall();
-  if (!active || !*active) {
+  if (thread_id.empty() || !active_call_query_) {
     return false;
   }
   auto thread = GetThread(thread_id);
   if (!thread || !*thread) {
     return false;
   }
-  std::vector<CallParticipant> joined;
-  if (auto parts = calls->ListJoinedParticipants((*active)->call_id); parts) {
-    joined = std::move(*parts);
-  }
-  return ThreadMatchesActiveCall(**thread, **active, joined);
+  return active_call_query_(**thread);
+}
+
+void ConversationsFacade::SetActiveCallQuery(std::function<bool(const Thread& thread)> query) {
+  active_call_query_ = std::move(query);
 }
 
 Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) { return hub_.Inbox().OpenThread(thread_id); }
 
-Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) { return hub_.Inbox().CloseThread(thread_id); }
+Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) {
+  auto closed = hub_.Inbox().CloseThread(thread_id);
+  if (closed) {
+    (void)hub_.ThreadPrefs().Delete(thread_id); // a deleted thread keeps no pin / mute / archive row
+  }
+  return closed;
+}
 
 void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread(); }
 
@@ -110,6 +127,20 @@ Roe<Thread> ConversationsFacade::CreateNewAiThread() { return hub_.Inbox().Creat
 
 Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview) {
   return hub_.Inbox().UpdatePreview(thread_id, preview);
+}
+
+Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
+  hub_.MeshMessaging().CancelPendingSend(message_id);
+  return hub_.Inbox().DeleteMessageForMe(thread_id, message_id);
+}
+
+Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::string& thread_id,
+                                                                  const std::string& message_id) {
+  return hub_.Store().GetMessage(thread_id, message_id);
+}
+
+Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
+  return hub_.DeleteMessageForEveryone(thread_id, message_id);
 }
 
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
@@ -131,6 +162,18 @@ Roe<void> ConversationsFacade::NameAiThreadFromFirstMessage(const std::string& t
 Roe<Thread> ConversationsFacade::FindOrCreateDirectThread(const std::string& contact_id, const ThreadChannel channel) {
   return hub_.Inbox().FindOrCreateDirectThread(contact_id, channel);
 }
+
+Roe<std::vector<ThreadLocalPrefs>> ConversationsFacade::ListThreadLocalPrefs() { return hub_.ThreadPrefs().List(); }
+
+Roe<ThreadLocalPrefs> ConversationsFacade::GetThreadLocalPrefs(const std::string& thread_id) {
+  return hub_.ThreadPrefs().Get(thread_id);
+}
+
+Roe<void> ConversationsFacade::SetThreadLocalPrefs(const ThreadLocalPrefs& prefs) {
+  return hub_.ThreadPrefs().Set(prefs);
+}
+
+void ConversationsFacade::MarkThreadRead(const std::string& thread_id) { hub_.Inbox().MarkThreadRead(thread_id); }
 
 void ConversationsFacade::NotifyThreadChanged() { hub_.Inbox().NotifyThreadChanged(); }
 
@@ -315,8 +358,25 @@ void ConversationsFacade::RegisterPeerKemKey(const std::string& kind, const std:
   hub_.MeshMessaging().RegisterPeerKemKey(kind, value, key_b64, source);
 }
 
-Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const DirectoryHit& hit) {
+Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const mesh::DirectoryHit& hit) {
   return hub_.Contacts().AddFromDirectoryHit(hit);
+}
+
+Roe<void> ConversationsFacade::SetContactTrust(const std::string& contact_id, const TrustLevel level) {
+  auto contact = hub_.Contacts().Get(contact_id);
+  if (!contact) {
+    return contact.error();
+  }
+  if (!*contact) {
+    return Error("Contact not found");
+  }
+  Contact updated = **contact;
+  updated.local.trust = level;
+  SyncContactMirrors(updated);
+  if (auto saved = hub_.Contacts().Upsert(updated); !saved) {
+    return saved.error();
+  }
+  return {};
 }
 
 Roe<RelayDeleteResult> ConversationsFacade::ClearUndeliveredOlderThan(const int older_than_days) {
@@ -375,7 +435,7 @@ std::optional<LocalIdentity> ConversationsFacade::GetIdentity() {
 }
 
 Roe<std::optional<Contact>> ConversationsFacade::FindContactByIdentity(const std::string& identity,
-                                                                  const ContactIdKind kind) {
+                                                                  const mesh::ContactIdKind kind) {
   return hub_.Contacts().FindByIdentity(identity, kind);
 }
 
@@ -383,8 +443,12 @@ Roe<std::optional<Contact>> ConversationsFacade::GetContact(const std::string& c
   return hub_.Contacts().Get(contact_id);
 }
 
-std::optional<DirectoryHit> ConversationsFacade::GetDirectoryShadow(const std::string& peer_id) {
+std::optional<mesh::DirectoryHit> ConversationsFacade::GetDirectoryShadow(const std::string& peer_id) {
   return hub_.DirectoryShadows().Get(peer_id);
+}
+
+void ConversationsFacade::EnsureDirectoryLookup(const std::string& peer_id) {
+  hub_.DirectoryShadows().EnsureLookup(peer_id);
 }
 
 // --- Actions ----------------------------------------------------------------
@@ -503,10 +567,6 @@ Roe<ThreadMessage> ConversationsFacade::BuildPaymentPromiseControlMessage(const 
   return hub_.BuildPaymentPromiseControlMessage(thread_id, type, promise, body_text);
 }
 
-Roe<PaymentPromise> ConversationsFacade::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
-  return hub_.StagePaymentPromiseControlMessage(message);
-}
-
 // --- Settings / profile helpers ---------------------------------------------
 
 ProfileIdentityView ConversationsFacade::LoadProfileIdentityView() { return hub_.LoadProfileIdentityView(); }
@@ -582,6 +642,26 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
   return std::nullopt;
 }
 
+Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,
+                                                                          const std::vector<uint8_t>& bytes,
+                                                                          const std::string& mime) {
+  auto stored = hub_.Attachments().StoreLocalImage(thread_id, bytes, mime);
+  if (!stored) {
+    return stored.error();
+  }
+  return StoredAiImage{.content_hash = std::move(stored->content_hash), .view_path = std::move(stored->view_path)};
+}
+
+std::optional<std::string> ConversationsFacade::AiImageViewPath(const std::string& thread_id,
+                                                                const std::vector<uint8_t>& content_hash,
+                                                                const std::string& mime) {
+  auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, content_hash, mime, std::string());
+  if (!view || view->empty()) {
+    return std::nullopt;
+  }
+  return *view;
+}
+
 bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id,
                                                            const std::string& message_id) {
   auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
@@ -604,7 +684,7 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
 
 Roe<void> ConversationsFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
 
-ReachabilitySnapshot ConversationsFacade::Reachability() { return hub_.Reachability(); }
+mesh::ReachabilitySnapshot ConversationsFacade::Reachability() { return hub_.Reachability(); }
 
 void ConversationsFacade::RunReachabilityProbe(const bool try_upnp) { hub_.RunReachabilityProbe(try_upnp); }
 
@@ -616,7 +696,7 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 
 // --- Messaging tools helpers ------------------------------------------------
 
-Roe<std::vector<DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
+Roe<std::vector<mesh::DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
   auto hits = hub_.Directory().SearchPeople(query);
   if (!hits) {
     return hits.error();
@@ -628,9 +708,9 @@ Roe<std::vector<DirectoryHit>> ConversationsFacade::SearchPeople(const std::stri
   if (self_ids.empty()) {
     return hits;
   }
-  std::vector<DirectoryHit> filtered;
+  std::vector<mesh::DirectoryHit> filtered;
   filtered.reserve(hits->size());
-  for (DirectoryHit& hit : *hits) {
+  for (mesh::DirectoryHit& hit : *hits) {
     if (DirectoryHitMatchesIdentities(hit, self_ids)) {
       continue;
     }
@@ -657,71 +737,8 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
   return pbr::UpdateRegisteredNickname(hub_.Registration(), hub_.Identity(), nickname);
 }
 
-
-// --- Live broadcast viewer ---------------------------------------------------
-
-void ConversationsFacade::WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done) {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    if (on_done) {
-      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
-    }
-    return;
-  }
-  broadcast->WatchLive(tip, std::move(on_done));
-}
-
-void ConversationsFacade::WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
-                                                  const std::string& program_id,
-                                                  std::function<void(Roe<void>)> on_done) {
-  auto tip = hub_.MeshMessaging().LatestAnnounceTip(peer_id, topic_id, program_id);
-  if (!tip) {
-    if (on_done) {
-      on_done(Error("No stored announce for that program"));
-    }
-    return;
-  }
-  WatchLiveAnnounce(*tip, std::move(on_done));
-}
-
-void ConversationsFacade::StopWatchingBroadcast() {
-  if (auto* broadcast = hub_.Broadcast()) {
-    broadcast->StopWatching();
-  }
-}
-
-std::optional<BroadcastViewerWorkflow::Status> ConversationsFacade::BroadcastWatchStatus() {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    return std::nullopt;
-  }
-  return broadcast->Viewer();
-}
-
-void ConversationsFacade::GoLive(const std::string& topic_id, const std::string& program_id,
-                                 std::vector<std::string> hops, std::function<void(Roe<void>)> on_done) {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    if (on_done) {
-      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
-    }
-    return;
-  }
-  broadcast->GoLive(BroadcastLiveRequest{topic_id, program_id, std::move(hops)}, std::move(on_done));
-}
-
-void ConversationsFacade::EndLive() {
-  if (auto* broadcast = hub_.Broadcast()) {
-    broadcast->EndLive();
-  }
-}
-
-std::optional<BroadcasterWorkflow::Status> ConversationsFacade::BroadcastLiveStatus() {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    return std::nullopt;
-  }
-  return broadcast->Live();
+Roe<void> ConversationsFacade::RevokeRegistration() {
+  return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
 }
 
 } // namespace pbr

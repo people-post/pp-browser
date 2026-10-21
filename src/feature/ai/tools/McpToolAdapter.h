@@ -12,6 +12,9 @@ namespace pbr {
 struct McpToolAdapterOptions {
   std::unordered_set<std::string> denylist;
   std::string tool_prefix;
+  // Whether the server's own `readOnlyHint` may make a tool "read" (runs without asking). True only for the
+  // promoted server, which is ours; a custom server's tool is at least "write" (PB-055).
+  bool trust_server_annotations = false;
 };
 
 class McpToolAdapter {

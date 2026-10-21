@@ -2,15 +2,16 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 
 #include "domain/media/VideoCodecUnavailable.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
-#include "domain/messaging/BroadcastJoinTicket.h"
-#include "domain/messaging/BroadcastMedia.h"
+#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "domain/broadcast/BroadcastJoinTicket.h"
+#include "domain/broadcast/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
 
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/tests/queue_owner_executor.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -61,7 +62,7 @@ protected:
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(Ports());
     workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
   }
-  int preferred_video_level_ = kDefaultVideoLevel;
+  int preferred_video_level_ = mesh::kDefaultVideoLevel;
 
   BroadcastViewerPorts Ports() {
     BroadcastViewerPorts p;
@@ -145,11 +146,11 @@ protected:
     return r;
   }
 
-  MediaDataFrame SealedFrame(const std::string& context, uint32_t seq,
+  mesh::MediaDataFrame SealedFrame(const std::string& context, uint32_t seq,
                              uint32_t stream = BroadcastPublisherStreamId(kPublisher)) {
-    auto body = SealMediaRelayFrame(media_key_, context, 1, stream, seq, 0, 0, opus_);
+    auto body = mesh::SealMediaRelayFrame(media_key_, context, 1, stream, seq, 0, 0, opus_);
     EXPECT_TRUE(body);
-    MediaDataFrame f;
+    mesh::MediaDataFrame f;
     f.stream_id = stream;
     f.channel_id = 0;
     f.seq = seq;
@@ -217,7 +218,7 @@ TEST_F(BroadcastViewerWorkflowTest, WatchesThePublishedVideoLevelNearestItsPrefe
   EXPECT_EQ(workflow_->CurrentStatus().video_level, 2);
   const uint32_t stream = BroadcastPublisherStreamId(kPublisher);
   EXPECT_EQ(relay_.subscriptions,
-            (std::vector<std::pair<uint32_t, uint16_t>>{{stream, kMediaChannelAudio}, {stream, VideoChannel(2)}}));
+            (std::vector<std::pair<uint32_t, uint16_t>>{{stream, mesh::kMediaChannelAudio}, {stream, mesh::VideoChannel(2)}}));
   EXPECT_GT(relay_.last_quote.want_down_bps, 64000) << "the quote asks for the video's downlink too";
   EXPECT_TRUE(relay_.last_quote.video_levels.empty()) << "a viewer publishes nothing";
 }
@@ -347,7 +348,7 @@ TEST_F(BroadcastViewerWorkflowTest, ACallTakingTheRelayStopsTheViewerClearly) {
   Drain();
   ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Listening);
   const int detaches = relay_.detaches;
-  relay_.Lose(MediaRelayClientLoss::Replaced);
+  relay_.Lose(mesh::MediaRelayClientLoss::Replaced);
   Drain();
   EXPECT_EQ(workflow_->CurrentStatus().phase, Phase::Failed);
   EXPECT_EQ(workflow_->CurrentStatus().error, "media relay client in use by a call");

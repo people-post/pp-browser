@@ -1,25 +1,28 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 #include "domain/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
+#include "feature/conversations/MeshNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
+#include "feature/conversations/ProductMeshProtocols.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/chat/RelayEnvelope.h"
-#include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallControlCodec.h"
+#include "domain/calls/CallTypes.h"
 #include "domain/people/ContactIdentity.h"
 #include "domain/people/ContactTypes.h"
-#include "domain/messaging/CallLifecycleTypes.h"
+#include "domain/calls/CallLifecycleTypes.h"
 #include "common/directory/DirectoryJson.h"
-#include "common/directory/DirectoryTypes.h"
+#include "mesh/types/DirectoryTypes.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <algorithm>
@@ -34,13 +37,15 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace call_probe {
 namespace {
 
-std::optional<DirectAudience>& DirectConnectionsOverride() {
-  static std::optional<DirectAudience> audience;  // set once from the command line, before Create
+std::optional<mesh::DirectAudience>& DirectConnectionsOverride() {
+  static std::optional<mesh::DirectAudience> audience;  // set once from the command line, before Create
   return audience;
 }
 
@@ -92,12 +97,13 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->local_peer_id_ = stack->LocalPeerId();
   harness->shared_session_key_ = SharedSessionKey();
 
-  harness->host_ = std::make_unique<MeshHost>();
+  harness->host_ = std::make_unique<mesh::MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
+  harness->host_->SetAppProtocols(ProductMeshProtocols());
   harness->host_->SetAddressDisclosure(&harness->address_disclosure_);
   // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
   // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).
   if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_,
-                                                     MeshHost::AttachDrive::MeshPump);
+                                                     mesh::MeshHost::AttachDrive::MeshPump);
       !attached) {
     return attached.error();
   }
@@ -151,11 +157,11 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   NormalizeMeshConfig(app_config_.mesh);
   // NAT scenarios test traversal: the answerer never learns the offerer's identity up front, so the
   // probe discloses to everyone unless a scenario narrows it (projects/privacy T1 lab checks).
-  app_config_.mesh.direct_connections = DirectAudience::Everyone;
+  app_config_.mesh.direct_connections = mesh::DirectAudience::Everyone;
   if (DirectConnectionsOverride()) {
     app_config_.mesh.direct_connections = *DirectConnectionsOverride();
   } else if (const char* audience = std::getenv("PP_PROBE_DIRECT_CONNECTIONS")) {
-    if (auto parsed = DirectAudienceFromName(audience)) {
+    if (auto parsed = mesh::DirectAudienceFromName(audience)) {
       app_config_.mesh.direct_connections = *parsed;
     }
   }
@@ -169,8 +175,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
   }
 
-  mesh_connectivity_ = std::make_unique<MeshConnectivity>();
-  mesh_media_relay_ = std::make_unique<MeshMediaRelay>(*mesh_connectivity_);
+  mesh_connectivity_ = std::make_unique<mesh::MeshConnectivity>();
+  mesh_media_relay_ = std::make_unique<mesh::MeshMediaRelay>(*mesh_connectivity_);
+  hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   stack_ = std::make_unique<CallStack>();
   if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
     return stores.error();
@@ -190,9 +197,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   deps.psk = psk_.get();
   // Set before the stack starts and never changed afterwards: one snapshot serves every owner.
   deps.mesh_config = [cfg = std::make_shared<const MeshConfig>(app_config_.mesh)]() { return cfg; };
-  deps.mesh = [this]() -> MeshHost* { return host_.get(); };
-  deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-  deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
+  deps.mesh = [this]() -> mesh::MeshHost* { return host_.get(); };
+  deps.list_directory_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
+  deps.list_dht_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
   deps.seed_dial_ok = []() { return true; };
   deps.prefetch_peer_reachability = [](const std::string&) {};
   deps.sync_mobile_ephemeral_listen = []() {};
@@ -209,8 +216,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
     // Dual-SNAT: private listen MAs are not dialable across peers — registering them makes
     // AmpDirectChat IsPeerReachable(account) true and OpenChannel dials undialable LAN.
-    const std::string ip = IpHostFromMultiaddrPrefix(multiaddr);
-    if (IsPrivateIpv4(ip) || IsLikelyUndialableLanIpv4(ip)) {
+    const std::string ip = mesh::IpHostFromMultiaddrPrefix(multiaddr);
+    if (mesh::IsPrivateIpv4(ip) || mesh::IsLikelyUndialableLanIpv4(ip)) {
       return;
     }
     (void)host_->Amp()->Links().RegisterEndpoint(identity, multiaddr);
@@ -218,31 +225,19 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
       (void)host_->Amp()->Links().RegisterEndpoint(*pid, multiaddr);
     }
   };
-  deps.delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
-                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {
-    ThreadMessage msg;
-    msg.id = util::GenerateUuid();
-    msg.thread_id = thread_id;
-    msg.text = text;
-    msg.content_type = options.content_type.value_or(ChatContentType::System);
-    msg.payload_json = options.payload_json.value_or("");
-    msg.timestamp = util::NowUnixMs();
+  deps.delivery.send_control = [this](const std::string& peer_account, const ThreadMessage& control,
+                                      const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+    ThreadMessage msg = control;
     msg.sender_contact_id = local_account_;
-
-    // Resolve recipient from the call-control thread's peer identity (E2ePublic direct).
-    std::string peer_account;
-    if (auto thr = store_->GetThread(thread_id); thr && thr->has_value()) {
-      peer_account = (*thr)->peer_identity_value;
-    }
     if (peer_account.empty()) {
-      return Error("call-control thread missing peer");
+      return Error("call control without a peer");
     }
     if (auto sent = SendCallControl(peer_account, msg); !sent) {
       return sent.error();
     }
-    return msg;
+    return {};
   };
-  deps.bind_call_control = [this](CallControlInboundPorts ports) { inbound_ = std::move(ports); };
+  deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;
   reach.mesh = deps.mesh;
   reach.contacts = deps.contacts;
@@ -251,7 +246,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   reach.list_dht_nodes = deps.list_dht_nodes;
   reach.seed_dial_ok = deps.seed_dial_ok;
   reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
-  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(std::move(reach)));
+  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
+  hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
   deps.media_relay = mesh_media_relay_.get();
 
@@ -267,8 +263,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
           std::vector<std::string> dialable;
           dialable.reserve(multiaddrs.size());
           for (const std::string& ma : multiaddrs) {
-            const std::string ip = IpHostFromMultiaddrPrefix(ma);
-            if (IsPrivateIpv4(ip) || IsLikelyUndialableLanIpv4(ip)) {
+            const std::string ip = mesh::IpHostFromMultiaddrPrefix(ma);
+            if (mesh::IsPrivateIpv4(ip) || mesh::IsLikelyUndialableLanIpv4(ip)) {
               continue;
             }
             dialable.push_back(ma);
@@ -279,12 +275,16 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
         });
   });
   stack_->DetachMeshMedia();
+  hop_policy_feed_->Start();
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   stack_->OnMeshServicesStarted();
   network_monitor_ = std::make_unique<NetworkMonitor>();
   if (!network_monitor_->Start([this](const NetworkChange& change) {
-        ReactToNetworkChange(change, host_.get(), stack_.get());
+        const auto local = ReactMeshToNetworkChange(change, host_.get());
+        if (stack_) {
+          ReactCallsToNetworkChange(change, local ? &*local : nullptr, *stack_);
+        }
       })) {
     std::cerr << "warning: product-stack network monitor unavailable" << std::endl;
   }
@@ -306,7 +306,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 }
 
 bool ProductStackHarness::SetDirectConnectionsOverride(const std::string& audience) {
-  const auto parsed = DirectAudienceFromName(audience);
+  const auto parsed = mesh::DirectAudienceFromName(audience);
   if (!parsed) {
     return false;
   }
@@ -333,8 +333,8 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   Contact contact;
   contact.id = util::GenerateUuid();
   contact.display_name = account_id;
-  contact.ids.push_back({ContactIdKind::Account, account_id, true});
-  contact.ids.push_back({ContactIdKind::PeerId, peer_id, true});
+  contact.ids.push_back({mesh::ContactIdKind::Account, account_id, true});
+  contact.ids.push_back({mesh::ContactIdKind::PeerId, peer_id, true});
   if (!multiaddr.empty()) {
     contact.multiaddrs.push_back(multiaddr);
   }
@@ -343,8 +343,8 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   if (auto up = contacts_->Upsert(contact); !up) {
     return up.error();
   }
-  if (mesh_connectivity_) {
-    mesh_connectivity_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
+  if (hop_policy_feed_) {
+    hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
     stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
@@ -355,8 +355,8 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   // Dual-SNAT: do not RegisterEndpoint private advertise MAs — that poisons dial book and
   // makes Amp chat try undialable LAN before circuit (dogfood / hard-w5).
   if (host_ && host_->Amp() && !multiaddr.empty()) {
-    const std::string ip = IpHostFromMultiaddrPrefix(multiaddr);
-    if (!IsPrivateIpv4(ip) && !IsLikelyUndialableLanIpv4(ip)) {
+    const std::string ip = mesh::IpHostFromMultiaddrPrefix(multiaddr);
+    if (!mesh::IsPrivateIpv4(ip) && !mesh::IsLikelyUndialableLanIpv4(ip)) {
       (void)host_->Amp()->Links().RegisterEndpoint(account_id, multiaddr);
       (void)host_->Amp()->Links().RegisterEndpoint(peer_id, multiaddr);
     }
@@ -369,6 +369,7 @@ void ProductStackHarness::RefreshMeshMedia() {
   stack_->DetachMeshMedia();
   mesh_media_relay_->ResetRelayClient();
   mesh_connectivity_->ResetDialRegistry();
+  hop_policy_feed_->Start();
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   stack_->RebindMeshMedia();
@@ -402,7 +403,7 @@ Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
   thread.channel = ThreadChannel::E2ePublic;
   thread.title = peer_account;
   thread.updated_at = util::NowUnixMs();
-  thread.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  thread.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   thread.peer_identity_value = peer_account;
   thread.participant_contact_ids = {local_account_, peer_account};
   if (auto up = store_->UpsertThread(thread); !up) {
@@ -460,7 +461,7 @@ std::string ProductStackHarness::AmpDialKeyForAccount(const std::string& account
     return it->second;
   }
   if (contacts_) {
-    if (auto found = contacts_->FindByIdentity(account_id, ContactIdKind::Account);
+    if (auto found = contacts_->FindByIdentity(account_id, mesh::ContactIdKind::Account);
         found && found->has_value()) {
       const std::string peer_id = PeerIdFromContact(**found);
       if (!peer_id.empty()) {
@@ -637,7 +638,7 @@ Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& pe
 }
 
 void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
-  if (env.body.e2e.payload_b64.empty() || !inbound_.apply_inbound_control) {
+  if (env.body.e2e.payload_b64.empty() || controls_.Snapshot()->empty()) {
     return;
   }
   auto bytes = Base64Decode(env.body.e2e.payload_b64);
@@ -686,7 +687,11 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
   }
   const std::string sender =
       env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
-  if (auto applied = inbound_.apply_inbound_control(msg, sender, std::nullopt, std::nullopt); !applied) {
+  const auto family = controls_.Find(msg);
+  if (!family || !family->apply) {
+    return;
+  }
+  if (auto applied = family->apply(msg, SystemControlContext{sender, std::nullopt, std::nullopt}); !applied) {
     std::cerr << "warning: product-stack inbound control: " << applied.error().message << "\n";
   }
 }
@@ -1123,6 +1128,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
   deps.links = &chat->links;
   deps.io = chat->io;
   deps.relay = mesh_media_relay_->RelayAttachPorts();
+  deps.lane = mesh_connectivity_->Lane();
   deps.publisher_key = std::move(publisher_key);
   deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
                                 BroadcastProgramKey key) {
@@ -1185,10 +1191,13 @@ void ProductStackHarness::ShutdownImpl() {
     std::cerr << "warning: probe teardown quiesce budget exceeded" << std::endl;
   }
   ShutdownStep("stop-mesh");
+  if (hop_policy_feed_) {
+    hop_policy_feed_->Stop();  // its inputs read the mesh
+  }
   if (stack_ && host_) {
     // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product
     // DetachAmpTransports): nothing may outlive the Amp stack.
-    MeshHost* host = host_.get();
+    mesh::MeshHost* host = host_.get();
     mesh_connectivity_->InvalidateAsyncOps();
     stack_->PrepareForMeshStop([host]() { host->AbortInflightCircuitRequests(); });
     mesh_media_relay_->ResetRelayClient();

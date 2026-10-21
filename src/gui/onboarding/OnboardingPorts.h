@@ -1,0 +1,31 @@
+#pragma once
+
+#include "domain/people/ProfileIdentityView.h"
+#include "foundation/platform/PlatformShare.h"
+#include "common/Error.h"
+
+#include <functional>
+#include <string>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+/** App-filled ports for the first-run wizard. Application fills them; clear via BindPorts({}). */
+struct OnboardingPorts {
+  std::function<ProfileIdentityView()> load_identity;
+  /** Register on the network with this nickname (the same call Me → Profile uses). */
+  std::function<Roe<void>(const std::string& nickname)> register_identity;
+  /** Run blocking work off the UI thread; on_done runs on the UI thread. */
+  std::function<void(std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done)> run_heavy;
+  std::function<void(const std::string& text)> copy_text;
+  /** System share sheet; false when the platform has none, then the wizard copies instead. */
+  std::function<bool(const std::string& text, ShareAnchor anchor)> share_text;
+  /** Friends step: closes the wizard and opens the app's find-someone flow (same as Contacts → find people). */
+  std::function<void()> find_friends;
+  std::function<bool()> is_completed;
+  std::function<void(bool completed)> set_completed;
+  /** Mount the wizard markup into the shell overlay; an empty body clears it. */
+  std::function<void(const std::string& body)> mount;
+};
+
+} // namespace pbr

@@ -19,26 +19,6 @@ std::vector<std::string> SelectPairwiseFanoutTargets(
   return out;
 }
 
-std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallParticipant>& participants,
-                                                   const std::string& skip_identity, bool include_joined,
-                                                   bool include_ringing_or_invited) {
-  std::vector<std::string> out;
-  out.reserve(participants.size());
-  for (const CallParticipant& row : participants) {
-    if (row.identity.empty() || row.identity == skip_identity) {
-      continue;
-    }
-    const bool ok_joined = include_joined && row.state == CallParticipantState::Joined;
-    const bool ok_ring =
-        include_ringing_or_invited &&
-        (row.state == CallParticipantState::Ringing || row.state == CallParticipantState::Invited);
-    if (!ok_joined && !ok_ring) {
-      continue;
-    }
-    out.push_back(row.identity);
-  }
-  return out;
-}
 
 PairwiseFanoutResult FanOutPairwise(
     const std::vector<std::string>& targets, PairwiseFanoutMode mode,

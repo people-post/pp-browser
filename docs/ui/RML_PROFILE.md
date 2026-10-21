@@ -18,6 +18,7 @@ AI-generated UI must follow this profile.
 
 - `data-model` on `body`
 - `data-value`, `data-checked`, `data-for`, `data-if`, `data-visible`, `data-rml`
+- Text is bound as `{{expr}}` in the element's content; the engine sets it as text, so names, titles and message text need no escaping. `data-rml` sets inner RML — the value is parsed as markup and a `{{…}}` inside it is evaluated — so it is only for fields that carry markup built by our code, named `*_rml` (`row.content_rml`, `turn.user_content_rml`, `turn.assistant_content_rml`, `working_set_rml`). `scripts/check/check_rml_bindings.sh` (CI lint) and `rml_binding_guard_test` enforce this in the views and in the markup `src/` serializes. Markup built in C++ escapes text with `common/ui/RmlEscape.h` (or `StructuredTextParser::EscapeText`).
 - `data-event-click="action_name()"` — chat chips use `send_chat_action('__ENTRY__', n)`; forms use `submit_form('__ENTRY__', form_id)`; calendar uses `calendar_prev`, `calendar_next`, `select_calendar_day`
 
 ## Growing textarea (`max-rows`)
@@ -72,7 +73,7 @@ For conversational replies (not full UI documents), respond with a single fenced
 | `form` | `id`, `fields[]`, `submit_template`, optional `title`, `submit_label` | reactive `data-value` form widget |
 | `calendar` | optional `month`, `year` (default: today); optional `min_date`, `max_date`, `available_days[]` | reactive calendar table with month nav |
 | `action_list` | `items[]` with nested `actions[]` | list + suggestion buttons |
-| `long_list` | `items[]`: `title`, optional `id`, `subtitle`, `meta`, `avatar_letter`, `avatar_tone`, `actions[]` (`style` optional: `primary`\|`secondary`\|`link`); optional `title`, `footer_actions[]` (`primary`\|`secondary` only) | scrollable list + avatar row + suggestion buttons. An item action with `style: "link"` is a small text link at the end of the item's last text paragraph (subtitle, else title) instead of a button in the row below; in `footer_actions` it renders as a normal button. `link` is for blocks the app builds itself (the article feed); it is deliberately not listed in the prompt profile below |
+| `long_list` | `items[]`: `title`, optional `id`, `subtitle`, `meta`, `avatar_letter`, `avatar_tone`, `share_text`, `share_url`, `actions[]` (`style` optional: `primary`\|`secondary`\|`link`); optional `title`, `footer_actions[]` (`primary`\|`secondary` only) | scrollable list + avatar row + suggestion buttons. An item action with `style: "link"` is a small text link at the end of the item's last text paragraph (subtitle, else title) instead of a button in the row below; in `footer_actions` it renders as a normal button. `link` is for blocks the app builds itself (the article feed); it is deliberately not listed in the prompt profile below. `share_text` / `share_url` (also app-built only) become `share-text` / `share-url` attributes on the item; the chat host offers Ask AI / Copy / Share for such an item on long press or right click |
 | `choice` | `prompt`, `options[]` | prompt + suggestion buttons |
 | `poll` | `question`, `options[]` | poll + suggestion buttons |
 

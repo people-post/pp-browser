@@ -15,9 +15,12 @@
 
 namespace pbr {
 
-/** The product's owner threads besides UI and Mesh I/O (projects/thread-ownership T001). */
-enum class OwnerThreadId : uint8_t { MediaSessions = 0, Connectivity = 1 };
-inline constexpr size_t kOwnerThreadCount = 2;
+/**
+ * The product's owner threads besides UI and Mesh I/O (projects/thread-ownership T001). Mesh control
+ * runs on the mesh's own io lane (THREADING.md § Mesh threads), not on an owner.
+ */
+enum class OwnerThreadId : uint8_t { MediaSessions = 0 };
+inline constexpr size_t kOwnerThreadCount = 1;
 /** OS thread name (≤ 15 chars for pthread). */
 const char* OwnerThreadName(OwnerThreadId id);
 

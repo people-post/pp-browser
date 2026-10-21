@@ -31,6 +31,13 @@ SDL_IOWhence SeekOrigin(int origin) {
 
 ui::FileHandle SdlAssetFileInterface::Open(const ui::String& path) {
   SDL_IOStream* stream = SDL_IOFromFile(path.c_str(), "rb");
+  // RmlUi strips the leading '/' of an absolute path (SystemInterface::JoinPath) and the working directory
+  // here is the app bundle, so a file in the data dir (an image thumbnail, an attachment view) arrives as
+  // "private/var/..." and is not found: the <img> then drew a white box. Try the absolute path it was.
+  if (stream == nullptr && !path.empty() && path[0] != '/') {
+    const ui::String absolute = "/" + path;
+    stream = SDL_IOFromFile(absolute.c_str(), "rb");
+  }
   return reinterpret_cast<ui::FileHandle>(stream);
 }
 

@@ -8,6 +8,7 @@
 #include <utility>
 #include <variant>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -25,7 +26,7 @@ constexpr int kInboundKeyPollMs = 250;
 } // namespace
 
 CallMediaConnectCoordinator::CallMediaConnectCoordinator(ICallMediaTransport& transport,
-                                                         PeerReachCoordinator& reach)
+                                                         mesh::PeerReachCoordinator& reach)
     : transport_(transport), reach_(reach), inbound_key_wait_ms_(kInboundKeyWaitMs),
       attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
   redirectLogger("CallMediaConnect");
@@ -289,19 +290,19 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
     Finish(seq, {});
     return;
   }
-  PeerReachRequest reach = request_.reach;
+  mesh::PeerReachRequest reach = request_.reach;
   if (attempt > 1) {
     reach.exclude_direct = false;  // one escalation per sequence
   }
   reach.fresh_link = std::exchange(fresh_link_next_, false);
   attempt_reused_link_ = false;
-  reach_id_ = reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](Roe<PeerReachResult> reached) {
+  reach_id_ = reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](Roe<mesh::PeerReachResult> reached) {
     outbox.Emit(connect_event::LinkReady{seq, attempt, std::move(reached)});
   });
 }
 
 void CallMediaConnectCoordinator::OnLinkReady(const uint64_t seq, const int attempt,
-                                              Roe<PeerReachResult> reached) {
+                                              Roe<mesh::PeerReachResult> reached) {
   if (!reached) {
     Finish(seq, Roe<void>(reached.error()));
     return;

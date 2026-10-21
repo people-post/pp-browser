@@ -2,7 +2,8 @@
 
 #include "common/chat/MessagingJson.h"
 #include "domain/messaging/RelayWirePayload.h"
-#include "domain/mesh/tests/support/mesh_test_harness.h"
+#include "mesh/testing/mesh_test_harness.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -33,7 +34,7 @@ class AmpDirectChatTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    auto created = pbr::test::AmpMeshHarness::Create();
+    auto created = mesh::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
@@ -58,7 +59,7 @@ protected:
     harness_.reset();
   }
 
-  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
+  std::unique_ptr<mesh::test::AmpMeshHarness> harness_;
   std::unique_ptr<AmpDirectChatTransport> a_chat_;
   std::unique_ptr<AmpDirectChatTransport> b_chat_;
 };

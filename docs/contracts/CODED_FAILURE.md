@@ -43,8 +43,9 @@ static Failure WrapChildFailure(const Child::Failure& child) {
 }
 ```
 
-Helpers live in `src/common/CodedFailure.h` (`pbr::`) and per-layer copies in pp-cpp-amp
-(`pp::amp::`, `pp::adp::`). New pp-browser modules use **`pbr::CodedFailure`**.
+Helpers live in pp-cpp-common's `common/CodedFailure.h` (`pp::`, bridged into `pbr` by `PbrCompat`)
+and per-layer copies in pp-cpp-amp (`pp::amp::`, `pp::adp::`). New pp-browser modules use
+**`CodedFailure`** (`pp::CodedFailure`).
 
 ---
 
@@ -140,7 +141,7 @@ carrier — not string copy alone.
 | Dial-back | `reachability/dial_back/` (`DialBackTypes`, `client/DialBackClient`, `serve/DialBackServer`) | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
 | DHT | `dht/client/DhtClient.{h,cpp}` (via `AmpDhtProtocol`) | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
 | Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
-| Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
+| Call-media leg | `feature/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
 | Media relay | `l4/media_relay/client/MediaRelayClientCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
 
 **Note:** Dial-back / DHT currently own `PeerLinkManager&` directly (mesh-internal), so

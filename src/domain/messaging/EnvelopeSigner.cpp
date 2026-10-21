@@ -41,14 +41,20 @@ void AppendBigEndianUInt32(std::ostringstream& oss, const uint32_t value) {
 } // namespace
 
 uint8_t EnvelopeSigner::RouteKindByte(const RelayRoute& route) {
-  if (route.kind == "group") {
+  if (route.kind == kRelayRouteGroup) {
     return 1;
+  }
+  if (route.kind == kRelayRouteControl) {
+    return 2;
   }
   return 0;
 }
 
 uint8_t EnvelopeSigner::ChannelByte(const RelayRoute& route) {
-  if (route.kind != "direct") {
+  if (route.kind == kRelayRouteControl) {
+    return 1;  // always e2e_public
+  }
+  if (route.kind != kRelayRouteDirect) {
     return 0xFF;
   }
   switch (route.channel) {

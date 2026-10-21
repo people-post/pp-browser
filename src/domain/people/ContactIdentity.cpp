@@ -1,4 +1,5 @@
 #include "domain/people/ContactIdentity.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -6,13 +7,13 @@ bool IsAccountIdentityValue(const std::string& value) {
   return value.rfind("account:", 0) == 0;
 }
 
-std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
-  for (const ContactId& id : contact.ids) {
+std::string PrimaryIdOfKind(const Contact& contact, const mesh::ContactIdKind kind) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == kind && id.primary && !id.value.empty()) {
       return id.value;
     }
   }
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == kind && !id.value.empty()) {
       return id.value;
     }
@@ -21,7 +22,7 @@ std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
 }
 
 std::optional<std::string> ContactAccountId(const Contact& contact) {
-  const std::string value = PrimaryIdOfKind(contact, ContactIdKind::Account);
+  const std::string value = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
   if (value.empty()) {
     return std::nullopt;
   }
@@ -29,7 +30,7 @@ std::optional<std::string> ContactAccountId(const Contact& contact) {
 }
 
 std::optional<std::string> ContactRelayUserId(const Contact& contact) {
-  const std::string value = PrimaryIdOfKind(contact, ContactIdKind::RelayUser);
+  const std::string value = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser);
   if (value.empty()) {
     return std::nullopt;
   }
@@ -38,13 +39,13 @@ std::optional<std::string> ContactRelayUserId(const Contact& contact) {
 
 namespace {
 
-std::optional<std::string> PrimaryIdFromHit(const DirectoryHit& hit, const ContactIdKind kind) {
-  for (const ContactId& id : hit.ids) {
+std::optional<std::string> PrimaryIdFromHit(const mesh::DirectoryHit& hit, const mesh::ContactIdKind kind) {
+  for (const mesh::ContactId& id : hit.ids) {
     if (id.kind == kind && id.primary && !id.value.empty()) {
       return id.value;
     }
   }
-  for (const ContactId& id : hit.ids) {
+  for (const mesh::ContactId& id : hit.ids) {
     if (id.kind == kind && !id.value.empty()) {
       return id.value;
     }
@@ -54,15 +55,15 @@ std::optional<std::string> PrimaryIdFromHit(const DirectoryHit& hit, const Conta
 
 } // namespace
 
-std::optional<std::string> PrimaryAccountIdFromHit(const DirectoryHit& hit) {
+std::optional<std::string> PrimaryAccountIdFromHit(const mesh::DirectoryHit& hit) {
   if (hit.account_id && !hit.account_id->empty()) {
     return *hit.account_id;
   }
-  return PrimaryIdFromHit(hit, ContactIdKind::Account);
+  return PrimaryIdFromHit(hit, mesh::ContactIdKind::Account);
 }
 
-std::optional<std::string> PrimaryRelayIdFromHit(const DirectoryHit& hit) {
-  return PrimaryIdFromHit(hit, ContactIdKind::RelayUser);
+std::optional<std::string> PrimaryRelayIdFromHit(const mesh::DirectoryHit& hit) {
+  return PrimaryIdFromHit(hit, mesh::ContactIdKind::RelayUser);
 }
 
 } // namespace pbr

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/CallControlCodec.h"
+#include "domain/calls/CallControlCodec.h"
 #include "feature/calls/LiveCall.h"
 
 #include "common/Error.h"

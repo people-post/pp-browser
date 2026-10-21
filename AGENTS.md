@@ -20,9 +20,9 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — product window host in `src/foundation/platform/ui/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
 - **First-party UI engine** — layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`ui::` / `#include <ui/…>`; RmlUi-derived)
-- **Hard-forked libp2p** — PeerId + key wire only in `src/lib/libp2p/` (A017; mesh underlay is Amp)
+- **PeerId** — derived by [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`crypto/PeerId.h`: ML-DSA key wire / multihash / base58); the mesh underlay is Amp
 - **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
-- **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
+- **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-amp` + `pp-cpp-mesh` + `pp-cpp-ui` + `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Logging:** [docs/architecture/LOGGING.md](docs/architecture/LOGGING.md) (Module `redirectLogger` / static `InitLogging` / free-fn `Logger&`). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh); L4 kinds gate [docs/contracts/L4_PROTOCOL_KINDS.md](docs/contracts/L4_PROTOCOL_KINDS.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
@@ -41,12 +41,11 @@ We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/peo
 | Text selection in static content | `include/ui/dom/SelectionController.h`, `SelectionTypes.h` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
 | User-agent baseline styles | `src/dom/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
 
-## libp2p is maintained in-tree (PeerId only)
+## Mesh identity (PeerId)
 
-We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/domain/mesh/`](src/domain/mesh/).
+PeerId derivation lives in pp-cpp-crypto (`pp::PeerIdFromMlDsaPublicKey`) — spec and golden vectors in [docs/architecture/MESH_IDENTITY.md](docs/architecture/MESH_IDENTITY.md). Dial / mux / links live in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`); the mesh on top — host, reachability, DHT, directory, relays — in [**pp-cpp-mesh**](https://github.com/people-post/pp-cpp-mesh) (FetchContent; `#include "mesh/..."`, spelled `mesh::X` in app code; lower layers may include only `mesh/types/`) — [docs/architecture/MESH.md](docs/architecture/MESH.md). There is no libp2p fork in the tree.
 
-- Document fork changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
-- Import/update remaining deps with `./scripts/vendor/libp2p_vendor_import.sh`.
+- Shared vendored deps (BoringSSL for curl's TLS, zlib, Asio, googletest) come from `cmake/libp2p_dependencies.cmake`; import or bump them with `./scripts/vendor/libp2p_vendor_import.sh` (both named after the retired fork).
 
 ## UI generation constraints
 
@@ -74,7 +73,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Chat storage / SQLite | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
-| Mesh stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/domain/mesh/StreamFrameIo.*` |
+| Mesh channel framing / hangs | [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), pp-cpp-amp `docs/STACK.md` (channels, sessions), pp-cpp-mesh (`host/`, `l4/`) |
 | P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
 | P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |
 | Reach / relay attach / media pipelines shared by calls + broadcast | [projects/media-client-layers/](projects/media-client-layers/) — `PeerReachCoordinator`, `CallMediaConnectCoordinator`, `MediaDeviceArbiter`, hub-owned `MeshConnectivity` (dial / reach / parking) + `MeshMediaRelay` (relay client); broadcast is a sibling feature, not a call |

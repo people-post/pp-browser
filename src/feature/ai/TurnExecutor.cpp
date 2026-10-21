@@ -7,6 +7,7 @@
 #include "domain/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -30,7 +31,7 @@ Value ToolCallsToJson(const std::vector<PlannedToolCall>& planned, const std::st
   return ArrayValue(std::move(out));
 }
 
-void ParsePeopleToolJson(const std::string& raw, std::vector<DirectoryHit>& hits, std::vector<Contact>& contacts) {
+void ParsePeopleToolJson(const std::string& raw, std::vector<mesh::DirectoryHit>& hits, std::vector<Contact>& contacts) {
   auto parsed = ParseValue(raw);
   if (!parsed) {
     return;
@@ -171,7 +172,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
   }
 
   if (plan.render_mode == RenderMode::PeopleList && !result.needs_permission) {
-    std::vector<DirectoryHit> hits;
+    std::vector<mesh::DirectoryHit> hits;
     std::vector<Contact> contacts;
     for (const std::string& raw : raw_results) {
       ParsePeopleToolJson(raw, hits, contacts);
@@ -182,12 +183,12 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     if (!hits.empty() && contacts.empty() && FindTool(tools, "list_contacts")) {
       auto local = tools.Execute("list_contacts", Object{});
       if (local) {
-        std::vector<DirectoryHit> ignored_hits;
+        std::vector<mesh::DirectoryHit> ignored_hits;
         ParsePeopleToolJson(*local, ignored_hits, contacts);
       }
     }
     for (const Contact& contact : contacts) {
-      for (const ContactId& id : contact.ids) {
+      for (const mesh::ContactId& id : contact.ids) {
         if (!id.value.empty()) {
           people_options.known_local_identity_values.insert(id.value);
         }

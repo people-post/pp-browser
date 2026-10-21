@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Module.h"
-#include "domain/messaging/CallMobility.h"
-#include "domain/messaging/CallPathPolicy.h"
+#include "domain/calls/CallMobility.h"
+#include "domain/calls/CallPathPolicy.h"
 
 #include <atomic>
 #include <optional>

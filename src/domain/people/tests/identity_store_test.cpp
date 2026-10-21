@@ -3,7 +3,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
@@ -56,7 +56,7 @@ TEST_F(IdentityStoreTest, CreateHasPeerIdAndEmptyRelay) {
   auto public_key = Base64Decode(identity->public_key_b64);
   ASSERT_TRUE(static_cast<bool>(public_key));
   EXPECT_EQ(public_key->size(), kMlDsa65PublicKeyBytes);
-  auto derived = PeerIdFromMlDsaPublicKey(*public_key);
+  auto derived = pp::PeerIdFromMlDsaPublicKey(*public_key);
   ASSERT_TRUE(static_cast<bool>(derived));
   EXPECT_EQ(identity->peer_id, *derived);
 }

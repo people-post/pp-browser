@@ -36,6 +36,9 @@ enum class Network : int32_t {
   Unreachable = 1,
   Timeout = 2,
   HttpError = 3,
+  DnsFailed = 4,
+  ConnectFailed = 5,
+  TlsFailed = 6,
 };
 
 enum class Pin : int32_t {
@@ -66,6 +69,7 @@ enum class Blob : int32_t {
   Generic = 0,
   QuotaExceeded = 1,
   NothingToDelete = 2,
+  UploadNotConfigured = 3,
 };
 
 } // namespace Err

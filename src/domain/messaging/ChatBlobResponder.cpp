@@ -4,7 +4,6 @@
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/CasLibrary.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include <unordered_set>
@@ -88,8 +87,8 @@ std::unordered_set<std::string> ReferencedAttachmentHashes(IThreadStore& store, 
 
 Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, const ChatBlobRequest& request,
                                                         const std::string& local_relay_user_id,
-                                                        const std::string& profile_data_dir, const ByteVector* dek,
-                                                        std::string_view profile_id) {
+                                                        const std::string& profile_data_dir,
+                                                        const ChatBlobContentSource& content) {
   if (request.op == ChatBlobOp::FetchPublic) {
     if (local_relay_user_id.empty()) {
       return Error("Local relay identity missing");
@@ -100,14 +99,14 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
     if (request.requester_identity_value.empty()) {
       return Error("Public CAS fetch missing requester identity");
     }
-    if (profile_id.empty()) {
-      return Error("Public CAS fetch requires profile_id");
+    if (!content.pinned_public) {
+      return Error("Public content is not served here");
     }
     auto content_id = HexToBytes(request.content_hash_hex);
-    if (!content_id || content_id->size() != kCasContentIdSize) {
+    if (!content_id || content_id->size() != kAttachmentContentHashSize) {
       return Error("Invalid public CAS content id");
     }
-    auto bytes = LoadPinnedPublicCasBytes(profile_data_dir, std::string(profile_id), *content_id);
+    auto bytes = content.pinned_public(*content_id);
     if (!bytes) {
       return bytes.error();
     }
@@ -140,11 +139,10 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
     return std::vector<uint8_t>(pending->begin(), pending->end());
   }
 
-  if (dek == nullptr || profile_id.empty()) {
-    return Error("Attachment CAS load requires DEK");
+  if (!content.private_plaintext) {
+    return Error("Attachment content unavailable (profile locked)");
   }
-  auto plaintext = LoadAttachmentPlaintext(profile_data_dir, request.thread_id, fields->content_hash, fields->mime,
-                                           fields->filename, *dek, profile_id);
+  auto plaintext = content.private_plaintext(fields->content_hash);
   if (!plaintext) {
     return plaintext.error();
   }

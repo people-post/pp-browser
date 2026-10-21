@@ -2,8 +2,8 @@
 #include "gui/contacts/PeoplePickerController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallSessionLogic.h"
+#include "domain/calls/CallTypes.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
@@ -23,6 +23,7 @@
 #include <cctype>
 #include <optional>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -41,25 +42,25 @@ bool ContactIsSelectable(const Contact& contact, const MessagingContactsPorts* p
   if (ports != nullptr && ports->snapshot && ports->snapshot().messaging_ready && ports->is_contact_reachable) {
     return ports->is_contact_reachable(contact);
   }
-  if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
+  if (target.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
     return false;
   }
   return true;
 }
 
 std::string ContactSubtitle(const Contact& contact) {
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::RelayUser && id.primary) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && id.primary) {
       return ShortRelayId(id.value);
     }
   }
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::RelayUser) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser) {
       return ShortRelayId(id.value);
     }
   }
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId) {
       return ShortRelayId(id.value);
     }
   }
@@ -87,7 +88,7 @@ bool MatchesQuery(const Contact& contact, const std::string& query_lower) {
       ContainsIgnoreCase(contact.server_nickname, query_lower)) {
     return true;
   }
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (ContainsIgnoreCase(id.value, query_lower)) {
       return true;
     }
@@ -509,7 +510,7 @@ void PeoplePickerController::SyncGroupCallRows() {
       }
     }
     if (!contact && picker_ports_.find_contact_by_identity) {
-      if (auto found = picker_ports_.find_contact_by_identity(identity, ContactIdKind::Account); found && *found) {
+      if (auto found = picker_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account); found && *found) {
         contact = **found;
       }
     }

@@ -20,6 +20,8 @@ pp-browser stores machine-wide connection settings separately from per-profile i
 | Config | `$XDG_CONFIG_HOME/pp-browser/config.json` or `~/.config/pp-browser/` | `~/Library/Application Support/pp-browser/` | `%APPDATA%/pp-browser/` |
 | Data | `$XDG_DATA_HOME/pp-browser/` or `~/.local/share/pp-browser/` | `~/Library/Application Support/pp-browser/data/` | `%LOCALAPPDATA%/pp-browser/` |
 
+iOS keeps both under the app container's `Library/Application Support/pp-browser/` (SDL pref path); that directory is marked excluded from iCloud / iTunes backup at first use, so message history and keys never leave the device in a backup (PB-040).
+
 Override data root with `data_dir` in config (supports `~` expansion). How config is resolved and edited: [ops/CONFIGURATION.md](../ops/CONFIGURATION.md).
 
 ## On-disk layout
@@ -37,13 +39,16 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor)
+  secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
   contacts.json             # address book (schema_version 1: local + remote + overrides{}); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4)
+    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4);
+                            # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
+                            # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
 ```
 
 ### Content CAS (planned)
@@ -62,7 +67,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
     blobs_view/         # optional session plaintext materialization (not source of truth)
     # blobs/            # not used; durable bytes live in cas/private only
   threads/ai-images/    # reserved name, NOT a thread (no thread.db): blobs_view/ only
-    blobs_view/         # session plaintext thumbnails of images the user sent to the AI; wiped with the others
+    blobs_view/         # pre-send preview of the image the user is about to send to the AI; removed on send / discard, cleared at startup
+                        # (sent AI images live in cas/private + the AI thread's own blobs_view, referenced by the message)
 ```
 
 | Realm | At rest | Object id | How it gets bytes |
@@ -73,6 +79,17 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
 **Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. Large private videos (> Soft 4 MiB) skip `blobs_view` until explicit open; CAS ingest unchanged. Public clear bytes need no DEK wipe path.
 
 Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
+
+### Local account backup (iOS Keychain, outside the data dir)
+
+One generic-password item, service `dev.pp-browser.secure-blob`, account `account-backup`,
+`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (never synced, never in device backups, gone with the device).
+Value: `pp-browser-account-backup` JSON v1 = `{ schema, version, updated_at_ms, link_bundle, contacts[] }` where
+`link_bundle` is a `pp-browser-link-device-v1` bundle with a 100-year expiry (account keys, DEK, relay id, nickname,
+public PSKs — same plaintext as a pasted transfer code) and `contacts[]` are `ContactToJson` rows. Written after
+registration, nickname changes and contact changes; deleted by profile reset; survives an uninstall so a fresh install
+can offer "Restore my account: <nickname>". Other platforms have no such store (desktop uninstalls keep the data dir;
+Android pending). See DESIGN-account-recovery §9–10 (local notes).
 
 ### PIN-related files (disk only)
 

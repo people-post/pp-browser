@@ -1,6 +1,7 @@
 #include "domain/media/CallMediaEngine.h"
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 #include "domain/media/IVideoCodec.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -52,7 +53,7 @@ protected:
   void Deliver(uint32_t stream_id, uint32_t seq) {
     CallMediaEngine::SfuPacket pkt;
     pkt.stream_id = stream_id;
-    pkt.channel_id = kMediaChannelAudio;
+    pkt.channel_id = mesh::kMediaChannelAudio;
     pkt.seq = seq;
     pkt.payload = frame_;
     engine_.OnSfuPacket(pkt);
@@ -79,6 +80,23 @@ TEST_F(MediaSessionSpecTest, PlaybackOnlyReceivesAndNeverSends) {
   EXPECT_EQ(engine_.HealthSnapshot().tx_audio_frames, 0u);
   EXPECT_FALSE(engine_.HasLocalCapture());
   EXPECT_FALSE(engine_.SetCameraEnabled(true)) << "camera needs a capturing session";
+}
+
+// PB-051: a remote that fans out packets under ever-new stream ids must not make us allocate an
+// Opus decoder and jitter buffer per id without end. Tracks beyond the cap are dropped; the ones we
+// already have keep receiving.
+TEST_F(MediaSessionSpecTest, RemoteAudioTracksAreCapped) {
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  // stream 1 is the id-less 1:1 path and always dropped; start at 2.
+  for (uint32_t stream = 2; stream <= CallMediaEngine::kMaxRemoteAudioTracks + 13; ++stream) {
+    Deliver(stream, 1);
+  }
+  EXPECT_EQ(engine_.HealthSnapshot().stream_count, CallMediaEngine::kMaxRemoteAudioTracks);
+  const uint64_t before = engine_.HealthSnapshot().rx_audio_frames;
+  Deliver(2, 2);
+  EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, before + 1) << "an existing track still receives";
+  Deliver(CallMediaEngine::kMaxRemoteAudioTracks + 100, 1);
+  EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, before + 1) << "a dropped stream is not counted";
 }
 
 // Broadcaster shape: capture → encode → send; inbound packets are not decoded.
@@ -156,7 +174,7 @@ TEST_F(MediaSessionSpecTest, EachCallDecodesPeerVideoWithAFreshDecoder) {
   engine_.SetVideoCodecFactoryForTest([configured] { return std::make_unique<CountingDecoder>(configured); });
   CallMediaEngine::SfuPacket video;
   video.stream_id = 7;
-  video.channel_id = VideoChannel(kDefaultVideoLevel);
+  video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
 
   ASSERT_TRUE(engine_.StartSfu("call:1", CountingSend()));
@@ -198,7 +216,7 @@ TEST_F(MediaSessionSpecTest, RemoteVideoIsLiveOnlyWhileFramesArrive) {
 
   CallMediaEngine::SfuPacket video;
   video.stream_id = 7;
-  video.channel_id = VideoChannel(kDefaultVideoLevel);
+  video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
   engine_.OnSfuPacket(video);
   EXPECT_TRUE(engine_.IsRemoteVideoLive(500));

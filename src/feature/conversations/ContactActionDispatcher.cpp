@@ -12,6 +12,7 @@
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -38,7 +39,7 @@ void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::s
 
 namespace {
 
-void RegisterKeysFromHit(MeshDeliveryOrchestrator* mesh_messaging, const DirectoryHit& hit) {
+void RegisterKeysFromHit(MeshDeliveryOrchestrator* mesh_messaging, const mesh::DirectoryHit& hit) {
   if (!mesh_messaging) {
     return;
   }
@@ -47,11 +48,11 @@ void RegisterKeysFromHit(MeshDeliveryOrchestrator* mesh_messaging, const Directo
     return;
   }
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-    mesh_messaging->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *account_id,
+    mesh_messaging->RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id,
                                 *hit.signing_public_key_b64, "directory");
   }
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-    mesh_messaging->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *account_id, *hit.kem_public_key_b64,
+    mesh_messaging->RegisterPeerKemKey(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id, *hit.kem_public_key_b64,
                             "directory");
   }
 }
@@ -71,7 +72,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (auto cid = payload->getString("contact_id")) {
       contact_id = *cid;
     } else if (const Object* hit_obj = payload->getObject("directory_hit")) {
-      const DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
+      const mesh::DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
       RegisterKeysFromHit(mesh_messaging_, hit);
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
@@ -129,7 +130,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!hit_obj) {
       return Error("Missing directory_hit");
     }
-    const DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
+    const mesh::DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
     RegisterKeysFromHit(mesh_messaging_, hit);
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
@@ -237,7 +238,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     }
     bool updated = false;
     for (Contact& contact : *contacts) {
-      for (const ContactId& id : contact.ids) {
+      for (const mesh::ContactId& id : contact.ids) {
         if (id.value == *inviter_identity) {
           contact.trust = TrustLevel::Blocked;
           if (auto saved = contacts_.Upsert(contact); !saved) {
@@ -306,7 +307,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
         if (groups_->IsMemberUnreachable(*group_id, member.member_identity)) {
           continue;
         }
-        if (auto contact = contacts_.FindByIdentity(member.member_identity, ContactIdKind::Account)) {
+        if (auto contact = contacts_.FindByIdentity(member.member_identity, mesh::ContactIdKind::Account)) {
           if (*contact) {
             member_contact_ids.push_back((*contact)->id);
           }

@@ -7,6 +7,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/ScreenKeyboard.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "domain/ui/ContextMenuHost.h"
 #include "domain/ui/RmlVariantHelpers.h"
@@ -150,6 +151,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
+    ctor.Bind("pin_gate_restore_label", &host.state_.pin_gate.restore_label);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
@@ -318,6 +320,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
     ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
     ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
+    ctor.BindEventCallback("pin_gate_identity_restore", &ShellHost::PinGateIdentityRestoreCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
     ctor.BindEventCallback("call_accept_voice", &ShellHost::CallAcceptVoiceCallback);
     ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
@@ -858,6 +861,7 @@ void ShellHost::DirtyFeedback() {
 void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
   DataModelHost::Instance().Dirty("window", "pin_gate_identity_fork_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_restore_label");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
@@ -1211,7 +1215,8 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   const float window_to_dp =
       (display_scale > 0.f) ? ((density > 0.f ? density : 1.f) / display_scale) : 1.f;
   const int top_win = std::max(0, safe.y);
-  const int bottom_win = std::max(0, win_h - (safe.y + safe.h));
+  // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
+  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), ScreenKeyboardHeight()});
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
 #endif
@@ -1295,6 +1300,8 @@ void ShellHost::ApplySafeAreaLayout() {
   // full-bleed and lift #shell-root by the panel height so nav stays above it
   // (same visual as OSK document-bottom inset).
   const int layout_bottom = bottom_chrome_open_ ? 0 : state_.safe_area_bottom_dp;
+  // Only a keyboard-sized inset: the home-indicator inset is already part of the menus' own margins.
+  ContextMenuHost::Instance().SetBottomInsetDp(state_.safe_area_bottom_dp >= kImeLatchMinDp ? state_.safe_area_bottom_dp : 0);
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp);
   ui::ElementDocument* doc = context_->GetDocument(0);
@@ -1959,12 +1966,12 @@ std::string ShellHost::SerializeDialog() const {
     out << "<div class=\"shell-scrim\" data-event-click=\"dialog_ok()\"></div>";
   }
   out << "<div class=\"shell-dialog\">";
-  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"dialog_title\"></h2>";
-  out << "<p class=\"text shell-dialog-message\" data-rml=\"dialog_message\"></p>";
+  out << "<h2 class=\"heading-2 shell-dialog-title\">{{dialog_title}}</h2>";
+  out << "<p class=\"text shell-dialog-message\">{{dialog_message}}</p>";
   out << "<label class=\"shell-dialog-checkbox row\" data-if=\"dialog_show_checkbox\">";
   out << "<input type=\"checkbox\" data-value=\"dialog_checkbox_checked\" "
          "data-event-change=\"dialog_toggle_checkbox()\"/>";
-  out << "<span data-rml=\"dialog_checkbox_label\"></span>";
+  out << "<span>{{dialog_checkbox_label}}</span>";
   out << "</label>";
   out << "<input class=\"shell-dialog-prompt\" type=\"text\" data-if=\"dialog_show_prompt\" "
          "data-value=\"dialog_prompt_value\"/>";
@@ -1987,23 +1994,23 @@ std::string ShellHost::SerializePinGate() const {
   out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
   out << "<div class=\"shell-dialog shell-pin-gate\">";
-  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"pin_gate_title\"></h2>";
-  out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
-  out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
+  out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
+  out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
+  out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
+  out << "<button class=\"btn btn-primary\" data-if=\"pin_gate_restore_label != ''\" "
+         "data-event-click=\"pin_gate_identity_restore()\">{{pin_gate_restore_label}}</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
       << Tr("pin.identity_new") << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
       << Tr("pin.identity_link") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
-      << "</button>";
   out << "</div>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
       << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">"
       << Tr("pin.just_continue") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back")
       << "</button>";
   out << "</div>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode\" "
@@ -2019,9 +2026,12 @@ std::string ShellHost::SerializePinGate() const {
       << Tr("pin.confirm_placeholder") << "\"/>";
   out << "<div class=\"shell-dialog-actions row\" "
          "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode || pin_gate_link_paste_mode\" "
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("common.back") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
       << "</button>";
   out << "</div></div></div>";
@@ -2038,12 +2048,12 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
   out << "<div class=\"shell-dialog shell-call-ring\" data-class-shell-call-ring--pulse=\"call_ring_pulse\">";
-  out << "<p class=\"text-sm shell-call-ring-eyebrow\" data-rml=\"call_ring_eyebrow\"></p>";
-  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
-  out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\" data-rml=\"call_ring_caller\"></p>";
-  out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
+  out << "<p class=\"text-sm shell-call-ring-eyebrow\">{{call_ring_eyebrow}}</p>";
+  out << "<h2 class=\"heading-2 shell-dialog-title\">{{call_ring_media}}</h2>";
+  out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\">{{call_ring_caller}}</p>";
+  out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
   out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
-         "data-rml=\"call_ring_pricing_label\"></p>";
+         ">{{call_ring_pricing_label}}</p>";
   // WeChat-style round icon buttons with a short label underneath; long labels above
   // (call_ring_decline_label / accept_label / voice_answer_label) stay bound for a11y.
   out << "<div class=\"shell-call-ring-actions row\">";
@@ -2059,7 +2069,7 @@ std::string ShellHost::SerializeCallRing() const {
          "data-event-click=\"call_accept_voice()\">";
   out << "<svg src=\"../icons/phone.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
   out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\" data-rml=\"call_ring_voice_short\"></p>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\">{{call_ring_voice_short}}</p>";
   out << "</div>";
   out << "<div class=\"shell-call-ring-action\">";
   out << "<button class=\"shell-call-ring-action-circle shell-call-accept\" "
@@ -2068,15 +2078,15 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<svg width=\"26\" height=\"26\" crop-to-content=\"true\" "
          "data-attr-src=\"call_ring_video_allowed ? '../icons/video.svg' : '../icons/phone.svg'\"></svg>";
   out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\" data-rml=\"call_ring_accept_short\"></p>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\">{{call_ring_accept_short}}</p>";
   out << "</div>";
   out << "</div>";
   out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
   out << "<button class=\"btn btn-secondary\" type=\"button\" "
          "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
-         "data-event-click=\"call_accept_charge()\" data-rml=\"call_ring_accept_charge_label\"></button>";
+         "data-event-click=\"call_accept_charge()\">{{call_ring_accept_charge_label}}</button>";
   out << "<p class=\"text-xs shell-dialog-message\" data-if=\"!call_ring_accept_charge_enabled\" "
-         "data-rml=\"call_ring_accept_charge_hint\"></p>";
+         ">{{call_ring_accept_charge_hint}}</p>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -2087,30 +2097,6 @@ std::string ShellHost::SerializeCallInProgress() const {
   if (!state_.call_in_progress.active) {
     return {};
   }
-  auto escape = [](const ui::String& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : std::string(s.c_str())) {
-      switch (c) {
-      case '&':
-        out += "&amp;";
-        break;
-      case '<':
-        out += "&lt;";
-        break;
-      case '>':
-        out += "&gt;";
-        break;
-      case '"':
-        out += "&quot;";
-        break;
-      default:
-        out += c;
-        break;
-      }
-    }
-    return out;
-  };
   auto append_quality_chip = [](std::ostringstream& out, const char* extra_class) {
     out << "<button class=\"shell-call-quality " << extra_class
         << "\" type=\"button\" data-event-click=\"call_details()\" "
@@ -2128,7 +2114,7 @@ std::string ShellHost::SerializeCallInProgress() const {
            "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 4\"></div>";
     out << "</div>";
     out << "<span class=\"text-xs shell-call-quality-label\" data-if=\"call_in_progress_quality_label != ''\" "
-           "data-rml=\"call_in_progress_quality_label\"></span>";
+           ">{{call_in_progress_quality_label}}</span>";
     out << "</button>";
   };
 
@@ -2185,10 +2171,8 @@ std::string ShellHost::SerializeCallInProgress() const {
     out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row " << corner_class
         << "\">";
     out << "<div class=\"shell-call-minimized-main\">";
-    out << "<p class=\"text-sm shell-call-minimized-title\" data-rml=\"call_in_progress_title\">"
-        << escape(call.title) << "</p>";
-    out << "<p class=\"text-xs shell-call-minimized-subtitle\" data-rml=\"call_in_progress_subtitle\">"
-        << escape(call.subtitle) << "</p>";
+    out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
+    out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";
     out << "</div>";
     append_quality_chip(out, "shell-call-quality--compact");
     out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
@@ -2212,14 +2196,12 @@ std::string ShellHost::SerializeCallInProgress() const {
     out << "<div class=\"shell-call-immersive-grabber\"></div>";
     out << "<div class=\"shell-call-bar-row row\">";
     out << "<div class=\"shell-call-bar-main\">";
-    out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\">"
-        << escape(call.title) << "</p>";
-    out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
-        << escape(call.subtitle) << "</p>";
+    out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
+    out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
     out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
-           "data-rml=\"call_in_progress_debug_subtitle\"></p>";
+           ">{{call_in_progress_debug_subtitle}}</p>";
     out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
-           "data-rml=\"call_in_progress_quality_hint\"></p>";
+           ">{{call_in_progress_quality_hint}}</p>";
     out << "</div>";
     append_quality_chip(out, "");
     out << "<button class=\"shell-call-expand\" type=\"button\" data-event-click=\"call_expand()\">";
@@ -2243,14 +2225,14 @@ std::string ShellHost::SerializeCallInProgress() const {
            "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
            "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
            "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
-           "<p class=\"avatar-letter\" data-rml=\"p.avatar_letter\"></p></div>";
+           "<p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
     out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
            "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
            "data-attr-src=\"p.avatar_src\"/>";
-    out << "<p class=\"text-sm shell-call-peer-name\" data-rml=\"p.name\"></p>";
+    out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
     out << "<p class=\"text-xs shell-call-peer-stall\" "
            "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
-           "data-rml=\"call_in_progress_remote_placeholder\"></p>";
+           ">{{call_in_progress_remote_placeholder}}</p>";
     out << "<div class=\"shell-call-peer-badges row\">";
     out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
            "crop-to-content=\"true\"></svg>";
@@ -2260,7 +2242,7 @@ std::string ShellHost::SerializeCallInProgress() const {
     // 1:1 / empty roster: still show a single presence card from title/peer.
     out << "<div class=\"shell-call-peer-card\" data-if=\"call_in_progress_participant_count == 0\">";
     out << "<div class=\"shell-call-peer-avatar\"></div>";
-    out << "<p class=\"text-sm shell-call-peer-name\" data-rml=\"call_in_progress_peer_label\"></p>";
+    out << "<p class=\"text-sm shell-call-peer-name\">{{call_in_progress_peer_label}}</p>";
     out << "</div>";
     out << "</div>";
     out << "<div class=\"shell-call-immersive-controls\">";
@@ -2275,7 +2257,7 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
   out << "<call-video-tile class=\"shell-call-remote\" id=\"call-remote-tile\" tile=\"remote\">";
   out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
-         "data-rml=\"call_in_progress_remote_placeholder\"></p>";
+         ">{{call_in_progress_remote_placeholder}}</p>";
   out << "</call-video-tile>";
   out << "<call-video-tile class=\"shell-call-pip\" id=\"call-local-tile\" tile=\"local\" "
          "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
@@ -2283,16 +2265,14 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-bar\">";
   out << "<div class=\"shell-call-bar-row row\">";
   out << "<div class=\"shell-call-bar-main\">";
-  out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\">"
-      << escape(call.title) << "</p>";
-  out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
-      << escape(call.subtitle) << "</p>";
+  out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
+  out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
   out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
-         "data-rml=\"call_in_progress_debug_subtitle\"></p>";
+         ">{{call_in_progress_debug_subtitle}}</p>";
   out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
-         "data-rml=\"call_in_progress_quality_hint\"></p>";
+         ">{{call_in_progress_quality_hint}}</p>";
   out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
-         "data-rml=\"call_in_progress_status_hint\"></p>";
+         ">{{call_in_progress_status_hint}}</p>";
   out << "</div>";
   append_quality_chip(out, "");
   out << "<div class=\"shell-call-bar-actions row\">";
@@ -2300,7 +2280,7 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "</div></div>";
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
   out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
-  out << "<span class=\"text-xs shell-call-roster-name\" data-rml=\"p.name\"></span>";
+  out << "<span class=\"text-xs shell-call-roster-name\">{{p.name}}</span>";
   out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"12\" height=\"12\" "
          "crop-to-content=\"true\"></svg>";
   out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"12\" height=\"12\" "
@@ -2316,10 +2296,10 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 4\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 5\"></div>";
   out << "</div>";
-  out << "<span class=\"text-xs shell-call-meter-hint\" data-rml=\"call_in_progress_mic_hint\"></span>";
+  out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_mic_hint}}</span>";
   out << "</div>";
   out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
-  out << "<span class=\"text-xs shell-call-meter-label\" data-rml=\"call_in_progress_peer_label\"></span>";
+  out << "<span class=\"text-xs shell-call-meter-label\">{{call_in_progress_peer_label}}</span>";
   out << "<div class=\"shell-call-meter-track row\">";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 1\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 2\"></div>";
@@ -2327,7 +2307,7 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 4\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 5\"></div>";
   out << "</div>";
-  out << "<span class=\"text-xs shell-call-meter-hint\" data-rml=\"call_in_progress_peer_hint\"></span>";
+  out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_peer_hint}}</span>";
   out << "</div></div></div></div>";
   return out.str();
 }
@@ -2347,6 +2327,7 @@ std::string ShellHost::SerializeShellRoot() const {
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
   out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
+  out << "<div id=\"shell-onboarding-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
   return out.str();
 }
 
@@ -2678,6 +2659,7 @@ void ShellHost::SyncLayout() {
   RemountDialogChromeNow();
   RemountCallChromeNow();
   RemountPinGateChromeNow();
+  RemountOverlayBodiesNow();
   DirtyWindow();
   if (state_.auxiliary_open) {
     DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -2759,7 +2741,7 @@ void ShellHost::FlushRemountCallChrome() {
   remount_call_chrome_pending_ = false;
   RemountCallChromeNow();
   // MountInner binds data views after any Dirty applied while remount was pending — dirty again
-  // next UI turn so Connected/elapsed replace baked Connecting… text via data-rml.
+  // next UI turn so Connected/elapsed replace baked Connecting… text through the text bindings.
   AppRuntime::PostUI([]() {
     ShellHost::Instance().DirtyCallChrome();
     Backend::RequestForceFrame();
@@ -2877,6 +2859,33 @@ void ShellHost::RemountDialogChromeNow() {
   DirtyFeedback();
 }
 
+void ShellHost::MountOverlayBody(const std::string& mount_id, const std::string& body) {
+  // Remembered so SyncLayout can put it back: the wizard mounted right after unlock was wiped by
+  // the full shell rebuild that follows (session list load / language apply) — fresh install on
+  // the iPhone went straight to an empty home screen (Kenneth 2026-10-13).
+  if (body.empty()) {
+    overlay_bodies_.erase(mount_id);
+  } else {
+    overlay_bodies_[mount_id] = body;
+  }
+  // Deferred like the PIN gate: a click handler may still be mid-dispatch inside the old overlay.
+  AppRuntime::PostUI([mount_id, body]() {
+    ShellHost& shell = ShellHost::Instance();
+    if (!shell.context_ || shell.context_->GetNumDocuments() == 0) {
+      return;
+    }
+    ui::ElementDocument* doc = shell.context_->GetDocument(0);
+    if (!doc) {
+      return;
+    }
+    if (ui::Element* mount = doc->GetElementById(mount_id.c_str())) {
+      RmlMount::MountInner(mount, body);
+    }
+    Backend::RequestForceFrame();
+  });
+  Backend::RequestForceFrame();
+}
+
 void ShellHost::RemountPinGateChrome() {
   if (remount_pin_gate_chrome_pending_) {
     Backend::RequestForceFrame();
@@ -2899,6 +2908,21 @@ void ShellHost::FlushRemountPinGateChrome() {
   });
 }
 
+void ShellHost::RemountOverlayBodiesNow() {
+  if (overlay_bodies_.empty() || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  for (const auto& [mount_id, body] : overlay_bodies_) {
+    if (ui::Element* mount = doc->GetElementById(mount_id.c_str())) {
+      RmlMount::MountInner(mount, body);
+    }
+  }
+}
+
 void ShellHost::RemountPinGateChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -2919,11 +2943,11 @@ void ShellHost::Update(ui::Context* context) {
   // Must match ShellFeedback::ShowToast's default clock (steady_clock).
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();
-  elapsed_ms_ = static_cast<float>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+  elapsed_ms_ = ShellFeedback::NowMs();
   const size_t toast_count_before = state_.toasts.size();
   ShellFeedback::ExpireToasts(state_, elapsed_ms_);
-  if (state_.toasts.size() != toast_count_before) {
+  const bool banner_gone = ShellFeedback::ExpireBanner(state_, elapsed_ms_);
+  if (state_.toasts.size() != toast_count_before || banner_gone) {
     DirtyFeedback();
   }
 
@@ -2968,7 +2992,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
     delay_sec = std::min(delay_sec, std::max(0.0, remaining));
   }
 
-  const double toast_delay = ShellFeedback::SecondsUntilNextToastExpiry(state_, elapsed_ms_);
+  const double toast_delay = ShellFeedback::SecondsUntilNextFeedbackExpiry(state_, elapsed_ms_);
   if (toast_delay >= 0.0) {
     delay_sec = std::min(delay_sec, toast_delay);
   }
@@ -3107,6 +3131,13 @@ void ShellHost::PinGateIdentityLinkCallback(ui::DataModelHandle /*model*/, ui::E
                                             const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_identity_link) {
     Instance().pin_gate_actions_.on_identity_link();
+  }
+}
+
+void ShellHost::PinGateIdentityRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
+  if (Instance().pin_gate_actions_.on_identity_restore) {
+    Instance().pin_gate_actions_.on_identity_restore();
   }
 }
 

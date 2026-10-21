@@ -204,8 +204,8 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
-| `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
+| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost`; calls and broadcast ride it as `HubParticipant`s (`feature/product/ProductStack`) |
+| pp-cpp-mesh `MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
 | `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/conversations/InboxController.*` | Active thread, display rows |
@@ -221,9 +221,66 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
+## System-control families
+
+A feature's control messages — call control, initiation billing, payment promises — are **system
+messages** whose payload names a `control_type`. Messaging does not know what they mean: a feature
+binds a `SystemControlFamily` (`common/chat/SystemControl.h`) in the `SystemControlRegistry` the hub
+owns, and messaging routes by what the family claims. A family's messages travel one of two ways:
+
+- **The chat stream** (default): end to end, sequenced, stored — history the user reads (a call
+  summary, a payment receipt).
+- **The control lane** (`on_lane`): signaling with no place in a transcript — see below.
+
+| Field | Messaging uses it for |
+|-------|-----------------------|
+| `owns` | Which system messages are the family's |
+| `apply` | Side effects of an inbound one; an error refuses the message (`couldn't apply <family> update`) |
+| `on_lane` | Which of its messages ride the control lane (one arriving in a chat stream is dropped) |
+| `lane_max_age_ms` | How long a lane message may have waited in the relay (relay clock) and still apply |
+| `quiet` | A stream message shown, but with no unread count, preview or notice |
+| `line` | A stream message's transcript line, names included (`SystemControlLabels`); none: its text |
+| `live` | A live exchange (a call): messaging holds key rotation and defers background history sync |
+
+Bound today:
+
+| Family | Bound by | Notes |
+|--------|----------|-------|
+| `call` | the call stack (`feature/calls/CallControlFamily`) | All signaling on the lane; one `call_summary` per call in the chat stream, worded from the reader's side (quiet unless it is a call we missed) |
+| `billing` | the hub (`PricingControlFamilies`) | Chat stream. Keyed on the authenticated sender; a message naming another peer is refused |
+| `payment promise` | the hub (`PricingControlFamilies`) | Chat stream. Staged only from our counterparty on the promise, signed by it, and a legal change of our copy (`MergeInboundPaymentPromise`: new offer; accept of our offer; outcome by it as actor; terms never change). The user's accept re-checks and commits |
+
+The receive pipeline, delivery and the inbox read the registry; membership updates and PSK rotation
+are messaging's own and stay in it. Families bind and unbind from any thread (the call stack rebuilds
+itself); readers take an immutable snapshot.
+
+### The control lane
+
+Signaling between a pair (call invite, accept, media keys, hop moves, roster …) travels outside the
+ordered chat stream:
+
+- **Wire:** route kind `control` (`kRelayRouteControl`, signed like any route kind), unsequenced
+  (`sender_seq` 0, bound into the AEAD's AAD), E2E under the pair's **e2e_public session** — the
+  account pair's AutoKey session, the one media keys are wrapped under; no thread. Its own relay
+  stream (`v1:control:…`), so it never shows up as a gap in the chat stream or in history sync.
+  Built by `BuildControlLaneEnvelope`; sent by `MeshDeliveryOrchestrator::SendControl` on the
+  critical worker lane — relay when a route is known (retried for two minutes), else Amp.
+- **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
+  that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;
+  through the relay, waited no longer than the family's `lane_max_age_ms` on the relay's clock — no
+  skew between devices), **first seen** (`ControlLaneSeenStore`, `control_lane_seen` in profile.db,
+  per sender and id, kept three hours), then the family's `apply`. Never stored, never a transcript
+  row, no inbox chrome.
+
+There is no control thread: no hidden e2e_public twin beside a private DM, no pruning, no
+out-of-order carve-outs in the chat stream.
+
 ## A/V calls (signaling over messaging)
 
-Call invite/accept/SDP/ICE/SFU controls are **system** direct messages on the same carrier. Media is a separate plane (PeerConnection or `media_relay`). Code ownership and target split: [CALLS.md](CALLS.md). Product ADRs: [projects/p2p-av-calls/](../../projects/p2p-av-calls/).
+Call signaling rides the control lane; each call leaves one `call_summary` (outcome, media,
+duration) in its thread's chat stream, written by its starter. Media is a separate plane
+(PeerConnection or `media_relay`). Code ownership and target split: [CALLS.md](CALLS.md). Product
+ADRs: [projects/p2p-av-calls/](../../projects/p2p-av-calls/).
 
 ## Group chat (future)
 

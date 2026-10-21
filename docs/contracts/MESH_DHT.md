@@ -3,7 +3,7 @@
 **Tier:** contract (draft — **n2-spec**; implementation **n2-core**)  
 **Status:** Draft v1  
 **Date:** 2026-09-02  
-**Related:** [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1), [DISCOVERY_ROADMAP](../../projects/p2p-mesh/DISCOVERY_ROADMAP.md), [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [platform-integration](../../../pp-ledger/docs/platform-integration.md) (pp-ledger fleet DHT retired)
+**Related:** [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1), [DISCOVERY_ROADMAP](../../projects/p2p-mesh/DISCOVERY_ROADMAP.md), [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md) (pp-ledger fleet DHT retired)
 
 ## Purpose
 
@@ -24,7 +24,7 @@ DHT **feeds candidates** only. [`MeshHopPolicy`](../../src/base/people/MeshHopPo
 | Mobile / Client | Never participates (consume-only) |
 | Default | `capabilities.dht = false` |
 | Publish gate | Reachability ≠ `Blocked`; advertise dialable ADP multiaddrs only |
-| Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](../../src/domain/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
+| Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](https://github.com/people-post/pp-cpp-mesh/blob/develop/include/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
 
 ## Transport
 

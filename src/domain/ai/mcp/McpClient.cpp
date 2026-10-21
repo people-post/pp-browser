@@ -48,6 +48,7 @@ void McpClient::Stop() {
     return;
   }
   process_.Stop();
+  stdio_carry_.clear();
   running_ = false;
   mock_ = false;
   http_ = false;
@@ -63,9 +64,9 @@ bool McpClient::Start(const std::string& command, const std::vector<std::string>
     return true;
   }
   if (!process_.Start(command, args)) {
-    mock_ = true;
-    running_ = true;
-    return true;
+    // A server that cannot start is a failure the user sees, never a silent switch to the mock (PB-056).
+    log().error << "Could not start MCP process: " << command;
+    return false;
   }
   running_ = true;
   log().info << "Started MCP process: " << command;
@@ -162,12 +163,13 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params) 
   }
 
   if (!process_.IsActive()) {
-    return EmptyObject();
+    return Error("MCP process is not running");
   }
 
+  const int64_t id = request_id_++;
   Object req;
   req.set("jsonrpc", "2.0");
-  req.set("id", static_cast<int64_t>(request_id_++));
+  req.set("id", id);
   req.set("method", method);
   req.set("params", params);
 
@@ -178,29 +180,15 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params) 
     return Error("MCP write failed");
   }
 
-  std::string line;
-  char ch = 0;
-  while (process_.Read(&ch, 1) == 1) {
-    if (ch == '\n') {
-      break;
-    }
-    line.push_back(ch);
+  auto response = ReadStdioResponse(
+      [this](char* out, const size_t size) { return process_.Read(out, size, kMcpReadTimeoutMs); }, id, stdio_carry_);
+  if (!response) {
+    // The stream is no longer trustworthy (half a line, a stuck server): stop it rather than misread later.
+    log().error << "MCP " << method << " failed: " << response.error().message << "; stopping the server";
+    Stop();
+    return response.error();
   }
-  if (line.empty()) {
-    log().error << "MCP empty response for method: " << method;
-    return Error("MCP empty response");
-  }
-
-  auto resp_value = ParseValue(line);
-  if (!resp_value) {
-    log().error << "MCP response parse failed for method: " << method;
-    return Error("MCP response parse failed");
-  }
-  const Object* resp = asObject(*resp_value);
-  if (!resp) {
-    log().error << "MCP response parse failed for method: " << method;
-    return Error("MCP response parse failed");
-  }
+  const Object* resp = &*response;
 
   if (auto err_slot = resp->fields().tryGet("error")) {
     const std::string err_text = DumpJson(err_slot->get());
@@ -260,6 +248,72 @@ Roe<Object> McpClient::CallTool(const std::string& name, const Object& arguments
   params.set("name", name);
   params.set("arguments", arguments);
   return Request("tools/call", params);
+}
+
+namespace {
+
+bool IdMatches(const Object& response, const int64_t expected) {
+  if (const auto i = response.getIf<int64_t>("id")) {
+    return *i == expected;
+  }
+  if (const auto u = response.getIf<uint64_t>("id")) {
+    return expected >= 0 && *u == static_cast<uint64_t>(expected);
+  }
+  if (const auto d = response.getIf<double>("id")) {
+    return *d == static_cast<double>(expected);
+  }
+  return false;
+}
+
+} // namespace
+
+Roe<Object> McpClient::ReadStdioResponse(const McpReadFn& read, const int64_t expected_id, std::string& carry) {
+  size_t skipped = 0;
+  char buffer[4096];
+  while (true) {
+    size_t newline = carry.find('\n');
+    while (newline == std::string::npos) {
+      if (carry.size() > kMaxMcpResponseBytes) {
+        carry.clear();
+        return Error("MCP response line too long (over " + std::to_string(kMaxMcpResponseBytes) + " bytes)");
+      }
+      const int n = read(buffer, sizeof(buffer));
+      if (n == os::OsProcessPipe::kReadTimedOut) {
+        carry.clear();
+        return Error("MCP response timed out");
+      }
+      if (n == 0) {
+        carry.clear();
+        return Error("MCP process closed its output");
+      }
+      if (n < 0) {
+        carry.clear();
+        return Error("MCP read failed");
+      }
+      carry.append(buffer, static_cast<size_t>(n));
+      newline = carry.find('\n');
+    }
+    std::string line = carry.substr(0, newline);
+    carry.erase(0, newline + 1);
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+    if (!line.empty()) {
+      auto value = ParseValue(line);
+      const Object* response = value ? asObject(*value) : nullptr;
+      if (!response) {
+        carry.clear();
+        return Error("MCP response parse failed");
+      }
+      if (IdMatches(*response, expected_id)) {
+        return *response;
+      }
+    }
+    if (++skipped > kMaxMcpSkippedLines) {
+      carry.clear();
+      return Error("MCP sent " + std::to_string(skipped) + " lines without the awaited response");
+    }
+  }
 }
 
 McpClient& McpClient::MockInstance() {
