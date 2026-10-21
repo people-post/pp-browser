@@ -20,6 +20,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp
     ChatPayloadValidator.cpp
+    ChatSyncLogic.cpp
     ConversationSummaryCodec.cpp
     E2eIngestClassifier.cpp
     E2eRelayPayloadCodec.cpp
