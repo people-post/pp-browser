@@ -383,7 +383,9 @@ private:
   void ConfigureAmpDhtProtocol();
   void ConfigureAmpDirectoryProtocol();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const mesh::PeerRoutingRecord& record);
-  /** Local (relay-capable) stack only — no StartMesh. */
+  /** The messaging objects (orchestrator, groups, actions) over the open stores; participants told. */
+  void BuildMessagingObjects();
+  /** Unlock: the relay-capable stack ready to use (built at Initialize; rebuilt after a discard). */
   Roe<void> BuildLocalMessagingStack();
   /** Attach Amp links from a running mesh_ to the orchestrator. */
   Roe<void> AttachAmpMessagingStack();

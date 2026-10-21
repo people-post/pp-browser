@@ -1201,31 +1201,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   BindPricingFamilies();
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
-  // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
-  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
-                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, *group_roster_, group_invite_gate_.get());
-  mesh_messaging_->SetSystemControls(&system_controls_);
-  mesh_messaging_->SetProfileDataDir(data_dir_);
-  mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
-  mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
-  WireAttachmentDownloads();
-  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *mesh_messaging_);
-  inbox_->SetGroupMembership(group_membership_.get());
-  mesh_messaging_->SetGroupMembership(group_membership_.get());
-  NotifyMessagingBuilt();
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
-                                                       group_membership_.get(), registration_, mesh_messaging_.get());
-
-  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
-    group_invite_gate_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
-    if (group_membership_) {
-      group_membership_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
-    }
-    NotifyPolicyPrefs(ProjectPolicy(*prefs));
-  }
+  // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
+  BuildMessagingObjects();
 
   messaging_ready_ = false;
   initialized_ = true;
@@ -1275,21 +1252,10 @@ void ConversationsHub::NotifyMeshReady() {
   });
 }
 
-Roe<void> ConversationsHub::BuildLocalMessagingStack() {
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
-    return Error("shutdown in progress");
-  }
-  WireRelayAuthSigner();
-
-  // Local / relay-capable stack: Amp links stay null until AttachAmpMessagingStack.
-  mesh::IChatPeerLinks* amp_links = nullptr;
-  std::function<void()> amp_pump;
-  std::function<void(std::function<void()>)> amp_worker;
-
-  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(
-      *store_, *contacts_, *identity_, relay_, *inbox_, signing_key_store_, *signing_resolver_, kem_key_store_,
-      *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
-      std::move(amp_worker));
+void ConversationsHub::BuildMessagingObjects() {
+  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
+                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
+                                                *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
@@ -1309,8 +1275,20 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
     group_membership_->SetInboundPolicy(policy);
     NotifyPolicyPrefs(ProjectPolicy(*prefs));
   }
+}
+
+Roe<void> ConversationsHub::BuildLocalMessagingStack() {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
+  WireRelayAuthSigner();
+  // Initialize built the stack; keep it — workers and timers may already hold it. Build again only
+  // after a discarded bring-up dropped it.
+  if (!mesh_messaging_) {
+    BuildMessagingObjects();
+  }
   RegisterContactEndpoints();
-  if (agent_inbound_.IsBound()) {
+  if (agent_inbound_.IsBound() && !router_) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
   if (shutdown_requested_.load(std::memory_order_acquire)) {
