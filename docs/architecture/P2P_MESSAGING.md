@@ -213,6 +213,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/gui/chat/TranscriptRml.*` | The transcript drawn as bound rows (bubbles, cards, system lines, chips); every click argument escaped for its attribute |
 | `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/domain/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
+| `src/domain/messaging/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
 | `src/domain/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
 | `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/chat/1.0.0` push |

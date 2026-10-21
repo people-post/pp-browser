@@ -340,17 +340,20 @@ void MaybePublishMemberJoinedAfterIngest(GroupMembershipWorkflow* groups, const 
 } // namespace
 
 void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome) {
-  if (!outcome.receive_failure_notice || outcome.receive_failure_notice->empty()) {
+  if (!outcome.receive_failure) {
     return;
   }
-  const std::string& notice = *outcome.receive_failure_notice;
-  log().warning << "Inbound receive failure"
-                << " sender=" << (outcome.receive_failure_sender ? *outcome.receive_failure_sender : "")
-                << " detail=" << outcome.receive_failure_detail << " notice=" << notice;
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::ReceiveFailed;
+  notice.receive = *outcome.receive_failure;
+  notice.peer = outcome.receive_failure_sender.value_or("");
+  notice.family = outcome.receive_failure_family;
+  notice.detail = outcome.receive_failure_detail;
+  log().warning << "Inbound receive failure sender=" << notice.peer << " reason=" << ReceiveFailureWire(notice.receive)
+                << " family=" << notice.family << " detail=" << notice.detail;
 
-  // One toast/system line per sender+notice within the cooldown — old relay backlog must not flood UI.
-  const std::string rate_key =
-      (outcome.receive_failure_sender ? *outcome.receive_failure_sender : std::string{}) + "|" + notice;
+  // One toast/system line per sender+reason within the cooldown — old relay backlog must not flood UI.
+  const std::string rate_key = notice.peer + "|" + ReceiveFailureWire(notice.receive) + "|" + notice.family;
   const int64_t now_ms = util::NowUnixMs();
   {
     std::lock_guard lock(receive_failure_mutex_);
@@ -377,10 +380,12 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.thread_id = *outcome.receive_failure_thread_id;
     local.sender_contact_id = kLocalSelfContactId;
     local.content_type = ChatContentType::System;
-    local.text = notice;
+    // No stored words: the transcript words the line from its payload, in the reader's language.
     Object detail;
-    detail.set("sender", outcome.receive_failure_sender.value_or(""));
-    detail.set("detail", outcome.receive_failure_detail);
+    detail.set("sender", notice.peer);
+    detail.set("reason", ReceiveFailureWire(notice.receive));
+    detail.set("family", notice.family);
+    detail.set("detail", notice.detail);
     Object payload;
     payload.set("control_type", "receive_failure");
     payload.set("detail", DumpJson(detail));
@@ -390,7 +395,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.relay_visible = false;
     local.generation = "local";
     if (store_.AppendMessage(local)) {
-      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id, notice);
+      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id);
     }
   }
 
@@ -452,13 +457,6 @@ void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
   const std::string peer = (*thread)->peer_identity_value;
   if (peer.empty()) {
     return;
-  }
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    if (relay_fallback_notice_thread_id_ != thread_id) {
-      relay_fallback_notice_thread_id_.clear();
-      relay_fallback_notice_text_.clear();
-    }
   }
   WarmPeerByKey(peer);
 }
@@ -669,13 +667,6 @@ void MeshDeliveryOrchestrator::RetryPeerDial(const std::string& thread_id) {
   const std::string peer = (*thread)->peer_identity_value;
   if (peer.empty()) {
     return;
-  }
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    if (relay_fallback_notice_thread_id_ == thread_id) {
-      relay_fallback_notice_thread_id_.clear();
-      relay_fallback_notice_text_.clear();
-    }
   }
   WarmPeerByKey(peer);
 }
@@ -1001,50 +992,13 @@ void MeshDeliveryOrchestrator::EnqueueRetry(PendingRelaySend pending) {
 }
 
 void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const std::string& error_message) {
-  if (!on_delivery_notice_) {
+  if (!on_delivery_notice_ || error_message.empty()) {
     return;
   }
-  const bool rate_limited = error_message.find("rate limit") != std::string::npos;
-  std::string notice;
-  if (error_message.empty()) {
-    notice = error_message;
-  } else if (error_message.find("host not running") != std::string::npos) {
-    notice = "Direct messaging is off — check Me → Network.";
-  } else if (error_message.find("Empty peer endpoint") != std::string::npos ||
-             error_message.find("Invalid multiaddr") != std::string::npos ||
-             error_message.find("missing /p2p/") != std::string::npos ||
-             error_message.find("Invalid PeerId") != std::string::npos) {
-    notice = "Peer address looks wrong — edit the contact multiaddr.";
-  } else if (error_message.find("not registered") != std::string::npos ||
-             error_message.find("missing PeerInfo") != std::string::npos ||
-             error_message.find("Peer-direct endpoint") != std::string::npos) {
-    notice = "No usable peer address — add a dialable multiaddr on the contact.";
-  } else if (error_message.find("backoff") != std::string::npos) {
-    notice = "Waiting before retrying the peer connection.";
-  } else if (error_message.find("Too many concurrent") != std::string::npos) {
-    notice = "Busy connecting to other peers — try again shortly.";
-  } else if (error_message.find("dial failed") != std::string::npos ||
-             error_message.find("timed out") != std::string::npos ||
-             error_message.find("timeout") != std::string::npos) {
-    notice = "Peer didn't answer — they may be offline or the address may be wrong.";
-  } else if (error_message.find("stream open failed") != std::string::npos) {
-    notice = "Reached the peer but chat handshake failed.";
-  } else if (error_message.find("Failed to send") != std::string::npos ||
-             error_message.find("Failed to read") != std::string::npos ||
-             error_message.find("ack") != std::string::npos) {
-    notice = "Direct send didn't confirm — will use relay if available.";
-  } else if (error_message.find("Relay client not configured") != std::string::npos) {
-    notice = "Couldn't deliver — relay isn't configured.";
-  } else {
-    notice = error_message;
-  }
-  if (rate_limited) {
-    if (ResolveThreadTrust(thread) == TrustLevel::Friendly) {
-      notice = "Relay is busy — your message will retry shortly.";
-    } else {
-      notice = "Relay rate limit — slow down messaging with new contacts.";
-    }
-  }
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::SendFailed;
+  notice.send = ClassifySendFailure(error_message, ResolveThreadTrust(thread) == TrustLevel::Friendly);
+  notice.detail = error_message;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1052,16 +1006,12 @@ void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const s
   });
 }
 
-void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& thread_id) {
-  const std::string notice = "Couldn't reach peer directly — sent via relay.";
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    relay_fallback_notice_thread_id_ = thread_id;
-    relay_fallback_notice_text_ = notice;
-  }
+void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& /*thread_id*/) {
   if (!on_delivery_notice_) {
     return;
   }
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::SentViaRelay;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1486,7 +1436,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
     AppRuntime::PostUI([this]() {
       if (on_delivery_notice_) {
-        on_delivery_notice_("Some group members couldn’t receive this message");
+        DeliveryNotice notice;
+        notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
+        on_delivery_notice_(notice);
       }
     });
   }
@@ -1928,7 +1880,7 @@ void MeshDeliveryOrchestrator::SetOnMessagesChanged(std::function<void()> callba
   on_messages_changed_ = std::move(callback);
 }
 
-void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const std::string&)> callback) {
+void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   on_delivery_notice_ = std::move(callback);
 }
 

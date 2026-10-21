@@ -3,6 +3,7 @@
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
+#include "domain/messaging/DeliveryNotice.h"
 #include "domain/messaging/E2eIngestClassifier.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
@@ -48,10 +49,12 @@ struct RelayReceiveOutcome {
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
   /**
-   * When an envelope from a known peer could not be read/applied: short UI notice + optional
-   * thread to attach a local system line. `receive_failure_detail` is for logs.
+   * When an envelope from a known peer could not be read / applied: why (the GUI words it), with an
+   * optional thread to attach a local system line. `receive_failure_detail` is for logs.
    */
-  std::optional<std::string> receive_failure_notice;
+  std::optional<ReceiveFailure> receive_failure;
+  /** ApplyFailed: the system-control family whose update failed. */
+  std::string receive_failure_family;
   /**
    * A "delete for everyone" from the sender: either the retract itself, or a message that arrived after its
    * retract and was stored as a tombstone. No preview / unread bump, no attachment download.

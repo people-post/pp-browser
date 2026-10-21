@@ -7,6 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/pricing/InitiationBillingStore.h"
 #include "domain/pricing/PaymentPromiseStore.h"
+#include "domain/messaging/DeliveryNotice.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
@@ -153,7 +154,7 @@ public:
   IChatBlobPeerService* PeerBlobService() const;
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
-  void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
+  void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
   void SetOnBackgroundUnread(
       std::function<void(std::string title, std::string body, std::string thread_id)> callback);
@@ -317,14 +318,11 @@ private:
   std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
-  std::function<void(const std::string&)> on_delivery_notice_;
+  std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
   mutable std::mutex retry_mutex_;
   std::vector<PendingRelaySend> retry_queue_;
   std::atomic<uint64_t> control_order_key_{0};
-  mutable std::mutex link_ux_mutex_;
-  mutable std::string relay_fallback_notice_thread_id_;
-  mutable std::string relay_fallback_notice_text_;
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   mutable std::mutex account_relay_mutex_;

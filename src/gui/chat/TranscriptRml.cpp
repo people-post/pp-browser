@@ -1,5 +1,8 @@
 #include "gui/chat/TranscriptRml.h"
 
+#include "gui/chat/DeliveryNoticeText.h"
+#include "common/ValueJson.h"
+
 #include "domain/ai/StructuredTextParser.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/ChatPayloadCodec.h"
@@ -98,6 +101,26 @@ std::string SharedBadgeRml(const ThreadMessage& message) {
   return "<span class=\"chat-shared-badge muted\">" + Tr("chat.shared_badge") + "</span>";
 }
 
+/** A local "couldn't read a message" line: worded from its payload (rows stored before had words). */
+std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
+  if (!message.text.empty() || message.sender_contact_id != kLocalSelfContactId) {
+    return std::nullopt;
+  }
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload || payload->getString("control_type").value_or("") != "receive_failure") {
+    return std::nullopt;
+  }
+  auto detail = TryParseObject(payload->getString("detail").value_or(""));
+  if (!detail) {
+    return std::nullopt;
+  }
+  const auto reason = ReceiveFailureFromWire(detail->getString("reason").value_or(""));
+  if (!reason) {
+    return std::nullopt;
+  }
+  return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
+}
+
 std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts) {
   const ThreadMessage& message = entry.message;
   if (entry.control) {
@@ -140,6 +163,9 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts) 
       return InjectEntryPlaceholders(html, JsArgInAttribute(message.id));
     }
     return html;
+  }
+  if (auto failure = ReceiveFailureLine(message)) {
+    return SystemLineRml(*failure);
   }
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
     return SystemLineRml("They're using only this device for new messages.");

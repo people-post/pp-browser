@@ -256,7 +256,7 @@ void ConversationsFacade::SetOnMessagesChanged(std::function<void()> callback) {
   hub_.MeshMessaging().SetOnMessagesChanged(std::move(callback));
 }
 
-void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const std::string&)> callback) {
+void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   hub_.MeshMessaging().SetOnDeliveryNotice(std::move(callback));
 }
 

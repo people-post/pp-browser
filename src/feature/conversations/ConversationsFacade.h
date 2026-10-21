@@ -125,7 +125,7 @@ public:
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                    const std::string& emoji);
   void SetOnMessagesChanged(std::function<void()> callback);
-  void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
+  void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
   void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback);
   void SyncInboxFromWake(bool force);
   void TailSyncActiveE2eThread();

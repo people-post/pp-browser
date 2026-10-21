@@ -452,7 +452,7 @@ TEST(MessagingCrossCuttingTest, FindOnlyRejectsUnknownSenderThread) {
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
   // Stale/unknown peer traffic is silent — no receive_failure UI spam.
-  EXPECT_FALSE(outcome.receive_failure_notice.has_value());
+  EXPECT_FALSE(outcome.receive_failure.has_value());
 }
 
 TEST(MessagingCrossCuttingTest, E2ePublicIngestUsesEncryptedAutoKeyPath) {
@@ -699,8 +699,8 @@ TEST(MessagingCrossCuttingTest, ControlFamilyFailureRefusesTheMessage) {
       harness.MakeSignedPayloadEnvelope("ctl-4", 1, TestControl("test_ping")), harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
-  ASSERT_TRUE(outcome.receive_failure_notice.has_value());
-  EXPECT_NE(outcome.receive_failure_notice->find("couldn't apply ping update"), std::string::npos)
-      << *outcome.receive_failure_notice;
+  ASSERT_TRUE(outcome.receive_failure.has_value());
+  EXPECT_EQ(*outcome.receive_failure, ReceiveFailure::ApplyFailed);
+  EXPECT_EQ(outcome.receive_failure_family, "ping");
   EXPECT_FALSE(harness.Stored("ctl-4").has_value());
 }

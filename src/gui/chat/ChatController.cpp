@@ -5,6 +5,7 @@
 #include <fstream>
 #include "gui/chat/ChatController.h"
 
+#include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
@@ -3901,8 +3902,8 @@ void ChatController::WireMessagingBindings() {
       contacts_notify_.refresh();
     }
   });
-  facade_->SetOnDeliveryNotice([this](const std::string& message) {
-    ShowToast(message);
+  facade_->SetOnDeliveryNotice([this](const DeliveryNotice& notice) {
+    ShowToast(DeliveryNoticeText(notice));
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread(

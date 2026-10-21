@@ -442,8 +442,8 @@ TEST(GroupInviteIngestTest, InboundAcceptWithoutPendingIsRejected) {
   auto members = owner.roster.ListMembers("group:hike");
   ASSERT_TRUE(members);
   EXPECT_EQ(members->size(), 1u);
-  ASSERT_TRUE(outcome.receive_failure_notice.has_value());
-  EXPECT_NE(outcome.receive_failure_notice->find("membership"), std::string::npos);
+  ASSERT_TRUE(outcome.receive_failure.has_value());
+  EXPECT_EQ(*outcome.receive_failure, ReceiveFailure::MembershipUpdateFailed);
 }
 
 TEST(GroupInviteIngestTest, InboundMemberJoinedAddsPeerToRoster) {
@@ -631,7 +631,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeFromASenderOffTheRosterIsDropped) {
       bob.pipeline.ProcessEnvelope(GroupEnvelopeFrom("account:alice", "group:hike", "account:bob"), "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
-  EXPECT_FALSE(outcome.receive_failure_notice) << "dropped on the roster, not at signature / decrypt";
+  EXPECT_FALSE(outcome.receive_failure) << "dropped on the roster, not at signature / decrypt";
 }
 
 // ...and when we are no longer a member, though the group's thread is still there (removed by the owner).
@@ -643,7 +643,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeAfterLocalRemovalIsDropped) {
       bob.pipeline.ProcessEnvelope(GroupEnvelopeFrom("account:alice", "group:hike", "account:bob"), "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
-  EXPECT_FALSE(outcome.receive_failure_notice) << "dropped on the roster, not at signature / decrypt";
+  EXPECT_FALSE(outcome.receive_failure) << "dropped on the roster, not at signature / decrypt";
 }
 
 // An invite is recorded only when its sender is the inviter and we are the invitee, and only from

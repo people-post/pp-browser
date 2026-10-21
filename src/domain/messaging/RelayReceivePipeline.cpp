@@ -1,5 +1,7 @@
 #include "domain/messaging/RelayReceivePipeline.h"
 
+#include "domain/messaging/DeliveryNotice.h"
+
 #include <cstdlib>
 
 #include "domain/messaging/ChatPayloadCodec.h"
@@ -74,11 +76,12 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   return target;
 }
 
-void MarkReceiveFailure(RelayReceiveOutcome& outcome, const std::string& sender, const std::string& reason_short,
-                        const std::string& detail, const std::optional<std::string>& thread_id = std::nullopt) {
-  const std::string who = sender.empty() ? std::string("a peer") : ShortRelayId(sender);
-  outcome.receive_failure_notice = "Couldn't read a message from " + who + " (" + reason_short + ").";
-  outcome.receive_failure_detail = detail.empty() ? reason_short : detail;
+void MarkReceiveFailure(RelayReceiveOutcome& outcome, const std::string& sender, const ReceiveFailure reason,
+                        const std::string& detail, const std::optional<std::string>& thread_id = std::nullopt,
+                        const std::string& family = {}) {
+  outcome.receive_failure = reason;
+  outcome.receive_failure_family = family;
+  outcome.receive_failure_detail = detail.empty() ? std::string(ReceiveFailureWire(reason)) : detail;
   if (!sender.empty()) {
     outcome.receive_failure_sender = sender;
   }
@@ -115,8 +118,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundControl(ThreadMessage& message, cons
   SystemControlContext context{envelope.sender_contact_id, envelope.relay_created_at_ms, envelope.relay_server_time_ms};
   auto applied = family->apply(message, context);
   if (!applied && outcome_on_failure) {
-    MarkReceiveFailure(*outcome_on_failure, envelope.sender_contact_id, "couldn't apply " + family->name + " update",
-                       applied.error().message, thread_id);
+    MarkReceiveFailure(*outcome_on_failure, envelope.sender_contact_id, ReceiveFailure::ApplyFailed,
+                       applied.error().message, thread_id, family->name);
   }
   return applied;
 }
@@ -627,7 +630,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   auto thread = store_.FindDirectThread(inbound_target);
   if (!thread) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "thread lookup failed", thread.error().message);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ThreadLookupFailed, thread.error().message);
     return outcome;
   }
 
@@ -640,7 +643,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   if (!auto_create && !IsEnvelopeFromPeer(**thread, envelope)) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "sender mismatch", "Envelope sender is not the thread peer",
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SenderMismatch, "Envelope sender is not the thread peer",
                        (*thread)->id);
     return outcome;
   }
@@ -651,7 +654,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     auto has_message_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
     if (!has_message_id) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, "store error", has_message_id.error().message,
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::StoreError, has_message_id.error().message,
                          resolved_thread_id);
       return outcome;
     }
@@ -697,13 +700,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   auto verified = VerifySignature(envelope, inbound_target);
   if (!verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "signature check failed", verified.error().message,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SignatureCheckFailed, verified.error().message,
                        resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
     return outcome;
   }
   if (!*verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "bad signature", "Envelope signature did not verify",
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::BadSignature, "Envelope signature did not verify",
                        resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
     return outcome;
   }
@@ -713,7 +716,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   if (E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
     if (local_relay_user_id.empty()) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, "missing local identity",
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MissingLocalIdentity,
                          "Local account identity unavailable for decrypt",
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
@@ -730,7 +733,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       auto kem_private = local_keys_.kem_private_key();
       if (!kem_private) {
         outcome.decision = IngestDecision::HardReject;
-        MarkReceiveFailure(outcome, envelope.sender_contact_id, "missing decryption key", kem_private.error().message,
+        MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MissingKey, kem_private.error().message,
                            resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
         return outcome;
       }
@@ -742,7 +745,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                                                            local_kem_private_key, &read);
     if (!decrypted) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't decrypt", decrypted.error().message,
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message,
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
     }
@@ -761,7 +764,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
     if (!decoded) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't decode", decoded.error().message,
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecodeFailed, decoded.error().message,
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
     }
@@ -772,7 +775,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         decoded->content_type != ChatContentType::Attachment &&
         decoded->content_type != ChatContentType::Unsupported) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, "unsupported content",
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::Unsupported,
                          "Inbound payload content type not supported",
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
@@ -786,7 +789,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       message.content_type != ChatContentType::CryptoTx && message.content_type != ChatContentType::Attachment &&
       message.content_type != ChatContentType::Unsupported) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "unsupported content",
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::Unsupported,
                        "Decoded message content type not supported",
                        resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
     return outcome;
@@ -805,7 +808,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         inbound_target, "", fallback_title.empty() ? envelope.sender_contact_id : fallback_title);
     if (!created) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't open chat", created.error().message);
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::OpenChatFailed, created.error().message);
       return outcome;
     }
     resolved_thread_id = created->id;
@@ -827,7 +830,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   if (auto rotate = ValidateInboundPskRotate(envelope, message); !rotate) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply key update", rotate.error().message,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::KeyUpdateFailed, rotate.error().message,
                        resolved_thread_id);
     return outcome;
   }
@@ -912,7 +915,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         persisted.session_epoch = envelope.session_epoch;
         if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
             !membership) {
-          MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
+          MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
                              membership.error().message, resolved_thread_id);
           return outcome;
         }
@@ -958,7 +961,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
       !membership) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
@@ -971,7 +974,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ReactionRejected, cap.error().message,
                        resolved_thread_id);
     return outcome;
   }
@@ -1053,12 +1056,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   auto verified = VerifySignature(envelope, inbound_target);
   if (!verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "signature check failed", verified.error().message);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SignatureCheckFailed, verified.error().message);
     return outcome;
   }
   if (!*verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "bad signature", "Group envelope signature did not verify");
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::BadSignature, "Group envelope signature did not verify");
     return outcome;
   }
   outcome.sender_verified = true;
@@ -1066,7 +1069,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   auto kem_private = local_keys_.kem_private_key();
   if (!kem_private) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "missing decryption key", kem_private.error().message);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MissingKey, kem_private.error().message);
     return outcome;
   }
 
@@ -1078,7 +1081,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     if (auto existing = store_.FindGroupThread(group_id); existing && *existing) {
       tid = (**existing).id;
     }
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't decrypt", decrypted.error().message, tid);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message, tid);
     return outcome;
   }
   ThreadMessage message = std::move(*decrypted);
@@ -1091,7 +1094,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   auto thread = store_.FindGroupThread(group_id);
   if (!thread) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "thread lookup failed", thread.error().message);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ThreadLookupFailed, thread.error().message);
     return outcome;
   }
   if (!*thread) {
@@ -1104,7 +1107,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   auto has_message_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
   if (!has_message_id) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "store error", has_message_id.error().message,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::StoreError, has_message_id.error().message,
                        resolved_thread_id);
     return outcome;
   }
@@ -1158,7 +1161,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
       !membership) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
@@ -1167,7 +1170,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ReactionRejected, cap.error().message,
                        resolved_thread_id);
     return outcome;
   }

@@ -22,6 +22,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     ChatPayloadValidator.cpp
     ChatSyncLogic.cpp
     ConversationSummaryCodec.cpp
+    DeliveryNotice.cpp
     E2eIngestClassifier.cpp
     E2eRelayPayloadCodec.cpp
     EnvelopeSigner.cpp
