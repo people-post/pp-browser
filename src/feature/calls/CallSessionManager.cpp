@@ -1370,6 +1370,15 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   if (!local) {
     return local.error();
   }
+  // Everything but an invite (and the stream's summary) speaks about a call the sender is in: its
+  // initiator or a current participant. A peer who declined or left it, or never was in it, does not
+  // end it, change its roster or steer its media.
+  if (*type != CallControlType::CallInvite && *type != CallControlType::CallSummary &&
+      !SenderIsInCall(detail_json, sender_identity)) {
+    log().info << "call control dropped (sender not in the call) type=" << static_cast<int>(*type)
+               << " from=" << sender_identity;
+    return {};
+  }
 
   switch (*type) {
   case CallControlType::CallInvite:
@@ -1419,6 +1428,33 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   return {};
 }
 
+
+bool CallSessionManager::SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const {
+  auto detail = TryParseObject(detail_json);
+  auto call_id = detail ? detail->getString("call_id") : std::nullopt;
+  if (!call_id || call_id->empty() || sender_identity.empty()) {
+    return false;
+  }
+  if (auto session = sessions_.LoadSession(*call_id); session && session->has_value() &&
+                                                     (*session)->initiator_identity == sender_identity) {
+    return true;
+  }
+  auto participant = sessions_.FindParticipant(*call_id, sender_identity);
+  if (!participant || !participant->has_value()) {
+    return false;
+  }
+  switch ((*participant)->state) {
+  case CallParticipantState::Invited:
+  case CallParticipantState::Ringing:
+  case CallParticipantState::Joined:
+    return true;
+  case CallParticipantState::Left:
+  case CallParticipantState::Declined:
+  case CallParticipantState::Missed:
+    return false;
+  }
+  return false;
+}
 
 Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
   return control_.LocalRelayIdentity();

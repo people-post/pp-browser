@@ -294,6 +294,8 @@ public:
 
 private:
   // Topology HostPorts helpers (V046 — not CallTopologyHost overrides)
+  /** The control's call (its detail's call_id) has `sender_identity` as initiator or current participant. */
+  bool SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const;
   Roe<std::string> TopologyLocalIdentity() const;
   Roe<void> TopologyLeaveCall(const std::string& call_id);
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,

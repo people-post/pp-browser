@@ -650,6 +650,12 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   local.state = CallParticipantState::Joined;
   local.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(local));
+  CallParticipant peer;  // the peer who ends it is in the call
+  peer.call_id = call_id;
+  peer.identity = "account:peer";
+  peer.state = CallParticipantState::Joined;
+  peer.joined_at = session.created_at;
+  ASSERT_TRUE(sessions_->UpsertParticipant(peer));
 
   csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"});  // as StartCall does
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::OutboundStarted, call_id); });
