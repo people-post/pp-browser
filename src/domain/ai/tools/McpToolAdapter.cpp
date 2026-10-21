@@ -58,7 +58,7 @@ std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const M
   std::vector<ToolDescriptor> out;
   auto tools = client.ListTools(options.list_timeout_s);
   if (listed) {
-    *listed = static_cast<bool>(tools);
+    *listed = client.LastRequestAnswered(); // a failing answer counts: the server is there
   }
   if (!tools) {
     return out;

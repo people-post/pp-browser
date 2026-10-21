@@ -4523,6 +4523,9 @@ void ChatController::OnApplicationPause() {
 }
 
 void ChatController::FlushHeldAgentSend() {
+  if (!held_agent_send_.Holding()) {
+    return;
+  }
   HeldAgentSend::Send send;
   const HeldAgentSend::Step step =
       held_agent_send_.Poll(AgentCloudReady(), std::chrono::steady_clock::now(), send);
@@ -4531,18 +4534,28 @@ void ChatController::FlushHeldAgentSend() {
   }
   if (step == HeldAgentSend::Step::Expired) {
     log().info << "Held send given up: the assistant did not connect in time";
-    UserFeedback::NeedsSetup(Tr("chat.hint.brief_unavailable_temp"));
+    UserFeedback::NeedsSetup(Tr("chat.hint.assistant_not_connected"));
     return;
   }
   if (ChromeSnapshot().banner_message == Tr("chat.status.connecting") && shell_feedback_.dismiss_banner) {
     shell_feedback_.dismiss_banner();
   }
-  if (send.thread_id != ActiveThreadId()) {
-    log().info << "Held send dropped: another thread is open now";
+  switch (HeldSendFateOf(send, ActiveThreadId(), chat_.loading)) {
+  case HeldSendFate::Send:
+    log().info << "Sending the held message: the assistant is connected";
+    SendUserText(send.text, std::move(send.payload), send.from_home_chip);
+    return;
+  case HeldSendFate::BackToDraft: {
+    log().info << "Held send put back in the composer: another thread is open, or a reply is loading";
+    const std::string draft = chat_.draft.c_str();
+    chat_.draft = (draft.empty() ? send.text : send.text + "\n" + draft).c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
     return;
   }
-  log().info << "Sending the held message: the assistant is connected";
-  SendUserText(send.text, std::move(send.payload), send.from_home_chip);
+  case HeldSendFate::Drop:
+    log().info << "Held chip send dropped: another thread is open, or a reply is loading";
+    return;
+  }
 }
 
 void ChatController::Update() {

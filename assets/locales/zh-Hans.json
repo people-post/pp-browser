@@ -655,6 +655,7 @@
     "chat.hint.brief_register": "请在 我 → 个人资料 中注册身份以使用 Brief 助手（或切换到 Cloud/Ollama）。",
     "chat.hint.brief_unavailable": "Brief 免费版暂时不可用 — 请稍后再试，或在 我 → 个人资料 中注册。",
     "chat.hint.brief_unavailable_temp": "Brief 免费版暂时不可用 — 请稍后再试。",
+    "chat.hint.assistant_not_connected": "助手还没连接上，请稍后再试。",
     "chat.hint.brief_key_save_failed": "暂时没法保存 AI 助手的授权，请稍后再试。",
     "chat.hint.mock_replies": "正在使用模拟回复 — 尚未配置 LLM。",
     "chat.hint.api_key_needed": "AI 助手还没准备好。用 Brief 的话开通账号即可；自带模型要在 我 → AI 助手 里填写。",

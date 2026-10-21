@@ -75,3 +75,24 @@ TEST(HeldAgentSendTest, ClearDropsTheHeldSend) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+namespace {
+
+// Once the assistant is ready the held send goes out only into the thread it was made in, and not over a reply
+// still loading there. Otherwise typed text goes back into the composer; a chip is dropped (it can be re-tapped).
+TEST(HeldAgentSendTest, FateWhenTheAssistantIsReady) {
+  const HeldAgentSend::Send typed{.text = "hi", .thread_id = "t1"};
+  const HeldAgentSend::Send chip{.text = "latest briefs", .from_home_chip = true, .thread_id = "t1"};
+
+  EXPECT_EQ(HeldSendFateOf(typed, "t1", /*reply_loading=*/false), HeldSendFate::Send);
+  EXPECT_EQ(HeldSendFateOf(chip, "t1", false), HeldSendFate::Send);
+
+  EXPECT_EQ(HeldSendFateOf(typed, "t2", false), HeldSendFate::BackToDraft);
+  EXPECT_EQ(HeldSendFateOf(typed, "t1", true), HeldSendFate::BackToDraft);
+  EXPECT_EQ(HeldSendFateOf(chip, "t2", false), HeldSendFate::Drop);
+  EXPECT_EQ(HeldSendFateOf(chip, "t1", true), HeldSendFate::Drop);
+}
+
+} // namespace
+} // namespace pbr

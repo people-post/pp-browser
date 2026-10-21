@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -753,6 +754,8 @@ struct FakeMcpServer {
   std::atomic<int> failing_lists{0}; // tools/list fails this many times, then answers; < 0: always fails
   std::atomic<long> last_list_timeout_s{-1};
   std::string tool_name = "blog_articles"; // what tools/list offers
+  std::atomic<int> list_status{200};        // non-200: the server is up but answers tools/list with this status
+  std::atomic<bool> hold_list{false};       // tools/list waits (up to 2 s) until this is cleared
 };
 
 HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
@@ -761,6 +764,13 @@ HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
     if (body.find("\"tools/list\"") != std::string::npos) {
       server->last_list_timeout_s = timeout_s;
       const int call = server->list_calls.fetch_add(1);
+      const auto held = std::chrono::steady_clock::now();
+      while (server->hold_list && std::chrono::steady_clock::now() - held < std::chrono::seconds(2)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      if (server->list_status != 200) {
+        return HttpResponse{.status_code = server->list_status, .body = "Service Unavailable"};
+      }
       if (server->failing_lists < 0 || call < server->failing_lists) {
         return Error("connection refused");
       }
@@ -922,7 +932,10 @@ TEST_F(AgentSessionFeedRelistTest, SubmitDuringAConfigureRunsOnceItIsDone) {
   StartWithPromotedMcp(true, -1);
   auto in_configure = std::make_shared<std::atomic<bool>>(false);
   auto release = std::make_shared<std::atomic<bool>>(false);
-  session_->SetToolRegistrationHook([in_configure, release](ToolRegistry&) {
+  session_->SetToolRegistrationHook([this, in_configure, release](ToolRegistry&) {
+    // ConfigureOnIO installs the real HTTP post before this hook runs: put the fake server back, now listing.
+    server_->failing_lists = 0;
+    McpClient::SetHttpPost(FakeMcpPost(server_));
     *in_configure = true;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (!*release && std::chrono::steady_clock::now() < deadline) {
@@ -943,13 +956,102 @@ TEST_F(AgentSessionFeedRelistTest, SubmitDuringAConfigureRunsOnceItIsDone) {
   std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the submit reaches a worker mid-configure
   *release = true;
   const auto events = WaitForTurn();
-  const auto errors = Of(events, AgentEventType::Error);
-  ASSERT_EQ(errors.size(), 1u); // the feed tool never appears (closed port): the turn ran and ended
-  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u); // the queued feed turn ran, re-listed the fake server and showed the feed
+  EXPECT_EQ(ready[0].response_goal, ResponseGoal::DisplayFeed);
+  EXPECT_GT(server_->list_calls.load(), 0); // the fake server, not the real transport, answered
 
   session_->SubmitToThread("t1", "What is in the news today?"); // not dropped as "busy"
   const auto next = WaitForTurn();
   EXPECT_EQ(Of(next, AgentEventType::AssistantReady).size(), 1u);
+}
+
+// The server is up but answers tools/list with an error status (a deploy's 503): it answered, so waiting longer
+// cannot help — fail at once instead of polling for the whole wait.
+TEST_F(AgentSessionFeedRelistTest, ServerErrorStatusFailsAtOnce) {
+  StartWithPromotedMcp(true, 0, std::chrono::milliseconds(5000));
+  server_->list_status = 503;
+  const auto started = std::chrono::steady_clock::now();
+  SubmitArticles();
+  const auto events = WaitForTurn();
+
+  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(1000));
+  EXPECT_EQ(server_->list_calls.load(), 1);
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
+}
+
+// Stop while tools/list is in flight: the listing that comes back afterwards is not written into the registry
+// (the next turn may already be reading it), so the next feed turn still finds the tool missing.
+TEST_F(AgentSessionFeedRelistTest, CancelDuringTheListingRegistersNothing) {
+  StartWithPromotedMcp(true, 0, std::chrono::milliseconds(300));
+  server_->hold_list = true;
+  const auto started = std::chrono::steady_clock::now();
+  SubmitArticles();
+  while (server_->list_calls.load() < 1 && std::chrono::steady_clock::now() - started < std::chrono::seconds(2)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_EQ(server_->list_calls.load(), 1);
+  session_->Cancel();
+  server_->hold_list = false; // the listing (with the tool) now returns to a stopped turn
+  const auto stopped = WaitForTurn();
+  EXPECT_TRUE(Of(stopped, AgentEventType::AssistantReady).empty());
+
+  server_->failing_lists = -1; // from here on the server is unreachable
+  SubmitArticles();
+  const auto events = WaitForTurn();
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
+}
+
+// A Configure that fails while a question waits for it ends that question (error + loading off) instead of
+// leaving the session busy: the next question, after a good Configure, runs.
+TEST_F(AgentSessionBriefStreamTest, SubmitDuringAFailingConfigureEndsTheTurn) {
+  Start();
+  Script({Meta(), Token("ok"), Done("ok")}, BriefAiOutcome::Done);
+  auto in_configure = std::make_shared<std::atomic<bool>>(false);
+  auto release = std::make_shared<std::atomic<bool>>(false);
+  auto fail = std::make_shared<std::atomic<bool>>(true);
+  session_->SetToolRegistrationHook([in_configure, release, fail](ToolRegistry&) {
+    if (!*fail) {
+      return;
+    }
+    *in_configure = true;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!*release && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    throw std::runtime_error("registry broke");
+  });
+  session_->Configure(MakeConfig("brief"));
+  const auto started = std::chrono::steady_clock::now();
+  while (!*in_configure && std::chrono::steady_clock::now() - started < std::chrono::seconds(2)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_TRUE(*in_configure);
+  session_->Submit("hi there");
+  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the submit is queued behind the configure
+  *release = true;
+  const auto failed = WaitForTurn();
+  const auto errors = Of(failed, AgentEventType::Error);
+  ASSERT_FALSE(errors.empty()); // the configure's own error, and the queued question's
+  for (const AgentEvent& error : errors) {
+    EXPECT_NE(error.message.find("Agent configure failed"), std::string::npos) << error.message;
+  }
+  EXPECT_TRUE(Of(failed, AgentEventType::AssistantReady).empty());
+
+  *fail = false;
+  session_->Configure(MakeConfig("brief"));
+  session_->WaitForConfigureIdle();
+  ASSERT_TRUE(session_->IsConfigured());
+  session_->Submit("hi again"); // not dropped as "busy"
+  const auto next = WaitForTurn();
+  ASSERT_EQ(Of(next, AgentEventType::AssistantReady).size(), 1u);
+  EXPECT_EQ(Requests().back().message, "hi again");
 }
 
 TEST_F(AgentSessionPayloadTurnTest, FindSomeoneChipListsThePeopleWithoutAnyModelCall) {

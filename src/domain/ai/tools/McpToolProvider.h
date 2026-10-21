@@ -17,7 +17,7 @@ public:
 
   std::string Id() const override;
   std::vector<ToolDescriptor> ListTools() override;
-  /** Whether the last ListTools() got an answer from the server (an empty list counts). */
+  /** Whether the last ListTools() got an answer from the server (an empty list or an error status counts). */
   bool Listed() const { return listed_; }
 
 private:

@@ -57,4 +57,19 @@ private:
   std::chrono::steady_clock::time_point deadline_{};
 };
 
+enum class HeldSendFate { Send, BackToDraft, Drop };
+
+/**
+ * Once the assistant is ready, a held send goes out only into the thread it was made in, and not over a reply
+ * still loading there. Otherwise typed text goes back into the composer so it is not lost; a Home chip is
+ * dropped (it can simply be tapped again).
+ */
+inline HeldSendFate HeldSendFateOf(const HeldAgentSend::Send& send, const std::string& active_thread_id,
+                                   const bool reply_loading) {
+  if (send.thread_id == active_thread_id && !reply_loading) {
+    return HeldSendFate::Send;
+  }
+  return send.from_home_chip ? HeldSendFate::Drop : HeldSendFate::BackToDraft;
+}
+
 } // namespace pbr

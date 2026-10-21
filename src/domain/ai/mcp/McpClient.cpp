@@ -87,6 +87,7 @@ bool McpClient::StartHttp(const std::string& url) {
 }
 
 Roe<Object> McpClient::Request(const std::string& method, const Object& params, const long timeout_s) {
+  answered_ = mock_;
   if (mock_) {
     if (method == "initialize") {
       Object out;
@@ -133,6 +134,7 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params, 
       log().error << "HTTP MCP request failed for " << method << ": " << response.error().message;
       return response.error();
     }
+    answered_ = true;
     if (response->status_code < 200 || response->status_code >= 300) {
       log().error << "HTTP MCP status " << response->status_code << " for " << method;
       return Error("HTTP MCP status " + std::to_string(response->status_code));
@@ -188,6 +190,7 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params, 
     Stop();
     return response.error();
   }
+  answered_ = true;
   const Object* resp = &*response;
 
   if (auto err_slot = resp->fields().tryGet("error")) {

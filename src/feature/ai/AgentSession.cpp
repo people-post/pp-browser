@@ -43,6 +43,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <thread>
+#include <utility>
 #include "common/ValueJson.h"
 
 #include <unordered_set>
@@ -123,6 +124,7 @@ struct AgentSession::Impl : public Module {
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
+  bool configure_failed = false; // the last ConfigureOnIO threw; guarded by configure_work_mutex
   bool submit_when_ready = false;
   std::chrono::steady_clock::time_point planner_started{};
   std::chrono::steady_clock::time_point synthesis_started{};
@@ -779,20 +781,29 @@ AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_
       if (!promoted || !promoted->IsRunning()) {
         return FeedRelist::Unavailable; // disabled or not configured: nothing to wait for
       }
+      if (promoted->IsStdio()) {
+        return FeedRelist::Unavailable; // a local server ignores the short bound (30 s reads): do not wait on it
+      }
       if (first) {
         state->Log().warning << "Planned tool(s) not registered: " << wanted
                              << "; re-listing the promoted MCP server for up to "
                              << state->missing_tool_wait.count() << " ms";
         first = false;
       }
-      const bool answered = RegisterPromotedMcpTools(state->tools, *promoted, kRelistTimeoutS);
+      // A turn that replaced this one after Cancel() may already read the registry: register nothing then.
+      const bool answered = RegisterPromotedMcpTools(state->tools, *promoted, kRelistTimeoutS, cancel.get());
+      if (cancel->load()) {
+        state->Log().info << "Turn stopped while re-listing the promoted MCP tools";
+        return FeedRelist::Cancelled;
+      }
       const std::string still = missing();
       if (still.empty()) {
         state->Log().info << "Promoted MCP tools listed after " << ElapsedMs(started) << " ms";
         return FeedRelist::Listed;
       }
       if (answered) {
-        // The server is reachable and does not offer the tool: waiting longer cannot help.
+        // The server is reachable (it listed, or answered with an error) and does not offer the tool: waiting
+        // longer cannot help.
         state->Log().warning << "Promoted MCP server listed its tools without: " << still;
         return FeedRelist::Unavailable;
       }
@@ -1244,13 +1255,20 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
 // A submit made while ConfigureOnIO runs must not be lost: checking `configured` and setting
 // submit_when_ready under configure_work_mutex (which ConfigureOnIO holds until it has consumed the flag)
 // means the flag is either set before ConfigureOnIO looks at it, or the turn sees `configured` and starts.
-// True: start the turn now (outside the lock: the turn may take configure_work_mutex itself).
+// True: start the turn now (outside the lock: the turn may take configure_work_mutex itself). After a failed
+// configure nothing would start a queued turn, so it ends here with the error instead of staying busy.
 bool AgentSession::StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state) {
-  std::lock_guard work_lock(state->configure_work_mutex);
+  std::unique_lock work_lock(state->configure_work_mutex);
   if (state->configured) {
     return true;
   }
-  state->submit_when_ready = true;
+  if (!state->configure_failed) {
+    state->submit_when_ready = true;
+    return false;
+  }
+  work_lock.unlock();
+  PushError(state, "Agent configure failed");
+  FinishTurn(state);
   return false;
 }
 
@@ -1264,6 +1282,15 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
   // unlock_in_progress stuck on Android.
   std::unique_lock work_lock(state->configure_work_mutex);
+  // A failed configure ends a question queued for it (its error, then loading off) instead of leaving it busy.
+  const auto end_queued_submit = [&] {
+    const bool queued = std::exchange(state->submit_when_ready, false);
+    work_lock.unlock();
+    if (queued) {
+      FinishTurn(state);
+    }
+  };
+  state->configure_failed = false;
   try {
     LlmConfig llm_config = state->config.llm;
     if (ResolvePreset(state->config) == "brief") {
@@ -1312,21 +1339,25 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
   } catch (const std::exception& e) {
     state->configured = false;
+    state->configure_failed = true;
     state->mcp.Stop();
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: " << e.what();
     PushError(state, std::string("Agent configure failed: ") + e.what());
+    end_queued_submit();
     return;
   } catch (...) {
     state->configured = false;
+    state->configure_failed = true;
     state->mcp.Stop();
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: unknown exception";
     PushError(state, "Agent configure failed");
+    end_queued_submit();
     return;
   }
 

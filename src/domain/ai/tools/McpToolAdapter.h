@@ -23,7 +23,8 @@ class McpToolAdapter {
 public:
   // Build descriptors for tools currently advertised by the client.
   // `occupied_names` skips collisions (e.g. tools already in the registry).
-  // `listed` (optional): whether tools/list answered; a failed listing returns no tools.
+  // `listed` (optional): whether the server answered tools/list, even with an error (McpClient::LastRequestAnswered);
+  // a failed listing returns no tools.
   static std::vector<ToolDescriptor> ListTools(McpClient& client, const McpToolAdapterOptions& options = {},
                                                const std::unordered_set<std::string>& occupied_names = {},
                                                const std::string& provider_id = {},
