@@ -1,8 +1,8 @@
 # Mesh DHT — AMP Kademlia peer routing (spec)
 
 **Tier:** contract (draft — **n2-spec**; implementation **n2-core**)  
-**Status:** Draft v1  
-**Date:** 2026-09-02  
+**Status:** Draft v1 (routing table, iterative lookup, publish at the k closest: 2026-10-21)  
+**Date:** 2026-09-02, updated 2026-10-21 — design: pp-cpp-mesh [docs/DHT.md](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/DHT.md)  
 **Related:** [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1), [DISCOVERY_ROADMAP](../../projects/p2p-mesh/DISCOVERY_ROADMAP.md), [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md) (pp-ledger fleet DHT retired)
 
 ## Purpose
@@ -25,6 +25,7 @@ DHT **feeds candidates** only. [`MeshHopPolicy`](../../src/base/people/MeshHopPo
 | Default | `capabilities.dht = false` |
 | Publish gate | Reachability ≠ `Blocked`; advertise dialable ADP multiaddrs only |
 | Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](https://github.com/people-post/pp-cpp-mesh/blob/develop/include/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
+| Lookups | A participating Node walks the DHT (iterative, below). A Client asks its query peers only and follows no `closer_peers` — a walk tells strangers whom you look for |
 
 ## Transport
 
@@ -45,6 +46,7 @@ No second UDP stack; reuse existing Amp association to peers.
 |----------|-------|-------|
 | `k` | 20 | Bucket size target (`mesh.dht.k_bucket_size` override reserved) |
 | `α` | 3 | Parallel lookup width |
+| `k_closer` | 20 (= `k`) | Most `closer_peers` in one answer |
 | Key width | 256 bit | XOR metric on `Key256(record_key)` |
 | Record key (v1) | `BLAKE2b-256("pp-mesh/dht/peer-routing/v1\\0" ‖ PeerId_multihash_bytes)` | Stable per target PeerId |
 
@@ -61,7 +63,10 @@ All messages include:
 ### `ping`
 
 Request: `{ "op": "ping", "req_id", "version": 1 }`  
-Response: `{ "op": "pong", "req_id", "version": 1, "peer_id": "<local PeerId base58>" }`
+Response: `{ "op": "pong", "req_id", "version": 1, "peer_id": "<local PeerId base58>", "participant": true }`
+
+`participant` (in `pong` and `find_peer_result`): the responder takes part in the DHT. Absent =
+`false` (older nodes).
 
 ### `find_peer` (v1 consumer)
 
@@ -85,14 +90,15 @@ Response (success):
   "version": 1,
   "peer_id": "12D3KooW…",
   "records": [ { …PeerRoutingRecord… } ],
-  "closer_peers": [ { "peer_id": "…", "multiaddr": "/ip4/…/adp/…/p2p/…" } ]
+  "closer_peers": [ { "peer_id": "…", "multiaddr": "/ip4/…/adp/…/p2p/…" } ],
+  "participant": true
 }
 ```
 
 | Field | Semantics |
 |-------|-----------|
 | `records` | Zero or more signed `peer_routing` records matching `peer_id` (best `seq` first) |
-| `closer_peers` | Kademlia hint set (≤ `α` entries) toward the lookup key |
+| `closer_peers` | Up to `k_closer` contacts from the responder's routing table closest to the lookup key, never the asker. Each `multiaddr` ends in `/p2p/<peer_id>` (dialling it authenticates the peer); entries that do not are skipped. A hint to ask — never a routing-table entry by itself |
 
 Response (error):
 
@@ -117,6 +123,24 @@ Response: `{ "op": "store_result", "req_id", "version": 1, "ok": true }`
 
 **v1 implementation scope:** nodes STORE only their **own** `peer_id` record; relay STORE for third parties deferred (n2-hard).
 
+**Where:** a Node STOREs its record at the (up to) `k` nodes closest to its own key that answer a
+walk to it, and at its query peers (where Clients ask). It re-publishes at `ttl_seconds / 2` and
+at once when its addresses change.
+
+## Routing table and lookup
+
+- **Admission:** a peer enters the routing table only after an authenticated exchange that shows
+  it takes part — its `store` was accepted, or it answered with `participant: true`. Its dial
+  address comes from its own signed record, or is the hinted address an authenticated dial just
+  reached. At most 2 entries per IPv4 /24 (IPv6 /48) per bucket; a full bucket keeps its
+  long-lived entries (the oldest is pinged only after 15 min of silence).
+- **Liveness** is the mesh reach record's: a peer it holds down (and with no link up) is not
+  dialled, not stored at, and leaves the table.
+- **Lookup:** iterative Kademlia — `α` asks in flight to the closest not yet asked, hints joined
+  as they arrive; it stops asking at a valid record, once the `k` closest seen have answered or
+  failed, or after 30 asks / 8 s. A self answer (the record's subject answering) beats any other;
+  else the highest `seq`. A lookup answered without a record is not repeated for 60 s.
+
 ## `PeerRoutingRecord` (v1)
 
 ```json
@@ -131,14 +155,20 @@ Response: `{ "op": "store_result", "req_id", "version": 1, "ok": true }`
     "/ip4/203.0.113.10/udp/443/adp/1.0.0/p2p/12D3KooW…"
   ],
   "signature_b64": "…",
-  "signature_alg": "ml-dsa-65"
+  "signature_alg": "ml-dsa-65",
+  "public_key_b64": "…"
 }
 ```
+
+`public_key_b64` is the signer's ML-DSA-65 public key. It is not part of the signing bytes (the
+PeerId binds it). A publisher always sets it; a STORE server keeps the sender's session key there.
 
 Validation (implementations MUST):
 
 1. `signature_alg` = `ml-dsa-65`.
-2. `peer_id` matches mesh identity derived from signing key.
+2. `peer_id` matches mesh identity derived from signing key: when the record's subject answers, the
+   key is its authenticated session key; otherwise `public_key_b64` must derive `peer_id` and the
+   signature must verify under it. A record from anyone else without `public_key_b64` is dropped.
 3. Each `multiaddr` contains `/p2p/<peer_id>` consistent with `peer_id`.
 4. Prefer ADP multiaddrs (`/adp/1.0.0/`) for dial; ignore undialable private addrs unless link-local policy applies.
 5. Reject when `issued_at + ttl_seconds` ≤ now (relay clock skew: allow 60s grace).
@@ -204,8 +234,8 @@ UI checkbox ships with **n2-core** (N008 — no inert controls). Ops: `pp-node -
 | Control | Behavior |
 |---------|----------|
 | Inbound rate limit | Per remote PeerId sliding window on FIND_PEER + STORE |
-| STORE validation | Reject `not_self`, `expired`, `bad_signature`, `seq_regression` with typed `error` responses |
-| Soft reputation | Skip bootstrap/query peers that return malformed/expired FIND_PEER records (cooldown) |
+| STORE validation | Reject `not_self`, `expired`, `bad_signature`, `bad_key` (a `public_key_b64` that is not the sender's), `seq_regression` with typed `error` responses |
+| Soft reputation | Skip peers that return malformed or wrongly signed FIND_PEER records (cooldown); an expired record is skipped, not held against its server |
 | Concurrency | Cap outbound FIND_PEER by `max_concurrent_lookups` |
 
 ## Non-goals (v1)
