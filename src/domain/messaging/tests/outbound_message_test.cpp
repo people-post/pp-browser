@@ -231,3 +231,18 @@ TEST(OutboundSendRulesTest, AGroupMembersCopy) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+namespace {
+
+TEST(OutboxRetryTest, WhatIsStillWorthSending) {
+  EXPECT_TRUE(OutboxSendStillWanted(/*control_lane=*/true, kControlRetryWindowMs, false));
+  EXPECT_FALSE(OutboxSendStillWanted(true, kControlRetryWindowMs + 1, false)) << "signaling past its use";
+  EXPECT_TRUE(OutboxSendStillWanted(false, kControlRetryWindowMs * 100, false)) << "a chat message waits";
+  EXPECT_FALSE(OutboxSendStillWanted(false, 0, /*thread_paused=*/true));
+  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1));
+  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts)) << "then it fails";
+}
+
+} // namespace
+} // namespace pbr

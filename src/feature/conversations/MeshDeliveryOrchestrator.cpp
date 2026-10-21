@@ -1576,11 +1576,9 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
   const int64_t now_ms = util::NowUnixMs();
   pending.erase(std::remove_if(pending.begin(), pending.end(),
                                [this, now_ms](const PendingRelaySend& item) {
-                                 if (item.thread_id.empty()) {
-                                   // Control lane: signaling past its use is not worth sending.
-                                   return now_ms - item.envelope.timestamp > kControlRetryWindowMs;
-                                 }
-                                 return IsThreadCompromised(item.thread_id);
+                                 const bool control_lane = item.thread_id.empty();
+                                 return !OutboxSendStillWanted(control_lane, now_ms - item.envelope.timestamp,
+                                                               !control_lane && IsThreadCompromised(item.thread_id));
                                }),
                 pending.end());
   if (pending.empty()) {
@@ -1621,7 +1619,7 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
           (*process)(index + 1);
           return;
         }
-        if (item.attempt_count < kMaxOutboxRetryAttempts) {
+        if (OutboxRetryAgain(item.attempt_count)) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
           (*process)(index + 1);

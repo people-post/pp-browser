@@ -249,4 +249,12 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
   return envelope;
 }
 
+bool OutboxSendStillWanted(const bool control_lane, const int64_t age_ms, const bool thread_paused) {
+  return control_lane ? age_ms <= kControlRetryWindowMs : !thread_paused;
+}
+
+bool OutboxRetryAgain(const int attempts) {
+  return attempts < kMaxOutboxRetryAttempts;
+}
+
 } // namespace pbr

@@ -255,8 +255,6 @@ private:
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
   uint64_t NextControlOrderKey();
-  /** A control-lane send still unsent this long after it was made is dropped from the retry queue. */
-  static constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
   void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void NotifyRelayFallback(const std::string& thread_id);

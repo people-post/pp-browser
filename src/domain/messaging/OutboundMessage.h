@@ -94,4 +94,18 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
                                        const std::string& group_id, const std::string& recipient,
                                        std::string payload_b64, std::optional<std::string> key_init_b64);
 
+// --- The outbox: sends queued after a failed relay attempt ----------------------------------------
+
+/** Control-lane signaling (call control and the like) is not worth sending once this old. */
+inline constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
+
+/**
+ * Whether a queued send is still worth trying: control-lane signaling only within its window, and
+ * nothing on a chat whose messaging is paused (integrity broken).
+ */
+bool OutboxSendStillWanted(bool control_lane, int64_t age_ms, bool thread_paused);
+
+/** After another failed relay attempt (`attempts` so far): queue it again, or give up (failed). */
+bool OutboxRetryAgain(int attempts);
+
 } // namespace pbr
