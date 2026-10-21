@@ -92,7 +92,7 @@
     <button class="chat-suggestion" data-event-click="load_older_history()">{{i18n:chat.banner.load_older}}</button>
   </div>
   <div class="chat-messages-wrap">
-  <div id="chat-messages" class="messages" data-mount-id="messages" keep-focus=""
+  <div id="chat-messages" class="messages" data-mount-id="messages"
        data-event-scroll="messages_scroll()">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
       <p class="text muted">{{i18n:chat.empty_body}}</p>
