@@ -24,7 +24,7 @@ class CallStack;
 
 /**
  * Sealed UI-facing façade over the call stack (projects/thread-ownership t2b). Call state is owned
- * by the calls owner (`CallsThread`), never read or written from UI directly:
+ * by the calls owner (`CallStack`'s executor), never read or written from UI directly:
  * - **intents** post to the owner; ones with a result deliver it on UI through `on_done`;
  * - **owner state** (phase, status, flags, seat, hop health, …) reads the snapshot the owner
  *   publishes after each step (`CallStack::UiState`);

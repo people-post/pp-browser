@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/calls/CallsExecutor.h"
+#include "foundation/runtime/RuntimeOwnerExecutor.h"
 #include "foundation/runtime/OwnerOutbox.h"
 
 #include <chrono>
@@ -26,7 +26,8 @@ public:
 
 private:
   std::function<void(Event&)> handle_;
-  OwnerTasks tasks_{CallsOwnerExecutor()};
+  RuntimeOwnerExecutor executor_{OwnerThreadId::MediaSessions};
+  OwnerTasks tasks_{executor_};
 };
 
 } // namespace pbr

@@ -31,33 +31,11 @@ std::function<void(Roe<void>)> ReplyOnUi(std::function<void(Roe<void>)> on_done)
   };
 }
 
-/** The product runner's thread: the media-sessions owner (inline when the runtime has none). */
-class MediaSessionsExecutor final : public OwnerExecutor {
-public:
-  void Post(std::function<void()> task) override { AppRuntime::PostToOwnerOrRun(kOwner, std::move(task)); }
-  void PostFront(std::function<void()> task) override { AppRuntime::PostToFront(kOwner, std::move(task)); }
-  TimerId After(const std::chrono::milliseconds delay, std::function<void()> task) override {
-    return AppRuntime::ScheduleOn(kOwner, delay, std::move(task));
-  }
-  void Cancel(const TimerId id) override {
-    if (id != 0) {
-      AppRuntime::CancelCoordinatorTimer(id);
-    }
-  }
-  bool IsCurrent() const override { return AppRuntime::CurrentlyOn(kOwner); }
-  void RunAndWait(const std::function<void()>& task) override { AppRuntime::RunAndWait(kOwner, task); }
-};
-
-OwnerExecutor& MediaSessionsOwner() {
-  static MediaSessionsExecutor executor;
-  return executor;
-}
-
 } // namespace
 
 BroadcastHub::BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster,
                            OwnerExecutor* executor)
-    : executor_(executor ? *executor : MediaSessionsOwner()), tasks_(executor_),
+    : executor_(executor ? *executor : own_executor_), tasks_(executor_),
       engine_(std::make_unique<CallMediaEngine>(devices)), capture_engine_(std::make_unique<CallMediaEngine>(devices)) {
   viewer.engine = engine_.get();
   viewer_ = std::make_unique<BroadcastViewerWorkflow>(std::move(viewer));

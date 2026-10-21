@@ -1,6 +1,6 @@
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallsThread.h"
+#include "foundation/runtime/RuntimeOwnerExecutor.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/product/tests/calls_loopback_outbox.h"
 #include "feature/product/tests/calls_on_owner.h"
@@ -33,6 +33,12 @@
 
 namespace pbr {
 namespace {
+
+/** The calls owner as CallStack holds it (here: none, so the test thread stands in). */
+RuntimeOwnerExecutor& CallsOwner() {
+  static RuntimeOwnerExecutor executor{OwnerThreadId::MediaSessions};
+  return executor;
+}
 
 ByteVector TestDek() {
   ByteVector dek(kDataEncryptionKeySize);
@@ -952,7 +958,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutResta
   const int detaches = transport_->detach_calls;
   const int ensures = circuit_->call_media_ensure_calls.load();
 
-  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  CallsOwner().RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
   for (int i = 0; i < 400 && transport_->migrate_calls.load() == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -986,7 +992,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCirc
   AppRuntime::RunUIAndOwnerTasks();
   const int detaches = transport_->detach_calls;
 
-  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  CallsOwner().RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
   for (int i = 0; i < 400 && transport_->connect_async_calls < 2; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1060,7 +1066,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) 
   }
   ASSERT_EQ(circuit_->upgrade_calls.load(), 3);
 
-  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  CallsOwner().RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
   for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 4; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1099,7 +1105,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCall
   ASSERT_EQ(transport_->migrate_calls.load(), 1) << "the first re-anchor failed; the next is a minute away";
   ASSERT_EQ(host_->live.Status(), CallMediaStatus::Reconnecting);
 
-  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  CallsOwner().RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
   for (int i = 0; i < 200 && host_->live.Status() != CallMediaStatus::DirectLive; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1135,7 +1141,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
       << "nor may the transport move the call onto a direct link that happens to be up";
 
   remote = MobilityClass::Stationary;  // the peer's caps_update
-  CallsThread::RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
+  CallsOwner().RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
   for (int i = 0; i < 200 && circuit_->upgrade_calls.load() == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1228,7 +1234,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   ASSERT_TRUE(media_->IsActive());
-  CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(mesh::PeerLinkKind::Relayed); });  // reach loop: circuit
+  CallsOwner().RunAndWait([&] { bridge_->SetReachKindForTest(mesh::PeerLinkKind::Relayed); });  // reach loop: circuit
   for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));

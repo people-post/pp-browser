@@ -5,6 +5,7 @@ pp_browser_add_foundation_library(pp_foundation_runtime_core
     CoordinatorThread.cpp
     OwnerTasks.cpp
     OwnerThread.cpp
+    RuntimeOwnerExecutor.cpp
     ThreadRuntime.cpp
     WorkerDispatch.cpp
 )

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/calls/CallStackEvents.h"
-#include "feature/calls/CallsExecutor.h"
+#include "foundation/runtime/OwnerTasks.h"
 
 #include <chrono>
 #include <functional>
