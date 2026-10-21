@@ -3,7 +3,7 @@
 #include "feature/conversations/AiImageRef.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/AttachmentPlaintextMemoryCache.h"
-#include "domain/messaging/CasStore.h"
+#include "domain/content/CasStore.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"

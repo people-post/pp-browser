@@ -1,6 +1,6 @@
-#include "domain/messaging/CasLibrary.h"
+#include "domain/content/CasLibrary.h"
 
-#include "domain/messaging/CasStore.h"
+#include "domain/content/CasStore.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 

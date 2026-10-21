@@ -6,6 +6,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -59,10 +60,6 @@ bool AttachmentAllowsInlinePrivateView(const std::string& mime, uint64_t byte_le
 
 std::string FormatAttachmentByteSize(uint64_t byte_length);
 
-/** True when private CAS holds the hash. */
-bool AttachmentBlobExists(const std::string& profile_dir, const std::string& thread_id,
-                          const std::vector<uint8_t>& content_hash);
-
 /**
  * Absolute path to a plaintext file for display/open under `blobs_view/` only.
  * Empty if the view is not materialized.
@@ -72,27 +69,13 @@ std::string AttachmentLocalPath(const std::string& profile_dir, const std::strin
                                 const std::string& filename = {});
 
 /**
- * Persist attachment bytes into private CAS (PPBA under cas/private). Requires `dek` and
- * `profile_id` (C007 — no thread `blobs/` durable store).
- */
-Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
-                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                         const ByteVector& plaintext, const std::string& filename,
-                                         const ByteVector& dek, std::string_view profile_id);
-
-/** Load plaintext from private CAS. Requires `dek` and `profile_id`. */
-Roe<ByteVector> LoadAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
-                                        const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                        const std::string& filename, const ByteVector& dek,
-                                        std::string_view profile_id);
-
-/**
- * Ensure a plaintext file under `blobs_view/` by loading from private CAS when needed.
+ * Ensure a plaintext file under `blobs_view/`, from `load_plaintext` (the private content store)
+ * when it is not there yet.
  */
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                          const std::string& filename, const ByteVector& dek,
-                                          std::string_view profile_id);
+                                          const std::string& filename,
+                                          const std::function<Roe<ByteVector>()>& load_plaintext);
 
 /** `{blobs_view}/{hash}.poster.jpg` — session plaintext poster (wiped with view cache). */
 std::string AttachmentPosterPath(const std::string& profile_dir, const std::string& thread_id,
@@ -108,12 +91,9 @@ bool AttachmentPosterExists(const std::string& profile_dir, const std::string& t
  */
 Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                        const std::string& filename, const ByteVector& dek,
-                                        std::string_view profile_id, uint64_t known_byte_length = 0);
-
-Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
-                                      const ChatAttachmentFields& fields, const std::string& source_path,
-                                      const ByteVector& dek, std::string_view profile_id);
+                                        const std::string& filename,
+                                        const std::function<Roe<ByteVector>()>& load_plaintext,
+                                        uint64_t known_byte_length = 0);
 
 /** Remove view / pending-cipher caches for a thread (and any leftover pre-cutover `blobs/` dir). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);

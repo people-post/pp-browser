@@ -1,5 +1,5 @@
-#include "domain/messaging/CasStore.h"
-#include "domain/messaging/CasLibrary.h"
+#include "domain/content/CasStore.h"
+#include "domain/content/CasLibrary.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"

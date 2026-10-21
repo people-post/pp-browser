@@ -1,4 +1,5 @@
 #include "foundation/crypto/AttachmentContentCipher.h"
+#include "feature/conversations/AttachmentContent.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -138,7 +139,7 @@ TEST(ChatBlobResponderTest, RejectsNonParticipantRequester) {
   request.requester_identity_value = "relay:stranger";
 
   auto response = ChatBlobResponder::ServeFetch(harness.store, request, harness.local_relay_id,
-                                                harness.profile_data_dir);
+                                                harness.profile_data_dir, ChatBlobContentSource{});
   EXPECT_FALSE(static_cast<bool>(response));
 }
 
@@ -148,11 +149,14 @@ TEST(ChatBlobResponderTest, ServeFetchReturnsCiphertextForCachedPlaintext) {
   harness.SeedAttachmentMessage(fields);
   const ByteVector dek = TestDek();
   ASSERT_TRUE(static_cast<bool>(
-      SaveAttachmentPlaintext(harness.profile_data_dir, harness.thread.id, fields.content_hash, fields.mime,
-                              harness.plain, fields.filename, dek, "profile-a")));
+      SaveAttachmentPlaintext(harness.profile_data_dir, "profile-a", fields.content_hash, fields.mime, harness.plain, fields.filename, dek)));
 
+  ChatBlobContentSource content;
+  content.private_plaintext = [&](const std::vector<uint8_t>& content_hash) {
+    return LoadAttachmentPlaintext(harness.profile_data_dir, "profile-a", content_hash, dek);
+  };
   auto response = ChatBlobResponder::ServeFetch(harness.store, harness.MakeFetchRequest(fields),
-                                                harness.local_relay_id, harness.profile_data_dir, &dek, "profile-a");
+                                                harness.local_relay_id, harness.profile_data_dir, content);
   ASSERT_TRUE(static_cast<bool>(response));
 
   const ByteVector cipher_bytes(response->begin(), response->end());

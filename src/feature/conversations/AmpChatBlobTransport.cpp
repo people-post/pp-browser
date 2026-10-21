@@ -3,7 +3,9 @@
 #include "mesh/l4/shared/InboundReply.h"
 
 #include "foundation/crypto/CryptoConstants.h"
+#include "domain/content/CasLibrary.h"
 #include "domain/messaging/ChatBlobResponder.h"
+#include "feature/conversations/AttachmentContent.h"
 #include "common/chat/MessagingJson.h"
 #include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
@@ -168,9 +170,19 @@ struct AmpChatBlobTransport::Impl {
                           return;
                         }
                         const ByteVector dek_copy = CopyDek();
-                        const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
+                        ChatBlobContentSource content;
+                        if (!dek_copy.empty() && !profile_id.empty()) {
+                          content.private_plaintext = [&](const std::vector<uint8_t>& content_hash) {
+                            return LoadAttachmentPlaintext(profile_data_dir, profile_id, content_hash, dek_copy);
+                          };
+                        }
+                        if (!profile_id.empty()) {
+                          content.pinned_public = [&](const ByteVector& content_id) {
+                            return LoadPinnedPublicCasBytes(profile_data_dir, profile_id, content_id);
+                          };
+                        }
                         auto ciphertext = ChatBlobResponder::ServeFetch(
-                            store, request, local_identity->relay_user_id, profile_data_dir, dek_ptr, profile_id);
+                            store, request, local_identity->relay_user_id, profile_data_dir, content);
                         if (ciphertext) {
                           reply->Send(std::move(*ciphertext));
                         } else {

@@ -1,4 +1,5 @@
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/AttachmentContent.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -730,7 +731,7 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
     state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
   } else if (!local_path.empty() ||
              (fields && !profile_data_dir_.empty() &&
-              AttachmentBlobExists(profile_data_dir_, message.thread_id, fields->content_hash))) {
+              AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
     state = AttachmentFetchWorkflow::DownloadState::Ready;
   }
 

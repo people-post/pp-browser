@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/messaging/CasTypes.h"
-#include "domain/messaging/ObjectIndex.h"
+#include "domain/content/CasTypes.h"
+#include "domain/content/ObjectIndex.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

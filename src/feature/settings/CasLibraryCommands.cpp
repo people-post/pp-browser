@@ -2,7 +2,7 @@
 
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ChatBlobTypes.h"
-#include "domain/messaging/CasLibrary.h"
+#include "domain/content/CasLibrary.h"
 #include "domain/net/OrgBackendClients.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/runtime/AppRuntime.h"

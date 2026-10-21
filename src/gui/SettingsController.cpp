@@ -40,7 +40,7 @@
 #include <filesystem>
 #include <functional>
 #include "common/PbrCompat.h"
-#include "domain/messaging/CasLibrary.h"
+#include "domain/content/CasLibrary.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {

@@ -1,4 +1,4 @@
-#include "domain/messaging/ObjectIndex.h"
+#include "domain/content/ObjectIndex.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/PbrCompat.h"

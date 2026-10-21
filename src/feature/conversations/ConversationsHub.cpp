@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/AttachmentContent.h"
 #include "feature/conversations/DeleteForEveryone.h"
 #include "feature/node/AppRuntimeMeshExecutors.h"
 
@@ -2031,7 +2032,7 @@ void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id,
             auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
             if (sent) {
               if (!attachment_dek.empty() && !profile_id_.empty()) {
-                (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+                (void)CopyAttachmentPlaintextFile(data_dir_, profile_id_, thread_id, *fields, path, attachment_dek);
               }
               Attachments().MaybeBuildPoster(thread_id, *fields);
               if (attachment_downloads_) {
@@ -2044,7 +2045,7 @@ void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id,
           auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
           if (sent) {
             if (!attachment_dek.empty() && !profile_id_.empty()) {
-              (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+              (void)CopyAttachmentPlaintextFile(data_dir_, profile_id_, thread_id, *fields, path, attachment_dek);
             }
             Attachments().MaybeBuildPoster(thread_id, *fields);
             if (attachment_downloads_) {

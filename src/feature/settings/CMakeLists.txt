@@ -13,6 +13,7 @@ pp_browser_add_feature_library(pp_feature_settings
     StorageSettingsSection.cpp
   PUBLIC_LIBS
     pp_domain_messaging
+    pp_domain_content
     pp_domain_net)
 
 if(PP_BROWSER_BUILD_TESTS)

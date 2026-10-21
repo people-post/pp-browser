@@ -33,6 +33,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
+    AttachmentContent.cpp
     MeshNetworkReaction.cpp
   PUBLIC_LIBS
     pp_feature_registration
@@ -40,6 +41,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging
+    pp_domain_content
     pp_domain_pricing
     pp_domain_calls
     pp_amp_link

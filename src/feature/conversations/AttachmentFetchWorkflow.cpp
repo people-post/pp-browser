@@ -1,10 +1,11 @@
 #include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "feature/conversations/AttachmentContent.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/AttachmentPlaintextMemoryCache.h"
-#include "domain/messaging/CasStore.h"
+#include "domain/content/CasStore.h"
 #include "feature/conversations/AiImageRef.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "feature/conversations/AttachmentFetch.h"
@@ -146,7 +147,7 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
   if (!CanFetchAttachment(job.fields, fetch_context)) {
     return;
   }
-  if (AttachmentBlobExists(profile_dir_, job.thread_id, job.fields.content_hash)) {
+  if (AttachmentBlobExists(profile_dir_, job.fields.content_hash)) {
     return;
   }
 
@@ -248,8 +249,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             }
             return;
           }
-          if (auto saved = SaveAttachmentPlaintext(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                                   bytes, job.fields.filename, dek_copy, profile_id_);
+          if (auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, job.fields.content_hash, job.fields.mime, bytes, job.fields.filename, dek_copy);
               !saved) {
             MarkFailed(key);
             if (on_done) {
@@ -259,8 +259,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           }
           const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
           if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint)) {
-            (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                           job.fields.filename, dek_copy, profile_id_);
+            (void)EnsureAttachmentView(profile_dir_, profile_id_, job.thread_id, job.fields.content_hash, job.fields.mime, job.fields.filename, dek_copy);
           }
           MaybeBuildPoster(job.thread_id, job.fields);
           // Cancelled while writing (message deleted): take back what was just written.
@@ -347,7 +346,7 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(
   if (profile_dir_.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return DownloadState::Failed;
   }
-  if (AttachmentBlobExists(profile_dir_, thread_id, content_hash)) {
+  if (AttachmentBlobExists(profile_dir_, content_hash)) {
     return DownloadState::Ready;
   }
   const std::string key = JobKey(thread_id, content_hash);
@@ -383,7 +382,7 @@ Roe<std::string> AttachmentFetchWorkflow::EnsureLocalViewPath(const std::string&
   if (dek_copy.empty() || profile_id_.empty()) {
     return Error("Attachment view requires unlocked DEK");
   }
-  return EnsureAttachmentViewPath(profile_dir_, thread_id, content_hash, mime, filename, dek_copy, profile_id_);
+  return EnsureAttachmentView(profile_dir_, profile_id_, thread_id, content_hash, mime, filename, dek_copy);
 }
 
 Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLocalImage(
@@ -396,12 +395,11 @@ Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLoc
   if (!hash) {
     return hash.error();
   }
-  if (auto saved = SaveAttachmentPlaintext(profile_dir_, thread_id, *hash, mime, plaintext, std::string(), dek_copy,
-                                           profile_id_);
+  if (auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, mime, plaintext, std::string(), dek_copy);
       !saved) {
     return saved.error();
   }
-  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id, *hash, mime, std::string(), dek_copy, profile_id_);
+  auto view = EnsureAttachmentView(profile_dir_, profile_id_, thread_id, *hash, mime, std::string(), dek_copy);
   if (!view) {
     return view.error();
   }
@@ -536,8 +534,8 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id,
   if (dek_copy.empty() || profile_id_.empty()) {
     return;
   }
-  (void)EnsureAttachmentPoster(profile_dir_, thread_id, fields.content_hash, fields.mime, fields.filename, dek_copy,
-                               profile_id_, fields.byte_length);
+  (void)EnsureAttachmentPosterFromContent(profile_dir_, profile_id_, thread_id, fields.content_hash, fields.mime,
+                                          fields.filename, dek_copy, fields.byte_length);
 }
 
 void AttachmentFetchWorkflow::RetryDownload(const std::string& thread_id, const std::string& message_id,

@@ -120,10 +120,11 @@ crypto
 | Path | Contents |
 |------|----------|
 | `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); a peer's DM (`PeerThreadLogic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) over `domain/content` |
 | `domain/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec, session and media-key stores, pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
 | `domain/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
 | `domain/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
+| `domain/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`feature/conversations/AttachmentContent`, `ChatBlobContentSource`) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
@@ -285,12 +286,6 @@ Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `Cha
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_domain` in `domain/CMakeLists.txt`; `pp_base` convenience INTERFACE in `src/CMakeLists.txt`).
 5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; `CallStack` / `BroadcastHub` moved out of the hub to `feature/product` (participants); remaining: optional gui bands, inbox presentation.
-
-## Boundary follow-ups
-
-Left from the calls / media / messaging boundary work (routine cleanup, tracked here):
-
-1. **`domain/content` peel ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)).** `CasStore`, `ObjectIndex`, realm types (and realm-generic caches) move out of `domain/messaging` into a `domain/content` peer once public CAS (P3/P4) gives them a second owner; chat-specific attachment policy stays behind.
 
 ## Related
 
