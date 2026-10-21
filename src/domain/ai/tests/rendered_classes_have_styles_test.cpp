@@ -36,9 +36,15 @@ void AddClassTokens(const std::string& value, std::set<std::string>& out) {
 // Classes in `class=\"...\"` literals, plus `classes = "..."` / `classes += "..."` string builders.
 std::set<std::string> EmittedClasses(const std::string& source) {
   std::set<std::string> out;
-  const std::regex attr(R"(class=\\"([^"\\]*)\\")");
+  // Capture up to the first '"': either the attribute's own closing \" or, when the class list is
+  // completed at runtime ("chat-card chat-card-" << variant), the literal's closing quote.
+  const std::regex attr(R"(class=\\"([^"]*))");
   for (std::sregex_iterator it(source.begin(), source.end(), attr), end; it != end; ++it) {
-    AddClassTokens((*it)[1], out);
+    std::string value = (*it)[1];
+    if (!value.empty() && value.back() == '\\') {
+      value.pop_back();
+    }
+    AddClassTokens(value, out);
   }
   const std::regex builder(R"re(\bclasses\s*\+?=\s*"([^"]*)")re");
   for (std::sregex_iterator it(source.begin(), source.end(), builder), end; it != end; ++it) {
@@ -60,13 +66,16 @@ TEST(RenderedClassesHaveStylesTest, EveryEmittedClassHasAThemeRule) {
   ASSERT_FALSE(css.empty()) << "no .rcss files under " << (root / "assets/themes");
 
   std::set<std::string> emitted;
-  for (const char* file : {"src/domain/ai/StructuredTextParser.cpp", "src/domain/ai/MarkdownToRml.cpp"}) {
+  for (const char* file : {"src/domain/ai/StructuredTextParser.cpp", "src/domain/ai/MarkdownToRml.cpp",
+                           "src/domain/ai/WorkingSetPolicy.cpp"}) {
     const std::string source = ReadFile(root / file);
     ASSERT_FALSE(source.empty()) << file;
     const auto classes = EmittedClasses(source);
     emitted.insert(classes.begin(), classes.end());
   }
   ASSERT_GT(emitted.size(), 20u) << "class scan found suspiciously few classes";
+  ASSERT_TRUE(emitted.count("chat-card-") != 0 && emitted.count("avatar-tone-") != 0)
+      << "dynamic class prefixes were not collected";
 
   // Classes that are intentionally unstyled (hooks for scripts or tests). Keep this empty unless
   // a class really needs no rule, and say why next to the entry.
