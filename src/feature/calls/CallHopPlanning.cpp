@@ -133,21 +133,12 @@ void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& 
 }
 
 CallHopReport CallHopPlanning::ReportForAccept(const std::string& call_id) const {
-  CallHopReport report;
   auto probes = probes_.find(call_id);
   auto planned = probe_planned_hop_.find(call_id);
   if (probes == probes_.end() || planned == probe_planned_hop_.end()) {
-    return report;
+    return {};
   }
-  for (const auto& [hop, ok] : probes->second) {
-    if (ok) {
-      (*ok ? report.reachable_hops : report.unreachable_hops).push_back(hop);
-    }
-    if (hop == planned->second) {
-      report.planned_hop_ok = ok;  // nullopt while the quote is still in flight
-    }
-  }
-  return report;
+  return BuildCallHopReport(probes->second, planned->second);
 }
 
 void CallHopPlanning::NoteAcceptReport(const std::string& call_id, const std::string& identity,

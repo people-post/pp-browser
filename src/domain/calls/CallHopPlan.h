@@ -5,6 +5,7 @@
 #include "common/MeshAlias.h"
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -102,6 +103,14 @@ struct GroupHopJoinDecision {
  * A hop still being probed is unknown — it excludes nothing (an invitee may accept before its
  * probes finish).
  */
+/**
+ * V050: what an invitee reports with its accept — the hops its probes reached and could not, and how
+ * the planned hop fared (unknown while its quote is still in flight). `probes`: hop → reached
+ * (none: still probing).
+ */
+CallHopReport BuildCallHopReport(const std::map<std::string, std::optional<bool>>& probes,
+                                 const std::string& planned_hop);
+
 bool HopUsableForAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports);
 
 /**

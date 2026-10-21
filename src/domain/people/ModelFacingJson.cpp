@@ -1,4 +1,4 @@
-#include "feature/conversations/ModelFacingJson.h"
+#include "domain/people/ModelFacingJson.h"
 
 #include "common/chat/MessagingJson.h"
 #include "domain/people/ContactJson.h"

@@ -14,7 +14,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     AmpChatBlobTransport.cpp
     MessageRouter.cpp
     MessagingTools.cpp
-    ModelFacingJson.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp

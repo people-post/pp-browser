@@ -250,4 +250,18 @@ std::vector<mesh::MeshHopCandidate> PlannedHopFirst(std::vector<mesh::MeshHopCan
   return PreferNamedHopFirst(std::move(ranked), planned.peer_id);
 }
 
+CallHopReport BuildCallHopReport(const std::map<std::string, std::optional<bool>>& probes,
+                                 const std::string& planned_hop) {
+  CallHopReport report;
+  for (const auto& [hop, ok] : probes) {
+    if (ok) {
+      (*ok ? report.reachable_hops : report.unreachable_hops).push_back(hop);
+    }
+    if (hop == planned_hop) {
+      report.planned_hop_ok = ok;
+    }
+  }
+  return report;
+}
+
 } // namespace pbr

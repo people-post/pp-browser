@@ -264,3 +264,20 @@ TEST(CallHopOrderTest, NamedAndPlannedHopsGoFirst) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+namespace {
+
+TEST(CallHopReportTest, WhatAnInviteeReports) {
+  const std::map<std::string, std::optional<bool>> probes{
+      {"hop:a", true}, {"hop:b", false}, {"hop:planned", std::nullopt}};
+  CallHopReport report = BuildCallHopReport(probes, "hop:planned");
+  EXPECT_EQ(report.reachable_hops, std::vector<std::string>{"hop:a"});
+  EXPECT_EQ(report.unreachable_hops, std::vector<std::string>{"hop:b"});
+  EXPECT_FALSE(report.planned_hop_ok) << "its quote is still in flight";
+  report = BuildCallHopReport(probes, "hop:b");
+  EXPECT_EQ(report.planned_hop_ok, std::optional<bool>(false));
+}
+
+} // namespace
+} // namespace pbr
