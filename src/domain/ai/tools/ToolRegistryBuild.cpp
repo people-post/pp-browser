@@ -5,6 +5,11 @@
 
 namespace pbr {
 
+void RegisterPromotedMcpTools(ToolRegistry& registry, McpClient& promoted_mcp) {
+  McpToolProvider promoted("mcp:promoted", promoted_mcp, {.trust_server_annotations = true}, "feeds");
+  registry.RegisterProvider(promoted);
+}
+
 void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config, McpClient* promoted_mcp,
                                  const std::vector<McpClient*>& custom_mcps,
                                  const std::vector<std::string>& custom_prefixes) {
@@ -14,8 +19,7 @@ void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config
   registry.RegisterProvider(web_search);
 
   if (promoted_mcp && promoted_mcp->IsRunning()) {
-    McpToolProvider promoted("mcp:promoted", *promoted_mcp, {.trust_server_annotations = true}, "feeds");
-    registry.RegisterProvider(promoted);
+    RegisterPromotedMcpTools(registry, *promoted_mcp);
   }
 
   for (size_t i = 0; i < custom_mcps.size(); ++i) {

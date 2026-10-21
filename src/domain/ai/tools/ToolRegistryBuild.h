@@ -14,4 +14,7 @@ void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config
                                  const std::vector<McpClient*>& custom_mcps = {},
                                  const std::vector<std::string>& custom_prefixes = {});
 
+// Adds the promoted MCP server's tools (the feeds); a name already in the registry is skipped.
+void RegisterPromotedMcpTools(ToolRegistry& registry, McpClient& promoted_mcp);
+
 } // namespace pbr

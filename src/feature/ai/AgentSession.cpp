@@ -37,10 +37,12 @@
 #include "foundation/runtime/AppVersion.h"
 #include "common/Metrics.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 #include "common/ValueJson.h"
 
 #include <unordered_set>
@@ -100,6 +102,8 @@ struct AgentSession::Impl : public Module {
   int configure_inflight = 0;
   /** Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger). */
   std::mutex configure_work_mutex;
+  std::chrono::milliseconds missing_tool_wait{10'000};
+  std::chrono::milliseconds missing_tool_poll{500};
 
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
@@ -698,7 +702,13 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
       }
       if (payload_plan->response_goal == ResponseGoal::DisplayFeed) {
         // The feed tool comes from the promoted MCP server; without it there is nothing to show, and asking the
-        // model instead would only produce a confusing answer.
+        // model instead would only produce a confusing answer. Right after launch the server may simply not have
+        // been reachable yet when the session was configured, so give it a bounded chance to list its tools.
+        if (RelistMissingFeedTools(state, *payload_plan)) {
+          if (auto relisted = ValidateTurnPlan(*payload_plan, AllowedToolNames(state))) {
+            return relisted;
+          }
+        }
         Error unavailable = validated.error();
         unavailable.user = TrOrDefault("feed.unavailable", "Briefs are unavailable right now.");
         return unavailable;
@@ -717,6 +727,54 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
     state->turn_trace.planner_ms = ElapsedMs(state->planner_started);
   }
   return plan;
+}
+
+bool AgentSession::RelistMissingFeedTools(const std::shared_ptr<Impl>& state, const TurnPlan& plan) {
+  const auto missing = [&] {
+    const std::vector<std::string> allowed = AllowedToolNames(state);
+    std::string names;
+    for (const PlannedToolCall& call : plan.tools) {
+      if (std::find(allowed.begin(), allowed.end(), call.name) == allowed.end()) {
+        names += (names.empty() ? "" : ", ") + call.name;
+      }
+    }
+    return names;
+  };
+  const std::string wanted = missing();
+  if (wanted.empty()) {
+    return true;
+  }
+
+  const auto started = std::chrono::steady_clock::now();
+  bool logged = false;
+  while (true) {
+    {
+      // A concurrent Configure() stops and replaces the MCP clients and rebuilds the registry.
+      std::lock_guard work_lock(state->configure_work_mutex);
+      McpClient* promoted = state->mcp.PromotedPtr();
+      if (!promoted || !promoted->IsRunning()) {
+        return false; // disabled or not configured: nothing to wait for
+      }
+      if (!logged) {
+        state->Log().warning << "Planned tool(s) not registered: " << wanted
+                             << "; re-listing the promoted MCP server for up to "
+                             << state->missing_tool_wait.count() << " ms";
+        logged = true;
+      }
+      RegisterPromotedMcpTools(state->tools, *promoted);
+    }
+    if (missing().empty()) {
+      state->Log().info << "Promoted MCP tools listed after " << ElapsedMs(started) << " ms";
+      return true;
+    }
+    if (state->cancelled ||
+        std::chrono::steady_clock::now() - started + state->missing_tool_poll > state->missing_tool_wait) {
+      break;
+    }
+    std::this_thread::sleep_for(state->missing_tool_poll);
+  }
+  state->Log().warning << "Promoted MCP tools still missing after " << ElapsedMs(started) << " ms: " << missing();
+  return false;
 }
 
 void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
@@ -1269,6 +1327,11 @@ void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
 
 void AgentSession::SetBriefAiStream(BriefAiStreamFn fn) {
   impl_->brief_stream_override = std::move(fn);
+}
+
+void AgentSession::SetMissingToolWait(const std::chrono::milliseconds total, const std::chrono::milliseconds poll) {
+  impl_->missing_tool_wait = total;
+  impl_->missing_tool_poll = poll;
 }
 
 void AgentSession::SetToolPermissions(ToolPermissionsPrefs permissions) {

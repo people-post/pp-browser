@@ -6,12 +6,15 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/ai/ToolRegistry.h"
+#include "domain/ai/mcp/McpClient.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -737,6 +740,109 @@ TEST_F(AgentSessionPayloadTurnTest, ArticlesChipWithoutTheToolSaysSoAndAsksNoMod
 
   EXPECT_TRUE(Requests().empty());
   EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
+}
+
+// --- The promoted MCP server was unreachable when the session was configured (the phone's network not up yet
+// at launch): a feed turn re-lists its tools for a bounded time instead of failing at once.
+
+struct FakeMcpServer {
+  std::atomic<int> list_calls{0};
+  std::atomic<int> failing_lists{0}; // tools/list fails this many times, then answers; < 0: always fails
+};
+
+HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
+  return [server](const std::string&, const std::string& body,
+                  const std::map<std::string, std::string>&) -> Roe<HttpResponse> {
+    if (body.find("\"tools/list\"") != std::string::npos) {
+      const int call = server->list_calls.fetch_add(1);
+      if (server->failing_lists < 0 || call < server->failing_lists) {
+        return Error("connection refused");
+      }
+      return HttpResponse{
+          .status_code = 200,
+          .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"blog_articles","description":"articles",)"
+                  R"("inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}})"};
+    }
+    if (body.find("\"tools/call\"") != std::string::npos) {
+      return HttpResponse{
+          .status_code = 200,
+          .body = R"({"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":)"
+                  R"("{\"articles\":[{\"id\":\"a1\",\"title\":\"First\",\"content\":\"First brief.\",)"
+                  R"(\"link_to\":\"https://apnews.com/x\",\"created_at\":1759000000}]}"}]}})"};
+    }
+    return HttpResponse{.status_code = 200, .body = R"({"jsonrpc":"2.0","id":0,"result":{}})"};
+  };
+}
+
+class AgentSessionFeedRelistTest : public AgentSessionBriefStreamTest {
+protected:
+  // The promoted MCP points at a closed port, so configure lists no tools; then the fake server takes over.
+  void StartWithPromotedMcp(const bool enabled, const int failing_lists) {
+    AppConfig config = MakeConfig("brief");
+    config.promoted_mcp.id = "brief";
+    config.promoted_mcp.enabled = enabled;
+    session_ = std::make_unique<AgentSession>();
+    session_->SetMissingToolWait(std::chrono::milliseconds(400), std::chrono::milliseconds(20));
+    session_->Configure(config);
+    session_->WaitForConfigureIdle();
+    ASSERT_TRUE(session_->IsConfigured());
+    session_->SetThreadStore(&store_);
+    Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+    server_->failing_lists = failing_lists;
+    McpClient::SetHttpPost(FakeMcpPost(server_));
+  }
+
+  void TearDown() override {
+    AgentSessionBriefStreamTest::TearDown();
+    McpClient::SetHttpPost(nullptr);
+  }
+
+  void SubmitArticles() {
+    session_->SubmitToThread("t1", "Show me recent articles",
+                             std::string(R"({"tool":"blog_articles","brf_domain":"en","brf_language":"en","size":2})"));
+  }
+
+  MemoryThreadStore store_;
+  std::shared_ptr<FakeMcpServer> server_ = std::make_shared<FakeMcpServer>();
+};
+
+TEST_F(AgentSessionFeedRelistTest, FeedToolListedShortlyAfterLaunchStillShowsTheFeed) {
+  StartWithPromotedMcp(true, 2);
+  SubmitArticles();
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].response_goal, ResponseGoal::DisplayFeed);
+  EXPECT_NE(ready[0].text.find("apnews.com"), std::string::npos);
+  EXPECT_EQ(server_->list_calls.load(), 3);
+}
+
+TEST_F(AgentSessionFeedRelistTest, FeedToolNeverListedEndsWithUnavailableAfterTheWait) {
+  StartWithPromotedMcp(true, -1);
+  const auto started = std::chrono::steady_clock::now();
+  SubmitArticles();
+  const auto events = WaitForTurn();
+
+  EXPECT_GE(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(300)); // it waited (last poll may be skipped)
+  EXPECT_GE(server_->list_calls.load(), 2);
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
+}
+
+TEST_F(AgentSessionFeedRelistTest, DisabledPromotedMcpFailsAtOnceWithoutListing) {
+  StartWithPromotedMcp(false, 0);
+  SubmitArticles();
+  const auto events = WaitForTurn();
+
+  EXPECT_EQ(server_->list_calls.load(), 0);
   const auto errors = Of(events, AgentEventType::Error);
   ASSERT_EQ(errors.size(), 1u);
   EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
