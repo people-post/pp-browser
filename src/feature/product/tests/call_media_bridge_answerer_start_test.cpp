@@ -316,7 +316,7 @@ public:
     ++detach_calls;
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+                    std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
     if (hang_first_n_connects > 0) {
@@ -326,7 +326,7 @@ public:
     if (fail_first_n_connects > 0) {
       --fail_first_n_connects;
       if (on_done) {
-        on_done(Error(connect_fail_message));
+        on_done(CallMediaFailure::Of(connect_fail_code, connect_fail_message));
       }
       return;
     }
@@ -340,10 +340,10 @@ public:
       on_done({});
     }
   }
-  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+  CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     int timeout_ms) override {
-    Roe<void> out;
-    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
+    CallMediaRoe out;
+    ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
   Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
@@ -366,6 +366,8 @@ public:
   int hang_first_n_connects = 0;
   std::string connect_fail_message =
       "amp link: transport failed [adp: adp udp: sendto dst=192.168.0.103:54410 errno=64]";
+  /** A send on the link failed: the link is dead (B39 — the bridge drops it and redials). */
+  CallMediaErr connect_fail_code = CallMediaErr::StaleLink;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
   test::InboundHelloFake inbound;

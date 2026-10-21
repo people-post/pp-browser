@@ -170,7 +170,7 @@ struct LinkReady {
 struct AttemptDone {
   uint64_t seq = 0;
   int attempt = 0;
-  Roe<void> connected;
+  CallMediaRoe connected;
 };
 /** Attempt `attempt` ran past its watchdog. */
 struct WatchdogDue {

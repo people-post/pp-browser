@@ -1116,7 +1116,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     pbr::CallMediaDirectCallbacks cbs;
     cbs.on_connected = [&] { connected.store(true, std::memory_order_release); };
 
-    AsyncWait<void> leg_done;
+    AsyncWait<void, pbr::CallMediaFailure> leg_done;
     const pbr::CallMediaLegId leg_id =
         media->StartLeg(params, std::move(cbs), leg_done.Fn(), timeout_ms);
     if (!leg_id) {

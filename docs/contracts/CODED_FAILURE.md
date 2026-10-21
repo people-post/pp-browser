@@ -129,7 +129,7 @@ pp-browser Phase 1 implements the **adapter** row:
 - [x] Tests: `mesh_ports_test.cpp`
 - [x] [AMP-LINK-ERRORS.md](AMP-LINK-ERRORS.md) port alias note
 
-### Phase 2 — L4 owning layers (mesh done; call-media leg pending)
+### Phase 2 — L4 owning layers (done)
 
 Each coordinator gets a **local `Err` enum**, `Failure` / `Roe` aliases, and
 **`WrapLinkFailure(const …::Failure&)`** (name may vary). Wrap at every
@@ -145,7 +145,7 @@ carrier — not string copy alone.
 | Punch walk | `reach/PunchIntroducerWalk`, `PunchErr` | `PunchIntroducerWalk::Err` | **done** (pp-cpp-mesh) — the introducer's refusal is a wire `code` |
 | Peer reach | `reach/PeerReachCoordinator` | `PeerReachCoordinator::Err` | **done** (pp-cpp-mesh); `IDialRegistry` passes link codes through |
 | Media relay | `l4/media_relay/client/MediaRelayClientCoordinator`, `IMediaRelayClient`, `media_plane/MediaRelayAttach` | `MediaRelayErr` | **done** (pp-cpp-mesh) — the hop's refusal is a wire `code` |
-| Call-media leg | `feature/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
+| Call-media leg | `feature/call_media/CallMediaLegCoordinator`, `ICallMediaTransport` | `CallMediaErr` | **done** — connects; migrations still report text |
 
 The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 
@@ -174,8 +174,7 @@ The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 - [ ] Stop stripping codes at `Error(child.message)` unless converting to `AppError` with mapped category.
       Known strips: `CallMediaConnectCoordinator::OnLinkReady` and `BroadcastHub`'s reach port
       (a peer reach failure becomes text), `ConversationsHub::RequestCircuitBridgePreferred`.
-- [ ] `CallMediaConnectCoordinator` decides "dial a fresh link next time" by finding
-      `"transport failed"` in the connect error — needs the call-media leg's code (Phase 2 row).
+- [x] `CallMediaConnectCoordinator` decides "dial a fresh link next time" by `CallMediaErr::StaleLink`.
 - [x] Chat send notices by code: the direct send reports `DirectSendErr` (`IDirectMessageClient`;
       `AmpDirectChatTransport::WrapLinkFailure`), the relay send `AppError` codes
       (`HttpRelayClient::Send`: rate limited, not configured, HTTP status; network failures were

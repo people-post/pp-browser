@@ -89,7 +89,7 @@ public:
     ++detach_calls;
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks /*cbs*/,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+                    std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_calls;
     if (hang_first_n > 0) {
       --hang_first_n;
@@ -98,7 +98,7 @@ public:
     }
     if (fail_first_n > 0) {
       --fail_first_n;
-      on_done(Error(fail_message));
+      on_done(CallMediaFailure::Of(fail_code, fail_message));
       if (after_fail) {
         after_fail(connect_calls);
       }
@@ -108,7 +108,7 @@ public:
     active_params = params;
     on_done({});
   }
-  Roe<void> Connect(const CallMediaDirectConnectParams&, CallMediaDirectCallbacks, int) override { return {}; }
+  CallMediaRoe Connect(const CallMediaDirectConnectParams&, CallMediaDirectCallbacks, int) override { return {}; }
   Roe<void> SendAudio(const std::vector<uint8_t>&, uint32_t, uint8_t) override { return {}; }
   Roe<void> SendMedia(uint8_t, const std::vector<uint8_t>&, uint32_t, uint8_t) override { return {}; }
 
@@ -119,7 +119,8 @@ public:
   int fail_first_n = 0;
   int hang_first_n = 0;
   std::string fail_message = "amp call-media: hello rejected";
-  std::function<void(Roe<void>)> pending;
+  CallMediaErr fail_code = CallMediaErr::HelloRejected;
+  std::function<void(CallMediaRoe)> pending;
   test::InboundHelloFake inbound;
   /** Runs on the UI thread right after a failed completion was delivered (attempt number). */
   std::function<void(int attempt)> after_fail;
@@ -248,7 +249,7 @@ TEST_F(CallMediaConnectCoordinatorTest, WatchdogFailsOnlyTheAttempt) {
   EXPECT_GE(transport_->detach_calls, 1) << "watchdog detaches the stuck attempt";
   // The hung attempt completing late must not finish the sequence a second time.
   if (transport_->pending) {
-    transport_->pending(Error("late"));
+    transport_->pending(CallMediaFailure::Of(CallMediaErr::Timeout, "late"));
   }
   PumpFor(std::chrono::milliseconds(100));
   EXPECT_EQ(finished_, 1);

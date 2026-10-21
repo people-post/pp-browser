@@ -2,6 +2,7 @@
 
 #include "domain/calls/CallMediaSessionTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
+#include "common/CodedFailure.h"
 #include "common/Error.h"
 #include "common/media/CallMediaHealth.h"
 #include "common/media/CallMediaProtocol.h"
@@ -14,6 +15,30 @@
 
 namespace pbr {
 
+/** Why a call-media connect failed (docs/contracts/CODED_FAILURE.md, call-media leg). */
+enum class CallMediaErr : int32_t {
+  Ok = 0,
+  NotStarted,
+  /** Missing peer, call id or media key. */
+  BadRequest,
+  /** No endpoint or link to the peer. */
+  Unreachable,
+  /** The link to the peer failed to send: it is likely dead — the next attempt dials a fresh one. */
+  StaleLink,
+  /** Opening the control channel failed at the link (otherwise). */
+  LinkFailed,
+  /** A channel did not open, or the hello could not be written. */
+  ChannelFailed,
+  /** The peer refused the hello (or its ack failed). */
+  HelloRejected,
+  Timeout,
+  /** The stream or the link went away. */
+  Closed,
+  Aborted,
+  Generic,
+};
+using CallMediaFailure = CodedFailure<CallMediaErr>;
+using CallMediaRoe = CodedRoe<void, CallMediaErr>;
 
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
@@ -121,11 +146,11 @@ public:
    * failed, timed out, or superseded. Prefer this over Connect(); MeshPump drives Amp.
    */
   virtual void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                            std::function<void(Roe<void>)> on_done, int timeout_ms = 15000) = 0;
+                            std::function<void(CallMediaRoe)> on_done, int timeout_ms = 15000) = 0;
 
   /** Blocking convenience for tests/harnesses; product bridge uses ConnectAsync. */
-  virtual Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                            int timeout_ms = 15000) = 0;
+  virtual CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+                               int timeout_ms = 15000) = 0;
 
   virtual Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) = 0;
   virtual Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,

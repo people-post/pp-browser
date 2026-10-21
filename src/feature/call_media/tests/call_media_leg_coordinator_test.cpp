@@ -6,6 +6,7 @@
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
+#include <type_traits>
 #include <sodium.h>
 
 #include <atomic>
@@ -24,10 +25,16 @@ namespace {
 struct LegCompletion {
   std::atomic<bool> finished{false};
   pp::Roe<void> result = pp::Error("pending");
+  /** A connect's code (CallMediaErr::Ok on success or for a migration result). */
+  CallMediaErr code = CallMediaErr::Ok;
 
-  CallMediaLegCoordinator::LegFinished Fn() {
-    return [this](pp::Roe<void> r) {
-      result = std::move(r);
+  /** Takes a connect's coded result or a migration's plain one. */
+  auto Fn() {
+    return [this](auto r) {
+      if constexpr (std::is_same_v<decltype(r), CallMediaRoe>) {
+        code = r ? CallMediaErr::Ok : r.error().GetCode();
+      }
+      result = r ? pp::Roe<void>() : pp::Roe<void>(pp::Error(r.error().message));
       finished.store(true, std::memory_order_release);
     };
   }
@@ -257,7 +264,7 @@ TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
   auto inner = leg_done.Fn();
   const CallMediaLegId leg_id = a_call_->StartLeg(
       params, std::move(cbs),
-      [&, inner](pp::Roe<void> result) mutable {
+      [&, inner](CallMediaRoe result) mutable {
         // Mirrors CallMediaAmpTransport::ConnectAsync, which calls PrimaryLegId() here.
         leg_in_finished = a_call_->PrimaryLegId();
         inner(std::move(result));
@@ -1327,6 +1334,18 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   c_call.Stop();
   b_call.Stop();
   a_call.Stop();
+}
+
+// B39: a send on the link failing marks it stale (the next attempt dials fresh) — by code.
+TEST(CallMediaLegCodesTest, ALinkThatCannotSendIsStale) {
+  using Links = pp::amp::PeerLinkManager;
+  const auto wrap = [](const Links::Err code) {
+    return CallMediaLegCoordinator::WrapLinkFailure(Links::Failure::Of(code, "x")).GetCode();
+  };
+  EXPECT_EQ(wrap(Links::Err::TransportFailed), CallMediaErr::StaleLink);
+  EXPECT_EQ(wrap(Links::Err::EndpointNotRegistered), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(Links::Err::ChannelOpenFailed), CallMediaErr::ChannelFailed);
+  EXPECT_EQ(wrap(Links::Err::DialTimeout), CallMediaErr::LinkFailed);
 }
 
 } // namespace

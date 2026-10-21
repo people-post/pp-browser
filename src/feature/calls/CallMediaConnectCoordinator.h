@@ -121,7 +121,7 @@ private:
   void OpenBundle(uint64_t seq, int attempt);
   void ArmWatchdog(uint64_t seq, int attempt);
   void OnWatchdog(uint64_t seq, int attempt);
-  void OnAttemptFinished(uint64_t seq, int attempt, Roe<void> connected);
+  void OnAttemptFinished(uint64_t seq, int attempt, CallMediaRoe connected);
   void Finish(uint64_t seq, Roe<void> result);
   void CancelTimers();
   const char* Role() const;

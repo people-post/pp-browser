@@ -138,10 +138,10 @@ void CallMediaAmpTransport::Detach() {
 
 void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params,
                                          CallMediaDirectCallbacks callbacks,
-                                         std::function<void(Roe<void>)> on_done, int timeout_ms) {
+                                         std::function<void(CallMediaRoe)> on_done, int timeout_ms) {
   if (!started_.load(std::memory_order_acquire)) {
     if (on_done) {
-      on_done(Error("amp call-media transport not started"));
+      on_done(CallMediaFailure::Of(CallMediaErr::NotStarted, "amp call-media transport not started"));
     }
     return;
   }
@@ -163,7 +163,7 @@ void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& par
 
   const CallMediaLegId leg_id = coordinator_.StartLeg(
       params, std::move(callbacks),
-      [this, on_done = std::move(on_done)](Roe<void> result) mutable {
+      [this, on_done = std::move(on_done)](CallMediaRoe result) mutable {
         if (result) {
           std::lock_guard lock(mu_);
           active_leg_ = coordinator_.PrimaryLegId();
@@ -179,13 +179,13 @@ void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& par
   }
 }
 
-Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& params,
-                                         CallMediaDirectCallbacks callbacks, int timeout_ms) {
-  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
+CallMediaRoe CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& params,
+                                            CallMediaDirectCallbacks callbacks, int timeout_ms) {
+  auto result_promise = std::make_shared<std::promise<CallMediaRoe>>();
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
 
-  auto finish = [settled, result_promise](Roe<void> value) {
+  auto finish = [settled, result_promise](CallMediaRoe value) {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
@@ -195,7 +195,7 @@ Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& par
     }
   };
 
-  ConnectAsync(params, std::move(callbacks), [finish](Roe<void> result) { finish(std::move(result)); },
+  ConnectAsync(params, std::move(callbacks), [finish](CallMediaRoe result) { finish(std::move(result)); },
                timeout_ms);
 
   // Product MeshPump drives Amp. Harnesses without a pump may supply io_pump_ (Tick).
@@ -205,7 +205,7 @@ Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& par
       break;
     }
     if (IsActive()) {
-      finish({});
+      finish(CallMediaRoe());
       break;
     }
     if (io_pump_) {
@@ -219,7 +219,7 @@ Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& par
     if (!IsActive()) {
       Detach();
     }
-    finish(Error("amp call-media connect timed out"));
+    finish(CallMediaFailure::Of(CallMediaErr::Timeout, "amp call-media connect timed out"));
   }
   return result_future.get();
 }

@@ -36,7 +36,13 @@ struct CallMediaPathState {
  */
 class CallMediaLegCoordinator {
 public:
+  /** A migration / standby result. */
   using LegFinished = std::function<void(Roe<void> result)>;
+  /** A connect's result, coded (CallMediaErr). */
+  using LegConnected = std::function<void(CallMediaRoe result)>;
+
+  /** Opening the control channel failed at the link: our code, the link's chain in `message`. */
+  static CallMediaFailure WrapLinkFailure(const pp::amp::PeerLinkManager::Failure& link);
   using InboundHandler = CallMediaInboundHandler;
 
   explicit CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime);
@@ -54,7 +60,7 @@ public:
 
   /** Returns leg id immediately; completion via `on_finished` when MediaReady or error. */
   CallMediaLegId StartLeg(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                          LegFinished on_finished = {}, int timeout_ms = 15000);
+                          LegConnected on_finished = {}, int timeout_ms = 15000);
 
   void CancelLeg(CallMediaLegId id);
   void DetachLeg(CallMediaLegId id);

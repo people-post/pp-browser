@@ -340,7 +340,7 @@ void CallMediaConnectCoordinator::OpenBundle(const uint64_t seq, const int attem
   ArmWatchdog(seq, attempt);
   transport_.ConnectAsync(
       request_.params, request_.callbacks,
-      [outbox = outbox_, seq, attempt](Roe<void> connected) {
+      [outbox = outbox_, seq, attempt](CallMediaRoe connected) {
         outbox.Emit(connect_event::AttemptDone{seq, attempt, std::move(connected)});
       },
       attempt_timeout_ms_);
@@ -364,11 +364,12 @@ void CallMediaConnectCoordinator::OnWatchdog(const uint64_t seq, const int attem
   watchdog_timer_id_ = 0;
   // Detach may not deliver on_finished if Mesh IO is wedged — force attempt progress.
   transport_.Detach();
-  OnAttemptFinished(seq, attempt, Error("amp call-media connect timed out (watchdog)"));
+  OnAttemptFinished(seq, attempt,
+                    CallMediaFailure::Of(CallMediaErr::Timeout, "amp call-media connect timed out (watchdog)"));
 }
 
 void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const int attempt,
-                                                    Roe<void> connected) {
+                                                    CallMediaRoe connected) {
   if (!Current(seq)) {
     // Superseded sequence: drop its bundle (Abort / restart already settled InFlight) — unless
     // a newer sequence is connecting the same call and may adopt it.
@@ -391,12 +392,12 @@ void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const in
   reach_.AbandonDial(request_.params.peer_key);
   // B39: the attempt ran on an already-"connected" link, or failed like a dead link — the next
   // reach drops it and redials fresh DialBook candidates instead of reusing the stale PeerLink.
-  if (attempt_reused_link_ || connected.error().message.find("transport failed") != std::string::npos) {
+  if (attempt_reused_link_ || connected.error().GetCode() == CallMediaErr::StaleLink) {
     fresh_link_next_ = true;
     log().info << "next attempt needs a fresh link peer=" << request_.params.peer_key << " attempt=" << attempt;
   }
   if (attempt >= kConnectAttempts) {
-    Finish(seq, std::move(connected));
+    Finish(seq, Error(connected.error().message));
     return;
   }
   retry_timer_id_ = outbox_.After(std::chrono::milliseconds(kRetryDelayMs), connect_event::RetryDue{seq, attempt});

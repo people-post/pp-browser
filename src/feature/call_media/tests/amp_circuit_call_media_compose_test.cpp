@@ -10,6 +10,7 @@
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
+#include <type_traits>
 #include <sodium.h>
 
 #include <atomic>
@@ -27,10 +28,16 @@ namespace {
 struct LegCompletion {
   std::atomic<bool> finished{false};
   Roe<void> result = Error("pending");
+  /** A connect's code (CallMediaErr::Ok on success or for a migration result). */
+  CallMediaErr code = CallMediaErr::Ok;
 
-  CallMediaLegCoordinator::LegFinished Fn() {
-    return [this](Roe<void> r) {
-      result = std::move(r);
+  /** Takes a connect's coded result or a migration's plain one. */
+  auto Fn() {
+    return [this](auto r) {
+      if constexpr (std::is_same_v<decltype(r), CallMediaRoe>) {
+        code = r ? CallMediaErr::Ok : r.error().GetCode();
+      }
+      result = r ? Roe<void>() : Roe<void>(Error(r.error().message));
       finished.store(true, std::memory_order_release);
     };
   }
