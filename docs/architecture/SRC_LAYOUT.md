@@ -292,7 +292,6 @@ Left from the calls / media / messaging boundary work (routine cleanup, tracked 
 
 1. **Live broadcast transport out of messaging.** `MeshDeliveryOrchestrator` still hosts `AmpBroadcastTransport` (ticket server, program keys) and the peer-announce feed (`AmpPeerAnnounceTransport`, `PeerAnnounceFeed` / `Publisher`, announce notifications, overlay replies). They belong with live broadcast: owned by `BroadcastParticipant` (`feature/product`) or `feature/broadcast`, borrowing mesh links from the hub, so messaging stops knowing about programs and tips.
 2. **`domain/content` peel ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)).** `CasStore`, `ObjectIndex`, realm types (and realm-generic caches) move out of `domain/messaging` into a `domain/content` peer once public CAS (P3/P4) gives them a second owner; chat-specific attachment policy stays behind.
-3. **Group-call history.** Group calls get the same one `call_summary` as 1:1, written by the starter when its own session ends; a call that outlives its starter (the rest stay on the hop) is summarized from the starter's view only. Decide whether the last one out (or the hop owner) should write it, with participants.
 
 ## Related
 

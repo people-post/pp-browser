@@ -58,17 +58,6 @@ std::string FormatDurationMs(const int64_t duration_ms) {
   return buf;
 }
 
-std::string PeerLabel(const SystemControlLabels& labels, const std::string& identity) {
-  if (identity.empty()) {
-    return Tr("call.label.someone");
-  }
-  if (identity == kLocalSelfContactId) {
-    return Tr("call.label.you");
-  }
-  const std::string label = labels.peer ? labels.peer(identity) : std::string();
-  return label.empty() ? Tr("call.label.someone") : label;
-}
-
 } // namespace
 
 std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const SystemControlLabels& labels) {
@@ -84,11 +73,20 @@ std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const S
   };
 
   if (summary->group) {
-    const std::string starter = PeerLabel(labels, message.sender_contact_id);
-    if (summary->outcome == CallOutcome::Completed && !duration.empty()) {
-      return line("group_duration", {{"name", starter}, {"duration", duration}});
+    // Written by this device, about its own user's part in the call.
+    switch (summary->outcome) {
+    case CallOutcome::Completed:
+      return line("group", {{"duration", duration}});
+    case CallOutcome::Missed:
+    case CallOutcome::Cancelled:
+      return line(summary->started ? (summary->outcome == CallOutcome::Missed ? "group_no_answer" : "group_cancelled")
+                                   : "group_missed");
+    case CallOutcome::Declined:
+      return line("group_declined");
+    case CallOutcome::Failed:
+      return line("group_failed");
     }
-    return line("group", {{"name", starter}});
+    return line("group_failed");
   }
   switch (summary->outcome) {
   case CallOutcome::Completed:

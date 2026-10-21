@@ -359,6 +359,9 @@ Roe<std::string> CallControlCodec::EncodeSummary(const CallSummaryDetail& detail
   if (detail.group) {
     json.set("group", true);
   }
+  if (detail.started) {
+    json.set("started", true);
+  }
   return DumpJson(json);
 }
 
@@ -374,6 +377,7 @@ Roe<CallSummaryDetail> CallControlCodec::DecodeSummary(const std::string& detail
   detail.outcome = CallOutcomeFromString(json->getString("outcome").value_or("failed"));
   detail.duration_ms = json->getIf<int64_t>("duration_ms");
   detail.group = json->getIf<bool>("group").value_or(false);
+  detail.started = json->getIf<bool>("started").value_or(false);
   return detail;
 }
 

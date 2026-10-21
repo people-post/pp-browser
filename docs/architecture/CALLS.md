@@ -446,11 +446,15 @@ binds on build and unbinds on teardown (`CallControlFamily.*`). Every signaling 
 **control lane** (`CallControlClient::SendDirect` → `send_control`): applied once while fresh, never a
 transcript row, no thread. A live call holds key rotation and defers background history sync.
 
-**History** is one `call_summary` per call (`CallSummaryDetail`: outcome, media, talk time from the
-first answer, group or not), sent by the call's starter into the call's thread as a normal chat
-message when the call ends (`CallSessionWorkflow::SendSummary`; kept locally when it cannot be sent).
-The line is worded from the reader's side — "Outgoing voice call · 3:21", "Missed voice call", "Bob
-started a voice call · 12:03" — and is quiet unless it is a call we missed.
+**History** is one `call_summary` per call (`CallSummaryDetail`: outcome, media, talk time, group or
+not), written when the call ends (`CallSessionWorkflow::SendSummary`), worded from the reader's side:
+
+- **1:1:** the starter sends it into the call's thread as a normal chat message (both sides and all
+  their devices read it; kept locally when it cannot be sent or the app is going down). Talk time runs
+  from the answer. "Outgoing voice call · 3:21", "Missed voice call"; quiet unless it is a call we missed.
+- **Group:** a group has no one view of a call, so each device keeps its own summary of its user's
+  part (not sent): "Group voice call · 12:03" from when it was in the call with someone else,
+  "Missed group voice call", "Declined group voice call".
 
 **The call's thread** is local to each device: the starter's is the thread it called from; an
 invitee resolves its own (`resolve_call_thread`: the group's thread for a group call, else its DM

@@ -255,6 +255,16 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     return msg;
   };
   deps.delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
+  deps.delivery.resolve_group_thread = [&side](const std::string& group_id) -> std::optional<std::string> {
+    if (auto threads = side.store->ListThreads()) {
+      for (const Thread& thread : *threads) {
+        if (thread.kind == ThreadKind::Group && thread.group_id == group_id) {
+          return thread.id;
+        }
+      }
+    }
+    return std::nullopt;
+  };
   deps.delivery.sync_inbox_from_wake = [](bool) {};
   deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
   deps.mesh = []() -> mesh::MeshHost* { return nullptr; };

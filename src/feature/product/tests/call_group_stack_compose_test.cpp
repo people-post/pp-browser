@@ -4,6 +4,8 @@
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
 #include "feature/product/tests/call_stack_compose_support.h"
+#include "domain/calls/CallControlCodec.h"
+#include "common/ValueJson.h"
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "domain/calls/CallSessionStore.h"
@@ -458,6 +460,28 @@ protected:
     return out;
   }
 
+  /** When set, StartGroupCall places the call in a group with this id (each member has its thread). */
+  std::optional<std::string> group_id_;
+
+  /** The call summaries a side holds in the group thread. */
+  std::vector<CallSummaryDetail> SummariesIn(size_t side) {
+    std::vector<CallSummaryDetail> out;
+    auto page = sides_[side].store->GetMessagesPage("thread-group-call", std::nullopt, 100);
+    if (!page) {
+      return out;
+    }
+    for (const ThreadMessage& message : *page) {
+      auto payload = TryParseObject(message.payload_json);
+      if (!payload || payload->getString("control_type") != std::optional<std::string>("call_summary")) {
+        continue;
+      }
+      if (auto decoded = CallControlCodec::DecodeSummary(payload->getString("detail").value_or(""))) {
+        out.push_back(*decoded);
+      }
+    }
+    return out;
+  }
+
   /** A starts a call from a group thread inviting B and C; returns the call id (media key shared). */
   std::string StartGroupCall() {
     Thread thread;
@@ -466,6 +490,12 @@ protected:
     thread.kind = ThreadKind::Group;
     thread.title = "Group";
     thread.updated_at = util::NowUnixMs();
+    if (group_id_) {
+      thread.group_id = *group_id_;  // a real group: every member holds its thread
+      for (size_t i : members_) {
+        EXPECT_TRUE(sides_[i].store->UpsertThread(thread));
+      }
+    }
     EXPECT_TRUE(sides_[kA].store->UpsertThread(thread));
 
     auto started =
@@ -1000,6 +1030,33 @@ TEST_F(CallGroupStackComposeTest, StoppedStackDropsItsPendingHopReannounce) {
 
 // A guest leaving a live group call ends only their media: the other two stay InCall and keep
 // hearing each other; the initiator's Leave then ends the call everywhere.
+TEST_F(CallGroupStackComposeTest, EachMemberKeepsItsOwnSummaryOfAGroupCall) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  sides_[kB].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  sides_[kC].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    for (size_t i : members_) {
+      if (sides_[i].stack->HasActiveLocalCall()) {
+        return false;
+      }
+    }
+    return true;
+  });
+  for (size_t i : members_) {
+    const auto summaries = SummariesIn(i);
+    ASSERT_EQ(summaries.size(), 1u) << "side " << i << ": one summary of its own";
+    EXPECT_TRUE(summaries.front().group);
+    EXPECT_EQ(summaries.front().outcome, CallOutcome::Completed) << "side " << i;
+    EXPECT_TRUE(summaries.front().duration_ms.has_value());
+    EXPECT_EQ(summaries.front().started, i == kA);
+    EXPECT_TRUE(sides_[i].summaries.empty()) << "side " << i << ": a group summary is not sent";
+  }
+}
+
 TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeaveEndsAll) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());

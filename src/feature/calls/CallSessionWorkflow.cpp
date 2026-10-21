@@ -919,31 +919,58 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
     return;
   }
   auto local = host_.wire.local_relay_identity();
-  if (!local || session.initiator_identity != *local) {
-    return;  // the starter reports the call; invitees read its summary
+  if (!local) {
+    return;
+  }
+  const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
+  const bool started = session.initiator_identity == *local;
+  if (!group && !started) {
+    return;  // 1:1: the starter reports the call; the other side reads its summary
   }
   CallSummaryDetail summary;
   summary.call_id = session.call_id;
   summary.media_mode = session.media_mode;
-  summary.group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
-  // Answered when anyone but the starter joined; talk time runs from the first such join.
-  std::optional<int64_t> answered_at;
+  summary.group = group;
+  summary.started = started;
+
+  // 1:1: answered when the other side joined. Group: each device notes the call as it went for its
+  // own user — answered when we were in it with someone else; talk time from when both were.
+  std::optional<int64_t> self_joined;
+  std::optional<int64_t> other_joined;
   if (auto participants = sessions_.ListParticipants(session.call_id)) {
     for (const CallParticipant& participant : *participants) {
-      if (participant.identity != session.initiator_identity && participant.joined_at && *participant.joined_at > 0) {
-        answered_at = answered_at ? std::min(*answered_at, *participant.joined_at) : *participant.joined_at;
+      if (!participant.joined_at || *participant.joined_at <= 0) {
+        continue;
       }
+      const bool self = participant.identity == *local;
+      if (!group && participant.identity == session.initiator_identity) {
+        continue;
+      }
+      auto& slot = self ? self_joined : other_joined;
+      slot = slot ? std::min(*slot, *participant.joined_at) : *participant.joined_at;
     }
+  }
+  std::optional<int64_t> answered_at;
+  if (!group) {
+    answered_at = other_joined;
+  } else if (self_joined && other_joined) {
+    answered_at = std::max(*self_joined, *other_joined);
   }
   if (reason == LiveCallEndReason::Orphaned) {
     answered_at.reset();  // ended by a restart, maybe hours later: no talk time to report
   }
   summary.outcome = SummaryOutcome(answered_at.has_value(), reason);
+  if (group && !answered_at && !started) {
+    // An invitee that never joined: it declined, or it missed the call.
+    summary.outcome = reason == LiveCallEndReason::Declined ? CallOutcome::Declined : CallOutcome::Missed;
+  }
   if (answered_at) {
     const int64_t ended_at = session.ended_at.value_or(util::NowUnixMs());
     summary.duration_ms = std::max<int64_t>(0, ended_at - *answered_at);
   }
-  const bool local_only = reason == LiveCallEndReason::Shutdown;
+  // A group has no one view of a call: the summary stays on this device. 1:1 goes to both sides,
+  // unless the app is going down.
+  const bool local_only = group || reason == LiveCallEndReason::Shutdown;
   if (auto sent = host_.wire.send_summary(*session.origin_thread_id, summary, local_only); !sent) {
     log().warning << "call summary not written call_id=" << session.call_id << " err=" << sent.error().message;
   }

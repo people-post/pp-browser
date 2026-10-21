@@ -3,6 +3,7 @@
 
 #include "domain/calls/CallControlCodec.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
@@ -64,11 +65,21 @@ TEST_F(CallControlFamilyTest, OneLinePerCallFromTheReadersSide) {
             std::optional<std::string>("Voice call · no answer"));
   EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Declined, std::nullopt, false, CallMediaMode::Video)),
             std::optional<std::string>("Video call · declined"));
-  EXPECT_EQ(Line(Summary("account:bob", CallOutcome::Completed, 61'000, true)),
-            std::optional<std::string>("Bob started a voice call · 1:01"));
-  const auto unknown = Line(Summary("account:carol", CallOutcome::Completed, 1'000, true));
-  ASSERT_TRUE(unknown);
-  EXPECT_EQ(unknown->find("account:carol"), std::string::npos) << "an unknown peer is not shown by id";
+}
+
+TEST_F(CallControlFamilyTest, AGroupSummaryIsTheReadersOwnPartInTheCall) {
+  EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Completed, 61'000, true)),
+            std::optional<std::string>("Group voice call · 1:01"));
+  EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Missed, std::nullopt, true)),
+            std::optional<std::string>("Missed group voice call"));
+  EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Declined, std::nullopt, true, CallMediaMode::Video)),
+            std::optional<std::string>("Declined group video call"));
+  auto started = Summary(kLocalSelfContactId, CallOutcome::Missed, std::nullopt, true);
+  CallSummaryDetail detail = CallControlCodec::DecodeSummary(
+      TryParseObject(started.payload_json)->getString("detail").value()).value();
+  detail.started = true;
+  started = Message(CallControlType::CallSummary, kLocalSelfContactId, CallControlCodec::EncodeSummary(detail).value());
+  EXPECT_EQ(Line(started), std::optional<std::string>("Group voice call · no answer"));
 }
 
 TEST_F(CallControlFamilyTest, OnlyAMissedCallIsNews) {

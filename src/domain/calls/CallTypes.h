@@ -304,8 +304,10 @@ struct CallSummaryDetail {
   CallMediaMode media_mode = CallMediaMode::Voice;
   CallOutcome outcome = CallOutcome::Completed;
   std::optional<int64_t> duration_ms;
-  /** A group call (the summary is in the group's thread). */
+  /** A group call (the summary is in the group's thread, kept on the device that wrote it). */
   bool group = false;
+  /** Group: the writer started the call (a 1:1 summary is always its starter's). */
+  bool started = false;
 };
 
 struct CallSdpDetail {
