@@ -10,6 +10,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/ContactsStore.h"
+#include "domain/people/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>
@@ -56,29 +57,7 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
   request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
   request.requester_identity_value = local_identity->relay_user_id;
   // History/stream routing stays on Brief relay ids (M010); thread peer is Account ID.
-  std::string peer_relay;
-  if (!thread.participant_contact_ids.empty()) {
-    if (auto contact = contacts_.Get(thread.participant_contact_ids.front()); contact && *contact) {
-      for (const mesh::ContactId& id : (*contact)->ids) {
-        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-          peer_relay = id.value;
-          break;
-        }
-      }
-    }
-  }
-  if (peer_relay.empty() && thread.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) &&
-      !thread.peer_identity_value.empty()) {
-    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, mesh::ContactIdKind::Account);
-    if (by_account && by_account->has_value()) {
-      for (const mesh::ContactId& id : (**by_account).ids) {
-        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-          peer_relay = id.value;
-          break;
-        }
-      }
-    }
-  }
+  const std::string peer_relay = ContactRelayRoute(thread, contacts_).value_or(std::string());
   if (peer_relay.empty()) {
     return Error("Direct thread missing peer relay route for history");
   }

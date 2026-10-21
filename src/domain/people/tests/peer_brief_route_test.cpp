@@ -64,6 +64,24 @@ TEST_F(PeerBriefRouteTest, ContactRelayPreferredOverLearned) {
   EXPECT_EQ(*route, "relay:from-contact");
 }
 
+TEST_F(PeerBriefRouteTest, ContactRouteFindsTheAccountsContactButNotLearnedRoutes) {
+  Contact contact;
+  contact.id = "c2";
+  contact.ids = {{mesh::ContactIdKind::Account, "account:peer", true},
+                 {mesh::ContactIdKind::RelayUser, "relay:by-account", false}};
+  ASSERT_TRUE(contacts_->Upsert(contact));
+  Thread thread;
+  thread.kind = ThreadKind::Direct;
+  thread.peer_identity_kind = "account";
+  thread.peer_identity_value = "account:peer";
+  EXPECT_EQ(ContactRelayRoute(thread, *contacts_), std::optional<std::string>("relay:by-account"))
+      << "no participant contact on the thread: the account's contact";
+  thread.peer_identity_value = "account:stranger";
+  EXPECT_FALSE(ContactRelayRoute(thread, *contacts_)) << "contacts only";
+  EXPECT_EQ(ResolvePeerBriefRoute(thread, *contacts_, {{"account:stranger", "relay:learned"}}),
+            std::optional<std::string>("relay:learned"));
+}
+
 TEST_F(PeerBriefRouteTest, DirectoryHitRelay) {
   mesh::DirectoryHit hit;
   hit.hit_id = "relay:hit";

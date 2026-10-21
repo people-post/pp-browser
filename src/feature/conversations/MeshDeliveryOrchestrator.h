@@ -63,12 +63,13 @@ enum class ThreadPeerPathKind {
 struct ThreadPeerLinkView {
   mesh::MeshPeerLinkPhase phase = mesh::MeshPeerLinkPhase::Unavailable;
   ThreadPeerPathKind path_kind = ThreadPeerPathKind::None;
-  std::string status_label;
-  std::string banner_message;
-  bool show_banner = false;
+  /** The transport's own failure text, for the log (the GUI words the state — PeerLinkText). */
+  std::string detail;
+  /** A retry may help (backing off after a failed dial). */
   bool show_retry = false;
   int backoff_seconds = 0;
   bool has_direct_endpoint = false;
+  /** Messages can go via the Brief relay (a route to the peer is known and a relay is configured). */
   bool relay_available = false;
   bool carrier_backed = false;
 };

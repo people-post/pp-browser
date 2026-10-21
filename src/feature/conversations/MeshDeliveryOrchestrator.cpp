@@ -622,118 +622,38 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct) {
     return view;
   }
-
-  const std::string peer = (*thread)->peer_identity_value;
-  view.relay_available = false;
-  if (relay_ != nullptr &&
-      ((*thread)->peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) ||
-       (*thread)->peer_identity_kind == "account")) {
-    if (!(*thread)->participant_contact_ids.empty()) {
-      if (auto contact = contacts_.Get((*thread)->participant_contact_ids.front())) {
-        if (*contact) {
-          for (const mesh::ContactId& id : (*contact)->ids) {
-            if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-              view.relay_available = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-    if (!view.relay_available) {
-      auto by_account = contacts_.FindByIdentity(peer, mesh::ContactIdKind::Account);
-      if (by_account && by_account->has_value()) {
-        for (const mesh::ContactId& id : (**by_account).ids) {
-          if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-            view.relay_available = true;
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  if (peer.empty()) {
-    view.phase = mesh::MeshPeerLinkPhase::Unavailable;
-    view.path_kind = ThreadPeerPathKind::Failed;
-    view.status_label = "Can't connect";
-    view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
-    view.show_banner = true;
+  const std::string& peer = (*thread)->peer_identity_value;
+  // The same route a send would use (contacts, learned from verified senders, the directory cache).
+  view.relay_available = relay_ != nullptr && ResolvePeerRelayId(**thread).has_value();
+  if (peer.empty() || !amp_links_) {
+    view.path_kind = view.relay_available && !peer.empty() ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
     return view;
   }
-
-  if (amp_links_) {
-    const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
-    view.phase = snap.phase;
-    view.has_direct_endpoint = snap.has_endpoint;
-    view.carrier_backed = snap.carrier_backed;
-    view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
-    switch (snap.phase) {
-    case mesh::MeshPeerLinkPhase::Connected:
-      if (snap.carrier_backed) {
-        view.path_kind = ThreadPeerPathKind::ViaHop;
-        view.status_label = "Via hop";
-      } else {
-        view.path_kind = ThreadPeerPathKind::Direct;
-        view.status_label = "Direct";
-      }
-      break;
-    case mesh::MeshPeerLinkPhase::Dialing:
-    case mesh::MeshPeerLinkPhase::Handshaking:
-      // Includes hole-punch burst dial — short-lived, never a settled badge.
-      view.path_kind = ThreadPeerPathKind::Connecting;
-      view.status_label = "Connecting…";
-      view.banner_message = "Trying a direct link…";
-      view.show_banner = true;
-      break;
-    case mesh::MeshPeerLinkPhase::Backoff:
-      view.path_kind = ThreadPeerPathKind::Degraded;
-      view.status_label = view.backoff_seconds > 0
-                              ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
-                              : "Retrying soon";
-      view.banner_message = snap.detail.empty()
-                                ? "Peer didn't answer — they may be offline or the address may be wrong."
-                                : snap.detail;
-      if (view.relay_available) {
-        view.banner_message += " Messages can still go via relay.";
-      }
-      view.show_banner = true;
-      view.show_retry = true;
-      break;
-    case mesh::MeshPeerLinkPhase::Idle:
-      view.path_kind = ThreadPeerPathKind::Ready;
-      view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
-      break;
-    case mesh::MeshPeerLinkPhase::Unavailable:
-    default:
-      if (view.relay_available) {
-        view.path_kind = ThreadPeerPathKind::ViaRelay;
-        view.status_label = "Via relay";
-      } else if (snap.has_endpoint) {
-        view.path_kind = ThreadPeerPathKind::Failed;
-        view.status_label = "Offline";
-        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-        view.show_banner = true;
-      } else {
-        view.path_kind = ThreadPeerPathKind::Failed;
-        view.status_label = "Can't connect";
-        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-        view.show_banner = true;
-      }
-      break;
-    }
-    return view;
-  }
-
-  view.phase = mesh::MeshPeerLinkPhase::Unavailable;
-  if (view.relay_available) {
-    view.path_kind = ThreadPeerPathKind::ViaRelay;
-    view.status_label = "Via relay";
-  } else {
-    view.path_kind = ThreadPeerPathKind::Failed;
-    view.status_label = "Offline";
-    view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-    view.show_banner = true;
+  const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+  view.phase = snap.phase;
+  view.has_direct_endpoint = snap.has_endpoint;
+  view.carrier_backed = snap.carrier_backed;
+  view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
+  view.detail = snap.detail;
+  switch (snap.phase) {
+  case mesh::MeshPeerLinkPhase::Connected:
+    view.path_kind = snap.carrier_backed ? ThreadPeerPathKind::ViaHop : ThreadPeerPathKind::Direct;
+    break;
+  case mesh::MeshPeerLinkPhase::Dialing:
+  case mesh::MeshPeerLinkPhase::Handshaking:
+    view.path_kind = ThreadPeerPathKind::Connecting;  // includes a punch burst: never a settled badge
+    break;
+  case mesh::MeshPeerLinkPhase::Backoff:
+    view.path_kind = ThreadPeerPathKind::Degraded;
+    view.show_retry = true;
+    break;
+  case mesh::MeshPeerLinkPhase::Idle:
+    view.path_kind = ThreadPeerPathKind::Ready;
+    break;
+  case mesh::MeshPeerLinkPhase::Unavailable:
+  default:
+    view.path_kind = view.relay_available ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
+    break;
   }
   return view;
 }
