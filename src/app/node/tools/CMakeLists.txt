@@ -69,3 +69,24 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
     pp_browser_add_gtest(pp_browser_call_probe_test)
   endif()
 endif()
+
+# pp-app-probe: the app with no GUI (same Bootstrap + ProductStack), one scripted user per process.
+# Desktop configure only (needs the product feature stack).
+if(TARGET pp_feature_product)
+  add_executable(pp-app-probe
+    app_probe/main.cpp
+    ${CMAKE_SOURCE_DIR}/src/app/Bootstrap.cpp
+  )
+  target_include_directories(pp-app-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  target_link_libraries(pp-app-probe PRIVATE
+    pp_feature_product
+    pp_feature
+    pp_base
+    pp_pbr_common
+    pp_mesh
+    CURL::libcurl
+    Threads::Threads
+  )
+  pp_browser_apply_warnings(pp-app-probe)
+  set_target_properties(pp-app-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
+endif()

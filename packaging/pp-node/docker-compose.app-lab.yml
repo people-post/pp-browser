@@ -1,0 +1,97 @@
+# App lab: the real Brief relay stack (www gateway + messenger inbox + Mongo) for pp-app-probe runs —
+# the product's messaging, control lane and AutoKey sessions over the relay the app uses in production.
+# Builds from a web2 checkout: PP_WEB2_ROOT (default ../../../../web2, beside web3/).
+#
+#   PP_WEB2_ROOT=~/codes/dailybrief/web2 docker compose -f docker-compose.app-lab.yml -p pp-app-lab up -d --build
+#
+# No fixed container names and no Mongo host port: it never collides with a developer's own Brief
+# stack (brief_db / brief_www). The gateway is published on 127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}.
+#
+# The lab's own mesh seed (pp-node, image pp-node:local as staged by pp_local_test.sh) sits on a
+# TEST-NET-2 network: the product dials seeds only on public addresses, and 198.51.100.0/24 reads
+# as one while the host still routes to it. Its /status is on 127.0.0.1:${PP_APP_LAB_HOP_STATUS_PORT:-18718}.
+services:
+  hop:
+    build:
+      context: ../../dist/pp-node/docker
+      dockerfile: Dockerfile
+    image: pp-node:local
+    environment:
+      PP_BROWSER_PIN: local-test-pin
+      PP_NODE_AMP_UDP_PORT: 18517
+      PP_NODE_DATA_DIR: /var/lib/pp-node
+      PP_NODE_STATUS_ADDR: 0.0.0.0:18518
+      PP_NODE_CAP_CIRCUIT_RELAY: 1
+      PP_NODE_CAP_MEDIA_RELAY: 1
+    networks:
+      lab:
+        ipv4_address: 198.51.100.10
+    ports:
+      - "127.0.0.1:${PP_APP_LAB_HOP_STATUS_PORT:-18718}:18518"
+
+  relay-db:
+    image: mongo:8-noble
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: brief
+      MONGO_INITDB_ROOT_PASSWORD: brief
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    networks: [lab]
+
+  messenger:
+    build:
+      context: ${PP_WEB2_ROOT:-../../../../web2}/messenger
+      # messenger's package.json pins no pnpm, so its own Dockerfile gets corepack's latest pnpm, which
+      # rejects `--quiet`. Pin the one www uses.
+      dockerfile_inline: |
+        FROM node:lts-alpine
+        ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
+        RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
+        WORKDIR /app
+        COPY app/package.json app/pnpm-lock.yaml app/pnpm-workspace.yaml ./
+        RUN pnpm install --frozen-lockfile --ignore-scripts
+        COPY app/src ./src
+        COPY app/tsconfig.json ./
+        RUN pnpm run build
+        CMD ["node", "obj/index.js"]
+    environment:
+      BRF_MESSENGER_HOST: "::"
+      BRF_MESSENGER_PORT: 9098
+      BRF_MESSENGER_MONGO_URI: "mongodb://brief:brief@relay-db:27017/messenger?authSource=admin"
+    networks: [lab]
+    depends_on:
+      relay-db:
+        condition: service_healthy
+
+  www:
+    build:
+      context: ${PP_WEB2_ROOT:-../../../../web2}/www
+    environment:
+      BRF_WWW_HOST: "::"
+      BRF_WWW_PORT: 9097
+      BRF_WWW_MONGO_URI: "mongodb://brief:brief@relay-db:27017/brief?authSource=admin"
+      BRF_WWW_MESSENGER_URI: "http://messenger:9098"
+      # Required by the config; the relay routes never look at it.
+      BRF_WWW_DOMAINS: '[{"id":"lab","origin":"http://lab.invalid"}]'
+    networks: [lab]
+    ports:
+      - "127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}:9097"
+    depends_on:
+      relay-db:
+        condition: service_healthy
+      messenger:
+        condition: service_started
+
+networks:
+  lab:
+    ipam:
+      config:
+        - subnet: 198.51.100.0/24

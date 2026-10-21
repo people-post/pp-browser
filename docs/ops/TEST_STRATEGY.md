@@ -190,12 +190,19 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/test/pp_local_test.sh run --suite msg-call-hop  # same-session chat during hop call
 ./scripts/test/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
 ./scripts/test/pp_local_test.sh run --suite ledger  # N-LEDGER, local processes (needs PP_LEDGER_ROOT built; not in all)
+./scripts/test/pp_local_test.sh run --suite app     # app lab: scripted users on pp-app-probe over the real relay (not in all)
 ./scripts/test/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/test/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/test/pp_local_test.sh clear               # down -v + ready-file
 ```
 
 `run` leaves the hop up unless `--down`. The hop image is built from `dist/pp-node/docker`; when that is missing (fresh checkout) `up` / `run` stage it from the desktop `build/src/app/node/pp-node`, and they restage whenever the desktop binary is newer. `scripts/platform/pp_node_package_linux.sh all` (stripped Ubuntu 24.04 build) still works and is what release CI uses.
+
+### App lab (`--suite app`)
+
+The other probes drive the call stack around the product's messaging; the app lab drives the app. [`pp-app-probe`](../../src/app/node/tools/app_probe/main.cpp) is the app with no GUI — the same `Bootstrap`, `ProductStack`, facade and `CallUiBackend` (incl. `Settle`) — one scripted user per process, its own profile dir, line-JSON commands on stdin (`register`, `open_chat`, `call`, `accept`, `leave`, `crash`, …). [`pp_app_lab.py`](../../scripts/test/pp_app_lab.py) runs the scenarios people hit when a call will not get through — first contact, both calling at once (and both answering), calling back while it rings, a redial storm, a restart while ringing, the caller's app dying mid-call and coming back, a peer vanishing mid-call, decline then call back — and checks the outcome: nobody stuck, one history entry per call, audio both ways, and times (ring, answer → audio, Reconnecting, failed).
+
+[`docker-compose.app-lab.yml`](../../packaging/pp-node/docker-compose.app-lab.yml) (project `pp-app-lab`) is the real relay — web2 `www` (gateway: registration, directory, signed requests, rate limits) + `messenger` + Mongo, built from `PP_WEB2_ROOT` — and the lab's own mesh seed. The seed sits on a TEST-NET-2 network (198.51.100.0/24): the product dials seeds only on public addresses. No fixed container names or Mongo host port, so it never meets a developer's own Brief stack. The relay allows 10 registrations per IP per hour; the driver restarts the gateway when a run has used them.
 
 Probes dial the hop at a **private / loopback** address from `/status` `listen_addrs` (its Docker network address) when the status URL is local: the hop ranks a public address learned from an internet seed first, which probes on the same host usually cannot reach (no NAT hairpin). Set `PP_NODE_HOP_MULTIADDR` to dial a specific hop address.
 
