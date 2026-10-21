@@ -9,7 +9,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 
 #include <functional>
 #include <optional>

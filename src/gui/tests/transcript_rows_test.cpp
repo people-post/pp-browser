@@ -5,7 +5,7 @@
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "gui/chat/TranscriptRml.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -36,7 +36,7 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     ContactsStore contacts(dir.string());
     MockDirectoryClient directory;
     DirectoryShadowCache shadows(directory);
-    PeerDisplayResolver labels(contacts, shadows);
+    PeerDisplayResolver labels(contacts, PeerDisplaySourcesFrom(shadows));
     InboxController inbox(store, contacts, labels, &shadows);
 
     Thread thread;
@@ -107,7 +107,7 @@ TEST(InboxMessageLinksTest, SharedArticleShowsTheLabelAsALink) {
     ContactsStore contacts(dir.string());
     MockDirectoryClient directory;
     DirectoryShadowCache shadows(directory);
-    PeerDisplayResolver labels(contacts, shadows);
+    PeerDisplayResolver labels(contacts, PeerDisplaySourcesFrom(shadows));
     InboxController inbox(store, contacts, labels, &shadows);
 
     Thread thread;

@@ -15,7 +15,7 @@
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"

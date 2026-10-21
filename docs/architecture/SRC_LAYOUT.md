@@ -107,7 +107,7 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
+| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version; owner threads and a runner's executor on one (`RuntimeOwnerExecutor`) |
 | `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; `platform/ui/` = window host + RmlUi Backend + overlays. See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
@@ -119,7 +119,7 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`); link-device and local account backup (`LinkDeviceCoordinator`, `LocalAccountBackup`) |
+| `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`); link-device and local account backup (`LinkDeviceCoordinator`, `LocalAccountBackup`); a peer's Brief route (`PeerBriefRoute`, `ContactRelayRoute`); the name a thread or sender shows (`PeerDisplayResolver`; the directory cache and group titles through `PeerDisplaySources`) |
 | `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the inbound receive engine (`RelayReceivePipeline`: verify, replay, decrypt, membership, control lane; the local keys through a `LocalKeys` port) and the group invite gate (`GroupInviteGate`; the inviter's standing through a port); the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); what a send of ours writes and puts on the wire (`OutboundMessage`: the row, the sealed payload, the envelope); what a transcript shows (`TranscriptAssembly`; the GUI draws it); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) — features wire it to `domain/content` |
 | `domain/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec and its system-control family (`CallControlFamily`), session and media-key stores and what a call's rows say (`CallSessionQueries`: who is in it, a peer's roster applied), the media key exchange (`CallMediaKeyExchange`, its control-lane sends through a port), the call-to-media seat (`CallMediaSeat`), the calls on this device and what they show (`LiveCalls`: call state, media Status, path gates), pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `CallPathMobility`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
 | `domain/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |

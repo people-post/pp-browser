@@ -6,7 +6,7 @@
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "gui/chat/TranscriptRml.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -45,7 +45,7 @@ protected:
     ASSERT_TRUE(store_->SetDek(TestDek()));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
-    labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *shadows_);
+    labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*shadows_));
     inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *labels_, shadows_.get());
     inbox_->SetSystemControls(&controls_);
     Thread thread;

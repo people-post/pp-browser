@@ -14,7 +14,7 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/RelayReceivePipeline.h"
 #include "feature/conversations/LocalKeysFromIdentity.h"
@@ -49,7 +49,7 @@ public:
         roster_store(store.ProfileDbPath()),
         contacts(data_dir.string()),
         shadows(directory),
-        labels(contacts, shadows),
+        labels(contacts, PeerDisplaySourcesFrom(shadows)),
         inbox(store, contacts, labels, &shadows),
         receive_pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store),
         sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {

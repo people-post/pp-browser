@@ -16,6 +16,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   PeerAccountBook.cpp
   PeerBriefRoute.cpp
   PeerDisplayLabel.cpp
+  PeerDisplayResolver.cpp
   RegistrationStatus.cpp
 )
 

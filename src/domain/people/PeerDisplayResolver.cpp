@@ -1,15 +1,16 @@
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "domain/people/PeerDisplayResolver.h"
 
 #include "domain/people/ContactJson.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/MeshAlias.h"
 
+#include <utility>
+
 namespace pbr {
 
-PeerDisplayResolver::PeerDisplayResolver(ContactsStore& contacts, DirectoryShadowCache& shadows,
-                                         GroupRosterStore* group_roster)
-    : contacts_(contacts), shadows_(shadows), group_roster_(group_roster) {}
+PeerDisplayResolver::PeerDisplayResolver(ContactsStore& contacts, PeerDisplaySources sources)
+    : contacts_(contacts), sources_(std::move(sources)) {}
 
 PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_identity_kind,
                                                         const std::string& peer_identity_value) const {
@@ -36,7 +37,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_
     }
   }
 
-  if (auto shadow = shadows_.Get(peer_identity_value)) {
+  if (auto shadow = sources_.directory ? sources_.directory(peer_identity_value) : std::nullopt) {
     const std::string title = FormatDirectoryTitle(*shadow);
     if (!title.empty()) {
       label.title = title;
@@ -56,12 +57,8 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
     label.trust = PeerLabelTrust::Group;
 
     std::string shared;
-    if (group_roster_ && thread.group_id) {
-      if (auto meta = group_roster_->LoadMetadata(*thread.group_id)) {
-        if (*meta && !(*meta)->title.empty()) {
-          shared = (*meta)->title;
-        }
-      }
+    if (sources_.group_title && thread.group_id) {
+      shared = sources_.group_title(*thread.group_id).value_or(std::string());
     }
     if (shared.empty()) {
       shared = thread.title;

@@ -23,7 +23,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
     MeshConnectivityWiring.cpp
-    PeerDisplayResolver.cpp
     ProfileIconClient.cpp
     ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp

@@ -1085,7 +1085,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   }
   group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
-  peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
+  peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
   inbox_->SetSystemControls(&system_controls_);
   directory_shadows_->SetOnUpdated([this]() {

@@ -3,7 +3,7 @@
 #include "domain/people/ContactsStore.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -31,7 +31,7 @@ struct InboxTestEnv {
     }
     contacts = std::make_unique<ContactsStore>(data_dir.string());
     shadows = std::make_unique<DirectoryShadowCache>(directory);
-    labels = std::make_unique<PeerDisplayResolver>(*contacts, *shadows);
+    labels = std::make_unique<PeerDisplayResolver>(*contacts, PeerDisplaySourcesFrom(*shadows));
     inbox = std::make_unique<InboxController>(*store, *contacts, *labels, shadows.get());
   }
 
