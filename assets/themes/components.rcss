@@ -934,13 +934,21 @@ select selectbox option {
   flex: 1 1 auto;
   min-width: 0;
   margin-bottom: 0;
+  font-size: 12dp;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.chat-long-list-meta-row .chat-long-list-meta-end {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  font-size: 12dp;
+  white-space: nowrap;
+}
+
 .chat-long-list-meta-row .chat-inline-link {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   margin-left: auto;
   white-space: nowrap;
 }
