@@ -30,6 +30,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     GroupMembershipCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
+    OutboundMessage.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp

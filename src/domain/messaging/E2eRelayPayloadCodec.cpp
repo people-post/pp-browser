@@ -9,6 +9,7 @@
 #include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
+#include "common/chat/MessagingLimits.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

@@ -251,6 +251,8 @@ private:
     std::optional<std::string> key_init_b64;
   };
   Roe<E2ePublicSession> ResolveE2ePublicSession(const std::string& peer_identity);
+  /** The peer's account KEM public key (directory, M015). */
+  Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
   uint64_t NextControlOrderKey();
   /** A control-lane send still unsent this long after it was made is dropped from the retry queue. */
   static constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
