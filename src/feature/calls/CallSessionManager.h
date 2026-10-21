@@ -28,6 +28,7 @@
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
+#include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/SharedPorts.h"
 
 #include "common/Error.h"
@@ -173,10 +174,10 @@ public:
   /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
   void SetDirectDriver(CallDirectDriver* direct) {
     direct_driver_ = direct;
-    live_calls_.BindDirectDriver(direct);
+    call_media_.BindDirectDriver(direct);
   }
-  /** A call's media coordinator (LiveCall); null for a call not admitted here. Calls owner. */
-  CallMediaCoordinator* CallMedia(const std::string& call_id) { return live_calls_.Media(call_id); }
+  /** A call's media coordinator (LiveCallMedia); null for a call not admitted here. Calls owner. */
+  CallMediaCoordinator* CallMedia(const std::string& call_id) { return call_media_.Media(call_id); }
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store);
   InitiationBillingStore* InitiationBilling() const { return billing_.Store(); }
@@ -325,7 +326,7 @@ private:
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
-  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override { return live_calls_.Media(call_id); }
+  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
   bool HopCarriesMedia() const override;
   void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                            const std::string& peer_id) override;
@@ -395,6 +396,8 @@ private:
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
+  /** Each live call's media coordinator (after live_calls_, which it reads). */
+  LiveCallMedia call_media_{live_calls_};
   /** Outbound call-control I/O (after delivery_ / the stores it borrows). */
   CallControlClient control_;
   /** The call's media keys between the peers (after control_, which carries them). */

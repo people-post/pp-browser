@@ -82,7 +82,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                                const std::string& key_id, const ByteVector& key) {
                           return control_.SendMediaKey(call_id, peer, epoch, key_id, key);
                         }}), billing_(identity), reach_signals_(control_),
-      workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
+      workflow_(store, sessions, key_exchange_, billing_, live_calls_, call_media_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
@@ -92,7 +92,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     }
   });
   BindSeat();
-  live_calls_.BindHopDriver(&topology_);
+  call_media_.BindHopDriver(&topology_);
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
   topology_.SetHopArmingPorts(MakeHopArmingPorts());
   BindTopologyHostPorts();
@@ -104,7 +104,7 @@ void CallSessionManager::BindTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return TopologyLocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
-  ports.call_media = [this](const std::string& call_id) { return live_calls_.Media(call_id); };
+  ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return TopologyFanOutToJoined(call_id, type, detail, display, skip);
@@ -570,7 +570,7 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
 }
 
 void CallSessionManager::BindSeat() {
-  live_calls_.BindMediaResources(&media_, &seat_);
+  call_media_.BindMediaResources(&media_, &seat_);
   CallMediaSeatPorts release;
   release.release = [this](const std::string& call_id) { seat_.Release(call_id); };
   media_seat_ports_.Set(std::move(release));
@@ -737,7 +737,7 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   // direct driver connect.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   if (auto begun = call_media ? call_media->BeginDirect(peer_identity, offerer)
                               : Roe<void>(Error("no live call for media"));
       !begun) {
@@ -813,8 +813,8 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
   if (!local) {
     return local.error();
   }
-  const std::string call_id = live_calls_.MediaRunningCallId();
-  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  const std::string call_id = call_media_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : call_media_.Media(call_id);
   if (!call_media) {
     return Error("No active call media");
   }
@@ -840,8 +840,8 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (!local) {
     return local.error();
   }
-  const std::string call_id = live_calls_.MediaRunningCallId();
-  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  const std::string call_id = call_media_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : call_media_.Media(call_id);
   if (!call_media) {
     return Error("No active call media");
   }
@@ -880,7 +880,7 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
     return Error("No active call");
   }
   if (publisher_identity.empty() || publisher_identity == *local) {
-    if (CallMediaCoordinator* call_media = live_calls_.Media(call_id)) {
+    if (CallMediaCoordinator* call_media = call_media_.Media(call_id)) {
       call_media->RequestKeyframe();
     }
     return {};
@@ -998,7 +998,7 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   // CSM is signaling-only for duplex stop: the call registry releases the seat (Detach-then-Stop).
-  live_calls_.StopMedia(call_id);
+  call_media_.StopMedia(call_id);
 }
 
 
@@ -1191,7 +1191,7 @@ void CallSessionManager::PollP2pConnectHealth() {
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   const auto direct_media = direct_media_.Get();
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   if (call_media && direct_media->media_attempted && direct_media->media_attempted(call_id)) {
     return call_media->Retry();
   }
@@ -1199,7 +1199,7 @@ Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
 }
 
 Roe<void> CallSessionManager::ResumeP2pMedia(const std::string& call_id) {
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }
 

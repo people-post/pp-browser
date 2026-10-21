@@ -12,7 +12,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "feature/calls/LiveCall.h"
+#include "feature/calls/LiveCallMedia.h"
 
 #include <functional>
 #include <optional>
@@ -125,7 +125,8 @@ public:
   };
 
   CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
-                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls);
+                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls,
+                      LiveCallMedia& call_media);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
@@ -299,6 +300,7 @@ private:
   CallInitiationBilling& billing_;
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
+  LiveCallMedia& call_media_;
   HostPorts host_;
   OwnerOutbox<WorkflowEvent> outbox_;
   /** Accepts waiting on their circuit park. */

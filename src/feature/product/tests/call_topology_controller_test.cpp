@@ -1,7 +1,7 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/calls/CallMediaSeat.h"
-#include "feature/calls/LiveCall.h"
+#include "feature/calls/LiveCallMedia.h"
 #include "domain/calls/CallLifecycleTypes.h"
 #include "feature/product/tests/calls_loopback_outbox.h"
 
@@ -80,6 +80,7 @@ class FakeTopologyHost {
 public:
   /** Every call the hop path drives is live here (the harness seeds store rows only). */
   LiveCalls live;
+  LiveCallMedia call_media{live};
   /** The 1:1 path the calls' coordinators release when the hop takes over. */
   struct CountingDirectDriver final : CallDirectDriver {
     int* releases = nullptr;
@@ -92,7 +93,7 @@ public:
   } direct;
   FakeTopologyHost() {
     direct.releases = &direct_media_releases;
-    live.BindDirectDriver(&direct);
+    call_media.BindDirectDriver(&direct);
   }
 
   CallTopologyController::HostPorts MakeHostPorts() {
@@ -101,7 +102,7 @@ public:
       if (!live.Find(call_id)) {
         live.AdmitPlaced(call_id, {});
       }
-      return live.Media(call_id);
+      return call_media.Media(call_id);
     };
     ports.local_relay_identity = [this]() -> Roe<std::string> {
       if (local_identity.empty()) {
@@ -328,7 +329,7 @@ protected:
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeTopologyHost>();
-    host_->live.BindMediaResources(media_.get(), nullptr);
+    host_->call_media.BindMediaResources(media_.get(), nullptr);
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
     topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
@@ -1470,7 +1471,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
 
   CallMediaSeat seat;
   topo_->SetSeatPorts(TestTopologySeatPorts(&seat));
-  host_->live.BindMediaResources(media_.get(), &seat);
+  host_->call_media.BindMediaResources(media_.get(), &seat);
 
   const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";

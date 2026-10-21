@@ -1,4 +1,4 @@
-#include "feature/calls/LiveCall.h"
+#include "domain/calls/LiveCall.h"
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
@@ -533,59 +533,6 @@ void LiveCalls::Close(const std::string& call_id, const LiveCallEndReason reason
   ended_order_.push_back(call_id);
   PruneEnded();
   Changed();
-}
-
-void LiveCalls::BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat) {
-  resources_.engine = engine;
-  resources_.seat = seat;
-}
-
-CallMediaCoordinator* LiveCalls::Media(const std::string& call_id) {
-  LiveCall* call = Find(call_id);
-  if (!call) {
-    LiveCallLog().warning << "media for a call not admitted here call_id=" << call_id;
-    return nullptr;
-  }
-  if (!call->media_ && resources_.engine) {
-    call->media_ = std::make_unique<CallMediaCoordinator>(call_id, resources_);
-  }
-  return call->media_.get();
-}
-
-void LiveCalls::StopMedia(const std::string& call_id) {
-  if (resources_.seat) {
-    resources_.seat->Release(call_id);  // Detach then engine Stop (seat teardown hooks)
-    return;
-  }
-  if (resources_.hop) {
-    resources_.hop->OnMediaStopped(call_id);
-  }
-  if (resources_.direct) {
-    resources_.direct->StopMeshMedia(call_id);
-  }
-}
-
-bool LiveCalls::MediaRunning() const {
-  return resources_.engine && resources_.engine->IsActive();
-}
-
-std::string LiveCalls::MediaRunningCallId() const {
-  return resources_.engine ? resources_.engine->ActiveCallId() : std::string{};
-}
-
-void LiveCalls::StopMediaExcept(const std::string& keep_call_id) {
-  CallMediaEngine* engine = resources_.engine;
-  if (!engine || (!engine->IsActive() && !engine->IsSfuMode())) {
-    return;
-  }
-  const std::string leftover = engine->ActiveCallId();
-  if (!leftover.empty() && leftover != keep_call_id) {
-    LiveCallLog().info << "stopping leftover media call_id=" << leftover << " for=" << keep_call_id;
-    StopMedia(leftover);
-  } else if (leftover.empty()) {
-    LiveCallLog().info << "stopping zombie engine (no call id) for=" << keep_call_id;
-    StopMedia({});
-  }
 }
 
 void LiveCalls::WarnIfSecondActive(const std::string& call_id) const {

@@ -17,9 +17,9 @@ namespace pbr {
 
 CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
                                          CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing,
-                                         LiveCalls& live_calls)
+                                         LiveCalls& live_calls, LiveCallMedia& call_media)
     : store_(store), sessions_(sessions), key_exchange_(key_exchange), billing_(billing),
-      live_calls_(live_calls) {
+      live_calls_(live_calls), call_media_(call_media) {
   redirectLogger("CallSessionWorkflow");
 }
 
@@ -477,7 +477,7 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
                                                       const std::string& local_identity) {
   // LeaveCallIfActiveExcept only sees Joined sessions; an Ended prior call can leave the engine
   // running. Stop it before this call's media — never the call we are accepting.
-  live_calls_.StopMediaExcept(call_id);
+  call_media_.StopMediaExcept(call_id);
   auto pending = LoadAcceptableInvite(call_id, local_identity);
   if (!pending) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << pending.error().message;
@@ -656,7 +656,7 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
   auto joined_after = sessions_.CountJoined(call_id);
   const size_t planner_n = joined_after ? *joined_after : 0;  // V050: joined only — ringing invitees never arm the hop
   // The call's media coordinator decides the path (the hop takes a group call; else 1:1 Direct).
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   const bool topology_took_media =
       call_media && call_media->DecideOnLocalAccept(planner_n, row.sfu_hint) == CallMediaPath::Hop;
   if (topology_took_media) {
@@ -934,7 +934,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                           const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
-  live_calls_.StopMedia(session.call_id);
+  call_media_.StopMedia(session.call_id);
   session.state = CallSessionState::Ended;
   session.ended_at = util::NowUnixMs();
   if (auto saved = sessions_.UpsertSession(session); !saved) {
@@ -960,16 +960,16 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
     // Still detach leftover SFU if the disk row is gone but capture is live.
-    live_calls_.StopMedia(call_id);
+    call_media_.StopMedia(call_id);
     return Error("Call session not found");
   }
   if ((*session)->state == CallSessionState::Ended) {
     // Session already Ended (remote CallEnded / prior EndCallLocal) must still tear down
     // media_relay — otherwise the next Accept inherits zombie RX and red "reconnecting".
-    live_calls_.StopMedia(call_id);
+    call_media_.StopMedia(call_id);
     return {};
   }
-  live_calls_.StopMedia(call_id);
+  call_media_.StopMedia(call_id);
 
   const int64_t now = util::NowUnixMs();
   CallParticipant self;
@@ -1058,7 +1058,7 @@ void CallSessionWorkflow::SweepExpiredInvites() {
 
   // CALLS outbound unanswered: clear sticky Calling bar without waiting on GUI LeaveClicked.
   const LiveCall* calling = live_calls_.Active();
-  if (calling && calling->State() == LiveCallState::Calling && !live_calls_.MediaRunning()) {
+  if (calling && calling->State() == LiveCallState::Calling && !call_media_.MediaRunning()) {
     auto active = ActiveLocalCall();
     if (active && active->has_value() &&
         CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, (*active)->created_at, now)) {
@@ -1531,7 +1531,7 @@ void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& ac
   if (!implicit && host_.hop.note_accept_hop_report) {
     host_.hop.note_accept_hop_report(accept.call_id, identity, accept.hop_report);
   }
-  CallMediaCoordinator* call_media = live_calls_.Media(accept.call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(accept.call_id);
   const bool stays_direct =
       !call_media || call_media->DecideOnRemoteAccept(n_joined, identity) == CallMediaPath::Direct;
   if (stays_direct) {
@@ -1622,7 +1622,7 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
       }
       return EndCallLocal(**session, duration, LiveCallEndReason::RemoteEnded);
     }
-    live_calls_.StopMedia(leave->call_id);
+    call_media_.StopMedia(leave->call_id);
     host_.wire.notify_ring_changed();
     return {};
   }
@@ -1718,10 +1718,10 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
     }
   }
   if (!CallSessionLogic::ShouldHonorInboundVideoRefresh(refresh->call_id, refresh->identity, sender_identity,
-                                                        *local, live_calls_.MediaRunningCallId(), sender_joined)) {
+                                                        *local, call_media_.MediaRunningCallId(), sender_joined)) {
     return {};
   }
-  if (CallMediaCoordinator* call_media = live_calls_.Media(refresh->call_id)) {
+  if (CallMediaCoordinator* call_media = call_media_.Media(refresh->call_id)) {
     call_media->RequestKeyframe();
   }
   return {};

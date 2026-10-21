@@ -1,3 +1,4 @@
+#include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -74,9 +75,10 @@ public:
     if (!live.Find(call_id)) {
       live.AdmitPlaced(call_id, {"account:peer"});
     }
-    return live.Media(call_id);
+    return call_media.Media(call_id);
   }
   LiveCalls live;
+  LiveCallMedia call_media{live};
   Roe<void> P2pSendDirect(const std::string& /*peer*/, CallControlType /*type*/,
                           const std::string& /*detail*/, const std::string& /*display*/) override {
     return {};
@@ -373,7 +375,7 @@ protected:
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeMediaHost>();
-    host_->live.BindMediaResources(media_.get(), nullptr);
+    host_->call_media.BindMediaResources(media_.get(), nullptr);
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitHopReach>();
     circuit_->dial = dial_.get();

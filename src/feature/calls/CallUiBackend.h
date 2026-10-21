@@ -7,7 +7,7 @@
 #include "domain/calls/CallLifecycleTypes.h"
 #include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
-#include "feature/calls/LiveCall.h"
+#include "domain/calls/LiveCall.h"
 
 #include <functional>
 #include <memory>

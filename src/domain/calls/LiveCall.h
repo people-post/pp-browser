@@ -3,12 +3,10 @@
 #include "domain/calls/CallLifecycleTypes.h"
 #include "domain/calls/CallMediaStatusLogic.h"
 #include "domain/calls/CallTypes.h"
-#include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>
 #include <functional>
 #include <map>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -103,8 +101,6 @@ public:
   const std::vector<std::string>& Peers() const { return peers_; }
   std::optional<std::string> SolePeer() const;
   int64_t AdmittedAtMs() const { return admitted_at_ms_; }
-  /** This call's media (engine + seat use); null until the call first needs media. */
-  CallMediaCoordinator* Media() const { return media_.get(); }
   const LiveCallMediaProgress& MediaProgress() const { return progress_; }
   /**
    * What the call shows as (V037 State): Ringing / Accepting as its call state; a placed call nobody
@@ -124,7 +120,6 @@ private:
   LiveCallState state_at_close_ = LiveCallState::Ended;
   std::vector<std::string> peers_;
   int64_t admitted_at_ms_ = 0;
-  std::unique_ptr<CallMediaCoordinator> media_;
   LiveCallMediaProgress progress_;
 };
 
@@ -132,6 +127,7 @@ private:
  * The calls this device has: at most one Calling / Accepting / Joined (the active call) and any
  * number Ringing. Only these operations change a LiveCall. Ended calls stay findable (their end
  * reason) until the same id is admitted again or a newer ending pushes them out. Calls owner only.
+ * A call's media (engine and seat use) is the feature's (LiveCallMedia), keyed by call and instance.
  */
 class LiveCalls {
 public:
@@ -205,32 +201,6 @@ public:
   /** Every end path. The first reason sticks; closing an unknown or ended call is a no-op. */
   void Close(const std::string& call_id, LiveCallEndReason reason);
 
-  /** The one media engine and the media seat every call's coordinator drives (seat may be null). */
-  void BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat);
-  /** The 1:1 path the coordinators drive (null: none wired). */
-  void BindDirectDriver(CallDirectDriver* direct) { resources_.direct = direct; }
-  /** The group path the coordinators drive (null: harness). */
-  void BindHopDriver(CallHopDriver* hop) { resources_.hop = hop; }
-  /**
-   * The call's media coordinator, created on first use. Null for a call this device never admitted
-   * (or pruned), or before media resources are bound. An ended call keeps it for its stops.
-   */
-  CallMediaCoordinator* Media(const std::string& call_id);
-  /**
-   * Stop `call_id`'s media (empty: whatever holds the seat). The seat's release tears the paths
-   * down; with no seat, each driver stops its part. Also for calls not admitted here (leftovers).
-   */
-  void StopMedia(const std::string& call_id);
-  /**
-   * Another call is about to take media: stop media still running for any call but `keep_call_id`
-   * (an ended call can leave the engine running). Never touches `keep_call_id`'s own media.
-   */
-  void StopMediaExcept(const std::string& keep_call_id);
-  /** The engine runs (1:1 or group capture). */
-  bool MediaRunning() const;
-  /** The call the engine runs for; empty when it runs for none (or is stopped). */
-  std::string MediaRunningCallId() const;
-
 private:
   LiveCall& Admit(const std::string& call_id, LiveCallOrigin origin, LiveCallState state,
                   const std::vector<std::string>& peers);
@@ -246,7 +216,6 @@ private:
   uint64_t media_cancel_gen_ = 0;
   std::string last_ended_by_peer_;
   std::function<void()> on_changed_;
-  CallMediaResources resources_;
   std::vector<std::string> ended_order_;
   uint64_t next_instance_ = 1;
 };

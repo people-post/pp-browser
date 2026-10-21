@@ -155,7 +155,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
   // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
   // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
   // IsSfuMode() is also true for 1:1 capture — require media_relay attach.
-  CallMediaCoordinator* call_media = LiveCallMedia(call_id);
+  CallMediaCoordinator* call_media = CallMediaFor(call_id);
   if (call_media && call_media->HopAttached() && media_.IsConnected()) {
     log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
     direct_.Detach();
@@ -921,7 +921,7 @@ void CallMediaBridge::PollMeshConnectHealth() {
   if (mesh_connect_failed_ || !media_.IsActive() || !media_.IsSfuMode()) {
     return;
   }
-  if (CallMediaCoordinator* call_media = LiveCallMedia(media_.ActiveCallId()); call_media && call_media->HopInFlight()) {
+  if (CallMediaCoordinator* call_media = CallMediaFor(media_.ActiveCallId()); call_media && call_media->HopInFlight()) {
     return;
   }
   // ConnectOffererWithRetry runs on a worker thread — do not UI-timeout while it is dialing.
@@ -1649,18 +1649,18 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   StopEngineFor(call_id.empty() ? active : call_id, "stop mesh media");
 }
 
-CallMediaCoordinator* CallMediaBridge::LiveCallMedia(const std::string& call_id) {
+CallMediaCoordinator* CallMediaBridge::CallMediaFor(const std::string& call_id) {
   // Quietly null for a call not admitted here (a leftover engine id): nothing to ask about it.
   return !call_id.empty() && host_.P2pLiveCall(call_id) ? host_.P2pCallMedia(call_id) : nullptr;
 }
 
 bool CallMediaBridge::HopAttachedFor(const std::string& call_id) {
-  CallMediaCoordinator* call_media = LiveCallMedia(call_id);
+  CallMediaCoordinator* call_media = CallMediaFor(call_id);
   return call_media && call_media->HopAttached();
 }
 
 void CallMediaBridge::StopEngineFor(const std::string& call_id, const char* why) {
-  if (CallMediaCoordinator* call_media = LiveCallMedia(call_id)) {
+  if (CallMediaCoordinator* call_media = CallMediaFor(call_id)) {
     call_media->StopEngine(why);
     return;
   }

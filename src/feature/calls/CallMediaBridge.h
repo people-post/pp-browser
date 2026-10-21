@@ -323,7 +323,7 @@ private:
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
   /** `call_id`'s media coordinator; null (quietly) for a call not admitted here. */
-  CallMediaCoordinator* LiveCallMedia(const std::string& call_id);
+  CallMediaCoordinator* CallMediaFor(const std::string& call_id);
   /** The group path carries `call_id`'s media now (its coordinator says so). */
   bool HopAttachedFor(const std::string& call_id);
   /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
