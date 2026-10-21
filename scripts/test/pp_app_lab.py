@@ -227,6 +227,8 @@ class Lab:
         self.root = tempfile.mkdtemp(prefix="pp-app-lab-")
         self.keep = args.keep
         self.relay_container = args.relay_container
+        self.hop_container = args.hop_container
+        self.hop_status = args.hop_status
         self.users = []
 
     def config_for(self, data_dir):
@@ -244,6 +246,15 @@ class Lab:
                 "capabilities": {"dht": False},
             },
         }
+
+    def wait_hop(self, timeout=60):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if subprocess.run(["curl", "-fsS", "-m", "2", self.hop_status + "/healthz"], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0:
+                return
+            time.sleep(0.5)
+        raise ProbeError("lab hop did not come back")
 
     def fresh_registration(self):
         """Restart the lab relay's gateway when this run has used up its registration allowance."""
@@ -591,6 +602,21 @@ def scenario_decline_then_call_back(lab):
         raise ProbeError("alice's history: %s" % got)
 
 
+def scenario_seed_down(lab):
+    """The relay seed goes away (crashed, unreachable) after both are online: the call still
+    connects directly, and the answer does not sit out the whole seed-park wait."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    subprocess.run(["docker", "stop", "-t", "1", lab.hop_container], check=True, stdout=subprocess.DEVNULL)
+    try:
+        _, took = connect(a, a_thread, b, timeout=40)
+        a.cmd("leave")
+        assert_idle(a, b)
+    finally:
+        subprocess.run(["docker", "start", lab.hop_container], check=True, stdout=subprocess.DEVNULL)
+        lab.wait_hop()
+    return took
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
@@ -601,7 +627,12 @@ SCENARIOS = [
     ("caller_restarts_mid_call", scenario_caller_restarts_mid_call),
     ("peer_vanishes_mid_call", scenario_peer_vanishes_mid_call),
     ("decline_then_call_back", scenario_decline_then_call_back),
+    ("seed_down", scenario_seed_down),
 ]
+
+# Run only when named (--only): seed_down documents a known gap — with the seed silently gone, the
+# answer still waits out the whole seed park (call_accept waits on it, ≤ 12 s).
+OPT_IN = {"seed_down"}
 
 
 def main():
@@ -613,6 +644,7 @@ def main():
     ap.add_argument("--hop-ip", default="198.51.100.10", help="the lab hop's address on the lab network")
     ap.add_argument("--relay-container", default="pp-app-lab-www-1",
                     help="lab relay gateway container, restarted when registrations run out")
+    ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
     ap.add_argument("--only", action="append", default=[])
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
@@ -623,7 +655,7 @@ def main():
             peer = json.load(r)["peer_id"]
         args.hop = "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (args.hop_ip, peer)
 
-    selected = [(n, f) for n, f in SCENARIOS if not args.only or n in args.only]
+    selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in OPT_IN)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
     failures = 0
