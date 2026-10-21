@@ -10,7 +10,7 @@
 #   feature/broadcast  runner: BroadcastHub.
 #
 # EXCEPTIONS lists known, documented sites with a count: a new site fails, and so does a removed one
-# (drop it from the list). Empty today.
+# (drop it from the list).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -38,7 +38,11 @@ FORBIDDEN = re.compile(
 UI_POST = re.compile(r"\bAppRuntime::PostUI\b")
 
 # path (relative to src/) -> (count, why)
-EXCEPTIONS = {}
+MESH_IO = "mesh-io transport: runs on the mesh's lanes, its protocol handlers guarded by its own Lifetime"
+EXCEPTIONS = {
+    "feature/broadcast/AmpBroadcastTransport.cpp": (2, MESH_IO),
+    "feature/broadcast/AmpPeerAnnounceTransport.cpp": (2, MESH_IO),
+}
 
 fail = 0
 counts = {}

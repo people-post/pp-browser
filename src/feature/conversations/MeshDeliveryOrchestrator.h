@@ -25,13 +25,6 @@
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
-#include "feature/conversations/AmpPeerAnnounceTransport.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
-#include "domain/broadcast/PeerAnnounceFeed.h"
-#include "domain/broadcast/PeerAnnouncePublisher.h"
-#include "domain/broadcast/AnnounceNotificationInbox.h"
-#include "domain/broadcast/AnnounceOverlayReply.h"
-#include "domain/broadcast/PeerAnnounceRpcCodec.h"
 #include "domain/net/OrgBackendClients.h"
 
 #include <atomic>
@@ -136,7 +129,7 @@ public:
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /**
-   * Bind Amp chat/history/blob/announce/broadcast on an existing orchestrator.
+   * Bind Amp chat/history/blob on an existing orchestrator.
    * Prefer this over destroying/recreating the orchestrator after messaging is ready —
    * in-flight SyncInbox / PostWorker lambdas still hold `this`.
    */
@@ -169,57 +162,6 @@ public:
                           const std::string& kem_public_key_b64, const std::string& source = "manual");
 
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
-  PeerAnnouncePublisher* PeerAnnouncePublisherOrNull() const { return peer_announce_publisher_.get(); }
-  AmpPeerAnnounceTransport* PeerAnnounceServiceOrNull() const { return peer_announce_.get(); }
-  AmpBroadcastTransport* BroadcastServiceOrNull() const { return broadcast_.get(); }
-  /**
-   * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
-   * Prefer Async when MeshPump is available; sync parks on PushTip.
-   * Requires Amp peer-announce service + device identity keys.
-   */
-  void PublishAndPushAnnounceAsync(const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft,
-                                   int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
-  Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
-                                                 const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
-  /**
-   * Spine B: reply to an announce publisher via DM (not in-topic speak).
-   * Resolves contact by tip PeerId when present; otherwise PeerId-keyed thread.
-   */
-  Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
-  /**
-   * Overlay (on-screen) reply request: DM body with intent=overlay.
-   * Publisher policy/rate limits decide whether to rebroadcast as live_chat.
-   */
-  Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
-                                            const std::string& text, const std::string& viewer_msg_id);
-  /** Publisher: sign+push a live_chat tip from a decoded overlay request. Prefer Async. */
-  void PublishLiveChatFromOverlayAsync(const std::string& peer_key, const std::string& topic_id,
-                                       const std::string& program_id, const std::string& join_handle,
-                                       const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
-                                       int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
-  Roe<PeerAnnounceTipAck> PublishLiveChatFromOverlay(const std::string& peer_key, const std::string& topic_id,
-                                                     const std::string& program_id, const std::string& join_handle,
-                                                     const std::string& viewer_peer_id,
-                                                     const AnnounceOverlayReplyBody& body, int64_t now_ms);
-  AnnounceNotificationInbox& AnnounceNotifications() { return announce_notifications_; }
-  const AnnounceNotificationInbox& AnnounceNotifications() const { return announce_notifications_; }
-  bool DismissAnnounceNotification(const std::string& key) { return announce_notifications_.Dismiss(key); }
-  bool DismissAnnounceLiveBanner(const std::string& key) { return announce_notifications_.DismissBanner(key); }
-  /**
-   * Spine C (slice 0): plan a live join from a tip (call_id = join_handle).
-   * Does not SoftMigrate or attach media yet.
-   */
-  /** Broadcaster (l5): the serving ticket side mints viewer tickets for this live program. */
-  Roe<void> PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
-                              AmpBroadcastTransport::LiveProgramKey key);
-  void ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle);
-  /** Sign and record a program tip in the local announce feed (followers pull / get pushed). */
-  Roe<PeerAnnounceTip> PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft);
-  /** Latest stored signed tip for a program (announce feed). */
-  std::optional<PeerAnnounceTip> LatestAnnounceTip(const std::string& peer_id, const std::string& topic_id,
-                                                   const std::string& program_id) const;
-  /** A publisher's ML-DSA public key for verifying its tips / tickets (self, pinned, or learned). */
-  std::optional<std::vector<uint8_t>> ResolveAnnouncePublisherKey(const std::string& peer_id) const;
 
 
   void MaybeTailSync(const std::string& thread_id);
@@ -365,11 +307,6 @@ private:
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
-  std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
-  std::unique_ptr<AmpPeerAnnounceTransport> peer_announce_;
-  std::unique_ptr<AmpBroadcastTransport> broadcast_;
-  std::unique_ptr<PeerAnnouncePublisher> peer_announce_publisher_;
-  AnnounceNotificationInbox announce_notifications_;
   std::unique_ptr<ChatSyncWorkflow> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

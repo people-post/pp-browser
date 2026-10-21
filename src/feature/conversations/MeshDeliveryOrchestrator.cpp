@@ -4,12 +4,6 @@
 #include "feature/conversations/AmpChatBlobTransport.h"
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
-#include "feature/conversations/AmpPeerAnnounceTransport.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
-#include "domain/broadcast/PeerAnnounceFeed.h"
-#include "domain/broadcast/PeerAnnounceKeyResolve.h"
-#include "domain/broadcast/AnnounceOverlayReply.h"
-#include "domain/broadcast/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -171,215 +165,6 @@ void MeshDeliveryOrchestrator::RegisterPeerSigningKey(const std::string& peer_id
   record.signing_public_key_b64 = signing_public_key_b64;
   record.source = source;
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
-}
-
-void MeshDeliveryOrchestrator::PublishAndPushAnnounceAsync(
-    const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft, const int64_t now_ms,
-    std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
-    return;
-  }
-  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
-  if (!tip) {
-    on_done(tip.error());
-    return;
-  }
-  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
-}
-
-Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishAndPushAnnounce(const std::string& peer_key,
-                                                                     const PeerAnnouncePublisher::Draft& draft,
-                                                                     const int64_t now_ms) {
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    return Error("peer-announce not ready (Amp or device identity missing)");
-  }
-  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
-  if (!tip) {
-    return tip.error();
-  }
-  return peer_announce_->PushTip(peer_key, *tip);
-}
-
-Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnouncePublisher(const std::string& tip_peer_id,
-                                                                  const std::string& text) {
-  if (tip_peer_id.empty()) {
-    return Error("Missing announce publisher peer_id");
-  }
-  if (text.empty()) {
-    return Error("Empty announce reply");
-  }
-
-  std::string contact_id;
-  std::string account_id;
-  std::string title = tip_peer_id;
-  if (auto found = contacts_.FindByIdentity(tip_peer_id, mesh::ContactIdKind::PeerId)) {
-    if (*found) {
-      const Contact& contact = **found;
-      contact_id = contact.id;
-      account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
-      title = FormatContactTitle(contact);
-      if (title.empty()) {
-        title = tip_peer_id;
-      }
-      RegisterContactDirectEndpoints(contact);
-    }
-  }
-
-  auto plan = PlanAnnounceDmReply(tip_peer_id, contact_id, account_id, title);
-  if (!plan) {
-    return plan.error();
-  }
-
-  auto thread = store_.FindOrCreateDirectThread(plan->target, plan->contact_id, plan->thread_title);
-  if (!thread) {
-    return thread.error();
-  }
-  WarmPeerForThread(thread->id);
-  return SendUserMessage(thread->id, text);
-}
-
-
-Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnounceOverlay(const std::string& tip_peer_id,
-                                                                const std::string& join_handle,
-                                                                const std::string& text,
-                                                                const std::string& viewer_msg_id) {
-  if (tip_peer_id.empty()) {
-    return Error("Missing announce publisher peer_id");
-  }
-  if (join_handle.empty() || viewer_msg_id.empty() || text.empty()) {
-    return Error("Overlay reply requires join_handle, viewer_msg_id, and text");
-  }
-
-  std::string contact_id;
-  std::string account_id;
-  std::string title = tip_peer_id;
-  if (auto found = contacts_.FindByIdentity(tip_peer_id, mesh::ContactIdKind::PeerId)) {
-    if (*found) {
-      const Contact& contact = **found;
-      contact_id = contact.id;
-      account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
-      title = FormatContactTitle(contact);
-      if (title.empty()) {
-        title = tip_peer_id;
-      }
-      RegisterContactDirectEndpoints(contact);
-    }
-  }
-
-  auto plan = PlanAnnounceOverlayReply(tip_peer_id, contact_id, account_id, title, join_handle, text, viewer_msg_id);
-  if (!plan) {
-    return plan.error();
-  }
-
-  auto thread = store_.FindOrCreateDirectThread(plan->dm.target, plan->dm.contact_id, plan->dm.thread_title);
-  if (!thread) {
-    return thread.error();
-  }
-  WarmPeerForThread(thread->id);
-  return SendUserMessage(thread->id, plan->message_body);
-}
-
-void MeshDeliveryOrchestrator::PublishLiveChatFromOverlayAsync(
-    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
-    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
-    const int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
-    return;
-  }
-  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
-  if (!draft) {
-    on_done(draft.error());
-    return;
-  }
-  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
-  if (!tip) {
-    on_done(tip.error());
-    return;
-  }
-  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
-  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
-}
-
-Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishLiveChatFromOverlay(
-    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
-    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
-    const int64_t now_ms) {
-  if (!peer_announce_ || !peer_announce_publisher_) {
-    return Error("peer-announce not ready (Amp or device identity missing)");
-  }
-  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
-  if (!draft) {
-    return draft.error();
-  }
-  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
-  if (!tip) {
-    return tip.error();
-  }
-  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
-  return peer_announce_->PushTip(peer_key, *tip);
-}
-
-Roe<void> MeshDeliveryOrchestrator::PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
-                                                       AmpBroadcastTransport::LiveProgramKey key) {
-  if (!broadcast_) {
-    return Error("broadcast service not running (Amp mesh down)");
-  }
-  broadcast_->PutLiveProgramKey(program_id, join_handle, std::move(key));
-  return {};
-}
-
-void MeshDeliveryOrchestrator::ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle) {
-  if (broadcast_) {
-    broadcast_->ClearLiveProgramKey(program_id, join_handle);
-  }
-}
-
-Roe<PeerAnnounceTip> MeshDeliveryOrchestrator::PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft) {
-  if (!peer_announce_publisher_) {
-    return Error("peer-announce publisher unavailable (device identity missing)");
-  }
-  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             std::chrono::system_clock::now().time_since_epoch())
-                             .count();
-  return peer_announce_publisher_->Publish(draft, now_ms);
-}
-
-std::optional<PeerAnnounceTip> MeshDeliveryOrchestrator::LatestAnnounceTip(const std::string& peer_id,
-                                                                          const std::string& topic_id,
-                                                                          const std::string& program_id) const {
-  if (!peer_announce_feed_) {
-    return std::nullopt;
-  }
-  return peer_announce_feed_->Latest(peer_id, topic_id, program_id);
-}
-
-std::optional<std::vector<uint8_t>> MeshDeliveryOrchestrator::ResolveAnnouncePublisherKey(
-    const std::string& peer_id) const {
-    std::string local_peer_id;
-    std::vector<uint8_t> local_pk;
-    if (auto local_identity = identity_.Get()) {
-      local_peer_id = local_identity->peer_id;
-    }
-    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
-      local_pk = *pk;
-    }
-  return ResolvePeerAnnouncePublisherKey(
-      peer_id, local_peer_id, local_pk,
-      [this](const std::string& kind, const std::string& value) -> std::optional<std::string> {
-        auto record = signing_key_store_.Get(kind, value);
-        if (!record) {
-          return std::nullopt;
-        }
-        return record->signing_public_key_b64;
-      });
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identity_kind,
@@ -2423,42 +2208,10 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
   chat->Start();
   peer_history_ = std::move(history);
   direct_chat_ = std::move(chat);
-  peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
-  peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump, worker,
-                                                           AmpPeerAnnounceTransport::ResolvePublisherKey{},
-                                                           amp_post_io, amp_post_after);
-  peer_announce_->SetPublisherKeyResolver(
-      [this](const std::string& tip_peer_id) { return ResolveAnnouncePublisherKey(tip_peer_id); });
-  peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
-    const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
-    announce_notifications_.UpsertFromTip(tip, now_ms);
-  });
-  if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-    if (auto local_identity = identity_.Get(); local_identity && !local_identity->peer_id.empty()) {
-      peer_announce_publisher_ =
-          std::make_unique<PeerAnnouncePublisher>(local_identity->peer_id, *sk, peer_announce_feed_.get());
-    } else {
-      log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
-    }
-  } else {
-    log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
-  }
-  peer_announce_->Start();
-  broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io, amp_post_after);
-  broadcast_->SetPublisherKeyResolver(
-      [this](const std::string& peer_id) { return ResolveAnnouncePublisherKey(peer_id); });
-  broadcast_->SetPublisherSecretResolver([this]() -> std::optional<std::vector<uint8_t>> {
-    if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-      return *sk;
-    }
-    return std::nullopt;
-  });
-  broadcast_->Start();
-
   if (chat_sync_) {
     chat_sync_->SetPeerHistoryClient(peer_history_.get());
   }
-  log().info << "direct chat/history/blob/peer-announce/broadcast transport=amp";
+  log().info << "direct chat/history/blob transport=amp";
 }
 
 void MeshDeliveryOrchestrator::DetachAmpTransports() {
@@ -2466,10 +2219,6 @@ void MeshDeliveryOrchestrator::DetachAmpTransports() {
     chat_sync_->SetPeerHistoryClient(nullptr);
   }
   // Destructors call Stop() → RemoveProtocolHandler on PeerLinks; Amp must still be alive.
-  broadcast_.reset();
-  peer_announce_.reset();
-  peer_announce_publisher_.reset();
-  peer_announce_feed_.reset();
   direct_chat_.reset();
   peer_history_.reset();
   peer_blob_.reset();

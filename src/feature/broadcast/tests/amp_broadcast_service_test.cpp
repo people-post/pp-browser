@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpBroadcastTransport.h"
+#include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
 #include "domain/broadcast/BroadcastJoinTicket.h"

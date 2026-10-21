@@ -97,7 +97,7 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 |-------|--------|
 | Amp L4 coordinators (`CircuitRelayServer` / `CircuitClientCoordinator`, `MediaRelayServer` / `MediaRelayClientCoordinator`, `CallMediaLegCoordinator`) | `PostIo` → `deferred`; circuit/media-relay also `lifetime` for ticks/handlers; call-media uses `weak_ptr` for ticks |
 | Amp protocols (`AmpPunchCoordinator`, `DialBackServer`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
-| Conversation Amp transports (`AmpDirectChatTransport`, `AmpBroadcastTransport`, `AmpChatHistoryTransport`, `AmpPeerAnnounceTransport`, `AmpChatBlobTransport`) | Protocol-handler `Bind`; Invalidate on Stop |
+| Amp transports — conversations (`AmpDirectChatTransport`, `AmpChatHistoryTransport`, `AmpChatBlobTransport`) and broadcast (`AmpBroadcastTransport`, `AmpPeerAnnounceTransport`, in `BroadcastServices`) | Protocol-handler `Bind`; Invalidate on Stop |
 | `MeshConnectivity` / `CircuitRendezvousCoordinator` | OnRelayChosen (connectivity); reserve / park / repark cbs (rendezvous); `InvalidateAsyncOps` → `Invalidate` at mesh stop and Clear (a pending park answers `false` at once: its deadline was a timer on the stopping runtime) |
 | `AmpCircuitHopReach` | AbortPending Invalidates; EnsureViaCircuit / punch cbs check Alive |
 | `CallSessionManager` intents | `intents_self_` (dtor Invalidates): the posted answerer-kick retry and media restarts check Alive |

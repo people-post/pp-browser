@@ -7,7 +7,7 @@
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "feature/broadcast/BroadcasterWorkflow.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
+#include "feature/broadcast/AmpBroadcastTransport.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/MediaDeviceArbiter.h"

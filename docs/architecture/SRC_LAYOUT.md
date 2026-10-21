@@ -172,7 +172,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/conversations/` | Conversations hub + delivery; never includes calls / broadcast / call_media — they ride the hub as `HubParticipant`s |
 | `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
-| `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer workflow; never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
+| `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 | `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
 | `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
@@ -290,8 +290,7 @@ Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `Cha
 
 Left from the calls / media / messaging boundary work (routine cleanup, tracked here):
 
-1. **Live broadcast transport out of messaging.** `MeshDeliveryOrchestrator` still hosts `AmpBroadcastTransport` (ticket server, program keys) and the peer-announce feed (`AmpPeerAnnounceTransport`, `PeerAnnounceFeed` / `Publisher`, announce notifications, overlay replies). They belong with live broadcast: owned by `BroadcastParticipant` (`feature/product`) or `feature/broadcast`, borrowing mesh links from the hub, so messaging stops knowing about programs and tips.
-2. **`domain/content` peel ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)).** `CasStore`, `ObjectIndex`, realm types (and realm-generic caches) move out of `domain/messaging` into a `domain/content` peer once public CAS (P3/P4) gives them a second owner; chat-specific attachment policy stays behind.
+1. **`domain/content` peel ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)).** `CasStore`, `ObjectIndex`, realm types (and realm-generic caches) move out of `domain/messaging` into a `domain/content` peer once public CAS (P3/P4) gives them a second owner; chat-specific attachment policy stays behind.
 
 ## Related
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/broadcast/BroadcastHub.h"
+#include "feature/broadcast/BroadcastServices.h"
 #include "feature/conversations/HubParticipant.h"
 #include "domain/broadcast/PeerAnnounceTypes.h"
 #include "common/Lifetime.h"
@@ -15,16 +16,28 @@
 namespace pbr {
 
 /**
- * Live broadcast riding the hub (sibling of calls, media-client-layers L013): owns the broadcast
- * hub, built while the mesh runs from its links, the media_relay client and messaging's announce
- * feed, and dropped — any watch or show stopped — before any of them is rewired or goes. UI thread.
+ * Live broadcast riding the hub (sibling of calls, media-client-layers L013). Owns:
+ * - the broadcast services (announce feed, publisher, notifications, ticket server) for as long as
+ *   the mesh runs;
+ * - the broadcast hub (viewer, broadcaster), built from the mesh links, the media_relay client and
+ *   the services, and dropped — any watch or show stopped — before any of them is rewired or goes.
+ * UI thread.
  */
 class BroadcastParticipant : public HubParticipant {
 public:
+  explicit BroadcastParticipant(ConversationsHub& hub);
   ~BroadcastParticipant() override;
 
   /** Null while the mesh is down or media_relay is not wired. */
   BroadcastHub* Hub() { return broadcast_.get(); }
+  /** Null while the mesh is down. */
+  BroadcastServices* Services() { return services_.get(); }
+
+  /** Spine B: reply to an announce publisher by DM (not in-topic speech). */
+  Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
+  /** An on-screen (overlay) reply request: a DM with intent=overlay; the publisher's policy decides. */
+  Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
+                                            const std::string& text, const std::string& viewer_msg_id);
   /** Fires (UI thread) on every status change, across rebuilds. */
   void SetOnChanged(std::function<void()> callback);
 
@@ -44,17 +57,18 @@ public:
   std::optional<BroadcasterWorkflow::Status> LiveStatus() const;
 
   void OnMeshMediaDetach() override { Reset(); }
-  void OnMeshServicesStarted(ConversationsHub& hub) override { Rebuild(hub); }
+  void OnMeshServicesStarted(ConversationsHub& hub) override;
   void OnMeshMediaRebound(ConversationsHub& hub) override { Rebuild(hub); }
-  void OnMeshStopping(const std::function<void()>&) override { Reset(); }
-  void OnMessagingDropped() override { Reset(); }
-  void OnShutdown() override { Reset(); }
+  void OnMeshStopping(const std::function<void()>&) override;
+  void OnShutdown() override;
 
 private:
   void Reset();
   void Rebuild(ConversationsHub& hub);
 
-  ConversationsHub* hub_ = nullptr;
+  ConversationsHub& hub_;
+  std::unique_ptr<BroadcastServices> services_;
+  // Borrows the services: declared after them, goes first.
   std::unique_ptr<BroadcastHub> broadcast_;
   /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */
   pp::Lifetime deferred_;

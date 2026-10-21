@@ -11,8 +11,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     GroupMembershipWorkflow.cpp
     InboxController.cpp
     AmpDirectChatTransport.cpp
-    AmpPeerAnnounceTransport.cpp
-    AmpBroadcastTransport.cpp
     AmpChatHistoryTransport.cpp
     AmpChatBlobTransport.cpp
     MessageRouter.cpp
@@ -42,7 +40,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging
-    pp_domain_broadcast
     pp_domain_pricing
     pp_domain_calls
     pp_amp_link

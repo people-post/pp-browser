@@ -16,7 +16,7 @@
 #include "foundation/platform/NetworkMonitor.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/broadcast/BroadcastHub.h"
-#include "feature/conversations/AmpBroadcastTransport.h"
+#include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "foundation/data/Config.h"
