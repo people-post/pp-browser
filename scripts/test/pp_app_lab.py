@@ -602,19 +602,52 @@ def scenario_decline_then_call_back(lab):
         raise ProbeError("alice's history: %s" % got)
 
 
+# Past a seed link's liveness: Amp keeps a hot link alive every 20 s and drops it after missed echoes.
+SEED_LINK_GONE_S = 45
+
+
+def stop_hop(lab):
+    subprocess.run(["docker", "stop", "-t", "1", lab.hop_container], check=True, stdout=subprocess.DEVNULL)
+
+
+def start_hop(lab):
+    subprocess.run(["docker", "start", lab.hop_container], check=True, stdout=subprocess.DEVNULL)
+    lab.wait_hop()
+
+
 def scenario_seed_down(lab):
     """The relay seed goes away (crashed, unreachable) after both are online: the call still
     connects directly, and the answer does not sit out the whole seed-park wait."""
     a, a_thread, b, b_thread = open_pair(lab)
-    subprocess.run(["docker", "stop", "-t", "1", lab.hop_container], check=True, stdout=subprocess.DEVNULL)
+    stop_hop(lab)
     try:
         _, took = connect(a, a_thread, b, timeout=40)
         a.cmd("leave")
         assert_idle(a, b)
     finally:
-        subprocess.run(["docker", "start", lab.hop_container], check=True, stdout=subprocess.DEVNULL)
-        lab.wait_hop()
+        start_hop(lab)
     return took
+
+
+def scenario_seed_dies_in_use(lab):
+    """The seed carried the pair's calls, then dies: a call right away (its link still reads up) and
+    one after the link timed out both connect without sitting out the seed park."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    stop_hop(lab)
+    try:
+        _, inside = connect(a, a_thread, b, timeout=40)
+        a.cmd("leave")
+        assert_idle(a, b)
+        time.sleep(SEED_LINK_GONE_S)
+        _, after = connect(b, b_thread, a, timeout=40)
+        b.cmd("leave")
+        assert_idle(a, b)
+    finally:
+        start_hop(lab)
+    return {"inside_link_window": inside, "after_link_gone": after}
 
 
 SCENARIOS = [
@@ -628,6 +661,7 @@ SCENARIOS = [
     ("peer_vanishes_mid_call", scenario_peer_vanishes_mid_call),
     ("decline_then_call_back", scenario_decline_then_call_back),
     ("seed_down", scenario_seed_down),
+    ("seed_dies_in_use", scenario_seed_dies_in_use),
 ]
 
 # Scenarios run only when named (--only).

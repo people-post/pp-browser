@@ -110,6 +110,9 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   deps.dial = connectivity_->Dial();
   deps.circuit_reach = connectivity_->CircuitReach();
   deps.lane = connectivity_->Lane();
+  deps.local_listen_addrs = [connectivity = connectivity_]() {
+    return connectivity->LocalView()->advertised_listen_multiaddrs;  // a published snapshot: any thread
+  };
   mesh::CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
   deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
   deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };
