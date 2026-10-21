@@ -305,7 +305,7 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
 
   mesh::AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
                           [relay, outbox = outbox_, current = current_show_, show = show_,
-                           hop](Roe<mesh::MediaRelayAttached> attached) {
+                           hop](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
                             if (attached && current->load(std::memory_order_acquire) != show) {
                               relay->Detach();  // ended while AcceptAndAttach was on the wire
                               return;
@@ -314,7 +314,7 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
                           });
 }
 
-void BroadcasterWorkflow::OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached) {
+void BroadcasterWorkflow::OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
   if (!attached) {
     BroadcasterLog().info << "attach to " << hop << " failed: " << attached.error().message;
     AttachNext("attach to " + hop + " failed: " + attached.error().message);

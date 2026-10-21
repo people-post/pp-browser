@@ -380,13 +380,13 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
     return Error("circuit path: missing stack/peer");
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
-  std::optional<Roe<void>> result;
-  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  std::optional<mesh::CircuitReachRoe> result;
+  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [&](mesh::CircuitReachRoe value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }
   if (!*result) {
-    return result->error();
+    return Error(result->error().message);
   }
   if (host_ && host_->Amp() && !host_->Amp()->Links().IsConnected(peer_id)) {
     return Error("circuit path: peer not connected after Ensure");

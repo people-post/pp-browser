@@ -73,8 +73,8 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
     mesh::PeerReachRequest request;
     request.keys = {peer_id};
     request.mode = mesh::PeerReachMode::Reach;
-    reach->Ensure(std::move(request), [on_done = std::move(on_done)](Roe<mesh::PeerReachResult> reached) {
-      on_done(reached ? Roe<void>() : Roe<void>(reached.error()));
+    reach->Ensure(std::move(request), [on_done = std::move(on_done)](mesh::PeerReachCoordinator::ReachRoe reached) {
+      on_done(reached ? Roe<void>() : Roe<void>(Error(reached.error().message)));
     });
   };
   ports.request_ticket = [rpc = rpc.get()](const std::string& publisher, const BroadcastTicketRequest& request,

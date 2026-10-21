@@ -136,14 +136,14 @@ public:
   }
 
   void EnsureAssociation(const std::string& peer_key,
-                         std::function<void(Roe<void>)> on_done) override {
+                         mesh::IChatPeerLinks::LinkCb on_done) override {
     ++ensure_association_calls;
     last_ensure_peer = peer_key;
     if (on_done) {
       if (ensure_result) {
         on_done({});
       } else {
-        on_done(Error(ensure_error));
+        on_done(mesh::IChatPeerLinks::Failure::Of(mesh::IChatPeerLinks::Err::Generic, ensure_error));
       }
     }
   }
@@ -198,20 +198,22 @@ public:
 
 class FakeCircuitHopReach final : public mesh::ICircuitHopReach {
 public:
-  Roe<void> TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
+  mesh::CircuitReachRoe TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
 
-  Roe<void> TryEnsurePeerReachable(const std::string& peer_key) override {
+  mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string& peer_key) override {
     ++call_media_ensure_calls;
     last_peer = peer_key;
     if (dial) {
       dial->connected[peer_key] = true;
       dial->circuit_hops[peer_key] = true;
     }
-    return call_media_result ? Roe<void>() : Error(call_media_error);
+    return call_media_result ? mesh::CircuitReachRoe()
+                             : mesh::CircuitReachRoe(mesh::CircuitReachFailure::Of(mesh::CircuitReachErr::NotConnected,
+                                                                                   call_media_error));
   }
 
   void TryEnsurePeerReachableAsync(const std::string& peer_key,
-                                        std::function<void(Roe<void>)> on_done,
+                                        mesh::CircuitReachDone on_done,
                                         bool /*allow_circuit*/ = true) override {
     // Runs on the reach's lane (PeerReachCoordinator) while the test thread reads the fields.
     ++call_media_ensure_calls;
@@ -224,7 +226,9 @@ public:
       dial->circuit_hops[peer_key] = true;
     }
     if (on_done) {
-      on_done(call_media_result ? Roe<void>() : Error(call_media_error));
+      on_done(call_media_result ? mesh::CircuitReachRoe()
+                                : mesh::CircuitReachRoe(mesh::CircuitReachFailure::Of(
+                                      mesh::CircuitReachErr::NotConnected, call_media_error)));
     }
   }
 
@@ -239,14 +243,16 @@ public:
   bool call_media_result = true;
   std::string call_media_error = "circuit hop reach failed";
 
-  void TryUpgradeToDirectAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done) override {
+  void TryUpgradeToDirectAsync(const std::string& peer_key, mesh::CircuitReachDone on_done) override {
     {
       std::lock_guard lock(mu);
       last_upgrade_peer = peer_key;
     }
     ++upgrade_calls;
     if (on_done) {
-      on_done(upgrade_result.load() ? Roe<void>() : Error("upgrade punch failed"));
+      on_done(upgrade_result.load() ? mesh::CircuitReachRoe()
+                                    : mesh::CircuitReachRoe(mesh::CircuitReachFailure::Of(
+                                          mesh::CircuitReachErr::PunchFailed, "upgrade punch failed")));
     }
   }
   std::string LastUpgradePeer() {

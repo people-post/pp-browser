@@ -202,14 +202,14 @@ public:
 
   bool IsStarted() const override { return started; }
 
-  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
                                     const mesh::MediaRelayQuoteRequest& request,
                                     int /*timeout_ms*/) override {
     ++quote_calls;
     last_quote_hop = hop_peer_key;
     last_quote_call_id = request.session_id;
     if (!quote_ok) {
-      return Error(quote_error);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, quote_error);
     }
     mesh::MediaRelayQuote q;
     q.ok = true;
@@ -220,7 +220,7 @@ public:
     return q;
   }
 
-  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& /*hop_peer_key*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& /*hop_peer_key*/,
                                               const std::string& /*quote_id*/,
                                               const std::string& /*call_id*/,
                                               const std::string& /*auth_stub*/,
@@ -228,7 +228,7 @@ public:
                                               int /*timeout_ms*/) override {
     ++attach_calls;
     if (!attach_ok) {
-      return Error(attach_error);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, attach_error);
     }
     if (before_accept_done) {
       before_accept_done();
@@ -255,11 +255,11 @@ public:
     }
   }
 
-  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
       const std::string& /*call_id*/, std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
     ++local_hop_calls;
     if (!local_hop_ok) {
-      return Error(local_hop_error);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, local_hop_error);
     }
     attached_ = true;
     local_hop_attached_ = true;
@@ -269,7 +269,7 @@ public:
     return r;
   }
 
-  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+  mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     // Product relay Subscribe is thread-safe (coordinator mutex) and is called from the calls owner
     // and relay paths — the fake must be too (ASan double-free in the vector otherwise).
     std::lock_guard lock(subscribe_mu);
@@ -277,7 +277,7 @@ public:
     subscribed_channels.push_back(channel_id);
     return {};
   }
-  Roe<void> SendFrame(const mesh::MediaDataFrame& /*frame*/) override { return {}; }
+  mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& /*frame*/) override { return {}; }
   void Detach() override {
     attached_ = false;
     local_hop_attached_ = false;

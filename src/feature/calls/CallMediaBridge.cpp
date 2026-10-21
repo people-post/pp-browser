@@ -569,7 +569,8 @@ void CallMediaBridge::OnDirectUpgradeFire() {
   ++upgrade_attempt_;
   const std::string peer_id = CallPeerMeshId();
   log().info << "direct upgrade attempt=" << upgrade_attempt_ << " call_id=" << call_id << " peer=" << peer_id;
-  reach_.UpgradeToDirect(peer_id, OnOwner<Roe<void>>([this, call_id](Roe<void> result) {
+  reach_.UpgradeToDirect(peer_id, OnOwner<mesh::PeerReachCoordinator::UpgradeRoe>(
+                                      [this, call_id](mesh::PeerReachCoordinator::UpgradeRoe result) {
     if (upgrade_call_id_ != call_id) {
       return;
     }
@@ -654,7 +655,7 @@ void CallMediaBridge::OnRelayStandbyFire() {
     }
   };
   standby_reach_id_ = reach_.Ensure(
-      std::move(request), OnOwner<Roe<mesh::PeerReachResult>>([this, call_id, retry](Roe<mesh::PeerReachResult> reached) {
+      std::move(request), OnOwner<mesh::PeerReachCoordinator::ReachRoe>([this, call_id, retry](mesh::PeerReachCoordinator::ReachRoe reached) {
         if (standby_call_id_ != call_id) {
           return;
         }
@@ -758,7 +759,7 @@ void CallMediaBridge::Reanchor(const std::string& call_id) {
     }
   };
   reanchor_reach_id_ = reach_.Ensure(
-      std::move(request), OnOwner<Roe<mesh::PeerReachResult>>([this, call_id, retry](Roe<mesh::PeerReachResult> reached) {
+      std::move(request), OnOwner<mesh::PeerReachCoordinator::ReachRoe>([this, call_id, retry](mesh::PeerReachCoordinator::ReachRoe reached) {
         if (reanchor_call_id_ != call_id) {
           return;
         }
@@ -1013,7 +1014,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
   request.exclude_direct = true;
   log().info << "TX-only escalate: building a circuit under the live call call_id=" << call_id << " peer=" << peer_id;
   escalate_reach_id_ = reach_.Ensure(
-      std::move(request), OnOwner<Roe<mesh::PeerReachResult>>([this, call_id, peer](Roe<mesh::PeerReachResult> reached) {
+      std::move(request), OnOwner<mesh::PeerReachCoordinator::ReachRoe>([this, call_id, peer](mesh::PeerReachCoordinator::ReachRoe reached) {
       escalate_reach_id_ = 0;
       if (stopping_.load() || media_.ActiveCallId() != call_id ||
           direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {

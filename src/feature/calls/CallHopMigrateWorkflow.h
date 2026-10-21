@@ -301,7 +301,7 @@ private:
   /** Run `step` as the next event (never inside the caller). */
   void Defer(std::function<void()> step);
   uint64_t StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, bool guest);
-  std::function<void(Roe<mesh::MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
+  std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
   void OnRelayAttached(const hop_migrate_event::RelayAttached& answer);
   void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);

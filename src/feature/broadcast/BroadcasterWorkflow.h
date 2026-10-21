@@ -82,7 +82,7 @@ namespace broadcaster_event {
 struct Attached {
   uint64_t show = 0;
   std::string hop;
-  Roe<mesh::MediaRelayAttached> attached;
+  mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached;
 };
 /** The Live tip's announce answered (`first`: the show's first Live tip). */
 struct Announced {
@@ -161,7 +161,7 @@ private:
   void Fail(const std::string& error);
   void Teardown(bool announce_end);
   void AttachNext(const std::string& why);
-  void OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached);
+  void OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached);
   void StartPublishing(const std::string& hop);
   void Announce(PeerAnnounceState state, std::function<void(Roe<void>)> on_done);
   void OnSessionEnded(mesh::MediaRelayClientLoss loss);

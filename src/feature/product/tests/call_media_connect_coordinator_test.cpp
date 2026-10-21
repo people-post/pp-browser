@@ -54,9 +54,9 @@ public:
 class FakeCircuitReach final : public mesh::ICircuitHopReach {
 public:
   explicit FakeCircuitReach(FakeDialRegistry& dial) : dial_(dial) {}
-  Roe<void> TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
-  Roe<void> TryEnsurePeerReachable(const std::string& /*peer*/) override { return {}; }
-  void TryEnsurePeerReachableAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done,
+  mesh::CircuitReachRoe TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
+  mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string& /*peer*/) override { return {}; }
+  void TryEnsurePeerReachableAsync(const std::string& peer_key, mesh::CircuitReachDone on_done,
                                         bool /*allow_circuit*/) override {
     {
       std::lock_guard lock(dial_.mu);

@@ -332,13 +332,45 @@ bool ReadTargetFile(const std::string& path, std::string& peer_id, std::string& 
   return !peer_id.empty() && !multiaddr.empty();
 }
 
+/** The failure type a mesh completion carries for `Result` (docs/ERRORS.md in pp-cpp-mesh). */
+template <typename Result>
+struct WaitFailure {
+  using type = pbr::Error;
+};
+template <>
+struct WaitFailure<pp::mesh::CircuitTunnelBridgeResult> {
+  using type = pp::mesh::CircuitClientCoordinator::Failure;
+};
+template <>
+struct WaitFailure<pp::mesh::MediaRelayQuote> {
+  using type = pp::mesh::MediaRelayFailure;
+};
+template <>
+struct WaitFailure<pp::mesh::MediaRelayAttachResult> {
+  using type = pp::mesh::MediaRelayFailure;
+};
+
+/** Why a completion is not a success: its failure, or none at all yet. */
+template <typename T, typename E>
+std::string WhyNot(const pp::ResultOrError<T, E>& result) {
+  return result ? std::string("no answer") : result.error().message;
+}
+
 template <typename Result>
 struct AsyncWait {
+  using Failure = typename WaitFailure<Result>::type;
+  using RoeT = pp::ResultOrError<Result, Failure>;
   std::atomic<bool> done{false};
-  pbr::Roe<Result> result = pbr::Error("pending");
+  RoeT result = Pending();
 
-  std::function<void(pbr::Roe<Result>)> Fn() {
-    return [this](pbr::Roe<Result> r) {
+  static Failure Pending() {
+    Failure pending;
+    pending.message = "pending";
+    return pending;
+  }
+
+  std::function<void(RoeT)> Fn() {
+    return [this](RoeT r) {
       result = std::move(r);
       done.store(true, std::memory_order_release);
     };
@@ -423,12 +455,7 @@ int RunReserve(const std::string& hop_ma) {
     }
     if (!wait.PumpUntilDone(pumps, 20000) || !wait.result) {
       std::cerr << "error: reserve: "
-                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
-      return 1;
-    }
-    if (!wait.result->ok) {
-      std::cerr << "error: reserve refused: "
-                << (wait.result->error.empty() ? "rejected" : wait.result->error) << "\n";
+                << WhyNot(wait.result) << "\n";
       return 1;
     }
     std::cout << "ok  circuit_relay StartReserve (op=reserve accepted)\n";
@@ -484,7 +511,7 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
     }
     if (!wait.PumpUntilDone(pumps) || !wait.result) {
       std::cerr << "error: media_relay quote: "
-                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
+                << WhyNot(wait.result) << "\n";
       return 1;
     }
     if (!wait.result->ok) {
@@ -509,11 +536,11 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
     }
     if (!wait.PumpUntilDone(pumps, 12000) || !wait.result) {
       std::cerr << "error: circuit_relay bridge: "
-                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
+                << WhyNot(wait.result) << "\n";
       return 1;
     }
-    if (!wait.result->ok || !wait.result->session) {
-      std::cerr << "error: circuit_relay bridge rejected: " << wait.result->error << "\n";
+    if (!wait.result->session) {
+      std::cerr << "error: circuit_relay bridge without a session\n";
       return 1;
     }
 
@@ -594,12 +621,12 @@ int RunMediaFanout(const std::string& hop_ma) {
   }
   if (!qa.PumpUntilDone(pumps) || !qa.result || !qa.result->ok) {
     std::cerr << "error: client-a quote: "
-              << (qa.result ? qa.result->error : qa.result.error().message) << "\n";
+              << WhyNot(qa.result) << "\n";
     return 1;
   }
   if (!qb.PumpUntilDone(pumps) || !qb.result || !qb.result->ok) {
     std::cerr << "error: client-b quote: "
-              << (qb.result ? qb.result->error : qb.result.error().message) << "\n";
+              << WhyNot(qb.result) << "\n";
     return 1;
   }
   std::cout << "ok  quotes a=" << qa.result->quote_id << " b=" << qb.result->quote_id << "\n";
@@ -626,12 +653,12 @@ int RunMediaFanout(const std::string& hop_ma) {
   }
   if (!attach_a.PumpUntilDone(pumps) || !attach_a.result || !attach_a.result->ok) {
     std::cerr << "error: client-a attach: "
-              << (attach_a.result ? attach_a.result->error : attach_a.result.error().message) << "\n";
+              << WhyNot(attach_a.result) << "\n";
     return 1;
   }
   if (!attach_b.PumpUntilDone(pumps) || !attach_b.result || !attach_b.result->ok) {
     std::cerr << "error: client-b attach: "
-              << (attach_b.result ? attach_b.result->error : attach_b.result.error().message) << "\n";
+              << WhyNot(attach_b.result) << "\n";
     return 1;
   }
   std::cout << "ok  AcceptAndAttach ×2\n";
@@ -776,8 +803,7 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
     }
     if (!attach_wait.PumpUntilDone(pumps) || !attach_wait.result || !attach_wait.result->ok) {
       std::cerr << "warn: client-" << i << " attach failed: "
-                << (attach_wait.result ? attach_wait.result->error
-                                       : attach_wait.result.error().message)
+                << WhyNot(attach_wait.result)
                 << "\n";
       if (!attach_wait.result) {
         ++transport_fails;
@@ -895,10 +921,9 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
 
     AsyncWait<pp::mesh::CircuitTunnelBridgeResult> wait;
     auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 10000);
-    if (!tunnel_id || !wait.PumpUntilDone(pumps, 12000) || !wait.result || !wait.result->ok ||
-        !wait.result->session) {
+    if (!tunnel_id || !wait.PumpUntilDone(pumps, 12000) || !wait.result || !wait.result->session) {
       std::cerr << "warn: bridge-" << i << " failed: "
-                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
+                << WhyNot(wait.result) << "\n";
       continue;
     }
 
@@ -1137,11 +1162,11 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file, c
   }
   if (!wait.PumpUntilDone(pumps, 20000) || !wait.result) {
     std::cerr << "error: circuit_relay bridge: "
-              << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
+              << WhyNot(wait.result) << "\n";
     return 1;
   }
-  if (!wait.result->ok || !wait.result->session) {
-    std::cerr << "error: circuit_relay bridge rejected: " << wait.result->error << "\n";
+  if (!wait.result->session) {
+    std::cerr << "error: circuit_relay bridge without a session\n";
     return 1;
   }
   const std::vector<uint8_t> payload = {'p', 'r', 'o', 'b', 'e'};
@@ -1239,7 +1264,7 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
   }
   if (!quote.PumpUntilDone(pumps) || !quote.result || !quote.result->ok) {
     std::cerr << "error: media-recv quote: "
-              << (quote.result ? quote.result->error : quote.result.error().message) << "\n";
+              << WhyNot(quote.result) << "\n";
     return 1;
   }
 
@@ -1258,7 +1283,7 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
   }
   if (!attach.PumpUntilDone(pumps) || !attach.result || !attach.result->ok) {
     std::cerr << "error: media-recv attach: "
-              << (attach.result ? attach.result->error : attach.result.error().message) << "\n";
+              << WhyNot(attach.result) << "\n";
     return 1;
   }
   relay->StartClientFrameReader();
@@ -1317,7 +1342,7 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
   }
   if (!quote.PumpUntilDone(pumps) || !quote.result || !quote.result->ok) {
     std::cerr << "error: media-send quote: "
-              << (quote.result ? quote.result->error : quote.result.error().message) << "\n";
+              << WhyNot(quote.result) << "\n";
     return 1;
   }
   AsyncWait<pp::mesh::MediaRelayAttachResult> attach;
@@ -1328,7 +1353,7 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
   }
   if (!attach.PumpUntilDone(pumps) || !attach.result || !attach.result->ok) {
     std::cerr << "error: media-send attach: "
-              << (attach.result ? attach.result->error : attach.result.error().message) << "\n";
+              << WhyNot(attach.result) << "\n";
     return 1;
   }
   relay->StartClientFrameReader();

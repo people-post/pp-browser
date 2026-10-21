@@ -296,15 +296,15 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
   }
   reach.fresh_link = std::exchange(fresh_link_next_, false);
   attempt_reused_link_ = false;
-  reach_id_ = reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](Roe<mesh::PeerReachResult> reached) {
+  reach_id_ = reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](mesh::PeerReachCoordinator::ReachRoe reached) {
     outbox.Emit(connect_event::LinkReady{seq, attempt, std::move(reached)});
   });
 }
 
 void CallMediaConnectCoordinator::OnLinkReady(const uint64_t seq, const int attempt,
-                                              Roe<mesh::PeerReachResult> reached) {
+                                              mesh::PeerReachCoordinator::ReachRoe reached) {
   if (!reached) {
-    Finish(seq, Roe<void>(reached.error()));
+    Finish(seq, Roe<void>(Error(reached.error().message)));
     return;
   }
   attempt_reused_link_ = reached->reused_link;

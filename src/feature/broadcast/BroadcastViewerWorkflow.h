@@ -87,7 +87,7 @@ struct Admission {
 struct Attached {
   uint64_t watch = 0;
   std::string hop;
-  Roe<mesh::MediaRelayAttached> attached;
+  mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached;
 };
 /** The relay client session ended (relay I/O). */
 struct SessionEnded {
@@ -167,7 +167,7 @@ private:
   void AskAdmission(const std::string& hop);
   void OnAdmission(const std::string& hop, Roe<BroadcastViewerAttachResult> result);
   void Attach(const std::string& hop);
-  void OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached);
+  void OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached);
   void StartListening(const std::string& hop);
   void OnSessionEnded(mesh::MediaRelayClientLoss loss);
   void Recover();

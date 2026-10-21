@@ -80,21 +80,21 @@ public:
     }
   }
 
-  Roe<void> Subscribe(const FakeHopClient* client, uint32_t stream_id, uint16_t channel_id) {
+  mesh::MediaRelayRoe<void> Subscribe(const FakeHopClient* client, uint32_t stream_id, uint16_t channel_id) {
     std::unique_lock lock(mu_);
     auto it = members_.find(client);
     if (it == members_.end()) {
-      return Error("not attached");
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "not attached");
     }
     it->second.subscriptions.insert(SubKey(stream_id, channel_id));
     return {};
   }
 
-  Roe<void> Forward(const FakeHopClient* sender, const mesh::MediaDataFrame& frame) {
+  mesh::MediaRelayRoe<void> Forward(const FakeHopClient* sender, const mesh::MediaDataFrame& frame) {
     std::shared_lock lock(mu_);
     const auto from = members_.find(sender);
     if (from == members_.end()) {
-      return Error("not attached");
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::NotAttached, "not attached");
     }
     {
       std::lock_guard stats(stats_mu_);
@@ -166,11 +166,11 @@ public:
   Roe<std::string> LocalPeerIdBase58() const override { return local_peer_id_; }
   bool IsStarted() const override { return true; }
 
-  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const mesh::MediaRelayQuoteRequest& /*request*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const mesh::MediaRelayQuoteRequest& /*request*/,
                                     int /*timeout_ms*/) override {
     std::lock_guard lock(mu_);
     if (unreachable_.count(hop_peer_key) > 0) {
-      return Error("hop unreachable from " + local_peer_id_);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "hop unreachable from " + local_peer_id_);
     }
     ++quote_calls_;
     quoted_hops_.push_back(hop_peer_key);
@@ -182,14 +182,14 @@ public:
     return q;
   }
 
-  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
                                               const std::string& session_id, const std::string& /*auth_stub*/,
                                               std::function<void(mesh::MediaDataFrame)> on_frame,
                                               int /*timeout_ms*/) override {
     {
       std::lock_guard lock(mu_);
       if (unreachable_.count(hop_peer_key) > 0) {
-        return Error("hop unreachable from " + local_peer_id_);
+        return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "hop unreachable from " + local_peer_id_);
       }
     }
     hop_.Attach(this, hop_peer_key, session_id, std::move(on_frame));
@@ -201,15 +201,15 @@ public:
 
   void StartClientFrameReader() override { hop_.StartReading(this); }
 
-  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
                                                std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
-    return Error("not a local hop");
+    return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "not a local hop");
   }
 
-  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+  mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     return hop_.Subscribe(this, stream_id, channel_id);
   }
-  Roe<void> SendFrame(const mesh::MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
+  mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
   void Detach() override { hop_.Detach(this); }
   bool IsAttached() const override { return hop_.IsAttached(this); }
   bool IsLocalHopAttached() const override { return false; }

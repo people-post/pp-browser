@@ -410,7 +410,7 @@ void CallHopMigrateWorkflow::TryPickHop(std::shared_ptr<HopPick> pick, size_t in
     // Edge: the reach answers on another thread — it only reports; the pick goes on as the next event.
     const uint64_t id = steps_.Store([this, pick, index]() { AttachPickedHop(pick, index); });
     relay_deps_->circuit_reach->TryEnsureHopReachableAsync(
-        hop.peer_id, [outbox = outbox_, id](Roe<void>) { outbox.Emit(hop_migrate_event::Continue{id}); });
+        hop.peer_id, [outbox = outbox_, id](mesh::CircuitReachRoe) { outbox.Emit(hop_migrate_event::Continue{id}); });
     return;
   }
   AttachPickedHop(std::move(pick), index);
@@ -1014,9 +1014,9 @@ uint64_t CallHopMigrateWorkflow::StoreAttach(HopAttach at, std::function<void(Ro
   return id;
 }
 
-std::function<void(Roe<mesh::MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
+std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
   // Edge: the relay answers on its I/O thread — it only reports.
-  return [outbox = outbox_, id](Roe<mesh::MediaRelayAttached> attached) {
+  return [outbox = outbox_, id](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
     hop_migrate_event::RelayAttached answer;
     answer.id = id;
     answer.ok = static_cast<bool>(attached);

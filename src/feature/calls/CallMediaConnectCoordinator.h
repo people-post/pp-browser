@@ -117,7 +117,7 @@ private:
   bool Current(uint64_t seq) const;
   bool MediaReady() const;
   void BeginAttempt(uint64_t seq, int attempt);
-  void OnLinkReady(uint64_t seq, int attempt, Roe<mesh::PeerReachResult> reached);
+  void OnLinkReady(uint64_t seq, int attempt, mesh::PeerReachCoordinator::ReachRoe reached);
   void OpenBundle(uint64_t seq, int attempt);
   void ArmWatchdog(uint64_t seq, int attempt);
   void OnWatchdog(uint64_t seq, int attempt);

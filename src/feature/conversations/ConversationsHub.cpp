@@ -2587,20 +2587,17 @@ Roe<mesh::CircuitRelayBridgeResult> ConversationsHub::RequestCircuitBridgePrefer
       last.error = "hop not dialable: " + key;
       continue;
     }
-    SettledWait<mesh::CircuitTunnelBridgeResult> wait;
+    SettledWait<mesh::CircuitTunnelBridgeResult, mesh::CircuitClientCoordinator::Failure> wait;
     (void)amp_circuit->StartBridge(key, target, {}, {},
-                                   [wait](Roe<mesh::CircuitTunnelBridgeResult> result) {
+                                   [wait](mesh::CircuitClientCoordinator::BridgeRoe result) {
                                      wait.Finish(std::move(result));
                                    },
                                    timeout_ms);
-    auto bridged =
-        wait.Wait(std::chrono::milliseconds(timeout_ms + 500), Error("amp circuit bridge timed out"));
+    auto bridged = wait.Wait(std::chrono::milliseconds(timeout_ms + 500),
+                             mesh::CircuitClientCoordinator::Failure::Of(mesh::CircuitTunnelErr::Timeout,
+                                                                         "amp circuit bridge timed out"));
     if (!bridged) {
       last.error = bridged.error().message;
-      continue;
-    }
-    if (!bridged->ok) {
-      last.error = bridged->error.empty() ? "amp circuit bridge failed" : bridged->error;
       continue;
     }
     mesh::CircuitRelayBridgeResult ok;

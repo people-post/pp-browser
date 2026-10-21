@@ -41,6 +41,16 @@ RelayEnvelope MakeTestEnvelope(const std::string& message_id, const std::string&
  * Regression: AmpDirectChatTransport must treat nested circuit IsConnected as reachable
  * even when A has no RegisterEndpoint for B (hard-lab / via-hop chat path).
  */
+/** The failure a mesh completion carries for `Result` (pp-cpp-mesh docs/ERRORS.md). */
+template <typename Result>
+struct WaitFailure {
+  using type = Error;
+};
+template <>
+struct WaitFailure<mesh::CircuitTunnelBridgeResult> {
+  using type = mesh::CircuitClientCoordinator::Failure;
+};
+
 class AmpDirectChatCircuitNestedTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -121,11 +131,19 @@ protected:
 
   template <typename Result>
   struct Wait {
+    using Failure = typename WaitFailure<Result>::type;
+    using RoeT = pp::ResultOrError<Result, Failure>;
     std::atomic<bool> done{false};
-    Roe<Result> result = Error("pending");
+    RoeT result = Pending();
 
-    std::function<void(Roe<Result>)> Fn() {
-      return [this](Roe<Result> r) {
+    static Failure Pending() {
+      Failure pending;
+      pending.message = "pending";
+      return pending;
+    }
+
+    std::function<void(RoeT)> Fn() {
+      return [this](RoeT r) {
         result = std::move(r);
         done.store(true, std::memory_order_release);
       };
@@ -161,10 +179,10 @@ protected:
     }
     bridge_wait.PumpUntilDone(*harness_);
     if (!bridge_wait.result) {
-      return bridge_wait.result.error();
+      return Error(bridge_wait.result.error().message);
     }
-    if (!bridge_wait.result->ok || !bridge_wait.result->session) {
-      return Error(bridge_wait.result->error.empty() ? "bridge refused" : bridge_wait.result->error);
+    if (!bridge_wait.result->session) {
+      return Error("bridge without a session");
     }
 
     Wait<void> nested_wait;

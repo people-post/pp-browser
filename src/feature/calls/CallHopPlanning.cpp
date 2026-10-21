@@ -123,7 +123,7 @@ void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& 
   request.quote.session_id = call_id;
   request.quote.participants = 3;  // a group is what this hop would serve
   // Edge: the quote answers on a worker / I/O — it only reports.
-  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](Roe<mesh::MediaRelayQuote> quote) {
+  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote) {
     const bool ok = quote && quote->ok;
     outbox.Emit(planning_event::ProbeAnswered{call_id, round, hop_peer_id, ok,
                                               ok ? std::string() : (quote ? quote->error : quote.error().message)});

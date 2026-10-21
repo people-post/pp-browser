@@ -396,7 +396,7 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   // be detached too; l4c stops watching before a call takes media.)
   mesh::AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
                           [relay, outbox = outbox_, current = current_watch_, watch = watch_,
-                           hop](Roe<mesh::MediaRelayAttached> attached) {
+                           hop](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
                             if (attached && current->load(std::memory_order_acquire) != watch) {
                               relay->Detach();
                               return;
@@ -405,7 +405,7 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
                           });
 }
 
-void BroadcastViewerWorkflow::OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached) {
+void BroadcastViewerWorkflow::OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
   if (!attached) {
     ViewerLog().info << "attach to " << hop << " failed: " << attached.error().message;
     RunLadder(ladder_->OnAttachFailed(hop, attached.error().message));

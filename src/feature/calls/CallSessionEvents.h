@@ -164,7 +164,7 @@ struct KeyPollTick {};
 struct LinkReady {
   uint64_t seq = 0;
   int attempt = 0;
-  Roe<mesh::PeerReachResult> reached;
+  mesh::PeerReachCoordinator::ReachRoe reached;
 };
 /** Attempt `attempt`'s bundle open finished. */
 struct AttemptDone {

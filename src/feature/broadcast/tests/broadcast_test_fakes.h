@@ -37,7 +37,7 @@ class FakeRelay final : public mesh::IMediaRelayClient {
 public:
   Roe<std::string> LocalPeerIdBase58() const override { return std::string(kFakeRelaySelf); }
   bool IsStarted() const override { return true; }
-  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop, const mesh::MediaRelayQuoteRequest& request,
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop, const mesh::MediaRelayQuoteRequest& request,
                                     int /*timeout_ms*/) override {
     last_quote = request;
     // The relay's answer to the video offer (B009), by this hop's policy (none = any level).
@@ -45,7 +45,7 @@ public:
     auto carried = mesh::ChooseCarriedVideoLevels({request.video_levels, request.video_parallel},
                                             policy == video_policies.end() ? mesh::MediaRelayVideoPolicy{} : policy->second);
     if (!carried) {
-      return carried.error();
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::HopRefused, carried.error().message);
     }
     mesh::MediaRelayQuote q;
     q.ok = true;
@@ -54,14 +54,14 @@ public:
     q.video_levels = *carried;
     return q;
   }
-  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string&, const std::string&, const std::string&,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string&, const std::string&, const std::string&,
                                               const std::string&, std::function<void(mesh::MediaDataFrame)>,
                                               int) override {
-    return Error("sync unused");
+    return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "sync unused");
   }
   void AcceptAndAttachAsync(const std::string& hop, const std::string& /*quote_id*/, const std::string& session_id,
                             const std::string& /*auth*/, std::function<void(mesh::MediaDataFrame)> on_frame,
-                            std::function<void(Roe<mesh::MediaRelayAttachResult>)> on_done, int /*timeout_ms*/) override {
+                            std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttachResult>)> on_done, int /*timeout_ms*/) override {
     attach_hops.push_back(hop);
     last_session = session_id;
     auto complete = [this, hop, on_frame = std::move(on_frame), on_done = std::move(on_done)]() mutable {
@@ -87,17 +87,17 @@ public:
     return next_token++;
   }
   void RemoveClientTransportLostObserver(uint64_t token) override { observers.erase(token); }
-  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string&, std::function<void(mesh::MediaDataFrame)>) override {
-    return Error("unused");
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string&, std::function<void(mesh::MediaDataFrame)>) override {
+    return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "unused");
   }
-  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+  mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     subscriptions.emplace_back(stream_id, channel_id);
     return {};
   }
   /** Capture thread (broadcaster) — guarded. */
-  Roe<void> SendFrame(const mesh::MediaDataFrame& frame) override {
+  mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& frame) override {
     if (!attached.load()) {
-      return Error("not attached");
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "not attached");
     }
     std::lock_guard lock(frames_mu);
     sent_frames.push_back(frame);

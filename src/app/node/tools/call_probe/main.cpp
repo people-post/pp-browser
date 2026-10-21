@@ -314,13 +314,20 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   return peer;
 }
 
-template <typename Result>
+template <typename Result, typename Failure = pbr::Error>
 struct AsyncWait {
+  using RoeT = pp::ResultOrError<Result, Failure>;
   std::atomic<bool> done{false};
-  pbr::Roe<Result> result = pbr::Error("pending");
+  RoeT result = Pending();
 
-  std::function<void(pbr::Roe<Result>)> Fn() {
-    return [this](pbr::Roe<Result> r) {
+  static Failure Pending() {
+    Failure pending;
+    pending.message = "pending";
+    return pending;
+  }
+
+  std::function<void(RoeT)> Fn() {
+    return [this](RoeT r) {
       result = std::move(r);
       done.store(true, std::memory_order_release);
     };
@@ -329,9 +336,11 @@ struct AsyncWait {
   pp::amp::PeerLinkManager::LinkCb LinkFn() {
     return [this](pp::amp::PeerLinkManager::LinkRoe r) {
       if (r) {
-        result = pbr::Roe<Result>();
+        result = RoeT();
       } else {
-        result = pbr::Error(r.error().message);
+        Failure failed;
+        failed.message = r.error().message;
+        result = failed;
       }
       done.store(true, std::memory_order_release);
     };
@@ -374,16 +383,16 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pp::mesh::CircuitClientCoord
   target.target_multiaddr = peer_ma;
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
-  AsyncWait<pp::mesh::CircuitTunnelBridgeResult> bridge_wait;
+  AsyncWait<pp::mesh::CircuitTunnelBridgeResult, pp::mesh::CircuitClientCoordinator::Failure> bridge_wait;
   auto tunnel_id = circuit.StartBridge(hop_key, target, {}, {}, bridge_wait.Fn(), 10000);
   if (!tunnel_id) {
     return pbr::Error("start bridge failed");
   }
   if (!bridge_wait.PumpUntilDone(peer, 12000) || !bridge_wait.result) {
-    return bridge_wait.result ? pbr::Error(bridge_wait.result->error) : bridge_wait.result.error();
+    return pbr::Error(bridge_wait.result ? std::string("bridge timed out") : bridge_wait.result.error().message);
   }
-  if (!bridge_wait.result->ok || !bridge_wait.result->session) {
-    return pbr::Error(bridge_wait.result->error.empty() ? "bridge refused" : bridge_wait.result->error);
+  if (!bridge_wait.result->session) {
+    return pbr::Error("bridge without a session");
   }
 
   AsyncWait<void> nested_wait;

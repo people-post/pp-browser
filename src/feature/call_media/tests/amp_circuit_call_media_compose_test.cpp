@@ -44,6 +44,16 @@ struct LegCompletion {
 /**
  * A has no ADP path to B; 1:1 call-media uses nested Session over Amp circuit ([A024]).
  */
+/** The failure a mesh completion carries for `Result` (pp-cpp-mesh docs/ERRORS.md). */
+template <typename Result>
+struct WaitFailure {
+  using type = Error;
+};
+template <>
+struct WaitFailure<mesh::CircuitTunnelBridgeResult> {
+  using type = mesh::CircuitClientCoordinator::Failure;
+};
+
 class AmpCircuitCallMediaComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -98,11 +108,19 @@ protected:
 
   template <typename Result>
   struct Wait {
+    using Failure = typename WaitFailure<Result>::type;
+    using RoeT = pp::ResultOrError<Result, Failure>;
     std::atomic<bool> done{false};
-    Roe<Result> result = Error("pending");
+    RoeT result = Pending();
 
-    std::function<void(Roe<Result>)> Fn() {
-      return [this](Roe<Result> r) {
+    static Failure Pending() {
+      Failure pending;
+      pending.message = "pending";
+      return pending;
+    }
+
+    std::function<void(RoeT)> Fn() {
+      return [this](RoeT r) {
         result = std::move(r);
         done.store(true, std::memory_order_release);
       };
@@ -145,10 +163,10 @@ protected:
     }
     bridge_wait.PumpUntilDone(*harness_);
     if (!bridge_wait.result) {
-      return bridge_wait.result.error();
+      return Error(bridge_wait.result.error().message);
     }
-    if (!bridge_wait.result->ok || !bridge_wait.result->session) {
-      return Error(bridge_wait.result->error.empty() ? "bridge refused" : bridge_wait.result->error);
+    if (!bridge_wait.result->session) {
+      return Error("bridge without a session");
     }
 
     Wait<void> nested_wait;
@@ -190,7 +208,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriority
     if (!wait.result) {
       return std::string("error: ") + wait.result.error().message;
     }
-    return wait.result->ok ? std::string("ok") : wait.result->error;
+    return std::string("ok");
   };
   EXPECT_EQ(bridge(mesh::CircuitStandbyPriority::Low), "ok");
   EXPECT_NE(bridge(mesh::CircuitStandbyPriority::Low).find("standby refused"), std::string::npos) << "Low: half full";
@@ -209,7 +227,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, BridgeRequestThatCannotBeSentFailsInstead
   Wait<mesh::CircuitTunnelBridgeResult> wait;
   ASSERT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
   wait.PumpUntilDone(*harness_);
-  const bool bridged = wait.result && wait.result->ok;
+  const bool bridged = static_cast<bool>(wait.result);
   EXPECT_FALSE(bridged) << "an unsendable request cannot bridge";
 }
 
@@ -1618,7 +1636,6 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyServeDialResumesWhenFarLegConne
 
   bridge_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(bridge_wait.result) << bridge_wait.result.error().message;
-  EXPECT_TRUE(bridge_wait.result->ok);
 }
 
 /**
