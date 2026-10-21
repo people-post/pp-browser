@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "crypto/PeerId.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -14,15 +15,18 @@ std::string PeerSigningKeyStore::MakeKey(const std::string& kind, const std::str
 
 bool PeerSigningKeyStore::Put(const std::string& peer_identity_kind, const std::string& peer_identity_value,
                               PeerSigningKeyRecord record) {
-  if (peer_identity_kind != ContactIdKindToString(mesh::ContactIdKind::Account)) {
-    return false;
-  }
   auto public_key = Base64Decode(record.signing_public_key_b64);
   if (!public_key) {
     return false;
   }
-  auto account_id = AccountIdFromMlDsaPublicKey(*public_key);
-  if (!account_id || *account_id != peer_identity_value) {
+  // Both self-certifying identities: an Account ID hashes the account key, a PeerId the device key.
+  Roe<std::string> derived = Error("Not a self-certifying identity kind");
+  if (peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account)) {
+    derived = AccountIdFromMlDsaPublicKey(*public_key);
+  } else if (peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::PeerId)) {
+    derived = pp::PeerIdFromMlDsaPublicKey(*public_key);
+  }
+  if (!derived || *derived != peer_identity_value) {
     return false;
   }
   std::lock_guard lock(mutex_);

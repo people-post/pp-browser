@@ -137,7 +137,8 @@ TEST(PeerSigningKeyStoreTest, AKeyIsKeptOnlyUnderTheAccountItHashesTo) {
   PeerSigningKeyStore store;
   EXPECT_FALSE(store.Put("account", *other_account, record)) << "another account";
   EXPECT_FALSE(store.Get("account", *other_account));
-  EXPECT_FALSE(store.Put("relay_user", "relay:me", record)) << "not an account";
+  EXPECT_FALSE(store.Put("relay_user", "relay:me", record)) << "not self-certifying";
+  EXPECT_FALSE(store.Put("peer_id", "QmNotMine", record)) << "a PeerId it does not derive";
   EXPECT_TRUE(store.Put("account", *my_account, record));
   ASSERT_TRUE(store.Get("account", *my_account));
 }
