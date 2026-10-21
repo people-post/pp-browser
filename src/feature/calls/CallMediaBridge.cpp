@@ -1,4 +1,6 @@
 #include "feature/calls/CallMediaBridge.h"
+
+#include "domain/calls/CallDirectPathLogic.h"
 #include "mesh/types/MediaChannel.h"
 #include "domain/calls/CallTxOnlyEscalateLogic.h"
 #include "domain/calls/SeedParkOutcome.h"
@@ -145,18 +147,20 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
 }
 
 void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::string& reason) {
-  if (media_.ActiveCallId() != call_id) {
+  CallMediaCoordinator* call_media = media_.ActiveCallId() == call_id ? CallMediaFor(call_id) : nullptr;
+  BundleFailureInput in;
+  in.engine_call = media_.ActiveCallId() == call_id;
+  in.engine_running = media_.IsActive();
+  in.engine_connected = media_.IsConnected();
+  in.direct_ready = DirectMediaReady();
+  // IsSfuMode() is also true for 1:1 capture — the hop must be attached.
+  in.hop_attached = call_media && call_media->HopAttached();
+  in.hop_pending = call_media && (call_media->HopInFlight() || call_media->ExpectsHop());
+  in.soft_close = IsSoftDirectClose(reason);
+  switch (DecideBundleFailure(in)) {
+  case BundleFailureAction::Ignore:
     return;
-  }
-  // Ignore a late fail when another bundle already carries media.
-  if (DirectMediaReady() && media_.IsConnected()) {
-    return;
-  }
-  // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
-  // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
-  // IsSfuMode() is also true for 1:1 capture — require media_relay attach.
-  CallMediaCoordinator* call_media = CallMediaFor(call_id);
-  if (call_media && call_media->HopAttached() && media_.IsConnected()) {
+  case BundleFailureAction::CarriedByHop:
     log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
     direct_.Detach();
     ClearMeshConnectFailed();
@@ -165,15 +169,8 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     }
     host_.P2pNotifyRingChanged();
     return;
-  }
-  // PreferLocal ReleaseDirect closes 1:1 while capture stays up; CallSfuAttach may still be in
-  // flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
-  const bool soft_direct_close =
-      reason.find("read_eof") != std::string::npos || reason.find("stream closed") != std::string::npos;
-  if ((call_media && (call_media->HopInFlight() || call_media->ExpectsHop())) ||
-      (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
-    log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << call_id
-               << " reason=" << reason;
+  case BundleFailureAction::AwaitHop:
+    log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << call_id << " reason=" << reason;
     if (call_media) {
       call_media->ExpectHopAttach();
     }
@@ -185,6 +182,8 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     }
     host_.P2pNotifyRingChanged();
     return;
+  case BundleFailureAction::Fail:
+    break;
   }
   log().warning << "Call-media failed call_id=" << call_id << " reason=" << reason;
   SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
@@ -526,12 +525,16 @@ void CallMediaBridge::OnReserveRenewFire() {
 // --- k3: a relayed call keeps trying for a direct path; the transport moves onto it by itself ------
 
 void CallMediaBridge::ArmDirectUpgrade(const std::string& call_id) {
-  // The migration driver (offerer) punches; the answerer's transport follows the migrate.
-  if (!session_offerer_ || call_id.empty() || MediaPathKind() != "circuit" || upgrade_call_id_ == call_id) {
-    return;
-  }
-  if (!PathPolicyFor(call_id).upgrade_to_direct) {
-    log().info << "direct upgrade: not for this pair (a mobile end anchors on the relay) call_id=" << call_id;
+  PathKeepingInput in;
+  in.offerer = session_offerer_;
+  in.has_call = !call_id.empty();
+  in.on_relay = MediaPathKind() == "circuit";
+  in.already_for_call = upgrade_call_id_ == call_id;
+  in.policy_upgrade_to_direct = in.has_call && PathPolicyFor(call_id).upgrade_to_direct;
+  if (!ShouldArmDirectUpgrade(in)) {
+    if (in.offerer && in.has_call && in.on_relay && !in.already_for_call) {
+      log().info << "direct upgrade: not for this pair (a mobile end anchors on the relay) call_id=" << call_id;
+    }
     return;
   }
   CancelDirectUpgrade();
@@ -541,12 +544,12 @@ void CallMediaBridge::ArmDirectUpgrade(const std::string& call_id) {
 }
 
 void CallMediaBridge::ScheduleDirectUpgrade() {
-  static constexpr int kDelaysMs[] = {3000, 20000, 60000};
-  if (upgrade_attempt_ >= static_cast<int>(std::size(kDelaysMs))) {
+  const std::optional<int> delay = RetryDelayMs(kDirectUpgradeDelaysMs, upgrade_attempt_);
+  if (!delay) {
     log().info << "direct upgrade: giving up call_id=" << upgrade_call_id_ << " (stays on the relay)";
     return;
   }
-  const int delay_ms = upgrade_delay_ms_for_test_ > 0 ? upgrade_delay_ms_for_test_ : kDelaysMs[upgrade_attempt_];
+  const int delay_ms = upgrade_delay_ms_for_test_ > 0 ? upgrade_delay_ms_for_test_ : *delay;
   upgrade_timer_id_ = outbox_.After(std::chrono::milliseconds(delay_ms), direct_event::UpgradeDue{});
 }
 
@@ -582,11 +585,14 @@ void CallMediaBridge::OnDirectUpgradeFire() {
 // --- k6: a direct call keeps a relayed standby (K003) -----------------------------------------------
 
 void CallMediaBridge::ArmRelayStandby(const std::string& call_id) {
-  if (!session_offerer_ || call_id.empty() || MediaPathKind() == "circuit" || standby_call_id_ == call_id ||
-      !reach_.HasCircuitReach()) {
-    return;
-  }
-  if (!PathPolicyFor(call_id).want_relay_standby) {
+  PathKeepingInput in;
+  in.offerer = session_offerer_;
+  in.has_call = !call_id.empty();
+  in.on_relay = MediaPathKind() == "circuit";
+  in.already_for_call = standby_call_id_ == call_id;
+  in.has_circuit_reach = reach_.HasCircuitReach();
+  in.policy_relay_standby = in.has_call && PathPolicyFor(call_id).want_relay_standby;
+  if (!ShouldArmRelayStandby(in)) {
     return;
   }
   CancelRelayStandby();
@@ -596,12 +602,12 @@ void CallMediaBridge::ArmRelayStandby(const std::string& call_id) {
 }
 
 void CallMediaBridge::ScheduleRelayStandby() {
-  static constexpr int kDelaysMs[] = {5000, 20000, 60000};
-  if (standby_attempt_ >= static_cast<int>(std::size(kDelaysMs))) {
+  const std::optional<int> delay = RetryDelayMs(kRelayStandbyDelaysMs, standby_attempt_);
+  if (!delay) {
     log().info << "relay standby: giving up call_id=" << standby_call_id_ << " (a lost path re-anchors)";
     return;
   }
-  const int delay_ms = standby_delay_ms_for_test_ > 0 ? standby_delay_ms_for_test_ : kDelaysMs[standby_attempt_];
+  const int delay_ms = standby_delay_ms_for_test_ > 0 ? standby_delay_ms_for_test_ : *delay;
   standby_timer_id_ = outbox_.After(std::chrono::milliseconds(delay_ms), direct_event::StandbyDue{});
 }
 
@@ -704,19 +710,19 @@ void CallMediaBridge::OnLocalNetworkChanged() {
   if (stopping_.load(std::memory_order_acquire) || call_id.empty()) {
     return;
   }
-  if (direct_planner_phase_ == CallDirectPlannerPhase::Reconnecting) {
-    // The retry backoff may be long; the new network is the best chance of reaching the peer.
+  switch (DecideOnNetworkChange(direct_planner_phase_, MediaPathKind() == "circuit", session_offerer_)) {
+  case NetworkChangeAction::Reanchor:
     log().info << "network changed: re-anchoring after the links settle call_id=" << call_id;
     ScheduleReanchor(call_id, std::chrono::milliseconds(network_settle_ms_));
     return;
-  }
-  if (direct_planner_phase_ == CallDirectPlannerPhase::Live && MediaPathKind() == "circuit" && session_offerer_) {
+  case NetworkChangeAction::RestartDirectUpgrade:
     log().info << "network changed: direct upgrade starts over call_id=" << call_id;
     CancelDirectUpgrade();
     ArmDirectUpgrade(call_id);
+    return;
+  case NetworkChangeAction::None:
+    return;
   }
-  // Live on a direct path: nothing to do here — if it died with the old network, Amp evicts its
-  // link and the transport fails over to the standby or reports the path lost.
 }
 
 // --- k4: re-anchor a call that lost its last path ----------------------------------------------
@@ -918,45 +924,41 @@ void CallMediaBridge::ClearMeshConnectFailed() {
 }
 
 void CallMediaBridge::PollMeshConnectHealth() {
-  if (mesh_connect_failed_ || !media_.IsActive() || !media_.IsSfuMode()) {
-    return;
-  }
-  if (CallMediaCoordinator* call_media = CallMediaFor(media_.ActiveCallId()); call_media && call_media->HopInFlight()) {
-    return;
-  }
-  // ConnectOffererWithRetry runs on a worker thread — do not UI-timeout while it is dialing.
-  if (connect_.InFlight()) {
-    return;
-  }
-  if (media_.IsConnected() && DirectMediaReady()) {
-    ClearMeshConnectFailed();
-    MaybeEscalateTxOnlyDirect();
-    return;
-  }
   const std::string call_id = media_.ActiveCallId();
-  if (call_id.empty()) {
-    return;
-  }
-  // Stream can be up while StartSfu→"connecting" left IsConnected false (chrome stuck).
-  if (DirectMediaReady()) {
-    ClearMeshConnectFailed();
-    if (media_.IsActive() && !media_.IsConnected()) {
-      log().info << "Heal call-media connected from direct stream call_id=" << call_id;
-      CommitDirectConnected(call_id);
+  DirectHealthInput in;
+  in.already_failed = mesh_connect_failed_;
+  in.engine_running = media_.IsActive() && media_.IsSfuMode();
+  if (in.engine_running && !in.already_failed) {
+    CallMediaCoordinator* call_media = CallMediaFor(call_id);
+    in.hop_in_flight = call_media && call_media->HopInFlight();
+    in.connect_in_flight = connect_.InFlight();
+    in.engine_connected = media_.IsConnected();
+    in.direct_ready = DirectMediaReady();
+    in.has_call = !call_id.empty();
+    if (in.has_call && !in.direct_ready) {
+      if (auto joined = sessions_.CountJoined(call_id)) {
+        in.n_joined = *joined;
+      }
     }
+    in.started_at_ms = media_.StartedAtMs();
+    in.now_ms = util::NowUnixMs();
+    in.timeout_ms = kMeshConnectTimeoutMs;
+  }
+  switch (DecideDirectHealth(in)) {
+  case DirectHealthAction::None:
+    return;
+  case DirectHealthAction::Healthy:
+    ClearMeshConnectFailed();
     MaybeEscalateTxOnlyDirect();
     return;
-  }
-  auto joined = sessions_.CountJoined(call_id);
-  if (joined && *joined >= 3) {
+  case DirectHealthAction::HealConnected:
+    ClearMeshConnectFailed();
+    log().info << "Heal call-media connected from direct stream call_id=" << call_id;
+    CommitDirectConnected(call_id);
+    MaybeEscalateTxOnlyDirect();
     return;
-  }
-  const int64_t started = media_.StartedAtMs();
-  if (started <= 0) {
-    return;
-  }
-  if (util::NowUnixMs() - started < kMeshConnectTimeoutMs) {
-    return;
+  case DirectHealthAction::TimedOut:
+    break;
   }
   log().warning << "Mesh connect timeout call_id=" << call_id;
   mesh_connect_missing_mic_ = !media_.HasLocalCapture();

@@ -571,6 +571,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/domain/calls/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick / roster join stamps and co-invitees |
 | `src/domain/calls/SoftMigrateLogic.*` | Pure who-picks, the arming gate (1:1 stays Direct), who hosts the hop, a re-pick while on a hop, what a failed pick tells the user |
 | `src/domain/calls/CallHopAttachLogic.*` | Pure attach-wait / fan-out / hop-hint |
+| `src/domain/calls/CallDirectPathLogic.*` | Pure 1:1-path decisions: connect health, a failed carrier, network change, when to try for a direct link / keep a relayed standby and their backoff |
 | `src/domain/calls/CallHopJoinLogic.*` | Pure group-path decisions as people join: which call the hop serves, our accept / a peer's accept / the roster's joined count, an inbound attach on a 1:1, a joiner's hop failure |
 | `src/domain/calls/CallControlCodec.*` | Wire JSON for call controls |
 | `src/domain/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
