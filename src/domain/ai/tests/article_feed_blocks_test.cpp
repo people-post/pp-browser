@@ -41,6 +41,8 @@ TEST(ArticleFeedBlocksTest, BuildsIntroAndLongListThatTheParserAccepts) {
   }
   EXPECT_GE(metas, 2u);
   EXPECT_NE(rml.find(">apnews.com"), std::string::npos);
+  // The time is its own element after the host, so a narrow row cuts the host and never the time.
+  EXPECT_NE(rml.find("chat-long-list-meta-end\">\xC2\xB7 "), std::string::npos);
   EXPECT_NE(rml.find("plain.example"), std::string::npos); // shown, but plain http gets no Open button
 
   // Each article carries what the item menu copies / shares / asks about; the link only when it is https.
@@ -48,13 +50,38 @@ TEST(ArticleFeedBlocksTest, BuildsIntroAndLongListThatTheParserAccepts) {
   EXPECT_NE(rml.find("share-url=\"https://"), std::string::npos);
   EXPECT_EQ(rml.find("share-url=\"http://"), std::string::npos);
 
-  // "View details" is a text link at the end of the article's own text, not a button row under it.
+  // "View details" is a text link on the meta row (after host · time), not inside the article's text
+  // and not a button row under it: it stays in one place however long the text is.
   const size_t link = rml.find("chat-inline-link");
   ASSERT_NE(link, std::string::npos);
   EXPECT_EQ(rml.find("chat-long-list-actions"), std::string::npos);
   const size_t text = rml.rfind("First brief.", link);
   ASSERT_NE(text, std::string::npos);
-  EXPECT_EQ(rml.find("</p>", text) > link, true); // inside the same paragraph as the text
+  EXPECT_LT(rml.find("</p>", text), link); // the text paragraph closes before the link
+  const size_t row = rml.rfind("chat-long-list-meta-row", link);
+  ASSERT_NE(row, std::string::npos);
+  EXPECT_LT(rml.find("chat-long-list-meta\"", row), link); // host · time first, then the link
+  EXPECT_LT(link, rml.find("</div>", row));                 // and the link is inside that row
+}
+
+TEST(ArticleFeedBlocksTest, MetaHostDropsTheWwwPrefix) {
+  const std::string json = BuildArticleFeedBlocksJson(
+      R"({"articles":[{"id":"w","title":"T","content":"C","link_to":"https://www.zaobao.com.sg/a","created_at":1759000000}]})");
+  EXPECT_NE(json.find(R"("meta":"zaobao.com.sg)"), std::string::npos) << json; // the open link keeps the full host
+}
+
+// An item with a link but no meta still gets the row, so the link keeps its place on the right.
+TEST(ArticleFeedBlocksTest, LinkWithoutMetaStillSitsOnTheMetaRow) {
+  const std::string json = R"({"blocks":[{"type":"long_list","items":[{"title":"One","actions":[
+      {"label":"Details","message":"Details","style":"link"}]}]}]})";
+  auto parsed = StructuredTextParser::ParseBlocksJson(json, ResponseGoal::DisplayFeed);
+  ASSERT_TRUE(parsed.ok) << parsed.error;
+  ASSERT_EQ(parsed.working_set_candidates.size(), 1u);
+  const std::string& rml = parsed.working_set_candidates[0].artifact_rml;
+  const size_t row = rml.find("chat-long-list-meta-row");
+  ASSERT_NE(row, std::string::npos);
+  EXPECT_EQ(rml.find("chat-long-list-meta\""), std::string::npos);
+  EXPECT_GT(rml.find("chat-inline-link"), row);
 }
 
 TEST(ArticleFeedBlocksTest, OnlyHttpsLinksGetAnOpenAction) {

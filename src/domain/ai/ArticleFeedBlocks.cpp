@@ -34,6 +34,9 @@ std::string HostOf(const std::string& url) {
   if (const size_t colon = authority.find(':'); colon != std::string::npos) {
     authority.erase(colon);
   }
+  if (authority.compare(0, 4, "www.") == 0) {
+    authority.erase(0, 4); // shorter on a phone-width meta row, and no less clear
+  }
   return authority;
 }
 
@@ -128,9 +131,12 @@ std::string BuildArticleFeedBlocksJson(const std::string& raw_json, const Articl
     if (!title.empty() && !content.empty()) {
       item.set("subtitle", content);
     }
-    const std::string meta = host.empty() ? time : (time.empty() ? host : host + " \xC2\xB7 " + time);
-    if (!meta.empty()) {
-      item.set("meta", meta);
+    // Host and time are separate meta fields: on a narrow row the host is what gets cut, never the time.
+    if (!host.empty()) {
+      item.set("meta", host);
+    }
+    if (!time.empty()) {
+      item.set("meta_end", time);
     }
     // What the item menu copies, shares or asks the AI about: the article as the user reads it.
     item.set("share_text", title.empty() || content.empty() ? (title.empty() ? content : title) : title + "\n" + content);
