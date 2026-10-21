@@ -124,6 +124,17 @@ bool ShouldFailOverToStandby(const CallMediaFailoverInput& in) {
          in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
 }
 
+bool ShouldEnterPathLost(const CallMediaFailoverInput& in) {
+  if (ShouldFailOverToStandby(in)) {
+    return false;
+  }
+  if (in.active_link_lost) {
+    return true;
+  }
+  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceLostMs &&
+         in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
+}
+
 bool CallMediaSeqWindow::Accept(const uint32_t seq) {
   const auto anchor = [&]() {
     have_ = true;

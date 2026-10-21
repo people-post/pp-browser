@@ -105,6 +105,13 @@ bool CallMediaBundlePhaseIsActive(CallMediaBundlePhase phase);
 inline constexpr int64_t kCallMediaActiveHeartbeatMs = 500;
 inline constexpr int64_t kCallMediaStandbyHeartbeatMs = 10000;
 inline constexpr int64_t kCallMediaActiveSilenceFailoverMs = 1500;
+/**
+ * With no standby to fail over to, a path silent this long while the peer heartbeats is lost
+ * (Reconnecting…, then the reconnect window): the peer's app died or its network went, and the
+ * link under the path can take most of a minute to notice (its liveness window follows the
+ * keepalive cadence).
+ */
+inline constexpr int64_t kCallMediaActiveSilenceLostMs = 3000;
 inline constexpr int64_t kCallMediaStandbyStaleMs = 25000;
 /**
  * k7: a call that lost its path while the peer is still connected on another link moves there
@@ -133,6 +140,9 @@ struct CallMediaFailoverInput {
  * path goes quiet). Never onto a standby that is itself gone or stale.
  */
 bool ShouldFailOverToStandby(const CallMediaFailoverInput& in);
+
+/** k4: the active path is lost and there is no failover — its link went, or it went silent. */
+bool ShouldEnterPathLost(const CallMediaFailoverInput& in);
 
 /**
  * Receive-side seq de-dupe for one media channel (call-path-resilience k3): while two paths

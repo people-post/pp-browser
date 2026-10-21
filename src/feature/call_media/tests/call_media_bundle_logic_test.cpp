@@ -154,6 +154,29 @@ TEST(CallMediaSeqWindowTest, DropsDuplicatesAcrossReorderingAndRestarts) {
   EXPECT_TRUE(window.Accept(2));
 }
 
+// k4: with nothing to fail over to, a lost link or 3 s of silence from a heartbeating peer is a
+// lost path (Reconnecting…). The peer's app died: its link can stay "connected" for most of a minute.
+TEST(CallMediaFailoverTest, ASilentPathWithNoStandbyIsLost) {
+  CallMediaFailoverInput in;
+  in.peer_heartbeats = true;
+  EXPECT_FALSE(ShouldEnterPathLost(in)) << "healthy active";
+  in.active_silence_ms = kCallMediaActiveSilenceLostMs - 1;
+  EXPECT_FALSE(ShouldEnterPathLost(in));
+  in.active_silence_ms = kCallMediaActiveSilenceLostMs;
+  EXPECT_TRUE(ShouldEnterPathLost(in)) << "silent, no standby";
+  in.peer_heartbeats = false;
+  EXPECT_FALSE(ShouldEnterPathLost(in)) << "a peer that never heartbeats may just be quiet";
+  in.active_link_lost = true;
+  EXPECT_TRUE(ShouldEnterPathLost(in)) << "lost link";
+  in.active_link_lost = false;
+  in.peer_heartbeats = true;
+  in.have_standby = true;
+  in.standby_link_alive = true;
+  EXPECT_FALSE(ShouldEnterPathLost(in)) << "fails over to the standby instead";
+  in.standby_link_alive = false;
+  EXPECT_TRUE(ShouldEnterPathLost(in)) << "the standby is gone too";
+}
+
 // k4: fail over only onto a live standby, on a lost active link or 1.5 s of silence from a peer that
 // heartbeats (older peers never trip the silence rule).
 TEST(CallMediaFailoverTest, SwitchesOnlyToALiveStandbyForALostOrSilentActive) {

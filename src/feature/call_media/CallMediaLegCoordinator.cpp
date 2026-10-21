@@ -1545,8 +1545,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
       if (ShouldFailOverToStandby(in)) {
         FailOverToStandby(bundle, in.active_link_lost ? "active link lost" : "active path silent");
-      } else if (in.active_link_lost && !bundle.Reconnecting()) {
-        EnterPathLost(bundle, "active link lost, no standby");
+      } else if (!bundle.Reconnecting() && ShouldEnterPathLost(in)) {
+        EnterPathLost(bundle, in.active_link_lost ? "active link lost, no standby" : "active path silent, no standby");
       }
     }
     MaybeHeartbeat(bundle.active, now, std::chrono::milliseconds(kCallMediaActiveHeartbeatMs), true);
