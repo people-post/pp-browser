@@ -6,6 +6,7 @@
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/PeerLink.h"
 #include "domain/calls/CallMediaBundleLogic.h"
+#include "domain/calls/CallMediaControlCodec.h"
 #include "feature/call_media/CallMediaFrameCrypto.h"
 #include "domain/calls/CallMediaSessionLogic.h"
 #include "common/LengthPrefixedCodec.h"
@@ -64,84 +65,10 @@ std::vector<uint8_t> Utf8Body(const std::string& utf8) {
 
 /** k3: a candidate path must be up and acknowledged within this, or the call stays where it is. */
 constexpr auto kMigrateTimeout = std::chrono::seconds(5);
-/** k3: release the old path once media arrived on the new one and this long passed ... */
-constexpr auto kRetireAfterSwitch = std::chrono::seconds(1);
-/** ... or after this long regardless (a muted / silent peer). */
-constexpr auto kRetireAtMost = std::chrono::seconds(5);
 /** k3: between automatic attempts to move a relayed call onto a direct link. */
 constexpr auto kAutoMigrateBackoff = std::chrono::seconds(10);
 /** k4 (K008): a call without any path waits this long for a new one before it fails. */
 constexpr auto kReconnectWindow = std::chrono::seconds(30);
-/** k3: a retiring path whose release was never acknowledged is dropped after this. */
-constexpr auto kRetireAbandon = std::chrono::seconds(10);
-
-/** `migrate` moves the call onto the new path; `path_add` (k6) keeps it there as the standby. */
-std::string BuildMigrateJson(const std::string& call_id, const uint32_t media_epoch, const uint32_t path_gen,
-                             const bool standby_only = false) {
-  Object o;
-  o.set("v", static_cast<int64_t>(1));
-  o.set("type", standby_only ? "path_add" : "migrate");
-  o.set("call_id", call_id);
-  o.set("media_epoch", static_cast<int64_t>(media_epoch));
-  o.set("path_gen", static_cast<int64_t>(path_gen));
-  return DumpJson(o);
-}
-
-std::string BuildMigrateAckJson(const bool ok, const uint32_t path_gen, const std::string& error = {}) {
-  Object o;
-  o.set("v", static_cast<int64_t>(1));
-  o.set("type", "migrate_ack");
-  o.set("ok", ok);
-  o.set("path_gen", static_cast<int64_t>(path_gen));
-  if (!error.empty()) {
-    o.set("error", error);
-  }
-  return DumpJson(o);
-}
-
-/** k4 heartbeat; `active` marks the sender's active path (a peer seeing it on its standby follows). */
-const std::string& HeartbeatJson(const bool active) {
-  static const std::string on_active = R"({"v":1,"type":"hb","active":true})";
-  static const std::string on_standby = R"({"v":1,"type":"hb"})";
-  return active ? on_active : on_standby;
-}
-
-std::string BuildPathReleaseJson(const char* type, const uint32_t path_gen) {
-  Object o;
-  o.set("v", static_cast<int64_t>(1));
-  o.set("type", type);
-  o.set("path_gen", static_cast<int64_t>(path_gen));
-  return DumpJson(o);
-}
-
-Roe<Object> ParseJsonObject(const std::string& json_utf8) {
-  auto root = TryParseObject(json_utf8);
-  if (!root) {
-    return Error("invalid call-media json");
-  }
-  return *root;
-}
-
-std::string BuildHelloJson(const CallMediaDirectConnectParams& params) {
-  Object hello;
-  hello.set("v", int64_t{1});
-  hello.set("type", "hello");
-  hello.set("call_id", params.call_id);
-  hello.setJsonUInt("media_epoch", params.media_epoch);
-  hello.set("role", params.offerer ? "offerer" : "answerer");
-  return DumpJson(hello);
-}
-
-std::string BuildHelloAckJson(const bool ok, const char* error = nullptr) {
-  Object ack;
-  ack.set("v", int64_t{1});
-  ack.set("type", "hello_ack");
-  ack.set("ok", ok);
-  if (!ok && error) {
-    ack.set("error", error);
-  }
-  return DumpJson(ack);
-}
 
 bool IsRemoteTerminalReason(const char* reason) {
   return reason && (std::strcmp(reason, "peer_close") == 0 || std::strcmp(reason, "peer_reset") == 0);
@@ -1003,11 +930,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   void HandleControlJson(const std::string& known_call_id, const CallMediaChannelRole role,
                          const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
                          const std::string& json_utf8) {
-    auto parsed = ParseJsonObject(json_utf8);
+    const auto parsed = DecodeCallMediaControl(json_utf8);
     if (!parsed) {
       return;
     }
-    const auto type = parsed->getString("type").value_or("");
+    const CallMediaControlType type = parsed->type;
     {
       // k4: anything on a path's control channel proves the path alive; `hb` only does that.
       CallbackLock lock(*this);
@@ -1015,12 +942,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (path) {
         path->last_rx = Clock::now();
       }
-      if (type == "hb") {
+      if (type == CallMediaControlType::Heartbeat) {
         if (bundle) {
           bundle->peer_heartbeats = true;
           // The peer's active-path heartbeat on our standby: it moved there — follow (both ends then
           // agree without waiting out their own silence timers).
-          if (parsed->getIf<bool>("active").value_or(false) && bundle->standby && path == &*bundle->standby &&
+          if (parsed->active && bundle->standby && path == &*bundle->standby &&
               bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->candidate && !bundle->retiring) {
             FailOverToStandby(*bundle, "peer moved to this path");
           }
@@ -1028,25 +955,25 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         return;
       }
     }
-    if (type == "hello") {
+    if (type == CallMediaControlType::Hello) {
       HandleInboundHello(channel_session, *parsed);
       return;
     }
-    if (type == "hello_ack") {
+    if (type == CallMediaControlType::HelloAck) {
       HandleHelloAck(known_call_id, role, *parsed);
       return;
     }
     // k3 path migration: routed by the channel, not the call id captured at bind (the responder's
     // candidate channel was bound as a placeholder).
-    if (type == "migrate" || type == "path_add") {
+    if (type == CallMediaControlType::Migrate || type == CallMediaControlType::PathAdd) {
       if (!ignore_migrate_for_test.load(std::memory_order_relaxed)) {
-        HandleMigrate(channel_session, *parsed, /*standby_only=*/type == "path_add");
+        HandleMigrate(channel_session, *parsed, /*standby_only=*/type == CallMediaControlType::PathAdd);
       }
-    } else if (type == "migrate_ack") {
+    } else if (type == CallMediaControlType::MigrateAck) {
       HandleMigrateAck(channel_session.get(), *parsed);
-    } else if (type == "path_release") {
+    } else if (type == CallMediaControlType::PathRelease) {
       HandlePathRelease(channel_session, *parsed);
-    } else if (type == "path_release_ack") {
+    } else if (type == CallMediaControlType::PathReleaseAck) {
       HandlePathReleaseAck(channel_session.get(), *parsed);
     }
   }
@@ -1207,19 +1134,19 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   /** Responder: a `migrate` on a new control channel (bound as a placeholder bundle). */
-  void HandleMigrate(const std::shared_ptr<pp::amp::ChannelSession>& session, const Object& msg,
+  void HandleMigrate(const std::shared_ptr<pp::amp::ChannelSession>& session, const CallMediaControl& msg,
                      const bool standby_only) {
     CallbackLock lock(*this);
     Bundle* holder = FindByInboundSession(session);
     if (!holder || !IsPendingCallId(holder->call_id)) {
       return;
     }
-    const std::string call_id = msg.getString("call_id").value_or("");
-    const auto gen = static_cast<uint32_t>(msg.getNonNegInt("path_gen").value_or(0));
-    const auto epoch = static_cast<uint32_t>(msg.getNonNegInt("media_epoch").value_or(0));
+    const std::string& call_id = msg.call_id;
+    const uint32_t gen = msg.path_gen;
+    const uint32_t epoch = msg.media_epoch;
     const auto reject = [&](const char* why) {
       CallMediaLegLog().info << "CallMediaLeg migrate reject call_id=" << call_id << " reason=" << why;
-      (void)session->EnqueueOutbound(Utf8Body(BuildMigrateAckJson(false, gen, why)));
+      (void)session->EnqueueOutbound(Utf8Body(EncodeCallMediaMigrateAck(false, gen, why)));
       EraseBundle(holder->call_id);
     };
     Bundle* target = FindByCallId(call_id);
@@ -1263,20 +1190,20 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     migration.deadline = Clock::now() + kMigrateTimeout;
     migration.standby_only = standby_only;
     target->migration = std::move(migration);
-    (void)session->EnqueueOutbound(Utf8Body(BuildMigrateAckJson(true, gen)));
+    (void)session->EnqueueOutbound(Utf8Body(EncodeCallMediaMigrateAck(true, gen)));
     CallMediaLegLog().info << "CallMediaLeg migrate accept call_id=" << call_id << " path_gen=" << gen;
   }
 
   /** Initiator: the responder's answer on the candidate control channel. */
-  void HandleMigrateAck(const pp::amp::ChannelSession* session, const Object& msg) {
+  void HandleMigrateAck(const pp::amp::ChannelSession* session, const CallMediaControl& msg) {
     CallbackLock lock(*this);
     auto [bundle, path] = FindControlOwner(session);
     if (!bundle || !bundle->candidate || path != &*bundle->candidate || !bundle->migration ||
         !bundle->migration->initiator) {
       return;
     }
-    if (!msg.getIf<bool>("ok").value_or(false)) {
-      return AbandonMigration(*bundle, "peer refused (" + msg.getString("error").value_or("") + ")");
+    if (!msg.ok) {
+      return AbandonMigration(*bundle, "peer refused (" + msg.error + ")");
     }
     pp::amp::PeerLink* link = ResolvePathLink(*bundle, *bundle->candidate);
     if (!link || !link->Mux()) {
@@ -1291,27 +1218,27 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   /** Responder: the driver releases the old path. */
-  void HandlePathRelease(const std::shared_ptr<pp::amp::ChannelSession>& session, const Object& msg) {
+  void HandlePathRelease(const std::shared_ptr<pp::amp::ChannelSession>& session, const CallMediaControl& msg) {
     CallbackLock lock(*this);
     auto [bundle, path] = FindControlOwner(session.get());
     if (!bundle || path != &bundle->active) {
       return;
     }
-    const auto gen = static_cast<uint32_t>(msg.getNonNegInt("path_gen").value_or(0));
+    const uint32_t gen = msg.path_gen;
     if (bundle->retiring && bundle->retiring->gen == gen) {
       KeepRetiringAsStandby(*bundle);
     }
-    (void)session->EnqueueOutbound(Utf8Body(BuildPathReleaseJson("path_release_ack", gen)));
+    (void)session->EnqueueOutbound(Utf8Body(EncodeCallMediaPathRelease(/*ack=*/true, gen)));
   }
 
   /** Initiator: the release is acknowledged — close the old path. */
-  void HandlePathReleaseAck(const pp::amp::ChannelSession* session, const Object& msg) {
+  void HandlePathReleaseAck(const pp::amp::ChannelSession* session, const CallMediaControl& msg) {
     CallbackLock lock(*this);
     auto [bundle, path] = FindControlOwner(session);
     if (!bundle || path != &bundle->active || !bundle->retiring) {
       return;
     }
-    const auto gen = static_cast<uint32_t>(msg.getNonNegInt("path_gen").value_or(0));
+    const uint32_t gen = msg.path_gen;
     if (bundle->retiring->gen == gen) {
       KeepRetiringAsStandby(*bundle);
     }
@@ -1465,7 +1392,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return;
     }
     path.last_hb_tx = now;
-    (void)control->EnqueueOutbound(Utf8Body(HeartbeatJson(active)));
+    (void)control->EnqueueOutbound(Utf8Body(EncodeCallMediaHeartbeat(active)));
   }
 
   static int64_t MsSince(const Clock::time_point now, const Clock::time_point then) {
@@ -1571,7 +1498,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           BindControlChannel(bundle, *bundle.candidate, *link, channel, CallMediaChannelRole::OutboundControl);
           if (!bundle.candidate->outbound_control ||
               !bundle.candidate->outbound_control->EnqueueOutbound(Utf8Body(
-                  BuildMigrateJson(bundle.call_id, bundle.params.media_epoch, bundle.candidate->gen,
+                  EncodeCallMediaMigrate(bundle.call_id, bundle.params.media_epoch, bundle.candidate->gen,
                                    m.standby_only)))) {
             return AbandonMigration(bundle, "migrate send failed");
           }
@@ -1592,26 +1519,33 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
     }
     if (bundle.retiring) {
-      if (PathLinkMissing(bundle, *bundle.retiring) || now - bundle.switched_at >= kRetireAbandon) {
+      CallMediaRetiringInput in;
+      in.link_lost = PathLinkMissing(bundle, *bundle.retiring);
+      in.since_switch_ms = MsSince(now, bundle.switched_at);
+      in.drove_switch = bundle.drove_switch;
+      in.release_sent = bundle.release_sent;
+      in.can_send = bundle.active.outbound_control != nullptr;
+      in.rx_since_switch = bundle.rx_since_switch;
+      switch (DecideCallMediaRetiring(in)) {
+      case CallMediaRetiringAction::Drop:
         DropPath(bundle, *bundle.retiring);
         bundle.retiring.reset();
         return;
-      }
-      if (bundle.drove_switch && !bundle.release_sent && bundle.active.outbound_control &&
-          now - bundle.switched_at >= kRetireAfterSwitch &&
-          (bundle.rx_since_switch || now - bundle.switched_at >= kRetireAtMost)) {
+      case CallMediaRetiringAction::Keep:
+        break;
+      case CallMediaRetiringAction::SendRelease:
         bundle.release_sent = bundle.active.outbound_control->EnqueueOutbound(
-            Utf8Body(BuildPathReleaseJson("path_release", bundle.retiring->gen)));
+            Utf8Body(EncodeCallMediaPathRelease(/*ack=*/false, bundle.retiring->gen)));
         bundle.release_sent_at = now;
       }
     }
   }
 
-  void HandleInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session, const Object& hello) {
+  void HandleInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session, const CallMediaControl& hello) {
     if (!channel_session) {
       return;
     }
-    const std::string hello_call_id = hello.getString("call_id").value_or("");
+    const std::string hello_call_id = hello.call_id;
     if (hello_call_id.empty()) {
       return;
     }
@@ -1642,7 +1576,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         // answer and close only its own channel — evicting the live inbound control first sent
         // the peer a Close and failed the call.
         const auto saved_remote_offerer = target->remote_offerer;
-        target->remote_offerer = hello.getString("role").value_or("") == "offerer";
+        target->remote_offerer = hello.sender_offerer;
         CallMediaInboundHelloContext pre;
         pre.phase = target->phase;
         pre.has_outbound_control = static_cast<bool>(target->active.outbound_control);
@@ -1657,7 +1591,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id=" << hello_call_id
                                  << " peer=" << link->PeerKey() << " reason=" << reason
                                  << " (existing bundle kept)";
-          (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, reason)));
+          (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, reason)));
           EraseBundle(holder->call_id);  // the placeholder and its new channel only
           return;
         }
@@ -1680,7 +1614,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           if (target) {
             // A call born from the peer's hello: we hold the other role. (An answerer's hello can
             // reach the offerer before its own media starts; the offerer then joins this bundle.)
-            target->offerer = hello.getString("role").value_or("") != "offerer";
+            target->offerer = !hello.sender_offerer;
           }
         }
       } else {
@@ -1691,7 +1625,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
 
       // Record the dialer's role before deciding glare (antisymmetric winner needs both roles).
-      target->remote_offerer = hello.getString("role").value_or("") == "offerer";
+      target->remote_offerer = hello.sender_offerer;
       CallMediaInboundHelloContext ctx;
       ctx.phase = target->phase;
       ctx.has_outbound_control = static_cast<bool>(target->active.outbound_control);
@@ -1703,7 +1637,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (decision == CallMediaInboundHelloDecision::RejectBusy) {
         CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id="
                                << hello_call_id << " peer=" << link->PeerKey() << " reason=busy";
-        (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "busy")));
+        (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "busy")));
         DropRole(*target, CallMediaChannelRole::InboundControl);
         if (!target->active.outbound_control && target->phase == CallMediaBundlePhase::Idle) {
           EraseBundle(target->call_id);
@@ -1713,7 +1647,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (decision == CallMediaInboundHelloDecision::RejectGlare) {
         CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id="
                                << hello_call_id << " peer=" << link->PeerKey() << " reason=glare";
-        (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "glare")));
+        (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "glare")));
         DropRole(*target, CallMediaChannelRole::InboundControl);
         return;
       }
@@ -1740,8 +1674,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
     CallMediaDirectConnectParams params;
     params.call_id = hello_call_id;
-    params.media_epoch = static_cast<uint32_t>(hello.getNonNegInt("media_epoch").value_or(1));
-    params.offerer = hello.getString("role").value_or("") == "offerer";
+    params.media_epoch = hello.media_epoch;
+    params.offerer = hello.sender_offerer;
     params.peer_key = link->PeerKey();
 
     InboundHandler handler;
@@ -1750,7 +1684,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       handler = inbound;
     }
     if (!handler) {
-      (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "no handler")));
+      (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "no handler")));
       CallbackLock lock(*this);
       auto* bundle = FindByCallId(hello_call_id);
       if (bundle) {
@@ -1787,7 +1721,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           return;
         }
         if (answer_params.media_key.empty() || answer_params.call_id.empty()) {
-          (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "rejected")));
+          (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "rejected")));
           TearDownBundle(*bundle, false, false, "amp call-media: inbound rejected");
           return;
         }
@@ -1802,7 +1736,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           bundle->params.peer_key = peer_key;
         }
         bundle->phase = CallMediaBundlePhase::AwaitingMedia;
-        if (!channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(true)))) {
+        if (!channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(true)))) {
           TearDownBundle(*bundle, false, false, "amp call-media: hello ack failed");
           return;
         }
@@ -1815,7 +1749,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     });
   }
 
-  void HandleHelloAck(const std::string& call_id, const CallMediaChannelRole role, const Object& ack) {
+  void HandleHelloAck(const std::string& call_id, const CallMediaChannelRole role, const CallMediaControl& ack) {
     CallbackLock lock(*this);
     auto* bundle = FindByCallId(call_id);
     if (!bundle) {
@@ -1823,7 +1757,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     CallMediaHelloAckContext ctx;
     ctx.phase = bundle->phase;
-    ctx.ack_ok = ack.getIf<bool>("ok").value_or(false);
+    ctx.ack_ok = ack.ok;
     ctx.from_outbound_control = role == CallMediaChannelRole::OutboundControl;
     ctx.offerer = bundle->offerer;
     ctx.local_wins_glare = [&] {
@@ -2081,7 +2015,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     BindControlChannel(*bundle, *link, channel_id, CallMediaChannelRole::OutboundControl);
     if (!bundle->active.outbound_control ||
-        !bundle->active.outbound_control->EnqueueOutbound(Utf8Body(BuildHelloJson(open.params)))) {
+        !bundle->active.outbound_control->EnqueueOutbound(Utf8Body(EncodeCallMediaHello(open.params.call_id, open.params.media_epoch, open.params.offerer)))) {
       CallMediaLegLog().info << "CallMediaLeg hello write failed call_id=" << open.call_id
                              << " peer=" << open.peer_key;
       TearDownBundle(*bundle, false, false, "amp call-media: hello write failed");

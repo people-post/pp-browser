@@ -162,4 +162,27 @@ private:
   std::bitset<kWindow> seen_;  // bit i = highest_ - i
 };
 
+/** k3: after a switch, the old path is released once media arrived on the new one and this long passed ... */
+inline constexpr int64_t kCallMediaRetireAfterSwitchMs = 1000;
+/** ... or after this long regardless (a muted / silent peer). */
+inline constexpr int64_t kCallMediaRetireAtMostMs = 5000;
+/** A retiring path whose release was never acknowledged is dropped after this. */
+inline constexpr int64_t kCallMediaRetireAbandonMs = 10000;
+
+struct CallMediaRetiringInput {
+  bool link_lost = false;
+  int64_t since_switch_ms = 0;
+  /** This end drove the switch (it releases the old path; the peer acknowledges). */
+  bool drove_switch = false;
+  bool release_sent = false;
+  bool can_send = false;
+  /** Media arrived on the new path since the switch. */
+  bool rx_since_switch = false;
+};
+
+enum class CallMediaRetiringAction { Keep, Drop, SendRelease };
+
+/** k3 make-before-break: what happens to the path a call just left. */
+CallMediaRetiringAction DecideCallMediaRetiring(const CallMediaRetiringInput& in);
+
 } // namespace pbr

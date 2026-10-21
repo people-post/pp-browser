@@ -168,4 +168,15 @@ bool CallMediaSeqWindow::Accept(const uint32_t seq) {
   return true;
 }
 
+CallMediaRetiringAction DecideCallMediaRetiring(const CallMediaRetiringInput& in) {
+  if (in.link_lost || in.since_switch_ms >= kCallMediaRetireAbandonMs) {
+    return CallMediaRetiringAction::Drop;
+  }
+  if (in.drove_switch && !in.release_sent && in.can_send && in.since_switch_ms >= kCallMediaRetireAfterSwitchMs &&
+      (in.rx_since_switch || in.since_switch_ms >= kCallMediaRetireAtMostMs)) {
+    return CallMediaRetiringAction::SendRelease;
+  }
+  return CallMediaRetiringAction::Keep;
+}
+
 } // namespace pbr

@@ -10,6 +10,7 @@ pp_browser_add_domain_library(pp_domain_calls
     CallHopPlan.cpp
     CallLifecycleTypes.cpp
     CallMediaBundleLogic.cpp
+    CallMediaControlCodec.cpp
     CallMediaKeyExchange.cpp
     CallMediaKeyStore.cpp
     CallMediaSeat.cpp
