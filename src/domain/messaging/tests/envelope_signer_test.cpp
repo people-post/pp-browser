@@ -1,6 +1,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
 #include "domain/messaging/EnvelopeSigner.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
 #include "common/chat/MessagingJson.h"
 
 #include <gtest/gtest.h>
@@ -118,6 +119,27 @@ TEST(EnvelopeSignerTest, MixedBodyShapesAreRefused) {
   RelayEnvelope unknown = MakeE2eVectorEnvelope();
   unknown.route.kind = "other";
   EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(unknown)) << "unknown route kind";
+}
+
+// An account's signing key must hash to the account (self-certifying Account ID): a key filed under
+// another account, or under another identity kind, is refused whoever offers it.
+TEST(PeerSigningKeyStoreTest, AKeyIsKeptOnlyUnderTheAccountItHashesTo) {
+  auto mine = MlDsa::GenerateKeyPair();
+  auto other = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(mine && other);
+  auto my_account = AccountIdFromMlDsaPublicKey(mine->public_key);
+  auto other_account = AccountIdFromMlDsaPublicKey(other->public_key);
+  ASSERT_TRUE(my_account && other_account);
+  PeerSigningKeyRecord record;
+  record.signing_public_key_b64 = Base64Encode(mine->public_key);
+  record.source = "test";
+
+  PeerSigningKeyStore store;
+  EXPECT_FALSE(store.Put("account", *other_account, record)) << "another account";
+  EXPECT_FALSE(store.Get("account", *other_account));
+  EXPECT_FALSE(store.Put("relay_user", "relay:me", record)) << "not an account";
+  EXPECT_TRUE(store.Put("account", *my_account, record));
+  ASSERT_TRUE(store.Get("account", *my_account));
 }
 
 } // namespace pbr

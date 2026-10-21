@@ -65,7 +65,7 @@ public:
     PeerSigningKeyRecord record;
     record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
-    key_store.Put("account", "account:peer", record);
+    key_store.PutUncheckedForTest("account", "account:peer", record);
 
     DirectChatTarget target;
     target.peer_identity_kind = "account";

@@ -84,7 +84,7 @@ struct PartyHarness {
     PeerSigningKeyRecord record;
     record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
-    key_store.Put("account", peer_account, record);
+    key_store.PutUncheckedForTest("account", peer_account, record);
 
     Contact contact;
     contact.id = "contact-peer";

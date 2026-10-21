@@ -67,7 +67,7 @@ public:
     PeerSigningKeyRecord record;
     record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
-    key_store.Put("account", "account:peer", record);
+    key_store.PutUncheckedForTest("account", "account:peer", record);
 
     Contact peer_contact;
     peer_contact.id = "contact-peer";

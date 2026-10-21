@@ -159,7 +159,7 @@ Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
 `signature` on wire: base64 over the 3309-byte ML-DSA-65 signature. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes below are frozen.
 
-Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt.
+Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`) — whichever source offers it (directory, contact card, sync) — and a directory answer must be for the account asked. The account KEM key is not bound this way yet: that needs the directory to return the account's signature over it.
 
 ## Send / receive pipeline (e2e)
 
