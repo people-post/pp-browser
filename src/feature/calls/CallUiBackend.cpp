@@ -177,6 +177,61 @@ void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<vo
   });
 }
 
+CallUiBackend::Surface CallUiBackend::Settle() {
+  Surface surface;
+  if (!Available()) {
+    return surface;
+  }
+  auto top = TopPendingInvite();
+  auto active = ActiveLocalCall();
+  if (active && active->has_value()) {
+    surface.active = **active;
+  }
+  if (top && top->has_value()) {
+    const PendingCallInvite& invite = **top;
+    const bool same_call_active = surface.active && surface.active->call_id == invite.call_id;
+    if (!same_call_active) {
+      surface.invite = invite;
+      if (ShouldSuppressRing(invite.call_id)) {
+        surface.kind = Surface::Kind::Answering;  // accept in flight (CALLS.md)
+        return surface;
+      }
+      if (Phase() == CallPhase::Idle) {
+        Apply(CallLifecycleEvent::InviteSeen, invite.call_id);
+      }
+      surface.kind = Surface::Kind::Ringing;
+      return surface;
+    }
+    // Same-call pending (duplicate invite / inbox race): the call, not a ring.
+  }
+  if (surface.active) {
+    const CallSession& call = *surface.active;
+    // LeaveClicked sets Idle before LeaveCall IO finishes: do not resurrect the panel from the
+    // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
+    if (Phase() == CallPhase::Idle) {
+      if (call.state == CallSessionState::Active && !Media().IsActive() &&
+          !MediaAttemptedThisProcess(call.call_id) && !IsAwaitingSfuRecovery()) {
+        LeaveCall(call.call_id, LiveCallEndReason::Orphaned);  // a true orphan: force-quit / restart
+      }
+      surface.active.reset();
+      return surface;
+    }
+    // Direct connect failed: the state callback may not have marked it yet (ordering). Never leave
+    // on `failed` here: that erased the session before the user could retry.
+    if (Media().IsActive() && Media().ActiveCallId() == call.call_id &&
+        Media().ConnectionState() == "failed" && !IsAwaitingSfuRecovery() && !Media().IsSfuMode() &&
+        !IsP2pConnectFailed()) {
+      PollP2pConnectHealth();
+    }
+    surface.kind = Surface::Kind::InCall;
+    return surface;
+  }
+  if (Phase() == CallPhase::Ringing) {
+    Apply(CallLifecycleEvent::InviteCleared, {});
+  }
+  return surface;
+}
+
 // --- durable state -------------------------------------------------------------------------------
 
 Roe<std::optional<PendingCallInvite>> CallUiBackend::TopPendingInvite() {

@@ -68,6 +68,26 @@ public:
   };
   std::optional<RemoteEnd> TakeRemoteEnd();
 
+  /** What the call surface shows. */
+  struct Surface {
+    enum class Kind {
+      None,      // nothing: no ring, no call panel
+      Ringing,   // `invite` rings; `active` is the call it would replace, if any
+      Answering, // `invite` was accepted and is being joined
+      InCall,    // `active` is this device's live call
+    };
+    Kind kind = Kind::None;
+    std::optional<PendingCallInvite> invite;
+    std::optional<CallSession> active;
+  };
+  /**
+   * Read the pending invite and the live call, taking the steps the owner is owed on the way: an
+   * invite first seen (InviteSeen) or gone (InviteCleared), a call orphaned by a restart (left), a
+   * failed direct connect the health poll has not marked yet. The GUI renders the result; headless
+   * drivers act on it. Every refresh of the call surface goes through here.
+   */
+  Surface Settle();
+
   // --- Intents with a result (`on_done` on UI) ---------------------------------------------------
   void StartCall(const std::string& origin_thread_id, bool video_allowed,
                  const std::vector<std::string>& invitee_identities, std::function<void(Roe<CallSession>)> on_done);
