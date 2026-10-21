@@ -482,8 +482,8 @@ TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
   EXPECT_GE(sent_control_messages_, 1);
 }
 
-// V037 intents: an Accept click while its accept is in flight is not a second accept; the ring stays
-// suppressed until the accept answers.
+// V037 intents: a second Accept click is not a second accept (the accept no longer waits for the
+// circuit park, so it has already gone through by the second click).
 TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {
   const std::string call_id = "call:dedupe";
   auto msg = MakeInviteMessage(call_id);
@@ -491,24 +491,15 @@ TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   int parks = 0;
-  std::function<void(bool)> park_done;
-  csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> done) {
-    ++parks;
-    park_done = std::move(done);
-  });
+  csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> /*done*/) { ++parks; });
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, {}); });  // the ring's call
-  EXPECT_EQ(csm_->AcceptingCallId(), call_id);
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Accepting);
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
-  EXPECT_EQ(parks, 1) << "the second click started no second accept";
-
-  ASSERT_TRUE(park_done);
-  OnCallsOwner([&] { park_done(true); });  // delivered on the owner, as CallStack does
   AppRuntime::RunAllOwnerTasks();
+  EXPECT_EQ(parks, 1) << "the second click started no second accept";
   EXPECT_TRUE(csm_->AcceptingCallId().empty());
   EXPECT_NE(csm_->Live().Phase(), CallPhase::Ringing);
-  EXPECT_TRUE(csm_->LastError().empty());
+  EXPECT_TRUE(csm_->LastError().empty()) << csm_->LastError();
 }
 
 // PR #239 review: two inbound bundles can each raise PeerReconnected before the first queued resume
@@ -530,10 +521,9 @@ TEST_F(CallSessionInboundComposeTest, ADuplicateResumeThatFailsLeavesTheResumedC
   EXPECT_EQ(csm_->Live().Phase(), CallPhase::InCall);
 }
 
-// thread-ownership t2a: Accept waits for the circuit park without blocking the calls owner — other
-// owner work (here: a ring notice and inbound control) runs while the park is outstanding, and
-// nothing is committed (no CallAccept, not Joined) until the park answers.
-TEST_F(CallSessionInboundComposeTest, AcceptAwaitsCircuitParkWithoutBlockingTheOwner) {
+// Accept asks for the circuit park but does not wait for it: a seed silently gone held every
+// answer for the whole park (≤ 12 s). The accept commits at once; the park lands when it lands.
+TEST_F(CallSessionInboundComposeTest, AcceptParksWithoutWaitingForThePark) {
   const std::string call_id = "call:park";
   auto msg = MakeInviteMessage(call_id);
   ASSERT_TRUE(msg);
@@ -544,24 +534,20 @@ TEST_F(CallSessionInboundComposeTest, AcceptAwaitsCircuitParkWithoutBlockingTheO
   csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> done) { park_done = std::move(done); });
   std::optional<Roe<void>> accepted;
   OnCallsOwner([&] { return csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); }); });
+  AppRuntime::RunAllOwnerTasks();
   ASSERT_TRUE(park_done) << "accept asked for the circuit park";
-  EXPECT_FALSE(accepted.has_value()) << "accept must not finish before the park";
-  auto self = sessions_->FindParticipant(call_id, local_identity_);
-  EXPECT_FALSE(self && self->has_value() && (*self)->state == CallParticipantState::Joined);
-
-  bool owner_free = false;
-  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [&]() { owner_free = true; });
-  AppRuntime::RunAllOwnerTasks();
-  EXPECT_TRUE(owner_free) << "the calls owner kept serving while accept awaited the park";
-
-  OnCallsOwner([&] { park_done(true); });  // delivered on the owner, as CallStack does
-  AppRuntime::RunAllOwnerTasks();
-  ASSERT_TRUE(accepted.has_value());
+  ASSERT_TRUE(accepted.has_value()) << "accept does not wait for the park";
   EXPECT_TRUE(*accepted) << accepted->error().message;
+  auto self = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
+  EXPECT_GE(sent_control_messages_, 1) << "CallAccept sent before the park answered";
+
+  OnCallsOwner([&] { park_done(false); });  // a late (failed) park changes nothing
+  AppRuntime::RunAllOwnerTasks();
   self = sessions_->FindParticipant(call_id, local_identity_);
   ASSERT_TRUE(self && self->has_value());
   EXPECT_EQ((*self)->state, CallParticipantState::Joined);
-  EXPECT_GE(sent_control_messages_, 1) << "CallAccept sent after the park";
 }
 
 TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {

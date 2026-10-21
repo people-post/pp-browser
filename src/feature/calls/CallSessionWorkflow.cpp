@@ -503,20 +503,17 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
     }
     on_done(std::move(accepted));
   };
-  // Thin product gate: connectivity owns the park; the session waits for it before CallAccept —
-  // asynchronously, so the calls owner keeps serving inbound control / Leave meanwhile.
-  if (!host_.reach.park_circuit) {
-    on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
-    return;
+  // Park on the seeds so the caller's circuit can reach us — but CallAccept does not wait for it.
+  // It used to (≤ 12 s): a seed silently gone held every answer for the whole park. The caller only
+  // tries a circuit after our accept reaches it, and its StartBridge waits at the relay for us to
+  // register (within its 14 s envelope), so a park that lands a moment later still serves it.
+  if (host_.reach.park_circuit) {
+    host_.reach.park_circuit(12000, [call_id](bool ready) {  // may answer after this workflow is gone
+      logging::getLogger("CallSessionWorkflow").info << "AcceptInvite circuit park call_id=" << call_id
+                                                      << " ready=" << (ready ? 1 : 0);
+    });
   }
-  const uint64_t step = steps_.StoreFor<bool>(
-      [this, call_id, charge_decision, voice_only_accept, local = *local, on_done](bool ready) {
-        log().info << "AcceptInvite circuit park call_id=" << call_id << " ready=" << (ready ? 1 : 0);
-        on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, local));
-      });
-  host_.reach.park_circuit(12000, [outbox = outbox_, step](bool ready) {
-    outbox.Emit(workflow_event::Continue{OwnerStepReady{step, std::make_shared<std::any>(ready)}});
-  });
+  on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
 }
 
 Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_id,

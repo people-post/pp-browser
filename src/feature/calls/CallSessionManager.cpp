@@ -361,6 +361,13 @@ void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
     NotifyCallStateChanged();
     return;
   }
+  // Already answered (a double tap: the accept no longer waits for the park, so the first one may
+  // have gone through by the second) — not a second accept.
+  if (const LiveCall* call = live_calls_.Find(call_id); call && call->State() == LiveCallState::Joined) {
+    log().info << "AcceptClicked ignored (already joined) call_id=" << call_id;
+    NotifyCallStateChanged();
+    return;
+  }
   accept_in_flight_ = call_id;
   NotifyCallStateChanged();
   AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
