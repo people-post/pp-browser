@@ -228,7 +228,7 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   const char* sql =
       "SELECT session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, "
       "key_scope, thread_kem_pk_b64, thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, "
-      "psk_rotate_msg_count, last_rotation_id FROM chat_targets "
+      "psk_rotate_msg_count, last_rotation_id, auto_key_session_id, auto_key_init_pending FROM chat_targets "
       "WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? LIMIT 1;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK load");
@@ -272,6 +272,12 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   if (sqlite3_column_text(stmt, 11)) {
     record.last_rotation_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
   }
+  if (sqlite3_column_text(stmt, 12)) {
+    record.auto_key_session_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
+  }
+  if (sqlite3_column_text(stmt, 13)) {
+    record.auto_key_init_pending = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
+  }
   sqlite3_finalize(stmt);
   if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
     return std::optional<PskSessionRecord>(record);
@@ -292,7 +298,8 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
   const char* sql =
       "SELECT peer_identity_kind, peer_identity_value, channel, session_epoch, master_psk_b64, psk_fingerprint, "
       "psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, thread_kem_sk_b64, "
-      "peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id FROM chat_targets;";
+      "peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, auto_key_session_id, "
+      "auto_key_init_pending FROM chat_targets;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK list");
   }
@@ -338,6 +345,12 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
     if (sqlite3_column_text(stmt, 14)) {
       record.last_rotation_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 14));
     }
+    if (sqlite3_column_text(stmt, 15)) {
+      record.auto_key_session_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 15));
+    }
+    if (sqlite3_column_text(stmt, 16)) {
+      record.auto_key_init_pending = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 16));
+    }
     if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
       continue;
     }
@@ -382,22 +395,28 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
   const char* sql =
       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
       "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
-      "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, "
+      "auto_key_session_id, auto_key_init_pending) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
       "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
       "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
       "retired_psks_json=excluded.retired_psks_json, key_scope=excluded.key_scope, "
       "thread_kem_pk_b64=excluded.thread_kem_pk_b64, thread_kem_sk_b64=excluded.thread_kem_sk_b64, "
       "peer_thread_kem_pk_b64=excluded.peer_thread_kem_pk_b64, last_psk_rotate_at=excluded.last_psk_rotate_at, "
-      "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id;";
+      "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id, "
+      "auto_key_session_id=excluded.auto_key_session_id, auto_key_init_pending=excluded.auto_key_init_pending;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK save");
   }
   sqlite3_bind_text(stmt, 1, to_save.key.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 2, to_save.key.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 3, ChannelToDb(to_save.key.channel).c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 4, "pending", -1, SQLITE_STATIC);
+  // No thread yet (a session for the control lane, or opened before the chat): a placeholder unique per
+  // target — local_thread_id is unique, and a shared "pending" made the second such peer fail to save.
+  const std::string pending_thread = "pending:" + to_save.key.peer_identity_kind + ":" +
+                                     to_save.key.peer_identity_value + ":" + ChannelToDb(to_save.key.channel);
+  sqlite3_bind_text(stmt, 4, pending_thread.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 5, static_cast<int>(to_save.session_epoch));
   if (to_save.master_psk_b64) {
     sqlite3_bind_text(stmt, 6, to_save.master_psk_b64->c_str(), -1, SQLITE_TRANSIENT);
@@ -441,6 +460,16 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
     sqlite3_bind_text(stmt, 16, to_save.last_rotation_id->c_str(), -1, SQLITE_TRANSIENT);
   } else {
     sqlite3_bind_null(stmt, 16);
+  }
+  if (to_save.auto_key_session_id) {
+    sqlite3_bind_text(stmt, 17, to_save.auto_key_session_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 17);
+  }
+  if (to_save.auto_key_init_pending) {
+    sqlite3_bind_text(stmt, 18, to_save.auto_key_init_pending->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 18);
   }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);

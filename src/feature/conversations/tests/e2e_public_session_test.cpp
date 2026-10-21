@@ -2,9 +2,7 @@
 // (AutoKey to the peer's KEM key) and the peer derives it from that send's key_init. These are the
 // ways real calls stop getting through: both sides open at once, the opening send is lost, one side
 // starts over (reinstall / wiped store).
-//
-// DISABLED_ cases fail today — the receiver always reads with the session it stored and ignores a
-// newer key_init, and a sender attaches key_init only to its first send — and turn on with the fix.
+
 #include "common/chat/SystemControl.h"
 #include "domain/messaging/ControlLaneEnvelope.h"
 #include "domain/messaging/ControlLaneSeenStore.h"
@@ -180,7 +178,7 @@ TEST_F(E2ePublicSessionTest, OneSideOpensAndBothDirectionsWork) {
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_))) << "the answer rides the session Bob derived";
 }
 
-TEST_F(E2ePublicSessionTest, DISABLED_BothSidesOpeningAtOnceStillGetThrough) {
+TEST_F(E2ePublicSessionTest, BothSidesOpeningAtOnceStillGetThrough) {
   // Alice and Bob call each other with no session yet: each opens one before seeing the other's.
   const RelayEnvelope from_alice = alice_->Signal(*bob_);
   const RelayEnvelope from_bob = bob_->Signal(*alice_);
@@ -191,16 +189,36 @@ TEST_F(E2ePublicSessionTest, DISABLED_BothSidesOpeningAtOnceStillGetThrough) {
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
 }
 
-TEST_F(E2ePublicSessionTest, DISABLED_LosingTheOpeningSendDoesNotLockThePairOut) {
+TEST_F(E2ePublicSessionTest, LosingTheOpeningSendDoesNotLockThePairOut) {
   (void)alice_->Signal(*bob_);  // opened the session; this send never arrived
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "the next send must still be readable";
 }
 
-TEST_F(E2ePublicSessionTest, DISABLED_ASideThatStartsOverIsHeardAgain) {
+TEST_F(E2ePublicSessionTest, ASideThatStartsOverIsHeardAgain) {
   ASSERT_TRUE(bob_->Receive(alice_->Signal(*bob_)));
   alice_->OpenProfile("profile-reinstalled");  // same account, empty session store
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "Bob must not keep reading with the old session";
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
+}
+
+TEST_F(E2ePublicSessionTest, SessionsWithSeveralPeersBeforeAnyThread) {
+  // The lane opens sessions with no thread: each must save (a shared placeholder thread id did not).
+  Side carol("carol", 0x70);
+  alice_->Know(carol);
+  carol.Know(*alice_);
+  EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_)));
+  EXPECT_TRUE(carol.Receive(alice_->Signal(carol)));
+  EXPECT_TRUE(alice_->Receive(carol.Signal(*alice_)));
+}
+
+TEST_F(E2ePublicSessionTest, OnceHeardTheSenderStopsAnnouncingItsSession) {
+  const RelayEnvelope opening = alice_->Signal(*bob_);
+  EXPECT_TRUE(opening.body.e2e.key_init_b64.has_value());
+  const RelayEnvelope still_unconfirmed = alice_->Signal(*bob_);
+  EXPECT_TRUE(still_unconfirmed.body.e2e.key_init_b64.has_value()) << "Bob has not answered yet";
+  ASSERT_TRUE(bob_->Receive(opening));
+  ASSERT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
+  EXPECT_FALSE(alice_->Signal(*bob_).body.e2e.key_init_b64.has_value()) << "Bob answered under it: confirmed";
 }
 
 } // namespace

@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS chat_targets (
   last_psk_rotate_at INTEGER,
   psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0,
   last_rotation_id TEXT,
+  auto_key_session_id TEXT,
+  auto_key_init_pending TEXT,
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);

@@ -5,7 +5,6 @@
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ReactionTypes.h"
 
-#include "domain/messaging/AutoKeyEnvelopeResolver.h"
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/ChatPayloadTypes.h"
@@ -397,28 +396,6 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
   return EnvelopeSigner::Verify(envelope, key->signing_public_key_b64);
 }
 
-Roe<void> RelayReceivePipeline::PersistDerivedAutoKeyPsk(const RelayEnvelope& envelope,
-                                                        const ChatTargetKey& target_key,
-                                                        const ByteVector& master_psk) const {
-  auto existing = psk_store_.Load(target_key);
-  if (!existing) {
-    return existing.error();
-  }
-  PskSessionRecord record;
-  if (*existing) {
-    record = **existing;
-  } else {
-    record.key = target_key;
-    record.session_epoch = envelope.session_epoch;
-  }
-  if (!record.master_psk_b64.has_value()) {
-    record.master_psk_b64 = Base64Encode(master_psk);
-    record.session_epoch = envelope.session_epoch;
-    return psk_store_.Save(record);
-  }
-  return {};
-}
-
 Roe<void> RelayReceivePipeline::ValidateInboundPskRotate(const RelayEnvelope& envelope,
                                                         const ThreadMessage& message) const {
   if (!PskRotateCodec::IsPskRotateMessage(message)) {
@@ -547,15 +524,19 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   target_key.peer_identity_kind = inbound_target.peer_identity_kind;
   target_key.peer_identity_value = inbound_target.peer_identity_value;
   target_key.channel = CryptoChannel::E2ePublic;
-  auto decrypted =
-      E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_, *kem_private);
+  AutoKeyRead read;
+  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
+                                                         *kem_private, &read);
   if (!decrypted) {
     log().warning << "control lane: couldn't decrypt message_id=" << envelope.message_id
                   << " err=" << decrypted.error().message;
     return outcome;
   }
-  if (auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_, *kem_private)) {
-    (void)PersistDerivedAutoKeyPsk(envelope, target_key, *master_psk);
+  // Signed by the peer and read: what that proves about the pair's session is kept.
+  if (auto kept = ReconcileE2ePublicSession(psk_store_, target_key, envelope.session_epoch, read,
+                                            envelope.body.e2e.key_init_b64);
+      !kept) {
+    log().warning << "control lane: session not updated: " << kept.error().message;
   }
 
   ThreadMessage message = std::move(*decrypted);
@@ -735,8 +716,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       local_kem_private_key = std::move(*kem_private);
     }
 
+    AutoKeyRead read;
     auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_aad_id, target_key, psk_store_,
-                                                           local_kem_private_key);
+                                                           local_kem_private_key, &read);
     if (!decrypted) {
       outcome.decision = IngestDecision::HardReject;
       MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't decrypt", decrypted.error().message,
@@ -747,10 +729,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
     if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value() &&
         !PskRotateCodec::IsPskRotateMessage(message)) {
-      auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_,
-                                                                       *local_kem_private_key);
-      if (master_psk) {
-        (void)PersistDerivedAutoKeyPsk(envelope, target_key, *master_psk);
+      // Signed by the peer (checked above) and read: keep what that proves about the pair's session.
+      if (auto kept = ReconcileE2ePublicSession(psk_store_, target_key, envelope.session_epoch, read,
+                                                envelope.body.e2e.key_init_b64);
+          !kept) {
+        log().warning << "e2e_public session not updated: " << kept.error().message;
       }
     }
   } else {

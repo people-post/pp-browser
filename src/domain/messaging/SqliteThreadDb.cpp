@@ -162,6 +162,11 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   } else if (user_version != kSqliteThreadProfileUserVersion) {
     return Error("Incompatible profile.db — wipe profile data directory");
   }
+  // Additive chat_targets columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
+                     nullptr);
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_init_pending TEXT;", nullptr, nullptr,
+                     nullptr);
   GroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
     return group_schema.error();

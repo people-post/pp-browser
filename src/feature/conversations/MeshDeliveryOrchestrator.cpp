@@ -1420,9 +1420,15 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       master_psk = std::move(established->master_psk);
       key_init_b64 = std::move(established->key_init_b64);
       PskSessionRecord record;
+      if (auto existing = psk_store_.Load(target_key); existing && existing->has_value()) {
+        record = **existing;
+      }
       record.key = target_key;
       record.session_epoch = *message.session_epoch;
       record.master_psk_b64 = Base64Encode(master_psk);
+      // Ours until the peer is heard under it: every send carries the key_init (see EnsureE2ePublicMasterPsk).
+      record.auto_key_session_id = AutoKeySessionId(*key_init_b64);
+      record.auto_key_init_pending = key_init_b64;
       if (auto saved = psk_store_.Save(record); !saved) {
         appended->delivery = MessageDelivery::Failed;
         (void)store_.UpdateMessage(*appended);
@@ -1438,6 +1444,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       master_psk = std::move(*decoded);
       if (options.key_init_b64 && !options.key_init_b64->empty()) {
         key_init_b64 = options.key_init_b64;
+      } else if ((*thread)->channel == ThreadChannel::E2ePublic) {
+        // A session we opened that the peer has not been heard under yet: keep announcing it.
+        if (auto record = psk_store_.Load(target_key);
+            record && record->has_value() && (*record)->session_epoch == *message.session_epoch) {
+          key_init_b64 = (*record)->auto_key_init_pending;
+        }
       }
     }
     E2eEncryptParams params;

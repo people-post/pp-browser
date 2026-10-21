@@ -13,9 +13,22 @@ namespace pbr {
 
 struct E2ePublicPskEnsureResult {
   ByteVector master_psk;
-  /** Set only when AutoKey encapsulation just created the session (attach on first send). */
+  /**
+   * The key_init to attach to this send: set while the session is one we opened and the peer has
+   * not been heard under it yet (a lost opening send must not lock the pair out).
+   */
   std::optional<std::string> key_init_b64;
   bool created = false;
+};
+
+/** A session's id: the hash of the key_init that opened it (hex). Both sides compute the same. */
+std::string AutoKeySessionId(const std::string& key_init_b64);
+
+/** Which session an e2e_public envelope was read under. */
+struct AutoKeyRead {
+  ByteVector master_psk;
+  /** Read under the session the envelope's key_init opens (not the one we had stored). */
+  bool via_key_init = false;
 };
 
 /** Session key for CallMediaKey wrap, plus optional first-send AutoKey `key_init`. */
@@ -33,6 +46,18 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_sto
                                                       const ChatTargetKey& target_key,
                                                       uint32_t session_epoch,
                                                       const ByteVector& peer_kem_public);
+
+/**
+ * What reading an authenticated envelope (signature verified) proves about the pair's session, and
+ * the session we keep:
+ * - read under our stored session: the peer has it — a session we opened is confirmed;
+ * - read under the envelope's key_init (ours could not read it, or we had none): the peer is on that
+ *   session, and we move to it — unless both opened at once and ours, unconfirmed, has the lower id
+ *   (the peer moves to ours instead; both sides decide the same).
+ */
+Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
+                                    uint32_t session_epoch, const AutoKeyRead& read,
+                                    const std::optional<std::string>& envelope_key_init_b64);
 
 /** Derive the pairwise session key used for CallMediaKey wrap (channel e2e_public). */
 Roe<ByteVector> DeriveE2ePublicSessionKey(const ByteVector& master_psk, uint32_t session_epoch);

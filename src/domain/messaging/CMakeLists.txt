@@ -5,7 +5,6 @@ pp_browser_add_domain_library(pp_domain_messaging
     AttachmentSuppressionStore.cpp
     ChatAttachmentPrepare.cpp
     AtAiParser.cpp
-    AutoKeyEnvelopeResolver.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
     ChatPayloadCodec.cpp
