@@ -1,5 +1,5 @@
-#include "feature/call_media/CallMediaBundleLogic.h"
-#include "feature/call_media/CallMediaSessionLogic.h"
+#include "domain/calls/CallMediaBundleLogic.h"
+#include "domain/calls/CallMediaSessionLogic.h"
 
 #include <gtest/gtest.h>
 

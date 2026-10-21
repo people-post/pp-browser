@@ -5,9 +5,9 @@
 #include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/PeerLink.h"
-#include "feature/call_media/CallMediaBundleLogic.h"
+#include "domain/calls/CallMediaBundleLogic.h"
 #include "feature/call_media/CallMediaFrameCrypto.h"
-#include "feature/call_media/CallMediaSessionLogic.h"
+#include "domain/calls/CallMediaSessionLogic.h"
 #include "common/LengthPrefixedCodec.h"
 #include "common/Logger.h"
 

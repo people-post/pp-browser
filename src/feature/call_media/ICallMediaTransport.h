@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/calls/CallMediaSessionTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
 #include "common/media/CallMediaHealth.h"
@@ -13,55 +14,6 @@
 
 namespace pbr {
 
-
-/** Transport session phases for 1:1 call-media (V033). Product UX phases are the calls' projection (LiveCall::Phase). */
-enum class CallMediaSessionPhase {
-  Idle = 0,
-  Dialing,
-  HelloOutbound,
-  HelloInbound,
-  Adopting,
-  MediaReady,
-  Detaching,
-};
-
-enum class CallMediaSessionEvent {
-  ConnectRequested = 0,
-  OpenStreamOk,
-  OpenStreamFail,
-  InboundStream,
-  HelloOk,
-  HelloFail,
-  AdoptWon,
-  AdoptLost,
-  DuplexStarted,
-  DuplexEof,
-  DuplexError,
-  DetachRequested,
-  ConnectTimeout,
-  HandlerCleared,
-  ConnectSuperseded,
-};
-
-const char* CallMediaSessionPhaseName(CallMediaSessionPhase phase);
-const char* CallMediaSessionEventName(CallMediaSessionEvent ev);
-
-struct CallMediaDirectConnectParams {
-  std::string peer_key;
-  std::string call_id;
-  uint32_t media_epoch = 1;
-  ByteVector media_key;
-  bool offerer = true;
-};
-
-/** Kind of mesh link the active call-media channels are bound on (path label truth). */
-enum class CallMediaLinkKind {
-  Unknown,
-  /** ADP association (dialed or punched). */
-  Direct,
-  /** Nested link over a relay circuit carrier. */
-  Relayed,
-};
 
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
