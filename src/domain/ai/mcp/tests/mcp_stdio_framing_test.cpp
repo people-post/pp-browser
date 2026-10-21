@@ -103,7 +103,7 @@ TEST(McpRuntimeTest, HttpServerSurvivesAFailedInitialize) {
   } reset;
   int posts = 0;
   pbr::McpClient::SetHttpPost([&](const std::string&, const std::string&,
-                                  const std::map<std::string, std::string>&) -> pbr::Roe<pbr::HttpResponse> {
+                                  const std::map<std::string, std::string>&, long) -> pbr::Roe<pbr::HttpResponse> {
     ++posts;
     return pbr::Error("HTTP request failed: Could not resolve hostname");
   });

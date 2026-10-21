@@ -142,12 +142,14 @@ private:
                               std::string summary);
   static void EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
                                  const std::string& finish_reason, const std::vector<BriefAiSource>& sources);
-  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state);
+  /** `cancelled` is set when the turn was stopped while resolving; the error then carries nothing to show. */
+  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled);
+  enum class FeedRelist { Listed, Unavailable, Cancelled };
   /**
    * A feed turn whose planned tool is not registered: re-lists the promoted MCP server (when there is one) until
-   * the tools appear, the wait runs out or the turn is cancelled. True when every planned tool is now registered.
+   * a listing answers, the wait runs out or the turn is cancelled. Listed: every planned tool is now registered.
    */
-  static bool RelistMissingFeedTools(const std::shared_ptr<Impl>& state, const TurnPlan& plan);
+  static FeedRelist RelistMissingFeedTools(const std::shared_ptr<Impl>& state, const TurnPlan& plan);
   static void ContinueAfterExecution(const std::shared_ptr<Impl>& state);
   static void RunSynthesisStep(const std::shared_ptr<Impl>& state);
   static void DispatchRefinementToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,

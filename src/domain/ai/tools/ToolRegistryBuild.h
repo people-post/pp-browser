@@ -15,6 +15,7 @@ void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config
                                  const std::vector<std::string>& custom_prefixes = {});
 
 // Adds the promoted MCP server's tools (the feeds); a name already in the registry is skipped.
-void RegisterPromotedMcpTools(ToolRegistry& registry, McpClient& promoted_mcp);
+// `list_timeout_s` bounds the tools/list request (0 = the transport's default). True when tools/list answered.
+bool RegisterPromotedMcpTools(ToolRegistry& registry, McpClient& promoted_mcp, long list_timeout_s = 0);
 
 } // namespace pbr

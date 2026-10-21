@@ -37,7 +37,7 @@ TEST(McpToolAdapterTest, BoundsSerializedToolResultsAtConfiguredLimit) {
   ASSERT_EQ(result_json.size(), pbr::kMaxMcpToolResultBytes);
 
   pbr::McpClient::SetHttpPost([&result_json](const std::string&, const std::string& request,
-                                              const std::map<std::string, std::string>&) -> pbr::Roe<pbr::HttpResponse> {
+                                              const std::map<std::string, std::string>&, long) -> pbr::Roe<pbr::HttpResponse> {
     if (request.find("tools/list") != std::string::npos) {
       return pbr::HttpResponse{.status_code = 200,
                                .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"large_result","description":"","inputSchema":{"type":"object"}}]}})"};
@@ -68,7 +68,7 @@ TEST(McpToolAdapterTest, BoundsSerializedToolResultsAtConfiguredLimit) {
 TEST(McpToolAdapterTest, ReadOnlyHintIsTrustedOnlyFromThePromotedServer) {
   McpHttpPostReset reset;
   pbr::McpClient::SetHttpPost([](const std::string&, const std::string&,
-                                 const std::map<std::string, std::string>&) -> pbr::Roe<pbr::HttpResponse> {
+                                 const std::map<std::string, std::string>&, long) -> pbr::Roe<pbr::HttpResponse> {
     return pbr::HttpResponse{
         .status_code = 200,
         .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[)"

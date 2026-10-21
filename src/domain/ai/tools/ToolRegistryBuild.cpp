@@ -5,9 +5,11 @@
 
 namespace pbr {
 
-void RegisterPromotedMcpTools(ToolRegistry& registry, McpClient& promoted_mcp) {
-  McpToolProvider promoted("mcp:promoted", promoted_mcp, {.trust_server_annotations = true}, "feeds");
+bool RegisterPromotedMcpTools(ToolRegistry& registry, McpClient& promoted_mcp, const long list_timeout_s) {
+  McpToolProvider promoted("mcp:promoted", promoted_mcp,
+                           {.trust_server_annotations = true, .list_timeout_s = list_timeout_s}, "feeds");
   registry.RegisterProvider(promoted);
+  return promoted.Listed();
 }
 
 void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config, McpClient* promoted_mcp,

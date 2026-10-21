@@ -17,12 +17,15 @@ public:
 
   std::string Id() const override;
   std::vector<ToolDescriptor> ListTools() override;
+  /** Whether the last ListTools() got an answer from the server (an empty list counts). */
+  bool Listed() const { return listed_; }
 
 private:
   std::string id_;
   McpClient& client_;
   McpToolAdapterOptions options_;
   std::string default_domain_;
+  bool listed_ = false;
 };
 
 } // namespace pbr

@@ -693,7 +693,7 @@ void AgentSession::ContinueAfterExecution(const std::shared_ptr<Impl>& state) {
   RunSynthesisStep(state);
 }
 
-Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) {
+Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled) {
   if (state->pending_user_payload && !state->pending_user_payload->empty()) {
     if (auto payload_plan = TryBuildPlanFromPayload(state->pending_user_text, *state->pending_user_payload)) {
       auto validated = ValidateTurnPlan(*payload_plan, AllowedToolNames(state));
@@ -704,10 +704,17 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
         // The feed tool comes from the promoted MCP server; without it there is nothing to show, and asking the
         // model instead would only produce a confusing answer. Right after launch the server may simply not have
         // been reachable yet when the session was configured, so give it a bounded chance to list its tools.
-        if (RelistMissingFeedTools(state, *payload_plan)) {
+        switch (RelistMissingFeedTools(state, *payload_plan)) {
+        case FeedRelist::Listed:
           if (auto relisted = ValidateTurnPlan(*payload_plan, AllowedToolNames(state))) {
             return relisted;
           }
+          break;
+        case FeedRelist::Cancelled:
+          cancelled = true;
+          return Error("Turn cancelled");
+        case FeedRelist::Unavailable:
+          break;
         }
         Error unavailable = validated.error();
         unavailable.user = TrOrDefault("feed.unavailable", "Briefs are unavailable right now.");
@@ -729,7 +736,13 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
   return plan;
 }
 
-bool AgentSession::RelistMissingFeedTools(const std::shared_ptr<Impl>& state, const TurnPlan& plan) {
+AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_ptr<Impl>& state,
+                                                              const TurnPlan& plan) {
+  // A short request bound: the launch case is a network that is not up yet, where one tools/list could otherwise
+  // block for the transport's default 30 s while holding configure_work_mutex.
+  constexpr long kRelistTimeoutS = 3;
+
+  // Caller holds configure_work_mutex: ConfigureOnIO clears and rebuilds the registry under it.
   const auto missing = [&] {
     const std::vector<std::string> allowed = AllowedToolNames(state);
     std::string names;
@@ -740,41 +753,57 @@ bool AgentSession::RelistMissingFeedTools(const std::shared_ptr<Impl>& state, co
     }
     return names;
   };
-  const std::string wanted = missing();
-  if (wanted.empty()) {
-    return true;
+
+  // This turn's own flag: a new Submit after Cancel() replaces it (and clears `cancelled`), this one stays set.
+  std::shared_ptr<std::atomic<bool>> cancel;
+  {
+    std::lock_guard lock(state->stream_cancel_mutex);
+    cancel = state->stream_cancel;
   }
 
   const auto started = std::chrono::steady_clock::now();
-  bool logged = false;
+  bool first = true;
   while (true) {
+    if (cancel->load()) {
+      state->Log().info << "Turn stopped while re-listing the promoted MCP tools";
+      return FeedRelist::Cancelled;
+    }
     {
       // A concurrent Configure() stops and replaces the MCP clients and rebuilds the registry.
       std::lock_guard work_lock(state->configure_work_mutex);
+      const std::string wanted = missing();
+      if (wanted.empty()) {
+        return FeedRelist::Listed; // a Configure() that ran meanwhile listed them
+      }
       McpClient* promoted = state->mcp.PromotedPtr();
       if (!promoted || !promoted->IsRunning()) {
-        return false; // disabled or not configured: nothing to wait for
+        return FeedRelist::Unavailable; // disabled or not configured: nothing to wait for
       }
-      if (!logged) {
+      if (first) {
         state->Log().warning << "Planned tool(s) not registered: " << wanted
                              << "; re-listing the promoted MCP server for up to "
                              << state->missing_tool_wait.count() << " ms";
-        logged = true;
+        first = false;
       }
-      RegisterPromotedMcpTools(state->tools, *promoted);
+      const bool answered = RegisterPromotedMcpTools(state->tools, *promoted, kRelistTimeoutS);
+      const std::string still = missing();
+      if (still.empty()) {
+        state->Log().info << "Promoted MCP tools listed after " << ElapsedMs(started) << " ms";
+        return FeedRelist::Listed;
+      }
+      if (answered) {
+        // The server is reachable and does not offer the tool: waiting longer cannot help.
+        state->Log().warning << "Promoted MCP server listed its tools without: " << still;
+        return FeedRelist::Unavailable;
+      }
     }
-    if (missing().empty()) {
-      state->Log().info << "Promoted MCP tools listed after " << ElapsedMs(started) << " ms";
-      return true;
-    }
-    if (state->cancelled ||
-        std::chrono::steady_clock::now() - started + state->missing_tool_poll > state->missing_tool_wait) {
+    if (std::chrono::steady_clock::now() - started + state->missing_tool_poll > state->missing_tool_wait) {
       break;
     }
     std::this_thread::sleep_for(state->missing_tool_poll);
   }
-  state->Log().warning << "Promoted MCP tools still missing after " << ElapsedMs(started) << " ms: " << missing();
-  return false;
+  state->Log().warning << "Promoted MCP server still not listing its tools after " << ElapsedMs(started) << " ms";
+  return FeedRelist::Unavailable;
 }
 
 void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
@@ -783,7 +812,17 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
   state->turn_trace.entry_id = state->pending_entry_id;
   state->turn_trace.thread_id = state->pending_thread_id;
 
-  auto plan = ResolveTurnPlan(state);
+  const uint64_t generation = state->turn_generation.load(std::memory_order_acquire);
+  bool cancelled = false;
+  auto plan = ResolveTurnPlan(state, cancelled);
+  if (cancelled) {
+    // Stopped while waiting for the feed tools: nothing to report. As with a stopped stream, only a turn that
+    // was not replaced ends here; after Cancel() and a new Submit the state belongs to the new turn.
+    if (state->turn_generation.load(std::memory_order_acquire) == generation) {
+      FinishTurn(state);
+    }
+    return;
+  }
   if (!plan) {
     PushError(state, plan.error());
     FinishTurn(state);
@@ -1231,8 +1270,12 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     const AppConfig defaults = Config::DefaultAppConfig();
     McpClient::SetHttpPost([](const std::string& url, const std::string& body,
-                                  const std::map<std::string, std::string>& headers) {
-      return HttpClient::Post(url, body, headers);
+                              const std::map<std::string, std::string>& headers, const long timeout_s) {
+      HttpTimeout timeout;
+      if (timeout_s > 0) {
+        timeout.total_s = timeout_s;
+      }
+      return HttpClient::Post(url, body, headers, kMaxHttpClientBodyBytes, timeout);
     });
     state->mcp.Start(state->config, defaults);
 

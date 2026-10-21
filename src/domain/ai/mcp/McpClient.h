@@ -52,7 +52,8 @@ public:
   static void SetHttpPost(HttpPostFn post);
 
   Roe<void> Initialize();
-  Roe<std::vector<McpTool>> ListTools();
+  /** `timeout_s`: an HTTP server's request bound (0 = the transport's default); stdio keeps kMcpReadTimeoutMs. */
+  Roe<std::vector<McpTool>> ListTools(long timeout_s = 0);
   Roe<Object> CallTool(const std::string& name, const Object& arguments);
 
   static McpClient& MockInstance();
@@ -66,7 +67,7 @@ public:
   static Roe<Object> ReadStdioResponse(const McpReadFn& read, int64_t expected_id, std::string& carry);
 
 private:
-  Roe<Object> Request(const std::string& method, const Object& params);
+  Roe<Object> Request(const std::string& method, const Object& params, long timeout_s = 0);
 
   bool running_ = false;
   bool mock_ = false;

@@ -86,7 +86,7 @@ bool McpClient::StartHttp(const std::string& url) {
   return true;
 }
 
-Roe<Object> McpClient::Request(const std::string& method, const Object& params) {
+Roe<Object> McpClient::Request(const std::string& method, const Object& params, const long timeout_s) {
   if (mock_) {
     if (method == "initialize") {
       Object out;
@@ -128,7 +128,7 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params) 
     if (!HttpPostSlot()) {
       return Error("MCP HTTP transport is not configured");
     }
-    auto response = HttpPostSlot()(http_url_, DumpJson(req), {{"Content-Type", "application/json"}});
+    auto response = HttpPostSlot()(http_url_, DumpJson(req), {{"Content-Type", "application/json"}}, timeout_s);
     if (!response) {
       log().error << "HTTP MCP request failed for " << method << ": " << response.error().message;
       return response.error();
@@ -214,8 +214,8 @@ Roe<void> McpClient::Initialize() {
   return {};
 }
 
-Roe<std::vector<McpTool>> McpClient::ListTools() {
-  auto result = Request("tools/list", EmptyObject());
+Roe<std::vector<McpTool>> McpClient::ListTools(const long timeout_s) {
+  auto result = Request("tools/list", EmptyObject(), timeout_s);
   if (!result) {
     return result.error();
   }
