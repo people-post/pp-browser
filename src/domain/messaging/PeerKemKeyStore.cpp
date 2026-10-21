@@ -4,7 +4,7 @@
 namespace pbr {
 
 std::string PeerKemKeyStore::MakeKey(const std::string& kind, const std::string& value) {
-  return kind + "\0" + value;
+  return kind + '\0' + value;  // a char: the string literal "\0" is empty (no separator)
 }
 
 void PeerKemKeyStore::Put(const std::string& peer_identity_kind, const std::string& peer_identity_value,

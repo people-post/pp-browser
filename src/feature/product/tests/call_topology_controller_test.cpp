@@ -8,6 +8,8 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/calls/CallControlCodec.h"
 #include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "domain/calls/CallHopAttachLogic.h"
 #include "domain/calls/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
@@ -320,6 +322,8 @@ protected:
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
     sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
+    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
@@ -329,6 +333,7 @@ protected:
     relay_ = std::make_unique<FakeMediaRelayClient>();
     topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
     topo_->SetOutbox(topo_events_.Get());  // the fixture plays the session manager
+    topo_->SetMediaKeyStore(keys_.get());
     topo_->SetHostPorts(host_->MakeHostPorts());
 
     CallTopologyController::MediaRelayDeps deps;
@@ -395,6 +400,13 @@ protected:
         std::chrono::milliseconds(30000));
   }
 
+  // SFU attach fails closed without the epoch key, as in production.
+  void SeedMediaKey(const std::string& call_id, uint32_t media_epoch) {
+    auto key = keys_->GenerateEpochKey();
+    ASSERT_TRUE(key);
+    ASSERT_TRUE(keys_->PutEpochKey(call_id, media_epoch, *key));
+  }
+
   void SeedJoinedCall(const std::string& call_id, const std::vector<std::string>& identities,
                       int64_t base_joined_at) {
     CallSession session;
@@ -406,6 +418,7 @@ protected:
     session.media_epoch = 1;
     session.media_key_id = "mk:1";
     ASSERT_TRUE(sessions_->UpsertSession(session));
+    SeedMediaKey(call_id, session.media_epoch);
     for (size_t i = 0; i < identities.size(); ++i) {
       CallParticipant p;
       p.call_id = call_id;
@@ -437,6 +450,7 @@ protected:
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<CallSessionStore> sessions_;
+  std::unique_ptr<CallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeTopologyHost> host_;

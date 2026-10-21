@@ -3,4 +3,5 @@ pp_browser_add_domain_folder_tests(
   pp_browser_messaging_test
   LINK_LIBS
     pp_domain_net
+    pp_domain_net_testing
     pp_domain_people)

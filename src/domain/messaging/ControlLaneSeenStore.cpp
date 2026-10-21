@@ -94,4 +94,21 @@ Roe<bool> ControlLaneSeenStore::FirstSight(const std::string& sender, const std:
   return sqlite3_changes(db.get()) == 1;
 }
 
+void ControlLaneSeenStore::Forget(const std::string& sender, const std::string& control_id) {
+  std::lock_guard lock(mutex_);
+  auto opened = OpenDb();
+  if (!opened) {
+    return;
+  }
+  std::unique_ptr<sqlite3, DbCloser> db(*opened);
+  sqlite3_stmt* remove = nullptr;
+  if (sqlite3_prepare_v2(db.get(), "DELETE FROM control_lane_seen WHERE sender = ?1 AND control_id = ?2", -1, &remove,
+                         nullptr) == SQLITE_OK) {
+    sqlite3_bind_text(remove, 1, sender.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(remove, 2, control_id.c_str(), -1, SQLITE_TRANSIENT);
+    (void)sqlite3_step(remove);
+  }
+  sqlite3_finalize(remove);
+}
+
 } // namespace pbr

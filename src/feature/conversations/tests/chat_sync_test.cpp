@@ -7,7 +7,7 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/SyncStateCodec.h"
-#include "domain/net/OrgBackendClientsImpl.h"
+#include "domain/net/testing/MockOrgBackendClients.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"

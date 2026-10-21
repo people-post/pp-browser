@@ -6,6 +6,7 @@
 #include "crypto/SodiumUtil.h"
 
 #include <cctype>
+#include <cstdint>
 #include <map>
 #include <sstream>
 #include <vector>
@@ -14,6 +15,19 @@
 namespace pbr {
 
 namespace {
+
+/** Non-empty, no control characters (incl. NUL) and no DEL — ids are stored and bound as text. */
+bool IsPlainIdentifier(const std::string& value) {
+  if (value.empty()) {
+    return false;
+  }
+  for (const unsigned char c : value) {
+    if (c < 0x20 || c == 0x7F) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // message_id ends up in generated RML (data-event-click="open_attachment('<id>')") and as a
 // SQLite primary key, so an inbound envelope with a hostile id (quotes, HTML, huge length) is
@@ -379,10 +393,10 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!version_opt) {
     return Error("Missing envelope_version");
   }
-  const int version = static_cast<int>(*version_opt);
-  if (version != kRelayEnvelopeVersion) {
+  if (*version_opt != kRelayEnvelopeVersion) {  // compared before narrowing
     return Error("Unsupported envelope_version");
   }
+  const int version = kRelayEnvelopeVersion;
   auto message_id = json.getString("message_id");
   if (!message_id) {
     return Error("Missing message_id");
@@ -499,6 +513,9 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     envelope.sender_seq = *sender_seq;
   }
   if (auto session_epoch = json.getNonNegInt("session_epoch")) {
+    if (*session_epoch > UINT32_MAX) {
+      return Error("session_epoch out of range");  // rejected, not truncated
+    }
     envelope.session_epoch = static_cast<uint32_t>(*session_epoch);
   }
   if (auto timestamp = json.getIf<int64_t>("timestamp")) {
@@ -507,6 +524,15 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (auto signature = json.getString("signature")) {
     envelope.signature = *signature;
   }
+  // Identities and ids are stored and bound as text: no control characters or NUL in them.
+  // sender_relay_id may be empty (no Brief route yet); the contact id may not.
+  if (!IsPlainIdentifier(envelope.sender_contact_id) ||
+      (!envelope.sender_relay_id.empty() && !IsPlainIdentifier(envelope.sender_relay_id))) {
+    return Error("Invalid identity in envelope");
+  }
+  if (envelope.route.group_id && !IsPlainIdentifier(*envelope.route.group_id)) {
+    return Error("Invalid group_id in envelope");
+  }
   if (auto stream_key = json.getString("stream_key")) {
     envelope.stream_key = *stream_key;
   }
@@ -514,6 +540,9 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     envelope.order_key = *order_key;
   }
   if (auto recipient = json.getString("recipient_contact_id")) {
+    if (!IsPlainIdentifier(*recipient)) {
+      return Error("Invalid recipient in envelope");
+    }
     envelope.recipient_contact_id = *recipient;
   }
   return envelope;

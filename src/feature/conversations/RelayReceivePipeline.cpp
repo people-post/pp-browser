@@ -588,6 +588,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   message.sender_contact_id = envelope.sender_contact_id;
   message.timestamp = envelope.timestamp;
   if (auto applied = ApplyInboundControl(message, envelope, &outcome); !applied) {
+    if (control_lane_seen_) {
+      control_lane_seen_->Forget(envelope.sender_contact_id, envelope.message_id);  // a redelivery may still apply
+    }
     return outcome;
   }
   outcome.decision = IngestDecision::AcceptControl;
@@ -922,6 +925,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         auto has_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
         if (has_id && !*has_id && store_.AppendMessage(persisted)) {
           outcome.persisted = true;
+          outcome.persisted_message = persisted;
           outcome.thread_changed = true;
           outcome.thread_id = resolved_thread_id;
         } else if (has_id && *has_id) {
@@ -983,6 +987,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     replay_windows_.erase(ReplayKey{resolved_thread_id, old_epoch});
     outcome.persisted = true;
+    outcome.persisted_message = persisted;
     outcome.thread_changed = true;
     outcome.thread_id = resolved_thread_id;
     ApplyInboundRetract(persisted, outcome);
@@ -999,6 +1004,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
   outcome.persisted = true;
+  outcome.persisted_message = persisted;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
   ApplyInboundRetract(persisted, outcome);
@@ -1014,6 +1020,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
                                                                const MessageTransport transport) {
   RelayReceiveOutcome outcome;
   if (!envelope.route.group_id || local_relay_user_id.empty()) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  // The same envelope bounds as the direct path: known version, bounded size.
+  if (envelope.envelope_version != kRelayEnvelopeVersion ||
+      DumpJson(RelayEnvelopeToJson(envelope)).size() > kMaxRelayEnvelopeBytes) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
@@ -1168,6 +1180,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   }
   (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
   outcome.persisted = true;
+  outcome.persisted_message = persisted;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
   ApplyInboundRetract(persisted, outcome);

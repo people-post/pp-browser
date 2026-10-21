@@ -728,8 +728,9 @@ Roe<void> CallHopMigrateWorkflow::LoadHopMediaKey(HopAttach& at) const {
     at.media_epoch = session->value().media_epoch;
   }
   if (!media_keys_) {
-    log().warning << "AttachLocalToSfu without media key store — plaintext SFU (test/incomplete wiring)";
-    return {};
+    // Fail closed: no key store means no media key — never a plaintext SFU attach.
+    log().warning << "AttachLocalToSfu without media key store call_id=" << at.call_id;
+    return Error("call media key required for SFU");
   }
   if (auto key = media_keys_->LoadEpochKey(at.call_id, at.media_epoch); key && key->has_value()) {
     at.media_key = **key;

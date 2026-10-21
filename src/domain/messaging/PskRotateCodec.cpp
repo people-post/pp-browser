@@ -1,6 +1,7 @@
 #include "domain/messaging/PskRotateCodec.h"
 
 #include "common/ValueJson.h"
+#include <cstdint>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -14,7 +15,11 @@ Roe<PskRotateDetail> ParseDetailJson(const std::string& detail_json) {
   }
   PskRotateDetail detail;
   detail.rotation_id = json->getString("rotation_id").value_or(std::string{});
-  detail.new_epoch = static_cast<uint32_t>(json->getNonNegInt("new_epoch").value_or(0));
+  const uint64_t new_epoch = json->getNonNegInt("new_epoch").value_or(0);
+  if (new_epoch > UINT32_MAX) {
+    return Error("psk_rotate new_epoch out of range");  // rejected, not truncated
+  }
+  detail.new_epoch = static_cast<uint32_t>(new_epoch);
   detail.wrap_kind = json->getString("wrap_kind").value_or(std::string{});
   detail.thread_kem_pk_b64 = json->getString("thread_kem_pk_b64").value_or(std::string{});
   detail.key_init_hash = json->getString("key_init_hash").value_or(std::string{});

@@ -33,6 +33,8 @@ struct RelayReceiveOutcome {
   IngestDecision decision = IngestDecision::HardReject;
   /** Set when `persisted` is true. */
   std::string thread_id;
+  /** The stored (decrypted) message when `persisted` — previews and attachment downloads read this. */
+  std::optional<ThreadMessage> persisted_message;
   /**
    * When true, MeshDelivery must not bump thread preview/unread or fire OS notices
    * (call MediaKey / SFU / mid-call roster, etc.).

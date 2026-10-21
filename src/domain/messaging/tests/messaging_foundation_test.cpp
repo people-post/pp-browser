@@ -1,4 +1,5 @@
 #include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"
 #include "common/chat/MessagingJson.h"
@@ -164,6 +165,42 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
     route.set("group_id", "group:a");
     json.set("route", route);
   })) << "group with payload_b64";
+}
+
+// Numbers are range-checked before narrowing, and ids carry no control characters.
+TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
+  RelayEnvelope direct;
+  direct.message_id = "m1";
+  direct.sender_relay_id = "relay:a";
+  direct.sender_contact_id = "account:a";
+  direct.route.kind = kRelayRouteDirect;
+  direct.route.channel = ThreadChannel::E2ePublic;
+  direct.body.e2e.payload_b64 = "AQID";
+  direct.timestamp = 1;
+  const auto with = [&](const std::function<void(Object&)>& edit) {
+    Object json = RelayEnvelopeToJson(direct);
+    edit(json);
+    return static_cast<bool>(ParseRelayEnvelope(json));
+  };
+  constexpr int64_t kTwo32 = int64_t{1} << 32;
+  EXPECT_TRUE(with([](Object&) {}));
+  EXPECT_FALSE(with([](Object& json) { json.set("session_epoch", kTwo32 + 1); })) << "epoch past u32";
+  EXPECT_FALSE(with([](Object& json) { json.set("envelope_version", kTwo32 + kRelayEnvelopeVersion); }))
+      << "version that only matches once narrowed";
+  EXPECT_FALSE(with([](Object& json) { json.set("sender_contact_id", std::string("account:a\nx")); }));
+  EXPECT_FALSE(with([](Object& json) { json.set("sender_contact_id", std::string("account:a\0x", 11)); }));
+  EXPECT_FALSE(with([](Object& json) { json.set("recipient_contact_id", std::string("account:b\tx")); }));
+  EXPECT_TRUE(with([](Object& json) { json.set("sender_relay_id", std::string()); }))
+      << "no Brief route yet is allowed";
+}
+
+// Kind and value are kept apart in the cache key.
+TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsKindAndValueApart) {
+  PeerKemKeyStore store;
+  store.Put("ab", "c", PeerKemKeyRecord{.kem_public_key_b64 = "k1", .source = "test"});
+  EXPECT_FALSE(store.Get("a", "bc").has_value());
+  ASSERT_TRUE(store.Get("ab", "c").has_value());
+  EXPECT_EQ(store.Get("ab", "c")->kem_public_key_b64, "k1");
 }
 
 } // namespace pbr

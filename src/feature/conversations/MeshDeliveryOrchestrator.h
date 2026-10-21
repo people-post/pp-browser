@@ -258,12 +258,11 @@ private:
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
-  void MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope, const std::string& thread_id);
+  void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
   void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
                        const std::string& error_message = {},
                        MessageTransport transport = MessageTransport::Relay,
                        bool relay_after_direct_attempt = false);
-  void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id,
                    std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,

@@ -168,7 +168,13 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
   auto identity = identity_.Get();
   const std::string local_account_id = identity ? (*identity).account_id : std::string{};
 
+  // No more than was asked for (and never past the batch cap), whatever the responder sent.
+  const size_t cap = std::min<size_t>(request.limit == 0 ? kMaxPollBatchMessages : request.limit, kMaxPollBatchMessages);
+  size_t taken = 0;
   for (const RelayEnvelope& envelope : response.messages) {
+    if (taken++ >= cap) {
+      break;
+    }
     const RelayReceiveOutcome outcome =
         receive_pipeline_.ProcessEnvelope(envelope, local_account_id, authorized_older_backfill, transport);
     if (outcome.persisted) {
@@ -176,17 +182,10 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
       changed = true;
       if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
         inbox_.OnInboundMessagePersisted(outcome.thread_id);
-        if (attachment_downloads_) {
-          if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-            if (decoded->content_type == ChatContentType::Attachment) {
-              ThreadMessage message;
-              message.id = envelope.message_id;
-              message.thread_id = outcome.thread_id;
-              message.content_type = ChatContentType::Attachment;
-              message.payload_json = decoded->payload_json;
-              attachment_downloads_->EnqueueFromMessage(outcome.thread_id, message);
-            }
-          }
+        // The stored, decrypted message — never the wire payload (ciphertext).
+        if (attachment_downloads_ && outcome.persisted_message &&
+            outcome.persisted_message->content_type == ChatContentType::Attachment) {
+          attachment_downloads_->EnqueueFromMessage(outcome.thread_id, *outcome.persisted_message);
         }
       }
     }

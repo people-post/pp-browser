@@ -41,7 +41,6 @@
 #include "domain/people/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/RelayInboxCursor.h"
 #include "domain/people/ContactIdentity.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -108,8 +107,6 @@ void ApplyRichPayloadOptions(ThreadMessage& message, const SendRelayOptions& opt
 
 namespace {
 
-constexpr const char* kMockPeerSigningPublicKeyB64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
-
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
   target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
@@ -174,11 +171,6 @@ void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identi
   record.kem_public_key_b64 = kem_public_key_b64;
   record.source = source;
   kem_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
-}
-
-void MeshDeliveryOrchestrator::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
-  RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), peer_identity_value,
-                         kMockPeerSigningPublicKeyB64, "mock_relay");
 }
 
 void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
@@ -463,11 +455,11 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
   }
   if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
     std::optional<std::string> preview;
-    if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-      preview = decoded->text;
+    if (outcome.persisted_message) {
+      preview = outcome.persisted_message->text;
     }
     inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
-    MaybeEnqueueAttachmentDownload(envelope, outcome.thread_id);
+    MaybeEnqueueAttachmentDownload(outcome);
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
@@ -1520,11 +1512,6 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     envelope.signature = *signature;
   }
 
-  if (auto* mock_relay = dynamic_cast<MockRelayClient*>(relay_)) {
-    mock_relay->SetNextReplySenderId((*thread)->peer_identity_value);
-    RegisterMockPeerKeyForReply((*thread)->peer_identity_value);
-  }
-
   // Amp dial key is Account ID (invite listen multiaddrs / contact endpoints). Brief uses relay:.
   auto send_work = [this, thread_id, envelope, message_id = message.id, amp_peer_key,
                     peer_relay_id, critical_lane = options.critical_lane]() mutable {
@@ -2122,11 +2109,11 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             continue;
           }
           std::optional<std::string> preview;
-          if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-            preview = decoded->text;
+          if (outcome.persisted_message) {
+            preview = outcome.persisted_message->text;
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-          MaybeEnqueueAttachmentDownload(envelope, resolved_thread_id);
+          MaybeEnqueueAttachmentDownload(outcome);
           if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
             std::string notice_title = "New message";
             if (auto thread = store_.GetThread(resolved_thread_id)) {
@@ -2242,21 +2229,13 @@ void MeshDeliveryOrchestrator::DetachAmpTransports() {
   amp_links_ = nullptr;
 }
 
-void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope,
-                                                           const std::string& thread_id) {
-  if (!attachment_downloads_) {
+void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome) {
+  // The stored, decrypted message — never the wire payload (ciphertext on every chat channel).
+  if (!attachment_downloads_ || !outcome.persisted_message ||
+      outcome.persisted_message->content_type != ChatContentType::Attachment || outcome.thread_id.empty()) {
     return;
   }
-  auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
-  if (!decoded || decoded->content_type != ChatContentType::Attachment) {
-    return;
-  }
-  ThreadMessage message;
-  message.id = envelope.message_id;
-  message.thread_id = thread_id;
-  message.content_type = ChatContentType::Attachment;
-  message.payload_json = decoded->payload_json;
-  attachment_downloads_->EnqueueFromMessage(thread_id, message);
+  attachment_downloads_->EnqueueFromMessage(outcome.thread_id, *outcome.persisted_message);
 }
 
 void MeshDeliveryOrchestrator::NotifyMessagesChanged() {
