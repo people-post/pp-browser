@@ -36,6 +36,8 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/runtime/AppRuntime.h"
 
+#include <SDL3/SDL_hints.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -46,7 +48,6 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unistd.h>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -511,7 +512,8 @@ int main(int argc, char** argv) {
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
   // real device path still runs.
-  setenv("SDL_AUDIO_DRIVER", "dummy", 0);
+  // (An SDL_AUDIO_DRIVER in the environment still wins over this hint.)
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::logging::Level::INFO);

@@ -26,6 +26,9 @@ import traceback
 import uuid
 
 PIN = "246810"
+# Answer → audio both ways on one machine is ~2 s; past this the call "isn't getting through" for a
+# person, who hangs up and calls again.
+MAX_ANSWER_TO_AUDIO_S = 8.0
 # The relay allows 10 registrations per client IP per hour (in memory); every probe is 127.0.0.1.
 REGISTRATIONS_PER_RELAY_START = 10
 registrations = REGISTRATIONS_PER_RELAY_START  # unknown at start: the first user restarts the gateway
@@ -321,7 +324,13 @@ def connect(a, a_thread, b, timeout=40):
     a.wait_surface("in_call", timeout, call_id=call_id)
     b.wait_surface("in_call", timeout, call_id=call_id)
     assert_media_flows(a, b, timeout=timeout)
-    return call_id, {"ring_s": round(rang, 2), "answer_to_audio_s": round(time.time() - answered, 2)}
+    return call_id, {"ring_s": round(rang, 2), "answer_to_audio_s": check_answer_time(time.time() - answered)}
+
+
+def check_answer_time(seconds):
+    if seconds > MAX_ANSWER_TO_AUDIO_S:
+        raise ProbeError("answer → audio took %.1f s (> %.0f s)" % (seconds, MAX_ANSWER_TO_AUDIO_S))
+    return round(seconds, 2)
 
 
 def open_pair(lab):
@@ -361,7 +370,7 @@ def scenario_first_contact(lab):
     a.wait_surface("in_call", 40, call_id=call_id)
     b.wait_surface("in_call", 40, call_id=call_id)
     assert_media_flows(a, b)
-    took = time.time() - answered
+    took = check_answer_time(time.time() - answered)
     a.cmd("leave")
     assert_idle(a, b)
     got = summaries_settle(a, a_thread, 1)
@@ -373,7 +382,7 @@ def scenario_first_contact(lab):
     got = summaries_settle(b, b_threads[0]["id"], 1)
     if len(got) != 1:
         raise ProbeError("bob's history: %s" % got)
-    return {"ring_s": round(rang, 2), "answer_to_audio_s": round(took, 2)}
+    return {"ring_s": round(rang, 2), "answer_to_audio_s": took}
 
 
 def scenario_calling_each_other_at_once(lab):
