@@ -27,6 +27,7 @@
 ## P005 — Alerts ≠ sync
 
 **Date:** 2026-07-13  
+**Amended 2026-10-22 (P010):** the device stays registered for push with alerts off — in the background a phone is reached by push only, and calls ring and notify with alerts off too. **Show notifications** hides message banners only.  
 **Decision:** **Show notifications** controls OS banners and FCM registration only. Inbox sync stays on via slow poll / WorkManager when alerts are off. Unregister FCM when alerts off.  
 **Rationale:** Users who silence banners still want unread catch-up; unregister keeps provider push send paths honest.
 

@@ -59,7 +59,7 @@ public:
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
-  Roe<void> SyncPushDevices(bool show_notifications);
+  Roe<void> SyncPushDevices();
   Roe<std::string> ExportLinkDevice();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
   /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */

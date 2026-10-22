@@ -23,26 +23,9 @@ PushDeviceRegistration MakeRegistration(ConversationsHub& hub, const std::string
 
 } // namespace
 
-Roe<void> PushDeviceCoordinator::UnregisterCurrent(ConversationsHub& hub) {
-  if (!hub.IsMessagingReady()) {
-    return {};
-  }
-  IPushDeviceClient* client = hub.PushDevices();
-  if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {
-    return {};
-  }
-  auto token = IPushDeviceRegistrar::Instance().GetPushToken();
-  PushDeviceRegistration reg = MakeRegistration(hub, token ? *token : std::string{});
-  if (reg.relay_user_id.empty() || reg.device_id.empty()) {
-    return {};
-  }
-  return client->UnregisterDevice(reg);
-}
-
-Roe<void> PushDeviceCoordinator::SyncWithPreference(ConversationsHub& hub, const bool show_notifications) {
-  if (!show_notifications) {
-    return UnregisterCurrent(hub);
-  }
+Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
+  // Registered whatever "Show notifications" says (P005 / P010): in the background a phone is
+  // reached by push only, and calls ring with alerts off too; the setting hides message banners.
   if (!hub.IsMessagingReady()) {
     return {};
   }

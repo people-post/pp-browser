@@ -7,11 +7,14 @@ namespace pbr {
 
 class ConversationsHub;
 
-/** Register/unregister FCM tokens with Brief based on Show notifications pref. */
+/**
+ * Registers this device's push token with the relay. Always, whatever "Show notifications" says:
+ * in the background a phone is reached by push only (P010), and calls ring with alerts off too; the
+ * setting hides message banners only (P005). Account revoke deletes the relay's device rows.
+ */
 class PushDeviceCoordinator {
 public:
-  static Roe<void> SyncWithPreference(ConversationsHub& hub, bool show_notifications);
-  static Roe<void> UnregisterCurrent(ConversationsHub& hub);
+  static Roe<void> Register(ConversationsHub& hub);
 };
 
 } // namespace pbr

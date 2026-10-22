@@ -43,8 +43,8 @@ Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
 }
 
-Roe<void> ConversationsFacade::SyncPushDevices(const bool show_notifications) {
-  return PushDeviceCoordinator::SyncWithPreference(hub_, show_notifications);
+Roe<void> ConversationsFacade::SyncPushDevices() {
+  return PushDeviceCoordinator::Register(hub_);
 }
 
 Roe<std::string> ConversationsFacade::ExportLinkDevice() {

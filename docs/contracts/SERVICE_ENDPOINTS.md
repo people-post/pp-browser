@@ -184,7 +184,7 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 | HTTP | Purpose |
 |------|---------|
 | `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
-| `POST /v1/devices/unregister` | Remove device binding (alerts off / logout) |
+| `POST /v1/devices/unregister` | Remove device binding (the client keeps its binding with alerts off — P005 amended; account revoke removes all of them) |
 
 On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
 

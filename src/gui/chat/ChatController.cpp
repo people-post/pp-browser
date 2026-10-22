@@ -4007,12 +4007,12 @@ void ChatController::WireMessagingBindings() {
         return;
       }
       if (facade_) {
-        (void)facade_->SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
+        (void)facade_->SyncPushDevices();
       }
     });
   });
   if (facade_) {
-    (void)facade_->SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
+    (void)facade_->SyncPushDevices();
   }
   facade_->SetOnThreadChanged([this]() {
     RefreshFromMessaging();

@@ -2488,11 +2488,12 @@ void ConversationsHub::Apply(const PolicyPrefs& prefs) {
   NotifyPolicyPrefs(prefs);
 }
 
-void ConversationsHub::Apply(const NotificationPrefs& prefs) {
+void ConversationsHub::Apply(const NotificationPrefs& /*prefs*/) {
   if (!initialized_ || !messaging_ready_) {
     return;
   }
-  (void)PushDeviceCoordinator::SyncWithPreference(*this, prefs.show_notifications);
+  // Banners only: the push registration does not follow the setting (P005).
+  (void)PushDeviceCoordinator::Register(*this);
 }
 
 ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig& config) {

@@ -982,7 +982,7 @@ void Application::WireUnlockPinAndFlow() {
     }
     // Import runs before EnsureMessagingReady; push attach after the vault is open.
     AppRuntime::PostWorkerNormal([this, &facade]() {
-      (void)facade.SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
+      (void)facade.SyncPushDevices();
     });
     if (chat_) {
       chat_->ReloadAgentConfig();
