@@ -57,6 +57,10 @@ int g_accept_delay_ms = 0;
 int g_leave_after_gate_ms = 0;
 /** --extra-hop (product-stack, repeatable): more hops this probe knows, after the warm / via hop. */
 std::vector<std::string> g_extra_hops;
+/** --dht <bootstrap-ma> / --dht-k N (product-stack, N-DHT call): take part in the mesh DHT; the
+ * offerer then dials the answerer at the address the DHT returns, never the one in --peer. */
+std::string g_dht_bootstrap;
+int g_dht_k = 0;
 /** --invite-later <peer-ma>,<account> + --invite-later-ms (product-stack offerer, V050 gt5). */
 std::string g_invite_later;
 int g_invite_later_ms = 15000;
@@ -110,6 +114,9 @@ void PrintUsage(const char* argv0) {
       << "  --min-rx-frames Answerer fails if fewer audio frames received (duplex gate).\n"
       << "  --product-stack  CallStack+CallUiBackend StartCall/Accept/Leave on Amp (HL004; no media mocks).\n"
       << "  --peer-account   Offerer (--product-stack): answerer Account ID from ready-file line 2.\n"
+      << "  --dht <ma> [--dht-k N]  Product-stack: take part in the mesh DHT (bootstrap <ma>). The\n"
+      << "                 answerer publishes before it is ready; the offerer dials the answerer at\n"
+      << "                 the address the DHT returns (only --peer's PeerId is used). N-DHT call.\n"
       << "  --signal-dir DIR With --product-stack (both roles): call control via files in DIR (relay-\n"
       << "                  inbox stand-in); no pre-built peer path, so media reach starts cold.\n"
       << "  --dirty-book     Product-stack offerer (--signal-dir): register the peer's private MA first.\n"
@@ -241,6 +248,9 @@ struct AmpPeer {
   std::unique_ptr<pp::amp::AmpStack> stack;
   std::string peer_id;
   std::string listen_ma;
+  /** The Amp identity's ML-DSA keys: the DHT signs this peer's record with them (--dht). */
+  pbr::ByteVector signing_secret;
+  pbr::ByteVector signing_public;
 
   void Pump() {
     if (stack) {
@@ -286,6 +296,8 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   peer->clock = std::make_shared<pp::adp::WallClock>();
   peer->peer_id = *peer_id;
 
+  peer->signing_secret = keys->secret_key;
+  peer->signing_public = keys->public_key;
   pp::amp::MshIdentity identity;
   identity.ml_dsa_secret_key = std::move(keys->secret_key);
   identity.ml_dsa_public_key = std::move(keys->public_key);
@@ -498,6 +510,15 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
   if (!harness) {
     std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
     return 1;
+  }
+  if (!g_dht_bootstrap.empty()) {
+    if (auto dht = (*harness)->EnableDht(g_dht_bootstrap, (*peer)->signing_secret, (*peer)->signing_public, g_dht_k,
+                                         30000);
+        !dht) {
+      std::cerr << "error: " << dht.error().message << "\n";
+      return 1;
+    }
+    std::cout << "ok  dht record published\n";
   }
 
   if (!warm_hop_ma.empty()) {
@@ -782,6 +803,8 @@ int RunProductStackOfferer(const std::string& peer_ma_list, const std::string& p
 
   auto clock = (*offerer)->clock;
   auto stack = std::move((*offerer)->stack);
+  pbr::ByteVector signing_secret = (*offerer)->signing_secret;
+  pbr::ByteVector signing_public = (*offerer)->signing_public;
   auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
                                                               advertise, hop_ma, g_extra_hops);
   if (!harness) {
@@ -794,8 +817,32 @@ int RunProductStackOfferer(const std::string& peer_ma_list, const std::string& p
   }
   std::cout << "ok  offerer warm-hop associated hop=" << hop_ma << "\n";
 
+  std::vector<std::string> dial_mas;
+  for (const std::string& ma : peer_mas) {
+    dial_mas.push_back(RewriteWildcardListenHost(ma));
+  }
+  if (!g_dht_bootstrap.empty()) {
+    // N-DHT: the answerer's address comes from the DHT only.
+    if (auto dht = (*harness)->EnableDht(g_dht_bootstrap, std::move(signing_secret), std::move(signing_public),
+                                         g_dht_k, 30000);
+        !dht) {
+      std::cerr << "error: " << dht.error().message << "\n";
+      (*harness)->Shutdown();
+      return 1;
+    }
+    for (size_t i = 0; i < peer_ids.size(); ++i) {
+      auto found = (*harness)->FindPeerViaDht(peer_ids[i], 20000);
+      if (!found) {
+        std::cerr << "error: " << found.error().message << "\n";
+        (*harness)->Shutdown();
+        return 1;
+      }
+      std::cout << "ok  dht found " << peer_ids[i] << " at " << *found << "\n";
+      dial_mas[i] = *found;
+    }
+  }
   for (size_t i = 0; i < peer_mas.size(); ++i) {
-    const std::string dial_peer_ma = RewriteWildcardListenHost(peer_mas[i]);
+    const std::string& dial_peer_ma = dial_mas[i];
     if (auto up = (*harness)->UpsertPeerContact(peer_accounts[i], peer_ids[i], dial_peer_ma); !up) {
       std::cerr << "error: upsert peer contact: " << up.error().message << "\n";
       return 1;
@@ -1293,6 +1340,10 @@ int main(int argc, char** argv) {
       g_accept_delay_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--leave-after-gate-ms") == 0 && i + 1 < argc) {
       g_leave_after_gate_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--dht") == 0 && i + 1 < argc) {
+      g_dht_bootstrap = argv[++i];
+    } else if (std::strcmp(argv[i], "--dht-k") == 0 && i + 1 < argc) {
+      g_dht_k = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--extra-hop") == 0 && i + 1 < argc) {
       g_extra_hops.push_back(argv[++i]);
     } else if (std::strcmp(argv[i], "--invite-later") == 0 && i + 1 < argc) {

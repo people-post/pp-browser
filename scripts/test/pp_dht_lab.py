@@ -2,7 +2,7 @@
 """DHT lab checks, run inside the pp-dht-lab `ctl` sidecar (docker-compose.dht-lab.yml).
 
 Phases (pp_dht_lab_smoke.sh drives them):
-  seed-ma          print the seed's ADP multiaddr once it is healthy
+  seed-ma          print the seed's ADP multiaddr once it is healthy (--host: another node's)
   wait-tables      every Node is up, has published, and holds >= --min-contacts routing contacts
   find-all         every Node finds every other Node's record (lookups via GET /dht/find)
 
@@ -51,7 +51,7 @@ def wait_until(what, check, timeout_s, every_s=1.0):
 
 def phase_seed_ma(args):
     def check():
-        st = status("seed")
+        st = status(args.host)
         ma = adp_ma(st) if st else ""
         return (bool(ma), ma or st)
 
@@ -131,6 +131,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("phase", choices=["seed-ma", "wait-tables", "find-all"])
     parser.add_argument("--nodes", type=int, default=12)
+    parser.add_argument("--host", default="seed")
     parser.add_argument("--min-contacts", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=120.0)
     args = parser.parse_args()

@@ -7,6 +7,9 @@
 # - k = 3 (PP_NODE_DHT_K): a record lives at its 3 closest Nodes, so finding it means walking.
 # - Status HTTP is read from the `ctl` sidecar (python3) on the same network; PP_NODE_LAB_DHT_FIND
 #   lets it start lookups (GET /dht/find?peer_id=…).
+# - `callee` / `caller` run the host-built pp-call-probe (product stack, --dht): the callee
+#   publishes while the seed is up; with the seed down the caller finds it through the DHT and
+#   calls it at that address only.
 #
 # Driver: scripts/test/pp_dht_lab_smoke.sh (pp_local_test.sh --suite dht).
 # Image: pp-node:local (staged by pp_local_test.sh like the hop).
@@ -56,6 +59,26 @@ services:
     networks:
       dht_net:
         ipv4_address: 10.78.0.20
+
+  callee:
+    image: pp-hard-peer:local
+    container_name: pp-dht-lab-callee
+    volumes: &probe-volumes
+      - ${PP_DHT_LAB_PROBE_DIR:-../../build/src/app/node}:/probes:ro
+      - ${PP_DHT_LAB_SHARE_DIR:-/tmp/pp-dht-lab-share}:/share
+    command: ["sleep", "infinity"]
+    networks:
+      dht_net:
+        ipv4_address: 10.78.21.10
+
+  caller:
+    image: pp-hard-peer:local
+    container_name: pp-dht-lab-caller
+    volumes: *probe-volumes
+    command: ["sleep", "infinity"]
+    networks:
+      dht_net:
+        ipv4_address: 10.78.20.10
   dht-1:
     <<: *dht-node
     container_name: pp-dht-lab-1
