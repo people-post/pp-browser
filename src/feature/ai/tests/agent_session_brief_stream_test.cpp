@@ -947,7 +947,9 @@ TEST_F(AgentSessionFeedRelistTest, SubmitDuringAConfigureRunsOnceItIsDone) {
   config.promoted_mcp.enabled = true;
   session_->Configure(config);
   const auto started = std::chrono::steady_clock::now();
-  while (!*in_configure && std::chrono::steady_clock::now() - started < std::chrono::seconds(2)) {
+  // Readiness wait, not a timing assertion: the first configure dials a closed port for real, which a
+  // Windows CI runner can take several seconds to refuse.
+  while (!*in_configure && std::chrono::steady_clock::now() - started < std::chrono::seconds(30)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   ASSERT_TRUE(*in_configure);
@@ -1029,7 +1031,9 @@ TEST_F(AgentSessionBriefStreamTest, SubmitDuringAFailingConfigureEndsTheTurn) {
   });
   session_->Configure(MakeConfig("brief"));
   const auto started = std::chrono::steady_clock::now();
-  while (!*in_configure && std::chrono::steady_clock::now() - started < std::chrono::seconds(2)) {
+  // Readiness wait, not a timing assertion: the first configure dials a closed port for real, which a
+  // Windows CI runner can take several seconds to refuse.
+  while (!*in_configure && std::chrono::steady_clock::now() - started < std::chrono::seconds(30)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   ASSERT_TRUE(*in_configure);
