@@ -1,7 +1,6 @@
 #include "feature/calls/CallStack.h"
-#include "feature/calls/CallControlFamily.h"
+#include "domain/calls/CallControlFamily.h"
 
-#include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
 #include "mesh/host/MeshPorts.h"
@@ -30,7 +29,7 @@ namespace pbr {
 CallStack::CallStack() {
   redirectLogger("CallStack");
   media_plane_ = std::make_unique<CallMediaPlane>();
-  publish_hook_ = CallsThread::AddAfterTaskHook([this]() { PublishUiState(); });
+  publish_hook_ = executor_.AddAfterTaskHook([this]() { PublishUiState(); });
 }
 
 CallStack::~CallStack() {
@@ -38,28 +37,28 @@ CallStack::~CallStack() {
   Shutdown();
   // Last, on the owner: nothing queued or enqueued during Shutdown runs after this (refs held
   // elsewhere go quiet), and no hook or event is mid-flight while the members are destroyed.
-  CallsThread::RunAndWait([this]() {
+  executor_.RunAndWait([this]() {
     loop_.Close();
-    CallsThread::RemoveAfterTaskHook(publish_hook_);
+    executor_.RemoveAfterTaskHook(publish_hook_);
   });
 }
 
 // --- hub-facing lifecycle edges: run on the calls owner, the caller waits (t2b-3) ---------------
 
 void CallStack::BuildSessions(const CallStackDeps& deps) {
-  CallsThread::RunAndWait([&]() { BuildSessionsOnOwner(deps); });
+  executor_.RunAndWait([&]() { BuildSessionsOnOwner(deps); });
 }
 
 void CallStack::OnMeshServicesStarted() {
-  CallsThread::RunAndWait([this]() { OnMeshServicesStartedOnOwner(); });
+  executor_.RunAndWait([this]() { OnMeshServicesStartedOnOwner(); });
 }
 
 void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
-  CallsThread::RunAndWait([&]() { PrepareForMeshStopOnOwner(abort_inflight_circuit); });
+  executor_.RunAndWait([&]() { PrepareForMeshStopOnOwner(abort_inflight_circuit); });
 }
 
 void CallStack::FinishMeshStop() {
-  CallsThread::RunAndWait([this]() { FinishMeshStopOnOwner(); });
+  executor_.RunAndWait([this]() { FinishMeshStopOnOwner(); });
 }
 
 // --- edge adapters: other threads enqueue; Dispatch routes on the owner ------------------------------
@@ -175,24 +174,24 @@ CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
 }
 
 void CallStack::DetachMeshMedia() {
-  CallsThread::RunAndWait([this]() { DetachMeshMediaOnOwner(); });
+  executor_.RunAndWait([this]() { DetachMeshMediaOnOwner(); });
 }
 
 void CallStack::RebindMeshMedia() {
-  CallsThread::RunAndWait([this]() { RebindMeshMediaOnOwner(); });
+  executor_.RunAndWait([this]() { RebindMeshMediaOnOwner(); });
 }
 
 void CallStack::ResetSessions() {
-  CallsThread::RunAndWait([this]() { ResetSessionsOnOwner(); });
+  executor_.RunAndWait([this]() { ResetSessionsOnOwner(); });
 }
 
 void CallStack::AbortCallMediaForShutdown() {
-  CallsThread::RunAndWait([this]() { AbortCallMediaForShutdownOnOwner(); });
+  executor_.RunAndWait([this]() { AbortCallMediaForShutdownOnOwner(); });
 }
 
 void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                                  const std::vector<std::string>& multiaddrs) {
-  CallsThread::RunAndWait([&]() { RegisterCallPeerListenMultiaddrsOnOwner(identity, multiaddrs); });
+  executor_.RunAndWait([&]() { RegisterCallPeerListenMultiaddrsOnOwner(identity, multiaddrs); });
 }
 
 void CallStack::PostToSessions(std::function<void(CallSessionManager* calls)> run) {
@@ -200,7 +199,7 @@ void CallStack::PostToSessions(std::function<void(CallSessionManager* calls)> ru
 }
 
 void CallStack::RunOnOwner(const std::function<void(CallSessionManager&)>& op) {
-  CallsThread::RunAndWait([&]() {
+  executor_.RunAndWait([&]() {
     if (call_sessions_) {
       op(*call_sessions_);
     }
@@ -348,7 +347,7 @@ void CallStack::BindMediaProducts() {
 
 Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const std::string& profile_id) {
   Roe<void> result;
-  CallsThread::RunAndWait([&]() { result = InitializeStoresOnOwner(profile_db_path, profile_id); });
+  executor_.RunAndWait([&]() { result = InitializeStoresOnOwner(profile_db_path, profile_id); });
   return result;
 }
 
@@ -514,7 +513,7 @@ void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialReg
 
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
                                   mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay) {
-  CallsThread::RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach, relay); });
+  executor_.RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach, relay); });
 }
 
 void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
@@ -552,7 +551,7 @@ bool CallStack::HasActiveLocalCall() {
 }
 
 bool CallStack::WantEphemeralListen() const {
-  if (CallsThread::IsCurrent()) {
+  if (executor_.IsCurrent()) {
     return want_ephemeral_listen_;
   }
   return UiState()->want_ephemeral_listen;
@@ -664,7 +663,7 @@ void CallStack::BindCallState() {
 }
 
 void CallStack::SetOnChromeRefresh(std::function<void()> fn) {
-  CallsThread::RunAndWait([this, &fn]() { on_chrome_refresh_ = std::move(fn); });
+  executor_.RunAndWait([this, &fn]() { on_chrome_refresh_ = std::move(fn); });
 }
 
 void CallStack::OnCallStateChangedOnOwner() {
@@ -687,7 +686,7 @@ void CallStack::SyncHubEphemeralListen() {
     return;
   }
   // The hub reads WantEphemeralListen from the snapshot: publish before it looks.
-  if (CallsThread::IsCurrent()) {
+  if (executor_.IsCurrent()) {
     PublishUiState();
   }
   if (AppRuntime::CurrentlyOnUI()) {
@@ -711,7 +710,7 @@ void CallStack::ResetSessionsOnOwner() {
 }
 
 void CallStack::Shutdown() {
-  CallsThread::RunAndWait([this]() {
+  executor_.RunAndWait([this]() {
     if (call_sessions_) {
       call_sessions_->ClearMediaCallbacks();
       call_sessions_->SetOnCallStateChanged({});
@@ -723,7 +722,7 @@ void CallStack::Shutdown() {
   if (!AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000))) {
     log().warning << "CallStack::Shutdown: DrainWorkersThenUI budget exceeded";
   }
-  CallsThread::RunAndWait([this]() { ReleaseOnOwner(); });
+  executor_.RunAndWait([this]() { ReleaseOnOwner(); });
 }
 
 void CallStack::ReleaseOnOwner() {

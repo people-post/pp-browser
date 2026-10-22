@@ -491,7 +491,8 @@ ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_v
                                 std::nullopt, style);
 }
 
-// `inline_tail` (link-style actions) goes at the end of the item's text, inside its last paragraph.
+// `inline_tail` (link-style actions) sits at the right end of the meta row under the item's text, so
+// it stays in one place however long the text is; without meta the row holds just the link.
 std::string RenderLongListItemBody(const Object& item, const std::string& inline_tail = {}) {
   std::ostringstream out;
   const bool has_avatar = item.getString("avatar_letter").has_value();
@@ -505,14 +506,30 @@ std::string RenderLongListItemBody(const Object& item, const std::string& inline
   }
 
   const auto subtitle = item.getString("subtitle");
-  out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item.getString("title"))
-      << (subtitle ? std::string() : inline_tail) << "</p>";
+  out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item.getString("title")) << "</p>";
   if (subtitle) {
-    out << "<p class=\"muted chat-long-list-subtitle\">" << StructuredTextParser::EscapeText(*subtitle)
-        << inline_tail << "</p>";
+    out << "<p class=\"muted chat-long-list-subtitle\">" << StructuredTextParser::EscapeText(*subtitle) << "</p>";
   }
-  if (auto meta = item.getString("meta")) {
-    out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta) << "</p>";
+  // Meta row: `meta` shrinks with an ellipsis, `meta_end` (a time) and the link keep their width.
+  // An empty string counts as absent, so no empty flex item and no dangling separator.
+  auto meta = item.getString("meta");
+  auto meta_end = item.getString("meta_end");
+  if (meta && meta->empty()) {
+    meta.reset();
+  }
+  if (meta_end && meta_end->empty()) {
+    meta_end.reset();
+  }
+  if (meta || meta_end || !inline_tail.empty()) {
+    out << "<div class=\"row chat-long-list-meta-row\">";
+    if (meta) {
+      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta) << "</p>";
+    }
+    if (meta_end) {
+      out << "<p class=\"muted chat-long-list-meta-end\">" << (meta ? "\xC2\xB7 " : "")
+          << StructuredTextParser::EscapeText(*meta_end) << "</p>";
+    }
+    out << inline_tail << "</div>";
   }
 
   if (has_avatar) {
@@ -521,7 +538,7 @@ std::string RenderLongListItemBody(const Object& item, const std::string& inline
   return out.str();
 }
 
-// One item: its text, with link-style actions at the end of the text and the other actions in a row below.
+// One item: its text, link-style actions on the meta row and the other actions in a row below.
 ParseResult RenderLongListItem(ParseResult& parent, const Object& item) {
   std::string inline_tail;
   std::string row;

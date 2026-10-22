@@ -25,7 +25,7 @@ Libp2p shrinks to retained crypto/identity utilities; `Host::newStream` and stre
 ┌─────────────────────────────────────────────────────────┐
 │  L4  Application protocols (kinds: identify / discover /│
 │      reach / circuit / rpc / blob / realtime — A028)    │
-│      /pp-browser/* /pp-mesh/* + WIRE_SCHEMAS payloads   │
+│      /pp/* /pp-mesh/* + WIRE_SCHEMAS payloads    │
 └─────────────────────────┬───────────────────────────────┘
                           │ messages ≤ app max (e.g. 256 KiB)
 ┌─────────────────────────▼───────────────────────────────┐
@@ -131,7 +131,7 @@ Immediately after Session completes, open **well-known channel 0** ([A016](DECIS
 - Relay/circuit capability flags
 - Replaces libp2p Identify + partial peerstore on the product path
 
-Dynamic protocols use `OPEN` with `protocol_id` (same `/pp-browser/*/1.0.0` strings where applicable).
+Dynamic protocols use `OPEN` with `protocol_id` (same `/pp/*/1.0.0` and `/pp-mesh/*/1.0.0` strings where applicable).
 
 ## Fragmentation
 

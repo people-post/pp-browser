@@ -46,6 +46,12 @@ struct PskSessionRecord {
    */
   std::optional<std::string> auto_key_session_id;
   std::optional<std::string> auto_key_init_pending;
+  /**
+   * The latest signed timestamp (the peer's clock) of an envelope the peer sent under this session.
+   * A different session's key_init is adopted only from a newer envelope, so a late or replayed
+   * opener cannot roll the pair back to a session one side has left.
+   */
+  std::optional<int64_t> auto_key_peer_heard_ms;
 };
 
 class IPskSessionStore {

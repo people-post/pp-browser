@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/directory/ShortRelayId.h" // re-exported: callers use it with the labels
+
 #include "domain/people/ContactTypes.h"
 #include "common/MeshAlias.h"
 
@@ -24,7 +26,5 @@ std::string FormatContactTitle(const Contact& contact);
 /** Unverified directory nickname: "~nick @relay:…". Empty nickname → empty unless id present. */
 std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit);
 
-/** Shorten relay ids for UI (e.g. relay:lHaEnkO4…). */
-std::string ShortRelayId(const std::string& relay_or_peer_id);
 
 } // namespace pbr

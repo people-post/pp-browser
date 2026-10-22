@@ -84,7 +84,7 @@ protected:
 // punch introducers hold org seeds and Friendly contacts' nodes — nobody else sees both our addresses.
 TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
   const mesh::MeshHopPolicy open = ComputeMeshHopPolicy(Inputs(false));
-  const auto open_surface = Ids(open.rendezvous_candidates);
+  const auto open_surface = Ids(open.Rendezvous());
   EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kVolunteer), open_surface.end());
   EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kPlain), open_surface.end());
 
@@ -97,9 +97,9 @@ TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
   std::sort(seeds_and_friend.begin(), seeds_and_friend.end());
 
   const mesh::MeshHopPolicy trusted = ComputeMeshHopPolicy(Inputs(true));
-  EXPECT_EQ(Ids(trusted.rendezvous_candidates), seeds_and_friend);
-  EXPECT_EQ(Ids(trusted.bootstrap_seeds), seeds) << "no directory volunteer";
-  EXPECT_EQ(trusted.punch_introducers.contact_peer_ids, std::vector<std::string>{kFriend});
+  EXPECT_EQ(Ids(trusted.Rendezvous()), seeds_and_friend);
+  EXPECT_EQ(Ids(trusted.Seeds()), seeds) << "no directory volunteer";
+  EXPECT_EQ(trusted.Introducers().contact_peer_ids, std::vector<std::string>{kFriend});
 }
 
 // Seeds a probe found unreachable are neither on the rendezvous surface nor a park target: Accept
@@ -109,7 +109,7 @@ TEST_F(MeshConnectivityWiringTest, UnreachableSeedsAreNoParkTarget) {
   NormalizeMeshConfig(normalized);
   const std::vector<std::string> seeds = Ids(CollectSeedHopCandidates(normalized.bootstrap_peers));
   ASSERT_FALSE(seeds.empty());
-  const auto reachable = Ids(ComputeMeshHopPolicy(Inputs(false)).bootstrap_seeds);
+  const auto reachable = Ids(ComputeMeshHopPolicy(Inputs(false)).Seeds());
   for (const std::string& seed : seeds) {
     EXPECT_NE(std::find(reachable.begin(), reachable.end(), seed), reachable.end()) << "reachable (or never probed)";
   }
@@ -117,8 +117,8 @@ TEST_F(MeshConnectivityWiringTest, UnreachableSeedsAreNoParkTarget) {
   MeshConnectivityWiringInputs in = Inputs(false);
   in.seed_dial_ok = []() { return false; };
   const mesh::MeshHopPolicy unreachable = ComputeMeshHopPolicy(in);
-  EXPECT_EQ(Ids(unreachable.bootstrap_seeds), std::vector<std::string>{kVolunteer}) << "the directory's still count";
-  const auto surface = Ids(unreachable.rendezvous_candidates);
+  EXPECT_EQ(Ids(unreachable.Seeds()), std::vector<std::string>{kVolunteer}) << "the directory's still count";
+  const auto surface = Ids(unreachable.Rendezvous());
   for (const std::string& seed : seeds) {
     EXPECT_EQ(std::find(surface.begin(), surface.end(), seed), surface.end()) << seed;
   }
@@ -139,11 +139,11 @@ TEST_F(MeshConnectivityWiringTest, TheFeedPushesWhileStartedAndNeverAfterStop) {
       return std::vector<mesh::MeshDirectoryNode>{};
     };
     feed.SetInputs(std::move(in));
-    EXPECT_TRUE(connectivity.HopPolicy()->rendezvous_candidates.empty());
+    EXPECT_TRUE(connectivity.HopPolicy()->Rendezvous().empty());
 
     feed.Start();
     EXPECT_EQ(directory_reads->load(), 1) << "Start pushes on the caller";
-    const auto surface = Ids(connectivity.HopPolicy()->rendezvous_candidates);
+    const auto surface = Ids(connectivity.HopPolicy()->Rendezvous());
     EXPECT_NE(std::find(surface.begin(), surface.end(), kPlain), surface.end());
 
     AddContact("c-new", "12D3KooWNewContact", TrustLevel::Unknown);
@@ -153,13 +153,13 @@ TEST_F(MeshConnectivityWiringTest, TheFeedPushesWhileStartedAndNeverAfterStop) {
     }
     ASSERT_GE(directory_reads->load(), 2) << "PushSoon pushes from a worker";
     for (int i = 0; i < 200; ++i) {
-      const auto now = Ids(connectivity.HopPolicy()->rendezvous_candidates);
+      const auto now = Ids(connectivity.HopPolicy()->Rendezvous());
       if (std::find(now.begin(), now.end(), "12D3KooWNewContact") != now.end()) {
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    const auto updated = Ids(connectivity.HopPolicy()->rendezvous_candidates);
+    const auto updated = Ids(connectivity.HopPolicy()->Rendezvous());
     EXPECT_NE(std::find(updated.begin(), updated.end(), "12D3KooWNewContact"), updated.end());
 
     feed.Stop();

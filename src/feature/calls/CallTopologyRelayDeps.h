@@ -46,6 +46,8 @@ struct CallTopologyMediaRelayDeps {
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** When false, org seed hops are omitted (bridge score / n-dir). */
   std::function<bool()> seed_dial_ok;
+  /** The mesh's reach record holds this peer down (it could not be reached lately): not a hop now. */
+  std::function<bool(const std::string& peer_id)> reach_held_down;
   /**
    * PreferLocalMediaHop / AttachAsLocalHop — durable Node only (desktop/org).
    * Must stay false for mobile ephemeral media_relay (V027): phones must not SoftMigrate

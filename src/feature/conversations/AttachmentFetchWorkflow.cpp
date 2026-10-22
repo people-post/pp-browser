@@ -6,7 +6,7 @@
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/AttachmentPlaintextMemoryCache.h"
 #include "domain/content/CasStore.h"
-#include "feature/conversations/AiImageRef.h"
+#include "domain/messaging/AiImageRef.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "feature/conversations/AttachmentFetch.h"
 #include "foundation/runtime/AppRuntime.h"

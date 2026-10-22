@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS group_metadata (
   owner_identity TEXT NOT NULL,
   title TEXT NOT NULL DEFAULT '',
   roster_epoch INTEGER NOT NULL DEFAULT 1,
-  policy_json TEXT NOT NULL DEFAULT '{}'
+  policy_json TEXT NOT NULL DEFAULT '{}',
+  title_version INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS group_rosters (
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS pending_group_invites (
   roster_epoch INTEGER NOT NULL DEFAULT 1,
   status TEXT NOT NULL DEFAULT 'pending',
   expires_at INTEGER,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  outbound INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pending_invites_created ON pending_group_invites(created_at);
 )sql";
@@ -99,12 +101,29 @@ Roe<void> GroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
                      nullptr, nullptr, nullptr);
   (void)sqlite3_exec(profile_db, "ALTER TABLE pending_group_invites ADD COLUMN roster_epoch INTEGER NOT NULL DEFAULT 1;",
                      nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE pending_group_invites ADD COLUMN outbound INTEGER NOT NULL DEFAULT 0;",
+                     nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE group_metadata ADD COLUMN title_version INTEGER NOT NULL DEFAULT 0;",
+                     nullptr, nullptr, nullptr);
   return {};
+}
+
+std::unique_lock<std::recursive_mutex> GroupRosterStore::LockForUpdate() {
+  static std::recursive_mutex mutex;
+  return std::unique_lock<std::recursive_mutex>(mutex);
+}
+
+bool GroupRosterStore::OpenDb(sqlite3** db) const {
+  if (sqlite3_open(profile_db_path_.c_str(), db) != SQLITE_OK) {
+    return false;
+  }
+  sqlite3_busy_timeout(*db, 5000);
+  return true;
 }
 
 Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db for group metadata");
   }
   if (auto schema = EnsureSchema(db); !schema) {
@@ -113,10 +132,10 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO group_metadata (group_id, owner_identity, title, roster_epoch, policy_json) "
-      "VALUES (?, ?, ?, ?, ?) "
+      "INSERT INTO group_metadata (group_id, owner_identity, title, roster_epoch, policy_json, title_version) "
+      "VALUES (?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(group_id) DO UPDATE SET owner_identity=excluded.owner_identity, title=excluded.title, "
-      "roster_epoch=excluded.roster_epoch, policy_json=excluded.policy_json;";
+      "roster_epoch=excluded.roster_epoch, policy_json=excluded.policy_json, title_version=excluded.title_version;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare group metadata upsert");
@@ -127,6 +146,7 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   sqlite3_bind_text(stmt, 3, metadata.title.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(metadata.roster_epoch));
   sqlite3_bind_text(stmt, 5, policy_json.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 6, static_cast<sqlite3_int64>(metadata.title_version));
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
@@ -139,12 +159,12 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
 
 Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::string& group_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db, "SELECT owner_identity, title, roster_epoch, policy_json FROM group_metadata WHERE "
+  if (sqlite3_prepare_v2(db, "SELECT owner_identity, title, roster_epoch, policy_json, title_version FROM group_metadata WHERE "
                              "group_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
@@ -164,6 +184,7 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
         metadata.policy = *policy;
       }
     }
+    metadata.title_version = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
     if (auto epoch = GetGroupSessionEpoch(group_id)) {
       metadata.session_epoch = *epoch;
     }
@@ -176,7 +197,7 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
 
 Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const GroupRosterMember& member) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -206,7 +227,7 @@ Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const Grou
 
 Roe<void> GroupRosterStore::RemoveMember(const std::string& group_id, const std::string& member_identity) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -226,7 +247,7 @@ Roe<void> GroupRosterStore::RemoveMember(const std::string& group_id, const std:
 
 Roe<std::vector<GroupRosterMember>> GroupRosterStore::ListMembers(const std::string& group_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -278,16 +299,17 @@ Roe<bool> GroupRosterStore::IsMember(const std::string& group_id, const std::str
 
 Roe<void> GroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& invite) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
+      // A stored invite is never rewritten by another one with the same nonce (status changes go
+      // through UpdateInviteStatus).
       "INSERT INTO pending_group_invites (invite_nonce, group_id, group_title, inviter_identity, invitee_identity, "
-      "roster_epoch, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-      "ON CONFLICT(invite_nonce) DO UPDATE SET status=excluded.status, group_title=excluded.group_title, "
-      "roster_epoch=excluded.roster_epoch;";
+      "roster_epoch, status, expires_at, created_at, outbound) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "ON CONFLICT(invite_nonce) DO NOTHING;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare invite upsert");
@@ -305,6 +327,7 @@ Roe<void> GroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& invite
     sqlite3_bind_null(stmt, 8);
   }
   sqlite3_bind_int64(stmt, 9, invite.created_at);
+  sqlite3_bind_int(stmt, 10, invite.outbound ? 1 : 0);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
@@ -317,14 +340,14 @@ Roe<void> GroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& invite
 
 Roe<std::optional<PendingGroupInvite>> GroupRosterStore::LoadPendingInvite(const std::string& invite_nonce) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
                          "SELECT group_id, group_title, inviter_identity, invitee_identity, roster_epoch, status, "
-                         "expires_at, created_at FROM pending_group_invites WHERE invite_nonce = ? LIMIT 1;",
+                         "expires_at, created_at, outbound FROM pending_group_invites WHERE invite_nonce = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare invite load");
@@ -346,6 +369,7 @@ Roe<std::optional<PendingGroupInvite>> GroupRosterStore::LoadPendingInvite(const
       invite.expires_at = sqlite3_column_int64(stmt, 6);
     }
     invite.created_at = sqlite3_column_int64(stmt, 7);
+    invite.outbound = sqlite3_column_int(stmt, 8) != 0;
     result = std::move(invite);
   }
   sqlite3_finalize(stmt);
@@ -355,7 +379,7 @@ Roe<std::optional<PendingGroupInvite>> GroupRosterStore::LoadPendingInvite(const
 
 Roe<void> GroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, const InviteStatus status) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -375,7 +399,7 @@ Roe<void> GroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, 
 
 Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -399,7 +423,7 @@ Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) c
 Roe<void> GroupRosterStore::UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
                                               const uint32_t session_epoch, const uint64_t next_outgoing_seq) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -428,7 +452,7 @@ Roe<void> GroupRosterStore::UpsertGroupTarget(const std::string& group_id, const
 
 Roe<void> GroupRosterStore::ClearGroupTarget(const std::string& group_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -446,7 +470,7 @@ Roe<void> GroupRosterStore::ClearGroupTarget(const std::string& group_id) const 
 
 Roe<void> GroupRosterStore::ClearGroupTargetByThreadId(const std::string& local_thread_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -465,7 +489,7 @@ Roe<void> GroupRosterStore::ClearGroupTargetByThreadId(const std::string& local_
 
 Roe<std::optional<std::string>> GroupRosterStore::FindThreadIdForGroup(const std::string& group_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -487,7 +511,7 @@ Roe<std::optional<std::string>> GroupRosterStore::FindThreadIdForGroup(const std
 
 Roe<uint64_t> GroupRosterStore::AllocateGroupSenderSeq(const std::string& group_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -519,7 +543,7 @@ Roe<uint64_t> GroupRosterStore::AllocateGroupSenderSeq(const std::string& group_
 
 Roe<uint32_t> GroupRosterStore::GetGroupSessionEpoch(const std::string& group_id) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);
@@ -543,7 +567,7 @@ Roe<uint32_t> GroupRosterStore::GetGroupSessionEpoch(const std::string& group_id
 
 Roe<void> GroupRosterStore::BumpGroupSessionEpoch(const std::string& group_id, const uint32_t new_epoch) const {
   sqlite3* db = nullptr;
-  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+  if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
   }
   (void)EnsureSchema(db);

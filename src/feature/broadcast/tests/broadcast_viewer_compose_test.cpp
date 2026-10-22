@@ -189,18 +189,18 @@ protected:
 
   void PublisherAttach() {
     std::atomic<bool> quoted{false};
-    Roe<mesh::MediaRelayQuote> quote = Error("pending");
+    mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote = mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "pending");
     mesh::MediaRelayQuoteRequest req;
     req.session_id = kJoin;
-    ASSERT_TRUE(publisher_relay_->StartQuote(hop_, req, [&](Roe<mesh::MediaRelayQuote> q) {
+    ASSERT_TRUE(publisher_relay_->StartQuote(hop_, req, [&](mesh::MediaRelayRoe<mesh::MediaRelayQuote> q) {
       quote = std::move(q);
       quoted = true;
     }));
     ASSERT_TRUE(RunUntil([&] { return quoted.load(); }));
     ASSERT_TRUE(quote && quote->ok) << (quote ? quote->error : quote.error().message);
     std::atomic<bool> attached{false};
-    Roe<mesh::MediaRelayAttachResult> result = Error("pending");
-    ASSERT_TRUE(publisher_relay_->StartAttach(hop_, quote->quote_id, kJoin, kJoin, {}, [&](Roe<mesh::MediaRelayAttachResult> r) {
+    mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> result = mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "pending");
+    ASSERT_TRUE(publisher_relay_->StartAttach(hop_, quote->quote_id, kJoin, kJoin, {}, [&](mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> r) {
       result = std::move(r);
       attached = true;
     }));

@@ -5,8 +5,8 @@
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/pricing/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"
-#include "feature/conversations/LinkDeviceCoordinator.h"
-#include "feature/conversations/LocalAccountBackup.h"
+#include "domain/people/LinkDeviceCoordinator.h"
+#include "domain/people/LocalAccountBackup.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -185,18 +185,14 @@ PeerDisplayLabel ConversationsFacade::ResolveThreadLabel(const Thread& thread) {
   return hub_.Inbox().ResolveThreadLabel(thread);
 }
 
-std::vector<MessageDisplayRow> ConversationsFacade::BuildDisplayRows(const std::string& thread_id,
-                                                                 const std::optional<int64_t> oldest_inclusive,
-                                                                 const std::optional<int64_t> newest_inclusive) {
-  auto rows = hub_.Inbox().BuildDisplayRows(thread_id, oldest_inclusive, newest_inclusive);
-  if (display_row_decorator_) {
-    display_row_decorator_(rows);
-  }
-  return rows;
+std::vector<TranscriptRow> ConversationsFacade::BuildTranscript(const std::string& thread_id,
+                                                            const std::optional<int64_t> oldest_inclusive,
+                                                            const std::optional<int64_t> newest_inclusive) {
+  return hub_.Inbox().BuildTranscript(thread_id, oldest_inclusive, newest_inclusive);
 }
 
-void ConversationsFacade::SetDisplayRowDecorator(std::function<void(std::vector<MessageDisplayRow>&)> decorator) {
-  display_row_decorator_ = std::move(decorator);
+TranscriptFacts ConversationsFacade::TranscriptFactsFor() {
+  return hub_.Inbox().Facts();
 }
 
 const std::string& ConversationsFacade::ProfileDataDir() const {
@@ -260,7 +256,7 @@ void ConversationsFacade::SetOnMessagesChanged(std::function<void()> callback) {
   hub_.MeshMessaging().SetOnMessagesChanged(std::move(callback));
 }
 
-void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const std::string&)> callback) {
+void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   hub_.MeshMessaging().SetOnDeliveryNotice(std::move(callback));
 }
 

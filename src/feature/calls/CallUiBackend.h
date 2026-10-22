@@ -5,9 +5,9 @@
 #include "domain/calls/CallTypes.h"
 #include "common/Error.h"
 #include "domain/calls/CallLifecycleTypes.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
-#include "feature/calls/LiveCall.h"
+#include "domain/calls/LiveCall.h"
 
 #include <functional>
 #include <memory>
@@ -24,7 +24,7 @@ class CallStack;
 
 /**
  * Sealed UI-facing façade over the call stack (projects/thread-ownership t2b). Call state is owned
- * by the calls owner (`CallsThread`), never read or written from UI directly:
+ * by the calls owner (`CallStack`'s executor), never read or written from UI directly:
  * - **intents** post to the owner; ones with a result deliver it on UI through `on_done`;
  * - **owner state** (phase, status, flags, seat, hop health, …) reads the snapshot the owner
  *   publishes after each step (`CallStack::UiState`);
@@ -100,6 +100,8 @@ public:
   // --- Durable state (stores, read-only) ---------------------------------------------------------
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<CallSession>> ActiveLocalCall();
+  /** V053: a group call this device may join from `thread_id`: StartCall on it joins (the button reads Join). */
+  std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;

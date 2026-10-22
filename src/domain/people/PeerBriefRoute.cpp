@@ -28,9 +28,7 @@ std::optional<std::string> RelayUserIdFromDirectoryHit(const mesh::DirectoryHit&
   return std::nullopt;
 }
 
-std::optional<std::string> ResolvePeerBriefRoute(
-    const Thread& thread, ContactsStore& contacts,
-    const std::unordered_map<std::string, std::string>& account_to_relay) {
+std::optional<std::string> ContactRelayRoute(const Thread& thread, ContactsStore& contacts) {
   // Communicating identity is Account ID; Brief delivery still needs relay: (M010).
   if (!thread.participant_contact_ids.empty()) {
     const auto contact = contacts.Get(thread.participant_contact_ids.front());
@@ -40,14 +38,22 @@ std::optional<std::string> ResolvePeerBriefRoute(
       }
     }
   }
-
   if (IsAccountIdentityValue(thread.peer_identity_value)) {
     auto by_account = contacts.FindByIdentity(thread.peer_identity_value, mesh::ContactIdKind::Account);
     if (by_account && by_account->has_value()) {
-      if (auto relay = RelayUserIdFromContact(**by_account)) {
-        return relay;
-      }
+      return RelayUserIdFromContact(**by_account);
     }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> ResolvePeerBriefRoute(
+    const Thread& thread, ContactsStore& contacts,
+    const std::unordered_map<std::string, std::string>& account_to_relay) {
+  if (auto relay = ContactRelayRoute(thread, contacts)) {
+    return relay;
+  }
+  if (IsAccountIdentityValue(thread.peer_identity_value)) {
     const auto learned = account_to_relay.find(thread.peer_identity_value);
     if (learned != account_to_relay.end() && !learned->second.empty()) {
       return learned->second;

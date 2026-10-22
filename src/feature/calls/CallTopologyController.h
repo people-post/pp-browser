@@ -18,7 +18,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/calls/CallHopPlannerLogic.h"
 
@@ -102,6 +102,8 @@ public:
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(CallMediaKeyStore* keys);
+  /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
+  void OnMediaKeyInstalled(const std::string& call_id) { hop_migrate_.InstallMediaKey(call_id); }
   /** V046 exclusive media bind / epoch via ports. */
   void SetSeatPorts(CallTopologySeatPorts ports);
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */

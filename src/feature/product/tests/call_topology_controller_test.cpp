@@ -1,13 +1,15 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/LiveCall.h"
+#include "domain/calls/CallMediaSeat.h"
+#include "feature/calls/LiveCallMedia.h"
 #include "domain/calls/CallLifecycleTypes.h"
 #include "feature/product/tests/calls_loopback_outbox.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/calls/CallControlCodec.h"
 #include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "domain/calls/CallHopAttachLogic.h"
 #include "domain/calls/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
@@ -78,6 +80,7 @@ class FakeTopologyHost {
 public:
   /** Every call the hop path drives is live here (the harness seeds store rows only). */
   LiveCalls live;
+  LiveCallMedia call_media{live};
   /** The 1:1 path the calls' coordinators release when the hop takes over. */
   struct CountingDirectDriver final : CallDirectDriver {
     int* releases = nullptr;
@@ -90,7 +93,7 @@ public:
   } direct;
   FakeTopologyHost() {
     direct.releases = &direct_media_releases;
-    live.BindDirectDriver(&direct);
+    call_media.BindDirectDriver(&direct);
   }
 
   CallTopologyController::HostPorts MakeHostPorts() {
@@ -99,7 +102,7 @@ public:
       if (!live.Find(call_id)) {
         live.AdmitPlaced(call_id, {});
       }
-      return live.Media(call_id);
+      return call_media.Media(call_id);
     };
     ports.local_relay_identity = [this]() -> Roe<std::string> {
       if (local_identity.empty()) {
@@ -199,14 +202,14 @@ public:
 
   bool IsStarted() const override { return started; }
 
-  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
                                     const mesh::MediaRelayQuoteRequest& request,
                                     int /*timeout_ms*/) override {
     ++quote_calls;
     last_quote_hop = hop_peer_key;
     last_quote_call_id = request.session_id;
     if (!quote_ok) {
-      return Error(quote_error);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, quote_error);
     }
     mesh::MediaRelayQuote q;
     q.ok = true;
@@ -217,7 +220,7 @@ public:
     return q;
   }
 
-  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& /*hop_peer_key*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& /*hop_peer_key*/,
                                               const std::string& /*quote_id*/,
                                               const std::string& /*call_id*/,
                                               const std::string& /*auth_stub*/,
@@ -225,7 +228,7 @@ public:
                                               int /*timeout_ms*/) override {
     ++attach_calls;
     if (!attach_ok) {
-      return Error(attach_error);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, attach_error);
     }
     if (before_accept_done) {
       before_accept_done();
@@ -252,11 +255,11 @@ public:
     }
   }
 
-  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
       const std::string& /*call_id*/, std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
     ++local_hop_calls;
     if (!local_hop_ok) {
-      return Error(local_hop_error);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, local_hop_error);
     }
     attached_ = true;
     local_hop_attached_ = true;
@@ -266,7 +269,7 @@ public:
     return r;
   }
 
-  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+  mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     // Product relay Subscribe is thread-safe (coordinator mutex) and is called from the calls owner
     // and relay paths — the fake must be too (ASan double-free in the vector otherwise).
     std::lock_guard lock(subscribe_mu);
@@ -274,7 +277,7 @@ public:
     subscribed_channels.push_back(channel_id);
     return {};
   }
-  Roe<void> SendFrame(const mesh::MediaDataFrame& /*frame*/) override { return {}; }
+  mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& /*frame*/) override { return {}; }
   void Detach() override {
     attached_ = false;
     local_hop_attached_ = false;
@@ -320,15 +323,18 @@ protected:
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
     sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
+    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeTopologyHost>();
-    host_->live.BindMediaResources(media_.get(), nullptr);
+    host_->call_media.BindMediaResources(media_.get(), nullptr);
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
     topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
     topo_->SetOutbox(topo_events_.Get());  // the fixture plays the session manager
+    topo_->SetMediaKeyStore(keys_.get());
     topo_->SetHostPorts(host_->MakeHostPorts());
 
     CallTopologyController::MediaRelayDeps deps;
@@ -395,6 +401,13 @@ protected:
         std::chrono::milliseconds(30000));
   }
 
+  // SFU attach fails closed without the epoch key, as in production.
+  void SeedMediaKey(const std::string& call_id, uint32_t media_epoch) {
+    auto key = keys_->GenerateEpochKey();
+    ASSERT_TRUE(key);
+    ASSERT_TRUE(keys_->PutEpochKey(call_id, media_epoch, *key));
+  }
+
   void SeedJoinedCall(const std::string& call_id, const std::vector<std::string>& identities,
                       int64_t base_joined_at) {
     CallSession session;
@@ -406,6 +419,7 @@ protected:
     session.media_epoch = 1;
     session.media_key_id = "mk:1";
     ASSERT_TRUE(sessions_->UpsertSession(session));
+    SeedMediaKey(call_id, session.media_epoch);
     for (size_t i = 0; i < identities.size(); ++i) {
       CallParticipant p;
       p.call_id = call_id;
@@ -437,6 +451,7 @@ protected:
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<CallSessionStore> sessions_;
+  std::unique_ptr<CallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeTopologyHost> host_;
@@ -1456,7 +1471,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
 
   CallMediaSeat seat;
   topo_->SetSeatPorts(TestTopologySeatPorts(&seat));
-  host_->live.BindMediaResources(media_.get(), &seat);
+  host_->call_media.BindMediaResources(media_.get(), &seat);
 
   const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";

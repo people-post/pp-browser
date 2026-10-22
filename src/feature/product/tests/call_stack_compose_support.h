@@ -30,6 +30,8 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <optional>
+#include <set>
 #include <memory>
 #include <optional>
 #include <string>
@@ -90,12 +92,12 @@ public:
     ++detach_calls;
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+                    std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
     if (fail_connects) {
       if (on_done) {
-        on_done(Error("fake call-media connect failed"));
+        on_done(CallMediaFailure::Of(CallMediaErr::Generic, "fake call-media connect failed"));
       }
       return;
     }
@@ -112,10 +114,10 @@ public:
       on_done({});
     }
   }
-  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+  CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     int timeout_ms) override {
-    Roe<void> out;
-    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
+    CallMediaRoe out;
+    ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
   Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
@@ -202,6 +204,8 @@ struct StackSideOptions {
   bool seed_dial_ok = false;
   /** Stands in for the hub's media_relay client (group calls); null = none. */
   mesh::IMediaRelayClient* relay = nullptr;
+  /** The hub's group roster as the calls see it (who is in a group now); unset = not checked. */
+  std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
 };
 
 /** Build `side` (tag = profile id, dirs under temp). Set `side.app_config` / `on_send` before. */
@@ -242,6 +246,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     }
     return {};
   };
+  deps.delivery.group_members = options.group_members;
   deps.delivery.send_to_thread = [&side](const std::string& thread_id, const std::string& text,
                                          const SendRelayOptions& send_options) -> Roe<ThreadMessage> {
     ThreadMessage msg;

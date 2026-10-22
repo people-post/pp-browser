@@ -32,12 +32,17 @@ Roe<PeerSigningKeyRecord> RelayDirectorySigningKeyResolver::Resolve(const std::s
   if (!hit->signing_public_key_b64 || hit->signing_public_key_b64->empty()) {
     return Error("Directory entry missing signing public key");
   }
+  if (!hit->account_id || *hit->account_id != peer_identity_value) {
+    return Error("Directory answered for another account");
+  }
 
   PeerSigningKeyRecord record;
   record.signing_public_key_b64 = *hit->signing_public_key_b64;
   record.source = "directory";
   record.source_ref = peer_identity_value;
-  store_.Put(peer_identity_kind, peer_identity_value, record);
+  if (!store_.Put(peer_identity_kind, peer_identity_value, record)) {
+    return Error("Directory signing key does not match the account");
+  }
   return record;
 }
 

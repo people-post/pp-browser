@@ -1,6 +1,8 @@
 #pragma once
 
+#include "domain/calls/CallMediaSessionTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
+#include "common/CodedFailure.h"
 #include "common/Error.h"
 #include "common/media/CallMediaHealth.h"
 #include "common/media/CallMediaProtocol.h"
@@ -13,55 +15,32 @@
 
 namespace pbr {
 
-
-/** Transport session phases for 1:1 call-media (V033). Product UX phases are the calls' projection (LiveCall::Phase). */
-enum class CallMediaSessionPhase {
-  Idle = 0,
-  Dialing,
-  HelloOutbound,
-  HelloInbound,
-  Adopting,
-  MediaReady,
-  Detaching,
+/** Why a call-media connect failed (docs/contracts/CODED_FAILURE.md, call-media leg). */
+enum class CallMediaErr : int32_t {
+  Ok = 0,
+  NotStarted,
+  /** Missing peer, call id or media key. */
+  BadRequest,
+  /** No endpoint or link to the peer. */
+  Unreachable,
+  /** The link to the peer failed to send: it is likely dead — the next attempt dials a fresh one. */
+  StaleLink,
+  /** Opening the control channel failed at the link (otherwise). */
+  LinkFailed,
+  /** A channel did not open, or the hello could not be written. */
+  ChannelFailed,
+  /** The peer refused the hello (or its ack failed). */
+  HelloRejected,
+  Timeout,
+  /** The stream or the link went away. */
+  Closed,
+  /** The peer closed or reset the call's stream: a clean end, not a network failure. */
+  StreamClosed,
+  Aborted,
+  Generic,
 };
-
-enum class CallMediaSessionEvent {
-  ConnectRequested = 0,
-  OpenStreamOk,
-  OpenStreamFail,
-  InboundStream,
-  HelloOk,
-  HelloFail,
-  AdoptWon,
-  AdoptLost,
-  DuplexStarted,
-  DuplexEof,
-  DuplexError,
-  DetachRequested,
-  ConnectTimeout,
-  HandlerCleared,
-  ConnectSuperseded,
-};
-
-const char* CallMediaSessionPhaseName(CallMediaSessionPhase phase);
-const char* CallMediaSessionEventName(CallMediaSessionEvent ev);
-
-struct CallMediaDirectConnectParams {
-  std::string peer_key;
-  std::string call_id;
-  uint32_t media_epoch = 1;
-  ByteVector media_key;
-  bool offerer = true;
-};
-
-/** Kind of mesh link the active call-media channels are bound on (path label truth). */
-enum class CallMediaLinkKind {
-  Unknown,
-  /** ADP association (dialed or punched). */
-  Direct,
-  /** Nested link over a relay circuit carrier. */
-  Relayed,
-};
+using CallMediaFailure = CodedFailure<CallMediaErr>;
+using CallMediaRoe = CodedRoe<void, CallMediaErr>;
 
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
@@ -69,7 +48,7 @@ struct CallMediaDirectCallbacks {
   /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
   /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
   std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
-  std::function<void(const std::string& error)> on_failed;
+  std::function<void(const CallMediaFailure& failure)> on_failed;
   /** k3: media moved to another path of the call (make-before-break migration); `kind` is the new path's. */
   std::function<void(CallMediaLinkKind kind)> on_path_changed;
   /**
@@ -169,11 +148,11 @@ public:
    * failed, timed out, or superseded. Prefer this over Connect(); MeshPump drives Amp.
    */
   virtual void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                            std::function<void(Roe<void>)> on_done, int timeout_ms = 15000) = 0;
+                            std::function<void(CallMediaRoe)> on_done, int timeout_ms = 15000) = 0;
 
   /** Blocking convenience for tests/harnesses; product bridge uses ConnectAsync. */
-  virtual Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                            int timeout_ms = 15000) = 0;
+  virtual CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+                               int timeout_ms = 15000) = 0;
 
   virtual Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) = 0;
   virtual Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,

@@ -3,6 +3,7 @@
 #include "mesh/types/MediaChannel.h"
 #include "domain/media/CallMediaEngine.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
+#include "mesh/reach/PeerReachCoordinator.h"
 #include "domain/broadcast/BroadcastRpcCodec.h"
 #include "domain/broadcast/BroadcastViewerLadder.h"
 #include "domain/broadcast/PeerAnnounceTypes.h"
@@ -48,8 +49,9 @@ struct BroadcastViewerPorts {
   std::function<std::string()> local_peer_id;
   /** Publisher's ML-DSA public key, from its signed announce; nullopt when unknown. */
   std::function<std::optional<ByteVector>(const std::string& publisher_peer_id)> publisher_key;
-  /** Link to a peer (the publisher, for its ticket). */
-  std::function<void(const std::string& peer_id, std::function<void(Roe<void>)> on_done)> reach_peer;
+  /** Link to a peer (the publisher, for its ticket); an adapter port: the reach's own codes. */
+  std::function<void(const std::string& peer_id, std::function<void(mesh::PeerReachCoordinator::ReachRoe)> on_done)>
+      reach_peer;
   std::function<void(const std::string& publisher_peer_id, const BroadcastTicketRequest& request,
                      std::function<void(Roe<BroadcastTicketResponse>)> on_done)>
       request_ticket;
@@ -73,7 +75,7 @@ namespace viewer_event {
 
 struct Reached {
   uint64_t watch = 0;
-  Roe<void> reached;
+  mesh::PeerReachCoordinator::ReachRoe reached;
 };
 struct Ticket {
   uint64_t watch = 0;
@@ -87,7 +89,7 @@ struct Admission {
 struct Attached {
   uint64_t watch = 0;
   std::string hop;
-  Roe<mesh::MediaRelayAttached> attached;
+  mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached;
 };
 /** The relay client session ended (relay I/O). */
 struct SessionEnded {
@@ -167,7 +169,7 @@ private:
   void AskAdmission(const std::string& hop);
   void OnAdmission(const std::string& hop, Roe<BroadcastViewerAttachResult> result);
   void Attach(const std::string& hop);
-  void OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached);
+  void OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached);
   void StartListening(const std::string& hop);
   void OnSessionEnded(mesh::MediaRelayClientLoss loss);
   void Recover();

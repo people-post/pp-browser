@@ -90,6 +90,9 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
       continue;
     }
     result.member_payloads[member.member_identity] = std::move(encrypted->payload_b64);
+    if (encrypted->key_init_b64 && !encrypted->key_init_b64->empty()) {
+      result.member_key_inits[member.member_identity] = std::move(*encrypted->key_init_b64);
+    }
   }
   if (result.member_payloads.empty() && !result.failed_member_identities.empty()) {
     return Error("Failed to encrypt for any group member");

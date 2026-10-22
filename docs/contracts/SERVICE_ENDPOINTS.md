@@ -115,7 +115,7 @@ Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlob
 
 Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **400** `{ "error": "Blob upload is not configured" }` when the gateway has no upload bucket → client shows "uploads not enabled" (`Err::Blob::UploadNotConfigured`; exact text match). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
 
-Chat attachment **file bytes** prefer peer-direct `/pp-browser/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
+Chat attachment **file bytes** prefer peer-direct `/pp/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
 
 ## Client compatibility discovery
 

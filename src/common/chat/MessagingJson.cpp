@@ -6,6 +6,7 @@
 #include "crypto/SodiumUtil.h"
 
 #include <cctype>
+#include <cstdint>
 #include <map>
 #include <sstream>
 #include <vector>
@@ -14,6 +15,19 @@
 namespace pbr {
 
 namespace {
+
+/** Non-empty, no control characters (incl. NUL) and no DEL — ids are stored and bound as text. */
+bool IsPlainIdentifier(const std::string& value) {
+  if (value.empty()) {
+    return false;
+  }
+  for (const unsigned char c : value) {
+    if (c < 0x20 || c == 0x7F) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // message_id ends up in generated RML (data-event-click="open_attachment('<id>')") and as a
 // SQLite primary key, so an inbound envelope with a hostile id (quotes, HTML, huge length) is
@@ -379,10 +393,10 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!version_opt) {
     return Error("Missing envelope_version");
   }
-  const int version = static_cast<int>(*version_opt);
-  if (version != kRelayEnvelopeVersion) {
+  if (*version_opt != kRelayEnvelopeVersion) {  // compared before narrowing
     return Error("Unsupported envelope_version");
   }
+  const int version = kRelayEnvelopeVersion;
   auto message_id = json.getString("message_id");
   if (!message_id) {
     return Error("Missing message_id");
@@ -440,9 +454,11 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (const Object* payloads = e2e->getObject("member_payloads")) {
     std::map<std::string, std::string> mapped;
     for (const auto& [key, value] : payloads->fields()) {
-      if (auto s = asString(value)) {
-        mapped[key] = *s;
+      auto s = asString(value);
+      if (!s || key.empty()) {
+        return Error("Invalid body.e2e.member_payloads entry");
       }
+      mapped[key] = *s;
     }
     envelope.body.e2e.member_payloads = std::move(mapped);
   }
@@ -478,11 +494,28 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (envelope.route.kind == "group" && !envelope.route.group_id) {
     return Error("Missing route.group_id for group envelope");
   }
+  // One body shape per route (both are signed as such): a direct / control envelope carries
+  // payload_b64 only, a group envelope member_payloads only.
+  if (envelope.route.kind == "group") {
+    if (!envelope.body.e2e.member_payloads || envelope.body.e2e.member_payloads->empty() ||
+        e2e->contains("payload_b64")) {
+      return Error("Group envelope must carry member_payloads only");
+    }
+  } else if (envelope.route.kind == "direct" || envelope.route.kind == kRelayRouteControl) {
+    if (e2e->contains("member_payloads") || envelope.body.e2e.payload_b64.empty() || envelope.route.group_id) {
+      return Error("Direct / control envelope must carry payload_b64 only");
+    }
+  } else {
+    return Error("Unknown route.kind");
+  }
 
   if (auto sender_seq = json.getNonNegInt("sender_seq")) {
     envelope.sender_seq = *sender_seq;
   }
   if (auto session_epoch = json.getNonNegInt("session_epoch")) {
+    if (*session_epoch > UINT32_MAX) {
+      return Error("session_epoch out of range");  // rejected, not truncated
+    }
     envelope.session_epoch = static_cast<uint32_t>(*session_epoch);
   }
   if (auto timestamp = json.getIf<int64_t>("timestamp")) {
@@ -491,6 +524,15 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (auto signature = json.getString("signature")) {
     envelope.signature = *signature;
   }
+  // Identities and ids are stored and bound as text: no control characters or NUL in them.
+  // sender_relay_id may be empty (no Brief route yet); the contact id may not.
+  if (!IsPlainIdentifier(envelope.sender_contact_id) ||
+      (!envelope.sender_relay_id.empty() && !IsPlainIdentifier(envelope.sender_relay_id))) {
+    return Error("Invalid identity in envelope");
+  }
+  if (envelope.route.group_id && !IsPlainIdentifier(*envelope.route.group_id)) {
+    return Error("Invalid group_id in envelope");
+  }
   if (auto stream_key = json.getString("stream_key")) {
     envelope.stream_key = *stream_key;
   }
@@ -498,6 +540,9 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     envelope.order_key = *order_key;
   }
   if (auto recipient = json.getString("recipient_contact_id")) {
+    if (!IsPlainIdentifier(*recipient)) {
+      return Error("Invalid recipient in envelope");
+    }
     envelope.recipient_contact_id = *recipient;
   }
   return envelope;
@@ -604,6 +649,12 @@ Object ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
   if (request.max_sender_seq) {
     json.setJsonUInt("max_sender_seq", *request.max_sender_seq);
   }
+  if (!request.signature.empty()) {
+    json.set("requester_account_id", request.requester_account_id);
+    json.set("requester_peer_id", request.requester_peer_id);
+    json.set("timestamp_ms", request.timestamp_ms);
+    json.set("signature", request.signature);
+  }
   return json;
 }
 
@@ -635,6 +686,18 @@ Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const Object& json) {
   }
   if (auto order = json.getString("order")) {
     request.order = *order;
+  }
+  if (auto account = json.getString("requester_account_id")) {
+    request.requester_account_id = *account;
+  }
+  if (auto peer_id = json.getString("requester_peer_id")) {
+    request.requester_peer_id = *peer_id;
+  }
+  if (auto timestamp = json.getIf<int64_t>("timestamp_ms")) {
+    request.timestamp_ms = *timestamp;
+  }
+  if (auto signature = json.getString("signature")) {
+    request.signature = *signature;
   }
   return request;
 }
@@ -823,6 +886,12 @@ Object ChatBlobRequestToJson(const ChatBlobRequest& request) {
   json.set("thread_id", request.thread_id);
   json.set("content_hash_hex", request.content_hash_hex);
   json.set("channel", ThreadChannelToString(request.channel));
+  if (!request.signature.empty()) {
+    json.set("requester_account_id", request.requester_account_id);
+    json.set("requester_peer_id", request.requester_peer_id);
+    json.set("timestamp_ms", request.timestamp_ms);
+    json.set("signature", request.signature);
+  }
   return json;
 }
 
@@ -844,6 +913,18 @@ Roe<ChatBlobRequest> ChatBlobRequestFromJson(const Object& json) {
   request.peer_identity_kind = *peer_kind;
   request.peer_identity_value = *peer_value;
   request.content_hash_hex = *content_hash;
+  if (auto account = json.getString("requester_account_id")) {
+    request.requester_account_id = *account;
+  }
+  if (auto peer_id = json.getString("requester_peer_id")) {
+    request.requester_peer_id = *peer_id;
+  }
+  if (auto timestamp = json.getIf<int64_t>("timestamp_ms")) {
+    request.timestamp_ms = *timestamp;
+  }
+  if (auto signature = json.getString("signature")) {
+    request.signature = *signature;
+  }
   if (request.op == ChatBlobOp::FetchPublic) {
     if (auto thread_id = json.getString("thread_id")) {
       request.thread_id = *thread_id;

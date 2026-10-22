@@ -1,6 +1,6 @@
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 
-#include "feature/conversations/AiImageRef.h"
+#include "domain/messaging/AiImageRef.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/AttachmentPlaintextMemoryCache.h"
 #include "domain/content/CasStore.h"

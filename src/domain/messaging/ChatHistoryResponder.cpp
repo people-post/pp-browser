@@ -1,5 +1,8 @@
 #include "domain/messaging/ChatHistoryResponder.h"
 
+#include "domain/messaging/PeerRequestAuth.h"
+#include "common/directory/DirectoryJson.h"
+
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ReactionTypes.h"
 
@@ -117,7 +120,9 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
                                                      const ChatHistoryRequest& request,
                                                      const std::string& local_relay_user_id,
                                                      const std::string& local_account_id,
-                                                     const SignBytesFn& sign_bytes) {
+                                                     const SignBytesFn& sign_bytes,
+                                                     const std::string& remote_peer_id,
+                                                     IPeerSigningKeyResolver& signing_keys, const int64_t now_ms) {
   if (local_relay_user_id.empty()) {
     return Error("Local relay identity missing");
   }
@@ -127,10 +132,14 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
   if (request.requester_identity_value.empty()) {
     return Error("History request missing requester identity");
   }
+  // The requester is who signed the request, on the link it signed for — not who the body names.
+  if (auto authorized = PeerRequestAuth::Verify(request, remote_peer_id, now_ms, signing_keys); !authorized) {
+    return authorized.error();
+  }
 
   DirectChatTarget target;
-  target.peer_identity_kind = request.peer_identity_kind;
-  target.peer_identity_value = request.requester_identity_value;
+  target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  target.peer_identity_value = request.requester_account_id;
   target.channel = request.channel;
 
   auto thread = store.FindDirectThread(target);

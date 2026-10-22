@@ -1,6 +1,7 @@
 pp_browser_add_feature_folder_tests(
   pp_gui
   pp_browser_gui_test
+  LINK_LIBS pp_domain_net_testing
   PRIVATE_DEFINITIONS
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 

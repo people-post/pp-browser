@@ -3,7 +3,7 @@
 #include "foundation/crypto/DataKeyVault.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/LinkDeviceCoordinator.h"
+#include "domain/people/LinkDeviceCoordinator.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"

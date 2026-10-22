@@ -7,17 +7,22 @@ pp_browser_add_domain_library(pp_domain_messaging
     AtAiParser.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
+    PeerRequestAuth.cpp
     ChatPayloadCodec.cpp
     ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp
     PeerThreadLogic.cpp
+    GroupInviteGate.cpp
+    RelayReceivePipeline.cpp
     ControlLaneEnvelope.cpp
     ControlLaneSeenStore.cpp
     E2ePublicSessionLogic.cpp
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp
     ChatPayloadValidator.cpp
+    ChatSyncLogic.cpp
     ConversationSummaryCodec.cpp
+    DeliveryNotice.cpp
     E2eIngestClassifier.cpp
     E2eRelayPayloadCodec.cpp
     EnvelopeSigner.cpp
@@ -27,6 +32,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     GroupMembershipCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
+    OutboundMessage.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
@@ -34,6 +40,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
+    TranscriptAssembly.cpp
     TranscriptCipher.cpp
     SqlitePskSessionStore.cpp
     SqliteThreadStore.cpp

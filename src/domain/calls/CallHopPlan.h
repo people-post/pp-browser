@@ -5,6 +5,7 @@
 #include "common/MeshAlias.h"
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -41,6 +42,17 @@ std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHop
                                                  bool prefer_local_as_hop,
                                                  const std::string& local_advertise_ma,
                                                  bool lan_reachability_confirmed = false);
+
+/** `hop_peer_id` moved to the front of `ranked` when it is listed (order otherwise kept). */
+std::vector<mesh::MeshHopCandidate> PreferNamedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
+                                                        const std::string& hop_peer_id);
+
+/**
+ * V050: the hop planned from the invite list at StartCall goes first. Invitees were told about it,
+ * so it stays a candidate (from its stored multiaddr) even when the listing no longer has it.
+ */
+std::vector<mesh::MeshHopCandidate> PlannedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
+                                                    const CallPlannedHop& planned);
 
 /**
  * PreferLocal eligibility (V035).
@@ -91,6 +103,14 @@ struct GroupHopJoinDecision {
  * A hop still being probed is unknown — it excludes nothing (an invitee may accept before its
  * probes finish).
  */
+/**
+ * V050: what an invitee reports with its accept — the hops its probes reached and could not, and how
+ * the planned hop fared (unknown while its quote is still in flight). `probes`: hop → reached
+ * (none: still probing).
+ */
+CallHopReport BuildCallHopReport(const std::map<std::string, std::optional<bool>>& probes,
+                                 const std::string& planned_hop);
+
 bool HopUsableForAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports);
 
 /**

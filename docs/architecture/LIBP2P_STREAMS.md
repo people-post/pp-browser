@@ -73,9 +73,9 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 
 | Protocol | Service | Exchange |
 |----------|---------|----------|
-| `/pp-browser/rpc/chat/1.0.0` | Amp `AmpDirectChatTransport` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
-| `/pp-browser/rpc/history/1.0.0` | Amp `AmpChatHistoryTransport` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
-| `/pp-browser/blob/1.0.0` | Amp `AmpChatBlobTransport` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
+| `/pp/rpc/chat/1.0.0` | Amp `AmpDirectChatTransport` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
+| `/pp/rpc/history/1.0.0` | Amp `AmpChatHistoryTransport` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
+| `/pp/blob/1.0.0` | Amp `AmpChatBlobTransport` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
 | dial-back / circuit-relay | Amp circuit coordinator when Amp owns mesh; else libp2p JSON framing | Control frames; Amp uses `ChannelSession` |
 | media-relay / call-media | Amp L4 coordinators when Amp up ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) | Ongoing frames; call-media = control+media channel bundle (A021); circuit nested Session (A024) |
 
@@ -103,7 +103,7 @@ E2E blob layout: [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md) (`[
 | **Noise** | `[u16 BE len][payload]` | `kMaxMsgLen` = 65535; plaintext max 65519 (minus 16 B tag) |
 | **Yamux** | 12-byte header (`version`, `type`, `flags`, `stream_id`, `length`) + data | Initial window 256 KiB; ping / idle-no-streams for connection hygiene — **not** per-app-frame deadlines |
 | **Multiselect** | uvarint length + message + `\n` | Protocol negotiation; `kMaxMessageSize` 65535 |
-| **Stock helpers** (`MessageReadWriterUvarint`, gossip, …) | uvarint / protobuf-shaped | Used by identify/kad/gossip — **not** by `/pp-browser/chat*` |
+| **Stock helpers** (`MessageReadWriterUvarint`, gossip, …) | uvarint / protobuf-shaped | Used by identify/kad/gossip — **not** by `/pp/chat*` |
 | **QUIC** (fork only) | Native QUIC streams + TLS | Same `Stream` API; not on `Libp2pHost` production path |
 
 ## Failure handling

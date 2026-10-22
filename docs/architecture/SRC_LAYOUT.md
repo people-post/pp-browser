@@ -107,7 +107,7 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
+| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version; owner threads and a runner's executor on one (`RuntimeOwnerExecutor`) |
 | `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; `platform/ui/` = window host + RmlUi Backend + overlays. See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
@@ -119,15 +119,15 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) over `domain/content` |
-| `domain/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec, session and media-key stores, pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
+| `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`); link-device and local account backup (`LinkDeviceCoordinator`, `LocalAccountBackup`); a peer's Brief route (`PeerBriefRoute`, `ContactRelayRoute`); the name a thread or sender shows (`PeerDisplayResolver`; the directory cache and group titles through `PeerDisplaySources`) |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the inbound receive engine (`RelayReceivePipeline`: verify, replay, decrypt, membership, control lane; the local keys through a `LocalKeys` port) and the group invite gate (`GroupInviteGate`; the inviter's standing through a port); the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); what a send of ours writes and puts on the wire (`OutboundMessage`: the row, the sealed payload, the envelope); what a transcript shows (`TranscriptAssembly`; the GUI draws it); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) — features wire it to `domain/content` |
+| `domain/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec and its system-control family (`CallControlFamily`), session and media-key stores and what a call's rows say (`CallSessionQueries`: who is in it, a peer's roster applied), the media key exchange (`CallMediaKeyExchange`, its control-lane sends through a port), the call-to-media seat (`CallMediaSeat`), the calls on this device and what they show (`LiveCalls`: call state, media Status, path gates), pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `CallPathMobility`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
 | `domain/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
 | `domain/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
 | `domain/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`feature/conversations/AttachmentContent`, `ChatBlobContentSource`) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
-| `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
+| `domain/ai/` | LLM client, turn types, parsers, payload plan builder; turn planning and the Brief turn runner (`TurnPlanner`, `BriefTurnRunner`); tool permissions and their prompt (`ToolPermissionPolicy`, `ToolPermissionPrompt`, `ParkedApproval`); `conversation/`, `mcp/` and `tools/` (web search, MCP tool adapters, the registry built from them) sublibs |
 | `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
 
 Window host / Backend / overlays: `foundation/platform/ui/` (not a domain peer).
@@ -174,7 +174,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
-| `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
+| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports, bindings |
 | `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
 | `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
 

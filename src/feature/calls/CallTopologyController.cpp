@@ -1,4 +1,8 @@
 #include "feature/calls/CallTopologyController.h"
+
+#include "domain/calls/CallHopJoinLogic.h"
+#include "domain/calls/CallSessionLogic.h"
+#include "domain/calls/CallSessionQueries.h"
 #include "mesh/types/MediaChannel.h"
 #include "domain/calls/CallMediaPlannerSelectLogic.h"
 #include "domain/calls/CallHopPlannerLogic.h"
@@ -368,8 +372,7 @@ void CallTopologyController::PollPendingSfuAttach() {
   in.now_ms = util::NowUnixMs();
   in.deadline_ms = attach_wait_.deadline_ms;
   in.soft_migrate_in_flight = flight_.in_flight;
-  in.sfu_attached_for_call =
-      sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+  in.sfu_attached_for_call = IsOnSfuForCall(call_id);
   if (auto joined = sessions_.CountJoined(call_id)) {
     in.joined_count = *joined;
   }
@@ -480,15 +483,7 @@ bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
 
 std::vector<std::string> CallTopologyController::JoinedRemoteIdentities(const std::string& call_id,
                                                                      const std::string& local_identity) const {
-  std::vector<std::string> out;
-  if (auto participants = sessions_.ListParticipants(call_id)) {
-    for (const CallParticipant& p : *participants) {
-      if (p.state == CallParticipantState::Joined && !p.identity.empty() && p.identity != local_identity) {
-        out.push_back(p.identity);
-      }
-    }
-  }
-  return out;
+  return call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity);
 }
 
 std::vector<std::string> CallTopologyController::JoinedMembersOtherThan(const std::string& call_id,
@@ -516,15 +511,7 @@ bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id, 
 
 bool CallTopologyController::AwaitsOwnInviteeAccept(const std::string& call_id,
                                                     const std::string& local_identity) const {
-  for (const std::string& identity : JoinedRemoteIdentities(call_id, local_identity)) {
-    auto invite = sessions_.LoadPendingInvite(call_id, identity);
-    // Inbound CallAccept marks the row "accepted" before OnRemoteAcceptJoined runs.
-    if (invite && invite->has_value() && (*invite)->inviter_identity == local_identity &&
-        (*invite)->status == "pending") {
-      return true;
-    }
-  }
-  return false;
+  return call_queries::AwaitsOwnInviteeAccept(sessions_, call_id, local_identity);
 }
 
 CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_id,
@@ -539,62 +526,33 @@ bool CallTopologyController::LanReachabilityConfirmedForCall(
 
 bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id) const {
   const auto seat_ports = seat_.Get();
-  if (call_id.empty()) {
-    return false;
-  }
-
-  // SoftMigrate / WaitForAttach are exclusive while in flight (zombie Active disk rows).
-  if (!flight_.call_id.empty()) {
-    return flight_.call_id == call_id;
-  }
-  if (!attach_wait_.call_id.empty()) {
-    return attach_wait_.call_id == call_id;
-  }
-
-  // V036: seat bind is the media-active answer — never veto via leftover engine ActiveCallId.
-  if (seat_ports->IsBound()) {
-    if (seat_ports->is_bound(call_id)) {
-      return true;
-    }
-    const std::string bound = seat_ports->bound_call_id();
-    if (!bound.empty()) {
+  auto session_active = [this](const std::string& id) -> bool {
+    if (id.empty()) {
       return false;
     }
-  } else {
-    // Guest SFU attach bind without seat (unit tests): exclusive if that call is still Active.
-    auto session_still_active = [this](const std::string& id) -> bool {
-      if (id.empty()) {
-        return false;
-      }
-      if (auto active = sessions_.ListActiveSessions(); active) {
-        for (const CallSession& session : *active) {
-          if (session.call_id == id) {
-            return true;
-          }
+    if (auto active = sessions_.ListActiveSessions(); active) {
+      for (const CallSession& session : *active) {
+        if (session.call_id == id) {
+          return true;
         }
       }
-      return false;
-    };
-    if (!guest_.active_call_id.empty()) {
-      if (guest_.active_call_id == call_id) {
-        return true;
-      }
-      if (session_still_active(guest_.active_call_id)) {
-        return false;
-      }
     }
-  }
-
-  auto active = sessions_.ListActiveSessions();
-  if (!active) {
     return false;
+  };
+  HopActiveCallInput in;
+  in.call_id = call_id;
+  in.flight_call_id = flight_.call_id;
+  in.attach_wait_call_id = attach_wait_.call_id;
+  in.seat_bound = seat_ports->IsBound();
+  if (in.seat_bound) {
+    in.seat_bound_to_call = seat_ports->is_bound(call_id);
+    in.seat_bound_call_id = seat_ports->bound_call_id();
+  } else {
+    in.guest_call_id = guest_.active_call_id;
+    in.guest_session_active = session_active(guest_.active_call_id);
   }
-  for (const CallSession& session : *active) {
-    if (session.call_id == call_id) {
-      return true;
-    }
-  }
-  return false;
+  in.call_session_active = session_active(call_id);
+  return IsHopActiveCall(in);
 }
 
 void CallTopologyController::FanOutSfuAttachForHop(const std::string& call_id,
@@ -853,13 +811,20 @@ bool CallTopologyController::ExpectsGroupMedia(const std::string& call_id) const
 bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
                                                  const std::optional<std::string>& sfu_hint) {
   Apply(CallHopPlannerEvent::LocalAcceptN3, call_id);
-  if (n_joined >= 3 && sfu_hint && !sfu_hint->empty()) {
+  bool group_call = false;
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    auto offered = sessions_.ListParticipants(call_id);
+    group_call = CallSessionLogic::IsGroupCall(**session, offered ? offered->size() : 0);
+  }
+  switch (DecideLocalAcceptHop(n_joined, sfu_hint && !sfu_hint->empty(), group_call)) {
+  case LocalAcceptHopAction::AttachToInviteHint:
     AttachFromInviteHint(call_id, *sfu_hint);
     return true;
-  }
-  if (ShouldArmHopPlanner(n_joined)) {
+  case LocalAcceptHopAction::JoinGroup:
     JoinGroupWithoutHint(call_id, n_joined);
     return true;
+  case LocalAcceptHopAction::StayDirect:
+    break;
   }
   StayDirectAfterAccept(call_id, n_joined);
   return false;
@@ -921,29 +886,32 @@ void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, si
   BeginSfuAttachWait(call_id);
   host_.SetMediaActivity(Tr("call.status.setting_up_group"));
   host_.NotifyRingChanged();
-  if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+  JoinWithoutHintInput in;
+  in.on_hop_for_call = IsOnSfuForCall(call_id);
+  in.flight_busy_for_call = MigrateFlightBusyFor(call_id);
+  // PreferLocal Node may PickHop on LocalJoinedWithoutHint; phones/guests WaitForAttach.
+  in.may_prefer_local_hop = relay_deps_.prefer_local_as_hop && relay_deps_.relay && relay_deps_.relay->IsStarted();
+  switch (DecideJoinWithoutHint(in)) {
+  case JoinWithoutHintAction::AlreadyOnHop:
     ClearSfuAttachWait();
     SyncSfuSubscriptions(call_id);
     Apply(CallHopPlannerEvent::AttachSucceeded, call_id);
     ReportHopProgress(CallHopPlannerPhase::Live, call_id);
     return;
-  }
-  // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes.
-  // Bumping flight_.migrate_generation here aborts that worker before StartSfu — caller shows
-  // Connected, guest stuck Connecting with streams=0.
-  if (MigrateFlightBusyFor(call_id)) {
+  case JoinWithoutHintAction::KeepFlight:
+    // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes; bumping
+    // the migrate generation would abort that worker before StartSfu (guest stuck Connecting).
     log().info << "OnLocalAcceptJoined keep in-flight SoftMigrate/attach call_id=" << call_id;
     ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
     return;
-  }
-  // PreferLocal Node may PickHop on LocalJoinedWithoutHint; phones/guests WaitForAttach.
-  // WaitForAttach must not bump gen or hold flight_.in_flight (defers inbound attach).
-  const bool may_prefer_local = relay_deps_.prefer_local_as_hop && relay_deps_.relay && relay_deps_.relay->IsStarted();
-  if (!may_prefer_local) {
+  case JoinWithoutHintAction::WaitForAttach:
+    // Must not bump the generation or hold the flight (it defers the inbound attach).
     log().info << "OnLocalAcceptJoined WaitForAttach call_id=" << call_id << " n=" << n_joined;
     ReportHopProgress(CallHopPlannerPhase::WaitingAttach, call_id);
     FlushPendingInboundSfuAttach();
     return;
+  case JoinWithoutHintAction::PickHop:
+    break;
   }
   ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
@@ -999,40 +967,47 @@ void CallTopologyController::StayDirectAfterAccept(const std::string& call_id, s
 
 bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined,
                                                   const std::string& joiner_identity) {
-  if (!IsActiveCallForTopology(call_id)) {
+  RemoteAcceptHopInput in;
+  in.active_call = IsActiveCallForTopology(call_id);
+  in.n_joined = n_joined;
+  in.on_hop_for_call = IsOnSfuForCall(call_id);
+  in.migrate_in_flight = flight_.in_flight;
+  const RemoteAcceptHopAction action = DecideRemoteAcceptHop(in);
+  switch (action) {
+  case RemoteAcceptHopAction::IgnoreNotActive:
     log().info << "OnRemoteAcceptJoined ignored (not active call) call_id=" << call_id
                << " joiner=" << joiner_identity << " media_active=" << media_.ActiveCallId();
-    // true → caller must not ScheduleStartDirectMedia for a stale/zombie call.
-    return true;
-  }
-  if (!CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
+    return true;  // the caller must not start direct media for a stale / zombie call
+  case RemoteAcceptHopAction::StayDirect:
     log().info << "OnRemoteAcceptJoined stay P2P call_id=" << call_id << " n=" << n_joined
                << " joiner=" << joiner_identity;
     ClearSfuAttachWait();
     host_.ClearMediaActivity();
     return false;
-  }
-  log().info << "OnRemoteAcceptJoined call_id=" << call_id << " n=" << n_joined << " joiner=" << joiner_identity
-             << " sfu=" << (sfu_.attached ? 1 : 0) << " inflight=" << (flight_.in_flight ? 1 : 0);
-  // Already on SFU (2nd concurrent accept): refresh subscriptions and re-fan-out attach so the
-  // late joiner (missed SoftMigrate fan-out while still Ringing) can WaitForAttach → attach.
-  if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+  case RemoteAcceptHopAction::RefreshOnHop:
+    // 2nd concurrent accept: re-fan-out the attach so a joiner that missed the SoftMigrate fan-out
+    // while still Ringing can WaitForAttach → attach.
     SyncSfuSubscriptions(call_id);
     RefanOutLocalHopForJoiner(call_id, joiner_identity);
     ClearSfuAttachWait();
     host_.NotifyRingChanged();
     return true;
+  case RemoteAcceptHopAction::JoinFlight:
+  case RemoteAcceptHopAction::ResolveAndMigrate:
+    break;
   }
-  // V050: the first migrate goes to the planned hop — or the one adjustment, or the joiner is refused
-  // and the call stays as it is.
-  if (!flight_.in_flight && !ResolveGroupHopForJoin(call_id, joiner_identity)) {
+  log().info << "OnRemoteAcceptJoined call_id=" << call_id << " n=" << n_joined << " joiner=" << joiner_identity
+             << " inflight=" << (flight_.in_flight ? 1 : 0);
+  // V050: the first migrate goes to the planned hop — or the one adjustment, or the joiner is
+  // refused and the call stays as it is.
+  if (action == RemoteAcceptHopAction::ResolveAndMigrate && !ResolveGroupHopForJoin(call_id, joiner_identity)) {
     return true;  // joiner refused; nothing to schedule for it
   }
   BeginSfuAttachWait(call_id);
   host_.SetMediaActivity(Tr("call.status.setting_up_group"));
   host_.NotifyRingChanged();
-  // Overlapping Accept: keep the in-flight SoftMigrate; bumping gen would Detach mid-attach.
-  if (flight_.in_flight) {
+  if (action == RemoteAcceptHopAction::JoinFlight) {
+    // Overlapping Accept: keep the in-flight SoftMigrate; bumping gen would Detach mid-attach.
     log().info << "OnRemoteAcceptJoined defer SoftMigrate (already in flight) joiner=" << joiner_identity;
     return true;
   }
@@ -1126,43 +1101,40 @@ void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_
 }
 
 void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, size_t n_joined) {
-  if (!CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
-    return;
+  JoinedCountHopInput in;
+  in.n_joined = n_joined;
+  in.on_hop_for_call = IsOnSfuForCall(call_id);
+  in.migrate_in_flight = flight_.in_flight;
+  in.attach_wait_for_call = !attach_wait_.call_id.empty() && attach_wait_.call_id == call_id;
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    in.has_sfu_hint = (*session)->sfu_hint && !(*session)->sfu_hint->empty();
+    in.planned_hop = (*session)->planned_hop.has_value();
   }
-  if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
-    // Roster grew while already on SFU — ensure we subscribe to any late Joined peers.
-    SyncSfuSubscriptions(call_id);
-    return;
+  if (in.planned_hop) {
+    auto local = host_.local_relay_identity();
+    in.initiator_awaits_own_invitee =
+        local && IsStickyInitiator(call_id, *local) && AwaitsOwnInviteeAccept(call_id, *local);
   }
-  if (flight_.in_flight) {
-    log().info << "OnJoinedCountObserved skip SoftMigrate (in flight) n=" << n_joined
-               << " call_id=" << call_id;
+  switch (DecideJoinedCountHop(in)) {
+  case JoinedCountHopAction::None:
     return;
-  }
-  // Already waiting for owner CallSfuAttach — re-entry only bumps gen and thrashs inbox.
-  if (!attach_wait_.call_id.empty() && attach_wait_.call_id == call_id) {
-    log().info << "OnJoinedCountObserved skip SoftMigrate (attach wait) n=" << n_joined
-               << " call_id=" << call_id;
+  case JoinedCountHopAction::SyncSubscriptions:
+    SyncSfuSubscriptions(call_id);  // the roster grew while on the hop: subscribe to late joiners
+    return;
+  case JoinedCountHopAction::SkipInFlight:
+    log().info << "OnJoinedCountObserved skip SoftMigrate (in flight) n=" << n_joined << " call_id=" << call_id;
+    return;
+  case JoinedCountHopAction::SkipAttachWait:
+    // Re-entry would only bump the generation and thrash the inbox.
+    log().info << "OnJoinedCountObserved skip SoftMigrate (attach wait) n=" << n_joined << " call_id=" << call_id;
     host_.RequestInboxSync();
     return;
-  }
-  auto session = sessions_.LoadSession(call_id);
-  const bool first_attach =
-      !session || !session->has_value() || !(*session)->sfu_hint || (*session)->sfu_hint->empty();
-  if (!first_attach) {
+  case JoinedCountHopAction::AwaitJoinerAccept:
+    log().info << "OnJoinedCountObserved: wait for the joiner's CallAccept (planned hop) n=" << n_joined
+               << " call_id=" << call_id;
     return;
-  }
-  // V050: with a planned hop the initiator forms the group from the joiner's CallAccept — it carries
-  // the hop report. A CallRoster that shows the join first (transports reorder) must not migrate
-  // without that report — but only a joiner this device invited sends its Accept here; one another
-  // member added accepts to that member, so its roster is all this device will see.
-  if (session && session->has_value() && (*session)->planned_hop) {
-    if (auto local = host_.local_relay_identity();
-        local && IsStickyInitiator(call_id, *local) && AwaitsOwnInviteeAccept(call_id, *local)) {
-      log().info << "OnJoinedCountObserved: wait for the joiner's CallAccept (planned hop) n=" << n_joined
-                 << " call_id=" << call_id;
-      return;
-    }
+  case JoinedCountHopAction::Migrate:
+    break;
   }
 
   host_.note_media_attempted(call_id);
@@ -1254,17 +1226,18 @@ bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
   // 1:1 must stay on call-media duplex. Owner SoftMigrate / inflated roster can still fan
   // CallSfuAttach; accepting it races ScheduleStartDirectMedia (intermittent hop sound → "direct").
   // Allow only when Status arms Topology (V037) or we are waiting / SoftMigrating this call.
-  size_t n_joined = 0;
+  InboundAttachInput in;
+  in.active_call = true;
   if (auto joined = sessions_.CountJoined(call_id)) {
-    n_joined = *joined;
+    in.n_joined = *joined;
   }
-  const bool status_allows_hop = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
-  const bool expect_group_attach =
-      status_allows_hop &&
-      (CallMediaTopology::ShouldUseMediaRelay(n_joined) || attach_wait_.call_id == call_id ||
-       (flight_.in_flight && flight_.call_id == call_id) || sfu_.attached);
+  in.status_allows_hop = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
+  in.attach_wait_for_call = attach_wait_.call_id == call_id;
+  in.flight_for_call = flight_.in_flight && flight_.call_id == call_id;
+  in.on_hop = sfu_.attached;
+  const bool expect_group_attach = ExpectsGroupAttach(in);
   if (!expect_group_attach) {
-    log().info << "OnInboundSfuAttach ignored (1:1 / hop not armed) call_id=" << call_id << " n_joined=" << n_joined
+    log().info << "OnInboundSfuAttach ignored (1:1 / hop not armed) call_id=" << call_id << " n_joined=" << in.n_joined
                << " hop=" << attach.hop_peer_id << " arming="
                << (arming_ports->IsBound() && arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "null");
   }
@@ -1398,7 +1371,7 @@ void CallTopologyController::FinishInboundSfuAttach(const std::string& call_id, 
 
 void CallTopologyController::FinishSupersededInboundSfuAttach(const std::string& call_id, uint64_t gen,
                                                               const Roe<void>& ok) {
-  const bool duplex = sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+  const bool duplex = IsOnSfuForCall(call_id);
   const bool owns_flight = flight_.flight_gen == gen;
   if (owns_flight || duplex) {
     ReleaseMigrateFlight();
@@ -1431,7 +1404,7 @@ void CallTopologyController::FlushPendingInboundSfuAttach() {
   const CallSfuAttachDetail attach = *inbound_gate_.pending_attach;
   inbound_gate_.pending_attach.reset();
   inbound_gate_.pending_call_id.clear();
-  if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+  if (IsOnSfuForCall(call_id)) {
     NoteRemotePublisherFromAttach(attach);
     SyncSfuSubscriptions(call_id);
     return;
@@ -1600,79 +1573,64 @@ void CallTopologyController::ReannouncePublisher(const topology_event::Reannounc
 
 void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail) {
   auto local = host_.local_relay_identity();
-  if (!local || !IsStickyInitiator(detail.call_id, *local)) {
-    return; // only sticky initiator handles hop hints
-  }
-  const std::string& guest = detail.identity;
-  // V050: one hop change per joiner — failing again on the hop the group already moved to for this
-  // guest keeps that hop and refuses (other attach failures keep today's recovery).
-  if (auto repicked = hop_hint_repicked_.find(detail.call_id); !guest.empty() && repicked != hop_hint_repicked_.end()) {
-    if (auto moved = repicked->second.find(guest);
-        moved != repicked->second.end() && moved->second == detail.failed_hop_peer_id) {
-      log().warning << "Hop hint refuse guest=" << guest << " (the group already moved to " << moved->second
-                    << " for this joiner)";
-      RefuseGuestNoSharedHop(detail.call_id, guest);
-      return;
-    }
-  }
-  // V050: everyone moves, so the new hop must be one the other members reached too (their accept
-  // reports; members without a report do not constrain).
-  const std::vector<std::string> guest_prefs =
-      planning_.UsableForMembers(detail.call_id, JoinedMembersOtherThan(detail.call_id, guest), detail.preferred_hop_peer_ids);
-  const auto decision = DecideHopHintOwnerAction(guest_prefs, DialableHopPeerIds(), detail.failed_hop_peer_id);
-  if (decision.action == HopHintOwnerAction::RefuseGuest || guest.empty()) {
-    log().warning << "Hop hint refuse guest=" << guest << " failed_hop=" << detail.failed_hop_peer_id;
-    if (!guest.empty()) {
-      RefuseGuestNoSharedHop(detail.call_id, guest);
-    }
+  HopFailureInput in;
+  in.sticky_initiator = local && IsStickyInitiator(detail.call_id, *local);
+  if (!in.sticky_initiator) {
     return;
   }
-  const std::string& prefer = decision.preferred_hop_peer_id;
-  if (!HopHintMayLeavePreferLocal(prefer)) {
-    log().warning << "Hop hint refuse (keep PreferLocal) guest=" << guest << " failed_hop=" << detail.failed_hop_peer_id
-                  << " prefer=" << prefer;
+  in.guest = detail.identity;
+  const std::string& guest = in.guest;
+  if (auto repicked = hop_hint_repicked_.find(detail.call_id); repicked != hop_hint_repicked_.end()) {
+    auto moved = repicked->second.find(guest);
+    in.already_moved_guest_to_failed_hop = moved != repicked->second.end() && moved->second == detail.failed_hop_peer_id;
+  }
+  if (!in.already_moved_guest_to_failed_hop) {
+    // V050: everyone moves, so the new hop must be one the other members reached too (their accept
+    // reports; members without a report do not constrain).
+    const std::vector<std::string> guest_prefs = planning_.UsableForMembers(
+        detail.call_id, JoinedMembersOtherThan(detail.call_id, guest), detail.preferred_hop_peer_ids);
+    in.owner = DecideHopHintOwnerAction(guest_prefs, DialableHopPeerIds(), detail.failed_hop_peer_id);
+    if (in.owner.action == HopHintOwnerAction::RePick) {
+      in.may_leave_prefer_local = HopHintMayLeavePreferLocal(in.owner.preferred_hop_peer_id);
+      in.on_pick = sfu_.attached && IsOnOrHintedHop(detail.call_id, in.owner.preferred_hop_peer_id);
+    }
+  }
+  in.migrate_in_flight = flight_.in_flight;
+  const std::string& prefer = in.owner.preferred_hop_peer_id;
+  switch (DecideHopFailure(in)) {
+  case HopFailureAction::Ignore:
+    log().warning << "Hop hint ignored (no guest) failed_hop=" << detail.failed_hop_peer_id;
+    return;
+  case HopFailureAction::RefuseGuest:
+    log().warning << "Hop hint refuse guest=" << guest << " failed_hop=" << detail.failed_hop_peer_id
+                  << " prefer=" << prefer << " moved_before=" << (in.already_moved_guest_to_failed_hop ? 1 : 0)
+                  << " keep_prefer_local=" << (in.may_leave_prefer_local ? 0 : 1);
     RefuseGuestNoSharedHop(detail.call_id, guest);
     return;
-  }
-  // Already SoftMigrated onto the guest prefer hop: re-fan-out only (do not Detach again).
-  if (sfu_.attached && !prefer.empty() && IsOnOrHintedHop(detail.call_id, prefer)) {
+  case HopFailureAction::RefanOut:
+    // Already SoftMigrated onto the pick: re-fan-out only (do not Detach again).
     log().info << "Hop hint no-op: already on prefer hop=" << prefer << " guest=" << guest;
     FanOutSfuAttachForHop(detail.call_id, prefer, *local);
     SyncSfuSubscriptions(detail.call_id);
     host_.ClearMediaActivity();
     host_.NotifyRingChanged();
     return;
-  }
-  if (flight_.in_flight) {
+  case HopFailureAction::Coalesce:
     flight_.pending_hop_prefer = prefer;
-    log().info << "Hop hint coalesced prefer=" << flight_.pending_hop_prefer << " guest=" << guest;
+    log().info << "Hop hint coalesced prefer=" << prefer << " guest=" << guest;
     return;
+  case HopFailureAction::Repick:
+    break;
   }
-  if (!guest.empty()) {
-    if (hop_hint_repicked_.size() > 4 && hop_hint_repicked_.count(detail.call_id) == 0) {
-      hop_hint_repicked_.clear();  // bounded like the report maps; OnMediaStopped erases per call
-    }
-    hop_hint_repicked_[detail.call_id][guest] = prefer;
+  if (hop_hint_repicked_.size() > 4 && hop_hint_repicked_.count(detail.call_id) == 0) {
+    hop_hint_repicked_.clear();  // bounded like the report maps; OnMediaStopped erases per call
   }
+  hop_hint_repicked_[detail.call_id][guest] = prefer;
   StartHopHintRepick(detail.call_id, prefer, guest);
 }
 
 bool CallTopologyController::IsStickyInitiator(const std::string& call_id, const std::string& local_identity) const {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return false;
-  }
-  std::vector<SoftMigrateJoinedPeer> joined_peers;
-  for (const CallParticipant& p : *participants) {
-    if (p.state != CallParticipantState::Joined) {
-      continue;
-    }
-    SoftMigrateJoinedPeer peer;
-    peer.identity = p.identity;
-    peer.joined_at = p.joined_at;
-    joined_peers.push_back(std::move(peer));
-  }
-  return SelectCallInitiator(joined_peers) == local_identity;
+  return call_queries::IsStickyInitiator(sessions_, call_id, local_identity);
 }
 
 bool CallTopologyController::HopHintMayLeavePreferLocal(const std::string& prefer_hop_peer_id) const {

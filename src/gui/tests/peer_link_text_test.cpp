@@ -15,9 +15,7 @@ ThreadPeerLinkView Link(const ThreadPeerPathKind kind, const bool relay_availabl
   link.path_kind = kind;
   link.relay_available = relay_available;
   // What the orchestrator fills today; none of it may reach the user.
-  link.status_label = "Retrying soon (3s)";
-  link.banner_message = "amp link manager: dial timeout [link: amp link: dial timeout]";
-  link.show_banner = true;
+  link.detail = "amp link manager: dial timeout [link: amp link: dial timeout]";
   link.show_retry = true;
   return link;
 }

@@ -5,7 +5,7 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
 #include "common/Module.h"
@@ -88,7 +88,7 @@ private:
   Roe<void> SendMembershipDirectMessage(const std::string& peer_identity, GroupMembershipControlType control_type,
                                         const std::string& detail_json, const std::string& display);
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
-                                    const std::string& title, uint64_t roster_epoch);
+                                    const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
   Roe<void> FanOutMembershipEvent(const std::string& group_id, GroupMembershipControlType control_type,
                                   const std::string& detail_json, const std::string& display,

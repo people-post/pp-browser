@@ -36,10 +36,11 @@ struct CallMediaConnectHooks {
   /** Link settled for an attempt. */
   std::function<void(mesh::PeerLinkKind kind)> on_link_ready;
   /**
-   * Sequence ended on its own: ok = bundle MediaReady, error = attempts exhausted / unreachable.
-   * Runs as its own event; skipped when Abort / Start ran after the sequence ended. Never runs for Abort.
+   * Sequence ended on its own: ok = bundle MediaReady, error = the last attempt's code (attempts
+   * exhausted), or the peer reach's wrapped (`WrapReachFailure`). Runs as its own event; skipped
+   * when Abort / Start ran after the sequence ended. Never runs for Abort.
    */
-  std::function<void(Roe<void> result)> on_finished;
+  std::function<void(CallMediaRoe result)> on_finished;
 };
 
 /** An inbound call-media hello the transport is asking us to accept. */
@@ -81,6 +82,9 @@ struct CallMediaInboundPorts {
 class CallMediaConnectCoordinator : public Module {
 public:
   CallMediaConnectCoordinator(ICallMediaTransport& transport, mesh::PeerReachCoordinator& reach);
+
+  /** A peer reach that found no link, as this layer's code (CODED_FAILURE.md: wrap the child). */
+  static CallMediaFailure WrapReachFailure(const mesh::PeerReachCoordinator::Failure& child);
   ~CallMediaConnectCoordinator() override;
 
   CallMediaConnectCoordinator(const CallMediaConnectCoordinator&) = delete;
@@ -117,12 +121,12 @@ private:
   bool Current(uint64_t seq) const;
   bool MediaReady() const;
   void BeginAttempt(uint64_t seq, int attempt);
-  void OnLinkReady(uint64_t seq, int attempt, Roe<mesh::PeerReachResult> reached);
+  void OnLinkReady(uint64_t seq, int attempt, mesh::PeerReachCoordinator::ReachRoe reached);
   void OpenBundle(uint64_t seq, int attempt);
   void ArmWatchdog(uint64_t seq, int attempt);
   void OnWatchdog(uint64_t seq, int attempt);
-  void OnAttemptFinished(uint64_t seq, int attempt, Roe<void> connected);
-  void Finish(uint64_t seq, Roe<void> result);
+  void OnAttemptFinished(uint64_t seq, int attempt, CallMediaRoe connected);
+  void Finish(uint64_t seq, CallMediaRoe result);
   void CancelTimers();
   const char* Role() const;
   /** A hello parked until its key lands (or the session ends / the deadline passes). */

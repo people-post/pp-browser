@@ -17,6 +17,8 @@ struct CallActionsPorts {
   std::function<void()> refresh_pending_ring;
   /** Platform can encode/send video for a call (gates the "Video call" menu item). */
   std::function<bool()> video_call_available;
+  /** A group call goes on in this chat that this device may join (the call button reads "Join"). */
+  std::function<bool(const std::string& thread_id)> call_joinable;
 
   // PeoplePicker
   std::function<void(const std::vector<std::string>& identities)> invite_identities;

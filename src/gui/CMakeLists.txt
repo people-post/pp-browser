@@ -11,6 +11,8 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatDataModel.cpp
     chat/ChatThreadChrome.cpp
     chat/ChatTranscriptScroller.cpp
+    chat/DeliveryNoticeText.cpp
+    chat/TranscriptRml.cpp
     chat/ChatWidgetHost.cpp
     chat/ChatWidgetStateBuilder.cpp
     chat/WorkingSetController.cpp
@@ -38,6 +40,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellFeedback.cpp
     shell/ShellFeedbackPorts.cpp
     shell/ShellHost.cpp
+    shell/StatusbarText.cpp
     shell/ShellNavigationPorts.cpp
     shell/ShellPinGatePorts.cpp
     shell/ShellSetupPorts.cpp

@@ -5,6 +5,7 @@
 #include "domain/people/IdentityStore.h"
 #include "foundation/data/Config.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -31,12 +32,23 @@ void ApplyNodeHosting(mesh::MeshHostConfig& cfg, const MeshConfig& mesh, bool no
 std::vector<std::string> CollectNodeQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
                                                   const std::vector<mesh::MeshDirectoryNode>& directory_nodes = {});
 
-/** Amp DHT: participate (and publish relay records per capability) only as a node with `dht`. */
+/**
+ * Amp DHT: participate (and publish relay records per capability) only as a node with `dht`.
+ * `reach_held_down`: the reach record holds a peer down — the DHT neither dials nor keeps it
+ * (pp-cpp-mesh docs/DHT.md D5); none = it never does.
+ */
 void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
-                         std::vector<std::string> query_peer_keys);
+                         std::vector<std::string> query_peer_keys,
+                         std::function<bool(const std::string& peer_id)> reach_held_down = {});
 
 /** Amp directory: query `query_peer_keys`; host the directory twin only as a node. */
-void ConfigureNodeAmpDirectory(mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys);
+/**
+ * `choose_query_peers`: which of the keys a list asks (`MeshConnectivity::ChoosePeers`); none =
+ * every key.
+ */
+void ConfigureNodeAmpDirectory(
+    mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys,
+    std::function<std::vector<std::string>(const std::vector<std::string>&)> choose_query_peers = {});
 
 /** This node's directory row: identity, capabilities, advertised (then listen, then configured) addrs. */
 mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config);

@@ -22,6 +22,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "domain/people/MeshHopPolicy.h"
+#include "mesh/dht/AmpDhtProtocol.h"
 #include "mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
 
@@ -29,6 +30,7 @@
 #include <chrono>
 #include <deque>
 #include <map>
+#include <mutex>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -324,6 +326,75 @@ void ProductStackHarness::PublishAddressDisclosure() {
   address_disclosure_.Publish(BuildAddressDisclosurePolicy(app_config_.mesh.direct_connections, book));
 }
 
+Roe<void> ProductStackHarness::EnableDht(const std::string& bootstrap_ma, ByteVector signing_secret,
+                                         ByteVector signing_public, const int k, const int timeout_ms) {
+  mesh::AmpDhtProtocol* dht = host_ ? host_->AmpDht() : nullptr;
+  const std::string bootstrap_id = PeerIdFromMultiaddr(bootstrap_ma);
+  if (!dht || !host_->Amp() || bootstrap_id.empty()) {
+    return Error("dht: no Amp DHT, or the bootstrap has no PeerId");
+  }
+  if (auto reg = host_->Amp()->Links().RegisterEndpoint(bootstrap_id, bootstrap_ma); !reg) {
+    return reg.error();
+  }
+  mesh::AmpDhtProtocolConfig cfg;
+  cfg.local_peer_id = local_peer_id_;
+  cfg.listen_multiaddrs = {advertise_ma_};
+  cfg.device_signing_secret = std::move(signing_secret);
+  cfg.device_signing_public = std::move(signing_public);
+  cfg.query_peer_keys = {bootstrap_id};
+  cfg.participate = true;
+  if (k > 0) {
+    cfg.tunables.k_bucket_size = k;
+  }
+  host_->ConfigureAmpDht(std::move(cfg));
+  host_->RefreshAmpDhtHosting(true);
+  const bool published = PumpUntil(
+      [dht]() {
+        const mesh::DhtOpsStats stats = dht->Stats();
+        return stats.self_publishes > 0 && stats.last_publish_targets > 0;
+      },
+      timeout_ms);
+  if (!published) {
+    return Error("dht: the self record was not stored anywhere");
+  }
+  return {};
+}
+
+Roe<std::string> ProductStackHarness::FindPeerViaDht(const std::string& peer_id, const int timeout_ms) {
+  mesh::AmpDhtProtocol* dht = host_ ? host_->AmpDht() : nullptr;
+  if (!dht || !host_->Amp()) {
+    return Error("dht: not enabled");
+  }
+  auto found = std::make_shared<std::optional<mesh::AmpDhtProtocol::FindPeerRoe>>();
+  auto mu = std::make_shared<std::mutex>();
+  dht->FindPeer(peer_id, [found, mu](mesh::AmpDhtProtocol::FindPeerRoe result) {
+    std::lock_guard lock(*mu);
+    *found = std::move(result);
+  });
+  const bool settled = PumpUntil(
+      [found, mu]() {
+        std::lock_guard lock(*mu);
+        return found->has_value();
+      },
+      timeout_ms);
+  std::lock_guard lock(*mu);
+  if (!settled || !found->has_value()) {
+    return Error("dht: find_peer timed out");
+  }
+  if (!**found) {
+    return Error("dht: " + (**found).error().message);
+  }
+  const std::vector<std::string> ranked =
+      mesh::RankAmpDialMultiaddrs((**found)->record.multiaddrs, mesh::CollectAmpDialLocalContext());
+  if (ranked.empty()) {
+    return Error("dht: the record has no dialable address");
+  }
+  if (auto reg = host_->Amp()->Links().RegisterEndpoints(peer_id, ranked); !reg) {
+    return reg.error();
+  }
+  return ranked.front();
+}
+
 Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
                                                  const std::string& peer_id,
                                                  const std::string& multiaddr) {
@@ -380,13 +451,13 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
     return Error("circuit path: missing stack/peer");
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
-  std::optional<Roe<void>> result;
-  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  std::optional<mesh::CircuitReachRoe> result;
+  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [&](mesh::CircuitReachRoe value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }
   if (!*result) {
-    return result->error();
+    return Error(result->error().message);
   }
   if (host_ && host_->Amp() && !host_->Amp()->Links().IsConnected(peer_id)) {
     return Error("circuit path: peer not connected after Ensure");
@@ -515,7 +586,7 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
     control_sends_.fetch_add(1, std::memory_order_release);
     return Error(!chat_ ? "chat transport not started" : "missing amp dial key for call-control");
   }
-  chat_->SendEnvelopeAsync(dial_key, env, [sends = &control_sends_, id = msg.id](Roe<void> sent) {
+  chat_->SendEnvelopeAsync(dial_key, env, [sends = &control_sends_, id = msg.id](DirectSendRoe sent) {
     if (!sent) {
       std::cerr << "warning: call-control send failed message_id=" << id << " err=" << sent.error().message
                 << std::endl;
@@ -885,6 +956,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   bool min_rx_met = false;
   bool was_in_call = false;
+  std::chrono::steady_clock::time_point next_alone_check{};
   MediaFlowMonitor flow("answerer", rx_stall_ms_, rx_watch_ms_);
   PublisherRxGate gate("answerer", gate_streams_, gate_frames_, gate_window_ms_);
   auto gates_ok = [&]() {
@@ -935,6 +1007,16 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
       } else if (was_in_call && ui_->Phase() == CallPhase::Idle) {
         std::cout << "ok  product-stack answerer: offerer left rx_frames=" << RxAudioFrames() << "\n";
         return gates_ok() ? 0 : 1;
+      }
+      // V053: the last one in a group call stays in it — everyone else gone is the end of the hold.
+      if (was_in_call && std::chrono::steady_clock::now() >= next_alone_check) {
+        next_alone_check = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        if (auto joined = ui_->ListJoinedParticipants(call_id); joined && joined->size() <= 1) {
+          const uint64_t rx_before_leave = RxAudioFrames();  // the engine stops on Leave
+          LeaveAndFlush(call_id);
+          std::cout << "ok  product-stack answerer: the others left rx_frames=" << rx_before_leave << "\n";
+          return gates_ok() ? 0 : 1;
+        }
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));

@@ -13,7 +13,7 @@ How to resolve, edit, and verify machine/profile settings. Normative disk layout
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
-**Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
+**Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`; a dev build can force it at compile time with CMake `-DPP_BROWSER_DEV_SANDBOX=ON` / the `PP_BROWSER_DEV_SANDBOX` define, so a phone opened from its icon still uses QA — never for a release build) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
 
 Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/foundation/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
@@ -33,6 +33,8 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
 | `PP_NODE_CAP_DHT` | `capabilities.dht` | Same bool forms (Node DHT participation; default off) |
+| `PP_NODE_DHT_K` | `dht.k_bucket_size` | 1–20 (default 20). Labs only: a small k makes lookups walk |
+| `PP_NODE_LAB_DHT_FIND` | — | `1`: status HTTP serves `GET /dht/find?peer_id=…` (starts a lookup). Labs only — leave unset on a reachable status port |
 | `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |

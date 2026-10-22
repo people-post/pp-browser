@@ -53,11 +53,14 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_sto
  * - read under our stored session: the peer has it — a session we opened is confirmed;
  * - read under the envelope's key_init (ours could not read it, or we had none): the peer is on that
  *   session, and we move to it — unless both opened at once and ours, unconfirmed, has the lower id
- *   (the peer moves to ours instead; both sides decide the same).
+ *   (the peer moves to ours instead; both sides decide the same) — or unless the envelope is older
+ *   (its signed timestamp, the peer's clock) than one the peer already sent under our session: a late
+ *   or replayed opener does not roll the pair back.
  */
 Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
                                     uint32_t session_epoch, const AutoKeyRead& read,
-                                    const std::optional<std::string>& envelope_key_init_b64);
+                                    const std::optional<std::string>& envelope_key_init_b64,
+                                    int64_t envelope_timestamp_ms);
 
 /** Derive the pairwise session key used for CallMediaKey wrap (channel e2e_public). */
 Roe<ByteVector> DeriveE2ePublicSessionKey(const ByteVector& master_psk, uint32_t session_epoch);

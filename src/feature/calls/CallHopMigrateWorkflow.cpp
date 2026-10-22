@@ -1,6 +1,7 @@
 #include "feature/calls/CallHopMigrateWorkflow.h"
+#include "feature/calls/SfuKeyRing.h"
 
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/calls/CallHopPlan.h"
@@ -32,40 +33,13 @@
 namespace pbr {
 namespace {
 
-std::vector<mesh::MeshHopCandidate> PreferNamedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
-                                                  const std::string& hop_peer_id) {
-  if (hop_peer_id.empty() || ranked.empty()) {
-    return ranked;
-  }
-  const auto it = std::find_if(ranked.begin(), ranked.end(), [&](const mesh::MeshHopCandidate& c) {
-    return c.peer_id == hop_peer_id;
-  });
-  if (it == ranked.end() || it == ranked.begin()) {
-    return ranked;
-  }
-  mesh::MeshHopCandidate chosen = std::move(*it);
-  ranked.erase(it);
-  ranked.insert(ranked.begin(), std::move(chosen));
-  return ranked;
-}
-
 std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures) {
-  if (hop_failures.empty()) {
-    return Tr("call.error.no_media_relay_hop");
-  }
-  const bool all_payment =
-      std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
-        return f.find("payment_unavailable") != std::string::npos;
-      });
-  if (all_payment) {
+  const HopPickFailure failure = ClassifyHopPickFailures(hop_failures);
+  if (failure == HopPickFailure::AllPayment) {
     return Tr("call.error.payment_unavailable_media");
   }
   std::string msg = Tr("call.error.no_media_relay_hop");
-  const bool all_undialable =
-      std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
-        return f.find("hop not dialable") != std::string::npos;
-      });
-  if (!all_undialable) {
+  if (failure != HopPickFailure::AllUndialable) {
     return msg;
   }
   const std::string tip = Tr(PlatformUserHints::P2pNetworkHintKey(), {{"product", kProductName}});
@@ -156,33 +130,34 @@ bool CallHopMigrateWorkflow::PassSoftMigrateArmingGate(const std::string& call_i
   // V037/V048: SoftMigrate from Direct* enters Migrating only when N≥3 (or IceRecover / prefer).
   // Relay-cap nudge used expected_gen=0 and promoted 1:1 DirectConnecting → Migrating PreferLocal
   // while the peer stayed on circuit — dogfood "Connecting group media…" vs Connecting.
-  if (!arming_ports->IsBound()) {
+  SoftMigrateArmingInput in;
+  in.arming_bound = arming_ports->IsBound();
+  if (in.arming_bound) {
+    if (auto joined = sessions_.CountJoined(call_id)) {
+      in.n_joined = *joined;
+    }
+    in.trigger = trigger;
+    in.prefer_named = !prefer_hop_peer_id.empty();
+    in.soft_migrate_may_arm = arming_ports->soft_migrate_may_arm && arming_ports->soft_migrate_may_arm();
+    in.migrate_ops_allowed = arming_ports->migrate_ops_allowed && arming_ports->migrate_ops_allowed();
+  }
+  const char* arming_name =
+      in.arming_bound && arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "?";
+  switch (DecideSoftMigrateArming(in)) {
+  case SoftMigrateArming::Proceed:
     return true;
-  }
-  size_t n_joined = 0;
-  if (auto joined = sessions_.CountJoined(call_id)) {
-    n_joined = *joined;
-  }
-  const bool n_requires_hop = CallMediaTopology::ShouldUseMediaRelay(n_joined);
-  const bool ice_or_prefer = trigger == SoftMigrateTrigger::IceRecover || !prefer_hop_peer_id.empty();
-  const bool may_arm = arming_ports->soft_migrate_may_arm && arming_ports->soft_migrate_may_arm();
-  const bool hop_armed = arming_ports->migrate_ops_allowed && arming_ports->migrate_ops_allowed();
-  const char* arming_name = arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "?";
-  if (!n_requires_hop && !ice_or_prefer && may_arm) {
-    log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
-               << " n_joined=" << n_joined << " arming=" << arming_name
-               << " trigger=" << static_cast<int>(trigger);
-    on_done(Roe<void>());
-    return false;
-  }
-  if (may_arm) {
+  case SoftMigrateArming::ArmAndProceed:
     ops_.apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
     if (arming_ports->report_progress) {
       arming_ports->report_progress(CallHopPlannerPhase::Migrating, call_id);
     }
     return true;
-  }
-  if (!hop_armed) {
+  case SoftMigrateArming::StayDirect:
+    log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
+               << " n_joined=" << in.n_joined << " arming=" << arming_name << " trigger=" << static_cast<int>(trigger);
+    on_done(Roe<void>());
+    return false;
+  case SoftMigrateArming::NotArmed:
     log().info << "MaybeSoftMigrateToSfuAsync skipped (hop not armed) call_id=" << call_id
                << " arming=" << arming_name;
     on_done(Error("hop path not armed"));
@@ -281,20 +256,17 @@ SoftMigrateAction CallHopMigrateWorkflow::DecideFirstSoftMigrate(const HopPick& 
   decision_in.trigger = trigger;
   decision_in.already_on_sfu = IsLiveOnHopFor(pick.call_id);
 
-  SoftMigrateAction action = DecideSoftMigrate(decision_in);
-  if (action == SoftMigrateAction::WaitForAttach && PreferLocalHopAllowed(pick.call_id, pick.local_identity)) {
-    // PreferLocal durable Node hosts media_relay when Link + LAN confirmed (V035).
-    // Sticky-initiator WaitForAttach must not block PreferLocal SoftMigrate on LAN.
-    log().info << "SoftMigrate PreferLocal Node overrides WaitForAttach → PickHop call_id=" << pick.call_id;
-    action = SoftMigrateAction::PickHop;
-  } else if (action == SoftMigrateAction::PickHop && !relay_deps_->prefer_local_as_hop &&
-             HasDurableMediaRelayHop()) {
-    // Phones must not PickHop when a durable media_relay Node is available — quote hits
-    // prefer-contacts stranger refuse before PreferLocal session exists.
-    log().info << "SoftMigrate defer PickHop to durable media_relay Node call_id=" << pick.call_id;
-    action = SoftMigrateAction::WaitForAttach;
+  const SoftMigrateAction who_picks = DecideSoftMigrate(decision_in);
+  HopHostingFacts hosting;
+  hosting.hosts_hops = relay_deps_->prefer_local_as_hop;
+  if (who_picks == SoftMigrateAction::WaitForAttach) {
+    hosting.prefer_local_allowed = PreferLocalHopAllowed(pick.call_id, pick.local_identity);
+  } else if (who_picks == SoftMigrateAction::PickHop && !hosting.hosts_hops) {
+    hosting.durable_hop_known = HasDurableMediaRelayHop();
   }
-  log().info << "SoftMigrate decide action=" << static_cast<int>(action) << " trigger=" << static_cast<int>(trigger)
+  const SoftMigrateAction action = AdjustForHopHosting(who_picks, hosting);
+  log().info << "SoftMigrate decide action=" << static_cast<int>(action) << " who_picks=" << static_cast<int>(who_picks)
+             << " trigger=" << static_cast<int>(trigger)
              << " joined=" << decision_in.joined_identities.size()
              << " initiator=" << decision_in.initiator_identity << " local=" << pick.local_identity
              << " call_id=" << pick.call_id;
@@ -334,51 +306,49 @@ bool CallHopMigrateWorkflow::HasDurableMediaRelayHop() const {
 
 bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id) {
   const std::string& call_id = pick.call_id;
-  // V035 FSM: same hop → re-fan-out only — never Detach/reattach (hop-hint storms).
-  const std::string current_hop = !flight_.attached_hop_peer_id.empty() ? flight_.attached_hop_peer_id
-                                  : pick.session && pick.session->sfu_hint ? *pick.session->sfu_hint
-                                                                           : std::string();
-  if (!current_hop.empty() && (prefer_hop_peer_id.empty() || prefer_hop_peer_id == current_hop)) {
-    const bool same = prefer_hop_peer_id == current_hop;
-    log().info << "SoftMigrate re-pick no-op: " << (same ? "already on prefer" : "keep attached")
-               << " hop=" << current_hop << " call_id=" << call_id;
-    ops_.fan_out_sfu_attach_for_hop(call_id, current_hop, pick.local_identity);
+  RepickOnHopInput in;
+  in.current_hop = !flight_.attached_hop_peer_id.empty()            ? flight_.attached_hop_peer_id
+                   : pick.session && pick.session->sfu_hint ? *pick.session->sfu_hint
+                                                            : std::string();
+  in.prefer_hop = prefer_hop_peer_id;
+  if (auto pid = relay_deps_->relay->LocalPeerIdBase58()) {
+    in.local_peer_id = *pid;
+  }
+  in.local_hop_attached = relay_deps_->relay->IsLocalHopAttached();
+  in.prefer_dialable = relay_deps_->dial && !prefer_hop_peer_id.empty() &&
+                       (relay_deps_->dial->IsDialable(prefer_hop_peer_id) ||
+                        !ops_.resolve_hop_multiaddr(prefer_hop_peer_id).empty());
+  const RepickOnHopAction action = DecideRepickOnHop(in);
+  switch (action) {
+  case RepickOnHopAction::StayOnNamedHop:
+  case RepickOnHopAction::KeepCurrentHop:
+    log().info << "SoftMigrate re-pick no-op: "
+               << (action == RepickOnHopAction::StayOnNamedHop ? "already on prefer" : "keep attached")
+               << " hop=" << in.current_hop << " call_id=" << call_id;
+    ops_.fan_out_sfu_attach_for_hop(call_id, in.current_hop, pick.local_identity);
     ops_.sync_sfu_subscriptions(call_id);
-    if (same) {
+    if (action == RepickOnHopAction::StayOnNamedHop) {
       host_.ClearMediaActivity();
       host_.NotifyRingChanged();
     }
     pick.on_done(Roe<void>());
     return true;
-  }
-  // Guest hint re-pick: leave PreferLocal only when prefer is a different shared hop.
-  std::string local_pid;
-  if (auto pid = relay_deps_->relay->LocalPeerIdBase58()) {
-    local_pid = *pid;
-  }
-  const bool prefer_self = !prefer_hop_peer_id.empty() && !local_pid.empty() && prefer_hop_peer_id == local_pid;
-  const bool prefer_other = !prefer_hop_peer_id.empty() && !local_pid.empty() && prefer_hop_peer_id != local_pid;
-  if ((prefer_self || relay_deps_->relay->IsLocalHopAttached()) && !prefer_other) {
+  case RepickOnHopAction::KeepPreferLocal:
     log().info << "SoftMigrate re-pick no-op: keep PreferLocal call_id=" << call_id << " prefer=" << prefer_hop_peer_id;
     ops_.sync_sfu_subscriptions(call_id);
     pick.on_done(Error("keep_prefer_local"));
     return true;
-  }
-  if (prefer_other && relay_deps_->relay->IsLocalHopAttached()) {
-    log().info << "SoftMigrate re-pick leave PreferLocal for shared hop=" << prefer_hop_peer_id
-               << " call_id=" << call_id;
-  }
-  const bool prefer_dialable = relay_deps_->dial && !prefer_hop_peer_id.empty() &&
-                               (relay_deps_->dial->IsDialable(prefer_hop_peer_id) ||
-                                !ops_.resolve_hop_multiaddr(prefer_hop_peer_id).empty());
-  if (!prefer_dialable) {
+  case RepickOnHopAction::KeepNotDialable:
     log().warning << "SoftMigrate re-pick aborted: prefer hop not dialable, keep current SFU hop="
                   << prefer_hop_peer_id;
     ops_.sync_sfu_subscriptions(call_id);
     pick.on_done(Roe<void>());
     return true;
+  case RepickOnHopAction::Detach:
+    break;
   }
-  log().info << "SoftMigrate re-pick detach call_id=" << call_id << " prefer=" << prefer_hop_peer_id;
+  log().info << "SoftMigrate re-pick detach call_id=" << call_id << " prefer=" << prefer_hop_peer_id
+             << " leaving_prefer_local=" << (in.local_hop_attached ? 1 : 0);
   host_.SetMediaActivity(Tr("call.status.switching_media_path"));
   host_.NotifyRingChanged();
   relay_deps_->relay->Detach();
@@ -413,21 +383,9 @@ std::vector<mesh::MeshHopCandidate> CallHopMigrateWorkflow::RankHopsForSoftMigra
   if (!prefer_hop_peer_id.empty()) {
     return PreferNamedHopFirst(std::move(ranked), prefer_hop_peer_id);
   }
-  // V050: the hop planned from the invite list at StartCall goes first — invitees were told about
-  // it, so it stays a candidate even if the listing changed since.
   if (pick.session && pick.session->planned_hop && !pick.session->planned_hop->peer_id.empty()) {
-    const CallPlannedHop& planned = *pick.session->planned_hop;
-    const bool listed = std::any_of(ranked.begin(), ranked.end(),
-                                    [&](const mesh::MeshHopCandidate& c) { return c.peer_id == planned.peer_id; });
-    if (!listed && !planned.multiaddr.empty()) {
-      mesh::MeshHopCandidate hop;
-      hop.peer_id = planned.peer_id;
-      hop.multiaddr = planned.multiaddr;
-      hop.dialable = true;
-      ranked.insert(ranked.begin(), std::move(hop));
-    }
-    ranked = PreferNamedHopFirst(std::move(ranked), planned.peer_id);
-    log().info << "SoftMigrate planned hop first=" << planned.peer_id << " call_id=" << pick.call_id;
+    ranked = PlannedHopFirst(std::move(ranked), *pick.session->planned_hop);
+    log().info << "SoftMigrate planned hop first=" << pick.session->planned_hop->peer_id << " call_id=" << pick.call_id;
   }
   return ranked;
 }
@@ -453,7 +411,7 @@ void CallHopMigrateWorkflow::TryPickHop(std::shared_ptr<HopPick> pick, size_t in
     // Edge: the reach answers on another thread — it only reports; the pick goes on as the next event.
     const uint64_t id = steps_.Store([this, pick, index]() { AttachPickedHop(pick, index); });
     relay_deps_->circuit_reach->TryEnsureHopReachableAsync(
-        hop.peer_id, [outbox = outbox_, id](Roe<void>) { outbox.Emit(hop_migrate_event::Continue{id}); });
+        hop.peer_id, [outbox = outbox_, id](mesh::CircuitReachRoe) { outbox.Emit(hop_migrate_event::Continue{id}); });
     return;
   }
   AttachPickedHop(std::move(pick), index);
@@ -603,6 +561,8 @@ struct CallHopMigrateWorkflow::HopAttach {
   uint64_t cancel_gen_at_start = 0;
   ByteVector media_key;
   uint32_t media_epoch = 1;
+  /** The attach's keys: the epoch it starts on, then each rotation (V003) — see SfuKeyRing. */
+  std::shared_ptr<SfuKeyRing> keys = std::make_shared<SfuKeyRing>();
   /** Inbound frames are dropped until the attach is committed. */
   std::shared_ptr<std::atomic<bool>> frames_ready = std::make_shared<std::atomic<bool>>(false);
 };
@@ -728,8 +688,9 @@ Roe<void> CallHopMigrateWorkflow::LoadHopMediaKey(HopAttach& at) const {
     at.media_epoch = session->value().media_epoch;
   }
   if (!media_keys_) {
-    log().warning << "AttachLocalToSfu without media key store — plaintext SFU (test/incomplete wiring)";
-    return {};
+    // Fail closed: no key store means no media key — never a plaintext SFU attach.
+    log().warning << "AttachLocalToSfu without media key store call_id=" << at.call_id;
+    return Error("call media key required for SFU");
   }
   if (auto key = media_keys_->LoadEpochKey(at.call_id, at.media_epoch); key && key->has_value()) {
     at.media_key = **key;
@@ -738,12 +699,27 @@ Roe<void> CallHopMigrateWorkflow::LoadHopMediaKey(HopAttach& at) const {
     log().warning << "AttachLocalToSfu missing media key call_id=" << at.call_id << " epoch=" << at.media_epoch;
     return Error("call media key required for SFU");
   }
+  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs());
   return {};
 }
 
+void CallHopMigrateWorkflow::InstallMediaKey(const std::string& call_id) {
+  if (!live_keys_ || live_keys_call_id_ != call_id || !media_keys_) {
+    return;
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return;
+  }
+  const uint32_t epoch = (*session)->media_epoch;
+  if (auto key = media_keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
+    live_keys_->Install(epoch, **key, util::NowUnixMs());
+    log().info << "SFU media key now epoch=" << epoch << " call_id=" << call_id;
+  }
+}
+
 std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSink(const HopAttach& at) {
-  return [this, ready = at.frames_ready, call_id = at.call_id, media_epoch = at.media_epoch,
-          media_key = at.media_key](mesh::MediaDataFrame frame) {
+  return [this, ready = at.frames_ready, call_id = at.call_id, keys = at.keys](mesh::MediaDataFrame frame) {
     if (!ready->load(std::memory_order_acquire)) {
       return;
     }
@@ -752,13 +728,21 @@ std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSi
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
     pkt.mark = frame.mark;
-    if (media_key.empty()) {
+    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
+    if (open_with.empty()) {
       pkt.payload = std::move(frame.payload);
       media_.OnSfuPacket(pkt);
       return;
     }
-    auto plain = DecryptCallMediaSfuFrame(media_key, call_id, media_epoch, frame.stream_id,
-                                          static_cast<uint8_t>(frame.channel_id), frame.payload);
+    // The newest epoch first; the previous one while the others switch to it.
+    Roe<CallMediaDecodedFrame> plain = Error("no key opened the frame");
+    for (const SfuKeyRing::Key& key : open_with) {
+      plain = DecryptCallMediaSfuFrame(key.key, call_id, key.epoch, frame.stream_id,
+                                       static_cast<uint8_t>(frame.channel_id), frame.payload);
+      if (plain) {
+        break;
+      }
+    }
     if (!plain) {
       static std::atomic<int> decrypt_fail_log{0};
       const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
@@ -812,6 +796,16 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
 
 Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
   const std::string& call_id = at.call_id;
+  live_keys_ = at.keys;  // a rotation from now on reaches this attach's frames
+  live_keys_call_id_ = call_id;
+  // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
+  // join request — V053) names the hop the call is on, not only the picker's.
+  if (auto session = sessions_.LoadSession(call_id);
+      session && session->has_value() && !at.attach.hop_peer_id.empty() &&
+      (*session)->sfu_hint.value_or("") != at.attach.hop_peer_id) {
+    (*session)->sfu_hint = at.attach.hop_peer_id;
+    (void)sessions_.UpsertSession(**session);
+  }
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
   host_.note_media_attempted(call_id);
@@ -926,8 +920,8 @@ bool CallHopMigrateWorkflow::OwnsHopAttachFlight(const HopAttach& at) const {
 }
 
 CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach& at) {
-  return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id, media_epoch = at.media_epoch,
-          media_key = at.media_key](const CallMediaEngine::SfuPacket& pkt) {
+  return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id,
+          keys = at.keys](const CallMediaEngine::SfuPacket& pkt) {
     if (!relay_deps_ || !relay_deps_->relay) {
       return;
     }
@@ -937,8 +931,9 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
     frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
     frame.seq = pkt.seq;
     frame.mark = pkt.mark;
-    if (!media_key.empty()) {
-      auto sealed = EncryptCallMediaSfuFrame(media_key, call_id, media_epoch, pub, pkt.seq, pkt.mark,
+    const SfuKeyRing::Key key = keys->Current();  // the newest epoch (V003)
+    if (!key.key.empty()) {
+      auto sealed = EncryptCallMediaSfuFrame(key.key, call_id, key.epoch, pub, pkt.seq, pkt.mark,
                                              static_cast<uint8_t>(pkt.channel_id), pkt.payload);
       if (!sealed) {
         media_.NoteOutboundDrop();
@@ -1056,9 +1051,9 @@ uint64_t CallHopMigrateWorkflow::StoreAttach(HopAttach at, std::function<void(Ro
   return id;
 }
 
-std::function<void(Roe<mesh::MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
+std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
   // Edge: the relay answers on its I/O thread — it only reports.
-  return [outbox = outbox_, id](Roe<mesh::MediaRelayAttached> attached) {
+  return [outbox = outbox_, id](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
     hop_migrate_event::RelayAttached answer;
     answer.id = id;
     answer.ok = static_cast<bool>(attached);
@@ -1217,6 +1212,8 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
   }
   // The engine is already live: frames flow as soon as the relay session is back.
   at.frames_ready->store(true, std::memory_order_release);
+  live_keys_ = at.keys;
+  live_keys_call_id_ = call_id;
   log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ops_.resolve_hop_multiaddr(at.attach.hop_peer_id);

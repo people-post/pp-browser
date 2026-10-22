@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS chat_targets (
   last_rotation_id TEXT,
   auto_key_session_id TEXT,
   auto_key_init_pending TEXT,
+  auto_key_peer_heard_ms INTEGER,
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);

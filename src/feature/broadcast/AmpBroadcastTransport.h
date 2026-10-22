@@ -23,7 +23,7 @@
 namespace pbr {
 
 /**
- * Serving side of `/pp-browser/rpc/broadcast/1.0.0` over AMP ChannelSession (Spine F): publisher
+ * Serving side of `/pp/rpc/broadcast/1.0.0` over AMP ChannelSession (Spine F): publisher
  * ticket mint, hop ladder admit/redirect, relay slot-win. The asking side is
  * `feature/broadcast/AmpBroadcastRpcClient` (media-client-layers l4c). Domain codecs/ladder stay
  * Amp-free.

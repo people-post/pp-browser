@@ -1,5 +1,7 @@
 #include "feature/conversations/AmpChatBlobTransport.h"
 
+#include "domain/messaging/PeerRequestAuth.h"
+
 #include "mesh/l4/shared/InboundReply.h"
 
 #include "foundation/crypto/CryptoConstants.h"
@@ -93,13 +95,38 @@ Roe<void> ParsePushAckBody(const std::vector<uint8_t>& body) {
   return {};
 }
 
+/** The one refusal a peer sees (the reason is logged here, not told to the asker). */
+constexpr const char* kChatBlobRefused = "Not available";
+
+/** Sign a peer request as this device's account, for this device's link (PeerRequestAuth). */
+Roe<ChatBlobRequest> SignedForSend(ChatBlobRequest request, IdentityStore& identity, const std::string& peer_override) {
+  auto local = identity.Get();
+  if (!local) {
+    return local.error();
+  }
+  auto peer_id = peer_override.empty() ? PeerRequestAuth::DevicePeerId(local->public_key_b64) : Roe<std::string>(peer_override);
+  if (!peer_id) {
+    return peer_id.error();
+  }
+  if (auto signed_ok = PeerRequestAuth::Sign(request, local->account_id, *peer_id, util::NowUnixMs(),
+                                             [&identity](const std::vector<uint8_t>& bytes) {
+                                               return identity.SignBytes(bytes);
+                                             });
+      !signed_ok) {
+    return signed_ok.error();
+  }
+  return request;
+}
+
 } // namespace
 
 struct AmpChatBlobTransport::Impl {
-  Impl(IThreadStore& store_in, IdentityStore& identity_in) : store(store_in), identity(identity_in) {}
+  Impl(IThreadStore& store_in, IdentityStore& identity_in, IPeerSigningKeyResolver& signing_keys_in)
+      : store(store_in), identity(identity_in), signing_keys(signing_keys_in) {}
 
   IThreadStore& store;
   IdentityStore& identity;
+  IPeerSigningKeyResolver& signing_keys;
   std::string profile_data_dir;
   std::string profile_id;
   ByteVector dek;
@@ -133,7 +160,7 @@ struct AmpChatBlobTransport::Impl {
     policy.read_timeout = kChatBlobOperationTimeout;
     *session_holder = links->BindChannel(
         remote_peer_id, channel_id, policy,
-        [this, session_holder, pending_push](Roe<std::vector<uint8_t>> frame) {
+        [this, session_holder, pending_push, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
@@ -159,7 +186,7 @@ struct AmpChatBlobTransport::Impl {
 
                       // Keep the channel open for the worker (InboundReply.h); `reply` closes it.
                       auto reply = mesh::MakeInboundReply(session, post_io);
-                      RunWorker(post_worker, [this, reply, request = *request]() mutable {
+                      RunWorker(post_worker, [this, reply, request = *request, remote_peer_id]() mutable {
                         if (stopped.load(std::memory_order_acquire)) {
                           reply->Close();
                           return;
@@ -181,13 +208,15 @@ struct AmpChatBlobTransport::Impl {
                             return LoadPinnedPublicCasBytes(profile_data_dir, profile_id, content_id);
                           };
                         }
+                        const ChatBlobRequester requester{remote_peer_id, &signing_keys, util::NowUnixMs()};
                         auto ciphertext = ChatBlobResponder::ServeFetch(
-                            store, request, local_identity->relay_user_id, profile_data_dir, content);
+                            store, request, local_identity->relay_user_id, profile_data_dir, content, requester);
                         if (ciphertext) {
                           reply->Send(std::move(*ciphertext));
                         } else {
-                          const std::string ack_json =
-                              DumpJson(ChatBlobAckToJson(false, ciphertext.error().message));
+                          // One answer to the peer whatever the reason (no existence oracle); the reason stays here.
+                          logging::getLogger("AmpChatBlobTransport").info << "chat-blob fetch refused: " << ciphertext.error().message;
+                          const std::string ack_json = DumpJson(ChatBlobAckToJson(false, kChatBlobRefused));
                           reply->Send(JsonToBody(ack_json));
                         }
                         reply->Close();
@@ -198,22 +227,26 @@ struct AmpChatBlobTransport::Impl {
                     const ChatBlobRequest request = **pending_push;
                     pending_push->reset();
                     auto reply = mesh::MakeInboundReply(session, post_io);
-                    RunWorker(post_worker, [this, reply, request, ciphertext = std::move(body)]() mutable {
+                    RunWorker(post_worker, [this, reply, request, remote_peer_id, ciphertext = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
                         reply->Close();
                         return;
                       }
                       auto local_identity = identity.Get();
                       if (!local_identity) {
-                        const std::string ack_json = DumpJson(ChatBlobAckToJson(false, "Local relay identity missing"));
+                        const std::string ack_json = DumpJson(ChatBlobAckToJson(false, kChatBlobRefused));
                         reply->Send(JsonToBody(ack_json));
                         reply->Close();
                         return;
                       }
+                      const ChatBlobRequester requester{remote_peer_id, &signing_keys, util::NowUnixMs()};
                       auto pushed = ChatBlobResponder::ServePush(store, request, local_identity->relay_user_id,
-                                                                 profile_data_dir, ciphertext);
+                                                                 profile_data_dir, ciphertext, requester);
+                      if (!pushed) {
+                        logging::getLogger("AmpChatBlobTransport").info << "chat-blob push refused: " << pushed.error().message;
+                      }
                       const std::string ack_json = pushed ? DumpJson(ChatBlobAckToJson(true))
-                                                          : DumpJson(ChatBlobAckToJson(false, pushed.error().message));
+                                                          : DumpJson(ChatBlobAckToJson(false, kChatBlobRefused));
                       reply->Send(JsonToBody(ack_json));
                       reply->Close();
                     });
@@ -223,9 +256,9 @@ struct AmpChatBlobTransport::Impl {
 };
 
 AmpChatBlobTransport::AmpChatBlobTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
-                                       IdentityStore& identity, WorkerPost post_worker, IoPost post_io,
-                                       IoAfter post_after)
-    : impl_(std::make_unique<Impl>(store, identity)), links_(links), io_pump_(std::move(io_pump)),
+                                       IdentityStore& identity, IPeerSigningKeyResolver& signing_keys,
+                                       WorkerPost post_worker, IoPost post_io, IoAfter post_after)
+    : impl_(std::make_unique<Impl>(store, identity, signing_keys)), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
       post_after_(std::move(post_after)) {
   impl_->links = &links_;
@@ -330,7 +363,12 @@ void AmpChatBlobTransport::FetchChatBlobAsync(const ChatBlobRequest& request,
   };
 
   const std::string peer_key = request.peer_identity_value;
-  const std::string request_json = DumpJson(ChatBlobRequestToJson(request));
+  auto signed_request = SignedForSend(request, impl_->identity, local_peer_id_override_);
+  if (!signed_request) {
+    finish(signed_request.error());
+    return;
+  }
+  const std::string request_json = DumpJson(ChatBlobRequestToJson(*signed_request));
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session_holder, deadline,
@@ -452,7 +490,12 @@ void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
   };
 
   const std::string peer_key = request.peer_identity_value;
-  const std::string request_json = DumpJson(ChatBlobRequestToJson(request));
+  auto signed_request = SignedForSend(request, impl_->identity, local_peer_id_override_);
+  if (!signed_request) {
+    finish(signed_request.error());
+    return;
+  }
+  const std::string request_json = DumpJson(ChatBlobRequestToJson(*signed_request));
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(

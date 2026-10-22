@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
-#include "feature/conversations/AiImageRef.h"
+#include "domain/messaging/AiImageRef.h"
 #include "foundation/platform/AiImagePrep.h"
 
 #include <string>

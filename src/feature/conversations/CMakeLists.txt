@@ -7,7 +7,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
-    GroupInviteGate.cpp
     GroupMembershipWorkflow.cpp
     InboxController.cpp
     AmpDirectChatTransport.cpp
@@ -15,7 +14,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     AmpChatBlobTransport.cpp
     MessageRouter.cpp
     MessagingTools.cpp
-    ModelFacingJson.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp
@@ -24,15 +22,11 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
     MeshConnectivityWiring.cpp
-    PeerDisplayResolver.cpp
     ProfileIconClient.cpp
     ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
-    LinkDeviceCoordinator.cpp
-    LocalAccountBackup.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
-    RelayReceivePipeline.cpp
     AttachmentContent.cpp
     MeshNetworkReaction.cpp
   PUBLIC_LIBS

@@ -265,7 +265,7 @@ On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expan
 | Left cluster | **Brief** · **Direct** · divider · **Help** · **Inbound** · **Load** pills (`circuit N` / `media N` when helping and count > 0) · sparse label. Click opens hybrid network-status popover. |
 | Right | `statusbar_activity` — ephemeral busy text (Thinking…, tool labels, Preparing…) via `ShellHost::SetActivity` |
 
-Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Brief+Direct; Node adds Help+Inbound; Load only when count > 0. Circuit/media aggregates from `RelayRuntimeStats` (`CircuitRelayService` / `MediaRelayService`).
+Data comes from `MessagingShellPorts::statusbar_cluster` (facts, polled in `ShellHost::RefreshStatusbarCluster`), worded by `BuildStatusbarClusterSnapshot` (`gui/shell/StatusbarText`). Adaptive: Client shows Brief+Direct; Node adds Help+Inbound; Load only when count > 0. Circuit/media aggregates from `RelayRuntimeStats` (`CircuitRelayService` / `MediaRelayService`).
 
 **Click → hybrid popover (s2):** Left cluster is a hit target (`toggle_statusbar_popover`). Opens `#shell-statusbar-popover` above the bar (inspect Brief/Direct/reachability summary, help echo, UPnP when helping, mesh traffic — links, relays parked on (or none, when behind NAT), up / down rate, round trip, resend % — helper load aggregates plus the rate relayed for others, last libp2p error) with **Test again** and **Open Network settings…**. No capability toggles. Escape / scrim dismiss.
 

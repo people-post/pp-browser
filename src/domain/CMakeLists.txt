@@ -29,6 +29,7 @@ if(NOT PP_BROWSER_HEADLESS)
     pp_domain_ai
     pp_domain_ai_conversation
     pp_domain_ai_mcp
+    pp_domain_ai_tools
     pp_domain_media
     pp_domain_ui
   )

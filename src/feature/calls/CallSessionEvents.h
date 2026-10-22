@@ -164,13 +164,13 @@ struct KeyPollTick {};
 struct LinkReady {
   uint64_t seq = 0;
   int attempt = 0;
-  Roe<mesh::PeerReachResult> reached;
+  mesh::PeerReachCoordinator::ReachRoe reached;
 };
 /** Attempt `attempt`'s bundle open finished. */
 struct AttemptDone {
   uint64_t seq = 0;
   int attempt = 0;
-  Roe<void> connected;
+  CallMediaRoe connected;
 };
 /** Attempt `attempt` ran past its watchdog. */
 struct WatchdogDue {
@@ -185,7 +185,7 @@ struct RetryDue {
 /** Sequence `seq` ended: hand its result to the owner (never inside the step that ended it). */
 struct Finished {
   uint64_t seq = 0;
-  Roe<void> result;
+  CallMediaRoe result;
 };
 
 } // namespace connect_event
@@ -223,6 +223,7 @@ struct BundleConnected {
 struct BundleFailed {
   std::string call_id;
   std::string reason;
+  CallMediaErr code = CallMediaErr::Generic;
 };
 /** k4: the call lost its last path (transport I/O). */
 struct PathLost {

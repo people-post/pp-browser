@@ -1573,7 +1573,7 @@ void ShellHost::RefreshStatusbarPopover() {
   }
   StatusbarPopoverSnapshot snap;
   if (shell_messaging_ports_.statusbar_popover) {
-    snap = shell_messaging_ports_.statusbar_popover();
+    snap = BuildStatusbarPopoverSnapshot(shell_messaging_ports_.statusbar_popover());
   }
   if (ApplyStatusbarPopover(snap)) {
     DirtyStatusbarPopover();
@@ -1677,7 +1677,7 @@ void ShellHost::RefreshStatusbarCluster() {
   }
   StatusbarClusterSnapshot snap;
   if (shell_messaging_ports_.statusbar_cluster) {
-    snap = shell_messaging_ports_.statusbar_cluster();
+    snap = BuildStatusbarClusterSnapshot(shell_messaging_ports_.statusbar_cluster());
   }
   if (ApplyStatusbarCluster(snap)) {
     DirtyStatusChrome();

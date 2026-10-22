@@ -3,15 +3,27 @@
 pp_browser_add_domain_library(pp_domain_calls
   SOURCES
     CallControlCodec.cpp
+    CallControlFamily.cpp
+    CallDirectPathLogic.cpp
     CallHopAttachLogic.cpp
+    CallHopJoinLogic.cpp
     CallHopPlan.cpp
     CallLifecycleTypes.cpp
+    CallMediaBundleLogic.cpp
+    CallMediaControlCodec.cpp
+    CallMediaKeyExchange.cpp
     CallMediaKeyStore.cpp
+    CallMediaSeat.cpp
+    CallMediaSessionLogic.cpp
     CallMobility.cpp
+    CallPathMobility.cpp
     CallPathPolicy.cpp
     CallSessionLogic.cpp
+    CallSessionQueries.cpp
     CallSessionStore.cpp
+    CallSummaryLogic.cpp
     CallTypes.cpp
+    LiveCall.cpp
     PeerCapsLogic.cpp
     SoftMigrateLogic.cpp
   PUBLIC_LIBS

@@ -27,7 +27,8 @@ public:
   StatusHttpServer& operator=(const StatusHttpServer&) = delete;
 
   /** Start accept loop on a background thread. Binds whatever host the operator set. */
-  Roe<void> Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth, SnapshotFn snapshot);
+  Roe<void> Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth, SnapshotFn snapshot,
+                  StatusHttpActions actions = {});
 
   void Stop();
 

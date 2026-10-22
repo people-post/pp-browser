@@ -1,9 +1,9 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/AttachmentContent.h"
-#include "feature/conversations/DeleteForEveryone.h"
+#include "domain/messaging/DeleteForEveryone.h"
 #include "feature/node/AppRuntimeMeshExecutors.h"
 
-#include "feature/conversations/LocalAccountBackup.h"
+#include "domain/people/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
 #include "domain/pricing/PaymentPromiseLifecycle.h"
@@ -15,7 +15,8 @@
 #include "common/ValueJson.h"
 
 #include "domain/people/ContactReachability.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
+#include "feature/conversations/GroupInviteStanding.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
@@ -69,6 +70,7 @@
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/host/MeshPorts.h"
 #include "mesh/reachability/NatTraversal.h"
+#include "mesh/reach/PeerReachSelect.h"
 #include "mesh/reachability/Reachability.h"
 #include "common/StartupTiming.h"
 #include "common/Utilities.h"
@@ -552,31 +554,16 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer
     if (lan_mdns_contact_peer_ids_.find(peer.peer_id_base58) == lan_mdns_contact_peer_ids_.end()) {
       return;
     }
-    auto ma = mesh::LanMdnsDiscovery::BuildMultiaddr(peer);
-    auto adp = mesh::LanMdnsDiscovery::BuildAdpMultiaddr(peer);
-    if (!ma && !adp) {
+    const auto adp = mesh::LanMdnsDiscovery::BuildAdpMultiaddr(peer);
+    if (!adp || !mesh_messaging_) {
       return;
     }
-    const std::string probe_ma = adp ? *adp : (ma ? *ma : "");
-    const std::string mdns_ip = mesh::IpHostFromMultiaddrPrefix(probe_ma);
-    if (mesh::IsLikelyUndialableLanIpv4(mdns_ip)) {
-      log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << probe_ma;
+    if (mesh::IsLikelyUndialableLanIpv4(mesh::IpHostFromMultiaddrPrefix(*adp))) {
+      log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << *adp;
       return;
     }
-    if (!(mesh_messaging_ && (adp || ma))) {
-      return;
-    }
-    log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58
-               << " ma=" << (ma ? *ma : "") << " adp=" << (adp ? *adp : "");
-    if (mesh_messaging_) {
-      if (ma) {
-        mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
-      }
-      if (adp) {
-        log().info << "LAN mDNS amp dial peer=" << peer.peer_id_base58 << " ma=" << *adp;
-        mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
-      }
-    }
+    log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58 << " ma=" << *adp;
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
     if (contacts_) {
       if (auto listed = contacts_->List(); listed) {
         for (const Contact& contact : *listed) {
@@ -589,14 +576,7 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer
               target.peer_identity_value == peer.peer_id_base58) {
             continue;
           }
-          if (mesh_messaging_) {
-            if (ma) {
-              mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
-            }
-            if (auto adp2 = mesh::LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
-              mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp2);
-            }
-          }
+          mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp);
           log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
                         << " dial_key=" << target.peer_identity_value;
         }
@@ -885,8 +865,14 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   }
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
+  // The DHT's liveness is the reach record's (pp-cpp-mesh docs/DHT.md D5). mesh_ (and its DHT)
+  // goes before mesh_connectivity_.
   ConfigureNodeAmpDht(*mesh_, *identity_, config_.mesh, ResolveMeshRole(config_.mesh) == MeshRole::Node,
-                      CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes));
+                      CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes),
+                      [connectivity = mesh_connectivity_.get()](const std::string& peer_id) {
+                        return connectivity &&
+                               mesh::ReachHeldDown(connectivity->ReachFacts(peer_id), mesh::PeerReachRecord::NowMs());
+                      });
 }
 
 namespace {
@@ -937,7 +923,13 @@ void ConversationsHub::ConfigureAmpDirectoryProtocol() {
     query_keys.push_back(key);
   }
 
-  ConfigureNodeAmpDirectory(*mesh_, host_directory, std::move(query_keys));
+  // A refresh asks a couple of providers that are up or answered lately — not every one, and not
+  // one the mesh found gone (pp-cpp-mesh docs/PEER_REACH.md, § 5).
+  constexpr size_t kDirectoryPeersPerList = 2;
+  ConfigureNodeAmpDirectory(*mesh_, host_directory, std::move(query_keys),
+                            [connectivity = mesh_connectivity_.get()](const std::vector<std::string>& keys) {
+                              return connectivity ? connectivity->ChoosePeers(keys, kDirectoryPeersPerList) : keys;
+                            });
 
   if (host_directory) {
     mesh_->AmpDirectory()->SetNodesProvider([this, mesh_cfg]() {
@@ -1082,9 +1074,9 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       return opened.error();
     }
   }
-  group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
+  group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
-  peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
+  peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
   inbox_->SetSystemControls(&system_controls_);
   directory_shadows_->SetOnUpdated([this]() {
@@ -2523,93 +2515,6 @@ ConversationsHub::PolicyPrefs ConversationsHub::ProjectPolicy(const ProfilePrefe
 ConversationsHub::NotificationPrefs ConversationsHub::ProjectNotifications(const ProfilePreferences& prefs) {
   return {.show_notifications = prefs.show_notifications};
 }
-
-Roe<mesh::CircuitRelayBridgeResult> ConversationsHub::RequestCircuitBridgePreferred(const std::string& target_peer_id,
-                                                                          const std::string& target_multiaddr,
-                                                                          int timeout_ms) {
-  if (target_peer_id.empty() && target_multiaddr.empty()) {
-    return Error("missing circuit bridge target");
-  }
-  mesh::CircuitClientCoordinator* amp_circuit = mesh_ ? mesh_->AmpCircuitClient() : nullptr;
-  if (!amp_circuit || !amp_circuit->IsStarted() || !mesh_ || !mesh_->Amp()) {
-    return Error("Amp circuit-relay required");
-  }
-  std::vector<Contact> contacts;
-  if (contacts_) {
-    if (auto listed = contacts_->List()) {
-      contacts = std::move(*listed);
-    }
-  }
-  MeshConfig mesh_cfg = config_.mesh;
-  NormalizeMeshConfig(mesh_cfg);
-  const bool include_seeds = !mesh_ || mesh_->Reachability().Snapshot().signals.seed_dial_ok;
-  std::vector<mesh::MeshDirectoryNode> directory_nodes;
-  if (mesh_directory_cache_) {
-    directory_nodes = mesh_directory_cache_->Snapshot();
-  }
-  std::vector<mesh::MeshDirectoryNode> dht_nodes;
-  if (mesh_ && mesh_->AmpDht()) {
-    dht_nodes = mesh::MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
-  }
-  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
-                                 mesh_cfg.prefer_contacts_for_routing, include_seeds);
-  if (mesh_cfg.trusted_relays_only) {  // privacy T4
-    hops = KeepTrustedRelays(std::move(hops), TrustedRelayPeerIds(contacts, mesh_cfg.bootstrap_peers));
-  }
-  if (hops.empty()) {
-    return Error("no circuit hop candidates");
-  }
-
-  mesh::CircuitBridgeTarget target;
-  target.target_peer_id = target_peer_id;
-  target.target_multiaddr = target_multiaddr;
-
-  mesh::CircuitRelayBridgeResult last;
-  last.error = "all hops failed";
-
-  auto circuit_deps = mesh_->CircuitDeps();
-  if (!circuit_deps) {
-    return Error("Amp circuit deps unavailable");
-  }
-  mesh::IChatPeerLinks& links = circuit_deps->links;
-  for (const mesh::MeshHopCandidate& hop : hops) {
-    const std::string key = hop.peer_id;
-    if (!target.target_peer_id.empty() && key == target.target_peer_id) {
-      continue;
-    }
-    if (!hop.multiaddr.empty()) {
-      (void)links.RegisterEndpoint(key, hop.multiaddr);
-    } else if (auto ma = links.PreferredMultiaddr(key)) {
-      (void)links.RegisterEndpoint(key, *ma);
-    }
-    if (!links.GetLinkSnapshot(key).has_endpoint) {
-      last.error = "hop not dialable: " + key;
-      continue;
-    }
-    SettledWait<mesh::CircuitTunnelBridgeResult> wait;
-    (void)amp_circuit->StartBridge(key, target, {}, {},
-                                   [wait](Roe<mesh::CircuitTunnelBridgeResult> result) {
-                                     wait.Finish(std::move(result));
-                                   },
-                                   timeout_ms);
-    auto bridged =
-        wait.Wait(std::chrono::milliseconds(timeout_ms + 500), Error("amp circuit bridge timed out"));
-    if (!bridged) {
-      last.error = bridged.error().message;
-      continue;
-    }
-    if (!bridged->ok) {
-      last.error = bridged->error.empty() ? "amp circuit bridge failed" : bridged->error;
-      continue;
-    }
-    mesh::CircuitRelayBridgeResult ok;
-    ok.ok = true;
-    ok.resolved_multiaddr = bridged->resolved_multiaddr;
-    return ok;
-  }
-  return last;
-}
-
 
 void ConversationsHub::SuspendMeshColdPeers() {
   SyncMobileEphemeralListen();

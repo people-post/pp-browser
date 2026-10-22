@@ -37,6 +37,22 @@ TEST(PskRotateCodecTest, EncodeDecodeRoundTrip) {
   EXPECT_EQ(decoded->key_init_hash, detail.key_init_hash);
 }
 
+TEST(PskRotateCodecTest, RejectsEpochPastUint32) {
+  auto json = PskRotateCodec::EncodePayloadJson(ValidDetail());
+  ASSERT_TRUE(static_cast<bool>(json)) << json.error().message;
+  auto payload = TryParseObject(*json);
+  ASSERT_TRUE(payload.has_value());
+  auto detail = TryParseObject(payload->getString("detail").value_or(""));
+  ASSERT_TRUE(detail.has_value());
+  detail->set("new_epoch", (int64_t{1} << 32) + 2);  // would read as epoch 2 if truncated
+  payload->set("detail", DumpJson(*detail));
+
+  ThreadMessage message;
+  message.content_type = ChatContentType::System;
+  message.payload_json = DumpJson(*payload);
+  EXPECT_FALSE(static_cast<bool>(PskRotateCodec::Decode(message)));
+}
+
 TEST(PskRotateCodecTest, RejectsObjectDetail) {
   ThreadMessage message;
   message.content_type = ChatContentType::System;

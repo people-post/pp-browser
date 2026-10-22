@@ -15,7 +15,7 @@
 namespace pbr {
 
 /**
- * Client side of `/pp-browser/rpc/broadcast/1.0.0` (media-client-layers l4c): a viewer asks the
+ * Client side of `/pp/rpc/broadcast/1.0.0` (media-client-layers l4c): a viewer asks the
  * publisher for a ticket and a hop for admission; a relay asks its parent for a slot. One request,
  * one response, on a fresh channel. The serving side (publisher tickets, hop admission) is
  * `AmpBroadcastTransport` in conversations until l5 / relay work moves it.

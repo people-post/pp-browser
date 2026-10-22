@@ -77,16 +77,21 @@ CallSessionState CallSessionLogic::TransitionOnRemoteJoined(const CallSessionSta
   return CallSessionState::Active;
 }
 
+bool CallSessionLogic::IsGroupCall(const CallSession& session, const size_t offered_participants) {
+  return (session.origin_group_id && !session.origin_group_id->empty()) || offered_participants > 2;
+}
+
 CallSessionState CallSessionLogic::TransitionOnLeave(const CallSessionState current,
-                                                     const size_t remaining_joined) {
+                                                     const size_t remaining_joined, const bool group) {
   if (current == CallSessionState::Ended) {
     return CallSessionState::Ended;
   }
   if (remaining_joined == 0) {
     return CallSessionState::Ended;
   }
-  // Active 1:1 (or last-remote leave): do not leave a sole survivor in-call with a dead peer.
-  if (current == CallSessionState::Active && remaining_joined == 1) {
+  // Active 1:1 (or last-remote leave): do not leave a sole survivor in-call with a dead peer. A group
+  // call goes on with whoever is left, alone too (V053).
+  if (!group && current == CallSessionState::Active && remaining_joined == 1) {
     return CallSessionState::Ended;
   }
   return current == CallSessionState::Ringing ? CallSessionState::Ringing : CallSessionState::Active;
@@ -171,6 +176,50 @@ bool ThreadMatchesActiveCall(const Thread& thread, const CallSession& session,
     }
   }
   return false;
+}
+
+std::optional<int64_t> CallSessionLogic::RosterJoinStamp(const std::vector<CallRosterEntry>& participants,
+                                                         const std::string& identity) {
+  for (const CallRosterEntry& entry : participants) {
+    if (entry.identity == identity && entry.joined_at) {
+      return entry.joined_at;
+    }
+  }
+  return std::nullopt;
+}
+
+int64_t CallSessionLogic::LocalJoinStampFallback(const CallSession& session) {
+  return session.created_at > 0 ? session.created_at : 1;
+}
+
+size_t CallSessionLogic::CountDistinctInvitees(const std::vector<std::string>& invitees,
+                                               const std::string& local_identity) {
+  std::vector<std::string> seen;
+  for (const std::string& identity : invitees) {
+    if (!identity.empty() && identity != local_identity &&
+        std::find(seen.begin(), seen.end(), identity) == seen.end()) {
+      seen.push_back(identity);
+    }
+  }
+  return seen.size();
+}
+
+void CallSessionLogic::AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants,
+                                               const std::vector<std::string>& co_invitees,
+                                               const std::string& local_identity) {
+  for (const std::string& identity : co_invitees) {
+    if (identity.empty() || identity == local_identity) {
+      continue;
+    }
+    const bool listed = std::any_of(participants.begin(), participants.end(),
+                                    [&identity](const CallRosterEntry& e) { return e.identity == identity; });
+    if (!listed) {
+      CallRosterEntry entry;
+      entry.identity = identity;
+      entry.state = CallParticipantState::Invited;
+      participants.push_back(std::move(entry));
+    }
+  }
 }
 
 } // namespace pbr

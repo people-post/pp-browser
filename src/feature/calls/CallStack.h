@@ -14,15 +14,14 @@
 #include "domain/calls/CallPathPolicy.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPlane.h"
-#include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/CallPathMobility.h"
+#include "domain/calls/CallMediaSeat.h"
+#include "domain/calls/CallPathMobility.h"
 #include "domain/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
 #include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
-#include "feature/calls/CallsExecutor.h"
 #include "feature/calls/CallsLoop.h"
-#include "feature/calls/CallsThread.h"
+#include "foundation/runtime/RuntimeOwnerExecutor.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "common/chat/SystemControl.h"
@@ -225,7 +224,8 @@ private:
   void OnCallStateChangedOnOwner();
 
   /** The calls owner's executor: every call object gets it from here (THREADING.md § Owner runners). */
-  OwnerExecutor& executor_ = CallsOwnerExecutor();
+  /** The calls owner: the media-sessions owner thread (UI without one); hooks publish the UI state. */
+  RuntimeOwnerExecutor executor_{OwnerThreadId::MediaSessions};
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
@@ -248,7 +248,7 @@ private:
   void AfterMobilityEvent(bool local_class_changed);
   void NotifyPathPolicyChangedOnOwner(const std::string& call_id);
   SharedPorts<CallUiState> ui_state_;
-  CallsThread::HookId publish_hook_ = 0;
+  RuntimeOwnerExecutor::HookId publish_hook_ = 0;
   std::atomic<int> call_state_binds_{0};
   std::function<void()> on_chrome_refresh_;
   bool want_ephemeral_listen_ = false;

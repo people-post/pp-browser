@@ -20,7 +20,7 @@ using tcp = asio::ip::tcp;
 constexpr size_t kMaxRequestBytes = 16 * 1024;
 
 void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig auth,
-                      StatusHttpServer::SnapshotFn snapshot) {
+                      StatusHttpServer::SnapshotFn snapshot, StatusHttpActions actions) {
   auto buf = std::make_shared<std::string>();
   buf->reserve(1024);
   auto chunk = std::make_shared<std::array<char, 1024>>();
@@ -29,6 +29,7 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
     std::shared_ptr<tcp::socket> socket;
     StatusHttpAuthConfig auth;
     StatusHttpServer::SnapshotFn snapshot;
+    StatusHttpActions actions;
     std::shared_ptr<std::string> buf;
     std::shared_ptr<std::array<char, 1024>> chunk;
 
@@ -60,7 +61,7 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
               }
               StatusHttpResponse response;
               try {
-                response = HandleStatusHttpRequest(*req, self->auth, snap);
+                response = HandleStatusHttpRequest(*req, self->auth, snap, self->actions);
               } catch (...) {
                 response = StatusHttpInternalError();  // never let a request unwind io.run()
               }
@@ -86,6 +87,7 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
   reader->socket = std::move(socket);
   reader->auth = std::move(auth);
   reader->snapshot = std::move(snapshot);
+  reader->actions = std::move(actions);
   reader->buf = std::move(buf);
   reader->chunk = std::move(chunk);
   reader->Start();
@@ -98,6 +100,7 @@ struct StatusHttpServer::Impl {
   std::unique_ptr<tcp::acceptor> acceptor;
   StatusHttpAuthConfig auth;
   SnapshotFn snapshot;
+  StatusHttpActions actions;
   std::string bound;
   std::atomic<bool> stopping{false};
 
@@ -111,7 +114,7 @@ struct StatusHttpServer::Impl {
         return;
       }
       if (!ec) {
-        HandleConnection(socket, auth, snapshot);
+        HandleConnection(socket, auth, snapshot, actions);
       } else if (ec != asio::error::operation_aborted) {
         logging::getLogger("pp-node").warning << "status HTTP accept: " << ec.message();
       }
@@ -134,7 +137,7 @@ std::string StatusHttpServer::BoundEndpoint() const {
 }
 
 Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth,
-                                  SnapshotFn snapshot) {
+                                  SnapshotFn snapshot, StatusHttpActions actions) {
   if (running_.load()) {
     return Error("status HTTP server already running");
   }
@@ -145,6 +148,7 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
   auto impl = std::make_unique<Impl>();
   impl->auth = std::move(auth);
   impl->snapshot = std::move(snapshot);
+  impl->actions = std::move(actions);
 
   std::error_code ec;
   const auto address = asio::ip::make_address(bind.host, ec);

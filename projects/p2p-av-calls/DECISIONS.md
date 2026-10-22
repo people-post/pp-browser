@@ -1284,3 +1284,23 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Rationale:** The lifecycle duplicated what the workflow already tracked on `LiveCall` (accepting, joined, ended) and kept a second, drifting copy of the active / accepting call ids, synced through two port sets. Projecting removes the drift and the ports.
 
 **Cross-link:** tests `CallLifecycleTest.*` (projection), `AcceptClickedDedupesWhileInFlight`, `ADuplicateResumeThatFailsLeavesTheResumedCallInCall`.
+
+## V053 — Group calls behave like Teams / Signal: join while it lasts, stay when alone, removal ends your part
+
+**Date:** 2026-10-22  
+**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged  
+**Decision:**
+
+| Rule | Detail |
+|------|--------|
+| Join while it lasts | Anyone a group call was offered to — declined, missed (ring expired, app closed), or left — can join it while it goes on. The joiner sends `call_join_request {call_id}` to every participant it knows of; the earliest joiner still in the call answers with a fresh `CallInvite` (current roster, the hop in use, the media key) — the mid-call invite path — and the joiner accepts it without ringing. One answerer keeps two invites from racing; if none comes within half the 15 s wait, the request goes again with `any: true` and anyone in the call answers. Nobody answering within 15 s means the call is over. |
+| Who may ask | The sender must hold a participant row for the call (it was offered to them); the call must be a group call (`origin_group_id`) this device is still in. Strangers and 1:1 calls: dropped, as before. |
+| Stay when alone | In a group call the last one left stays in it ("waiting for others"); the call ends when the last participant leaves. After 5 min alone it leaves by itself (a call left running by mistake). Leaving with others still in no longer ends it for them. 1:1: the other side leaving ends the call, as before. |
+| The end reaches everyone | The last participant's `call_ended` goes to everyone the call was offered to (declined / missed / left too), so no one keeps a Join for a call that is over. |
+| Call = Join | The call button on a group whose call this device may join joins it instead of placing a second call; the button reads "Join" meanwhile. |
+| One call per group | Two members calling the group at the same moment (each before the other's invite arrives): as two people calling each other — both keep the lower call id while their own call has nobody else in it; the other's starter answers it and drops its own, whose `call_ended` stops its ring everywhere. |
+| Removal | Who is no longer in the group (removed, or left it) is no longer in its call. Each device in the call reads the group roster it already keeps: someone it saw in the group and no longer does is taken as gone (as a `call_leave`: the key rotates without them, V003); the device of the one removed leaves the call. Only members may ask to join or see Join. Nothing new on the wire: a removed device that never hears of its removal is still cut off by everyone else. |
+
+**Rationale:** In a group, declining is "not now", not "never" — people drop out and back in. Ending a group call for the last person, and with it everyone's way back in, makes the call die the moment the second-to-last leaves. Removal is usually for a reason; keeping the removed person in the call (and its key) surprises the owner. The join handshake reuses the mid-call invite instead of letting a stale view of the call pick a media path: the answering participant knows the roster and the hop.
+
+**Cross-link:** app lab `pp_app_lab.py` group scenarios; CALLS.md § Group calls.

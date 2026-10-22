@@ -28,7 +28,6 @@ inline constexpr const char* kNodeIdentityMlKemAccountInfo = "pp-node/ml-kem-acc
 inline constexpr size_t kReplayWindowSize = 32;
 inline constexpr uint32_t kMaxRetiredPskEpochs = 8;
 
-inline constexpr size_t kMaxE2ePlaintextBytes = 128 * 1024;
 inline constexpr size_t kMaxPskBundleBytes = 4 * 1024;
 /** Quiet auto-`rotate_psk` on public `device_pair` (E027). */
 inline constexpr uint32_t kPublicPskAutoRotateMsgCount = 100;

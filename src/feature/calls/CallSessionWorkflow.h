@@ -8,15 +8,18 @@
 #include "common/thread/ThreadRecordTypes.h"
 #include "domain/calls/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
-#include "feature/calls/CallMediaKeyExchange.h"
+#include "domain/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "feature/calls/LiveCall.h"
+#include "feature/calls/LiveCallMedia.h"
 
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -55,8 +58,12 @@ public:
     std::function<std::optional<std::string>(const std::string& inviter, const std::optional<std::string>& group_id)>
         resolve_call_thread;
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
+    /** Who is in a group now; none when unknown. Unset: group membership is not checked. */
+    std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
     std::function<void()> sync_inbox_from_wake;
     std::function<void()> clear_media_activity;
+    /** What the call chrome shows the user went wrong (e.g. "That call has ended"). */
+    std::function<void(std::string message)> set_last_error;
 
     bool IsBound() const { return static_cast<bool>(local_relay_identity); }
   };
@@ -125,7 +132,8 @@ public:
   };
 
   CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
-                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls);
+                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls,
+                      LiveCallMedia& call_media);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
@@ -142,6 +150,14 @@ public:
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
+  /**
+   * V053: join group call `call_id` this device dropped out of (declined, missed, left): ask everyone
+   * it was offered to; one in the call answers with an invite, accepted without ringing. Unanswered
+   * within kJoinRequestTimeoutMs: the call is over.
+   */
+  Roe<CallSession> JoinCall(const std::string& call_id);
+  /** V053: the group call this device may join from `thread_id` (a group's thread), if any. */
+  std::optional<CallSession> JoinableCallInThread(const std::string& thread_id) const;
   /**
    * Accept a pending invite: checks → circuit park (async) → CallAccept + Joined + media arm.
    * `on_done` runs once, on the calls owner (inline when there is no park port).
@@ -198,8 +214,34 @@ public:
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
+  Roe<void> HandleInboundJoinRequest(const std::string& detail_json, const std::string& sender_identity,
+                                     const std::string& local_identity);
 
 private:
+  bool IsGroupCall(const CallSession& session) const;
+  /** Every participant the call was offered to but this device (any state), one by one. */
+  void SendToEveryoneOffered(const std::string& call_id, CallControlType type, const std::string& detail_json,
+                             const std::string& display, const std::string& local_identity);
+  /** The call is over: those last known in it are marked left (it is no longer joinable). */
+  void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
+  /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
+  void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
+  /** Whether `identity` is in the group now (true when membership is not checked). */
+  bool InGroup(const std::string& group_id, const std::string& identity) const;
+  /**
+   * V053: who is no longer in the group is no longer in its call — they are taken as gone (the
+   * key rotates without them); this device, if it is the one, leaves. Only who this device saw in
+   * the group drops: a member it has not heard of yet is not taken for a removed one.
+   */
+  void DropWhoLeftTheGroup(const std::string& local_identity, int64_t now);
+  /** `identity` is no longer in the call (left, or out of its group). */
+  Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity,
+                            const std::string& local_identity);
+  /** V053: a group call's invite that arrived too late to ring: recorded as missed, still joinable. */
+  void RecordMissedGroupCall(const CallInviteDetail& invite, const std::string& sender_identity,
+                             const std::string& local_identity, int64_t created_at);
+
   /**
    * `co_invitees`: everyone StartCall is inviting now. Their rows are written only after each
    * invite is on the wire (V045), so the roster snapshot lists them as Invited explicitly — every
@@ -243,7 +285,8 @@ private:
   // --- HandleInboundInvite steps ---
   /**
    * This device's own unanswered 1:1 call to `peer`, when `peer` just invited us to another one:
-   * both called each other at once. Both sides keep the call with the lower id (the same choice on
+   * both called each other at once. For a group's invite: our call of that group nobody has joined
+   * yet (V053: one call per group). Both sides keep the call with the lower id (the same choice on
    * each side, no message needed): the loser's side answers the winner and drops its own.
    */
   std::optional<CallSession> CrossedCall(const CallInviteDetail& invite, const std::string& peer,
@@ -299,6 +342,7 @@ private:
   CallInitiationBilling& billing_;
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
+  LiveCallMedia& call_media_;
   HostPorts host_;
   OwnerOutbox<WorkflowEvent> outbox_;
   /** Accepts waiting on their circuit park. */
@@ -310,6 +354,15 @@ private:
   bool pending_accept_voice_only_ = false;
   std::string pending_answerer_kick_call_id_;
   std::string pending_answerer_kick_peer_;
+  /** V053: calls this device asked to join → until when it waits for the invite. */
+  std::unordered_map<std::string, int64_t> join_requested_until_ms_;
+  /** V053: join requests re-sent to anyone in the call (no answer from the earliest joiner). */
+  std::unordered_set<std::string> join_any_retry_sent_;
+  /** V053: group calls this device is alone in → since when. */
+  std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** V053: the group's members at the last check, per group call this device is in or rung for. */
+  std::unordered_map<std::string, std::set<std::string>> group_members_seen_;
+  int64_t group_members_checked_ms_ = 0;
 };
 
 } // namespace pbr

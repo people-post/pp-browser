@@ -1,5 +1,6 @@
+#include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallsThread.h"
+#include "foundation/runtime/RuntimeOwnerExecutor.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/product/tests/calls_loopback_outbox.h"
 #include "feature/product/tests/calls_on_owner.h"
@@ -32,6 +33,12 @@
 
 namespace pbr {
 namespace {
+
+/** The calls owner as CallStack holds it (here: none, so the test thread stands in). */
+RuntimeOwnerExecutor& CallsOwner() {
+  static RuntimeOwnerExecutor executor{OwnerThreadId::MediaSessions};
+  return executor;
+}
 
 ByteVector TestDek() {
   ByteVector dek(kDataEncryptionKeySize);
@@ -74,9 +81,10 @@ public:
     if (!live.Find(call_id)) {
       live.AdmitPlaced(call_id, {"account:peer"});
     }
-    return live.Media(call_id);
+    return call_media.Media(call_id);
   }
   LiveCalls live;
+  LiveCallMedia call_media{live};
   Roe<void> P2pSendDirect(const std::string& /*peer*/, CallControlType /*type*/,
                           const std::string& /*detail*/, const std::string& /*display*/) override {
     return {};
@@ -128,14 +136,14 @@ public:
   }
 
   void EnsureAssociation(const std::string& peer_key,
-                         std::function<void(Roe<void>)> on_done) override {
+                         mesh::IChatPeerLinks::LinkCb on_done) override {
     ++ensure_association_calls;
     last_ensure_peer = peer_key;
     if (on_done) {
       if (ensure_result) {
         on_done({});
       } else {
-        on_done(Error(ensure_error));
+        on_done(mesh::IChatPeerLinks::Failure::Of(mesh::IChatPeerLinks::Err::Generic, ensure_error));
       }
     }
   }
@@ -190,20 +198,22 @@ public:
 
 class FakeCircuitHopReach final : public mesh::ICircuitHopReach {
 public:
-  Roe<void> TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
+  mesh::CircuitReachRoe TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
 
-  Roe<void> TryEnsurePeerReachable(const std::string& peer_key) override {
+  mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string& peer_key) override {
     ++call_media_ensure_calls;
     last_peer = peer_key;
     if (dial) {
       dial->connected[peer_key] = true;
       dial->circuit_hops[peer_key] = true;
     }
-    return call_media_result ? Roe<void>() : Error(call_media_error);
+    return call_media_result ? mesh::CircuitReachRoe()
+                             : mesh::CircuitReachRoe(mesh::CircuitReachFailure::Of(mesh::CircuitReachErr::NotConnected,
+                                                                                   call_media_error));
   }
 
   void TryEnsurePeerReachableAsync(const std::string& peer_key,
-                                        std::function<void(Roe<void>)> on_done,
+                                        mesh::CircuitReachDone on_done,
                                         bool /*allow_circuit*/ = true) override {
     // Runs on the reach's lane (PeerReachCoordinator) while the test thread reads the fields.
     ++call_media_ensure_calls;
@@ -216,7 +226,9 @@ public:
       dial->circuit_hops[peer_key] = true;
     }
     if (on_done) {
-      on_done(call_media_result ? Roe<void>() : Error(call_media_error));
+      on_done(call_media_result ? mesh::CircuitReachRoe()
+                                : mesh::CircuitReachRoe(mesh::CircuitReachFailure::Of(
+                                      mesh::CircuitReachErr::NotConnected, call_media_error)));
     }
   }
 
@@ -231,14 +243,16 @@ public:
   bool call_media_result = true;
   std::string call_media_error = "circuit hop reach failed";
 
-  void TryUpgradeToDirectAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done) override {
+  void TryUpgradeToDirectAsync(const std::string& peer_key, mesh::CircuitReachDone on_done) override {
     {
       std::lock_guard lock(mu);
       last_upgrade_peer = peer_key;
     }
     ++upgrade_calls;
     if (on_done) {
-      on_done(upgrade_result.load() ? Roe<void>() : Error("upgrade punch failed"));
+      on_done(upgrade_result.load() ? mesh::CircuitReachRoe()
+                                    : mesh::CircuitReachRoe(mesh::CircuitReachFailure::Of(
+                                          mesh::CircuitReachErr::PunchFailed, "upgrade punch failed")));
     }
   }
   std::string LastUpgradePeer() {
@@ -302,7 +316,7 @@ public:
     ++detach_calls;
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+                    std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
     if (hang_first_n_connects > 0) {
@@ -312,7 +326,7 @@ public:
     if (fail_first_n_connects > 0) {
       --fail_first_n_connects;
       if (on_done) {
-        on_done(Error(connect_fail_message));
+        on_done(CallMediaFailure::Of(connect_fail_code, connect_fail_message));
       }
       return;
     }
@@ -326,10 +340,10 @@ public:
       on_done({});
     }
   }
-  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+  CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     int timeout_ms) override {
-    Roe<void> out;
-    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
+    CallMediaRoe out;
+    ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
   Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
@@ -352,6 +366,8 @@ public:
   int hang_first_n_connects = 0;
   std::string connect_fail_message =
       "amp link: transport failed [adp: adp udp: sendto dst=192.168.0.103:54410 errno=64]";
+  /** A send on the link failed: the link is dead (B39 — the bridge drops it and redials). */
+  CallMediaErr connect_fail_code = CallMediaErr::StaleLink;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
   test::InboundHelloFake inbound;
@@ -373,7 +389,7 @@ protected:
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeMediaHost>();
-    host_->live.BindMediaResources(media_.get(), nullptr);
+    host_->call_media.BindMediaResources(media_.get(), nullptr);
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitHopReach>();
     circuit_->dial = dial_.get();
@@ -950,7 +966,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutResta
   const int detaches = transport_->detach_calls;
   const int ensures = circuit_->call_media_ensure_calls.load();
 
-  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  CallsOwner().RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
   for (int i = 0; i < 400 && transport_->migrate_calls.load() == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -984,7 +1000,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCirc
   AppRuntime::RunUIAndOwnerTasks();
   const int detaches = transport_->detach_calls;
 
-  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  CallsOwner().RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
   for (int i = 0; i < 400 && transport_->connect_async_calls < 2; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1058,7 +1074,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) 
   }
   ASSERT_EQ(circuit_->upgrade_calls.load(), 3);
 
-  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  CallsOwner().RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
   for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 4; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1097,7 +1113,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCall
   ASSERT_EQ(transport_->migrate_calls.load(), 1) << "the first re-anchor failed; the next is a minute away";
   ASSERT_EQ(host_->live.Status(), CallMediaStatus::Reconnecting);
 
-  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  CallsOwner().RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
   for (int i = 0; i < 200 && host_->live.Status() != CallMediaStatus::DirectLive; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1133,7 +1149,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
       << "nor may the transport move the call onto a direct link that happens to be up";
 
   remote = MobilityClass::Stationary;  // the peer's caps_update
-  CallsThread::RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
+  CallsOwner().RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
   for (int i = 0; i < 200 && circuit_->upgrade_calls.load() == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1226,7 +1242,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   ASSERT_TRUE(media_->IsActive());
-  CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(mesh::PeerLinkKind::Relayed); });  // reach loop: circuit
+  CallsOwner().RunAndWait([&] { bridge_->SetReachKindForTest(mesh::PeerLinkKind::Relayed); });  // reach loop: circuit
   for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));

@@ -7,16 +7,17 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/SyncStateCodec.h"
-#include "domain/net/OrgBackendClientsImpl.h"
+#include "domain/net/testing/MockOrgBackendClients.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "domain/messaging/GroupRosterStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "common/MeshAlias.h"
 
@@ -48,9 +49,9 @@ public:
         roster_store(store.ProfileDbPath()),
         contacts(data_dir.string()),
         shadows(directory),
-        labels(contacts, shadows),
+        labels(contacts, PeerDisplaySourcesFrom(shadows)),
         inbox(store, contacts, labels, &shadows),
-        receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
+        receive_pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store),
         sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
@@ -67,7 +68,7 @@ public:
     PeerSigningKeyRecord record;
     record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
-    key_store.Put("account", "account:peer", record);
+    key_store.PutUncheckedForTest("account", "account:peer", record);
 
     Contact peer_contact;
     peer_contact.id = "contact-peer";

@@ -1403,6 +1403,19 @@ select selectbox option:hover {
   background-color: #4b5563;
 }
 
+.chat-header-call-btn--join {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.chat-header-call-btn--join:hover {
+  background-color: #22c55e;
+}
+
+.chat-header-call-btn--join svg {
+  image-color: #ffffff;
+}
+
 .chat-header-call-btn svg,
 .chat-header-more-btn svg {
   image-color: #f9fafb;

@@ -10,12 +10,18 @@
 
 namespace pbr {
 
-/** Owner-side: pending invite → active member (requires pending row + matching invitee). */
-Roe<void> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
-                                    const std::string& member_identity);
-/** Owner-side: clear pending invite (invitee was never an active encrypt target). */
+/**
+ * Owner-side: an invite this device issued (`outbound`), for `group_id`, which `local_identity`
+ * owns, accepted by its invitee before it expired → active member, roster epoch +1. True when the
+ * member was added now; false when the invite was already accepted (a re-delivered accept adds no
+ * one — a member removed since, or one who left, needs a new invite).
+ */
+Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
+                                    const std::string& member_identity, const std::string& group_id,
+                                    const std::string& local_identity, int64_t now_ms);
+/** Owner-side: clear a pending invite this device issued (invitee was never an encrypt target). */
 Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
-                                     const std::string& member_identity);
+                                     const std::string& member_identity, const std::string& group_id);
 
 /**
  * Apply owner-signed member_joined. Actor must be current owner; roster_epoch must be > local.
@@ -45,5 +51,13 @@ Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershi
 Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
                                      const GroupMembershipCodec::MemberRemovedPayload& payload,
                                      const std::string& actor_identity);
+
+/**
+ * Apply an owner-signed group_renamed: the actor must be the owner, and the rename must be newer
+ * than the title we hold (`title_version`) — a late or re-delivered rename does not bring an old
+ * title back. True when the title changed.
+ */
+Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
+                                    const std::string& actor_identity);
 
 } // namespace pbr

@@ -71,9 +71,13 @@ protected:
       return peer == kPublisher ? std::optional<ByteVector>(verify_key_ ? *verify_key_ : publisher_keys_.public_key)
                                 : std::nullopt;
     };
-    p.reach_peer = [this](const std::string& peer, std::function<void(Roe<void>)> done) {
+    p.reach_peer = [this](const std::string& peer, std::function<void(mesh::PeerReachCoordinator::ReachRoe)> done) {
       reached_.push_back(peer);
-      done(publisher_reachable_ ? Roe<void>() : Roe<void>(Error("no link")));
+      if (publisher_reachable_) {
+        done(mesh::PeerReachResult{});
+      } else {
+        done(mesh::PeerReachCoordinator::Failure::Of(mesh::PeerReachCoordinator::Err::NotConnected, "no link"));
+      }
     };
     p.request_ticket = [this](const std::string& /*publisher*/, const BroadcastTicketRequest& req,
                               std::function<void(Roe<BroadcastTicketResponse>)> done) {

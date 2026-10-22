@@ -263,6 +263,14 @@ select selectbox option {
   height: 18dp;
 }
 
+/* V053: a group call goes on in this chat — the call button joins it. */
+.chat-header-call-btn--join {
+  width: auto;
+  padding: 0 14dp;
+  gap: 6dp;
+  font-weight: bold;
+}
+
 .shell-profile-btn {
   position: relative;
   flex-shrink: 0;
@@ -921,6 +929,36 @@ select selectbox option {
 .chat-long-list-meta {
   margin-bottom: 4dp;
   font-size: 13dp;
+}
+
+/* Meta row: host (one line, cut with an ellipsis when the row is narrow) · time (never cut), and the
+   item's text link pinned to the right so it never moves with the text above. */
+.chat-long-list-meta-row {
+  align-items: baseline;
+  margin-bottom: 4dp;
+}
+
+.chat-long-list-meta-row .chat-long-list-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+  font-size: 12dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-long-list-meta-row .chat-long-list-meta-end {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  font-size: 12dp;
+  white-space: nowrap;
+}
+
+.chat-long-list-meta-row .chat-inline-link {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .chat-long-list-actions,

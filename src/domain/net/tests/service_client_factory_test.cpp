@@ -1,6 +1,6 @@
 #include "common/chat/MessagingJson.h"
 #include "domain/net/OrgBackendClientFactory.h"
-#include "domain/net/OrgBackendClientsImpl.h"
+#include "domain/net/testing/MockOrgBackendClients.h"
 
 #include <gtest/gtest.h>
 

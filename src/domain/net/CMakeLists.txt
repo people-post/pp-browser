@@ -32,5 +32,11 @@ target_compile_definitions(pp_domain_net PUBLIC
   "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
 
 if(PP_BROWSER_BUILD_TESTS)
+  # Mock backend clients: test binaries only, never linked into the app or pp-node.
+  pp_browser_add_domain_library(pp_domain_net_testing
+    SOURCES
+      testing/MockOrgBackendClients.cpp
+    PUBLIC_LIBS
+      pp_domain_net)
   add_subdirectory(tests)
 endif()

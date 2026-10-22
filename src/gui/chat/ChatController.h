@@ -8,6 +8,7 @@
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
+#include "gui/chat/HeldAgentSend.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -187,6 +188,8 @@ private:
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
+    /** A group call goes on here that this device may join: the call button reads "Join" (V053). */
+    bool call_joinable = false;
     bool show_forget_memory = false;
     bool show_sync_with_peer = false;
     bool show_thread_menu = false;
@@ -337,6 +340,9 @@ private:
   void DiscardPendingAiImage();
   /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
   bool SendImageQuestion(const std::string& text);
+  /** A thread's transcript window drawn as bound rows, AI question images decorated. */
+  std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
+                                                  std::optional<int64_t> newest_inclusive) const;
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
@@ -373,6 +379,9 @@ private:
   void SyncDisplayFromThread();
   /** Last time a display sync ran the whole-thread attachment backfill. */
   std::chrono::steady_clock::time_point last_attachment_backfill_{};
+  std::chrono::steady_clock::time_point last_call_joinable_poll_{};
+  /** Each second: whether the open group chat has a call this device may join (calls change it). */
+  void RefreshCallJoinable(std::chrono::steady_clock::time_point now);
   void OnStopTurn();
   void OpenChatLink(const std::string& entry_id, int link_index);
   /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
@@ -439,6 +448,10 @@ private:
   bool AgentConfigured() const;
   /** Agent session + cloud/mock LLM usable (Brief/API key resolved). Peer relay ignores this. */
   bool AgentCloudReady() const;
+  /** The Brief / API key the agent needs is there (AgentCloudReady minus the configured check). */
+  bool AgentHasCredentials() const;
+  /** Sends the held send once the agent is configured, or gives it up after kHeldAgentSendTimeout. Per frame. */
+  void FlushHeldAgentSend();
 
   ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
@@ -472,6 +485,7 @@ private:
   ChatThreadChrome chrome_;
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
+  HeldAgentSend held_agent_send_; // a send made while the agent was still (re)configuring
 
   /** The prepared image waiting in the composer for its question. */
   struct PendingAiImage {

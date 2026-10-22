@@ -15,11 +15,11 @@
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/PeerDisplayResolver.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
@@ -205,6 +205,8 @@ public:
   MeshDeliveryOrchestrator* MeshMessagingOrNull() { return mesh_messaging_.get(); }
   SystemControlRegistry& SystemControls() { return system_controls_; }
   SqlitePskSessionStore* PskSessions() { return psk_store_.get(); }
+  /** The group rosters (from stores open to hub teardown; null outside that). */
+  GroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
   std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
@@ -319,14 +321,6 @@ public:
    */
   mesh::MeshHost* Mesh() { return mesh_.get(); }
   const mesh::MeshHost* Mesh() const { return mesh_.get(); }
-
-  /**
-   * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
-   * Registers hop endpoints as needed; returns first successful Amp bridge.
-   */
-  Roe<mesh::CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
-                                                              const std::string& target_multiaddr,
-                                                              int timeout_ms = 8000);
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 

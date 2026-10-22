@@ -49,8 +49,10 @@
     </div>
     <div class="chat-header-actions row">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
+              data-class-chat-header-call-btn--join="call_joinable"
               data-event-click="start_call()">
         <svg src="../icons/phone.svg"></svg>
+        <span data-if="call_joinable">{{i18n:call.join}}</span>
       </button>
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
               data-event-click="open_thread_actions_menu()">

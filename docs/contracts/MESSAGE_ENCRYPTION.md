@@ -46,7 +46,7 @@ Not protected in v1: traffic metadata. Local disk: identity, PSK, and transcript
 
 - 32 bytes from CSPRNG; fingerprint = BLAKE2b-256(PSK) as grouped hex.
 - Initial setup (E011): either peer generates; export raw base64 + fingerprint OOB; peer imports; both confirm fingerprint before first send (`psk_verified_at` on `chat_targets`). Rotation: export/import `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
-- **Public direct (`e2e_public`):** encapsulate to the recipient **account** ML-KEM-768 (E013 / E024 / **M015**) → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`). Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
+- **Public direct (`e2e_public`):** encapsulate to the recipient **account** ML-KEM-768 (E013 / E024 / **M015**) → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
 
 ### Session key (HKDF — E015)
 
@@ -137,21 +137,29 @@ Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknow
 
 Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `MlDsa::Sign`). String fields use **LenUtf8** (D088).
 
-**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v1"` + NUL.
+**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v2"` + NUL.
 
-Then: `sign_version=1`, `envelope_version=1`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), `message_id` LenUtf8, `sender_contact_id` LenUtf8.
+Then: `sign_version=2`, `envelope_version=1`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `body.e2e.key_init_b64` LenUtf8 (empty when none).
+
+Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, and the relay route it may learn for the sender (learned only from envelopes whose signature verified).
+
+**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). Signer and parser refuse anything else, and unknown route kinds.
 
 **Body hash:**
 
 ```
-body_hash = BLAKE2b-256( 0x02 || decoded_e2e_blob_bytes )
+direct / control:  body_hash = BLAKE2b-256( 0x02 || LenBytes(decoded payload_b64) )
+group:             body_hash = BLAKE2b-256( 0x02 || for each (member_id, blob) in member_payloads, by member_id:
+                                                    LenUtf8(member_id) || LenBytes(decoded blob) )
 ```
+
+(`LenBytes` / `LenUtf8` = u64 BE length + bytes.) The hash covers exactly what the receiver decrypts.
 
 Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
 `signature` on wire: base64 over the 3309-byte ML-DSA-65 signature. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes below are frozen.
 
-Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt.
+Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`) — whichever source offers it (directory, contact card, sync) — and a directory answer must be for the account asked. The account KEM key is not bound this way yet: that needs the directory to return the account's signature over it.
 
 ## Send / receive pipeline (e2e)
 
@@ -192,8 +200,8 @@ Regenerate after E023 channel enum change: `projects/e2e-message-crypto/tools/ge
 | `sender_seq` | `42` |
 | `session_epoch` | `1` |
 | **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=` |
-| **`body_hash` (hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` |
-| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233` |
+| **`body_hash` (hex)** | `f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c` |
+| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233` |
 
 ### HKDF (E015)
 

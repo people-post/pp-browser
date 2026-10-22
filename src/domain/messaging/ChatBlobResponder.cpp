@@ -1,5 +1,8 @@
 #include "domain/messaging/ChatBlobResponder.h"
 
+#include "domain/messaging/PeerRequestAuth.h"
+#include "common/directory/DirectoryJson.h"
+
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -14,7 +17,7 @@ namespace pbr {
 namespace {
 
 Roe<DirectChatTarget> AuthorizeRequest(IThreadStore& store, const ChatBlobRequest& request,
-                                       const std::string& local_relay_user_id) {
+                                       const std::string& local_relay_user_id, const ChatBlobRequester& requester) {
   if (local_relay_user_id.empty()) {
     return Error("Local relay identity missing");
   }
@@ -24,10 +27,19 @@ Roe<DirectChatTarget> AuthorizeRequest(IThreadStore& store, const ChatBlobReques
   if (request.requester_identity_value.empty() || request.thread_id.empty()) {
     return Error("Chat-blob request missing auth fields");
   }
+  // The requester is who signed the request, on the link it signed for — not who the body names.
+  if (!requester.signing_keys) {
+    return Error("Request not authorized");
+  }
+  if (auto authorized =
+          PeerRequestAuth::Verify(request, requester.remote_peer_id, requester.now_ms, *requester.signing_keys);
+      !authorized) {
+    return authorized.error();
+  }
 
   DirectChatTarget target;
-  target.peer_identity_kind = request.peer_identity_kind;
-  target.peer_identity_value = request.requester_identity_value;
+  target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  target.peer_identity_value = request.requester_account_id;
   target.channel = request.channel;
 
   auto thread = store.FindDirectThread(target);
@@ -50,7 +62,9 @@ Roe<ChatAttachmentFields> FindAttachmentFields(IThreadStore& store, const std::s
     return page.error();
   }
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Attachment) {
+    // Only what this device sent in the thread: the requester is the one it was sent to. A row the
+    // peer sent us names a key of the peer's choosing, so it never authorizes serving our content.
+    if (message.content_type != ChatContentType::Attachment || message.sender_contact_id != kLocalSelfContactId) {
       continue;
     }
     auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
@@ -88,7 +102,8 @@ std::unordered_set<std::string> ReferencedAttachmentHashes(IThreadStore& store, 
 Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, const ChatBlobRequest& request,
                                                         const std::string& local_relay_user_id,
                                                         const std::string& profile_data_dir,
-                                                        const ChatBlobContentSource& content) {
+                                                        const ChatBlobContentSource& content,
+                                                        const ChatBlobRequester& requester) {
   if (request.op == ChatBlobOp::FetchPublic) {
     if (local_relay_user_id.empty()) {
       return Error("Local relay identity missing");
@@ -119,7 +134,7 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
   if (request.op != ChatBlobOp::Fetch) {
     return Error("Expected fetch chat-blob request");
   }
-  auto auth = AuthorizeRequest(store, request, local_relay_user_id);
+  auto auth = AuthorizeRequest(store, request, local_relay_user_id, requester);
   if (!auth) {
     return auth.error();
   }
@@ -156,11 +171,11 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
 
 Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobRequest& request,
                                        const std::string& local_relay_user_id, const std::string& profile_data_dir,
-                                       const std::vector<uint8_t>& ciphertext) {
+                                       const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester) {
   if (request.op != ChatBlobOp::Push) {
     return Error("Expected push chat-blob request");
   }
-  auto auth = AuthorizeRequest(store, request, local_relay_user_id);
+  auto auth = AuthorizeRequest(store, request, local_relay_user_id, requester);
   if (!auth) {
     return auth.error();
   }

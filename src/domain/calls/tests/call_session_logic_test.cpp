@@ -28,6 +28,9 @@ TEST(CallSessionLogicTest, TransitionOnLeaveHostless) {
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ringing, 1), CallSessionState::Ringing);
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ringing, 0), CallSessionState::Ended);
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ended, 0), CallSessionState::Ended);
+  // V053: a group call goes on with whoever is left, alone too; it ends with the last one.
+  EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Active, 1, /*group=*/true), CallSessionState::Active);
+  EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Active, 0, /*group=*/true), CallSessionState::Ended);
 }
 
 TEST(CallSessionLogicTest, ShouldAutoLeaveOutboundUnanswered) {

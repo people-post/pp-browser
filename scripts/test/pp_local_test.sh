@@ -5,12 +5,13 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
-# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | hard-w2 | hard-w3 | hard-w5 | all
+# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | hard-w2 | hard-w3 | hard-w5 | dht | all
 # --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
 # --suite mix is nightly: browser parallel + shrunk hop parallel + same-session hop chat.
 # --suite hard is Wave 1 forced-hop (isolated nets; separate compose/ports 18618).
 # --suite hard-w2 is Wave 2 netem/tbf (N-HARD-LOSSY / BW) on the same compose.
 # --suite hard-w3 is Wave 3 discovery (N-HARD-STALE-ADDR / SEED-ONLY).
+# --suite dht is N-DHT: a seed + 12 DHT Nodes (k = 3); the seed stops, every Node finds every other.
 # --suite app is the app lab: scripted users on the real app stack (pp-app-probe) over the real
 #   relay (web2 www + messenger, PP_WEB2_ROOT) — glare, redial storms, restarts, a peer vanishing.
 #
@@ -54,7 +55,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|ledger|app|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -83,6 +84,7 @@ Examples:
   $(basename "$0") run --suite hard-w2
   $(basename "$0") run --suite hard-w3
   $(basename "$0") run --suite hard-w5
+  $(basename "$0") run --suite dht
   $(basename "$0") up && $(basename "$0") status
   $(basename "$0") stop
   $(basename "$0") clear --images
@@ -487,6 +489,14 @@ run_hard_w5() {
   bash "${ROOT}/scripts/test/pp_hard_nat_smoke.sh" --status-url "${PP_HARD_CGNAT_STATUS_URL}"
 }
 
+run_dht() {
+  cmake_build_probes
+  stage_hop_binary_if_newer
+  ensure_docker_context
+  echo "=== suite dht (N-DHT: lookups with the seed down) ==="
+  # The lab's compose builds pp-node:local from the staged hop binary (seed service).
+  bash "${ROOT}/scripts/test/pp_dht_lab_smoke.sh"
+}
 
 cmd_run() {
   case "${SUITE}" in
@@ -505,6 +515,7 @@ cmd_run() {
     hard-w2) run_hard_w2 ;;
     hard-w3) run_hard_w3 ;;
     hard-w5) run_hard_w5 ;;
+    dht) run_dht ;;
     ledger) run_ledger ;;
     app) run_app ;;
     all)
@@ -514,7 +525,7 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|ledger|app|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
     if [[ "${SUITE}" == "app" ]]; then

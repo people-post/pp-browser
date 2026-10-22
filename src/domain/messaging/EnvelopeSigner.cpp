@@ -18,9 +18,9 @@ namespace {
 
 constexpr std::array<char, 34> kSignDomain = {
     'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r', 'e', 'l', 'a', 'y', '-',
-    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '1', '\0'};
+    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '2', '\0'};
 
-constexpr uint8_t kSignVersion = 1;
+constexpr uint8_t kSignVersion = 2;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
 void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
@@ -68,33 +68,65 @@ uint8_t EnvelopeSigner::ChannelByte(const RelayRoute& route) {
   return 0xFF;
 }
 
-Roe<std::vector<uint8_t>> EnvelopeSigner::BodyHash(const RelayMessageBody& body) {
-  EnsureSodiumInit();
-  std::vector<uint8_t> input;
-  input.push_back(kBodyKindE2e);
+Roe<void> EnvelopeSigner::CheckBodyShape(const RelayEnvelope& envelope) {
+  const bool has_members = envelope.body.e2e.member_payloads.has_value();
+  const bool has_payload = !envelope.body.e2e.payload_b64.empty();
+  if (envelope.route.kind == kRelayRouteGroup) {
+    if (!envelope.route.group_id || envelope.route.group_id->empty()) {
+      return Error("Group envelope without group_id");
+    }
+    if (!has_members || envelope.body.e2e.member_payloads->empty() || has_payload) {
+      return Error("Group envelope must carry member_payloads only");
+    }
+    return {};
+  }
+  if (envelope.route.kind == kRelayRouteDirect || envelope.route.kind == kRelayRouteControl) {
+    if (has_members || !has_payload) {
+      return Error("Direct / control envelope must carry payload_b64 only");
+    }
+    if (envelope.route.group_id) {
+      return Error("Direct / control envelope with a group_id");
+    }
+    return {};
+  }
+  return Error("Unknown route kind");
+}
 
-  if (body.e2e.member_payloads && !body.e2e.member_payloads->empty()) {
-    for (const auto& [member_id, payload_b64] : *body.e2e.member_payloads) {
-      (void)member_id;
-      auto decoded = Base64Decode(payload_b64);
+Roe<std::vector<uint8_t>> EnvelopeSigner::BodyHash(const RelayEnvelope& envelope) {
+  EnsureSodiumInit();
+  if (auto shape = CheckBodyShape(envelope); !shape) {
+    return shape.error();
+  }
+  // Exactly the bytes the receiver decrypts: the one blob of a direct / control envelope, or each
+  // (member, blob) pair of a group envelope, length-prefixed so pairs cannot be re-split.
+  std::ostringstream oss;
+  oss.put(static_cast<char>(kBodyKindE2e));
+  {
+    OutputArchive ar(oss);
+    if (envelope.route.kind == kRelayRouteGroup) {
+      for (const auto& [member_id, payload_b64] : *envelope.body.e2e.member_payloads) {
+        auto decoded = Base64Decode(payload_b64);
+        if (!decoded) {
+          return decoded.error();
+        }
+        WireLenUtf8 member{member_id};
+        ar & member;
+        WireLenBytes blob{*decoded};
+        ar & blob;
+      }
+    } else {
+      auto decoded = Base64Decode(envelope.body.e2e.payload_b64);
       if (!decoded) {
         return decoded.error();
       }
-      input.insert(input.end(), decoded->begin(), decoded->end());
+      WireLenBytes blob{*decoded};
+      ar & blob;
     }
-  } else {
-    if (body.e2e.payload_b64.empty()) {
-      return Error("Missing E2E payload for body hash");
-    }
-    auto decoded = Base64Decode(body.e2e.payload_b64);
-    if (!decoded) {
-      return decoded.error();
-    }
-    input.insert(input.end(), decoded->begin(), decoded->end());
   }
-
+  const std::string input = oss.str();
   std::vector<uint8_t> digest(32);
-  if (crypto_generichash(digest.data(), digest.size(), input.data(), input.size(), nullptr, 0) != 0) {
+  if (crypto_generichash(digest.data(), digest.size(), reinterpret_cast<const unsigned char*>(input.data()),
+                         input.size(), nullptr, 0) != 0) {
     return Error("BLAKE2b body hash failed");
   }
   return digest;
@@ -104,7 +136,7 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
   if (envelope.envelope_version != kRelayEnvelopeVersion) {
     return Error("Unsupported envelope version");
   }
-  auto body_hash = BodyHash(envelope.body);
+  auto body_hash = BodyHash(envelope);
   if (!body_hash) {
     return body_hash.error();
   }
@@ -130,6 +162,14 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
     ar & message_id;
     WireLenUtf8 sender_contact_id{envelope.sender_contact_id};
     ar & sender_contact_id;
+    // v2: who the sender says it is on the relay, which group, and the AutoKey key_init — each
+    // decides something on receipt (route, thread, session), so each is the signer's word.
+    WireLenUtf8 sender_relay_id{envelope.sender_relay_id};
+    ar & sender_relay_id;
+    WireLenUtf8 group_id{envelope.route.group_id.value_or(std::string{})};
+    ar & group_id;
+    WireLenUtf8 key_init{envelope.body.e2e.key_init_b64.value_or(std::string{})};
+    ar & key_init;
   }
 
   const std::string packed = oss.str();

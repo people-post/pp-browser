@@ -4,28 +4,22 @@ pp_browser_add_feature_library(pp_feature_calls
   SOURCES
     CallMediaBridge.cpp
     CallMediaConnectCoordinator.cpp
-    CallMediaSeat.cpp
     CallMediaPlane.cpp
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
     CallSessionManager.cpp
     CallStack.cpp
     LocalNetworkReaction.cpp
-    CallsThread.cpp
-    CallsExecutor.cpp
     CallsLoop.cpp
     CallTopologyController.cpp
     CallUiBackend.cpp
-    LiveCall.cpp
+    LiveCallMedia.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp
-  CallControlFamily.cpp
-    CallMediaKeyExchange.cpp
     CallInitiationBilling.cpp
     CallReachSignals.cpp
     CallHopRanking.cpp
     CallHopPlanning.cpp
-    CallPathMobility.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
     pp_domain_media
@@ -41,5 +35,6 @@ pp_browser_add_feature_library(pp_feature_calls
     pp_foundation_runtime)
 
 if(PP_BROWSER_BUILD_TESTS)
-  # Call unit tests currently live under feature/conversations/tests (shared harness).
+  # Harness-based call tests live under feature/conversations/tests and feature/product/tests.
+  add_subdirectory(tests)
 endif()

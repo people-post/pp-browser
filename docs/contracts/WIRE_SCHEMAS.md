@@ -128,10 +128,10 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (as enums), `timestamp`, `body_hash`, `sender_seq`, `session_epoch` |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `body_hash`, `sender_seq`, `session_epoch`, `body.e2e.key_init_b64` (sign v2 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
-| `body_hash` | BLAKE2b-256(`0x02` \|\| decoded E2E blob bytes) only — no `0x01` public path |
-| Not signed | `thread_id`, `sender_relay_id`, `signature`, unknown keys |
+| `body_hash` | BLAKE2b-256 over exactly what the receiver decrypts: `0x02` ‖ LenBytes(blob) (direct / control), or `0x02` ‖ each LenUtf8(member_id) ‖ LenBytes(blob) (group) — no `0x01` public path |
+| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, relay metadata, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
@@ -172,7 +172,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Signed** (sign v2). Group envelopes carry the recipient's `key_init` when the sender opened that member's pairwise session on this send. Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
 
 ### `body.e2e` (group tier — D095, E022)
 
@@ -180,7 +180,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 |-------|------|----------|-------|
 | `member_payloads` | object map | yes | Keys = recipient relay ids; values = RFC 4648 base64 ciphertext blobs (pairwise `e2e_public` per member). Each value uses the same AEAD layout as direct `payload_b64`. |
 
-**Rules:** `route.kind=group` requires `member_payloads`; omit `payload_b64` and `route.channel`. One envelope is fan-out per member on send (client may emit N relay records). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
+**Rules:** `route.kind=group` requires `member_payloads` (non-empty) and `group_id`; `payload_b64` must be absent (rejected), and `route.channel` omitted. `direct` / `control` envelopes must not carry `member_payloads` or `group_id`. One envelope is fan-out per member on send (client may emit N relay records). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
 ---
 
@@ -279,7 +279,7 @@ Regenerate: [`chatpayload_codec.py`](../../projects/e2e-message-crypto/tools/cha
 |-------|-------|
 | Logical | `content_type=text`, `text="Hello"` |
 | **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
-| **`body_hash` (E2E blob, hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` *(example — hash of `0x02` ‖ E2E blob)* |
+| **`body_hash` (E2E blob, hex)** | `f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c` *(example — hash of `0x02` ‖ E2E blob)* |
 
 #### Vector B — non-ASCII text, plain default
 
@@ -331,6 +331,12 @@ Example libp2p / client JSON:
 | `max_sender_seq` | integer | no | Inclusive upper bound — mapped to relay `max_index_key` in v1 |
 | `limit` | integer | no | Default **50**, max **100** (D029) |
 | `order` | string | no | `asc` (default) \| `desc` |
+| `requester_account_id` | string | peer-direct | The requesting **account** — the responder serves this account's thread only |
+| `requester_peer_id` | string | peer-direct | The requester's device PeerId — must be the Amp link's authenticated remote peer |
+| `timestamp_ms` | integer | peer-direct | Signing time; refused beyond ±5 min of the responder's clock |
+| `signature` | string | peer-direct | ML-DSA-65 by the requester's account key over `PeerRequestAuth::SignBytes` (domain `"pp-browser:peer-request-sign-v1"`, kind `history`, the three fields above, then every request field LenUtf8 / BE ints) |
+
+**Peer-direct requests are authenticated** (history and `/pp/blob/1.0.0` alike): the Amp link proves a device, not an account, so the body's `requester_identity_*` is never trusted on its own. The responder verifies the signature with the account's known signing key, requires `requester_peer_id` to be the link's peer and the time to be recent, then serves only that account's direct thread. A blob fetch serves only attachments this device sent in that thread. Every refusal answers the same (blob: `{"ok":false,"error":"Not available"}`; history: no answer). The relay's HTTP history path is authenticated by the relay and does not use these fields.
 
 ### Stream history (HTTP relay)
 
@@ -402,7 +408,7 @@ Chat-shaped response (libp2p / documentation):
 
 ---
 
-## `PeerAnnounceTip` (`/pp-browser/rpc/peer-announce/1.0.0`, `schema_version: 1`)
+## `PeerAnnounceTip` (`/pp/rpc/peer-announce/1.0.0`, `schema_version: 1`)
 
 A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/domain/broadcast/PeerAnnounceCodec.cpp`.
 
@@ -424,7 +430,7 @@ A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine 
 
 **Canonical signed bytes:** `key=value\n` lines in this order — `v`, `peer_id`, `topic_id`, `program_id`, `state`, `seq`, `epoch`, `created_at_ms`, `join_handle`, then `hop_peer_id`, `l1_hop_peer_ids` (comma-joined), `video_levels` (comma-joined), `kind`, `viewer_peer_id`, `viewer_msg_id` **only when non-empty**, then `body`, `content_id_hex`. Every optional field present is signed: a verifier must rebuild the bytes from all of them.
 
-## `media_relay` control (`/pp-browser/datagram-relay/1.0.0`)
+## `media_relay` control (`/pp-mesh/datagram-relay/1.0.0`)
 
 JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: pp-cpp-mesh `l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
 
@@ -438,7 +444,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 
 **Data frames** (not JSON): `MediaDataFrame` — `stream_id` u32, `channel_id` u16, `channel_type`, `seq` u32, `mark` u8, payload (`EncodeMediaDataFrame`, `MediaRelayTypes.h`). `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
 
-**Call-media** (`/pp-browser/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
+**Call-media** (`/pp/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
 
 ## Versioning matrix
 
@@ -449,7 +455,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 | `ChatPayload` | `payload_version` | Body binary layout or required tail fields change (D087) |
 | Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto DESIGN](../../projects/e2e-message-crypto/DESIGN.md) |
-| libp2p history | protocol id `/pp-browser/rpc/history/1.0.0` | Request/response breaking change → new protocol id |
+| libp2p history | protocol id `/pp/rpc/history/1.0.0` | Request/response breaking change → new protocol id |
 | App release | `PP_BROWSER_RELEASE_VERSION` | Packaging + About + User-Agent; compared to `min_client_version` |
 | Client-compat | `schema_version` on `GET /v1/client-compat` | Product floor / soft update nudge ([SERVICE_ENDPOINTS](SERVICE_ENDPOINTS.md#client-compatibility-discovery)) |
 | Protocol gen | `kProtocolGen` | App constant; future in-band messaging hello — not directory profile |

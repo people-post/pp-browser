@@ -129,7 +129,7 @@ pp-browser Phase 1 implements the **adapter** row:
 - [x] Tests: `mesh_ports_test.cpp`
 - [x] [AMP-LINK-ERRORS.md](AMP-LINK-ERRORS.md) port alias note
 
-### Phase 2 — L4 owning layers (in progress)
+### Phase 2 — L4 owning layers (done)
 
 Each coordinator gets a **local `Err` enum**, `Failure` / `Roe` aliases, and
 **`WrapLinkFailure(const …::Failure&)`** (name may vary). Wrap at every
@@ -140,9 +140,14 @@ carrier — not string copy alone.
 |--------|---------------|------------------------|--------|
 | Dial-back | `reachability/dial_back/` (`DialBackTypes`, `client/DialBackClient`, `serve/DialBackServer`) | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
 | DHT | `dht/client/DhtClient.{h,cpp}` (via `AmpDhtProtocol`) | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
-| Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
-| Call-media leg | `feature/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
-| Media relay | `l4/media_relay/client/MediaRelayClientCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
+| Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `CircuitTunnelErr` | **done** (pp-cpp-mesh) — the relay's refusal is a wire `code` |
+| Circuit reach | `reach/AmpCircuitHopReach`, `ICircuitHopReach` (`MeshReachPorts.h`) | `CircuitReachErr` | **done** (pp-cpp-mesh) |
+| Punch walk | `reach/PunchIntroducerWalk`, `PunchErr` | `PunchIntroducerWalk::Err` | **done** (pp-cpp-mesh) — the introducer's refusal is a wire `code` |
+| Peer reach | `reach/PeerReachCoordinator` | `PeerReachCoordinator::Err` | **done** (pp-cpp-mesh); `IDialRegistry` passes link codes through |
+| Media relay | `l4/media_relay/client/MediaRelayClientCoordinator`, `IMediaRelayClient`, `media_plane/MediaRelayAttach` | `MediaRelayErr` | **done** (pp-cpp-mesh) — the hop's refusal is a wire `code` |
+| Call-media leg | `feature/call_media/CallMediaLegCoordinator`, `ICallMediaTransport` | `CallMediaErr` | **done** — connects; migrations still report text |
+
+The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 
 **Note:** Dial-back / DHT currently own `PeerLinkManager&` directly (mesh-internal), so
 `WrapLinkFailure` takes `PeerLinkManager::Failure`. Feature-facing L4 that goes through
@@ -162,11 +167,25 @@ carrier — not string copy alone.
 
 ### Phase 3 — Feature Amp services
 
-- [ ] `AmpDirectChatTransport`, `AmpChatHistoryTransport`, `AmpChatBlobTransport`, `AmpCircuitHopReach`:
-      `WrapL4Failure` (or wrap link where L4 not yet coded).
-- [ ] Retry/backoff branches on **`DialInBackoff`**, **`AssociationNotReady`**, **`EndpointNotRegistered`**
-      via port/coordinator code — not message substring alone.
-- [ ] Stop stripping codes at `Error(child.message)` unless converting to `AppError` with mapped category.
+- [x] Retry / backoff decisions read codes, not message text. No message-substring branch is left on
+      a transport path: group-membership controls dispatch on their control type
+      (`RelayReceivePipeline`), and a call's clean stream close is `CallMediaErr::StreamClosed`,
+      read by the call bridge (it matched "stream closed" / "read_eof").
+- [x] No code strips at `Error(child.message)`: `CallMediaConnectCoordinator` wraps a peer reach
+      failure (`WrapReachFailure`) and finishes with `CallMediaRoe`; the broadcast viewer's
+      `reach_peer` port passes the reach's own result through; `ICallMediaTransport::on_failed`
+      carries the `CallMediaFailure`. `ConversationsHub::RequestCircuitBridgePreferred` (unused)
+      is gone.
+- [x] `CallMediaConnectCoordinator` decides "dial a fresh link next time" by `CallMediaErr::StaleLink`.
+- [x] Chat send notices by code: the direct send reports `DirectSendErr` (`IDirectMessageClient`;
+      `AmpDirectChatTransport::WrapLinkFailure`), the relay send `AppError` codes
+      (`HttpRelayClient::Send`: rate limited, not configured, HTTP status; network failures were
+      coded already), and `domain/messaging/DeliveryNotice` maps them (`SendFailureFromDirect`,
+      `SendFailureFromRelay`). With no relay route, the notice says why the direct send failed.
+- [ ] `AmpChatHistoryTransport`, `AmpChatBlobTransport`: still text. Their callers
+      (`ChatSyncWorkflow`, `AttachmentFetch`, `AttachmentClient`) fall back to the relay / CDN on
+      any peer failure, so nothing branches yet; code them (as `IDirectMessageClient`) when a caller
+      or the UI mapping (Phase 4) needs to tell the failures apart.
 
 ### Phase 4 — UI boundary
 

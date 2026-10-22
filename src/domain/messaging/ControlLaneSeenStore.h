@@ -25,6 +25,8 @@ public:
 
   /** True the first time (`sender`, `control_id`) is seen (recorded now); false for a repeat. */
   Roe<bool> FirstSight(const std::string& sender, const std::string& control_id, int64_t now_ms);
+  /** Undo a first sight whose apply failed, so a redelivery of it can still apply. */
+  void Forget(const std::string& sender, const std::string& control_id);
 
 private:
   Roe<sqlite3*> OpenDb() const;

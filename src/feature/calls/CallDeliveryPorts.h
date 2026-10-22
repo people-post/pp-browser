@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 
 namespace pbr {
@@ -32,6 +33,8 @@ struct CallDeliveryPorts {
   std::function<pp::Roe<std::string>(const std::string& peer_identity)> resolve_peer_thread;
   /** This device's thread for a group; none when it has none. */
   std::function<std::optional<std::string>(const std::string& group_id)> resolve_group_thread;
+  /** Who is in a group now (identities); none when this device does not know the group. */
+  std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
   std::function<void(bool force)> sync_inbox_from_wake;
   /** Register a dialable multiaddr for a peer identity (call listen bootstrap). */
   std::function<void(const std::string& identity, const std::string& multiaddr)> register_peer_direct_endpoint;

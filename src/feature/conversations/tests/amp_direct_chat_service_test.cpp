@@ -87,5 +87,31 @@ TEST_F(AmpDirectChatTransportTest, SendEnvelopeRoundTrip) {
   EXPECT_EQ(received.message_id, "msg-1");
 }
 
+// A send to a peer with no address, or with the transport stopped, says so by its code.
+TEST_F(AmpDirectChatTransportTest, FailuresCarryTheirCode) {
+  const auto unknown = a_chat_->SendEnvelope("nobody-registered", MakeTestEnvelope("msg-2", "x"));
+  ASSERT_FALSE(unknown);
+  EXPECT_EQ(unknown.error().GetCode(), DirectSendErr::NoAddress);
+  a_chat_->Stop();
+  const auto stopped = a_chat_->SendEnvelope("b", MakeTestEnvelope("msg-3", "x"));
+  ASSERT_FALSE(stopped);
+  EXPECT_EQ(stopped.error().GetCode(), DirectSendErr::NotStarted);
+}
+
+// The link's failures, as the direct send's: what the chat notice can tell the user.
+TEST(AmpDirectChatTransportCodesTest, LinkFailuresMapToDirectSendCodes) {
+  using LinkErr = mesh::IChatPeerLinks::Err;
+  const auto wrap = [](const LinkErr code) {
+    return AmpDirectChatTransport::WrapLinkFailure(mesh::IChatPeerLinks::Failure::Of(code, "x")).GetCode();
+  };
+  EXPECT_EQ(wrap(LinkErr::EndpointNotRegistered), DirectSendErr::NoAddress);
+  EXPECT_EQ(wrap(LinkErr::DialInBackoff), DirectSendErr::DialInBackoff);
+  EXPECT_EQ(wrap(LinkErr::MaxLinksReached), DirectSendErr::DialBusy);
+  EXPECT_EQ(wrap(LinkErr::DialTimeout), DirectSendErr::NoAnswer);
+  EXPECT_EQ(wrap(LinkErr::HandshakeFailed), DirectSendErr::Refused);
+  EXPECT_EQ(wrap(LinkErr::TransportFailed), DirectSendErr::TransportFailed);
+  EXPECT_EQ(wrap(LinkErr::ChannelOpenFailed), DirectSendErr::ChannelFailed);
+}
+
 } // namespace
 } // namespace pbr

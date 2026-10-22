@@ -1,4 +1,6 @@
 #include "feature/calls/CallSessionManager.h"
+
+#include "domain/calls/CallSessionQueries.h"
 #include "feature/calls/CallControlClient.h"
 #include "domain/calls/CallListenAddrsLogic.h"
 #include "domain/calls/CallAnswererKickLogic.h"
@@ -73,10 +75,17 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),
       control_(store, identity, sessions, psk_store, delivery_),
-      key_exchange_(sessions, media_keys, control_), billing_(identity), reach_signals_(control_),
-      workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
+      key_exchange_(sessions, media_keys,
+                    CallMediaKeyExchange::Transport{
+                        [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); },
+                        [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
+                               const std::string& key_id, const ByteVector& key) {
+                          return control_.SendMediaKey(call_id, peer, epoch, key_id, key);
+                        }}), billing_(identity), reach_signals_(control_),
+      workflow_(store, sessions, key_exchange_, billing_, live_calls_, call_media_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) { topology_.OnMediaKeyInstalled(call_id); });
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
     const auto direct_media = direct_media_.Get();
     if (direct_media->on_media_key_ready) {
@@ -84,7 +93,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     }
   });
   BindSeat();
-  live_calls_.BindHopDriver(&topology_);
+  call_media_.BindHopDriver(&topology_);
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
   topology_.SetHopArmingPorts(MakeHopArmingPorts());
   BindTopologyHostPorts();
@@ -96,7 +105,7 @@ void CallSessionManager::BindTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return TopologyLocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
-  ports.call_media = [this](const std::string& call_id) { return live_calls_.Media(call_id); };
+  ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return TopologyFanOutToJoined(call_id, type, detail, display, skip);
@@ -162,7 +171,9 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
     return *thread;
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
+  ports.group_members = delivery_.group_members;
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+  ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
   ports.sync_inbox_from_wake = [this]() {
     if (delivery_.sync_inbox_from_wake) {
       delivery_.sync_inbox_from_wake(true);
@@ -562,7 +573,7 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
 }
 
 void CallSessionManager::BindSeat() {
-  live_calls_.BindMediaResources(&media_, &seat_);
+  call_media_.BindMediaResources(&media_, &seat_);
   CallMediaSeatPorts release;
   release.release = [this](const std::string& call_id) { seat_.Release(call_id); };
   media_seat_ports_.Set(std::move(release));
@@ -729,7 +740,7 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   // direct driver connect.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   if (auto begun = call_media ? call_media->BeginDirect(peer_identity, offerer)
                               : Roe<void>(Error("no live call for media"));
       !begun) {
@@ -805,8 +816,8 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
   if (!local) {
     return local.error();
   }
-  const std::string call_id = live_calls_.MediaRunningCallId();
-  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  const std::string call_id = call_media_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : call_media_.Media(call_id);
   if (!call_media) {
     return Error("No active call media");
   }
@@ -832,8 +843,8 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (!local) {
     return local.error();
   }
-  const std::string call_id = live_calls_.MediaRunningCallId();
-  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  const std::string call_id = call_media_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : call_media_.Media(call_id);
   if (!call_media) {
     return Error("No active call media");
   }
@@ -872,7 +883,7 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
     return Error("No active call");
   }
   if (publisher_identity.empty() || publisher_identity == *local) {
-    if (CallMediaCoordinator* call_media = live_calls_.Media(call_id)) {
+    if (CallMediaCoordinator* call_media = call_media_.Media(call_id)) {
       call_media->RequestKeyframe();
     }
     return {};
@@ -978,27 +989,7 @@ void CallSessionManager::NotifyRingChanged() {
 
 
 Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& call_id) const {
-  auto session = sessions_.LoadSession(call_id);
-  if (!session || !session->has_value()) {
-    return Error("Call session not found");
-  }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  CallRosterDetail detail;
-  detail.call_id = call_id;
-  detail.media_epoch = (*session)->media_epoch;
-  for (const CallParticipant& row : *participants) {
-    CallRosterEntry entry;
-    entry.identity = row.identity;
-    entry.state = row.state;
-    entry.audio_muted = row.media.audio_muted;
-    entry.video_enabled = row.media.video_enabled;
-    entry.joined_at = row.joined_at;
-    detail.participants.push_back(std::move(entry));
-  }
-  return detail;
+  return call_queries::RosterDetail(sessions_, call_id);
 }
 
 
@@ -1010,7 +1001,7 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   // CSM is signaling-only for duplex stop: the call registry releases the seat (Detach-then-Stop).
-  live_calls_.StopMedia(call_id);
+  call_media_.StopMedia(call_id);
 }
 
 
@@ -1116,6 +1107,11 @@ Roe<std::vector<PendingCallInvite>> CallSessionManager::ListPendingInvites() {
   return sessions_.ListPendingInvitesForInvitee(*local);
 }
 
+std::optional<std::string> CallSessionManager::JoinableCallInThread(const std::string& thread_id) const {
+  auto call = workflow_.JoinableCallInThread(thread_id);
+  return call ? std::optional<std::string>(call->call_id) : std::nullopt;
+}
+
 Roe<std::optional<CallSession>> CallSessionManager::ActiveLocalCall() const {
   return workflow_.ActiveLocalCall();
 }
@@ -1129,16 +1125,11 @@ Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const st
   if (!local) {
     return local.error();
   }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
+  auto peer = call_queries::FirstRemoteParticipant(sessions_, call_id, *local);
+  if (!peer) {
+    return peer.error();
   }
-  for (const CallParticipant& row : *participants) {
-    if (row.identity != *local && !row.identity.empty()) {
-      return std::optional<std::string>{row.identity};
-    }
-  }
-  return std::optional<std::string>{};
+  return *peer ? std::optional<std::string>{(*peer)->identity} : std::optional<std::string>{};
 }
 
 Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::string& call_id) const {
@@ -1146,16 +1137,11 @@ Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::
   if (!local) {
     return local.error();
   }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
+  auto peer = call_queries::FirstRemoteParticipant(sessions_, call_id, *local);
+  if (!peer) {
+    return peer.error();
   }
-  for (const CallParticipant& row : *participants) {
-    if (row.identity != *local && !row.identity.empty()) {
-      return std::optional<bool>{row.media.video_enabled};
-    }
-  }
-  return std::optional<bool>{};
+  return *peer ? std::optional<bool>{(*peer)->media.video_enabled} : std::optional<bool>{};
 }
 
 Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::string& call_id) const {
@@ -1170,32 +1156,11 @@ Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::stri
 }
 
 Roe<bool> CallSessionManager::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  for (const CallParticipant& p : *participants) {
-    auto invite = sessions_.LoadPendingInvite(call_id, p.identity);
-    if (invite && invite->has_value() && (*invite)->status == "accepted_implicit") {
-      return true;
-    }
-  }
-  return false;
+  return call_queries::AwaitingExplicitAnswer(sessions_, call_id);
 }
 
 Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(const std::string& call_id) const {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  std::vector<CallParticipant> joined;
-  joined.reserve(participants->size());
-  for (const CallParticipant& row : *participants) {
-    if (row.state == CallParticipantState::Joined) {
-      joined.push_back(row);
-    }
-  }
-  return joined;
+  return call_queries::JoinedParticipants(sessions_, call_id);
 }
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const {
@@ -1234,7 +1199,7 @@ void CallSessionManager::PollP2pConnectHealth() {
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   const auto direct_media = direct_media_.Get();
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   if (call_media && direct_media->media_attempted && direct_media->media_attempted(call_id)) {
     return call_media->Retry();
   }
@@ -1242,7 +1207,7 @@ Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
 }
 
 Roe<void> CallSessionManager::ResumeP2pMedia(const std::string& call_id) {
-  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  CallMediaCoordinator* call_media = call_media_.Media(call_id);
   return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }
 
@@ -1370,6 +1335,18 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   if (!local) {
     return local.error();
   }
+  // Everything but an invite (and the stream's summary) speaks about a call the sender is in: its
+  // initiator or a current participant. A peer who declined or left it, or never was in it, does not
+  // end it, change its roster or steer its media.
+  // V053: who dropped out of a group call may ask to join it, and its end reaches them too.
+  const bool from_offered = (*type == CallControlType::CallJoinRequest || *type == CallControlType::CallEnded) &&
+                            SenderMayJoin(detail_json, sender_identity);
+  if (*type != CallControlType::CallInvite && *type != CallControlType::CallSummary && !from_offered &&
+      !SenderIsInCall(detail_json, sender_identity)) {
+    log().info << "call control dropped (sender not in the call) type=" << static_cast<int>(*type)
+               << " from=" << sender_identity;
+    return {};
+  }
 
   switch (*type) {
   case CallControlType::CallInvite:
@@ -1383,6 +1360,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
                                *local);
   case CallControlType::CallAccept:
     return HandleInboundAccept(detail_json, sender_identity, *local);
+  case CallControlType::CallJoinRequest:
+    return workflow_.HandleInboundJoinRequest(detail_json, sender_identity, *local);
   case CallControlType::CallDecline:
     return HandleInboundDecline(detail_json, sender_identity);
   case CallControlType::CallLeave:
@@ -1419,6 +1398,18 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   return {};
 }
 
+
+bool CallSessionManager::SenderMayJoin(const std::string& detail_json, const std::string& sender_identity) const {
+  auto detail = TryParseObject(detail_json);
+  auto call_id = detail ? detail->getString("call_id") : std::nullopt;
+  return call_id && call_queries::SenderMayJoin(sessions_, *call_id, sender_identity);
+}
+
+bool CallSessionManager::SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const {
+  auto detail = TryParseObject(detail_json);
+  auto call_id = detail ? detail->getString("call_id") : std::nullopt;
+  return call_id && call_queries::SenderIsInCall(sessions_, *call_id, sender_identity);
+}
 
 Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
   return control_.LocalRelayIdentity();

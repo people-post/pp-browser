@@ -2,7 +2,7 @@
 
 #include "domain/ai/LlmClient.h"
 #include "domain/ai/TurnPlan.h"
-#include "feature/ai/ToolPermissionPolicy.h"
+#include "domain/ai/ToolPermissionPolicy.h"
 #include "domain/ai/ToolRegistry.h"
 #include "common/Error.h"
 #include "domain/people/ContactTypes.h"

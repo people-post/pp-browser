@@ -80,21 +80,21 @@ public:
     }
   }
 
-  Roe<void> Subscribe(const FakeHopClient* client, uint32_t stream_id, uint16_t channel_id) {
+  mesh::MediaRelayRoe<void> Subscribe(const FakeHopClient* client, uint32_t stream_id, uint16_t channel_id) {
     std::unique_lock lock(mu_);
     auto it = members_.find(client);
     if (it == members_.end()) {
-      return Error("not attached");
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "not attached");
     }
     it->second.subscriptions.insert(SubKey(stream_id, channel_id));
     return {};
   }
 
-  Roe<void> Forward(const FakeHopClient* sender, const mesh::MediaDataFrame& frame) {
+  mesh::MediaRelayRoe<void> Forward(const FakeHopClient* sender, const mesh::MediaDataFrame& frame) {
     std::shared_lock lock(mu_);
     const auto from = members_.find(sender);
     if (from == members_.end()) {
-      return Error("not attached");
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::NotAttached, "not attached");
     }
     {
       std::lock_guard stats(stats_mu_);
@@ -166,11 +166,11 @@ public:
   Roe<std::string> LocalPeerIdBase58() const override { return local_peer_id_; }
   bool IsStarted() const override { return true; }
 
-  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const mesh::MediaRelayQuoteRequest& /*request*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const mesh::MediaRelayQuoteRequest& /*request*/,
                                     int /*timeout_ms*/) override {
     std::lock_guard lock(mu_);
     if (unreachable_.count(hop_peer_key) > 0) {
-      return Error("hop unreachable from " + local_peer_id_);
+      return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "hop unreachable from " + local_peer_id_);
     }
     ++quote_calls_;
     quoted_hops_.push_back(hop_peer_key);
@@ -182,14 +182,14 @@ public:
     return q;
   }
 
-  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
                                               const std::string& session_id, const std::string& /*auth_stub*/,
                                               std::function<void(mesh::MediaDataFrame)> on_frame,
                                               int /*timeout_ms*/) override {
     {
       std::lock_guard lock(mu_);
       if (unreachable_.count(hop_peer_key) > 0) {
-        return Error("hop unreachable from " + local_peer_id_);
+        return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "hop unreachable from " + local_peer_id_);
       }
     }
     hop_.Attach(this, hop_peer_key, session_id, std::move(on_frame));
@@ -201,15 +201,15 @@ public:
 
   void StartClientFrameReader() override { hop_.StartReading(this); }
 
-  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
                                                std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
-    return Error("not a local hop");
+    return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "not a local hop");
   }
 
-  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+  mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     return hop_.Subscribe(this, stream_id, channel_id);
   }
-  Roe<void> SendFrame(const mesh::MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
+  mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
   void Detach() override { hop_.Detach(this); }
   bool IsAttached() const override { return hop_.IsAttached(this); }
   bool IsLocalHopAttached() const override { return false; }
@@ -260,6 +260,16 @@ protected:
       StackSideOptions options;
       options.seed_dial_ok = true;
       options.relay = relays_[i].get();
+      options.group_members = [this, i](const std::string& /*group_id*/) -> std::optional<std::set<std::string>> {
+        if (!group_of_[i].empty()) {
+          return group_of_[i];
+        }
+        std::set<std::string> everyone;
+        for (const StackSide& side : sides_) {
+          everyone.insert(side.local_identity);
+        }
+        return everyone;
+      };
       BuildStackSide(sides_[i], tags[i], static_cast<uint8_t>(0xa0 + 0x10 * i), options);
     }
     for (size_t i = 0; i < kSides; ++i) {
@@ -321,6 +331,9 @@ protected:
       DestroyStackSide(side);
     }
   }
+
+  /** Who side i sees in the group; empty: every side. */
+  std::set<std::string> group_of_[kSides];
 
   static std::string MeshPeerIdOf(size_t i) { return std::string("12D3KooWGroupSide") + static_cast<char>('A' + i); }
 
@@ -1057,7 +1070,7 @@ TEST_F(CallGroupStackComposeTest, EachMemberKeepsItsOwnSummaryOfAGroupCall) {
   }
 }
 
-TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeaveEndsAll) {
+TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenTheLastWaitsAlone) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
 
@@ -1082,7 +1095,16 @@ TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeave
   EXPECT_GE(RxAudioFrames(kA), a_before + kMinRxFrames) << "A stopped hearing B after C left:" << Describe(call_id);
   EXPECT_GE(RxAudioFrames(kB), b_before + kMinRxFrames) << "B stopped hearing A after C left:" << Describe(call_id);
 
+  // V053: the initiator leaves; B, the last one in, waits alone (a group call is hostless).
   sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::Idle && !relays_[kA]->IsAttached();
+  });
+  EXPECT_EQ(sides_[kA].ui->Phase(), CallPhase::Idle);
+  EXPECT_TRUE(sides_[kB].stack->HasActiveLocalCall()) << "the last one in stays in the call:" << Describe(call_id);
+
+  sides_[kB].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   DrainUntil([&]() {
     PumpWire();
     for (size_t i : members_) {
@@ -1098,6 +1120,198 @@ TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeave
     EXPECT_FALSE(sides_[i].stack->HasActiveLocalCall()) << "side " << i;
     EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " still attached to the hop";
   }
+}
+
+// V053: C declines; A and B talk. C presses call on the group's thread: it joins that call (a
+// participant answers its join request with an invite, accepted without ringing) — no second call.
+TEST_F(CallGroupStackComposeTest, ADeclinerJoinsTheCallThatGoesOn) {
+  group_id_ = "group-1";
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kC].ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  sides_[kC].ui->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
+  ASSERT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::optional<std::string>(call_id));
+
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  EXPECT_EQ(joined->call_id, call_id) << "the call button joins, it does not place a second call";
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id)) << "C never got into the call:" << Describe(call_id);
+}
+
+// V053: once the last one leaves, the end reaches who declined too: nothing is left to join.
+TEST_F(CallGroupStackComposeTest, AnEndedCallIsNoLongerJoinable) {
+  group_id_ = "group-1";
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kC].ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  sides_[kC].ui->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(sides_[kC].ui->JoinableCallInThread("thread-group-call"));
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::Idle;
+  });
+  EXPECT_TRUE(sides_[kC].ui->JoinableCallInThread("thread-group-call")) << "B is still in it";
+  sides_[kB].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return !sides_[kC].ui->JoinableCallInThread("thread-group-call");
+  });
+  EXPECT_FALSE(sides_[kC].ui->JoinableCallInThread("thread-group-call")) << "the last leave ended it for C too";
+}
+
+// V053: C leaves a live three-way call and joins it again: everyone hears everyone on the hop.
+TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kC].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kC].ui->Phase() == CallPhase::Idle && !relays_[kC]->IsAttached();
+  });
+  ASSERT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::optional<std::string>(call_id));
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  EXPECT_EQ(joined->call_id, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
+}
+
+// V053: the owner removes C from the group mid-call. A and B learn of it; C's device has not (it
+// keeps its side of the call): A and B take C as gone, and the media key moves on without C.
+TEST_F(CallGroupStackComposeTest, RemovedFromTheGroupIsOutOfTheCall) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  auto sweep = [&]() {
+    for (StackSide& side : sides_) {
+      side.ui->SweepExpiredInvites();
+    }
+    PumpWire();
+  };
+  // Each side sees the group as it is during the call once.
+  const int64_t seen_at = util::NowUnixMs();
+  DrainUntil([&]() {
+    sweep();
+    return util::NowUnixMs() - seen_at > 1200;
+  });
+  for (size_t i : {kA, kB}) {
+    group_of_[i] = {sides_[kA].local_identity, sides_[kB].local_identity, sides_[kD].local_identity};
+  }
+  auto state_of_c = [&](size_t i) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto row = sessions.FindParticipant(call_id, sides_[kC].local_identity);
+    return row && row->has_value() ? (*row)->state : CallParticipantState::Invited;
+  };
+  auto epoch2 = [&](size_t i) { return sides_[i].stack->MediaKeys()->LoadEpochKey(call_id, 2); };
+  DrainUntil(
+      [&]() {
+        sweep();
+        auto a = epoch2(kA);
+        auto b = epoch2(kB);
+        return state_of_c(kA) == CallParticipantState::Left && state_of_c(kB) == CallParticipantState::Left && a &&
+               a->has_value() && b && b->has_value();
+      },
+      10000);
+  EXPECT_EQ(state_of_c(kA), CallParticipantState::Left) << Describe(call_id);
+  EXPECT_EQ(state_of_c(kB), CallParticipantState::Left) << Describe(call_id);
+  auto a = epoch2(kA);
+  auto b = epoch2(kB);
+  ASSERT_TRUE(a && a->has_value()) << "the key did not move on:" << Describe(call_id);
+  ASSERT_TRUE(b && b->has_value()) << "B has no epoch-2 key:" << Describe(call_id);
+  EXPECT_EQ(**a, **b);
+  auto c = epoch2(kC);
+  EXPECT_FALSE(c && c->has_value()) << "C got the key of a call it was removed from";
+  EXPECT_NE(sides_[kA].ui->Phase(), CallPhase::Idle) << "A and B go on";
+  EXPECT_NE(sides_[kB].ui->Phase(), CallPhase::Idle);
+}
+
+// V053: the device of the one removed leaves the group's call, and is no longer offered to join it.
+TEST_F(CallGroupStackComposeTest, TheOneRemovedLeavesTheCall) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const int64_t seen_at = util::NowUnixMs();
+  DrainUntil([&]() {
+    sides_[kC].ui->SweepExpiredInvites();
+    PumpWire();
+    return util::NowUnixMs() - seen_at > 1200;
+  });
+  group_of_[kC] = {sides_[kA].local_identity, sides_[kB].local_identity};
+  DrainUntil(
+      [&]() {
+        sides_[kC].ui->SweepExpiredInvites();
+        PumpWire();
+        return sides_[kC].ui->Phase() == CallPhase::Idle;
+      },
+      10000);
+  EXPECT_EQ(sides_[kC].ui->Phase(), CallPhase::Idle) << Describe(call_id);
+  EXPECT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
+}
+
+// V053: A and B call the group at the same moment. Both keep the call with the lower id: the
+// other one's starter answers it, and C's ring for the other one stops.
+TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
+  group_id_ = "group-1";
+  Thread thread;
+  thread.id = "thread-group-call";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = *group_id_;
+  thread.updated_at = util::NowUnixMs();
+  for (size_t i : {kA, kB, kC}) {
+    ASSERT_TRUE(sides_[i].store->UpsertThread(thread));
+  }
+  auto a = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  auto b = StartCallNow(*sides_[kB].ui, thread.id, false, {sides_[kA].local_identity, sides_[kC].local_identity});
+  ASSERT_TRUE(a) << a.error().message;
+  ASSERT_TRUE(b) << b.error().message;
+  ASSERT_NE(a->call_id, b->call_id);
+  const std::string winner = std::min(a->call_id, b->call_id);
+  const std::string loser = std::max(a->call_id, b->call_id);
+  auto ringing = [&](size_t i, const std::string& call_id) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto session = sessions.LoadSession(call_id);
+    auto row = sessions.FindParticipant(call_id, sides_[i].local_identity);
+    return session && session->has_value() && (*session)->state != CallSessionState::Ended && row &&
+           row->has_value() && (*row)->state == CallParticipantState::Ringing;
+  };
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::InCall && sides_[kB].ui->Phase() == CallPhase::InCall &&
+           ringing(kC, winner) && !ringing(kC, loser);
+  });
+  for (size_t i : {kA, kB}) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto me = sessions.FindParticipant(winner, sides_[i].local_identity);
+    EXPECT_TRUE(me && me->has_value() && (*me)->state == CallParticipantState::Joined)
+        << "side " << i << " is not in the winning call:" << Describe(winner);
+  }
+  EXPECT_TRUE(ringing(kC, winner)) << "C does not ring for the call that goes on:" << Describe(winner);
+  EXPECT_FALSE(ringing(kC, loser)) << "C still rings for the call that gave way";
 }
 
 } // namespace

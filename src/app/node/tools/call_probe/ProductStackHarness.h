@@ -69,6 +69,16 @@ public:
   Roe<void> EnsureOriginThread(const std::string& thread_id, const std::string& peer_account);
   /** Group call origin (B-HARD-GROUP-CALL-NAT): call-control still rides per-peer direct threads. */
   Roe<void> EnsureGroupOriginThread(const std::string& thread_id, const std::vector<std::string>& peer_accounts);
+  /**
+   * DHT lab (N-DHT call): take part in the mesh DHT as a Node, bootstrapping from `bootstrap_ma`,
+   * signing records with this probe's Amp identity key (the records bind its PeerId). `k`: the
+   * DHT's k (0: default). Waits until the self record has been stored somewhere.
+   */
+  Roe<void> EnableDht(const std::string& bootstrap_ma, ByteVector signing_secret, ByteVector signing_public,
+                      int k, int timeout_ms);
+  /** Look `peer_id` up in the DHT; registers its record's addresses (as ConversationsHub does) and
+   * returns the one to dial. */
+  Roe<std::string> FindPeerViaDht(const std::string& peer_id, int timeout_ms);
   /** Dual-SNAT: nested circuit to peer so Amp chat call-control can deliver before StartCall. */
   Roe<void> EnsurePeerCircuitPath(const std::string& peer_id);
 

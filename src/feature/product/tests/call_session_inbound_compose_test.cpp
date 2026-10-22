@@ -2,7 +2,7 @@
 #include "feature/product/tests/calls_loopback_outbox.h"
 #include "feature/product/tests/calls_on_owner.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -138,7 +138,7 @@ public:
     ++detach_calls;
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+                    std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
     active = true;
@@ -150,10 +150,10 @@ public:
       on_done({});
     }
   }
-  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+  CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     int timeout_ms) override {
-    Roe<void> out;
-    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
+    CallMediaRoe out;
+    ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
   Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
@@ -650,6 +650,12 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   local.state = CallParticipantState::Joined;
   local.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(local));
+  CallParticipant peer;  // the peer who ends it is in the call
+  peer.call_id = call_id;
+  peer.identity = "account:peer";
+  peer.state = CallParticipantState::Joined;
+  peer.joined_at = session.created_at;
+  ASSERT_TRUE(sessions_->UpsertParticipant(peer));
 
   csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"});  // as StartCall does
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::OutboundStarted, call_id); });

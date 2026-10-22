@@ -1,6 +1,6 @@
 #include "feature/conversations/MessagingTools.h"
 
-#include "feature/conversations/ModelFacingJson.h"
+#include "domain/people/ModelFacingJson.h"
 
 
 #include "common/chat/MessagingJson.h"

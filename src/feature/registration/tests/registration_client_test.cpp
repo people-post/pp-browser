@@ -1,7 +1,7 @@
 #include "feature/registration/RegistrationClient.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
-#include "domain/net/OrgBackendClientsImpl.h"
+#include "domain/net/testing/MockOrgBackendClients.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 

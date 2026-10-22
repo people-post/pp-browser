@@ -3,6 +3,7 @@ pp_browser_add_domain_library(pp_domain_ai
     AppActionClassifier.cpp
     ArticleFeedBlocks.cpp
     BriefAiClient.cpp
+    BriefTurnRunner.cpp
     LlmClient.cpp
     MarkdownToRml.cpp
     PromptBuilder.cpp
@@ -11,9 +12,12 @@ pp_browser_add_domain_library(pp_domain_ai
     SseClient.cpp
     SseParser.cpp
     StructuredTextParser.cpp
+    ToolPermissionPolicy.cpp
+    ToolPermissionPrompt.cpp
     ToolRegistry.cpp
     ToolResultFormatter.cpp
     TurnPlan.cpp
+    TurnPlanner.cpp
     TurnTrace.cpp
     WorkingSetPolicy.cpp
   PUBLIC_LIBS
@@ -28,3 +32,4 @@ endif()
 
 add_subdirectory(conversation)
 add_subdirectory(mcp)
+add_subdirectory(tools)

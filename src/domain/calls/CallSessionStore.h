@@ -25,6 +25,8 @@ public:
   Roe<void> UpsertSession(const CallSession& session) const;
   Roe<std::optional<CallSession>> LoadSession(const std::string& call_id) const;
   Roe<std::vector<CallSession>> ListActiveSessions() const;
+  /** A group's calls in any state, newest first (at most `limit`). */
+  Roe<std::vector<CallSession>> ListSessionsForGroup(const std::string& group_id, size_t limit = 20) const;
 
   Roe<void> UpsertParticipant(const CallParticipant& participant) const;
   Roe<std::vector<CallParticipant>> ListParticipants(const std::string& call_id) const;

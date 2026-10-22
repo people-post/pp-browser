@@ -15,7 +15,7 @@
 namespace pbr {
 
 /**
- * `/pp-browser/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
+ * `/pp/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
  * Product single-entry when MeshHost Amp is attached ([A020]); legacy path remains for tests/fallback.
  *
  * Prefer SendEnvelopeAsync when MeshPump + PostToIo are available; sync SendEnvelope parks.
@@ -41,10 +41,13 @@ public:
   void SetInboundHandler(InboundHandler handler);
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
-  Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
+  DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
 
   void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
-                         std::function<void(Roe<void>)> on_done) override;
+                         std::function<void(DirectSendRoe)> on_done) override;
+
+  /** Opening the chat channel failed at the link: our code, the link's chain in `message`. */
+  static DirectSendFailure WrapLinkFailure(const mesh::IChatPeerLinks::Failure& link);
 
 private:
   struct Impl;

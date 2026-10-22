@@ -171,7 +171,7 @@ void ChatThreadChrome::UpdatePeerLink() {
   }
   const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
   const PeerLinkText link_text = PeerLinkTextFor(link);
-  LogPeerLinkDetail(link.banner_message);
+  LogPeerLinkDetail(link.detail);
   view_.show_peer_link = link_text.status_key != nullptr || in_call;
   if (in_call) {
     // Prefer call presence over mesh path label while the call is live.

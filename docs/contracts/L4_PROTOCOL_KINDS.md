@@ -10,7 +10,7 @@ AMP L1–L3 already provide association, crypto, mux, QoS, and fragmentation. **
 
 **Shared-code boundary:** Amp owns transport (OPEN/FRAG/Bulk QoS). pp-browser owns L4 conversation SMs (rpc/blob/realtime/…). pp-ledger owns `/pp-ledger/rpc/1.0.0` codecs and chain sync. Do not put swarm/piece selection or ledger tip-follow into Amp — see [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md). BitTorrent-style multi-peer fetch is future **blob** ops + **discover**, not a new kind.
 
-Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|rpc/peer-announce|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has multiple OPEN ids (chat vs history vs peer-announce) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
+Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). **The prefix names the repo that owns the protocol, never an app:** `/pp/` — product protocols any PP app speaks (`/pp/rpc/chat|rpc/history|rpc/peer-announce|rpc/broadcast|blob|realtime/1.0.0`, here); `/pp-mesh/` — pp-cpp-mesh (`circuit|datagram-relay|reach|reach/punch|dht|directory/1.0.0`); `/pp-amp/` — pp-cpp-amp link plumbing (`capability|circuit-carrier/1.0.0`); `/pp-ledger/` — ledger RPC. Tests and lab tools use `/test/`. (Renamed 2026-10-22 from `/pp-browser/…` as one cutover: builds before it do not interoperate.) Kind **rpc** has multiple OPEN ids (chat vs history vs peer-announce) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
 
 ## Gate — when to add a `protocol_id`
 
@@ -24,7 +24,7 @@ Add a new L4 `protocol_id` **only** when the conversation contract is new:
 | | New NAT / reachability trick |
 | | New tunnel hop count or broker path |
 
-**Do not** add `/pp-browser/call-signal/…`, A/V-specific relay forks, or per-feature tunnels. Prefer envelope `op`, `channel_type` / frame fields, `target_protocol` on circuit, and PeerLink policy.
+**Do not** add `/pp/call-signal/…`, A/V-specific relay forks, or per-feature tunnels. Prefer envelope `op`, `channel_type` / frame fields, `target_protocol` on circuit, and PeerLink policy.
 
 **Multiple OPEN ids under one kind are OK** when separate services own the inbound handler (e.g. `rpc/chat` vs `rpc/history`). That is still one kind — not a license to mint a new *kind* per feature. Avoid first-frame `op` sniffing only to share a single OPEN string across unrelated handlers.
 
@@ -36,13 +36,13 @@ A mesh that can host most apps needs these shapes — not more:
 |------|---------------------|------------------|-----------|
 | **identify** | Who are you / what do you speak? | Control (ch0) | well-known channel 0 — not a product `protocol_id` |
 | **discover** | How do I find names / PeerIds / hints? | Control | `/pp-mesh/*` |
-| **reach** | Can we meet on the path? | Control | `/pp-browser/*` (infra) |
-| **circuit** | Opaque live tunnel when direct fails | Realtime (+ control JSON) | `/pp-browser/*` (infra) |
-| **rpc** | Reliable typed request/response + push | Transactional | `/pp-browser/*` (app) |
-| **blob** | Content-addressed bulk bytes | Bulk | `/pp-browser/*` (app) |
-| **realtime** | Duplex live media or blind datagram fan-out | Realtime + RealtimeControl | `/pp-browser/*` |
+| **reach** | Can we meet on the path? | Control | `/pp-mesh/*` |
+| **circuit** | Opaque live tunnel when direct fails | Realtime (+ control JSON) | `/pp-mesh/*` |
+| **rpc** | Reliable typed request/response + push | Transactional | `/pp/*` |
+| **blob** | Content-addressed bulk bytes | Bulk | `/pp/*` |
+| **realtime** | Duplex live media or blind datagram fan-out | Realtime + RealtimeControl | `/pp/*` (E2E), `/pp-mesh/*` (blind hop) |
 
-Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`** = app and infra conversation protocols advertised on ch0. Plumbing carriers (e.g. `amp-circuit-carrier`) are not product kinds.
+Namespaces: **`/pp/*`** = product conversation protocols (any PP app); **`/pp-mesh/*`** = mesh infrastructure (reach, circuit, blind-hop relay, discovery); **`/pp-amp/*`** = Amp link plumbing (capability ch0, circuit carrier), not product kinds.
 
 ### Kind contracts (summary)
 
@@ -63,16 +63,16 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | Channel 0 capability plane | **identify** | [A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane) |
 | `/pp-mesh/directory/1.0.0` | **discover** | |
 | `/pp-mesh/dht/1.0.0` | **discover** | Separate id while Kademlia SM differs |
-| `/pp-browser/reach/1.0.0` | **reach** | Dial-back probe |
-| `/pp-browser/reach/punch/1.0.0` | **reach** | Punch SM (distinct id; multi-frame) |
-| `/pp-browser/circuit/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
-| `/amp/circuit-carrier/1.0.0` | *(plumbing)* | Amp-owned nested-Session carrier (`kAmpCircuitCarrierProtocolId`); product uses Amp default — not a `/pp-browser/*` id |
-| `/pp-browser/rpc/chat/1.0.0` | **rpc** | Live chat envelopes |
-| `/pp-browser/rpc/history/1.0.0` | **rpc** | Peer history request/response |
-| `/pp-browser/rpc/peer-announce/1.0.0` | **rpc** | Peer-scoped announce tips (Spine B; own OPEN) |
-| `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
-| `/pp-browser/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |
-| `/pp-browser/datagram-relay/1.0.0` | **realtime** (blind hop) | Content-agnostic fan-out ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |
+| `/pp-mesh/reach/1.0.0` | **reach** | Dial-back probe |
+| `/pp-mesh/reach/punch/1.0.0` | **reach** | Punch SM (distinct id; multi-frame) |
+| `/pp-mesh/circuit/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
+| `/pp-amp/circuit-carrier/1.0.0` | *(plumbing)* | Amp-owned nested-Session carrier (`kAmpCircuitCarrierProtocolId`); product uses Amp default — not a `/pp/*` id |
+| `/pp/rpc/chat/1.0.0` | **rpc** | Live chat envelopes |
+| `/pp/rpc/history/1.0.0` | **rpc** | Peer history request/response |
+| `/pp/rpc/peer-announce/1.0.0` | **rpc** | Peer-scoped announce tips (Spine B; own OPEN) |
+| `/pp/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
+| `/pp/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |
+| `/pp-mesh/datagram-relay/1.0.0` | **realtime** (blind hop) | Content-agnostic fan-out ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |
 
 
 ## Use-case coverage (composition)
@@ -100,7 +100,7 @@ These product goals are **in scope of the seven kinds**; they need swarm/fan-out
 | Goal | Do | Don’t |
 |------|----|--------|
 | **File share by content id** | Keep **blob** as the bulk conversation; add provider advertise/lookup on **discover**/**rpc**; optional blob piece/manifest mode for multi-source assemble; HTTP/CDN remains a delivery path; **public** CAS realm only via explicit publish | Mint `/pp-browser/ipfs/…` or treat Bitswap as an L4 kind; require Kubo wire compatibility; promote chat decrypt into public CAS |
-| **Live broadcast** | Treat as **realtime** blind-hop topology (more subscribers) + **rpc** for channel control; identify caps may advertise `realtime_broadcast_fanout` | Mint `/pp-browser/broadcast/…` as a kind; conflate live fan-out with durable ordered blob/rpc logs |
+| **Live broadcast** | Treat as **realtime** blind-hop topology (more subscribers) + **rpc** for channel control; identify caps may advertise `realtime_broadcast_fanout` | Mint `/pp/broadcast/…` as a kind; conflate live fan-out with durable ordered blob/rpc logs |
 
 Cheap forward-compat: identify capability bits (`blob_pieces`, `blob_provide`, `realtime_broadcast_fanout`); leave blob APIs room for `content_id` + optional `manifest`. Defer full rarest-first swarm, provider-DHT product semantics, and broadcast SFU UX until attachments and 1:1/group calls + hop are solid.
 
@@ -112,7 +112,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 
 | Dimension | `rpc/chat` | `rpc/history` | `blob` | `realtime` (call-media) | `datagram-relay` (hop) |
 |-----------|------------|---------------|--------|-------------------------|-------------------------|
-| **Wire id** | `/pp-browser/rpc/chat/1.0.0` | `/pp-browser/rpc/history/1.0.0` | `/pp-browser/blob/1.0.0` | `/pp-browser/realtime/1.0.0` | `/pp-browser/datagram-relay/1.0.0` |
+| **Wire id** | `/pp/rpc/chat/1.0.0` | `/pp/rpc/history/1.0.0` | `/pp/blob/1.0.0` | `/pp/realtime/1.0.0` | `/pp-mesh/datagram-relay/1.0.0` |
 | **Kind** | rpc | rpc | blob | realtime (E2E) | realtime (blind hop) |
 | **L3 class** | Transactional | Transactional | Bulk | RealtimeControl + Realtime | RealtimeControl + Realtime |
 | **QoS** | Reliable | Reliable | Reliable | control Reliable; media BestEffort | hop control Reliable; media BestEffort |
@@ -135,7 +135,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 
 | Dimension | `reach` dial-back | `reach/punch` | `circuit` | `circuit-carrier` | ch0 identify | `directory` / `dht` |
 |-----------|-------------------|---------------|-----------|-------------------|--------------|---------------------|
-| **Wire id** | `/pp-browser/reach/1.0.0` | `/pp-browser/reach/punch/1.0.0` | `/pp-browser/circuit/1.0.0` | `/amp/circuit-carrier/1.0.0` | (ch0; no product id) | `/pp-mesh/directory/1.0.0`, `/pp-mesh/dht/1.0.0` |
+| **Wire id** | `/pp-mesh/reach/1.0.0` | `/pp-mesh/reach/punch/1.0.0` | `/pp-mesh/circuit/1.0.0` | `/pp-amp/circuit-carrier/1.0.0` | `/pp-amp/capability/1.0.0` (ch0) | `/pp-mesh/directory/1.0.0`, `/pp-mesh/dht/1.0.0` |
 | **Kind** | reach | reach | circuit | plumbing | identify | discover |
 | **Send size** | small JSON | small multi-frame JSON | control JSON + opaque splice | opaque nested Session | caps JSON | small control JSON |
 | **Guarantee** | reliable short probe | reliable SM; may fail → circuit | reliable setup; then opaque forward | large BestEffort-ish carrier queue for bursts | reliable | reliable |
@@ -144,7 +144,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 | **Lifetime** | one-shot | short multi-frame SM | live tunnel while needed | while nested call/path up | session start | short ops |
 | **Role** | “can you dial me?” | NAT assist | path when direct fails | nest E2E Session in tunnel | “what do you speak?” | find peers / names |
 
-**Dial-back serving rules** (`/pp-browser/reach/1.0.0`, `DialBackServer`): any peer may ask a seed to dial, so a probe is bounded — at most **4** `target_multiaddrs` (filtered first, then capped), `timeout_ms` clamped to **1–15 s**, **one probe in flight per requesting peer** (a second is refused until the first answers), and only targets `DialBackTargetAllowed` accepts: the requester's own observed IPv4 address, its own IPv6 **/64**, or — across families (a global IPv6 target over an IPv4 link) — a public-routable address. Others are dropped; a probe left with none answers `no target_multiaddrs`.
+**Dial-back serving rules** (`/pp-mesh/reach/1.0.0`, `DialBackServer`): any peer may ask a seed to dial, so a probe is bounded — at most **4** `target_multiaddrs` (filtered first, then capped), `timeout_ms` clamped to **1–15 s**, **one probe in flight per requesting peer** (a second is refused until the first answers), and only targets `DialBackTargetAllowed` accepts: the requester's own observed IPv4 address, its own IPv6 **/64**, or — across families (a global IPv6 target over an IPv4 link) — a public-routable address. Others are dropped; a probe left with none answers `no target_multiaddrs`.
 
 **Delivery path** (direct ADP, punch-assisted direct, circuit → nested Session, HTTP/CDN fallback) is **orthogonal** to the rows above: same `protocol_id` conversation, different way to reach the peer.
 

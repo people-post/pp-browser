@@ -20,6 +20,9 @@ std::optional<std::string> RelayUserIdFromContact(const Contact& contact);
 /** First non-empty RelayUser id on a directory hit (PrimaryRelayIdFromHit). */
 std::optional<std::string> RelayUserIdFromDirectoryHit(const mesh::DirectoryHit& hit);
 
+/** A direct thread's Brief route from contacts alone: its contact's RelayUser, else the account's contact's. */
+std::optional<std::string> ContactRelayRoute(const Thread& thread, ContactsStore& contacts);
+
 /**
  * Brief delivery route for a direct thread: contact RelayUser, else learned
  * account→relay map (inbound `sender_relay_id`).

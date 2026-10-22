@@ -170,6 +170,8 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_punch_offer";
   case CallControlType::CallPunchAnswer:
     return "call_punch_answer";
+  case CallControlType::CallJoinRequest:
+    return "call_join_request";
   case CallControlType::CallCapsUpdate:
     return "call_caps_update";
   }
@@ -188,6 +190,9 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_leave") {
     return CallControlType::CallLeave;
+  }
+  if (value == "call_join_request") {
+    return CallControlType::CallJoinRequest;
   }
   if (value == "call_roster") {
     return CallControlType::CallRoster;

@@ -278,6 +278,29 @@ Roe<CallLeaveDetail> CallControlCodec::DecodeLeave(const std::string& detail_jso
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeJoinRequest(const CallJoinRequestDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("identity", detail.identity);
+  if (detail.any) {
+    json.set("any", true);
+  }
+  return DumpJson(json);
+}
+
+Roe<CallJoinRequestDetail> CallControlCodec::DecodeJoinRequest(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  if (!json || !call_id || call_id->empty()) {
+    return Error("Invalid call_join_request detail");
+  }
+  CallJoinRequestDetail detail;
+  detail.call_id = *call_id;
+  detail.identity = json->getString("identity").value_or("");
+  detail.any = json->getIf<bool>("any").value_or(false);
+  return detail;
+}
+
 Roe<std::string> CallControlCodec::EncodeRoster(const CallRosterDetail& detail) {
   std::vector<Value> participants;
   participants.reserve(detail.participants.size());

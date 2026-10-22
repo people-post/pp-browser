@@ -10,6 +10,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/ValueJson.h"
+#include "mesh/dht/AmpDhtProtocol.h"
 #include "mesh/reachability/Reachability.h"
 #if defined(PP_BROWSER_HAS_LEDGER)
 #include "feature/node/NodeLedgerRole.h"
@@ -68,7 +69,7 @@ void PrintUsage(const char* argv0) {
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
       << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
-      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT,\n"
+      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT, PP_NODE_DHT_K,\n"
       << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN, PP_NODE_LOG_LEVEL,\n"
       << "  PP_NODE_LEDGER_ROLE, PP_NODE_LEDGER_DIR\n"
@@ -319,8 +320,27 @@ int main(int argc, char** argv) {
     pbr::StatusHttpAuthConfig auth;
     auth.bearer_token = status_token;
     pbr::NodeBootstrapResult* boot_ptr = &(*boot);
+    // Lab only (pp_local_test.sh --suite dht): GET /dht/find?peer_id=… starts a DHT lookup.
+    pbr::StatusHttpActions actions;
+    if (const char* lab_find = std::getenv("PP_NODE_LAB_DHT_FIND"); lab_find && std::string(lab_find) == "1") {
+      actions.dht_find = [boot_ptr](const std::string& peer_id) {
+        auto* dht = boot_ptr->mesh ? boot_ptr->mesh->AmpDht() : nullptr;
+        if (!dht || !dht->IsStarted()) {
+          return false;
+        }
+        dht->FindPeer(peer_id, [peer_id](pbr::mesh::AmpDhtProtocol::FindPeerRoe found) {
+          auto log = pbr::logging::getLogger("pp-node");
+          if (found) {
+            log.info << "lab dht find " << peer_id << " found from_cache=" << found->from_cache;
+          } else {
+            log.info << "lab dht find " << peer_id << " failed: " << found.error().message;
+          }
+        });
+        return true;
+      };
+    }
     if (auto started = status_http.Start(*bind, std::move(auth),
-                                         [boot_ptr]() { return MakeSnapshot(*boot_ptr); });
+                                         [boot_ptr]() { return MakeSnapshot(*boot_ptr); }, std::move(actions));
         !started) {
       root.error << "status HTTP failed: " << started.error().message;
       ShutdownNode(*boot);

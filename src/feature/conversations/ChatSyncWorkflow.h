@@ -4,7 +4,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/OrgBackendClients.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
 
 #include <cstdint>
 #include <functional>
@@ -66,9 +66,6 @@ private:
                                             MessageTransport transport = MessageTransport::Relay);
   bool PassesEmptyGapGuard(const std::string& thread_id, uint32_t session_epoch, const std::string& seq_owner,
                            uint64_t gap_max) const;
-  void CloseEmptyGap(PeerSyncState& state, uint64_t min_seq, uint64_t max_seq) const;
-  std::optional<std::pair<uint64_t, uint64_t>> ClampGapRange(uint64_t gap_min, uint64_t gap_max,
-                                                             uint64_t history_floor_seq) const;
 
   IThreadStore& store_;
   IdentityStore& identity_;

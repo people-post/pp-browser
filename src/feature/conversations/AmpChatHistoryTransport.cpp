@@ -3,6 +3,8 @@
 #include "mesh/l4/shared/InboundReply.h"
 
 #include "domain/messaging/ChatHistoryResponder.h"
+#include "domain/messaging/PeerRequestAuth.h"
+#include "common/Utilities.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"
@@ -53,12 +55,14 @@ std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
 } // namespace
 
 struct AmpChatHistoryTransport::Impl {
-  Impl(IThreadStore& store_in, IdentityStore& identity_in, IPskSessionStore& psk_store_in)
-      : store(store_in), identity(identity_in), psk_store(psk_store_in) {}
+  Impl(IThreadStore& store_in, IdentityStore& identity_in, IPskSessionStore& psk_store_in,
+       IPeerSigningKeyResolver& signing_keys_in)
+      : store(store_in), identity(identity_in), psk_store(psk_store_in), signing_keys(signing_keys_in) {}
 
   IThreadStore& store;
   IdentityStore& identity;
   IPskSessionStore& psk_store;
+  IPeerSigningKeyResolver& signing_keys;
   mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
@@ -68,8 +72,9 @@ struct AmpChatHistoryTransport::Impl {
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
   pp::Lifetime deferred;
 
-  void ServeRequest(std::shared_ptr<mesh::InboundReply> reply, std::vector<uint8_t> body) {
-    RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
+  void ServeRequest(std::shared_ptr<mesh::InboundReply> reply, std::vector<uint8_t> body,
+                    const std::string& remote_peer_id) {
+    RunWorker(post_worker, [this, reply, remote_peer_id, body = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
                         return;
                       }
@@ -91,9 +96,10 @@ struct AmpChatHistoryTransport::Impl {
                                                                : local_identity->relay_user_id;
                       auto response = ChatHistoryResponder::Serve(
                           store, psk_store, *request, local_identity->relay_user_id, local_account_id,
-                          [this](const std::vector<uint8_t>& bytes) { return identity.SignBytes(bytes); });
+                          [this](const std::vector<uint8_t>& bytes) { return identity.SignBytes(bytes); },
+                          remote_peer_id, signing_keys, util::NowUnixMs());
                       if (!response) {
-                        return;
+                        return;  // refused or failed: the asker gets no answer either way
                       }
                       const std::string response_json = DumpJson(ChatHistoryResponseToJson(*response));
                       reply->Send(JsonToBody(response_json));
@@ -107,13 +113,13 @@ struct AmpChatHistoryTransport::Impl {
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     *session_holder = links->BindChannel(
         remote_peer_id, channel_id, mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
-        [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+        [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
           }
           // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
-          ServeRequest(mesh::MakeInboundReply(session, post_io), std::move(*frame));
+          ServeRequest(mesh::MakeInboundReply(session, post_io), std::move(*frame), remote_peer_id);
           return true;
         });
   }
@@ -121,8 +127,9 @@ struct AmpChatHistoryTransport::Impl {
 
 AmpChatHistoryTransport::AmpChatHistoryTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                              IdentityStore& identity, IPskSessionStore& psk_store,
-                                             WorkerPost post_worker, IoPost post_io, IoAfter post_after)
-    : impl_(std::make_unique<Impl>(store, identity, psk_store)), links_(links), io_pump_(std::move(io_pump)),
+                                             IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker,
+                                             IoPost post_io, IoAfter post_after)
+    : impl_(std::make_unique<Impl>(store, identity, psk_store, signing_keys)), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
       post_after_(std::move(post_after)) {
   impl_->links = &links_;
@@ -213,7 +220,27 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
   };
 
   const std::string peer_key = request.peer_identity_value;
-  const std::string request_json = DumpJson(ChatHistoryRequestToJson(request));
+  auto local = impl_->identity.Get();
+  if (!local) {
+    (*finish)(local.error());
+    return;
+  }
+  ChatHistoryRequest signed_request = request;
+  auto peer_id = local_peer_id_override_.empty() ? PeerRequestAuth::DevicePeerId(local->public_key_b64)
+                                                 : Roe<std::string>(local_peer_id_override_);
+  if (!peer_id) {
+    (*finish)(peer_id.error());
+    return;
+  }
+  if (auto signed_ok = PeerRequestAuth::Sign(signed_request, local->account_id, *peer_id,
+                                             util::NowUnixMs(), [this](const std::vector<uint8_t>& bytes) {
+                                               return impl_->identity.SignBytes(bytes);
+                                             });
+      !signed_ok) {
+    (*finish)(signed_ok.error());
+    return;
+  }
+  const std::string request_json = DumpJson(ChatHistoryRequestToJson(signed_request));
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session_holder, deadline,

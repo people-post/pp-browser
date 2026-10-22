@@ -123,7 +123,7 @@ void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& 
   request.quote.session_id = call_id;
   request.quote.participants = 3;  // a group is what this hop would serve
   // Edge: the quote answers on a worker / I/O — it only reports.
-  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](Roe<mesh::MediaRelayQuote> quote) {
+  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote) {
     const bool ok = quote && quote->ok;
     outbox.Emit(planning_event::ProbeAnswered{call_id, round, hop_peer_id, ok,
                                               ok ? std::string() : (quote ? quote->error : quote.error().message)});
@@ -133,21 +133,12 @@ void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& 
 }
 
 CallHopReport CallHopPlanning::ReportForAccept(const std::string& call_id) const {
-  CallHopReport report;
   auto probes = probes_.find(call_id);
   auto planned = probe_planned_hop_.find(call_id);
   if (probes == probes_.end() || planned == probe_planned_hop_.end()) {
-    return report;
+    return {};
   }
-  for (const auto& [hop, ok] : probes->second) {
-    if (ok) {
-      (*ok ? report.reachable_hops : report.unreachable_hops).push_back(hop);
-    }
-    if (hop == planned->second) {
-      report.planned_hop_ok = ok;  // nullopt while the quote is still in flight
-    }
-  }
-  return report;
+  return BuildCallHopReport(probes->second, planned->second);
 }
 
 void CallHopPlanning::NoteAcceptReport(const std::string& call_id, const std::string& identity,

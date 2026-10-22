@@ -2,6 +2,7 @@
 
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "domain/messaging/ChatSyncLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
@@ -9,6 +10,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/ContactsStore.h"
+#include "domain/people/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>
@@ -55,29 +57,7 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
   request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
   request.requester_identity_value = local_identity->relay_user_id;
   // History/stream routing stays on Brief relay ids (M010); thread peer is Account ID.
-  std::string peer_relay;
-  if (!thread.participant_contact_ids.empty()) {
-    if (auto contact = contacts_.Get(thread.participant_contact_ids.front()); contact && *contact) {
-      for (const mesh::ContactId& id : (*contact)->ids) {
-        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-          peer_relay = id.value;
-          break;
-        }
-      }
-    }
-  }
-  if (peer_relay.empty() && thread.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) &&
-      !thread.peer_identity_value.empty()) {
-    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, mesh::ContactIdKind::Account);
-    if (by_account && by_account->has_value()) {
-      for (const mesh::ContactId& id : (**by_account).ids) {
-        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-          peer_relay = id.value;
-          break;
-        }
-      }
-    }
-  }
+  const std::string peer_relay = ContactRelayRoute(thread, contacts_).value_or(std::string());
   if (peer_relay.empty()) {
     return Error("Direct thread missing peer relay route for history");
   }
@@ -85,15 +65,8 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
   request.peer_identity_value = peer_relay;
   request.channel = thread.channel;
   request.session_epoch = session_epoch;
-  request.limit = std::min(limit, kMaxPollBatchMessages);
   request.order = order;
-
-  if (min_sender_seq) {
-    request.min_sender_seq = std::max(*min_sender_seq, history_floor_seq + 1);
-  } else if (history_floor_seq > 0) {
-    request.min_sender_seq = history_floor_seq + 1;
-  }
-  request.max_sender_seq = max_sender_seq;
+  chat_sync::BoundHistoryRequest(request, history_floor_seq, min_sender_seq, max_sender_seq, limit);
   return request;
 }
 
@@ -109,37 +82,6 @@ bool ChatSyncWorkflow::PassesEmptyGapGuard(const std::string& thread_id, const u
     return false;
   }
   return rows->empty();
-}
-
-void ChatSyncWorkflow::CloseEmptyGap(PeerSyncState& state, const uint64_t min_seq, const uint64_t max_seq) const {
-  for (uint64_t seq = min_seq; seq <= max_seq; ++seq) {
-    if (std::find(state.empty_closed_seqs.begin(), state.empty_closed_seqs.end(), seq) ==
-        state.empty_closed_seqs.end()) {
-      state.empty_closed_seqs.push_back(seq);
-    }
-  }
-  if (max_seq > state.contiguous_peer_seq) {
-    state.contiguous_peer_seq = max_seq;
-  }
-  if (state.phase == PeerSyncPhase::Gap) {
-    state.phase = PeerSyncPhase::Ok;
-  }
-}
-
-std::optional<std::pair<uint64_t, uint64_t>> ChatSyncWorkflow::ClampGapRange(const uint64_t gap_min,
-                                                                             const uint64_t gap_max,
-                                                                             const uint64_t history_floor_seq) const {
-  if (gap_max < gap_min) {
-    return std::nullopt;
-  }
-  const uint64_t clamped_min = std::max(gap_min, history_floor_seq + 1);
-  if (clamped_min > gap_max) {
-    return std::nullopt;
-  }
-  if (gap_max - clamped_min + 1 > kMaxGapRepairSeqSpan) {
-    return std::make_pair(clamped_min, clamped_min + kMaxGapRepairSeqSpan - 1);
-  }
-  return std::make_pair(clamped_min, gap_max);
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& thread_id,
@@ -161,14 +103,18 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
   if (!sync_state) {
     return sync_state.error();
   }
-  const bool authorized_older_backfill =
-      request.max_sender_seq && sync_state->loaded_min_seq > 0 &&
-      *request.max_sender_seq < sync_state->loaded_min_seq;
+  const bool authorized_older_backfill = chat_sync::AuthorizedOlderBackfill(request, *sync_state);
 
   auto identity = identity_.Get();
   const std::string local_account_id = identity ? (*identity).account_id : std::string{};
 
+  // No more than was asked for (and never past the batch cap), whatever the responder sent.
+  const size_t cap = chat_sync::HistoryResponseCap(request);
+  size_t taken = 0;
   for (const RelayEnvelope& envelope : response.messages) {
+    if (taken++ >= cap) {
+      break;
+    }
     const RelayReceiveOutcome outcome =
         receive_pipeline_.ProcessEnvelope(envelope, local_account_id, authorized_older_backfill, transport);
     if (outcome.persisted) {
@@ -176,17 +122,10 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
       changed = true;
       if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
         inbox_.OnInboundMessagePersisted(outcome.thread_id);
-        if (attachment_downloads_) {
-          if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-            if (decoded->content_type == ChatContentType::Attachment) {
-              ThreadMessage message;
-              message.id = envelope.message_id;
-              message.thread_id = outcome.thread_id;
-              message.content_type = ChatContentType::Attachment;
-              message.payload_json = decoded->payload_json;
-              attachment_downloads_->EnqueueFromMessage(outcome.thread_id, message);
-            }
-          }
+        // The stored, decrypted message — never the wire payload (ciphertext).
+        if (attachment_downloads_ && outcome.persisted_message &&
+            outcome.persisted_message->content_type == ChatContentType::Attachment) {
+          attachment_downloads_->EnqueueFromMessage(outcome.thread_id, *outcome.persisted_message);
         }
       }
     }
@@ -197,12 +136,9 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
     if (!fresh_sync_state) {
       return fresh_sync_state.error();
     }
-    const std::string seq_owner = (*thread)->participant_contact_ids.empty()
-                                      ? (*thread)->peer_identity_value
-                                      : (*thread)->participant_contact_ids.front();
-    if (PassesEmptyGapGuard(thread_id, request.session_epoch, seq_owner, *request.max_sender_seq)) {
+    if (PassesEmptyGapGuard(thread_id, request.session_epoch, chat_sync::SeqOwner(**thread), *request.max_sender_seq)) {
       PeerSyncState updated = *fresh_sync_state;
-      CloseEmptyGap(updated, *request.min_sender_seq, *request.max_sender_seq);
+      chat_sync::CloseEmptyGap(updated, *request.min_sender_seq, *request.max_sender_seq);
       (void)store_.SetPeerSyncState(thread_id, request.session_epoch, updated);
       result.empty_gap_closed = true;
     }
@@ -230,30 +166,18 @@ void ChatSyncWorkflow::AdvanceContiguousThroughStoredSeqs(const std::string& thr
     return;
   }
 
-  const std::string seq_owner = (*thread)->participant_contact_ids.empty()
-                                    ? (*thread)->peer_identity_value
-                                    : (*thread)->participant_contact_ids.front();
-
+  const std::string seq_owner = chat_sync::SeqOwner(**thread);
   PeerSyncState updated = *sync_state;
-  bool changed = false;
-  while (updated.contiguous_peer_seq < updated.loaded_max_seq) {
+  const bool changed = chat_sync::AdvanceContiguous(updated, [&](const uint64_t seq) {
     SeqRangeQuery query;
     query.session_epoch = session_epoch;
     query.seq_owner_contact_id = seq_owner;
-    query.min_sender_seq = updated.contiguous_peer_seq + 1;
-    query.max_sender_seq = updated.contiguous_peer_seq + 1;
+    query.min_sender_seq = seq;
+    query.max_sender_seq = seq;
     query.limit = 1;
     auto rows = store_.GetMessagesBySeqRange(thread_id, query);
-    if (!rows || rows->empty()) {
-      break;
-    }
-    updated.contiguous_peer_seq += 1;
-    changed = true;
-  }
-  if (updated.phase == PeerSyncPhase::Gap && updated.contiguous_peer_seq == updated.loaded_max_seq) {
-    updated.phase = PeerSyncPhase::Ok;
-    changed = true;
-  }
+    return rows && !rows->empty();
+  });
   if (changed) {
     (void)store_.SetPeerSyncState(thread_id, session_epoch, updated);
   }
@@ -417,12 +341,8 @@ void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id,
     return;
   }
 
-  std::optional<uint64_t> tail_min_seq;
-  if (sync_state->loaded_max_seq > 0) {
-    tail_min_seq = sync_state->loaded_max_seq + 1;
-  }
-
-  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, tail_min_seq, std::nullopt,
+  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq,
+                              chat_sync::TailMinSeq(*sync_state), std::nullopt,
                               kDefaultTailSyncLimit, "desc");
   if (!request) {
     if (on_done) {
@@ -482,13 +402,13 @@ void ChatSyncWorkflow::RepairGapAsync(const std::string& thread_id, const uint64
     return;
   }
 
-  const auto range = ClampGapRange(gap_min, gap_max, sync_state->history_floor_seq);
+  const auto range = chat_sync::ClampGapRange(gap_min, gap_max, sync_state->history_floor_seq);
   if (!range) {
     finish(ChatSyncResult{});
     return;
   }
 
-  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, range->first, range->second,
+  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, range->min, range->max,
                               kMaxPollBatchMessages, "asc");
   if (!request) {
     finish(request.error());
@@ -540,15 +460,12 @@ void ChatSyncWorkflow::RepairKnownGapAsync(const std::string& thread_id,
     finish(sync_state.error());
     return;
   }
-  if (sync_state->phase != PeerSyncPhase::Gap) {
+  const auto gap = chat_sync::KnownGap(*sync_state);
+  if (!gap) {
     finish(ChatSyncResult{});
     return;
   }
-  if (sync_state->loaded_max_seq <= sync_state->contiguous_peer_seq + 1) {
-    finish(ChatSyncResult{});
-    return;
-  }
-  RepairGapAsync(thread_id, sync_state->contiguous_peer_seq + 1, sync_state->loaded_max_seq - 1, std::move(finish));
+  RepairGapAsync(thread_id, gap->min, gap->max, std::move(finish));
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::ScrollBackfill(const std::string& thread_id) {
@@ -594,13 +511,12 @@ void ChatSyncWorkflow::ScrollBackfillAsync(const std::string& thread_id,
     finish(sync_state.error());
     return;
   }
-  if (sync_state->loaded_min_seq <= sync_state->history_floor_seq + 1) {
+  const auto max_seq = chat_sync::OlderBackfillMaxSeq(*sync_state);
+  if (!max_seq) {
     finish(ChatSyncResult{});
     return;
   }
-
-  const uint64_t max_seq = sync_state->loaded_min_seq - 1;
-  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, std::nullopt, max_seq,
+  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, std::nullopt, *max_seq,
                               kUserSyncOlderHistoryLimit, "desc");
   if (!request) {
     finish(request.error());

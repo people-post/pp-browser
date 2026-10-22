@@ -54,9 +54,9 @@ public:
 class FakeCircuitReach final : public mesh::ICircuitHopReach {
 public:
   explicit FakeCircuitReach(FakeDialRegistry& dial) : dial_(dial) {}
-  Roe<void> TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
-  Roe<void> TryEnsurePeerReachable(const std::string& /*peer*/) override { return {}; }
-  void TryEnsurePeerReachableAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done,
+  mesh::CircuitReachRoe TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
+  mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string& /*peer*/) override { return {}; }
+  void TryEnsurePeerReachableAsync(const std::string& peer_key, mesh::CircuitReachDone on_done,
                                         bool /*allow_circuit*/) override {
     {
       std::lock_guard lock(dial_.mu);
@@ -89,7 +89,7 @@ public:
     ++detach_calls;
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks /*cbs*/,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
+                    std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_calls;
     if (hang_first_n > 0) {
       --hang_first_n;
@@ -98,7 +98,7 @@ public:
     }
     if (fail_first_n > 0) {
       --fail_first_n;
-      on_done(Error(fail_message));
+      on_done(CallMediaFailure::Of(fail_code, fail_message));
       if (after_fail) {
         after_fail(connect_calls);
       }
@@ -108,7 +108,7 @@ public:
     active_params = params;
     on_done({});
   }
-  Roe<void> Connect(const CallMediaDirectConnectParams&, CallMediaDirectCallbacks, int) override { return {}; }
+  CallMediaRoe Connect(const CallMediaDirectConnectParams&, CallMediaDirectCallbacks, int) override { return {}; }
   Roe<void> SendAudio(const std::vector<uint8_t>&, uint32_t, uint8_t) override { return {}; }
   Roe<void> SendMedia(uint8_t, const std::vector<uint8_t>&, uint32_t, uint8_t) override { return {}; }
 
@@ -119,7 +119,8 @@ public:
   int fail_first_n = 0;
   int hang_first_n = 0;
   std::string fail_message = "amp call-media: hello rejected";
-  std::function<void(Roe<void>)> pending;
+  CallMediaErr fail_code = CallMediaErr::HelloRejected;
+  std::function<void(CallMediaRoe)> pending;
   test::InboundHelloFake inbound;
   /** Runs on the UI thread right after a failed completion was delivered (attempt number). */
   std::function<void(int attempt)> after_fail;
@@ -168,7 +169,7 @@ protected:
     CallMediaConnectHooks h;
     h.before_attempt = [this](const CallMediaDirectConnectParams&) { ++before_attempts_; };
     h.on_link_ready = [this](mesh::PeerLinkKind kind) { last_kind_ = kind; };
-    h.on_finished = [this](Roe<void> r) {
+    h.on_finished = [this](CallMediaRoe r) {
       ++finished_;
       result_ = std::move(r);
     };
@@ -210,7 +211,7 @@ protected:
   std::unique_ptr<CallsLoopbackOutbox<ConnectEvent>> events_;
   int before_attempts_ = 0;
   int finished_ = 0;
-  std::optional<Roe<void>> result_;
+  std::optional<CallMediaRoe> result_;
   mesh::PeerLinkKind last_kind_ = mesh::PeerLinkKind::Unknown;
 };
 
@@ -248,7 +249,7 @@ TEST_F(CallMediaConnectCoordinatorTest, WatchdogFailsOnlyTheAttempt) {
   EXPECT_GE(transport_->detach_calls, 1) << "watchdog detaches the stuck attempt";
   // The hung attempt completing late must not finish the sequence a second time.
   if (transport_->pending) {
-    transport_->pending(Error("late"));
+    transport_->pending(CallMediaFailure::Of(CallMediaErr::Timeout, "late"));
   }
   PumpFor(std::chrono::milliseconds(100));
   EXPECT_EQ(finished_, 1);
@@ -259,9 +260,25 @@ TEST_F(CallMediaConnectCoordinatorTest, GivesUpAfterAllAttempts) {
   OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(20)));
   ASSERT_TRUE(result_);
-  EXPECT_FALSE(*result_);
+  ASSERT_FALSE(*result_);
+  EXPECT_EQ(result_->error().GetCode(), transport_->fail_code) << "the last attempt's code, not its text";
   EXPECT_EQ(transport_->connect_calls, 5);
   EXPECT_FALSE(connect_->InFlight());
+}
+
+// A peer reach that found no link ends the sequence with this layer's code (the reach's chain kept).
+TEST(CallMediaConnectWrapTest, AReachFailureIsWrappedAsCallMediaCodes) {
+  using ReachErr = mesh::PeerReachCoordinator::Err;
+  const auto wrap = [](ReachErr code) {
+    return CallMediaConnectCoordinator::WrapReachFailure(mesh::PeerReachCoordinator::Failure::Of(code, "why"));
+  };
+  EXPECT_EQ(wrap(ReachErr::NoEndpoint).GetCode(), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(ReachErr::NotConnected).GetCode(), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(ReachErr::CircuitFailed).GetCode(), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(ReachErr::NoAnswer).GetCode(), CallMediaErr::Timeout);
+  EXPECT_EQ(wrap(ReachErr::TransportFailed).GetCode(), CallMediaErr::StaleLink);
+  EXPECT_EQ(wrap(ReachErr::Cancelled).GetCode(), CallMediaErr::Aborted);
+  EXPECT_NE(wrap(ReachErr::NoAnswer).message.find("why"), std::string::npos);
 }
 
 // THREADING.md Cancel / Abort: abort clears InFlight itself and completes nothing.
@@ -303,7 +320,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownRejectsStart) {
   OnCallsOwner([&] { connect_->Shutdown(); });
   std::string failure;
   auto req = Request();
-  req.callbacks.on_failed = [&failure](const std::string& why) { failure = why; };
+  req.callbacks.on_failed = [&failure](const CallMediaFailure& why) { failure = why.message; };
   OnCallsOwner([&] { connect_->Start(std::move(req), Hooks()); });
   EXPECT_EQ(failure, "shutdown in progress");
   EXPECT_FALSE(connect_->InFlight());

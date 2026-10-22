@@ -4,6 +4,7 @@
 
 #include "common/Error.h"
 
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,6 +18,14 @@ namespace pbr {
 class GroupRosterStore {
 public:
   explicit GroupRosterStore(std::string profile_db_path);
+
+  /**
+   * Hold across a read-then-write of a group's roster or metadata (an epoch bump, an inbound
+   * membership event): those run on several workers at once — two accepts in one inbox poll — and
+   * each would bump the epoch from the same value. One lock for every profile: cheap and rare.
+   * Recursive: an owner's change holds it across its read and the apply that takes it too.
+   */
+  [[nodiscard]] static std::unique_lock<std::recursive_mutex> LockForUpdate();
 
   Roe<void> EnsureSchema(sqlite3* profile_db) const;
 
@@ -45,6 +54,9 @@ public:
   Roe<void> BumpGroupSessionEpoch(const std::string& group_id, uint32_t new_epoch) const;
 
 private:
+  /** profile.db with the busy timeout the other profile stores use (concurrent writers wait). */
+  bool OpenDb(sqlite3** db) const;
+
   std::string profile_db_path_;
 };
 

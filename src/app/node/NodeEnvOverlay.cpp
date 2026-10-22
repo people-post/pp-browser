@@ -102,6 +102,15 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
       config.mesh.capabilities.dht = *parsed;
     }
   }
+  if (const char* k = EnvOrNull("PP_NODE_DHT_K")) {  // labs: a small k makes lookups walk
+    try {
+      const int parsed = std::stoi(k);
+      if (parsed >= 1 && parsed <= 20) {
+        config.mesh.dht.k_bucket_size = parsed;
+      }
+    } catch (...) {
+    }
+  }
   if (const char* ledger = EnvOrNull("PP_NODE_CAP_LEDGER_GATEWAY")) {
     if (auto parsed = ParsePpNodeBoolEnv(ledger)) {
       config.mesh.capabilities.ledger_gateway = *parsed;

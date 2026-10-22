@@ -225,3 +225,59 @@ TEST(GroupHopAtJoinTest, NoPlanMeansTheUsualPick) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+namespace {
+
+std::vector<mesh::MeshHopCandidate> Hops(std::initializer_list<const char*> ids) {
+  std::vector<mesh::MeshHopCandidate> out;
+  for (const char* id : ids) {
+    mesh::MeshHopCandidate c;
+    c.peer_id = id;
+    out.push_back(c);
+  }
+  return out;
+}
+
+std::vector<std::string> Ids(const std::vector<mesh::MeshHopCandidate>& hops) {
+  std::vector<std::string> out;
+  for (const auto& h : hops) {
+    out.push_back(h.peer_id);
+  }
+  return out;
+}
+
+TEST(CallHopOrderTest, NamedAndPlannedHopsGoFirst) {
+  EXPECT_EQ(Ids(PreferNamedHopFirst(Hops({"a", "b", "c"}), "c")), (std::vector<std::string>{"c", "a", "b"}));
+  EXPECT_EQ(Ids(PreferNamedHopFirst(Hops({"a", "b"}), "z")), (std::vector<std::string>{"a", "b"})) << "not listed";
+  EXPECT_EQ(Ids(PreferNamedHopFirst(Hops({"a", "b"}), "")), (std::vector<std::string>{"a", "b"}));
+
+  CallPlannedHop planned;
+  planned.peer_id = "p";
+  EXPECT_EQ(Ids(PlannedHopFirst(Hops({"a"}), planned)), (std::vector<std::string>{"a"})) << "unlisted, no address";
+  planned.multiaddr = "/ip4/203.0.113.1/tcp/1";
+  auto ranked = PlannedHopFirst(Hops({"a"}), planned);
+  EXPECT_EQ(Ids(ranked), (std::vector<std::string>{"p", "a"})) << "invitees were told about it";
+  EXPECT_TRUE(ranked.front().dialable);
+  EXPECT_EQ(Ids(PlannedHopFirst(Hops({"a", "p"}), planned)), (std::vector<std::string>{"p", "a"}));
+}
+
+} // namespace
+} // namespace pbr
+
+namespace pbr {
+namespace {
+
+TEST(CallHopReportTest, WhatAnInviteeReports) {
+  const std::map<std::string, std::optional<bool>> probes{
+      {"hop:a", true}, {"hop:b", false}, {"hop:planned", std::nullopt}};
+  CallHopReport report = BuildCallHopReport(probes, "hop:planned");
+  EXPECT_EQ(report.reachable_hops, std::vector<std::string>{"hop:a"});
+  EXPECT_EQ(report.unreachable_hops, std::vector<std::string>{"hop:b"});
+  EXPECT_FALSE(report.planned_hop_ok) << "its quote is still in flight";
+  report = BuildCallHopReport(probes, "hop:b");
+  EXPECT_EQ(report.planned_hop_ok, std::optional<bool>(false));
+}
+
+} // namespace
+} // namespace pbr

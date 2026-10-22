@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -47,6 +48,15 @@ struct StatusHttpSnapshot {
   std::string dht_json;
 };
 
+/**
+ * Lab-only actions (off unless set). `dht_find`: start a DHT lookup of `peer_id` (answered at once;
+ * a found record shows in `/status` → `dht_stats.records`). pp-node sets it only with
+ * PP_NODE_LAB_DHT_FIND=1 — a reachable status port must not let anyone start lookups.
+ */
+struct StatusHttpActions {
+  std::function<bool(const std::string& peer_id)> dht_find;
+};
+
 struct StatusHttpResponse {
   int status_code = 200;
   std::string content_type = "application/json";
@@ -57,6 +67,8 @@ struct StatusHttpResponse {
 struct StatusHttpRequest {
   std::string method;
   std::string path;
+  /** After `?`, as sent (empty when none). */
+  std::string query;
   std::string authorization;
 };
 
@@ -65,7 +77,8 @@ std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw)
 
 StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
                                            const StatusHttpAuthConfig& auth,
-                                           const StatusHttpSnapshot& snap);
+                                           const StatusHttpSnapshot& snap,
+                                           const StatusHttpActions& actions = {});
 
 /** Serialize a complete HTTP/1.1 response. */
 std::string FormatStatusHttpResponse(const StatusHttpResponse& response);

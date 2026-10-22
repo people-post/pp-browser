@@ -1,7 +1,7 @@
 #pragma once
 
 #include "amp/link/MeshRuntime.h"
-#include "feature/call_media/CallMediaBundleLogic.h"
+#include "domain/calls/CallMediaBundleLogic.h"
 #include "feature/call_media/ICallMediaTransport.h"
 
 #include <atomic>
@@ -30,13 +30,19 @@ struct CallMediaPathState {
 };
 
 /**
- * Non-blocking `/pp-browser/realtime/1.0.0` over AMP channel bundles on MeshRuntime.
+ * Non-blocking `/pp/realtime/1.0.0` over AMP channel bundles on MeshRuntime.
  * One call attempt = call_id-keyed control+media bundle ([A021]).
  * Product uses CallMediaAmpTransport as the single entry when MeshHost Amp is up ([A020]).
  */
 class CallMediaLegCoordinator {
 public:
+  /** A migration / standby result. */
   using LegFinished = std::function<void(Roe<void> result)>;
+  /** A connect's result, coded (CallMediaErr). */
+  using LegConnected = std::function<void(CallMediaRoe result)>;
+
+  /** Opening the control channel failed at the link: our code, the link's chain in `message`. */
+  static CallMediaFailure WrapLinkFailure(const pp::amp::PeerLinkManager::Failure& link);
   using InboundHandler = CallMediaInboundHandler;
 
   explicit CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime);
@@ -54,7 +60,7 @@ public:
 
   /** Returns leg id immediately; completion via `on_finished` when MediaReady or error. */
   CallMediaLegId StartLeg(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                          LegFinished on_finished = {}, int timeout_ms = 15000);
+                          LegConnected on_finished = {}, int timeout_ms = 15000);
 
   void CancelLeg(CallMediaLegId id);
   void DetachLeg(CallMediaLegId id);

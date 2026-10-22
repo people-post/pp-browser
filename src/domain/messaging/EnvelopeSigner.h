@@ -14,7 +14,13 @@ namespace pbr {
 class EnvelopeSigner {
 public:
   static Roe<std::vector<uint8_t>> BuildSignBytes(const RelayEnvelope& envelope);
-  static Roe<std::vector<uint8_t>> BodyHash(const RelayMessageBody& body);
+  /** BLAKE2b-256 over exactly what the receiver decrypts (route-aware; see MESSAGE_ENCRYPTION.md). */
+  static Roe<std::vector<uint8_t>> BodyHash(const RelayEnvelope& envelope);
+  /**
+   * Direct / control envelopes carry `payload_b64` only; group envelopes `member_payloads` only
+   * (and a group_id). Anything else is malformed — signing and verifying both refuse it.
+   */
+  static Roe<void> CheckBodyShape(const RelayEnvelope& envelope);
   static Roe<bool> Verify(const RelayEnvelope& envelope, const std::string& public_key_b64);
 
 private:

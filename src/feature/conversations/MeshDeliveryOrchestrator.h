@@ -7,6 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/pricing/InitiationBillingStore.h"
 #include "domain/pricing/PaymentPromiseStore.h"
+#include "domain/messaging/DeliveryNotice.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
@@ -22,8 +23,8 @@
 #include "domain/messaging/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
 #include "domain/messaging/ControlLaneSeenStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClients.h"
 
@@ -63,12 +64,13 @@ enum class ThreadPeerPathKind {
 struct ThreadPeerLinkView {
   mesh::MeshPeerLinkPhase phase = mesh::MeshPeerLinkPhase::Unavailable;
   ThreadPeerPathKind path_kind = ThreadPeerPathKind::None;
-  std::string status_label;
-  std::string banner_message;
-  bool show_banner = false;
+  /** The transport's own failure text, for the log (the GUI words the state — PeerLinkText). */
+  std::string detail;
+  /** A retry may help (backing off after a failed dial). */
   bool show_retry = false;
   int backoff_seconds = 0;
   bool has_direct_endpoint = false;
+  /** Messages can go via the Brief relay (a route to the peer is known and a relay is configured). */
   bool relay_available = false;
   bool carrier_backed = false;
 };
@@ -152,7 +154,7 @@ public:
   IChatBlobPeerService* PeerBlobService() const;
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
-  void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
+  void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
   void SetOnBackgroundUnread(
       std::function<void(std::string title, std::string body, std::string thread_id)> callback);
@@ -240,7 +242,7 @@ private:
   std::optional<std::string> ResolvePeerRelayId(const Thread& thread) const;
   /** Sync directory LookupByAccount when contacts/learned/shadow miss (send path). */
   std::optional<std::string> ResolvePeerRelayIdWithDirectory(const Thread& thread);
-  void RememberRouteFromEnvelope(const RelayEnvelope& envelope);
+  void RememberRouteFromEnvelope(const RelayEnvelope& envelope, const RelayReceiveOutcome& outcome);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The pair's e2e_public session as the lane and media-key wraps use it. */
   struct E2ePublicSession {
@@ -251,19 +253,21 @@ private:
     std::optional<std::string> key_init_b64;
   };
   Roe<E2ePublicSession> ResolveE2ePublicSession(const std::string& peer_identity);
+  /** The peer's account KEM public key (directory, M015). */
+  Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
   uint64_t NextControlOrderKey();
-  /** A control-lane send still unsent this long after it was made is dropped from the retry queue. */
-  static constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
   void EnqueueRetry(PendingRelaySend pending);
-  void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
+  void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
-  void MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope, const std::string& thread_id);
-  void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
-                       const std::string& error_message = {},
-                       MessageTransport transport = MessageTransport::Relay,
-                       bool relay_after_direct_attempt = false);
-  void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
+  void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
+  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport,
+                          bool relay_after_direct_attempt = false);
+  /** `detail`: the transport's own text, for the log. */
+  void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
+                       const std::string& detail);
+  /** The message row's delivery state; false when there is no row (a control-lane send). */
+  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id,
                    std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
@@ -317,14 +321,11 @@ private:
   std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
-  std::function<void(const std::string&)> on_delivery_notice_;
+  std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
   mutable std::mutex retry_mutex_;
   std::vector<PendingRelaySend> retry_queue_;
   std::atomic<uint64_t> control_order_key_{0};
-  mutable std::mutex link_ux_mutex_;
-  mutable std::string relay_fallback_notice_thread_id_;
-  mutable std::string relay_fallback_notice_text_;
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   mutable std::mutex account_relay_mutex_;

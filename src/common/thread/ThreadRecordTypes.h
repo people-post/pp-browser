@@ -72,7 +72,7 @@ struct ThreadMessage {
   std::optional<std::string> working_set_json;
   /**
    * The image sent with this AI question, as JSON `{content_hash (hex), mime, width, height}`
-   * (`AiImageRef` in feature/conversations/AiImageRef.h). The bytes live in the private CAS like a chat attachment;
+   * (`AiImageRef` in domain/messaging/AiImageRef.h). The bytes live in the private CAS like a chat attachment;
    * the thread text keeps only the "[Image] " marker. Local AI threads only, never on the wire.
    */
   std::optional<std::string> ai_image_json;

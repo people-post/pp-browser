@@ -220,4 +220,48 @@ GroupHopJoinDecision DecideGroupHopAtJoin(const GroupHopJoinInput& in) {
   return out;
 }
 
+std::vector<mesh::MeshHopCandidate> PreferNamedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
+                                                        const std::string& hop_peer_id) {
+  if (hop_peer_id.empty()) {
+    return ranked;
+  }
+  const auto it = std::find_if(ranked.begin(), ranked.end(),
+                               [&](const mesh::MeshHopCandidate& c) { return c.peer_id == hop_peer_id; });
+  if (it != ranked.end()) {
+    std::rotate(ranked.begin(), it, std::next(it));
+  }
+  return ranked;
+}
+
+std::vector<mesh::MeshHopCandidate> PlannedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
+                                                    const CallPlannedHop& planned) {
+  if (planned.peer_id.empty()) {
+    return ranked;
+  }
+  const bool listed = std::any_of(ranked.begin(), ranked.end(),
+                                  [&](const mesh::MeshHopCandidate& c) { return c.peer_id == planned.peer_id; });
+  if (!listed && !planned.multiaddr.empty()) {
+    mesh::MeshHopCandidate hop;
+    hop.peer_id = planned.peer_id;
+    hop.multiaddr = planned.multiaddr;
+    hop.dialable = true;
+    ranked.insert(ranked.begin(), std::move(hop));
+  }
+  return PreferNamedHopFirst(std::move(ranked), planned.peer_id);
+}
+
+CallHopReport BuildCallHopReport(const std::map<std::string, std::optional<bool>>& probes,
+                                 const std::string& planned_hop) {
+  CallHopReport report;
+  for (const auto& [hop, ok] : probes) {
+    if (ok) {
+      (*ok ? report.reachable_hops : report.unreachable_hops).push_back(hop);
+    }
+    if (hop == planned_hop) {
+      report.planned_hop_ok = ok;
+    }
+  }
+  return report;
+}
+
 } // namespace pbr

@@ -10,10 +10,11 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"
-#include "feature/ai/BriefTurnRunner.h"
-#include "feature/ai/ParkedApproval.h"
+#include "domain/ai/BriefTurnRunner.h"
+#include "domain/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -86,6 +87,11 @@ public:
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
+  /**
+   * How long a turn whose planned tool is missing waits for the promoted MCP server to list it, re-listing every
+   * `poll` (default 10 s / 500 ms; tests shorten it).
+   */
+  void SetMissingToolWait(std::chrono::milliseconds total, std::chrono::milliseconds poll);
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   /**
    * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
@@ -123,6 +129,8 @@ private:
 
   void BeginStreamTurn();
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
+  /** Submit worker: true to start the turn now; false when ConfigureOnIO will start it, or (configure failed) it ended. */
+  static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
   static void RunTurnPipeline(const std::shared_ptr<Impl>& state);
   static bool UseBriefStream(const std::shared_ptr<Impl>& state);
@@ -136,7 +144,14 @@ private:
                               std::string summary);
   static void EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
                                  const std::string& finish_reason, const std::vector<BriefAiSource>& sources);
-  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state);
+  /** `cancelled` is set when the turn was stopped while resolving; the error then carries nothing to show. */
+  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled);
+  enum class FeedRelist { Listed, Unavailable, Cancelled };
+  /**
+   * A feed turn whose planned tool is not registered: re-lists the promoted MCP server (when there is one) until
+   * a listing answers, the wait runs out or the turn is cancelled. Listed: every planned tool is now registered.
+   */
+  static FeedRelist RelistMissingFeedTools(const std::shared_ptr<Impl>& state, const TurnPlan& plan);
   static void ContinueAfterExecution(const std::shared_ptr<Impl>& state);
   static void RunSynthesisStep(const std::shared_ptr<Impl>& state);
   static void DispatchRefinementToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,

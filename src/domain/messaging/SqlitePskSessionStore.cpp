@@ -216,6 +216,8 @@ Roe<sqlite3*> SqlitePskSessionStore::OpenDb() const {
   if (sqlite3_open(profile_db_path_.c_str(), &db_) != SQLITE_OK) {
     return Error("Failed to open profile.db for PSK store");
   }
+  // profile.db has other writers (group rosters, call sessions): wait for them, as they wait for us.
+  sqlite3_busy_timeout(db_, 5000);
   return db_;
 }
 
@@ -228,7 +230,8 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   const char* sql =
       "SELECT session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, "
       "key_scope, thread_kem_pk_b64, thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, "
-      "psk_rotate_msg_count, last_rotation_id, auto_key_session_id, auto_key_init_pending FROM chat_targets "
+      "psk_rotate_msg_count, last_rotation_id, auto_key_session_id, auto_key_init_pending, "
+      "auto_key_peer_heard_ms FROM chat_targets "
       "WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? LIMIT 1;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK load");
@@ -278,6 +281,9 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   if (sqlite3_column_text(stmt, 13)) {
     record.auto_key_init_pending = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
   }
+  if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
+    record.auto_key_peer_heard_ms = sqlite3_column_int64(stmt, 14);
+  }
   sqlite3_finalize(stmt);
   if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
     return std::optional<PskSessionRecord>(record);
@@ -299,7 +305,7 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
       "SELECT peer_identity_kind, peer_identity_value, channel, session_epoch, master_psk_b64, psk_fingerprint, "
       "psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, thread_kem_sk_b64, "
       "peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, auto_key_session_id, "
-      "auto_key_init_pending FROM chat_targets;";
+      "auto_key_init_pending, auto_key_peer_heard_ms FROM chat_targets;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK list");
   }
@@ -351,6 +357,9 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
     if (sqlite3_column_text(stmt, 16)) {
       record.auto_key_init_pending = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 16));
     }
+    if (sqlite3_column_type(stmt, 17) != SQLITE_NULL) {
+      record.auto_key_peer_heard_ms = sqlite3_column_int64(stmt, 17);
+    }
     if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
       continue;
     }
@@ -396,8 +405,8 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
       "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
       "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, "
-      "auto_key_session_id, auto_key_init_pending) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "auto_key_session_id, auto_key_init_pending, auto_key_peer_heard_ms) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
       "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
       "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
@@ -405,7 +414,8 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
       "thread_kem_pk_b64=excluded.thread_kem_pk_b64, thread_kem_sk_b64=excluded.thread_kem_sk_b64, "
       "peer_thread_kem_pk_b64=excluded.peer_thread_kem_pk_b64, last_psk_rotate_at=excluded.last_psk_rotate_at, "
       "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id, "
-      "auto_key_session_id=excluded.auto_key_session_id, auto_key_init_pending=excluded.auto_key_init_pending;";
+      "auto_key_session_id=excluded.auto_key_session_id, auto_key_init_pending=excluded.auto_key_init_pending, "
+      "auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK save");
   }
@@ -470,6 +480,11 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
     sqlite3_bind_text(stmt, 18, to_save.auto_key_init_pending->c_str(), -1, SQLITE_TRANSIENT);
   } else {
     sqlite3_bind_null(stmt, 18);
+  }
+  if (to_save.auto_key_peer_heard_ms) {
+    sqlite3_bind_int64(stmt, 19, *to_save.auto_key_peer_heard_ms);
+  } else {
+    sqlite3_bind_null(stmt, 19);
   }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);

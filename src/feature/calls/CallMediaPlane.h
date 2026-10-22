@@ -9,7 +9,7 @@
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallDirectPathDeps.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"

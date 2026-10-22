@@ -141,7 +141,7 @@ PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
 - Config: `--config` / `PP_BROWSER_CONFIG` only (packaging passes `/etc/pp-node/config.json`); without one the node runs on defaults and env — it never reads the desktop app's config of the same user. Logs at `info` (`--log-level` / `PP_NODE_LOG_LEVEL`; `--debug`).
 - PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_AMP_UDP_PORT`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
 - Amp UDP listen is controlled by `libp2p.amp_udp_port` / `PP_NODE_AMP_UDP_PORT` (0 = ephemeral; org seed should pin **443**).
-- Dial-back protocol `/pp-browser/reach/1.0.0` is enabled for reachability probes (feeds phase **nr**).
+- Dial-back protocol `/pp-mesh/reach/1.0.0` is enabled for reachability probes (feeds phase **nr**).
 - **Status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON), and `GET /metrics` (Prometheus text for operator scraping — [NODE_METRICS.md](../contracts/NODE_METRICS.md)). Separate from the Amp UDP listen port. For console / probes, set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` (ADDR alone is enough) and publish host port **18518**:
   ```bash
   curl -sS http://127.0.0.1:18518/healthz

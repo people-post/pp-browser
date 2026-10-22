@@ -164,6 +164,16 @@ protected:
       };
     }
 
+    /** Circuit reach's completion: its code kept in `code`, its message in `result`. */
+    mesh::CircuitReachDone ReachFn() {
+      return [this](mesh::CircuitReachRoe r) {
+        code = r ? mesh::CircuitReachErr::Ok : r.error().GetCode();
+        result = r ? Roe<void>() : Roe<void>(Error(r.error().message));
+        done.store(true, std::memory_order_release);
+      };
+    }
+    mesh::CircuitReachErr code = mesh::CircuitReachErr::Ok;
+
     pp::amp::PeerLinkManager::LinkCb LinkFn() {
       return [this](pp::amp::PeerLinkManager::LinkRoe r) {
         if (r) {
@@ -233,13 +243,13 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
       *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
       // Punch miss (expected under dual-NAT) — fall through to nested circuit.
-      [](const std::string&, std::function<void(Roe<void>)> on_done) {
-        on_done(Error("punch burst dial timed out"));
+      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -325,13 +335,13 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, backoff_links, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
-      [](const std::string&, std::function<void(Roe<void>)> on_done) {
-        on_done(Error("punch burst dial timed out"));
+      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(backoff_links.IsConnected(harness_->peer_id_b));
@@ -354,18 +364,18 @@ TEST_F(AmpCircuitHopReachTest, RelayedReachBuildsACircuitBesideADirectLink) {
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
-      [](const std::string&, std::function<void(Roe<void>)> on_done) { on_done(Error("no punch here")); },
+      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) { on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "no punch here")); },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   recording_->nested_over_carrier_calls = 0;
   Wait<void> plain;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, plain.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, plain.ReachFn());
   plain.PumpUntilDone(*harness_);
   ASSERT_TRUE(plain.result);
   EXPECT_EQ(recording_->nested_over_carrier_calls, 0) << "the direct link satisfies a plain reach";
 
   Wait<void> relayed;
-  reach.TryEnsureRelayedAsync(harness_->peer_id_b, relayed.Fn());
+  reach.TryEnsureRelayedAsync(harness_->peer_id_b, relayed.ReachFn());
   relayed.PumpUntilDone(*harness_);
   ASSERT_TRUE(relayed.result) << relayed.result.error().message;
   EXPECT_GE(recording_->nested_over_carrier_calls, 1);
@@ -392,7 +402,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
       PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -434,13 +444,13 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
         }
         return out;
       },
-      [](const std::string&, std::function<void(Roe<void>)> on_done) {
-        on_done(Error("punch burst dial timed out"));
+      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -473,13 +483,13 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
         }
         return out;
       },
-      [](const std::string&, std::function<void(Roe<void>)> on_done) {
-        on_done(Error("punch burst dial timed out"));
+      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -491,19 +501,19 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {
   WarmAnswererAndOfferer("relay");
 
   auto punch_started = std::make_shared<std::atomic<bool>>(false);
-  auto hold_punch = std::make_shared<std::function<void(Roe<void>)>>();
+  auto hold_punch = std::make_shared<mesh::PunchIntroducerWalk::Done>();
 
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
-      [punch_started, hold_punch](const std::string&, std::function<void(Roe<void>)> on_done) {
+      [punch_started, hold_punch](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
         punch_started->store(true, std::memory_order_release);
         *hold_punch = std::move(on_done);
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -518,7 +528,7 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
   WarmAnswererAndOfferer("relay");
 
   auto punch_started = std::make_shared<std::atomic<bool>>(false);
-  auto hold_punch = std::make_shared<std::function<void(Roe<void>)>>();
+  auto hold_punch = std::make_shared<mesh::PunchIntroducerWalk::Done>();
 
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, *recording_, mesh::AmpCircuitHopReach::IoPump{},
@@ -526,7 +536,7 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
         // Force circuit miss without StartBridge so Abort can win before any tunnel work.
         return std::vector<std::string>{};
       },
-      [punch_started, hold_punch](const std::string&, std::function<void(Roe<void>)> on_done) {
+      [punch_started, hold_punch](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
         punch_started->store(true, std::memory_order_release);
         *hold_punch = std::move(on_done);
       });
@@ -534,17 +544,16 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
   // can win the race before any PostToIo turn.
 
   Wait<void> ensure_wait;
-  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   // Empty relay list fails circuit synchronously, then starts punch (held). Abort before punch
   // completion — finish must report aborted and must not treat punch as success.
   ASSERT_TRUE(punch_started->load(std::memory_order_acquire));
   ASSERT_TRUE(hold_punch && *hold_punch);
   reach.AbortPending();
-  (*hold_punch)(Roe<void>());
+  (*hold_punch)(mesh::PunchIntroducerWalk::WalkRoe());
   ASSERT_TRUE(ensure_wait.done.load(std::memory_order_acquire));
   ASSERT_FALSE(ensure_wait.result);
-  EXPECT_NE(ensure_wait.result.error().message.find("aborted"), std::string::npos)
-      << ensure_wait.result.error().message;
+  EXPECT_EQ(ensure_wait.code, mesh::CircuitReachErr::Aborted) << ensure_wait.result.error().message;
 }
 
 /**
@@ -562,14 +571,14 @@ TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExp
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
-      [punch_calls](const std::string&, std::function<void(Roe<void>)> on_done) {
+      [punch_calls](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
         ++(*punch_calls);
-        on_done(Error("punch burst window expired"));
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst window expired"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureHopReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsureHopReachableAsync(harness_->peer_id_b, ensure_wait.ReachFn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_EQ(*punch_calls, 1);

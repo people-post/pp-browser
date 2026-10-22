@@ -7,8 +7,10 @@
 
 namespace pbr {
 
-Roe<void> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
-                                    const std::string& member_identity) {
+Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
+                                    const std::string& member_identity, const std::string& group_id,
+                                    const std::string& local_identity, const int64_t now_ms) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -17,49 +19,58 @@ Roe<void> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
     return Error("Invite not found");
   }
   const PendingGroupInvite& invite = **pending;
+  if (!invite.outbound) {
+    return Error("Invite accept for an invite this device did not issue");
+  }
   if (invite.invitee_identity != member_identity) {
     return Error("Invite accept sender does not match invitee");
   }
-
-  // Idempotent re-delivery of accept: ensure member is active and invite marked accepted.
+  if (invite.group_id != group_id) {
+    return Error("Invite accept names another group");
+  }
+  auto metadata = roster.LoadMetadata(invite.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!*metadata || local_identity.empty() || (*metadata)->owner_identity != local_identity) {
+    return Error("Invite accept for a group this device does not own");
+  }
   if (invite.status == InviteStatus::Accepted) {
-    GroupRosterMember member;
-    member.member_identity = member_identity;
-    member.role = MemberRole::Member;
-    member.joined_at = util::NowUnixMs();
-    return roster.UpsertMember(invite.group_id, member);
+    // Re-delivered (or re-sent) accept: it was applied once. A member removed since, or one who
+    // left, needs a new invite — an old accept does not bring them back.
+    return false;
   }
   if (invite.status != InviteStatus::Pending) {
     return Error("Invite is not pending");
+  }
+  if (invite.expires_at && now_ms > *invite.expires_at) {
+    (void)roster.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+    return Error("Invite expired");
   }
 
   GroupRosterMember member;
   member.member_identity = member_identity;
   member.role = MemberRole::Member;
-  member.joined_at = util::NowUnixMs();
+  member.joined_at = now_ms;
   if (auto upserted = roster.UpsertMember(invite.group_id, member); !upserted) {
     return upserted.error();
   }
+  GroupMetadata updated = **metadata;
+  updated.roster_epoch += 1;  // our own roster's next epoch — not one the accept names
+  if (auto saved = roster.UpsertMetadata(updated); !saved) {
+    return saved.error();
+  }
+  // Last: until the invite reads Accepted, a failure above leaves it Pending and a re-delivered
+  // accept applies it again (the member upsert is idempotent) instead of being ignored.
   if (auto status = roster.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); !status) {
     return status.error();
   }
-
-  auto metadata = roster.LoadMetadata(invite.group_id);
-  if (!metadata) {
-    return metadata.error();
-  }
-  if (*metadata) {
-    GroupMetadata updated = **metadata;
-    updated.roster_epoch = std::max(updated.roster_epoch, invite.roster_epoch) + 1;
-    if (auto saved = roster.UpsertMetadata(updated); !saved) {
-      return saved.error();
-    }
-  }
-  return {};
+  return true;
 }
 
 Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
-                                     const std::string& member_identity) {
+                                     const std::string& member_identity, const std::string& group_id) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -68,8 +79,8 @@ Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string
     return Error("Invite not found");
   }
   const PendingGroupInvite& invite = **pending;
-  if (invite.invitee_identity != member_identity) {
-    return Error("Invite decline sender does not match invitee");
+  if (!invite.outbound || invite.invitee_identity != member_identity || invite.group_id != group_id) {
+    return Error("Invite decline does not match an invite this device issued");
   }
   if (invite.status != InviteStatus::Pending) {
     return Error("Invite is not pending");
@@ -101,6 +112,7 @@ Roe<void> RequireNewerEpoch(const GroupMetadata& metadata, const uint64_t inboun
 
 Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
                                     const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -146,6 +158,7 @@ Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembers
 Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
                                         const GroupMembershipCodec::OwnerTransferredPayload& payload,
                                         const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -198,6 +211,7 @@ Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
 
 Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
                                   const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   if (payload.member_identity != actor_identity) {
     return Error("member_left actor must match member_identity");
   }
@@ -222,6 +236,7 @@ Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershi
 Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
                                      const GroupMembershipCodec::MemberRemovedPayload& payload,
                                      const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -241,6 +256,31 @@ Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
   GroupMetadata updated = *metadata;
   updated.roster_epoch = payload.roster_epoch;
   return roster.UpsertMetadata(updated);
+}
+
+Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
+                                    const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  auto metadata = LoadMetadataRequired(roster, payload.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (actor_identity.empty() || metadata->owner_identity != actor_identity) {
+    return Error("Rename rejected: actor is not the group owner");
+  }
+  if (payload.title_version <= metadata->title_version) {
+    return false;  // not newer than the title we hold
+  }
+  GroupMetadata updated = *metadata;
+  updated.title = payload.title;
+  updated.title_version = payload.title_version;
+  if (payload.roster_epoch > updated.roster_epoch) {
+    updated.roster_epoch = payload.roster_epoch;
+  }
+  if (auto saved = roster.UpsertMetadata(updated); !saved) {
+    return saved.error();
+  }
+  return true;
 }
 
 } // namespace pbr

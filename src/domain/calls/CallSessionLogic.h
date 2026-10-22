@@ -43,7 +43,18 @@ public:
    * Ringing stays ringing while at least one joined remains (caller waiting).
    */
   static CallSessionState TransitionOnRemoteJoined(CallSessionState current);
-  static CallSessionState TransitionOnLeave(CallSessionState current, size_t remaining_joined);
+  /**
+   * After a leave, `remaining_joined` still joined (the leaver not counted). 1:1: a sole survivor is
+   * not left in a call with a dead peer. Group (V053): the call goes on while anyone is in it — the
+   * last one waits for others alone; it ends when the last participant leaves.
+   */
+  static CallSessionState TransitionOnLeave(CallSessionState current, size_t remaining_joined, bool group = false);
+  /** V053: group rules apply — a group's call, or one that has had more than two people offered it. */
+  static bool IsGroupCall(const CallSession& session, size_t offered_participants);
+  /** V053: a group call's last participant leaves by itself after this long alone. */
+  static constexpr int64_t kAloneInGroupCallMs = 5LL * 60 * 1000;
+  /** V053: a join request nobody in the call answered (with an invite) within this long: it is over. */
+  static constexpr int64_t kJoinRequestTimeoutMs = 15000;
 
   static bool CanAcceptJoin(size_t current_joined_count, size_t max_joined = kCallEngineeringMaxJoined);
 
@@ -74,6 +85,17 @@ public:
   static bool ShouldAutoLeaveOutboundUnanswered(bool outbound_calling, bool media_active,
                                                 int64_t session_created_at_ms, int64_t now_ms,
                                                 int64_t ttl_ms = kDefaultCallInviteTtlMs);
+
+  /** Join stamp the roster carries for `identity` (the sender's clock), if any. */
+  static std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants,
+                                                const std::string& identity);
+  /** Old peers send no stamps: this device's receipt time (still earlier than later acceptors). */
+  static int64_t LocalJoinStampFallback(const CallSession& session);
+  /** Distinct invitees other than `local_identity` (empty ids skipped). */
+  static size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity);
+  /** Roster entries (Invited) for co-invitees the roster does not list yet (V050 full invite roster). */
+  static void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants,
+                                      const std::vector<std::string>& co_invitees, const std::string& local_identity);
 };
 
 /**

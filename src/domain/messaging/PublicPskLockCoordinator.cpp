@@ -308,6 +308,10 @@ Roe<PublicKeyScope> PublicPskLockCoordinator::ApplyInbound(const std::string& th
     return record->key_scope;
   }
 
+  if (detail->new_epoch <= record->session_epoch) {
+    return Error("psk_rotate to an epoch not newer than the session's");
+  }
+
   // Initiator siblings share the sender account id but not the new PSK (wrap is to the peer).
   if (!local_account_id.empty() && envelope.sender_contact_id == local_account_id) {
     record->key_scope = PublicKeyScope::LockedOut;

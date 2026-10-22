@@ -3,7 +3,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallHopDriver.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 
 #include "common/Error.h"
 
@@ -34,9 +34,10 @@ enum class CallMediaPath {
 };
 
 /**
- * One call's media: this call's use of the one media engine and the media seat. Owned by the
- * call's LiveCall; the path drivers (1:1 CallMediaBridge, group hop workflow) start and stop the
- * engine through it instead of touching the engine and seat themselves. Calls owner only.
+ * One call's media: this call's use of the one media engine and the media seat. Owned by
+ * LiveCallMedia for one admission of the call; the path drivers (1:1 CallMediaBridge, group hop
+ * workflow) start and stop the engine through it instead of touching the engine and seat
+ * themselves. Calls owner only.
  *
  * Grows toward the call's media-mode owner (Direct ↔ Hop selection and switching); today it owns
  * the engine start / stops, the 1:1 start (BeginDirect) and the Direct → Hop hand-off
@@ -44,7 +45,7 @@ enum class CallMediaPath {
  */
 class CallMediaCoordinator {
 public:
-  /** `resources` outlives the coordinator (LiveCalls owns both); its engine must be set. */
+  /** `resources` outlives the coordinator (LiveCallMedia owns both); its engine must be set. */
   CallMediaCoordinator(std::string call_id, const CallMediaResources& resources);
 
   const std::string& CallId() const { return call_id_; }

@@ -241,6 +241,13 @@ Roe<std::optional<PendingCallInvite>> CallUiBackend::TopPendingInvite() {
   return UnavailableError();
 }
 
+std::optional<std::string> CallUiBackend::JoinableCallInThread(const std::string& thread_id) const {
+  if (auto* calls = stack_.Calls()) {
+    return calls->JoinableCallInThread(thread_id);
+  }
+  return std::nullopt;
+}
+
 Roe<std::optional<CallSession>> CallUiBackend::ActiveLocalCall() {
   if (auto* calls = stack_.Calls()) {
     return calls->ActiveLocalCall();

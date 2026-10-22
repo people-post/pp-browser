@@ -1,4 +1,5 @@
 #include "domain/people/ContactTypes.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/AmpChatBlobTransport.h"
@@ -7,7 +8,6 @@
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
-#include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
@@ -33,6 +33,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "domain/messaging/PskRotateCodec.h"
+#include "domain/messaging/OutboundMessage.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/EmojiKey.h"
@@ -41,7 +42,6 @@
 #include "domain/people/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/RelayInboxCursor.h"
 #include "domain/people/ContactIdentity.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -65,50 +65,16 @@
 namespace pbr {
 namespace {
 
-Roe<void> EnsureAnnotationCap(IThreadStore& store, const std::string& thread_id,
-                              const ThreadMessage& message) {
-  if (message.content_type != ChatContentType::Annotation) {
-    return {};
-  }
-  const std::string target_id = message.target_message_id.value_or("");
-  if (target_id.empty()) {
-    return Error("Annotation missing target_message_id");
-  }
-  if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
-      fields && fields->annotation_type == kAnnotationTypeRetract) {
-    return {}; // the cap guards against reaction floods; it must never stop a delete
-  }
-  auto count = store.CountAnnotationsForTarget(thread_id, target_id);
-  if (!count) {
-    return count.error();
-  }
-  if (static_cast<size_t>(*count) >= kMaxAnnotationsPerTarget) {
-    return Error("Too many reactions on this message");
-  }
-  return {};
-}
-
-void ApplyRichPayloadOptions(ThreadMessage& message, const SendRelayOptions& options) {
-  if (options.content_type) {
-    message.content_type = *options.content_type;
-  }
-  if (options.payload_json) {
-    message.payload_json = *options.payload_json;
-  }
-  if (message.content_type == ChatContentType::Annotation) {
-    if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json)) {
-      if (!fields->target_message_id.empty()) {
-        message.target_message_id = fields->target_message_id;
-      }
-    }
-  }
+/** Mark a message whose send could not even start as failed; returns the error to pass up. */
+Error FailOutbound(IThreadStore& store, ThreadMessage& message, Error error) {
+  message.delivery = MessageDelivery::Failed;
+  (void)store.UpdateMessage(message);
+  return error;
 }
 
 } // namespace
 
 namespace {
-
-constexpr const char* kMockPeerSigningPublicKeyB64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
@@ -136,7 +102,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
-      std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
+      std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
@@ -174,11 +140,6 @@ void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identi
   record.kem_public_key_b64 = kem_public_key_b64;
   record.source = source;
   kem_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
-}
-
-void MeshDeliveryOrchestrator::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
-  RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), peer_identity_value,
-                         kMockPeerSigningPublicKeyB64, "mock_relay");
 }
 
 void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
@@ -347,21 +308,18 @@ void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_
   if (!IsAccountIdentityValue(account_id) || !IsRelayUserIdValue(relay_user_id)) {
     return;
   }
-  {
-    std::lock_guard lock(account_relay_mutex_);
-    account_to_relay_[account_id] = relay_user_id;
-  }
-  if (directory_shadows_) {
-    mesh::DirectoryHit hit;
-    hit.hit_id = relay_user_id;
-    hit.account_id = account_id;
-    hit.ids = {{mesh::ContactIdKind::Account, account_id, true},
-               {mesh::ContactIdKind::RelayUser, relay_user_id, false}};
-    directory_shadows_->Put(hit);
-  }
+  // A route only — never a directory answer: the directory cache holds what the directory said.
+  std::lock_guard lock(account_relay_mutex_);
+  account_to_relay_[account_id] = relay_user_id;
 }
 
-void MeshDeliveryOrchestrator::RememberRouteFromEnvelope(const RelayEnvelope& envelope) {
+void MeshDeliveryOrchestrator::RememberRouteFromEnvelope(const RelayEnvelope& envelope,
+                                                          const RelayReceiveOutcome& outcome) {
+  // Learned only from an envelope whose signature verified: its sender_relay_id is then the
+  // sender's own signed claim, not whatever an unauthenticated envelope said.
+  if (!outcome.sender_verified) {
+    return;
+  }
   NoteAccountRelayRoute(envelope.sender_contact_id, envelope.sender_relay_id);
 }
 
@@ -382,17 +340,20 @@ void MaybePublishMemberJoinedAfterIngest(GroupMembershipWorkflow* groups, const 
 } // namespace
 
 void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome) {
-  if (!outcome.receive_failure_notice || outcome.receive_failure_notice->empty()) {
+  if (!outcome.receive_failure) {
     return;
   }
-  const std::string& notice = *outcome.receive_failure_notice;
-  log().warning << "Inbound receive failure"
-                << " sender=" << (outcome.receive_failure_sender ? *outcome.receive_failure_sender : "")
-                << " detail=" << outcome.receive_failure_detail << " notice=" << notice;
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::ReceiveFailed;
+  notice.receive = *outcome.receive_failure;
+  notice.peer = outcome.receive_failure_sender.value_or("");
+  notice.family = outcome.receive_failure_family;
+  notice.detail = outcome.receive_failure_detail;
+  log().warning << "Inbound receive failure sender=" << notice.peer << " reason=" << ReceiveFailureWire(notice.receive)
+                << " family=" << notice.family << " detail=" << notice.detail;
 
-  // One toast/system line per sender+notice within the cooldown — old relay backlog must not flood UI.
-  const std::string rate_key =
-      (outcome.receive_failure_sender ? *outcome.receive_failure_sender : std::string{}) + "|" + notice;
+  // One toast/system line per sender+reason within the cooldown — old relay backlog must not flood UI.
+  const std::string rate_key = notice.peer + "|" + ReceiveFailureWire(notice.receive) + "|" + notice.family;
   const int64_t now_ms = util::NowUnixMs();
   {
     std::lock_guard lock(receive_failure_mutex_);
@@ -419,10 +380,12 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.thread_id = *outcome.receive_failure_thread_id;
     local.sender_contact_id = kLocalSelfContactId;
     local.content_type = ChatContentType::System;
-    local.text = notice;
+    // No stored words: the transcript words the line from its payload, in the reader's language.
     Object detail;
-    detail.set("sender", outcome.receive_failure_sender.value_or(""));
-    detail.set("detail", outcome.receive_failure_detail);
+    detail.set("sender", notice.peer);
+    detail.set("reason", ReceiveFailureWire(notice.receive));
+    detail.set("family", notice.family);
+    detail.set("detail", notice.detail);
     Object payload;
     payload.set("control_type", "receive_failure");
     payload.set("detail", DumpJson(detail));
@@ -432,7 +395,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.relay_visible = false;
     local.generation = "local";
     if (store_.AppendMessage(local)) {
-      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id, notice);
+      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id);
     }
   }
 
@@ -449,13 +412,13 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
 }
 
 void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
-  RememberRouteFromEnvelope(envelope);
   auto identity = identity_.Get();
   if (!identity) {
     return;
   }
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
+  RememberRouteFromEnvelope(envelope, outcome);
   MaybePublishMemberJoinedAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
@@ -466,11 +429,11 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
   }
   if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
     std::optional<std::string> preview;
-    if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-      preview = decoded->text;
+    if (outcome.persisted_message) {
+      preview = outcome.persisted_message->text;
     }
     inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
-    MaybeEnqueueAttachmentDownload(envelope, outcome.thread_id);
+    MaybeEnqueueAttachmentDownload(outcome);
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
@@ -494,13 +457,6 @@ void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
   const std::string peer = (*thread)->peer_identity_value;
   if (peer.empty()) {
     return;
-  }
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    if (relay_fallback_notice_thread_id_ != thread_id) {
-      relay_fallback_notice_thread_id_.clear();
-      relay_fallback_notice_text_.clear();
-    }
   }
   WarmPeerByKey(peer);
 }
@@ -530,11 +486,7 @@ Roe<MeshDeliveryOrchestrator::E2ePublicSession> MeshDeliveryOrchestrator::Resolv
     return record.error();
   }
   session.epoch = record->has_value() && (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
-  auto peer_kem = kem_key_resolver_.Resolve(session.target_key.peer_identity_kind, peer_identity);
-  if (!peer_kem) {
-    return peer_kem.error();
-  }
-  auto peer_public = Base64Decode(peer_kem->kem_public_key_b64);
+  auto peer_public = PeerKemPublicKey(session.target_key);
   if (!peer_public) {
     return peer_public.error();
   }
@@ -563,6 +515,14 @@ Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSession
     out.first_message_key_init_b64 = std::move(*session->key_init_b64);
   }
   return out;
+}
+
+Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const ChatTargetKey& key) const {
+  auto kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
+  if (!kem) {
+    return kem.error();
+  }
+  return Base64Decode(kem->kem_public_key_b64);
 }
 
 uint64_t MeshDeliveryOrchestrator::NextControlOrderKey() {
@@ -644,7 +604,7 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
       via_relay();
       return;
     }
-    direct_chat_->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](Roe<void> direct) {
+    direct_chat_->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](DirectSendRoe direct) {
       if (!direct) {
         log().warning << "control lane Amp send failed message_id=" << envelope.message_id
                       << " err=" << direct.error().message;
@@ -660,118 +620,38 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct) {
     return view;
   }
-
-  const std::string peer = (*thread)->peer_identity_value;
-  view.relay_available = false;
-  if (relay_ != nullptr &&
-      ((*thread)->peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) ||
-       (*thread)->peer_identity_kind == "account")) {
-    if (!(*thread)->participant_contact_ids.empty()) {
-      if (auto contact = contacts_.Get((*thread)->participant_contact_ids.front())) {
-        if (*contact) {
-          for (const mesh::ContactId& id : (*contact)->ids) {
-            if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-              view.relay_available = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-    if (!view.relay_available) {
-      auto by_account = contacts_.FindByIdentity(peer, mesh::ContactIdKind::Account);
-      if (by_account && by_account->has_value()) {
-        for (const mesh::ContactId& id : (**by_account).ids) {
-          if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-            view.relay_available = true;
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  if (peer.empty()) {
-    view.phase = mesh::MeshPeerLinkPhase::Unavailable;
-    view.path_kind = ThreadPeerPathKind::Failed;
-    view.status_label = "Can't connect";
-    view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
-    view.show_banner = true;
+  const std::string& peer = (*thread)->peer_identity_value;
+  // The same route a send would use (contacts, learned from verified senders, the directory cache).
+  view.relay_available = relay_ != nullptr && ResolvePeerRelayId(**thread).has_value();
+  if (peer.empty() || !amp_links_) {
+    view.path_kind = view.relay_available && !peer.empty() ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
     return view;
   }
-
-  if (amp_links_) {
-    const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
-    view.phase = snap.phase;
-    view.has_direct_endpoint = snap.has_endpoint;
-    view.carrier_backed = snap.carrier_backed;
-    view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
-    switch (snap.phase) {
-    case mesh::MeshPeerLinkPhase::Connected:
-      if (snap.carrier_backed) {
-        view.path_kind = ThreadPeerPathKind::ViaHop;
-        view.status_label = "Via hop";
-      } else {
-        view.path_kind = ThreadPeerPathKind::Direct;
-        view.status_label = "Direct";
-      }
-      break;
-    case mesh::MeshPeerLinkPhase::Dialing:
-    case mesh::MeshPeerLinkPhase::Handshaking:
-      // Includes hole-punch burst dial — short-lived, never a settled badge.
-      view.path_kind = ThreadPeerPathKind::Connecting;
-      view.status_label = "Connecting…";
-      view.banner_message = "Trying a direct link…";
-      view.show_banner = true;
-      break;
-    case mesh::MeshPeerLinkPhase::Backoff:
-      view.path_kind = ThreadPeerPathKind::Degraded;
-      view.status_label = view.backoff_seconds > 0
-                              ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
-                              : "Retrying soon";
-      view.banner_message = snap.detail.empty()
-                                ? "Peer didn't answer — they may be offline or the address may be wrong."
-                                : snap.detail;
-      if (view.relay_available) {
-        view.banner_message += " Messages can still go via relay.";
-      }
-      view.show_banner = true;
-      view.show_retry = true;
-      break;
-    case mesh::MeshPeerLinkPhase::Idle:
-      view.path_kind = ThreadPeerPathKind::Ready;
-      view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
-      break;
-    case mesh::MeshPeerLinkPhase::Unavailable:
-    default:
-      if (view.relay_available) {
-        view.path_kind = ThreadPeerPathKind::ViaRelay;
-        view.status_label = "Via relay";
-      } else if (snap.has_endpoint) {
-        view.path_kind = ThreadPeerPathKind::Failed;
-        view.status_label = "Offline";
-        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-        view.show_banner = true;
-      } else {
-        view.path_kind = ThreadPeerPathKind::Failed;
-        view.status_label = "Can't connect";
-        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-        view.show_banner = true;
-      }
-      break;
-    }
-    return view;
-  }
-
-  view.phase = mesh::MeshPeerLinkPhase::Unavailable;
-  if (view.relay_available) {
-    view.path_kind = ThreadPeerPathKind::ViaRelay;
-    view.status_label = "Via relay";
-  } else {
-    view.path_kind = ThreadPeerPathKind::Failed;
-    view.status_label = "Offline";
-    view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-    view.show_banner = true;
+  const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+  view.phase = snap.phase;
+  view.has_direct_endpoint = snap.has_endpoint;
+  view.carrier_backed = snap.carrier_backed;
+  view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
+  view.detail = snap.detail;
+  switch (snap.phase) {
+  case mesh::MeshPeerLinkPhase::Connected:
+    view.path_kind = snap.carrier_backed ? ThreadPeerPathKind::ViaHop : ThreadPeerPathKind::Direct;
+    break;
+  case mesh::MeshPeerLinkPhase::Dialing:
+  case mesh::MeshPeerLinkPhase::Handshaking:
+    view.path_kind = ThreadPeerPathKind::Connecting;  // includes a punch burst: never a settled badge
+    break;
+  case mesh::MeshPeerLinkPhase::Backoff:
+    view.path_kind = ThreadPeerPathKind::Degraded;
+    view.show_retry = true;
+    break;
+  case mesh::MeshPeerLinkPhase::Idle:
+    view.path_kind = ThreadPeerPathKind::Ready;
+    break;
+  case mesh::MeshPeerLinkPhase::Unavailable:
+  default:
+    view.path_kind = view.relay_available ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
+    break;
   }
   return view;
 }
@@ -787,13 +667,6 @@ void MeshDeliveryOrchestrator::RetryPeerDial(const std::string& thread_id) {
   const std::string peer = (*thread)->peer_identity_value;
   if (peer.empty()) {
     return;
-  }
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    if (relay_fallback_notice_thread_id_ == thread_id) {
-      relay_fallback_notice_thread_id_.clear();
-      relay_fallback_notice_text_.clear();
-    }
   }
   WarmPeerByKey(peer);
 }
@@ -854,12 +727,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::stri
     if (!*thread) {
       return Error("Thread not found");
     }
-    const ChatTargetKey key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
-    auto peer_kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
-    if (!peer_kem) {
-      return peer_kem.error();
-    }
-    auto decoded = Base64Decode(peer_kem->kem_public_key_b64);
+    auto decoded = PeerKemPublicKey(E2eRelayPayloadCodec::ChatTargetFromThread(**thread));
     if (!decoded) {
       return decoded.error();
     }
@@ -1101,6 +969,9 @@ std::optional<std::string> MeshDeliveryOrchestrator::ResolvePeerRelayIdWithDirec
     return std::nullopt;
   }
   NoteAccountRelayRoute(thread.peer_identity_value, *relay);
+  if (directory_shadows_) {
+    directory_shadows_->Put(*hit);  // the directory's own answer
+  }
   return relay;
 }
 
@@ -1120,51 +991,16 @@ void MeshDeliveryOrchestrator::EnqueueRetry(PendingRelaySend pending) {
   retry_queue_.push_back(std::move(pending));
 }
 
-void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const std::string& error_message) {
+void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const SendFailure failure,
+                                                   const std::string& detail) {
   if (!on_delivery_notice_) {
     return;
   }
-  const bool rate_limited = error_message.find("rate limit") != std::string::npos;
-  std::string notice;
-  if (error_message.empty()) {
-    notice = error_message;
-  } else if (error_message.find("host not running") != std::string::npos) {
-    notice = "Direct messaging is off — check Me → Network.";
-  } else if (error_message.find("Empty peer endpoint") != std::string::npos ||
-             error_message.find("Invalid multiaddr") != std::string::npos ||
-             error_message.find("missing /p2p/") != std::string::npos ||
-             error_message.find("Invalid PeerId") != std::string::npos) {
-    notice = "Peer address looks wrong — edit the contact multiaddr.";
-  } else if (error_message.find("not registered") != std::string::npos ||
-             error_message.find("missing PeerInfo") != std::string::npos ||
-             error_message.find("Peer-direct endpoint") != std::string::npos) {
-    notice = "No usable peer address — add a dialable multiaddr on the contact.";
-  } else if (error_message.find("backoff") != std::string::npos) {
-    notice = "Waiting before retrying the peer connection.";
-  } else if (error_message.find("Too many concurrent") != std::string::npos) {
-    notice = "Busy connecting to other peers — try again shortly.";
-  } else if (error_message.find("dial failed") != std::string::npos ||
-             error_message.find("timed out") != std::string::npos ||
-             error_message.find("timeout") != std::string::npos) {
-    notice = "Peer didn't answer — they may be offline or the address may be wrong.";
-  } else if (error_message.find("stream open failed") != std::string::npos) {
-    notice = "Reached the peer but chat handshake failed.";
-  } else if (error_message.find("Failed to send") != std::string::npos ||
-             error_message.find("Failed to read") != std::string::npos ||
-             error_message.find("ack") != std::string::npos) {
-    notice = "Direct send didn't confirm — will use relay if available.";
-  } else if (error_message.find("Relay client not configured") != std::string::npos) {
-    notice = "Couldn't deliver — relay isn't configured.";
-  } else {
-    notice = error_message;
-  }
-  if (rate_limited) {
-    if (ResolveThreadTrust(thread) == TrustLevel::Friendly) {
-      notice = "Relay is busy — your message will retry shortly.";
-    } else {
-      notice = "Relay rate limit — slow down messaging with new contacts.";
-    }
-  }
+  log().info << "send failed thread=" << thread.id << " detail=" << detail;
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::SendFailed;
+  notice.send = SendFailureForThread(failure, ResolveThreadTrust(thread) == TrustLevel::Friendly);
+  notice.detail = detail;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1172,16 +1008,12 @@ void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const s
   });
 }
 
-void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& thread_id) {
-  const std::string notice = "Couldn't reach peer directly — sent via relay.";
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    relay_fallback_notice_thread_id_ = thread_id;
-    relay_fallback_notice_text_ = notice;
-  }
+void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& /*thread_id*/) {
   if (!on_delivery_notice_) {
     return;
   }
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::SentViaRelay;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1234,15 +1066,14 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   });
 }
 
-void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
-                                          const std::string& error_message, MessageTransport transport,
-                                          bool relay_after_direct_attempt) {
+bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const std::string& message_id,
+                                            const bool success, const MessageTransport transport) {
   if (thread_id.empty()) {
-    return;  // a control-lane send: no transcript row to update
+    return false;  // a control-lane send: no transcript row to update
   }
   auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
-    return;
+    return false;
   }
   for (ThreadMessage& existing : *messages) {
     if (existing.id == message_id) {
@@ -1254,14 +1085,30 @@ void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, con
       break;
     }
   }
-  if (success && transport == MessageTransport::Relay && relay_after_direct_attempt) {
+  return true;
+}
+
+void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
+                                                  const MessageTransport transport,
+                                                  const bool relay_after_direct_attempt) {
+  if (!MarkDelivery(thread_id, message_id, true, transport)) {
+    return;
+  }
+  if (transport == MessageTransport::Relay && relay_after_direct_attempt) {
     NotifyRelayFallback(thread_id);
   }
-  if (!success) {
-    auto thread = store_.GetThread(thread_id);
-    if (thread && *thread) {
-      NotifyDeliveryIssue(**thread, error_message);
-    }
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
+  }
+}
+
+void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, const std::string& message_id,
+                                               const SendFailure failure, const std::string& detail) {
+  if (!MarkDelivery(thread_id, message_id, false, MessageTransport::Relay)) {
+    return;
+  }
+  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+    NotifyDeliveryIssue(**thread, failure, detail);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -1274,26 +1121,24 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   if (!thread) {
     return thread.error();
   }
-  if (!*thread || (*thread)->kind != ThreadKind::Direct) {
-    return Error("Not a direct thread");
-  }
-  if ((*thread)->channel == ThreadChannel::E2e && IsThreadCompromised(thread_id)) {
-    return Error("Messaging paused — rotate the encryption key or pause only");
-  }
-  if ((*thread)->channel == ThreadChannel::E2e && !IsPskReadyToSend(thread_id)) {
-    return Error("Verify the encryption key with your contact before sending");
-  }
-  if ((*thread)->channel == ThreadChannel::E2ePublic) {
-    auto scope = public_lock_.GetKeyScope(thread_id);
-    if (!scope) {
-      return scope.error();
-    }
-    if (*scope == PublicKeyScope::LockedOut) {
-      return Error("This chat continues on another device");
+  DirectSendGate gate;
+  gate.direct_thread = *thread && (*thread)->kind == ThreadKind::Direct;
+  if (gate.direct_thread) {
+    gate.channel = (*thread)->channel;
+    gate.peer_known = !(*thread)->peer_identity_value.empty();
+    if (gate.channel == ThreadChannel::E2e) {
+      gate.compromised = IsThreadCompromised(thread_id);
+      gate.psk_ready = IsPskReadyToSend(thread_id);
+    } else if (gate.channel == ThreadChannel::E2ePublic) {
+      auto scope = public_lock_.GetKeyScope(thread_id);
+      if (!scope) {
+        return scope.error();
+      }
+      gate.locked_out = *scope == PublicKeyScope::LockedOut;
     }
   }
-  if ((*thread)->peer_identity_value.empty()) {
-    return Error("Direct thread missing peer identity");
+  if (auto allowed = CheckDirectSendAllowed(gate); !allowed) {
+    return allowed.error();
   }
   // P001: first initiate blocked when peer floor > 0 and payment rails unavailable.
   // System/control traffic (call invite, charge_required, …) must not hit this gate.
@@ -1321,212 +1166,45 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     }
   }
 
-  ThreadMessage message;
-  message.id = util::GenerateUuid();
-  message.thread_id = thread_id;
-  message.sender_contact_id = options.sender_contact_id.value_or(kLocalSelfContactId);
-  message.text = text;
-  message.timestamp = util::NowUnixMs();
-  message.delivery = MessageDelivery::Pending;
-  message.relay_visible = true;
-  message.transport = MessageTransport::Relay;
-  message.generation = options.generation;
-  message.ai_invoke_mode = options.ai_invoke_mode;
-  message.seq_owner_contact_id = options.seq_owner_contact_id;
-  ApplyRichPayloadOptions(message, options);
-
-  auto sender_seq = store_.AllocateSenderSeq(thread_id);
-  if (!sender_seq) {
-    return sender_seq.error();
-  }
-  auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
-  if (!session_epoch) {
-    return session_epoch.error();
-  }
-  message.sender_seq = *sender_seq;
-  message.session_epoch = *session_epoch;
-
-  if (auto cap = EnsureAnnotationCap(store_, thread_id, message); !cap) {
-    return cap.error();
-  }
-
-  auto appended = store_.AppendMessage(message);
+  auto appended = AppendOutboundMessage(
+      store_, NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs()));
   if (!appended) {
     return appended.error();
   }
-
   if (options.update_preview) {
     (void)inbox_.UpdatePreview(thread_id, text);
   }
 
   auto identity = identity_.Get();
   if (!identity) {
-    appended->delivery = MessageDelivery::Failed;
-    (void)store_.UpdateMessage(*appended);
-    return appended.error();
+    return FailOutbound(store_, *appended, identity.error());
   }
-
   auto peer_relay_id = ResolvePeerRelayIdWithDirectory(**thread);
   const std::string amp_peer_key = (*thread)->peer_identity_value;
-  const bool amp_reachable =
-      direct_chat_ && !amp_peer_key.empty() && direct_chat_->IsPeerReachable(amp_peer_key);
+  const bool amp_reachable = direct_chat_ && direct_chat_->IsPeerReachable(amp_peer_key);
   if (!peer_relay_id && !amp_reachable) {
-    appended->delivery = MessageDelivery::Failed;
-    (void)store_.UpdateMessage(*appended);
-    return Error("Direct thread missing peer relay id");
+    return FailOutbound(store_, *appended, Error("Direct thread missing peer relay id"));
   }
-
-  std::optional<std::string> payload_b64;
-  std::optional<std::string> key_init_b64;
-  if (E2eRelayPayloadCodec::RequiresEncryption((*thread)->channel)) {
-    const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
-    ByteVector master_psk;
-    auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, *message.session_epoch);
-    if (!master_psk_b64) {
-      appended->delivery = MessageDelivery::Failed;
-      (void)store_.UpdateMessage(*appended);
-      return master_psk_b64.error();
-    }
-    if (!master_psk_b64->has_value()) {
-      if (options.key_init_b64 && !options.key_init_b64->empty()) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return Error("psk_rotate requires the current encryption key");
-      }
-      if ((*thread)->channel != ThreadChannel::E2ePublic) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return Error("PSK not configured for this chat");
-      }
-      auto peer_kem = kem_key_resolver_.Resolve(target_key.peer_identity_kind, target_key.peer_identity_value);
-      if (!peer_kem) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return peer_kem.error();
-      }
-      auto peer_public = Base64Decode(peer_kem->kem_public_key_b64);
-      if (!peer_public) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return peer_public.error();
-      }
-      // Directory KEM is the recipient account key (M015).
-      auto established = AutoKeyEstablishment::EncapsulateForRecipient(*peer_public);
-      if (!established) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return established.error();
-      }
-      master_psk = std::move(established->master_psk);
-      key_init_b64 = std::move(established->key_init_b64);
-      PskSessionRecord record;
-      if (auto existing = psk_store_.Load(target_key); existing && existing->has_value()) {
-        record = **existing;
-      }
-      record.key = target_key;
-      record.session_epoch = *message.session_epoch;
-      record.master_psk_b64 = Base64Encode(master_psk);
-      // Ours until the peer is heard under it: every send carries the key_init (see EnsureE2ePublicMasterPsk).
-      record.auto_key_session_id = AutoKeySessionId(*key_init_b64);
-      record.auto_key_init_pending = key_init_b64;
-      if (auto saved = psk_store_.Save(record); !saved) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return saved.error();
-      }
-    } else {
-      auto decoded = Base64Decode(**master_psk_b64);
-      if (!decoded) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return decoded.error();
-      }
-      master_psk = std::move(*decoded);
-      if (options.key_init_b64 && !options.key_init_b64->empty()) {
-        key_init_b64 = options.key_init_b64;
-      } else if ((*thread)->channel == ThreadChannel::E2ePublic) {
-        // A session we opened that the peer has not been heard under yet: keep announcing it.
-        if (auto record = psk_store_.Load(target_key);
-            record && record->has_value() && (*record)->session_epoch == *message.session_epoch) {
-          key_init_b64 = (*record)->auto_key_init_pending;
-        }
-      }
-    }
-    E2eEncryptParams params;
-    params.text = text;
-    params.channel = E2eRelayPayloadCodec::ChannelFromThread((*thread)->channel);
-    params.peer_contact_id = (*thread)->peer_identity_value;
-    params.sender_contact_id = identity->account_id;
-    params.message_id = message.id;
-    params.sender_seq = *message.sender_seq;
-    params.session_epoch = *message.session_epoch;
-    params.timestamp = message.timestamp;
-    Roe<E2eEncryptResult> encrypted = [&]() -> Roe<E2eEncryptResult> {
-      if (options.content_type && *options.content_type != ChatContentType::Text) {
-        auto plaintext = ChatPayloadCodec::EncodeToRow(message);
-        if (!plaintext) {
-          return plaintext.error();
-        }
-        return E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(params, *plaintext, master_psk, key_init_b64);
-      }
-      return E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
-    }();
-    if (!encrypted) {
-      appended->delivery = MessageDelivery::Failed;
-      (void)store_.UpdateMessage(*appended);
-      return encrypted.error();
-    }
-    payload_b64 = std::move(encrypted->payload_b64);
-    key_init_b64 = std::move(encrypted->key_init_b64);
-  } else {
-    auto plaintext = RelayWirePayload::EncodePlaintextText(text);
-    if (!plaintext) {
-      appended->delivery = MessageDelivery::Failed;
-      (void)store_.UpdateMessage(*appended);
-      return plaintext.error();
-    }
-    payload_b64 = std::move(*plaintext);
+  auto sealed = SealDirectPayload(*appended, **thread, identity->account_id, options, psk_store_,
+                                  [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); });
+  if (!sealed) {
+    return FailOutbound(store_, *appended, sealed.error());
   }
-
-  RelayEnvelope envelope;
-  envelope.envelope_version = kRelayEnvelopeVersion;
-  envelope.message_id = message.id;
-  envelope.sender_relay_id = identity->relay_user_id;
-  envelope.sender_contact_id = identity->account_id;
-  envelope.route.kind = "direct";
-  envelope.route.channel = (*thread)->channel;
-  envelope.body.e2e.payload_b64 = *payload_b64;
-  if (key_init_b64 && !key_init_b64->empty()) {
-    envelope.body.e2e.key_init_b64 = std::move(*key_init_b64);
-  }
-  envelope.sender_seq = *message.sender_seq;
-  envelope.order_key = envelope.sender_seq;
-  envelope.session_epoch = *message.session_epoch;
   // Brief recipient is relay:; Amp-only (no route yet) uses Account as party placeholder.
-  const std::string route_party = peer_relay_id ? *peer_relay_id : amp_peer_key;
-  envelope.stream_key =
-      BuildCanonicalRelayStreamKey(identity->relay_user_id, route_party, (*thread)->channel, *message.session_epoch);
-  envelope.recipient_contact_id = route_party;
-  envelope.timestamp = message.timestamp;
-
+  RelayEnvelope envelope =
+      BuildDirectEnvelope(*appended, EnvelopeSender{identity->relay_user_id, identity->account_id},
+                          (*thread)->channel, peer_relay_id ? *peer_relay_id : amp_peer_key, std::move(*sealed));
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   if (!sign_bytes) {
-    appended->delivery = MessageDelivery::Failed;
-    (void)store_.UpdateMessage(*appended);
-    return sign_bytes.error();
+    return FailOutbound(store_, *appended, sign_bytes.error());
   }
   auto signature = identity_.SignBytes(*sign_bytes);
   if (signature) {
     envelope.signature = *signature;
   }
 
-  if (auto* mock_relay = dynamic_cast<MockRelayClient*>(relay_)) {
-    mock_relay->SetNextReplySenderId((*thread)->peer_identity_value);
-    RegisterMockPeerKeyForReply((*thread)->peer_identity_value);
-  }
-
   // Amp dial key is Account ID (invite listen multiaddrs / contact endpoints). Brief uses relay:.
-  auto send_work = [this, thread_id, envelope, message_id = message.id, amp_peer_key,
+  auto send_work = [this, thread_id, envelope, message_id = appended->id, amp_peer_key,
                     peer_relay_id, critical_lane = options.critical_lane]() mutable {
     auto post_continue = [critical_lane](std::function<void()> fn) {
       if (critical_lane) {
@@ -1535,16 +1213,25 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         AppRuntime::PostWorkerNormal(std::move(fn));
       }
     };
+    // `direct`: the direct send's failure when it was tried — what the notice says when the relay
+    // cannot carry the message either.
     auto finish_relay = [this, thread_id, message_id, envelope, peer_relay_id,
-                         critical_lane](bool tried_direct) mutable {
+                         critical_lane](std::optional<DirectSendFailure> direct) mutable {
+      const bool tried_direct = direct.has_value();
       if (!peer_relay_id) {
-        ApplySendResult(thread_id, message_id, false,
-                        tried_direct ? "mesh dial failed" : "Direct thread missing peer relay id");
+        if (direct) {
+          ApplySendFailed(thread_id, message_id, SendFailureFromDirect(direct->GetCode()), direct->message);
+        } else {
+          ApplySendFailed(thread_id, message_id, SendFailure::NoAddress, "Direct thread missing peer relay id");
+        }
         return;
       }
       if (!relay_) {
-        ApplySendResult(thread_id, message_id, false,
-                        tried_direct ? "mesh dial failed" : "Relay client not configured");
+        if (direct) {
+          ApplySendFailed(thread_id, message_id, SendFailureFromDirect(direct->GetCode()), direct->message);
+        } else {
+          ApplySendFailed(thread_id, message_id, SendFailure::RelayNotConfigured, "Relay client not configured");
+        }
         return;
       }
       const auto result = relay_->Send(envelope);
@@ -1553,35 +1240,34 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                       << " err=" << result.error().message;
         EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
                                       .attempt_count = 1});
-        ApplySendResult(thread_id, message_id, false, result.error().message);
+        ApplySendFailed(thread_id, message_id, SendFailureFromRelay(result.error()), result.error().message);
         return;
       }
       if (critical_lane) {
         log().info << "Relay Send ok (call-control) message_id=" << message_id
                    << " peer=" << *peer_relay_id;
       }
-      ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
+      ApplySendSucceeded(thread_id, message_id, MessageTransport::Relay, tried_direct);
     };
 
     // Call-control (critical_lane): Amp chat Open+ack-per-message races SoftMigrate/media and
     // burns up to ~4s before Brief — noisy WARNINGs for 10–20s while signaling still works via
     // relay. Prefer Brief when a relay route is known; Amp remains for Amp-only peers.
-    const bool try_amp = direct_chat_ && !amp_peer_key.empty() &&
-                         direct_chat_->IsPeerReachable(amp_peer_key) &&
-                         !(critical_lane && peer_relay_id.has_value());
+    const bool try_amp = DirectSendTriesAmpFirst(direct_chat_ && direct_chat_->IsPeerReachable(amp_peer_key),
+                                                 peer_relay_id.has_value(), critical_lane);
     if (!try_amp) {
-      finish_relay(false);
+      finish_relay(std::nullopt);
       return;
     }
     // Fire-and-forget Amp send: free this worker while MeshPump drives Open+ack.
     direct_chat_->SendEnvelopeAsync(
         amp_peer_key, envelope,
         [this, thread_id, message_id, amp_peer_key, critical_lane, post_continue,
-         finish_relay = std::move(finish_relay)](Roe<void> direct) mutable {
+         finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
           post_continue([this, thread_id, message_id, amp_peer_key, critical_lane, direct = std::move(direct),
                          finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
-              ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
+              ApplySendSucceeded(thread_id, message_id, MessageTransport::Direct);
               return;
             }
             if (critical_lane) {
@@ -1589,7 +1275,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                             << " peer=" << amp_peer_key << " err=" << direct.error().message
                             << " (will try Brief if relay route known)";
             }
-            finish_relay(true);
+            finish_relay(direct.error());
           });
         });
   };
@@ -1695,36 +1381,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     return members.error();
   }
 
-  ThreadMessage message;
-  message.id = util::GenerateUuid();
-  message.thread_id = thread_id;
-  message.sender_contact_id = options.sender_contact_id.value_or(kLocalSelfContactId);
-  message.text = text;
-  message.timestamp = util::NowUnixMs();
-  message.delivery = MessageDelivery::Pending;
-  message.relay_visible = true;
-  message.transport = MessageTransport::Relay;
-  ApplyRichPayloadOptions(message, options);
-
-  auto sender_seq = store_.AllocateSenderSeq(thread_id);
-  if (!sender_seq) {
-    return sender_seq.error();
-  }
-  auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
-  if (!session_epoch) {
-    return session_epoch.error();
-  }
-  message.sender_seq = *sender_seq;
-  message.session_epoch = *session_epoch;
-
-  if (auto cap = EnsureAnnotationCap(store_, thread_id, message); !cap) {
-    return cap.error();
-  }
-
-  auto appended = store_.AppendMessage(message);
+  auto appended = AppendOutboundMessage(
+      store_, NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs()));
   if (!appended) {
     return appended.error();
   }
+  const ThreadMessage& message = *appended;
   if (options.update_preview) {
     (void)inbox_.UpdatePreview(thread_id, text);
   }
@@ -1740,21 +1402,13 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     targets.push_back(std::move(target));
   }
 
-  auto resolve_kem = [this](const ChatTargetKey& key) -> Roe<ByteVector> {
-    auto kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
-    if (!kem) {
-      return kem.error();
-    }
-    return Base64Decode(kem->kem_public_key_b64);
-  };
+  auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
 
   std::optional<std::vector<uint8_t>> rich_plaintext;
   if (options.content_type && *options.content_type != ChatContentType::Text) {
     auto plaintext = ChatPayloadCodec::EncodeToRow(message);
     if (!plaintext) {
-      appended->delivery = MessageDelivery::Failed;
-      (void)store_.UpdateMessage(*appended);
-      return plaintext.error();
+      return FailOutbound(store_, *appended, plaintext.error());
     }
     rich_plaintext = std::move(*plaintext);
   }
@@ -1764,14 +1418,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       text, group_id, identity->account_id, message.id, *message.sender_seq, *message.session_epoch,
       message.timestamp, targets, psk_store_, resolve_kem, rich_plaintext);
   if (!encrypted) {
-    appended->delivery = MessageDelivery::Failed;
-    (void)store_.UpdateMessage(*appended);
     if (groups_) {
       for (const GroupMemberTarget& target : targets) {
         groups_->MarkMemberUnreachable(group_id, target.member_identity);
       }
     }
-    return encrypted.error();
+    return FailOutbound(store_, *appended, encrypted.error());
   }
 
   if (groups_) {
@@ -1780,21 +1432,14 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     }
   }
 
+  const EnvelopeSender sender{identity->relay_user_id, identity->account_id};
   for (const auto& [recipient, payload_b64] : encrypted->member_payloads) {
-    RelayEnvelope envelope;
-    envelope.envelope_version = kRelayEnvelopeVersion;
-    envelope.message_id = message.id;
-    envelope.sender_relay_id = identity->relay_user_id;
-    envelope.sender_contact_id = identity->account_id;
-    envelope.route.kind = "group";
-    envelope.route.group_id = group_id;
-    envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, payload_b64}};
-    envelope.sender_seq = *message.sender_seq;
-    envelope.order_key = envelope.sender_seq;
-    envelope.session_epoch = *message.session_epoch;
-    envelope.stream_key = BuildGroupRelayStreamKey(group_id, *message.session_epoch);
-    envelope.recipient_contact_id = recipient;
-    envelope.timestamp = message.timestamp;
+    std::optional<std::string> key_init;
+    if (auto found = encrypted->member_key_inits.find(recipient); found != encrypted->member_key_inits.end()) {
+      key_init = found->second;
+    }
+    RelayEnvelope envelope =
+        BuildGroupMemberEnvelope(message, sender, group_id, recipient, payload_b64, std::move(key_init));
 
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
@@ -1817,7 +1462,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
     AppRuntime::PostUI([this]() {
       if (on_delivery_notice_) {
-        on_delivery_notice_("Some group members couldn’t receive this message");
+        DeliveryNotice notice;
+        notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
+        on_delivery_notice_(notice);
       }
     });
   }
@@ -1907,11 +1554,9 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
   const int64_t now_ms = util::NowUnixMs();
   pending.erase(std::remove_if(pending.begin(), pending.end(),
                                [this, now_ms](const PendingRelaySend& item) {
-                                 if (item.thread_id.empty()) {
-                                   // Control lane: signaling past its use is not worth sending.
-                                   return now_ms - item.envelope.timestamp > kControlRetryWindowMs;
-                                 }
-                                 return IsThreadCompromised(item.thread_id);
+                                 const bool control_lane = item.thread_id.empty();
+                                 return !OutboxSendStillWanted(control_lane, now_ms - item.envelope.timestamp,
+                                                               !control_lane && IsThreadCompromised(item.thread_id));
                                }),
                 pending.end());
   if (pending.empty()) {
@@ -1948,17 +1593,17 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
                                                              bool tried_direct) mutable {
         const auto result = relay_->Send(item.envelope);
         if (result) {
-          ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Relay, tried_direct);
+          ApplySendSucceeded(item.thread_id, item.message_id, MessageTransport::Relay, tried_direct);
           (*process)(index + 1);
           return;
         }
-        if (item.attempt_count < kMaxOutboxRetryAttempts) {
+        if (OutboxRetryAgain(item.attempt_count)) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
           (*process)(index + 1);
           return;
         }
-        ApplySendResult(item.thread_id, item.message_id, false, result.error().message);
+        ApplySendFailed(item.thread_id, item.message_id, SendFailureFromRelay(result.error()), result.error().message);
         (*process)(index + 1);
       };
 
@@ -1969,12 +1614,12 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
         direct_chat_->SendEnvelopeAsync(
             peer_key, envelope,
             [this, still_pending, process, index, item = std::move(item),
-             try_relay = std::move(try_relay)](Roe<void> direct) mutable {
+             try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
               AppRuntime::PostWorkerNormal([this, still_pending, process, index, item = std::move(item),
                                             try_relay = std::move(try_relay),
                                             direct = std::move(direct)]() mutable {
                 if (direct) {
-                  ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Direct);
+                  ApplySendSucceeded(item.thread_id, item.message_id, MessageTransport::Direct);
                   (*process)(index + 1);
                   return;
                 }
@@ -2094,8 +1739,8 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         };
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
-          RememberRouteFromEnvelope(envelope);
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
+          RememberRouteFromEnvelope(envelope, outcome);
           MaybePublishMemberJoinedAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {
@@ -2118,11 +1763,11 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             continue;
           }
           std::optional<std::string> preview;
-          if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-            preview = decoded->text;
+          if (outcome.persisted_message) {
+            preview = outcome.persisted_message->text;
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-          MaybeEnqueueAttachmentDownload(envelope, resolved_thread_id);
+          MaybeEnqueueAttachmentDownload(outcome);
           if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
             std::string notice_title = "New message";
             if (auto thread = store_.GetThread(resolved_thread_id)) {
@@ -2207,13 +1852,13 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
     worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
   }
 
-  auto blob = std::make_unique<AmpChatBlobTransport>(people, amp_io_pump, store_, identity_, worker, amp_post_io,
-                                                     amp_post_after);
+  auto blob = std::make_unique<AmpChatBlobTransport>(people, amp_io_pump, store_, identity_, signing_key_resolver_,
+                                                     worker, amp_post_io, amp_post_after);
   blob->Start();
   peer_blob_ = std::move(blob);
 
   auto history = std::make_unique<AmpChatHistoryTransport>(people, amp_io_pump, store_, identity_, psk_store_,
-                                                         worker, amp_post_io, amp_post_after);
+                                                         signing_key_resolver_, worker, amp_post_io, amp_post_after);
   history->Start();
   auto chat = std::make_unique<AmpDirectChatTransport>(people, amp_io_pump, worker, amp_post_io, amp_post_after);
   chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
@@ -2238,21 +1883,13 @@ void MeshDeliveryOrchestrator::DetachAmpTransports() {
   amp_links_ = nullptr;
 }
 
-void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope,
-                                                           const std::string& thread_id) {
-  if (!attachment_downloads_) {
+void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome) {
+  // The stored, decrypted message — never the wire payload (ciphertext on every chat channel).
+  if (!attachment_downloads_ || !outcome.persisted_message ||
+      outcome.persisted_message->content_type != ChatContentType::Attachment || outcome.thread_id.empty()) {
     return;
   }
-  auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
-  if (!decoded || decoded->content_type != ChatContentType::Attachment) {
-    return;
-  }
-  ThreadMessage message;
-  message.id = envelope.message_id;
-  message.thread_id = thread_id;
-  message.content_type = ChatContentType::Attachment;
-  message.payload_json = decoded->payload_json;
-  attachment_downloads_->EnqueueFromMessage(thread_id, message);
+  attachment_downloads_->EnqueueFromMessage(outcome.thread_id, *outcome.persisted_message);
 }
 
 void MeshDeliveryOrchestrator::NotifyMessagesChanged() {
@@ -2269,7 +1906,7 @@ void MeshDeliveryOrchestrator::SetOnMessagesChanged(std::function<void()> callba
   on_messages_changed_ = std::move(callback);
 }
 
-void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const std::string&)> callback) {
+void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   on_delivery_notice_ = std::move(callback);
 }
 

@@ -6,7 +6,7 @@
 #include "domain/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "domain/calls/CallDirectPlannerLogic.h"
@@ -268,7 +268,7 @@ private:
   CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream,
                                                const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
-  void OnBundleFailed(const std::string& call_id, const std::string& reason);
+  void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
   static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
@@ -323,7 +323,7 @@ private:
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
   /** `call_id`'s media coordinator; null (quietly) for a call not admitted here. */
-  CallMediaCoordinator* LiveCallMedia(const std::string& call_id);
+  CallMediaCoordinator* CallMediaFor(const std::string& call_id);
   /** The group path carries `call_id`'s media now (its coordinator says so). */
   bool HopAttachedFor(const std::string& call_id);
   /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
