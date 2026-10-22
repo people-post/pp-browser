@@ -228,7 +228,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
   };
   deps.delivery.send_control = [this](const std::string& peer_account, const ThreadMessage& control,
-                                      const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+                                      const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
     ThreadMessage msg = control;
     msg.sender_contact_id = local_account_;
     if (peer_account.empty()) {

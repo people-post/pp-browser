@@ -20,10 +20,11 @@ namespace pbr {
 struct CallDeliveryPorts {
   /**
    * Call signaling to a peer on the control lane (no thread, never a transcript row). `key_init_b64`:
-   * the AutoKey init of a session a media-key wrap just opened, for the peer to derive it.
+   * the AutoKey init of a session a media-key wrap just opened, for the peer to derive it. `urgent`:
+   * a call invite — the relay wakes the peer as for an incoming call (P012).
    */
   std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
-                              const std::optional<std::string>& key_init_b64)>
+                              const std::optional<std::string>& key_init_b64, bool urgent)>
       send_control;
   /** A message into a thread's chat stream (direct or group): the call summary. */
   std::function<pp::Roe<ThreadMessage>(const std::string& thread_id, const std::string& text,

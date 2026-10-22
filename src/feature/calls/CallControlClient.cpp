@@ -50,7 +50,9 @@ Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const 
       key_init = it->second;
     }
   }
-  if (auto sent = delivery_.send_control(peer_identity, *control, key_init); !sent) {
+  // A call invite rings: the relay wakes the peer as for an incoming call (P012).
+  const bool urgent = type == CallControlType::CallInvite;
+  if (auto sent = delivery_.send_control(peer_identity, *control, key_init, urgent); !sent) {
     return sent.error();
   }
   if (key_init) {

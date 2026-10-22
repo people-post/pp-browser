@@ -190,14 +190,15 @@ On `POST /v1/messages` accept, a conforming relay **best-effort** wakes register
 
 | Condition | Opaque type |
 |-----------|-------------|
-| Every accepted message | `inbox_wake` |
+| Accepted message | `inbox_wake` |
+| Accepted message with `"urgent": true`, within the urgent rate limit | `call_wake` |
 
-The relay cannot tell a call invite from a message (the control type is inside the end-to-end payload) and does not need to: every wake syncs the inbox, a call invite in it rings, and every ring raises the "Incoming call" notification where the user is not looking (P010 / `CallPresenter`). Android wakes are already FCM `priority: high`. `call_wake` stays in the client's vocabulary (it is handled like `inbox_wake`) for a future relay that knows a message is urgent.
+The relay cannot tell a call invite from a message (the control type is inside the end-to-end payload). The sender says so instead: a call invite's send record carries `"urgent": true` (P012). The hint sits next to the record's fields and is **not** in the signed bytes, so a relay that does not know it ignores it and verifies the request as before. The relay trusts it no further than a rate limit: per sender → recipient, at most one urgent wake per 15 s; over the limit the message wakes as `inbox_wake`. Every wake syncs the inbox, a call invite in it rings, and every ring raises the "Incoming call" notification where the user is not looking (P010 / `CallPresenter`).
 
 | `platform` | Provider shape |
 |------------|----------------|
 | `android` | FCM **data** message `{ "type": "…" }` |
-| `ios` | APNs silent push (`content-available: 1`, `apns-push-type: background`) with custom `type` |
+| `ios` | `inbox_wake`: APNs silent push (`content-available: 1`, `apns-push-type: background`, priority 5) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `interruption-level: time-sensitive`, `sound`, `alert.loc-key: CALL_INCOMING` — worded on the device, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and may never wake the app for one |
 
 Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 

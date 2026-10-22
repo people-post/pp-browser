@@ -537,7 +537,7 @@ uint64_t MeshDeliveryOrchestrator::NextControlOrderKey() {
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                                                const std::optional<std::string>& key_init_b64) {
+                                                const std::optional<std::string>& key_init_b64, const bool urgent) {
   auto identity = identity_.Get();
   if (!identity || identity->account_id.empty()) {
     return Error("Local account identity unavailable");
@@ -583,6 +583,7 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
     return built.error();
   }
   RelayEnvelope envelope = std::move(*built);
+  envelope.relay_wake_urgent = urgent;
 
   // Off the caller's thread, on the critical lane (signaling must not queue behind inbox polls).
   // Prefer the relay when a route is known: Amp's open + ack per message races media setup.

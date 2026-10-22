@@ -188,6 +188,39 @@ TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
   EXPECT_EQ(app->getString("sender_relay_id"), std::optional<std::string>("relay:alice123"));
 }
 
+TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "relay:alice123";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
+  envelope.recipient_contact_id = "relay:bob456";
+
+  const auto plain = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(plain));
+  EXPECT_FALSE(plain.value().urgent);
+  EXPECT_FALSE(RelayWireSendRecordToJson(plain.value()).contains("urgent"));
+
+  envelope.relay_wake_urgent = true;
+  const auto urgent = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(urgent));
+  EXPECT_TRUE(urgent.value().urgent);
+  EXPECT_EQ(RelayWireSendRecordToJson(urgent.value()).getIf<bool>("urgent"), std::optional<bool>(true));
+  // The hint is not part of what the recipient gets.
+  EXPECT_EQ(urgent.value().blob_b64, plain.value().blob_b64);
+}
+
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   using namespace pbr;
 

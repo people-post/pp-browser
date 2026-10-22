@@ -240,7 +240,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.identity = side.identity.get();
   deps.psk = side.psk.get();
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
-                                       const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+                                       const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {
       side.on_send(peer, control);
     }

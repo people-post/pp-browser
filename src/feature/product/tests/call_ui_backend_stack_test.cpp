@@ -197,7 +197,7 @@ protected:
     deps.identity = identity_.get();
     deps.psk = psk_.get();
     deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
-                                        const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+                                        const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
       ++sent_control_;
       {
         std::lock_guard lock(sent_mu_);

@@ -59,6 +59,11 @@ struct RelayEnvelope {
   std::optional<int64_t> relay_created_at_ms;
   /** Unix ms relay clock from the poll response that delivered this envelope. */
   std::optional<int64_t> relay_server_time_ms;
+  /**
+   * P012 — a hint to the relay, not part of the envelope (neither its wire form nor its
+   * signature): wake the recipient as for an incoming call (a call invite).
+   */
+  bool relay_wake_urgent = false;
 };
 
 /** Opaque relay HTTP wire record for send (routing + blob). */
@@ -70,6 +75,8 @@ struct RelayWireSendRecord {
   std::string blob_b64;
   int64_t timestamp = 0;
   std::string signature;
+  /** P012 — wake the recipient as for an incoming call (unsigned hint; older relays ignore it). */
+  bool urgent = false;
 };
 
 /** Opaque relay HTTP wire record returned on poll/history. */

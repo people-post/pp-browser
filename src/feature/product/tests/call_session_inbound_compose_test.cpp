@@ -228,7 +228,7 @@ protected:
 
     CallDeliveryPorts delivery;
     delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
-                                   const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+                                   const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
       if (fail_sends_) {
         return Error("offline (test)");
       }

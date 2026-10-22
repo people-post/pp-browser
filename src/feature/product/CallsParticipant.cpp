@@ -24,12 +24,12 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
   deps.psk = hub.PskSessions();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
-                                        const std::optional<std::string>& key_init_b64) -> Roe<void> {
+                                        const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
         return Error("Messaging not ready");
       }
-      return messaging->SendControl(peer_identity, control, key_init_b64);
+      return messaging->SendControl(peer_identity, control, key_init_b64, urgent);
     };
     deps.delivery.send_to_thread = [&hub](const std::string& thread_id, const std::string& text,
                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {

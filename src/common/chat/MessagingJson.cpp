@@ -557,6 +557,9 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   json.set("blob_b64", record.blob_b64);
   json.set("timestamp", record.timestamp);
   json.set("signature", record.signature);
+  if (record.urgent) {
+    json.set("urgent", true);
+  }
   return json;
 }
 
@@ -581,6 +584,7 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.stream_id = envelope.stream_key;
   record.index_key = index_key;
   record.blob_b64 = ::pp::Base64Encode(bytes);
+  record.urgent = envelope.relay_wake_urgent;
   return record;
 }
 

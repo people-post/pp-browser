@@ -225,7 +225,7 @@ public:
    * critical lane — relay when a route is known (retried while fresh), else Amp.
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                        const std::optional<std::string>& key_init_b64 = std::nullopt);
+                        const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
