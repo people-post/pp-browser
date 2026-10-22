@@ -65,6 +65,11 @@ std::string RewriteBriefOriginUrl(std::string url) {
 }
 
 bool ResolveSandboxModeFromLaunch(const int argc, char** argv) {
+#ifdef PP_BROWSER_DEV_SANDBOX
+  // Dev builds only (like PP_BROWSER_DEV_PIN): the sandbox backend without a launch flag, so an
+  // iPhone opened from its icon still talks to QA. Never set for a release build.
+  return true;
+#endif
   if (argv != nullptr) {
     for (int i = 1; i < argc; ++i) {
       if (std::strcmp(argv[i], "--sandbox") == 0) {

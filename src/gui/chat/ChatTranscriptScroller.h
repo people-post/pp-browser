@@ -60,6 +60,13 @@ public:
                             std::optional<int64_t>& loaded_min, std::optional<int64_t>& loaded_max,
                             bool& has_more_local_history);
 
+  /**
+   * Scroll offset after the viewport changed height (on-screen keyboard shown / hidden): pinned stays on
+   * the bottom; otherwise the content in view stays where it is, within the new range.
+   */
+  static float ScrollTopAfterViewportResize(float top, float old_client_height, float new_client_height,
+                                            float scroll_height, bool pinned_to_bottom);
+
   /** Call at start of SyncDisplayFromThread; returns true if active thread id changed. */
   bool BeginDisplaySync(const std::string& thread_id);
   /** After rebuilding messages; updates watermarks and pin / jump-FAB. */
@@ -97,6 +104,7 @@ private:
   std::optional<float> pending_scroll_height_before_;
   std::optional<float> pending_scroll_top_before_;
   float last_messages_scroll_height_ = 0.f;
+  float last_client_height_ = 0.f;
   int unread_while_scrolled_ = 0;
   ConversationsFacade* facade_ = nullptr;
   RowBuilder rows_;

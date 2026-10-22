@@ -54,9 +54,12 @@ Roe<std::string> CallMcpToolJson(McpClient& client, const std::string& name, con
 std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const McpToolAdapterOptions& options,
                                                       const std::unordered_set<std::string>& occupied_names,
                                                       const std::string& provider_id,
-                                                      const std::string& default_domain) {
+                                                      const std::string& default_domain, bool* listed) {
   std::vector<ToolDescriptor> out;
-  auto tools = client.ListTools();
+  auto tools = client.ListTools(options.list_timeout_s);
+  if (listed) {
+    *listed = client.LastRequestAnswered(); // a failing answer counts: the server is there
+  }
   if (!tools) {
     return out;
   }
