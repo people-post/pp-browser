@@ -4,7 +4,10 @@
 
 #include "common/Utilities.h"
 
+#include <atomic>
 #include <filesystem>
+#include <thread>
+#include <vector>
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
 
@@ -462,6 +465,42 @@ TEST_F(GroupRosterInviteApplyTest, OnlyANewerOwnerRenameChangesTheTitle) {
   ASSERT_TRUE(meta && meta->has_value());
   EXPECT_EQ((*meta)->title, "B");
   EXPECT_EQ((*meta)->title_version, 2u);
+}
+
+// Two accepts in one inbox poll are applied on two workers at once: both members land and the
+// epoch counts both (it used to lose one — "Failed to upsert group metadata" under a busy
+// profile.db, after the member and the invite status were already written).
+TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch) {
+  SeedOwnedGroup(1);
+  constexpr int kInvitees = 8;
+  for (int i = 0; i < kInvitees; ++i) {
+    PendingGroupInvite pending = MakePending();
+    pending.invite_nonce = "nonce-" + std::to_string(i);
+    pending.invitee_identity = "relay:member" + std::to_string(i);
+    ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
+  }
+  std::vector<std::thread> workers;
+  std::atomic<int> applied{0};
+  for (int i = 0; i < kInvitees; ++i) {
+    workers.emplace_back([this, i, &applied]() {
+      GroupRosterStore own(store_->ProfileDbPath());  // each worker its own connection, as in the app
+      auto accepted = ApplyInviteAcceptToRoster(own, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
+                                                "group:hike", "relay:alice", util::NowUnixMs());
+      if (accepted && *accepted) {
+        applied.fetch_add(1);
+      }
+    });
+  }
+  for (std::thread& worker : workers) {
+    worker.join();
+  }
+  EXPECT_EQ(applied.load(), kInvitees);
+  for (int i = 0; i < kInvitees; ++i) {
+    EXPECT_TRUE(IsMember("relay:member" + std::to_string(i))) << i;
+  }
+  auto metadata = roster_->LoadMetadata("group:hike");
+  ASSERT_TRUE(metadata && *metadata);
+  EXPECT_EQ((*metadata)->roster_epoch, 1u + kInvitees) << "every accept moved the epoch on";
 }
 
 } // namespace

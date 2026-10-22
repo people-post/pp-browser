@@ -10,6 +10,7 @@ namespace pbr {
 Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
                                     const std::string& member_identity, const std::string& group_id,
                                     const std::string& local_identity, const int64_t now_ms) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -54,19 +55,22 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
   if (auto upserted = roster.UpsertMember(invite.group_id, member); !upserted) {
     return upserted.error();
   }
-  if (auto status = roster.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); !status) {
-    return status.error();
-  }
   GroupMetadata updated = **metadata;
   updated.roster_epoch += 1;  // our own roster's next epoch — not one the accept names
   if (auto saved = roster.UpsertMetadata(updated); !saved) {
     return saved.error();
+  }
+  // Last: until the invite reads Accepted, a failure above leaves it Pending and a re-delivered
+  // accept applies it again (the member upsert is idempotent) instead of being ignored.
+  if (auto status = roster.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); !status) {
+    return status.error();
   }
   return true;
 }
 
 Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
                                      const std::string& member_identity, const std::string& group_id) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -108,6 +112,7 @@ Roe<void> RequireNewerEpoch(const GroupMetadata& metadata, const uint64_t inboun
 
 Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
                                     const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -153,6 +158,7 @@ Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembers
 Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
                                         const GroupMembershipCodec::OwnerTransferredPayload& payload,
                                         const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -205,6 +211,7 @@ Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
 
 Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
                                   const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   if (payload.member_identity != actor_identity) {
     return Error("member_left actor must match member_identity");
   }
@@ -229,6 +236,7 @@ Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershi
 Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
                                      const GroupMembershipCodec::MemberRemovedPayload& payload,
                                      const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -252,6 +260,7 @@ Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
 
 Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
                                     const std::string& actor_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();

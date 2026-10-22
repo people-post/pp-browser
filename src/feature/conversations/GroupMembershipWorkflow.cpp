@@ -512,6 +512,7 @@ Roe<void> GroupMembershipWorkflow::FanOutMembershipEvent(const std::string& grou
 
 Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group_id,
                                                         const std::string& member_identity) {
+  auto update = GroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -533,6 +534,7 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
     return applied.error();
   }
   metadata->roster_epoch = removal.roster_epoch;
+  update.unlock();  // not across the sends below
   // The removed member must not read what follows: our group session moves on.
   (void)roster_.BumpGroupSessionEpoch(group_id, metadata->session_epoch + 1);
   ClearMemberUnreachable(group_id, member_identity);
@@ -603,6 +605,7 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   if (!local) {
     return local.error();
   }
+  auto update = GroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -629,6 +632,7 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   if (auto applied = ApplyOwnerTransferredToRoster(roster_, transfer, *local); !applied) {
     return applied.error();
   }
+  update.unlock();  // not across the sends below
 
   auto detail =
       GroupMembershipCodec::EncodeOwnerTransferred(group_id, new_owner_identity, transfer.roster_epoch, true);
