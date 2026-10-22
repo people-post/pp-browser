@@ -6,7 +6,8 @@
 # through its OwnerOutbox and gets timers from it. Tests are exempt.
 #
 #   feature/calls      runner: CallStack (with its loop: CallsLoop / CallsExecutor / CallsThread);
-#                      CallUiBackend is the UI edge and may post replies to UI.
+#                      the UI edge (CallUiBackend, and CallPresenter on the UI thread above it) may
+#                      post to UI.
 #   feature/broadcast  runner: BroadcastHub.
 #
 # EXCEPTIONS lists known, documented sites with a count: a new site fails, and so does a removed one
@@ -24,7 +25,7 @@ root = Path(sys.argv[1])
 
 # tree (under src/) -> (runner file stems, UI edge stems)
 TREES = {
-    "feature/calls": ({"CallsThread", "CallsExecutor", "CallsLoop", "CallStack"}, {"CallUiBackend"}),
+    "feature/calls": ({"CallsThread", "CallsExecutor", "CallsLoop", "CallStack"}, {"CallUiBackend", "CallPresenter"}),
     "feature/broadcast": ({"BroadcastHub"}, set()),
 }
 
@@ -56,7 +57,9 @@ for tree, (runner, ui_edge) in TREES.items():
         rel = path.relative_to(root / "src").as_posix()
         for n, line in enumerate(path.read_text().splitlines(), 1):
             code = line.split("//", 1)[0]
-            hit = FORBIDDEN.search(code) or (UI_POST.search(code) and path.stem not in ui_edge)
+            hit = FORBIDDEN.search(code)
+            if not hit and path.stem not in ui_edge:
+                hit = UI_POST.search(code)
             if not hit:
                 continue
             counts[rel] = counts.get(rel, 0) + 1
