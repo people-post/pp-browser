@@ -329,7 +329,7 @@ int main(int argc, char** argv) {
           return false;
         }
         dht->FindPeer(peer_id, [peer_id](pbr::mesh::AmpDhtProtocol::FindPeerRoe found) {
-          auto& log = pbr::logging::getLogger("pp-node");
+          auto log = pbr::logging::getLogger("pp-node");
           if (found) {
             log.info << "lab dht find " << peer_id << " found from_cache=" << found->from_cache;
           } else {
