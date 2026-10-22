@@ -32,6 +32,7 @@
 
 ## P006 — Background poll + WorkManager fallback
 
+**Status:** In-process background poll superseded by [P010](#p010--background-is-push-only-a-wake-is-a-window) (it never ran: background pauses the coordinator its timer lives on). WorkManager stays.  
 **Date:** 2026-07-13  
 **Decision:** Implement D032 background path: in-process poll at `kBackgroundRelayPollIntervalMs` (45s) while alive; Android WorkManager ~15 min when process dead and alerts off; rarer backup (1–6h) when alerts on.  
 **Rationale:** Push is wake-only; poll remains source of truth. Fast background poll is rejected for battery/Doze.
@@ -55,3 +56,11 @@
 **Decision:** FCM/APNs may carry `type=call_wake` in addition to `inbox_wake`. Same opacity rules as P001 (no `call_id`, names, or media). Client treats `call_wake` as force sync then **fetch pending call invites → ring UI** (V006). Vault-locked behavior follows P003 with generic “Incoming call” copy when a banner is shown. Relay emits `call_wake` on call-invite class envelopes (see `SERVICE_ENDPOINTS.md`).  
 **Rationale:** Prioritize ring UX over chat badge without leaking call metadata to the push path.  
 **Alternatives:** Overload `inbox_wake` only (weak ring); put `call_id` in FCM (rejected).
+
+## P010 — Background is push only; a wake is a window
+
+**Date:** 2026-10-22  
+**Status:** Accepted (product owner: push only in the background, for power) — supersedes P006's in-process background poll  
+**Decision:** In the background a phone app's work is paused (`AppLifecycle::OnWillEnterBackground`) and it has no relay poll of its own: it is reached by push. A push (`inbox_wake` / `call_wake`) or a WorkManager run resumes the work for `kBackgroundWakeWindowMs` (20 s) — enough to sync the inbox and ring — then the work pauses again unless the app came to the foreground; a newer wake extends the window. WorkManager stays as the safety net for missed pushes. A minimized desktop window is not background (it keeps working and notifies).  
+**Rationale:** The OS enforces it anyway (iOS suspends, Android Doze batches network), and the messengers people compare against work this way. The 45 s in-process poll never ran (its timer lived on the paused coordinator), and a push could not wake the app (its sync was posted to that paused coordinator); once that was fixed, one push kept the phone awake for good.  
+**Cross-link:** app lab `background_is_push_only`, `push_wakes_background_callee`, `minimized_still_rings` (`scripts/test/pp_app_lab.py`).

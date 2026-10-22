@@ -11,8 +11,12 @@ inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeJsonBytes = 256 * 1024;
 inline constexpr size_t kMaxPollBatchMessages = 100;
 inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
-/** D032 / P006 — in-process background poll while app is alive. */
-inline constexpr uint64_t kBackgroundRelayPollIntervalMs = 45000;
+/**
+ * In the background a phone is reached by push only (power): its work is paused (AppLifecycle) and
+ * the relay poll with it. A push / WorkManager wake resumes the work for this long — enough to fetch
+ * the inbox and ring — then it pauses again.
+ */
+inline constexpr uint64_t kBackgroundWakeWindowMs = 20000;
 /** WorkManager backup when alerts on (milliseconds). */
 inline constexpr uint64_t kWorkManagerAlertsOnBackupIntervalMs = 3ULL * 60ULL * 60ULL * 1000ULL;
 /** WorkManager when alerts off (~15 min Android minimum). */

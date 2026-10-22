@@ -16,7 +16,8 @@
 | iOS | APNs token via `IosPushDeviceRegistrar` + `IosApnsAppDelegate` (SDLUIKitDelegate subclass); silent `inbox_wake` / `call_wake` → `BackgroundSyncScheduler` |
 | www relay | `FcmPushSender` + `ApnsPushSender` (HTTP/2 + .p8 JWT); branch on `platform` |
 | Desktop local banners | Native OS APIs (Linux Freedesktop/D-Bus, macOS `UNUserNotificationCenter`, Windows WinRT toasts); tap → raise + open thread; `ClearForThread` on select |
-| Desktop lifecycle | Minimize / focus-lost treated as background so banners can fire while the process is alive |
+| Desktop lifecycle | Minimize / focus-lost read as not attentive so banners fire; the app keeps working (calls ring) — not background (P010) |
+| Background (phones) | Push only (P010): work paused; a push / WorkManager wake resumes it for 20 s |
 | Contracts | `SERVICE_ENDPOINTS.md`, `PLATFORMS.md` updated |
 | `call_wake` | Opaque type + Android JNI + iOS remote-notification handler + client fetch-then-ring (P008 / V006); relay emit rule documented |
 

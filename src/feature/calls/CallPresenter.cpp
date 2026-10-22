@@ -158,8 +158,22 @@ void CallPresenter::Refresh() {
   const CallUiBackend::Surface surface = backend->Settle();
   using SurfaceKind = CallUiBackend::Surface::Kind;
   CallScreen next;
+  // A click the stack has not taken yet: its ring stays answered / declined meanwhile.
+  const std::string ringing_id = surface.kind == SurfaceKind::Ringing ? surface.invite->call_id : std::string();
+  if (answered_call_id_ != ringing_id) {
+    answered_call_id_.clear();
+  }
+  if (declined_call_id_ != ringing_id) {
+    declined_call_id_.clear();
+  }
 
-  if (surface.kind == SurfaceKind::Answering) {
+  if (surface.kind == SurfaceKind::Ringing && !declined_call_id_.empty()) {
+    // Declined: nothing shows (the call this device is in, if any, stays active).
+    if (surface.active) {
+      active_call_id_ = surface.active->call_id;
+    }
+  } else if (surface.kind == SurfaceKind::Answering ||
+             (surface.kind == SurfaceKind::Ringing && !answered_call_id_.empty())) {
     // Accept in flight (CALLS.md): the ring is gone; a Connecting bar so Accept does not look hung.
     const PendingCallInvite& top = *surface.invite;
     ringing_call_id_.clear();
@@ -512,6 +526,7 @@ std::string CallPresenter::Accept(const bool voice_only) {
   // AcceptInvite finished made Accept look hung.
   ringing_call_id_.clear();
   ring_shown_ = false;
+  answered_call_id_ = call_id;
   screen_ = {};
   Changed();
   log().warning << "Accept → lifecycle AcceptClicked call_id=" << call_id << " charge=waive"
@@ -547,6 +562,7 @@ std::string CallPresenter::AcceptWithCharge() {
   }
   ringing_call_id_.clear();
   ring_shown_ = false;
+  answered_call_id_ = call_id;
   screen_ = {};
   Changed();
   log().warning << "AcceptWithCharge → lifecycle AcceptClicked call_id=" << call_id << " charge=take_all";
@@ -566,6 +582,7 @@ std::string CallPresenter::Decline() {
   }
   ringing_call_id_.clear();
   ring_shown_ = false;
+  declined_call_id_ = call_id;
   screen_ = {};
   Changed();
   if (callbacks_.on_decline) {

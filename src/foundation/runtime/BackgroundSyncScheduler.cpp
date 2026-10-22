@@ -54,10 +54,18 @@ void BackgroundSyncScheduler::RequestWakeSync() {
     return;
   }
   // A push wakes a backgrounded app: its work is paused, the coordinator included, so the sync
-  // posted below would only run once the user opened the app. Resume first (RunScheduledSync
-  // marks the IO as held for the wake).
+  // posted below would only run once the user opened the app. Resume it for a window, long
+  // enough to fetch the inbox and ring, then pause again: in the background a phone is reached by
+  // push only (power).
   if (!AppLifecycle::IsForeground()) {
+    const uint64_t window = wake_window_.fetch_add(1) + 1;
     AppRuntime::ResumeBackgroundWork();
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kBackgroundWakeWindowMs), [this, window]() {
+      if (window == wake_window_.load() && !AppLifecycle::IsForeground()) {
+        log().info << "background wake window over: work paused again";
+        AppRuntime::PauseBackgroundWork();
+      }
+    });
   }
   AppRuntime::PostCoordinatorCritical([this]() { RunScheduledSync(true); });
 }
@@ -81,23 +89,19 @@ void BackgroundSyncScheduler::RunScheduledSync(bool force) {
   if (!handler_) {
     return;
   }
-  if (AppLifecycle::IsForeground()) {
-    bg_io_held_ = false;
-  }
   if (!force) {
+    // In the background a phone is reached by push only (P010): no poll of its own, even inside a
+    // wake window (the wake's own sync fetched the inbox).
+    if (!AppLifecycle::IsForeground()) {
+      return;
+    }
     const uint64_t now = util::NowUnixMs();
-    const uint64_t interval = AppLifecycle::IsForeground() ? kForegroundRelayPollIntervalMs
-                                                           : kBackgroundRelayPollIntervalMs;
-    if (now - last_poll_ms_ < interval) {
+    if (now - last_poll_ms_ < kForegroundRelayPollIntervalMs) {
       return;
     }
     last_poll_ms_ = now;
   } else {
     last_poll_ms_ = util::NowUnixMs();
-  }
-  if (!AppLifecycle::IsForeground()) {
-    AppRuntime::ResumeBackgroundWork();
-    bg_io_held_ = true;
   }
   handler_(force);
 }

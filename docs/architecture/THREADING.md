@@ -106,7 +106,7 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 
 Drives periodic **policy** (not Amp UDP drain):
 
-- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
+- Relay poll: foreground ~2s; background none — push only, a wake resumes the paused work for 20 s (`MessagingLimits.h`, P010) — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
 - Hub policy: peer sweep, mDNS, reachability UX — `ConversationsHub` (~1s)
 - Peer idle sweep: ~15s internal where applicable
 

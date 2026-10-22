@@ -138,6 +138,12 @@ private:
   std::string ringing_call_id_;
   std::string active_call_id_;
   bool ring_shown_ = false;
+  /**
+   * The ring the user just answered / declined: the stack's state reads Ringing for it until the
+   * owner has taken the click, and showing it again then flashed the ring after Accept.
+   */
+  std::string answered_call_id_;
+  std::string declined_call_id_;
   bool pending_call_wake_notify_ = false;
   /**
    * 2026-09-28: video calls start with the local camera on — set by the caller (video StartCall)

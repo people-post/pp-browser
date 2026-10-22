@@ -246,7 +246,7 @@ flowchart TB
 
   subgraph coord["Coordinator thread"]
     Coord["CoordinatorThread<br/><small>mailbox + timer wheel</small>"]
-    RelayPoll["BackgroundSyncScheduler<br/><small>relay poll 2s/45s</small>"]
+    RelayPoll["BackgroundSyncScheduler<br/><small>relay poll 2s fg; bg push only</small>"]
     HubPolicy["ConversationsHub policy<br/><small>peer sweep · mDNS · reachability</small>"]
     Coord --> RelayPoll
     Coord --> HubPolicy

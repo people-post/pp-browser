@@ -682,6 +682,38 @@ def scenario_push_wakes_background_callee(lab):
     return {"ring_after_push_s": round(rang, 2)}
 
 
+# The app's background wake window (MessagingLimits.h kBackgroundWakeWindowMs).
+BACKGROUND_WAKE_WINDOW_S = 20
+
+
+def scenario_background_is_push_only(lab):
+    """Bob's phone app is in the background; a push wakes it with nothing to deliver. Once the wake
+    window is over it sleeps again (push only, for power): Alice's call does not ring until its own
+    push, or until Bob opens the app — then it rings and he answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("background")
+    b.cmd("push_wake")
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    try:
+        b.wait_surface("ringing", 8, call_id=call_id)
+        raise ProbeError("bob: rang with the app asleep in the background (no push for it)")
+    except ProbeError as e:
+        if "rang with" in str(e):
+            raise
+    opened = time.time()
+    b.cmd("foreground")
+    b.wait_surface("ringing", 15, call_id=call_id)
+    rang = time.time() - opened
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"ring_after_open_s": round(rang, 2)}
+
+
 def scenario_background_mid_call(lab):
     """Alice's phone app goes to the background mid-call (she looks something up) and comes back:
     the call goes on both ways the whole time."""
@@ -1240,6 +1272,7 @@ SCENARIOS = [
     ("minimized_still_rings", scenario_minimized_still_rings),
     ("push_wakes_background_callee", scenario_push_wakes_background_callee),
     ("background_mid_call", scenario_background_mid_call),
+    ("background_is_push_only", scenario_background_is_push_only),
     ("network_drops_mid_call", scenario_network_drops_mid_call),
     ("address_changes_mid_call", scenario_address_changes_mid_call),
     ("group_member_network_drops", scenario_group_member_network_drops),
