@@ -3,6 +3,7 @@
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
+#include <cstdint>
 #include <functional>
 
 namespace pbr {
@@ -28,15 +29,23 @@ public:
   /** UI/SDL thread only — tracks desktop focus independent of minimize/lifecycle. */
   static void SetDesktopInputFocused(bool focused);
   static void SetDesktopMinimized(bool minimized);
+  /**
+   * A desktop window minimized / restored. Minimized is not attentive (alerts notify) but the app
+   * keeps working: calls ring and messages arrive, as in any desktop messenger. Background (paused
+   * work) is the mobile OS's state, not a window's.
+   */
+  static void OnDesktopMinimized();
+  static void OnDesktopRestored();
 
   static void OnWillEnterBackground();
   static void OnDidEnterForeground();
   static void OnLowMemory();
 
-  static void AddBackgroundListener(std::function<void()> listener);
-  static void AddForegroundListener(std::function<void()> listener);
-  static void ClearBackgroundListeners();
-  static void ClearForegroundListeners();
+  /** A listener's handle; RemoveListener takes it back (each owner removes only its own). */
+  using ListenerId = uint64_t;
+  static ListenerId AddBackgroundListener(std::function<void()> listener);
+  static ListenerId AddForegroundListener(std::function<void()> listener);
+  static void RemoveListener(ListenerId id);
 };
 
 } // namespace pbr

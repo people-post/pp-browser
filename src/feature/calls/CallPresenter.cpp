@@ -253,7 +253,9 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   signals.p2p_connect_failed = backend.IsP2pConnectFailed();
   signals.p2p_missing_mic = backend.P2pConnectMissingMic();
   signals.p2p_seed_unreachable = backend.P2pConnectSeedUnreachable();
-  signals.awaiting_sfu_recovery = backend.IsAwaitingSfuRecovery();
+  // The hop path being recovered, also a guest's lost transport between reattach attempts (the
+  // Reconnecting line stays up; the seat stays Live by design).
+  signals.awaiting_sfu_recovery = backend.IsAwaitingSfuRecovery() || backend.IsGuestHopRecovering();
   signals.sfu_mode = backend.Media().IsSfuMode();
   signals.group_context = group_call || joined > 2 || signals.awaiting_sfu_recovery || signals.sfu_mode;
   signals.media_chrome_live = backend.MediaChromeLive();

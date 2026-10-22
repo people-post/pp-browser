@@ -53,6 +53,12 @@ void BackgroundSyncScheduler::RequestWakeSync() {
   if (!handler_) {
     return;
   }
+  // A push wakes a backgrounded app: its work is paused, the coordinator included, so the sync
+  // posted below would only run once the user opened the app. Resume first (RunScheduledSync
+  // marks the IO as held for the wake).
+  if (!AppLifecycle::IsForeground()) {
+    AppRuntime::ResumeBackgroundWork();
+  }
   AppRuntime::PostCoordinatorCritical([this]() { RunScheduledSync(true); });
 }
 

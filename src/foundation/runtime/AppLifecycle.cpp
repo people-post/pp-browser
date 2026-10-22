@@ -13,8 +13,36 @@ namespace pbr {
 namespace {
 
 AppLifecycleState g_state = AppLifecycleState::Foreground;
-std::vector<std::function<void()>> g_background_listeners;
-std::vector<std::function<void()>> g_foreground_listeners;
+struct Listener {
+  AppLifecycle::ListenerId id = 0;
+  std::function<void()> fn;
+};
+// Added / removed from any thread (owners register as they come up); called on the UI thread.
+std::mutex g_listeners_mu;
+std::vector<Listener> g_background_listeners;
+std::vector<Listener> g_foreground_listeners;
+AppLifecycle::ListenerId g_next_listener_id = 1;
+
+/** A copy taken under the lock: listeners run outside it (one may add or remove another). */
+std::vector<std::function<void()>> Snapshot(const std::vector<Listener>& listeners) {
+  std::lock_guard lock(g_listeners_mu);
+  std::vector<std::function<void()>> out;
+  out.reserve(listeners.size());
+  for (const Listener& listener : listeners) {
+    out.push_back(listener.fn);
+  }
+  return out;
+}
+
+AppLifecycle::ListenerId Add(std::vector<Listener>& listeners, std::function<void()> fn) {
+  if (!fn) {
+    return 0;
+  }
+  std::lock_guard lock(g_listeners_mu);
+  const AppLifecycle::ListenerId id = g_next_listener_id++;
+  listeners.push_back({id, std::move(fn)});
+  return id;
+}
 
 // Updated only on the UI/SDL thread. Read from any thread for alert gating.
 // Mobile never touches these; defaults keep IsUserAttentive() == IsForeground().
@@ -71,13 +99,23 @@ void AppLifecycle::SetDesktopMinimized(bool minimized) {
   g_desktop_minimized.store(minimized, std::memory_order_relaxed);
 }
 
+void AppLifecycle::OnDesktopMinimized() {
+  SetDesktopMinimized(true);
+  SetDesktopInputFocused(false);
+  logger().info << "Desktop window minimized (still working)";
+}
+
+void AppLifecycle::OnDesktopRestored() {
+  SetDesktopMinimized(false);
+}
+
 void AppLifecycle::OnWillEnterBackground() {
   if (g_state == AppLifecycleState::Background) {
     return;
   }
   g_state = AppLifecycleState::Background;
   AppRuntime::PauseBackgroundWork();
-  for (const auto& listener : g_background_listeners) {
+  for (const auto& listener : Snapshot(g_background_listeners)) {
     listener();
   }
   logger().info << "Entering background";
@@ -93,7 +131,7 @@ void AppLifecycle::OnDidEnterForeground() {
   if (!was_background) {
     return;
   }
-  for (const auto& listener : g_foreground_listeners) {
+  for (const auto& listener : Snapshot(g_foreground_listeners)) {
     listener();
   }
   logger().info << "Entering foreground";
@@ -103,24 +141,22 @@ void AppLifecycle::OnLowMemory() {
   logger().warning << "Low memory warning";
 }
 
-void AppLifecycle::AddBackgroundListener(std::function<void()> listener) {
-  if (listener) {
-    g_background_listeners.push_back(std::move(listener));
+AppLifecycle::ListenerId AppLifecycle::AddBackgroundListener(std::function<void()> listener) {
+  return Add(g_background_listeners, std::move(listener));
+}
+
+AppLifecycle::ListenerId AppLifecycle::AddForegroundListener(std::function<void()> listener) {
+  return Add(g_foreground_listeners, std::move(listener));
+}
+
+void AppLifecycle::RemoveListener(const ListenerId id) {
+  if (id == 0) {
+    return;
   }
-}
-
-void AppLifecycle::AddForegroundListener(std::function<void()> listener) {
-  if (listener) {
-    g_foreground_listeners.push_back(std::move(listener));
+  std::lock_guard lock(g_listeners_mu);
+  for (auto* listeners : {&g_background_listeners, &g_foreground_listeners}) {
+    std::erase_if(*listeners, [id](const Listener& listener) { return listener.id == id; });
   }
-}
-
-void AppLifecycle::ClearBackgroundListeners() {
-  g_background_listeners.clear();
-}
-
-void AppLifecycle::ClearForegroundListeners() {
-  g_foreground_listeners.clear();
 }
 
 } // namespace pbr

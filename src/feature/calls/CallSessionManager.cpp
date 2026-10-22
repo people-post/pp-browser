@@ -655,6 +655,7 @@ void CallSessionManager::OnLocalNetworkMoved() {
   if (direct_path_) {
     direct_path_->OnLocalNetworkChanged();
   }
+  topology_.OnLocalNetworkMoved();
 }
 
 void CallSessionManager::OnPathPolicyChanged(const std::string& call_id) {
@@ -1165,6 +1166,10 @@ Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(con
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const {
   return topology_.IsAwaitingSfuRecovery();
+}
+
+bool CallSessionManager::IsGuestHopRecovering() const {
+  return topology_.IsGuestHopRecovering();
 }
 
 bool CallSessionManager::IsSoftMigrateInFlight() const {

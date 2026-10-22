@@ -102,6 +102,8 @@ public:
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(CallMediaKeyStore* keys);
+  /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
+  void OnLocalNetworkMoved();
   /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
   void OnMediaKeyInstalled(const std::string& call_id) { hop_migrate_.InstallMediaKey(call_id); }
   /** V046 exclusive media bind / epoch via ports. */
@@ -114,6 +116,8 @@ public:
   void Handle(TopologyEvent& event);
 
   bool IsAwaitingSfuRecovery() const override;
+  /** This guest's hop transport was lost and is not back yet (the call screen reads Reconnecting). */
+  bool IsGuestHopRecovering() const;
   bool IsSfuAttached() const override;
   /** Hop driver: SoftMigrate / hint / N≥3 / recovery — the call's 1:1 stream closing is expected. */
   bool ExpectsGroupMedia(const std::string& call_id) const override;

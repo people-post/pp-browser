@@ -475,6 +475,8 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
+  /** Its AppLifecycle background listener (removed at Shutdown). */
+  uint64_t lifecycle_background_id_ = 0;
   bool mesh_ready_ = false;
   /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
   bool brief_guest_mint_attempted_ = false;

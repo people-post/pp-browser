@@ -1097,6 +1097,13 @@ void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::Relea
   if (!sfu_.attached || media_.ActiveCallId() != release.call_id) {
     return;
   }
+  // The guest's hop transport went down since this attach (a reattach is under way, or gave up):
+  // the settle of the attach that was lost must not read the call as connected again. The direct
+  // transport was released when the attach completed; a reattach that succeeds reports Live.
+  if (guest_.active_call_id == release.call_id && (guest_.reattach_in_flight || guest_.reattach_attempts > 0)) {
+    log().info << "ReleaseDirect settle skipped (hop transport lost) call_id=" << release.call_id;
+    return;
+  }
   if (release.self_hop && IsMigrateGenerationCurrent(release.migrate_generation)) {
     if (auto local = host_.local_relay_identity()) {
       if (auto encoded = CallControlCodec::EncodeSfuAttach(release.fanout)) {
@@ -1141,8 +1148,9 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
     log().warning << "Guest SFU reattach exhausted attempts=" << guest_.reattach_attempts
                   << " call_id=" << call_id;
     // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
+    // The call still reads Reconnecting (not Connected: nothing flows) until the device's network
+    // comes back or moves (OnLocalNetworkMoved tries again) or the user leaves.
     host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
-    host_.ClearMediaActivity();
     return;
   }
   ++guest_.reattach_attempts;
@@ -1153,6 +1161,15 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
   log().warning << "Guest SFU duplex lost — reattach attempt=" << attempt
                 << " hop=" << attach.hop_peer_id << " call_id=" << call_id;
   host_.SetMediaActivity(Tr("call.status.reconnecting"));
+  if (attempt == 1) {
+    // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
+    // The seat stays Live by design (a reattach is not a demotion); IsGuestHopRecovering keeps
+    // the Reconnecting line up until a reattach succeeds.
+    const auto arming_ports = arming_.Get();
+    if (arming_ports->report_progress) {
+      arming_ports->report_progress(CallHopPlannerPhase::Attaching, call_id);
+    }
+  }
 
   // The completion runs on the owner (from the attach's event, or a deferred early failure).
   ReattachGuestSfuTransportAsync(call_id, attach, [this, call_id, gen, attempt](Roe<void> ok) {
@@ -1164,6 +1181,10 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
       log().info << "Guest SFU reattach ok call_id=" << call_id;
       guest_.reattach_attempts = 0;
       host_.ClearMediaActivity();
+      const auto arming_ports = arming_.Get();
+      if (arming_ports->report_progress) {
+        arming_ports->report_progress(CallHopPlannerPhase::Live, call_id);
+      }
       return;
     }
     log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message
@@ -1171,6 +1192,20 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
     const int backoff_ms = 400 * attempt;
     outbox_.After(std::chrono::milliseconds(backoff_ms), hop_migrate_event::GuestReattachRetry{});
   });
+}
+
+void CallHopMigrateWorkflow::OnLocalNetworkMoved() {
+  if (!guest_.active_attach || guest_.active_call_id.empty()) {
+    return;
+  }
+  // Attempts spent while the network was down say nothing about the network now: a fresh budget,
+  // and a guest that had given up tries again (a retry still pending picks the budget up).
+  const bool gave_up = guest_.reattach_attempts >= kMaxGuestSfuReattachAttempts && !guest_.reattach_in_flight;
+  guest_.reattach_attempts = 0;
+  if (gave_up) {
+    log().info << "Guest SFU reattach again: the local network moved call_id=" << guest_.active_call_id;
+    OnGuestSfuTransportLost();
+  }
 }
 
 void CallHopMigrateWorkflow::ReattachGuestSfuTransportAsync(const std::string& call_id,

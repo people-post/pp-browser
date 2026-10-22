@@ -245,6 +245,8 @@ public:
                              std::function<void(Roe<void>)> on_done);
 
   void OnGuestSfuTransportLost();
+  /** The device's network came back or moved: a guest whose hop transport was lost tries again. */
+  void OnLocalNetworkMoved();
   void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                                       std::function<void(Roe<void>)> on_done);
 

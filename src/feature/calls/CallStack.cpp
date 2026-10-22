@@ -226,6 +226,7 @@ void CallStack::PublishUiState() {
       state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
     }
     state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();
+    state.guest_hop_recovering = call_sessions_->IsGuestHopRecovering();
     state.soft_migrate_in_flight = call_sessions_->IsSoftMigrateInFlight();
     state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();
     state.p2p_connect_failed = call_sessions_->IsP2pConnectFailed();

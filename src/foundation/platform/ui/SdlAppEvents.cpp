@@ -58,15 +58,14 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
     return true;
   case SDL_EVENT_WINDOW_MINIMIZED:
     if (Platform::IsDesktop()) {
-      AppLifecycle::SetDesktopMinimized(true);
-      AppLifecycle::SetDesktopInputFocused(false);
-      // Minimize slows poll / pauses IO. Clicking another app does not.
-      AppLifecycle::OnWillEnterBackground();
+      // Not background: a minimized messenger still rings and receives (it pausing all work held
+      // every incoming call until the window came back).
+      AppLifecycle::OnDesktopMinimized();
     }
     break;
   case SDL_EVENT_WINDOW_RESTORED:
     if (Platform::IsDesktop()) {
-      AppLifecycle::SetDesktopMinimized(false);
+      AppLifecycle::OnDesktopRestored();
     }
     MaybeEnterDesktopForeground();
     break;

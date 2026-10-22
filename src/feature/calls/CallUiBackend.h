@@ -115,6 +115,7 @@ public:
   /** The whole snapshot, for readers that want one consistent view. */
   std::shared_ptr<const CallUiState> State() const;
   bool IsAwaitingSfuRecovery() const { return State()->awaiting_sfu_recovery; }
+  bool IsGuestHopRecovering() const { return State()->guest_hop_recovering; }
   bool IsSoftMigrateInFlight() const { return State()->soft_migrate_in_flight; }
   bool IsSfuAttachWaitActive() const { return State()->sfu_attach_wait_active; }
   bool IsP2pConnectFailed() const { return State()->p2p_connect_failed; }

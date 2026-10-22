@@ -250,6 +250,7 @@ public:
   void KickAnswererDirectMediaIfArmed(const std::string& call_id);
 
   bool IsAwaitingSfuRecovery() const;
+  bool IsGuestHopRecovering() const;
   bool IsSoftMigrateInFlight() const;
   bool IsSfuAttachWaitActive() const;
   bool IsP2pConnectFailed() const;

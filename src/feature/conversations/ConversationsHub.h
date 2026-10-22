@@ -331,6 +331,9 @@ public:
   void TickMesh();
   /** Drop cold peer connections (Android background). */
   void SuspendMeshColdPeers();
+  /** The app went to the background / came back (AppLifecycle): the mesh follows. */
+  void OnAppBackground();
+  void OnAppForeground();
 
   void SetOnMessagingReady(std::function<void()> callback);
   /** Fired on UI thread when async mesh bring-up finishes (success or soft-fail). */
@@ -489,6 +492,9 @@ private:
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  /** AppLifecycle listeners (OnAppBackground / OnAppForeground), removed at Shutdown. */
+  uint64_t lifecycle_background_id_ = 0;
+  uint64_t lifecycle_foreground_id_ = 0;
   bool mesh_ready_ = false;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};

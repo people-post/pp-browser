@@ -24,6 +24,8 @@ struct CallUiState {
   std::string last_error;
   // Session manager / topology / bridge
   bool awaiting_sfu_recovery = false;
+  /** A guest's lost hop transport is not back yet (screen only: path decisions read the above). */
+  bool guest_hop_recovering = false;
   bool soft_migrate_in_flight = false;
   bool sfu_attach_wait_active = false;
   bool p2p_connect_failed = false;

@@ -4072,16 +4072,8 @@ bool ChatController::Setup(ui::Context* context) {
   }
 
   context_ = context;
-  AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
-  AppLifecycle::AddForegroundListener([this]() {
-    if (!messaging_ready_) {
-      return;
-    }
-    const std::string active = ActiveThreadId();
-    if (!active.empty() && MessagingReady()) {
-      facade_->WarmPeerForThread(active);
-    }
-  });
+  // The mesh's own background / foreground reactions are the hub's (ConversationsHub::OnAppBackground).
+  lifecycle_background_id_ = AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
   const AppConfig& config = Store().Snapshot().config;
   widgets_.ClearAll();
   chat_ = {};
@@ -4545,9 +4537,6 @@ void ChatController::OnApplicationPause() {
   if (AgentReady() && agent_ports_.cancel) {
     agent_ports_.cancel();
   }
-  if (messaging_ready_) {
-    facade_->SuspendMeshColdPeers();
-  }
 }
 
 void ChatController::FlushHeldAgentSend() {
@@ -4619,8 +4608,8 @@ void ChatController::AfterLayout() {
 }
 
 void ChatController::Shutdown() {
-  AppLifecycle::ClearBackgroundListeners();
-  AppLifecycle::ClearForegroundListeners();
+  AppLifecycle::RemoveListener(lifecycle_background_id_);
+  lifecycle_background_id_ = 0;
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
   // MessagingReady / ReachabilityUpdated are owned by Application.
   if (MessagingInitialized() && facade_) {

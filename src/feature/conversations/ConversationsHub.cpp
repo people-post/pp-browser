@@ -1201,6 +1201,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   BuildMessagingObjects();
 
   messaging_ready_ = false;
+  if (lifecycle_background_id_ == 0) {
+    lifecycle_background_id_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
+    lifecycle_foreground_id_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
+  }
   initialized_ = true;
   return {};
 }
@@ -2520,6 +2524,22 @@ void ConversationsHub::SuspendMeshColdPeers() {
   SyncMobileEphemeralListen();
 }
 
+void ConversationsHub::OnAppBackground() {
+  if (messaging_ready_) {
+    SuspendMeshColdPeers();
+  }
+}
+
+void ConversationsHub::OnAppForeground() {
+  // The open chat's peer is the one the user is about to talk to: warm its link.
+  if (!messaging_ready_ || !mesh_messaging_ || !inbox_) {
+    return;
+  }
+  if (const std::string active = inbox_->ActiveThreadId(); !active.empty()) {
+    mesh_messaging_->WarmPeerForThread(active);
+  }
+}
+
 
 void ConversationsHub::FlushForExit() {
   if (!initialized_) {
@@ -2538,6 +2558,10 @@ void ConversationsHub::Shutdown() {
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
+  AppLifecycle::RemoveListener(lifecycle_background_id_);
+  AppLifecycle::RemoveListener(lifecycle_foreground_id_);
+  lifecycle_background_id_ = 0;
+  lifecycle_foreground_id_ = 0;
 
   on_messaging_ready_ = nullptr;
   on_reachability_updated_ = nullptr;

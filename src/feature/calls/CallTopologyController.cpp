@@ -205,6 +205,12 @@ bool CallTopologyController::IsAwaitingSfuRecovery() const {
          guest_.reattach_in_flight;
 }
 
+bool CallTopologyController::IsGuestHopRecovering() const {
+  // From the first reattach attempt until one succeeds (attempts reset): between attempts and after
+  // they ran out too, nothing flows.
+  return guest_.reattach_in_flight || guest_.reattach_attempts > 0;
+}
+
 bool CallTopologyController::IsSfuAttached() const {
   return sfu_.attached;
 }
@@ -772,6 +778,10 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
 
 void CallTopologyController::OnGuestSfuTransportLost() {
   hop_migrate_.OnGuestSfuTransportLost();
+}
+
+void CallTopologyController::OnLocalNetworkMoved() {
+  hop_migrate_.OnLocalNetworkMoved();
 }
 
 uint64_t CallTopologyController::ClaimMigrateFlight(const std::string& call_id) {
