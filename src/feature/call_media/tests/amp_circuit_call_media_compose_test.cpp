@@ -638,7 +638,7 @@ protected:
       };
       cbs.on_path_changed = [&](CallMediaLinkKind kind) { b_path_ = kind; };
       cbs.on_path_lost = [&] { ++b_lost_; };
-      cbs.on_failed = [&](const std::string&) { b_failed_ = true; };
+      cbs.on_failed = [&](const CallMediaFailure&) { b_failed_ = true; };
     }));
     CallMediaDirectConnectParams params;
     params.peer_key = harness_->peer_id_b;
@@ -650,7 +650,7 @@ protected:
     cbs.on_connected = [&] { a_connected_ = true; };
     cbs.on_path_changed = [&](CallMediaLinkKind kind) { a_path_ = kind; };
     cbs.on_path_lost = [&] { ++a_lost_; };
-    cbs.on_failed = [&](const std::string&) { a_failed_ = true; };
+    cbs.on_failed = [&](const CallMediaFailure&) { a_failed_ = true; };
     LegCompletion leg_done;
     leg_ = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 8000);
     ASSERT_TRUE(leg_);

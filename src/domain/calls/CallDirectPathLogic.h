@@ -53,9 +53,6 @@ DirectHealthAction DecideDirectHealth(const DirectHealthInput& in);
 
 // --- A carrier failed ------------------------------------------------------------------------------
 
-/** A clean close of the 1:1 stream (read EOF / stream closed), not a network failure. */
-bool IsSoftDirectClose(const std::string& reason);
-
 struct BundleFailureInput {
   /** The failed carrier is the engine's call. */
   bool engine_call = false;
@@ -67,6 +64,7 @@ struct BundleFailureInput {
   bool hop_attached = false;
   /** A hop attach is in flight or expected (the 1:1 stream closing is part of the move). */
   bool hop_pending = false;
+  /** The peer closed the 1:1 stream (CallMediaErr::StreamClosed): a clean end, not a network failure. */
   bool soft_close = false;
 };
 

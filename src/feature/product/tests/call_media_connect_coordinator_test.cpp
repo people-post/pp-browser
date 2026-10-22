@@ -304,7 +304,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownRejectsStart) {
   OnCallsOwner([&] { connect_->Shutdown(); });
   std::string failure;
   auto req = Request();
-  req.callbacks.on_failed = [&failure](const std::string& why) { failure = why; };
+  req.callbacks.on_failed = [&failure](const CallMediaFailure& why) { failure = why.message; };
   OnCallsOwner([&] { connect_->Start(std::move(req), Hooks()); });
   EXPECT_EQ(failure, "shutdown in progress");
   EXPECT_FALSE(connect_->InFlight());

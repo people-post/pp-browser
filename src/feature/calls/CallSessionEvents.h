@@ -223,6 +223,7 @@ struct BundleConnected {
 struct BundleFailed {
   std::string call_id;
   std::string reason;
+  CallMediaErr code = CallMediaErr::Generic;
 };
 /** k4: the call lost its last path (transport I/O). */
 struct PathLost {

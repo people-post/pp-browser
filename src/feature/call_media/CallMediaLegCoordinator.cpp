@@ -527,7 +527,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         FinishBundle(bundle, Aborted());
       } else {
         if (notify_failed && bundle.callbacks.on_failed && !fail_message.empty()) {
-          pending_user_cbs.push_back([on_failed = bundle.callbacks.on_failed, fail_message]() { on_failed(fail_message); });
+          pending_user_cbs.push_back([on_failed = bundle.callbacks.on_failed, failure]() { on_failed(failure); });
         }
         FinishBundle(bundle, failure);
       }
@@ -639,13 +639,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     for (const auto& call_id : reconnect_expired) {
       CallbackLock lock(*this);
       if (auto* bundle = FindByCallId(call_id); bundle && bundle->Reconnecting()) {
-        const std::string why = "amp call-media: no path within the reconnect window";
+        const CallMediaFailure lost = Fail(CallMediaErr::Closed, "amp call-media: no path within the reconnect window");
         CallMediaLegLog().warning << "CallMediaLeg reconnect window expired call_id=" << call_id;
         // A MediaReady leg has finished, so TearDownBundle reports nothing: report the loss here.
         if (bundle->callbacks.on_failed) {
-          pending_user_cbs.push_back([on_failed = bundle->callbacks.on_failed, why]() { on_failed(why); });
+          pending_user_cbs.push_back([on_failed = bundle->callbacks.on_failed, lost]() { on_failed(lost); });
         }
-        TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true, Fail(CallMediaErr::Closed, why));
+        TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true, lost);
       }
     }
     for (const auto& call_id : link_lost) {
@@ -760,7 +760,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const bool notify = decision == CallMediaChannelCloseDecision::FailLeg && ctx.remote_terminal;
     const std::string message =
         std::string("call-media stream closed (") + (reason && reason[0] ? reason : "unknown") + ")";
-    TearDownBundle(*bundle, /*finish_with_abort=*/false, notify, Fail(CallMediaErr::Closed, message));
+    // The peer closing or resetting the stream is a clean end (the bridge keeps a call the hop carries).
+    TearDownBundle(*bundle, /*finish_with_abort=*/false, notify,
+                   Fail(ctx.remote_terminal ? CallMediaErr::StreamClosed : CallMediaErr::Closed, message));
   }
 
   void OpenMediaOutbound(Bundle& bundle) {

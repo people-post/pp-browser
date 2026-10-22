@@ -268,7 +268,7 @@ private:
   CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream,
                                                const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
-  void OnBundleFailed(const std::string& call_id, const std::string& reason);
+  void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
   static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,

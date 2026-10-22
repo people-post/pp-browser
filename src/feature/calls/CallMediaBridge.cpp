@@ -134,8 +134,8 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
                  fixed_stream](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
     ReceiveDirectMedia(*gate, media, host, outbox, call_id, fixed_stream, channel, seq, mark, payload);
   };
-  cbs.on_failed = [outbox = outbox_, call_id](const std::string& reason) {
-    outbox.Emit(direct_event::BundleFailed{call_id, reason});
+  cbs.on_failed = [outbox = outbox_, call_id](const CallMediaFailure& failure) {
+    outbox.Emit(direct_event::BundleFailed{call_id, failure.message, failure.GetCode()});
   };
   // k4: the call lost its last path — reconnect window (the offerer re-anchors).
   cbs.on_path_lost = [outbox = outbox_, call_id]() { outbox.Emit(direct_event::PathLost{call_id}); };
@@ -146,7 +146,7 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
   return cbs;
 }
 
-void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::string& reason) {
+void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::string& reason, const CallMediaErr code) {
   CallMediaCoordinator* call_media = media_.ActiveCallId() == call_id ? CallMediaFor(call_id) : nullptr;
   BundleFailureInput in;
   in.engine_call = media_.ActiveCallId() == call_id;
@@ -156,7 +156,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
   // IsSfuMode() is also true for 1:1 capture — the hop must be attached.
   in.hop_attached = call_media && call_media->HopAttached();
   in.hop_pending = call_media && (call_media->HopInFlight() || call_media->ExpectsHop());
-  in.soft_close = IsSoftDirectClose(reason);
+  in.soft_close = code == CallMediaErr::StreamClosed;
   switch (DecideBundleFailure(in)) {
   case BundleFailureAction::Ignore:
     return;
@@ -443,7 +443,7 @@ void CallMediaBridge::Handle(DirectPathEvent& event) {
           log().info << e.label << " connected call_id=" << e.call_id;
           CommitDirectConnected(e.call_id);
         } else if constexpr (std::is_same_v<E, direct_event::BundleFailed>) {
-          OnBundleFailed(e.call_id, e.reason);
+          OnBundleFailed(e.call_id, e.reason, e.code);
         } else if constexpr (std::is_same_v<E, direct_event::PathLost>) {
           Apply(CallDirectPlannerEvent::PathLost, e.call_id, media_peer_identity_);
         } else if constexpr (std::is_same_v<E, direct_event::PathChanged>) {

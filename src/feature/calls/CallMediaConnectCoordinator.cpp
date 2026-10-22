@@ -264,7 +264,7 @@ void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMed
   if (AppRuntime::IsShuttingDown() || shut_down_.load(std::memory_order_acquire)) {
     log().debug << "Start rejected: shutting down call_id=" << request.params.call_id;
     if (request.callbacks.on_failed) {
-      request.callbacks.on_failed("shutdown in progress");
+      request.callbacks.on_failed(CallMediaFailure::Of(CallMediaErr::Aborted, "shutdown in progress"));
     }
     return;
   }

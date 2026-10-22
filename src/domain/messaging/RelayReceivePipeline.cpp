@@ -151,6 +151,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   auto local_id = local_keys_.account_id();
   const std::string local_account = local_id ? *local_id : std::string();
 
+  // Each kind is decoded by its own branch; a decode error there is a real error.
+  const std::optional<GroupMembershipControlType> kind = GroupMembershipCodec::ControlTypeFromMessage(message);
+
   auto ignore_if_not_member = [this, &local_account](const std::string& group_id) -> Roe<bool> {
     if (local_account.empty() || group_id.empty()) {
       return false;
@@ -162,8 +165,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return !*is_member; // true => ignore
   };
 
-  auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
-  if (response) {
+  if (kind == GroupMembershipControlType::GroupInviteAccept ||
+      kind == GroupMembershipControlType::GroupInviteDecline) {
+    auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
+    if (!response) {
+      return response.error();
+    }
     if (response->control_type == GroupMembershipControlType::GroupInviteAccept) {
       // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
       auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
@@ -189,12 +196,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return {};
   }
-  if (response.error().message.find("not a group invite response") == std::string::npos) {
-    return response.error();
-  }
 
-  auto joined = GroupMembershipCodec::DecodeMemberJoinedFromMessage(message);
-  if (joined) {
+  if (kind == GroupMembershipControlType::MemberJoined) {
+    auto joined = GroupMembershipCodec::DecodeMemberJoinedFromMessage(message);
+    if (!joined) {
+      return joined.error();
+    }
     if (auto ignore = ignore_if_not_member(joined->group_id); ignore && *ignore) {
       return {};
     }
@@ -216,12 +223,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return {};
   }
-  if (joined.error().message.find("not a member_joined") == std::string::npos) {
-    return joined.error();
-  }
 
-  auto transferred = GroupMembershipCodec::DecodeOwnerTransferredFromMessage(message);
-  if (transferred) {
+  if (kind == GroupMembershipControlType::OwnerTransferred) {
+    auto transferred = GroupMembershipCodec::DecodeOwnerTransferredFromMessage(message);
+    if (!transferred) {
+      return transferred.error();
+    }
     if (auto ignore = ignore_if_not_member(transferred->group_id); ignore && *ignore) {
       return {};
     }
@@ -246,12 +253,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return {};
   }
-  if (transferred.error().message.find("not an owner_transferred") == std::string::npos) {
-    return transferred.error();
-  }
 
-  auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(message);
-  if (left) {
+  if (kind == GroupMembershipControlType::MemberLeft) {
+    auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(message);
+    if (!left) {
+      return left.error();
+    }
     if (auto ignore = ignore_if_not_member(left->group_id); ignore && *ignore) {
       return {};
     }
@@ -272,12 +279,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return {};
   }
-  if (left.error().message.find("not a member_left") == std::string::npos) {
-    return left.error();
-  }
 
-  auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(message);
-  if (removed) {
+  if (kind == GroupMembershipControlType::MemberRemoved) {
+    auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(message);
+    if (!removed) {
+      return removed.error();
+    }
     // If we are the removed member and already left, ignore; if still a member, drop self below.
     if (auto ignore = ignore_if_not_member(removed->group_id); ignore && *ignore) {
       return {};
@@ -302,12 +309,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return {};
   }
-  if (removed.error().message.find("not a member_removed") == std::string::npos) {
-    return removed.error();
-  }
 
-  auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(message);
-  if (renamed) {
+  if (kind == GroupMembershipControlType::GroupRenamed) {
+    auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(message);
+    if (!renamed) {
+      return renamed.error();
+    }
     if (auto ignore = ignore_if_not_member(renamed->group_id); ignore && *ignore) {
       return {};
     }
@@ -338,19 +345,16 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return {};
   }
-  if (renamed.error().message.find("not a group rename") == std::string::npos) {
-    return renamed.error();
-  }
 
   if (!invite_gate_) {
     return {};
   }
 
+  if (kind != GroupMembershipControlType::GroupInvite) {
+    return {};
+  }
   auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
   if (!invite) {
-    if (invite.error().message.find("not a group invite") != std::string::npos) {
-      return {};
-    }
     return invite.error();
   }
   // An invite speaks for its signed sender only, and only to us.

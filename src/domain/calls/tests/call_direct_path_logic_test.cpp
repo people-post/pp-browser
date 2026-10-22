@@ -47,10 +47,6 @@ TEST(CallDirectPathLogicTest, ConnectHealth) {
 }
 
 TEST(CallDirectPathLogicTest, AFailedCarrier) {
-  EXPECT_TRUE(IsSoftDirectClose("read_eof"));
-  EXPECT_TRUE(IsSoftDirectClose("peer: stream closed"));
-  EXPECT_FALSE(IsSoftDirectClose("timeout"));
-
   BundleFailureInput in;
   in.engine_call = true;
   in.engine_running = true;

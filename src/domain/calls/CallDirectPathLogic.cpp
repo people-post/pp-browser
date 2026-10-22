@@ -25,10 +25,6 @@ DirectHealthAction DecideDirectHealth(const DirectHealthInput& in) {
   return in.now_ms - in.started_at_ms >= in.timeout_ms ? DirectHealthAction::TimedOut : DirectHealthAction::None;
 }
 
-bool IsSoftDirectClose(const std::string& reason) {
-  return reason.find("read_eof") != std::string::npos || reason.find("stream closed") != std::string::npos;
-}
-
 BundleFailureAction DecideBundleFailure(const BundleFailureInput& in) {
   if (!in.engine_call || (in.direct_ready && in.engine_connected)) {
     return BundleFailureAction::Ignore;

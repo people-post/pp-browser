@@ -304,7 +304,7 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
-    cbs.on_failed = [&](const std::string&) { b_failed.store(true, std::memory_order_release); };
+    cbs.on_failed = [&](const CallMediaFailure&) { b_failed.store(true, std::memory_order_release); };
     cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
   }));
 
@@ -370,7 +370,7 @@ TEST_F(CallMediaLegCoordinatorTest, SecondHelloForALiveCallLeavesTheCallAlone) {
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
-    cbs.on_failed = [&](const std::string&) { b_failed.fetch_add(1); };
+    cbs.on_failed = [&](const CallMediaFailure&) { b_failed.fetch_add(1); };
     cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1); };
   }));
   CallMediaDirectConnectParams params;
@@ -381,7 +381,7 @@ TEST_F(CallMediaLegCoordinatorTest, SecondHelloForALiveCallLeavesTheCallAlone) {
   params.offerer = true;
   std::atomic<int> a_failed{0};
   CallMediaDirectCallbacks cbs;
-  cbs.on_failed = [&](const std::string&) { a_failed.fetch_add(1); };
+  cbs.on_failed = [&](const CallMediaFailure&) { a_failed.fetch_add(1); };
   LegCompletion leg_done;
   const CallMediaLegId leg_id = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 5000);
   ASSERT_TRUE(leg_id);
@@ -799,7 +799,7 @@ TEST_F(CallMediaLegCoordinatorTest, FailAfterDetachDoesNotCallOnFailed) {
   params.media_key = media_key;
   params.offerer = true;
   CallMediaDirectCallbacks cbs;
-  cbs.on_failed = [&](const std::string&) { local_failed.fetch_add(1); };
+  cbs.on_failed = [&](const CallMediaFailure&) { local_failed.fetch_add(1); };
 
   LegCompletion leg_done;
   const CallMediaLegId leg_id = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 5000);
