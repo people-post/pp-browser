@@ -5,7 +5,7 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
-# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | hard-w2 | hard-w3 | hard-w5 | dht | all
+# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | hard-w2 | hard-w3 | hard-w5 | dht | app | app-nat | all
 # --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
 # --suite mix is nightly: browser parallel + shrunk hop parallel + same-session hop chat.
 # --suite hard is Wave 1 forced-hop (isolated nets; separate compose/ports 18618).
@@ -14,6 +14,8 @@
 # --suite dht is N-DHT: a seed + 12 DHT Nodes (k = 3); the seed stops, every Node finds every other.
 # --suite app is the app lab: scripted users on the real app stack (pp-app-probe) over the real
 #   relay (web2 www + messenger, PP_WEB2_ROOT) — glare, redial storms, restarts, a peer vanishing.
+# --suite app-nat runs the app lab with each user in its own container behind its own NAT gateway
+#   (docker-compose.app-lab-nat.yml): no two users can reach each other directly.
 #
 # See docs/ops/TEST_STRATEGY.md, packaging/pp-node/IMAGE_SMOKE.md, packaging/pp-node/HARD_LAB.md
 set -euo pipefail
@@ -55,7 +57,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|app-nat|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -309,11 +311,18 @@ run_call() {
 }
 
 APP_LAB_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab.yml"
+APP_LAB_NAT_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab-nat.yml"
+APP_LAB_NAT=0  # --suite app-nat: users behind their own NATs
 
 app_lab_compose() {
   need_cmd docker
+  local files=(-f "${APP_LAB_COMPOSE}")
+  if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
+    files+=(-f "${APP_LAB_NAT_COMPOSE}")
+  fi
   PP_WEB2_ROOT="${PP_WEB2_ROOT:-$(cd "${ROOT}/../.." && pwd)/web2}" \
-    docker compose -p pp-app-lab -f "${APP_LAB_COMPOSE}" "$@"
+    PP_APP_LAB_PROBE_DIR="${BUILD_DIR}/src/app/node" PP_APP_LAB_NAT_SHARE="${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}" \
+    docker compose -p pp-app-lab "${files[@]}" "$@"
 }
 
 run_app() {
@@ -326,6 +335,10 @@ run_app() {
   if [[ "${COMPOSE_BUILD}" -eq 1 || "${HOP_NEEDS_REBUILD}" -eq 1 ]]; then
     args+=(--build)
   fi
+  if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
+    mkdir -p "${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}"
+    app_lab_compose build gw-a user-a  # the gateway and user images (cached when unchanged)
+  fi
   app_lab_compose "${args[@]}"
   local i
   for i in $(seq 1 60); do
@@ -333,9 +346,16 @@ run_app() {
       curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
     sleep 1
   done
-  echo "=== suite app (scripted users on pp-app-probe over the lab relay) ==="
+  local nat_args=()
+  if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
+    echo "=== suite app-nat (scripted users, each behind its own NAT, over the lab relay and hop) ==="
+    nat_args=(--nat)
+  else
+    echo "=== suite app (scripted users on pp-app-probe over the lab relay) ==="
+  fi
   # shellcheck disable=SC2086 # PP_APP_LAB_ARGS is a word list (e.g. "--only redial_storm --repeat 3")
-  python3 "${ROOT}/scripts/test/pp_app_lab.py" --probe "${BUILD_DIR}/src/app/node/pp-app-probe" ${PP_APP_LAB_ARGS:-}
+  python3 "${ROOT}/scripts/test/pp_app_lab.py" --probe "${BUILD_DIR}/src/app/node/pp-app-probe" \
+    ${nat_args[@]+"${nat_args[@]}"} ${PP_APP_LAB_ARGS:-}
 }
 
 run_ledger() {
@@ -518,6 +538,10 @@ cmd_run() {
     dht) run_dht ;;
     ledger) run_ledger ;;
     app) run_app ;;
+    app-nat)
+      APP_LAB_NAT=1
+      run_app
+      ;;
     all)
       run_unit
       run_call
@@ -525,10 +549,10 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|app-nat|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
-    if [[ "${SUITE}" == "app" ]]; then
+    if [[ "${SUITE}" == "app" || "${SUITE}" == "app-nat" ]]; then
       echo "app-lab compose stop project=pp-app-lab"
       app_lab_compose stop || true
     elif [[ "${SUITE}" == "hard-w5" ]]; then
@@ -544,6 +568,8 @@ cmd_run() {
     echo "hop left running; $(basename "$0") stop | clear when done"
   elif [[ "${SUITE}" == "app" ]]; then
     echo "app-lab left running; stop with: docker compose -p pp-app-lab -f ${APP_LAB_COMPOSE} stop"
+  elif [[ "${SUITE}" == "app-nat" ]]; then
+    echo "app-lab left running; stop with: docker compose -p pp-app-lab -f ${APP_LAB_COMPOSE} -f ${APP_LAB_NAT_COMPOSE} stop"
   elif [[ "${SUITE}" == "hard-w5" ]]; then
     echo "hard-lab-cgnat left running; $(basename "$0") clear when done"
   elif [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" || "${SUITE}" == "hard-w3" ]]; then

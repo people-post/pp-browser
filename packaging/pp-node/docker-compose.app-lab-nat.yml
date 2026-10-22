@@ -1,0 +1,115 @@
+# App lab across NATs: an overlay on docker-compose.app-lab.yml that puts the scripted users behind
+# their own NAT gateways, so no two of them share a network or can reach each other directly.
+#
+#   user-a ── nat_a (10.119.1.0/24, internal) ── gw-a ──┐
+#   user-b ── nat_b (10.119.2.0/24, internal) ── gw-b ──┼── lab (198.51.100.0/24): hop, relay (www)
+#   user-c ── nat_c (10.119.3.0/24, internal) ── gw-c ──┘
+#
+# The gateways MASQUERADE outbound and admit no unsolicited inbound (packaging/pp-node/
+# hard-gw-entrypoint.sh, symmetric NAT by default: PP_APP_LAB_NAT=cone for a port-preserving one).
+# Users reach the relay at 198.51.100.20:9097 and the hop at 198.51.100.10 through their gateway;
+# everything between two users goes through the hop (circuit, media relay).
+#
+# A user container only holds the probe: pp_app_lab.py --nat starts each user's pp-app-probe with
+# `docker exec -i` (as the host user), its profile under the shared ${PP_APP_LAB_NAT_SHARE} dir,
+# mounted at the same path so config paths read the same inside and out.
+#
+#   docker compose -f docker-compose.app-lab.yml -f docker-compose.app-lab-nat.yml -p pp-app-lab up -d
+#   (pp_local_test.sh run --suite app-nat brings it up and runs the lab)
+
+x-app-lab-gw: &app-lab-gw
+  build:
+    context: .
+    dockerfile: Dockerfile.hard-gw
+  image: pp-hard-gw:local
+  cap_add: [NET_ADMIN]
+  sysctls:
+    - net.ipv4.ip_forward=1
+
+x-app-lab-user: &app-lab-user
+  build:
+    context: .
+    dockerfile: Dockerfile.hard-peer
+  image: pp-hard-peer:local
+  cap_add: [NET_ADMIN]
+  volumes:
+    - ${PP_APP_LAB_PROBE_DIR:-../../build/src/app/node}:/probes:ro
+    - ${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}:${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}
+
+services:
+  gw-a:
+    <<: *app-lab-gw
+    environment:
+      PP_HARD_GW_PRIV_CIDR: 10.119.1.0/24
+      PP_HARD_GW_PUB_CIDR: 198.51.100.0/24
+      PP_HARD_GW_NAT: ${PP_APP_LAB_NAT:-symmetric}
+    networks:
+      lab:
+        ipv4_address: 198.51.100.11
+      nat_a:
+        ipv4_address: 10.119.1.254
+
+  gw-b:
+    <<: *app-lab-gw
+    environment:
+      PP_HARD_GW_PRIV_CIDR: 10.119.2.0/24
+      PP_HARD_GW_PUB_CIDR: 198.51.100.0/24
+      PP_HARD_GW_NAT: ${PP_APP_LAB_NAT:-symmetric}
+    networks:
+      lab:
+        ipv4_address: 198.51.100.12
+      nat_b:
+        ipv4_address: 10.119.2.254
+
+  gw-c:
+    <<: *app-lab-gw
+    environment:
+      PP_HARD_GW_PRIV_CIDR: 10.119.3.0/24
+      PP_HARD_GW_PUB_CIDR: 198.51.100.0/24
+      PP_HARD_GW_NAT: ${PP_APP_LAB_NAT:-symmetric}
+    networks:
+      lab:
+        ipv4_address: 198.51.100.13
+      nat_c:
+        ipv4_address: 10.119.3.254
+
+  user-a:
+    <<: *app-lab-user
+    networks:
+      nat_a:
+        ipv4_address: 10.119.1.10
+    command: ["sh", "-c", "ip route replace default via 10.119.1.254 && exec sleep infinity"]
+    depends_on: [gw-a]
+
+  user-b:
+    <<: *app-lab-user
+    networks:
+      nat_b:
+        ipv4_address: 10.119.2.10
+    command: ["sh", "-c", "ip route replace default via 10.119.2.254 && exec sleep infinity"]
+    depends_on: [gw-b]
+
+  user-c:
+    <<: *app-lab-user
+    networks:
+      nat_c:
+        ipv4_address: 10.119.3.10
+    command: ["sh", "-c", "ip route replace default via 10.119.3.254 && exec sleep infinity"]
+    depends_on: [gw-c]
+
+networks:
+  nat_a:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.119.1.0/24
+  nat_b:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.119.2.0/24
+  nat_c:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.119.3.0/24

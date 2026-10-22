@@ -10,6 +10,10 @@ by checking nothing is left stuck and the call history says what happened.
   scripts/test/pp_app_lab.py --probe build/src/app/node/pp-app-probe [--only first_contact]
 
 (`pp_local_test.sh run --suite app` brings the lab up and runs this.)
+
+With --nat each user runs in its own container behind its own NAT gateway
+(packaging/pp-node/docker-compose.app-lab-nat.yml): no two users share a network, so everything
+between them goes through the hop. `pp_local_test.sh run --suite app-nat` brings that up and runs it.
 """
 
 import argparse
@@ -41,9 +45,10 @@ class ProbeError(Exception):
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name):
+    def __init__(self, lab, name, container=None):
         self.lab = lab
         self.name = name
+        self.container = container  # --nat: the user's own NAT'd container (None: a host process)
         self.dir = os.path.join(lab.root, name)
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
@@ -64,10 +69,16 @@ class User:
     def start(self):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
-        self.proc = subprocess.Popen(
-            [self.lab.probe, "--config", self.config, "--pin", PIN, "--log-file", log],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, bufsize=1)
+        argv = ["--config", self.config, "--pin", PIN, "--log-file", log]
+        if self.container:
+            # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
+            script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
+            cmd = ["docker", "exec", "-i", "--user", "%d:%d" % (os.getuid(), os.getgid()), "-e", "HOME=/tmp",
+                   self.container, "sh", "-c", script, self.pidfile()] + argv
+        else:
+            cmd = [self.lab.probe] + argv
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
         self.wait_event(lambda e: e.get("event") in ("booted", "boot_failed"), 60, "boot")
         if self.last_event.get("event") == "boot_failed":
@@ -108,11 +119,17 @@ class User:
         try:
             self.proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            self.proc.kill()
+            self.crash()
             raise ProbeError("%s: quit hung (killed)" % self.name)
+
+    def pidfile(self):
+        return os.path.join(self.dir, "probe.pid")
 
     def crash(self):
         """The app dies with no goodbye (force-quit, OOM kill)."""
+        if self.container:
+            subprocess.run(["docker", "exec", self.container, "sh", "-c", 'kill -9 "$(cat "$0")" 2>/dev/null',
+                            self.pidfile()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if self.alive():
             self.proc.kill()
             self.proc.wait()
@@ -224,7 +241,12 @@ class Lab:
         self.probe = os.path.abspath(args.probe)
         self.relay = args.relay.rstrip("/")
         self.hop = args.hop
-        self.root = tempfile.mkdtemp(prefix="pp-app-lab-")
+        # --nat: users run in these containers, one each in turn; they reach the relay at user_relay.
+        self.containers = args.nat_containers.split(",") if args.nat else []
+        self.user_relay = args.nat_relay.rstrip("/") if args.nat else self.relay
+        if args.nat:
+            os.makedirs(args.nat_share, exist_ok=True)
+        self.root = tempfile.mkdtemp(prefix="pp-app-lab-", dir=args.nat_share if args.nat else None)
         self.keep = args.keep
         self.relay_container = args.relay_container
         self.hop_container = args.hop_container
@@ -235,9 +257,9 @@ class Lab:
         return {
             "config_version": 1,
             "data_dir": data_dir,
-            "relay": {"base_url": self.relay},
-            "directory": {"base_url": self.relay},
-            "registration": {"base_url": self.relay},
+            "relay": {"base_url": self.user_relay},
+            "directory": {"base_url": self.user_relay},
+            "registration": {"base_url": self.user_relay},
             "mesh": {
                 "node_enabled": False,
                 "mesh_enabled": True,
@@ -280,7 +302,8 @@ class Lab:
 
     def user(self, name):
         self.fresh_registration()
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]))
+        container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -1042,6 +1065,10 @@ SCENARIOS = [
 # Scenarios run only when named (--only).
 OPT_IN = set()
 
+# Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
+# --nat they run only when named.
+NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1053,6 +1080,13 @@ def main():
     ap.add_argument("--relay-container", default="pp-app-lab-www-1",
                     help="lab relay gateway container, restarted when registrations run out")
     ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
+    ap.add_argument("--nat", action="store_true",
+                    help="each user in its own container behind its own NAT (docker-compose.app-lab-nat.yml)")
+    ap.add_argument("--nat-containers", default="pp-app-lab-user-a-1,pp-app-lab-user-b-1,pp-app-lab-user-c-1")
+    ap.add_argument("--nat-relay", default="http://198.51.100.20:9097/api/relay",
+                    help="the relay as users behind the NATs reach it")
+    ap.add_argument("--nat-share", default=os.environ.get("PP_APP_LAB_NAT_SHARE", "/tmp/pp-app-lab-nat"),
+                    help="profile dirs, mounted at the same path in the user containers")
     ap.add_argument("--only", action="append", default=[])
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
@@ -1063,7 +1097,8 @@ def main():
             peer = json.load(r)["peer_id"]
         args.hop = "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (args.hop_ip, peer)
 
-    selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in OPT_IN)]
+    skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else set())
+    selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
     failures = 0

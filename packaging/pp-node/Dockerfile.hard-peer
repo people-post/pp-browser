@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       iputils-ping \
       libstdc++6 \
       libasound2 \
+      libdbus-1-3 \
       libva2 \
       libva-drm2 \
       python3 \
