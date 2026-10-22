@@ -17,7 +17,7 @@ set(PP_CPP_MESH_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-mesh (overrides FetchContent)")
 set(PP_CPP_MESH_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-mesh.git"
   CACHE STRING "Git remote for pp-cpp-mesh")
-pp_fetch_git_tag(PP_CPP_MESH_GIT_TAG "v1.4.0"
+pp_fetch_git_tag(PP_CPP_MESH_GIT_TAG "v1.4.1"
   "Release tag on pp-cpp-mesh main (not a branch name)")
 
 # Mesh tests run in pp-cpp-mesh CI. UPnP stays off as it always was in pp-browser (turning it on is a
