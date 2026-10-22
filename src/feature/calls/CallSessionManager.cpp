@@ -85,6 +85,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       workflow_(store, sessions, key_exchange_, billing_, live_calls_, call_media_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) { topology_.OnMediaKeyInstalled(call_id); });
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
     const auto direct_media = direct_media_.Get();
     if (direct_media->on_media_key_ready) {

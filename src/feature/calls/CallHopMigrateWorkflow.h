@@ -222,6 +222,8 @@ public:
   void SetTopologyOps(TopologyOps ops);
   void SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps);
   void SetMediaKeyStore(CallMediaKeyStore* keys);
+  /** The call moved to a new media epoch (V003): the live hop attach seals with its key from now. */
+  void InstallMediaKey(const std::string& call_id);
 
   SoftMigrateFlight& Flight() { return flight_; }
   const SoftMigrateFlight& Flight() const { return flight_; }
@@ -251,6 +253,10 @@ public:
 private:
   struct HopPick;
   struct HopAttach;
+
+  /** The live attach's key ring (calls owner), so a rotation reaches its frames. */
+  std::shared_ptr<class SfuKeyRing> live_keys_;
+  std::string live_keys_call_id_;
 
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
   bool IsLiveOnHopFor(const std::string& call_id) const;

@@ -1,4 +1,5 @@
 #include "feature/calls/CallHopMigrateWorkflow.h"
+#include "feature/calls/SfuKeyRing.h"
 
 #include "domain/calls/CallMediaSeat.h"
 
@@ -560,6 +561,8 @@ struct CallHopMigrateWorkflow::HopAttach {
   uint64_t cancel_gen_at_start = 0;
   ByteVector media_key;
   uint32_t media_epoch = 1;
+  /** The attach's keys: the epoch it starts on, then each rotation (V003) — see SfuKeyRing. */
+  std::shared_ptr<SfuKeyRing> keys = std::make_shared<SfuKeyRing>();
   /** Inbound frames are dropped until the attach is committed. */
   std::shared_ptr<std::atomic<bool>> frames_ready = std::make_shared<std::atomic<bool>>(false);
 };
@@ -696,12 +699,27 @@ Roe<void> CallHopMigrateWorkflow::LoadHopMediaKey(HopAttach& at) const {
     log().warning << "AttachLocalToSfu missing media key call_id=" << at.call_id << " epoch=" << at.media_epoch;
     return Error("call media key required for SFU");
   }
+  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs());
   return {};
 }
 
+void CallHopMigrateWorkflow::InstallMediaKey(const std::string& call_id) {
+  if (!live_keys_ || live_keys_call_id_ != call_id || !media_keys_) {
+    return;
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return;
+  }
+  const uint32_t epoch = (*session)->media_epoch;
+  if (auto key = media_keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
+    live_keys_->Install(epoch, **key, util::NowUnixMs());
+    log().info << "SFU media key now epoch=" << epoch << " call_id=" << call_id;
+  }
+}
+
 std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSink(const HopAttach& at) {
-  return [this, ready = at.frames_ready, call_id = at.call_id, media_epoch = at.media_epoch,
-          media_key = at.media_key](mesh::MediaDataFrame frame) {
+  return [this, ready = at.frames_ready, call_id = at.call_id, keys = at.keys](mesh::MediaDataFrame frame) {
     if (!ready->load(std::memory_order_acquire)) {
       return;
     }
@@ -710,13 +728,21 @@ std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSi
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
     pkt.mark = frame.mark;
-    if (media_key.empty()) {
+    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
+    if (open_with.empty()) {
       pkt.payload = std::move(frame.payload);
       media_.OnSfuPacket(pkt);
       return;
     }
-    auto plain = DecryptCallMediaSfuFrame(media_key, call_id, media_epoch, frame.stream_id,
-                                          static_cast<uint8_t>(frame.channel_id), frame.payload);
+    // The newest epoch first; the previous one while the others switch to it.
+    Roe<CallMediaDecodedFrame> plain = Error("no key opened the frame");
+    for (const SfuKeyRing::Key& key : open_with) {
+      plain = DecryptCallMediaSfuFrame(key.key, call_id, key.epoch, frame.stream_id,
+                                       static_cast<uint8_t>(frame.channel_id), frame.payload);
+      if (plain) {
+        break;
+      }
+    }
     if (!plain) {
       static std::atomic<int> decrypt_fail_log{0};
       const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
@@ -770,6 +796,8 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
 
 Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
   const std::string& call_id = at.call_id;
+  live_keys_ = at.keys;  // a rotation from now on reaches this attach's frames
+  live_keys_call_id_ = call_id;
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
   host_.note_media_attempted(call_id);
@@ -884,8 +912,8 @@ bool CallHopMigrateWorkflow::OwnsHopAttachFlight(const HopAttach& at) const {
 }
 
 CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach& at) {
-  return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id, media_epoch = at.media_epoch,
-          media_key = at.media_key](const CallMediaEngine::SfuPacket& pkt) {
+  return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id,
+          keys = at.keys](const CallMediaEngine::SfuPacket& pkt) {
     if (!relay_deps_ || !relay_deps_->relay) {
       return;
     }
@@ -895,8 +923,9 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
     frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
     frame.seq = pkt.seq;
     frame.mark = pkt.mark;
-    if (!media_key.empty()) {
-      auto sealed = EncryptCallMediaSfuFrame(media_key, call_id, media_epoch, pub, pkt.seq, pkt.mark,
+    const SfuKeyRing::Key key = keys->Current();  // the newest epoch (V003)
+    if (!key.key.empty()) {
+      auto sealed = EncryptCallMediaSfuFrame(key.key, call_id, key.epoch, pub, pkt.seq, pkt.mark,
                                              static_cast<uint8_t>(pkt.channel_id), pkt.payload);
       if (!sealed) {
         media_.NoteOutboundDrop();
@@ -1175,6 +1204,8 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
   }
   // The engine is already live: frames flow as soon as the relay session is back.
   at.frames_ready->store(true, std::memory_order_release);
+  live_keys_ = at.keys;
+  live_keys_call_id_ = call_id;
   log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ops_.resolve_hop_multiaddr(at.attach.hop_peer_id);

@@ -35,5 +35,6 @@ pp_browser_add_feature_library(pp_feature_calls
     pp_foundation_runtime)
 
 if(PP_BROWSER_BUILD_TESTS)
-  # Call unit tests currently live under feature/conversations/tests (shared harness).
+  # Harness-based call tests live under feature/conversations/tests and feature/product/tests.
+  add_subdirectory(tests)
 endif()

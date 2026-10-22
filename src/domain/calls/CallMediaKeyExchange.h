@@ -41,6 +41,8 @@ public:
 
   /** Runs after a peer's key is stored (the 1:1 start may be waiting for it). */
   void SetOnKeyReady(KeyReadyFn fn) { on_key_ready_ = std::move(fn); }
+  /** Runs when the call moves to a newer epoch (ours rotated, or a peer's key): live media switches. */
+  void SetOnEpochInstalled(KeyReadyFn fn) { on_epoch_installed_ = std::move(fn); }
 
   /** A new key for `call_id` at `epoch`, stored. The caller records epoch / key id on the session. */
   Roe<EpochKey> Mint(const std::string& call_id, uint32_t epoch);
@@ -72,6 +74,7 @@ private:
   CallMediaKeyStore& keys_;
   Transport transport_;
   KeyReadyFn on_key_ready_;
+  KeyReadyFn on_epoch_installed_;
 };
 
 } // namespace pbr

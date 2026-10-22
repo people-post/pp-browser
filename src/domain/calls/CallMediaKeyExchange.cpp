@@ -39,6 +39,9 @@ Roe<CallMediaKeyExchange::EpochKey> CallMediaKeyExchange::Rotate(const std::stri
   if (auto saved = sessions_.UpsertSession(**session); !saved) {
     return saved.error();
   }
+  if (on_epoch_installed_) {
+    on_epoch_installed_(call_id);
+  }
   return minted;
 }
 
@@ -131,13 +134,18 @@ Roe<void> CallMediaKeyExchange::HandleInbound(const std::string& detail_json, co
   log().info << "Inbound CallMediaKey call_id=" << key->call_id << " epoch=" << key->media_epoch
              << " from=" << sender_identity;
   auto session = sessions_.LoadSession(key->call_id);
-  if (session && session->has_value()) {
+  // Epochs only move forward: a late or replayed CallMediaKey for an older epoch is not the key now.
+  const bool newer = session && session->has_value() && key->media_epoch > (*session)->media_epoch;
+  if (newer) {
     (*session)->media_epoch = key->media_epoch;
     (*session)->media_key_id = key->media_key_id;
     (void)sessions_.UpsertSession(**session);
   }
-  (void)TakeWrapped(key->call_id, key->media_epoch, key->media_key_id, key->wrapped_key_b64, sender_identity,
-                    "CallMediaKey");
+  const bool stored = TakeWrapped(key->call_id, key->media_epoch, key->media_key_id, key->wrapped_key_b64,
+                                  sender_identity, "CallMediaKey");
+  if (stored && newer && on_epoch_installed_) {
+    on_epoch_installed_(key->call_id);
+  }
   return {};
 }
 
