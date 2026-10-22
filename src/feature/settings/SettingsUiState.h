@@ -85,6 +85,8 @@ struct SettingsUiState {
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */
   std::string show_notifications = "on";
+  /** P011 — stay connected in the background: "on" / "off" (Android only). */
+  std::string stay_connected = "off";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
   /** Display label for the theme row / picker value. */

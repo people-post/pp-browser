@@ -120,9 +120,11 @@ public:
   /** Push / OS notification preference projected from ProfilePreferences. */
   struct NotificationPrefs {
     bool show_notifications = true;
+    /** P011 — stay connected in the background (opt-in). */
+    bool stay_connected = false;
 
     bool operator==(const NotificationPrefs& other) const {
-      return show_notifications == other.show_notifications;
+      return show_notifications == other.show_notifications && stay_connected == other.stay_connected;
     }
     bool operator!=(const NotificationPrefs& other) const { return !(*this == other); }
   };

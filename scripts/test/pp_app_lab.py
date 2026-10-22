@@ -729,6 +729,30 @@ def scenario_background_is_push_only(lab):
     return {"ring_after_open_s": round(rang, 2)}
 
 
+def scenario_stay_connected_rings_in_background(lab):
+    """Bob's phone has no push service, so he turned on "Stay connected in the background": with the
+    app in the background, Alice's call still rings (and notifies) — no push needed."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    if not b.cmd("stay_connected", on=True).get("stay_connected"):
+        raise ProbeError("bob: the setting did not take")
+    b.cmd("background")
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)  # past any wake window: only the setting keeps it awake
+    started = time.time()
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 20, call_id=call_id)
+    rang = time.time() - started
+    assert_incoming_call_notice(b, a)
+    b.cmd("foreground")
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    b.cmd("stay_connected", on=False)
+    return {"ring_s": round(rang, 2)}
+
+
 def scenario_background_mid_call(lab):
     """Alice's phone app goes to the background mid-call (she looks something up) and comes back:
     the call goes on both ways the whole time."""
@@ -1288,6 +1312,7 @@ SCENARIOS = [
     ("push_wakes_background_callee", scenario_push_wakes_background_callee),
     ("background_mid_call", scenario_background_mid_call),
     ("background_is_push_only", scenario_background_is_push_only),
+    ("stay_connected_rings_in_background", scenario_stay_connected_rings_in_background),
     ("network_drops_mid_call", scenario_network_drops_mid_call),
     ("address_changes_mid_call", scenario_address_changes_mid_call),
     ("group_member_network_drops", scenario_group_member_network_drops),

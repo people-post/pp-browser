@@ -63,6 +63,15 @@
           </button>
         </div>
         <p class="text muted settings-help">{{i18n:settings.notifications.help}}</p>
+        <div class="settings-toggle-row row" data-if="stay_connected_available">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.stay_connected}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="stay_connected == 'on'"
+                  data-event-click="toggle_stay_connected()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="stay_connected_available">{{i18n:settings.stay_connected.help}}</p>
         <div class="me-profile-actions row">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
             <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>

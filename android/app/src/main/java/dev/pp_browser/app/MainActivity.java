@@ -675,6 +675,15 @@ public class MainActivity extends SDLActivity {
         return info.getType() == ConnectivityManager.TYPE_WIFI;
     }
 
+    /** P011 — called from native (StayConnectedService_Android) when "Stay connected" changes. */
+    public void setStayConnected(boolean on) {
+        if (on) {
+            PpConnectionService.start(getApplicationContext());
+        } else {
+            PpConnectionService.stop(getApplicationContext());
+        }
+    }
+
     /** Called from native AndroidLocalNotifier. */
     public void showLocalNotification(String title, String body, String threadId) {
         ensureNotificationChannel();

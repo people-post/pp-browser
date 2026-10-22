@@ -38,6 +38,7 @@
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/SdlAppEvents.h"
+#include "foundation/platform/StayConnectedService.h"
 #include "foundation/platform/WindowIcon.h"
 #include "feature/ai/AgentUiPorts.h"
 #include "feature/conversations/AgentInboundPorts.h"
@@ -471,6 +472,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
           },
   });
   SdlAppEvents::Install();
+  InstallStayConnectedService();  // P011: Android's foreground service follows the setting
 
   ContextMenuHost::Instance().Install(context);
   return true;
@@ -981,7 +983,7 @@ void Application::WireUnlockPinAndFlow() {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
     }
     // Import runs before EnsureMessagingReady; push attach after the vault is open.
-    AppRuntime::PostWorkerNormal([this, &facade]() {
+    AppRuntime::PostWorkerNormal([&facade]() {
       (void)facade.SyncPushDevices();
     });
     if (chat_) {

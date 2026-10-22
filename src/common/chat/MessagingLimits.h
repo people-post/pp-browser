@@ -17,6 +17,8 @@ inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
  * the inbox and ring — then it pauses again.
  */
 inline constexpr uint64_t kBackgroundWakeWindowMs = 20000;
+/** P011 — staying connected in the background (opt-in, Android): the relay poll's pace there. */
+inline constexpr uint64_t kStayConnectedRelayPollIntervalMs = 30000;
 /** WorkManager backup when alerts on (milliseconds). */
 inline constexpr uint64_t kWorkManagerAlertsOnBackupIntervalMs = 3ULL * 60ULL * 60ULL * 1000ULL;
 /** WorkManager when alerts off (~15 min Android minimum). */

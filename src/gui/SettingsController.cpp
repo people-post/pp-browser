@@ -24,6 +24,7 @@
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "gui/AccountInvite.h"
@@ -277,6 +278,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_avatar_tone = bindings_.profile_avatar_tone;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
+  ui_state_.stay_connected = bindings_.stay_connected.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
   ui_state_.appearance_label = bindings_.appearance_label.c_str();
@@ -361,6 +363,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_avatar_tone = ui_state_.profile_avatar_tone;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
+  bindings_.stay_connected = ui_state_.stay_connected.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
   bindings_.appearance_label = ui_state_.appearance_label.c_str();
@@ -550,6 +553,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_avatar_tone", &controller.bindings_.profile_avatar_tone);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
+    ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
+    controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
+    ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("appearance_label", &controller.bindings_.appearance_label);
@@ -608,6 +614,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("copy_cas_tip", &SettingsController::CopyCasTipCallback);
     ctor.BindEventCallback("fetch_cas_tip", &SettingsController::FetchCasTipCallback);
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
+    ctor.BindEventCallback("toggle_stay_connected", &SettingsController::ToggleStayConnectedCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
     ctor.BindEventCallback("toggle_show_advanced_settings",
@@ -706,6 +713,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_avatar_tone");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
+  host.Dirty("settings", "stay_connected");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "appearance_label");
@@ -1956,6 +1964,15 @@ void SettingsController::ToggleShowNotificationsCallback(ui::DataModelHandle /*m
   auto& controller = Instance();
   controller.bindings_.show_notifications =
       controller.bindings_.show_notifications == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("profile", /*show_toast=*/false);
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleStayConnectedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                      const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.stay_connected = controller.bindings_.stay_connected == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("profile", /*show_toast=*/false);
   controller.DirtyAll();

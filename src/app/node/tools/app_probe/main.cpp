@@ -21,6 +21,7 @@
 //   background / foreground             a phone's OS sends the app to the background / brings it back
 //   minimize / restore                  a desktop window minimized / restored
 //   push_wake                           a call push arrives (what FCM's wake does)
+//   stay_connected {on}                 the "Stay connected in the background" setting (P011)
 //   create_group {title, accounts}      a group with these contacts (each invited)
 //   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
 //   group_roster {group_id}             the members this user knows of
@@ -371,6 +372,19 @@ public:
       out.set("foreground", AppLifecycle::IsForeground());
       out.set("attentive", AppLifecycle::IsUserAttentive());
       Emit(out);
+    } else if (cmd == "stay_connected") {
+      // Me → Profile → "Stay connected in the background" (P011): the profile pref, applied as
+      // ConfigApplyBridge applies a pref change.
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      prefs.stay_connected = request->getIf<bool>("on").value_or(true);
+      if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+        ReplyError(id, saved.error().message);
+      } else {
+        Hub().Apply(ConversationsHub::ProjectNotifications(prefs));
+        Object out = Reply(id, true);
+        out.set("stay_connected", AppLifecycle::StaysConnected());
+        Emit(out);
+      }
     } else if (cmd == "push_wake") {
       // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
       BackgroundSyncScheduler::Instance().RequestCallWakeSync();

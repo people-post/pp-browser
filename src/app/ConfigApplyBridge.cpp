@@ -27,6 +27,7 @@ void ConfigApplyBridge::InstallListeners() {
   last_network_ = ConversationsHub::ProjectNetwork(snap.config);
   last_policy_ = ConversationsHub::ProjectPolicy(snap.profile_prefs);
   last_notifications_ = ConversationsHub::ProjectNotifications(snap.profile_prefs);
+  messaging_->Apply(*last_notifications_);  // stay connected (P011) holds from unlock
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
   last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
   last_agent_ = ChatController::ProjectAgent(snap.config);

@@ -61,7 +61,7 @@ void BackgroundSyncScheduler::RequestWakeSync() {
     const uint64_t window = wake_window_.fetch_add(1) + 1;
     AppRuntime::ResumeBackgroundWork();
     AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kBackgroundWakeWindowMs), [this, window]() {
-      if (window == wake_window_.load() && !AppLifecycle::IsForeground()) {
+      if (window == wake_window_.load() && !AppLifecycle::IsForeground() && !AppLifecycle::StaysConnected()) {
         log().info << "background wake window over: work paused again";
         AppRuntime::PauseBackgroundWork();
       }
@@ -91,12 +91,14 @@ void BackgroundSyncScheduler::RunScheduledSync(bool force) {
   }
   if (!force) {
     // In the background a phone is reached by push only (P010): no poll of its own, even inside a
-    // wake window (the wake's own sync fetched the inbox).
-    if (!AppLifecycle::IsForeground()) {
+    // wake window (the wake's own sync fetched the inbox) — unless it stays connected (P011).
+    const bool foreground = AppLifecycle::IsForeground();
+    if (!foreground && !AppLifecycle::StaysConnected()) {
       return;
     }
     const uint64_t now = util::NowUnixMs();
-    if (now - last_poll_ms_ < kForegroundRelayPollIntervalMs) {
+    const uint64_t interval = foreground ? kForegroundRelayPollIntervalMs : kStayConnectedRelayPollIntervalMs;
+    if (now - last_poll_ms_ < interval) {
       return;
     }
     last_poll_ms_ = now;

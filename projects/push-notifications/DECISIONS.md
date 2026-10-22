@@ -67,3 +67,11 @@
 **Rationale:** The OS enforces it anyway (iOS suspends, Android Doze batches network), and the messengers people compare against work this way. The 45 s in-process poll never ran (its timer lived on the paused coordinator), and a push could not wake the app (its sync was posted to that paused coordinator); once that was fixed, one push kept the phone awake for good.  
 Every ring raises the "Incoming call" notice (`CallPresenter`), however its invite arrived; the platform's notifier shows it only when the user is not looking. So the relay needs no call class (it could not see one: the control type is end-to-end encrypted).  
 **Cross-link:** app lab `background_is_push_only`, `push_wakes_background_callee`, `minimized_still_rings` (`scripts/test/pp_app_lab.py`).
+
+## P011 — Stay connected in the background (opt-in, Android)
+
+**Date:** 2026-10-22  
+**Status:** Accepted (product owner)  
+**Decision:** Me → Profile → **Stay connected in the background** (`ProfilePreferences.stay_connected`, off by default, shown on Android). On: entering the background no longer pauses the app's work (`AppLifecycle::SetStayConnected`), the relay is polled every 30 s there (`kStayConnectedRelayPollIntervalMs`), a wake window never pauses it, and `PpConnectionService` — a foreground service (`specialUse`, with its subtype explained in the manifest) and its ongoing notification — keeps the process alive. The app still reads not attentive, so calls and messages notify.  
+**Rationale:** Phones without a push service (the no-FCM build, de-Googled phones, most phones sold in China) otherwise get nothing in the background (P010) but WorkManager every 15 min — too slow for calls. Like Signal without Play services: the user chooses battery for reach. Vendor push (Huawei, Xiaomi, OPPO, vivo) may follow.  
+**Cross-link:** app lab `stay_connected_rings_in_background`.

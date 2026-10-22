@@ -153,6 +153,9 @@ private:
     int profile_avatar_tone = 0;
     ui::String auto_renew_registration = "auto";
     ui::String show_notifications = "on";
+    ui::String stay_connected = "off";
+    /** The "Stay connected" row shows (Android: phones without a push service). */
+    bool stay_connected_available = false;
     ui::String brief_llm_key_masked;
     ui::String appearance = "system";
     ui::String appearance_label = "System";
@@ -230,6 +233,7 @@ private:
   void PerformUnpublishCas(const std::string& content_id_hex);
   void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
   static void ToggleShowNotificationsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleStayConnectedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleReduceTransparencyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleCallDiagnosticsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleShowAdvancedSettingsCallback(ui::DataModelHandle model, ui::Event& ev,

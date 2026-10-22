@@ -2488,7 +2488,8 @@ void ConversationsHub::Apply(const PolicyPrefs& prefs) {
   NotifyPolicyPrefs(prefs);
 }
 
-void ConversationsHub::Apply(const NotificationPrefs& /*prefs*/) {
+void ConversationsHub::Apply(const NotificationPrefs& prefs) {
+  AppLifecycle::SetStayConnected(prefs.stay_connected);
   if (!initialized_ || !messaging_ready_) {
     return;
   }
@@ -2518,7 +2519,7 @@ ConversationsHub::PolicyPrefs ConversationsHub::ProjectPolicy(const ProfilePrefe
 }
 
 ConversationsHub::NotificationPrefs ConversationsHub::ProjectNotifications(const ProfilePreferences& prefs) {
-  return {.show_notifications = prefs.show_notifications};
+  return {.show_notifications = prefs.show_notifications, .stay_connected = prefs.stay_connected};
 }
 
 void ConversationsHub::SuspendMeshColdPeers() {

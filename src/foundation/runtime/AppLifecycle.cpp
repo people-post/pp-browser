@@ -21,6 +21,12 @@ struct Listener {
 std::mutex g_listeners_mu;
 std::vector<Listener> g_background_listeners;
 std::vector<Listener> g_foreground_listeners;
+struct StayConnectedListener {
+  AppLifecycle::ListenerId id = 0;
+  std::function<void(bool)> fn;
+};
+std::vector<StayConnectedListener> g_stay_connected_listeners;
+std::atomic<bool> g_stay_connected{false};
 AppLifecycle::ListenerId g_next_listener_id = 1;
 
 /** A copy taken under the lock: listeners run outside it (one may add or remove another). */
@@ -109,12 +115,53 @@ void AppLifecycle::OnDesktopRestored() {
   SetDesktopMinimized(false);
 }
 
+void AppLifecycle::SetStayConnected(const bool on) {
+  if (g_stay_connected.exchange(on) == on) {
+    return;
+  }
+  logger().info << "Stay connected in the background: " << (on ? "on" : "off");
+  if (g_state == AppLifecycleState::Background) {
+    // Already in the background: follow the setting now.
+    if (on) {
+      AppRuntime::ResumeBackgroundWork();
+    } else {
+      AppRuntime::PauseBackgroundWork();
+    }
+  }
+  std::vector<std::function<void(bool)>> listeners;
+  {
+    std::lock_guard lock(g_listeners_mu);
+    for (const StayConnectedListener& listener : g_stay_connected_listeners) {
+      listeners.push_back(listener.fn);
+    }
+  }
+  for (const auto& listener : listeners) {
+    listener(on);
+  }
+}
+
+bool AppLifecycle::StaysConnected() {
+  return g_stay_connected.load();
+}
+
+AppLifecycle::ListenerId AppLifecycle::AddStayConnectedListener(std::function<void(bool)> listener) {
+  if (!listener) {
+    return 0;
+  }
+  std::lock_guard lock(g_listeners_mu);
+  const ListenerId id = g_next_listener_id++;
+  g_stay_connected_listeners.push_back({id, std::move(listener)});
+  return id;
+}
+
 void AppLifecycle::OnWillEnterBackground() {
   if (g_state == AppLifecycleState::Background) {
     return;
   }
   g_state = AppLifecycleState::Background;
-  AppRuntime::PauseBackgroundWork();
+  if (!g_stay_connected.load()) {
+    AppRuntime::PauseBackgroundWork();  // push only (P010)
+  }
   for (const auto& listener : Snapshot(g_background_listeners)) {
     listener();
   }
@@ -157,6 +204,7 @@ void AppLifecycle::RemoveListener(const ListenerId id) {
   for (auto* listeners : {&g_background_listeners, &g_foreground_listeners}) {
     std::erase_if(*listeners, [id](const Listener& listener) { return listener.id == id; });
   }
+  std::erase_if(g_stay_connected_listeners, [id](const StayConnectedListener& listener) { return listener.id == id; });
 }
 
 } // namespace pbr

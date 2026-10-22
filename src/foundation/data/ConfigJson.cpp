@@ -735,6 +735,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("pin_is_default", prefs.pin_is_default);
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
+  object.set("stay_connected", prefs.stay_connected);
   object.set("call_diagnostics", prefs.call_diagnostics);
   object.set("crash_reports_enabled", prefs.crash_reports_enabled);
   object.set("group_invite_policy", prefs.group_invite_policy);
@@ -776,6 +777,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   } else {
     prefs.auto_renew_registration = true;
   }
+  prefs.stay_connected = object.getIf<bool>("stay_connected").value_or(false);
   if (auto show_notifications = object.getIf<bool>("show_notifications")) {
     prefs.show_notifications = *show_notifications;
   } else {
