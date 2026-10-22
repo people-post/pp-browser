@@ -67,6 +67,8 @@ struct StatusHttpResponse {
 struct StatusHttpRequest {
   std::string method;
   std::string path;
+  /** After `?`, as sent (empty when none). */
+  std::string query;
   std::string authorization;
 };
 

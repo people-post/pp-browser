@@ -141,8 +141,10 @@ TEST(StatusHttpProtocolTest, ParseRequestExtractsAuthorization) {
 // Lab only: off unless pp-node sets the action; a PeerId must be base58.
 TEST(StatusHttpProtocolTest, DhtFindIsOffUnlessSetAndTakesOnlyAPeerId) {
   pbr::StatusHttpSnapshot snap;
-  pbr::StatusHttpRequest find{.method = "GET", .path = "/dht/find?peer_id=QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP",
-                              .authorization = {}};
+  const auto parsed = pbr::TryParseStatusHttpRequest(
+      "GET /dht/find?peer_id=QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP HTTP/1.1\r\nHost: x\r\n\r\n");
+  ASSERT_TRUE(parsed.has_value());
+  const pbr::StatusHttpRequest find = *parsed;
   EXPECT_EQ(pbr::HandleStatusHttpRequest(find, {}, snap).status_code, 404);
 
   std::vector<std::string> asked;
@@ -156,7 +158,7 @@ TEST(StatusHttpProtocolTest, DhtFindIsOffUnlessSetAndTakesOnlyAPeerId) {
   ASSERT_EQ(asked.size(), 1u);
   EXPECT_EQ(asked.front(), "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP");
 
-  pbr::StatusHttpRequest bad{.method = "GET", .path = "/dht/find?peer_id=Qm0l&x=1", .authorization = {}};
+  pbr::StatusHttpRequest bad{.method = "GET", .path = "/dht/find", .query = "peer_id=Qm0l&x=1", .authorization = {}};
   EXPECT_EQ(pbr::HandleStatusHttpRequest(bad, {}, snap, actions).status_code, 400);
   EXPECT_EQ(asked.size(), 1u) << "not asked";
 

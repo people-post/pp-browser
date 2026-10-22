@@ -202,8 +202,9 @@ std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw)
   StatusHttpRequest req;
   req.method = std::string(request_line.substr(0, sp1));
   req.path = std::string(request_line.substr(sp1 + 1, sp2 - sp1 - 1));
-  // Strip query string
+  // The query string apart from the path.
   if (const auto q = req.path.find('?'); q != std::string::npos) {
+    req.query = req.path.substr(q + 1);
     req.path.resize(q);
   }
 
@@ -293,9 +294,10 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
     return JsonResponse(200, reach);
   }
 
-  constexpr std::string_view kDhtFind = "/dht/find?peer_id=";
-  if (actions.dht_find && request.path.rfind(kDhtFind, 0) == 0) {
-    const std::string peer_id = request.path.substr(kDhtFind.size());
+  constexpr std::string_view kPeerIdParam = "peer_id=";
+  if (actions.dht_find && request.path == "/dht/find") {
+    const std::string peer_id =
+        request.query.rfind(kPeerIdParam, 0) == 0 ? request.query.substr(kPeerIdParam.size()) : std::string();
     constexpr std::string_view kBase58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     if (peer_id.empty() || peer_id.size() > 128 || peer_id.find_first_not_of(kBase58) != std::string::npos) {
       Object body;
