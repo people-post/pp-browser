@@ -77,12 +77,7 @@ void CallPresenter::Tick() {
 }
 
 void CallPresenter::OnCallWake() {
-  // Inbox sync is async: the notification goes out once Refresh sees the invite.
-  if (!AppRuntime::CurrentlyOnUI()) {
-    AppRuntime::PostUI([this]() { OnCallWake(); });
-    return;
-  }
-  pending_call_wake_notify_ = true;
+  // Inbox sync is async: the ring (and its notification) comes once Refresh sees the invite.
   Refresh();
 }
 
@@ -208,9 +203,9 @@ void CallPresenter::Refresh() {
       if (callbacks_.on_ring_started) {
         callbacks_.on_ring_started(top.call_id, top.video_allowed);
       }
-    }
-    if (pending_call_wake_notify_) {
-      pending_call_wake_notify_ = false;
+      // Every ring announces itself, however the invite arrived (a push, a sync, the mesh): the
+      // platform's notifier shows it only when the user is not looking at the app (in the
+      // background, a minimized window).
       CallNotice notice;
       notice.kind = CallNotice::Kind::IncomingCall;
       notice.identity = top.inviter_identity;

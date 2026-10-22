@@ -41,5 +41,5 @@
 
 - FCM/APNs token refresh → automatic re-register after native start (handler exists; harden cold-start race)
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
-- Relay implementation of `call_wake` emit on call-invite path (contract ready; message path still sends `inbox_wake`)
+- ~~Relay `call_wake` on call invites~~ — not needed: the relay cannot see control types (end-to-end), and every ring now notifies by itself (P010). iOS calls in the background need VoIP push + CallKit (an urgent-hint decision for the relay)
 - iOS local banner polish when alerts on (Darwin `DesktopLocalNotifier` already wired)

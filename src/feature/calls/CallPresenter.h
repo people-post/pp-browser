@@ -25,7 +25,7 @@ struct CallNotice {
     /** The peer ended (or declined) a call this device placed or was in: `identity`. */
     PeerEnded,
     PeerDeclined,
-    /** A call arrived while the app was woken for it (`identity`: the caller). */
+    /** A call rings (`identity`: the caller); the platform notifies when the user is not looking. */
     IncomingCall,
   };
   Kind kind = Kind::Error;
@@ -82,7 +82,7 @@ public:
   void Tick();
   /** Decide the screen from the call stack now (after inbox sync, a ring change, an action). */
   void Refresh();
-  /** The app was woken for a call: the next ring also notifies. */
+  /** The app was woken for a call: look for its ring now. */
   void OnCallWake();
 
   const CallScreen& Screen() const { return screen_; }
@@ -144,7 +144,6 @@ private:
    */
   std::string answered_call_id_;
   std::string declined_call_id_;
-  bool pending_call_wake_notify_ = false;
   /**
    * 2026-09-28: video calls start with the local camera on — set by the caller (video StartCall)
    * or the callee (non-voice-only accept of a video call); consumed once the call is connected.

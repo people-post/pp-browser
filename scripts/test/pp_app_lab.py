@@ -641,6 +641,19 @@ def scenario_decline_then_call_back(lab):
         raise ProbeError("alice's history: %s" % got)
 
 
+def assert_incoming_call_notice(u, caller):
+    """The ring announced itself (an "Incoming call" notification where the user is not looking)."""
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        with u.lock:
+            seen = any(m.get("event") == "notice" and m.get("kind") == "incoming_call" and
+                       m.get("identity") == caller.account for _, m in u.history)
+        if seen:
+            return
+        time.sleep(0.2)
+    raise ProbeError("%s: no incoming-call notification for %s's ring" % (u.name, caller.name))
+
+
 def scenario_minimized_still_rings(lab):
     """Bob's desktop window is minimized: Alice's call still rings (a notification, as any
     messenger's would); he restores the window and answers."""
@@ -651,6 +664,7 @@ def scenario_minimized_still_rings(lab):
     call_id = a.cmd("call", thread=a_thread)["call_id"]
     b.wait_surface("ringing", 20, call_id=call_id)
     rang = time.time() - started
+    assert_incoming_call_notice(b, a)
     b.cmd("restore")
     b.cmd("accept_voice")
     for u in (a, b):
@@ -672,6 +686,7 @@ def scenario_push_wakes_background_callee(lab):
     b.cmd("push_wake")
     b.wait_surface("ringing", 20, call_id=call_id)
     rang = time.time() - woke
+    assert_incoming_call_notice(b, a)
     b.cmd("foreground")  # he taps the call notification
     b.cmd("accept_voice")
     for u in (a, b):

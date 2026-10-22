@@ -52,6 +52,7 @@
 
 ## P008 — `call_wake` opaque type
 
+**Status:** Relay emit not implementable as written (the control type is end-to-end encrypted); superseded for Android / desktop by every ring notifying itself (P010). `call_wake` stays accepted by the client.  
 **Date:** 2026-07-28  
 **Decision:** FCM/APNs may carry `type=call_wake` in addition to `inbox_wake`. Same opacity rules as P001 (no `call_id`, names, or media). Client treats `call_wake` as force sync then **fetch pending call invites → ring UI** (V006). Vault-locked behavior follows P003 with generic “Incoming call” copy when a banner is shown. Relay emits `call_wake` on call-invite class envelopes (see `SERVICE_ENDPOINTS.md`).  
 **Rationale:** Prioritize ring UX over chat badge without leaking call metadata to the push path.  
@@ -63,4 +64,5 @@
 **Status:** Accepted (product owner: push only in the background, for power) — supersedes P006's in-process background poll  
 **Decision:** In the background a phone app's work is paused (`AppLifecycle::OnWillEnterBackground`) and it has no relay poll of its own: it is reached by push. A push (`inbox_wake` / `call_wake`) or a WorkManager run resumes the work for `kBackgroundWakeWindowMs` (20 s) — enough to sync the inbox and ring — then the work pauses again unless the app came to the foreground; a newer wake extends the window. WorkManager stays as the safety net for missed pushes. A minimized desktop window is not background (it keeps working and notifies).  
 **Rationale:** The OS enforces it anyway (iOS suspends, Android Doze batches network), and the messengers people compare against work this way. The 45 s in-process poll never ran (its timer lived on the paused coordinator), and a push could not wake the app (its sync was posted to that paused coordinator); once that was fixed, one push kept the phone awake for good.  
+Every ring raises the "Incoming call" notice (`CallPresenter`), however its invite arrived; the platform's notifier shows it only when the user is not looking. So the relay needs no call class (it could not see one: the control type is end-to-end encrypted).  
 **Cross-link:** app lab `background_is_push_only`, `push_wakes_background_callee`, `minimized_still_rings` (`scripts/test/pp_app_lab.py`).

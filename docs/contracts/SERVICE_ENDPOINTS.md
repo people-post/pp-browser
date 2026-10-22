@@ -190,8 +190,9 @@ On `POST /v1/messages` accept, a conforming relay **best-effort** wakes register
 
 | Condition | Opaque type |
 |-----------|-------------|
-| Ordinary message / default | `inbox_wake` |
-| Call-invite class system control (`control_type=call_invite`) or dedicated call-invite accept path | `call_wake` |
+| Every accepted message | `inbox_wake` |
+
+The relay cannot tell a call invite from a message (the control type is inside the end-to-end payload) and does not need to: every wake syncs the inbox, a call invite in it rings, and every ring raises the "Incoming call" notification where the user is not looking (P010 / `CallPresenter`). Android wakes are already FCM `priority: high`. `call_wake` stays in the client's vocabulary (it is handled like `inbox_wake`) for a future relay that knows a message is urgent.
 
 | `platform` | Provider shape |
 |------------|----------------|
