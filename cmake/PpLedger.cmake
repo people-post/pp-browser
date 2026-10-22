@@ -23,7 +23,7 @@ set(PP_LEDGER_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-ledger (overrides FetchContent)")
 set(PP_LEDGER_GIT_REPOSITORY "https://github.com/people-post/pp-ledger.git"
   CACHE STRING "Git remote for pp-ledger")
-pp_fetch_git_tag(PP_LEDGER_GIT_TAG "release/v1.7.0"
+pp_fetch_git_tag(PP_LEDGER_GIT_TAG "release/v1.8.0"
   "Release tag on pp-ledger main (not a branch name)")
 
 # pp-ledger's own apps, HTTP server and tests build in its repo.
