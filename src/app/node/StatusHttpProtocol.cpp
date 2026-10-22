@@ -99,6 +99,10 @@ const char* StatusReason(int code) {
   switch (code) {
   case 200:
     return "OK";
+  case 202:
+    return "Accepted";
+  case 400:
+    return "Bad Request";
   case 401:
     return "Unauthorized";
   case 404:
@@ -227,7 +231,8 @@ std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw)
 
 StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
                                            const StatusHttpAuthConfig& auth,
-                                           const StatusHttpSnapshot& snap) {
+                                           const StatusHttpSnapshot& snap,
+                                           const StatusHttpActions& actions) {
   if (!AuthOk(auth, request.authorization)) {
     return Unauthorized();
   }
@@ -286,6 +291,21 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
       }
     }
     return JsonResponse(200, reach);
+  }
+
+  constexpr std::string_view kDhtFind = "/dht/find?peer_id=";
+  if (actions.dht_find && request.path.rfind(kDhtFind, 0) == 0) {
+    const std::string peer_id = request.path.substr(kDhtFind.size());
+    constexpr std::string_view kBase58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    if (peer_id.empty() || peer_id.size() > 128 || peer_id.find_first_not_of(kBase58) != std::string::npos) {
+      Object body;
+      body.set("error", "peer_id must be a base58 PeerId");
+      return JsonResponse(400, body);
+    }
+    Object body;
+    body.set("started", actions.dht_find(peer_id));
+    body.set("peer_id", peer_id);
+    return JsonResponse(202, body);
   }
 
   return NotFound();

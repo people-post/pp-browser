@@ -1,0 +1,172 @@
+# DHT lab (pp-cpp-mesh docs/DHT.md § 5): an org seed and 12 DHT Nodes; the seed stops once the
+# routing tables fill, then every Node must find every other Node's record through the DHT.
+#
+# - One internal network (no egress: the seed has no bootstrap of its own and must not reach the
+#   public seeds); each Node in its own /24, because a routing-table bucket admits at most 2
+#   entries per /24.
+# - k = 3 (PP_NODE_DHT_K): a record lives at its 3 closest Nodes, so finding it means walking.
+# - Status HTTP is read from the `ctl` sidecar (python3) on the same network; PP_NODE_LAB_DHT_FIND
+#   lets it start lookups (GET /dht/find?peer_id=…).
+#
+# Driver: scripts/test/pp_dht_lab_smoke.sh (pp_local_test.sh --suite dht).
+# Image: pp-node:local (staged by pp_local_test.sh like the hop).
+
+name: pp-dht-lab
+
+x-dht-node: &dht-node
+  image: pp-node:local
+  restart: "no"
+  environment: &dht-env
+    PP_BROWSER_PIN: ${PP_BROWSER_PIN:-local-test-pin}
+    PP_NODE_AMP_UDP_PORT: "18517"
+    PP_NODE_DATA_DIR: /var/lib/pp-node
+    PP_NODE_STATUS_ADDR: 0.0.0.0:18518
+    PP_NODE_CAP_DHT: "1"
+    PP_NODE_CAP_CIRCUIT_RELAY: "0"
+    PP_NODE_CAP_MEDIA_RELAY: "0"
+    PP_NODE_MESH_PUBLISH: "0"
+    PP_NODE_DHT_K: ${PP_DHT_LAB_K:-3}
+    PP_NODE_LAB_DHT_FIND: "1"
+    PP_NODE_BOOTSTRAP_PEERS: ${PP_DHT_SEED_MA:-}
+
+services:
+  seed:
+    <<: *dht-node
+    build:
+      context: ../../dist/pp-node/docker
+      dockerfile: Dockerfile
+    container_name: pp-dht-lab-seed
+    environment:
+      <<: *dht-env
+      PP_NODE_BOOTSTRAP_PEERS: ""
+      PP_NODE_IDENTITY_SEED: "5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.0.10
+
+  ctl:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-peer
+    image: pp-hard-peer:local
+    container_name: pp-dht-lab-ctl
+    volumes:
+      - ${PP_DHT_LAB_SCRIPT_DIR:-../../scripts/test}:/scripts:ro
+    command: ["sleep", "infinity"]
+    networks:
+      dht_net:
+        ipv4_address: 10.78.0.20
+  dht-1:
+    <<: *dht-node
+    container_name: pp-dht-lab-1
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.1.10
+  dht-2:
+    <<: *dht-node
+    container_name: pp-dht-lab-2
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0202020202020202020202020202020202020202020202020202020202020202"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.2.10
+  dht-3:
+    <<: *dht-node
+    container_name: pp-dht-lab-3
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0303030303030303030303030303030303030303030303030303030303030303"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.3.10
+  dht-4:
+    <<: *dht-node
+    container_name: pp-dht-lab-4
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0404040404040404040404040404040404040404040404040404040404040404"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.4.10
+  dht-5:
+    <<: *dht-node
+    container_name: pp-dht-lab-5
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0505050505050505050505050505050505050505050505050505050505050505"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.5.10
+  dht-6:
+    <<: *dht-node
+    container_name: pp-dht-lab-6
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0606060606060606060606060606060606060606060606060606060606060606"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.6.10
+  dht-7:
+    <<: *dht-node
+    container_name: pp-dht-lab-7
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0707070707070707070707070707070707070707070707070707070707070707"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.7.10
+  dht-8:
+    <<: *dht-node
+    container_name: pp-dht-lab-8
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0808080808080808080808080808080808080808080808080808080808080808"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.8.10
+  dht-9:
+    <<: *dht-node
+    container_name: pp-dht-lab-9
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0909090909090909090909090909090909090909090909090909090909090909"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.9.10
+  dht-10:
+    <<: *dht-node
+    container_name: pp-dht-lab-10
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.10.10
+  dht-11:
+    <<: *dht-node
+    container_name: pp-dht-lab-11
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.11.10
+  dht-12:
+    <<: *dht-node
+    container_name: pp-dht-lab-12
+    environment:
+      <<: *dht-env
+      PP_NODE_IDENTITY_SEED: "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+    networks:
+      dht_net:
+        ipv4_address: 10.78.12.10
+networks:
+  dht_net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.78.0.0/16

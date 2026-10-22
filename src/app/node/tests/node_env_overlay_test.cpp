@@ -62,6 +62,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EnvGuard g7("PP_NODE_MESH_PUBLISH");
   EnvGuard g8("PP_NODE_AMP_UDP_PORT");
   EnvGuard g9("PP_NODE_REGISTRATION_BASE_URL");
+  EnvGuard g10("PP_NODE_DHT_K");
 
   pbr::AppConfig config;
   config.data_dir = "/old";
@@ -84,6 +85,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   SetEnv("PP_NODE_CAP_LEDGER_GATEWAY", "1");
   SetEnv("PP_NODE_ADVERTISE_MULTIADDRS", "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://www-en.qa.peoplepost.org/api/relay");
+  SetEnv("PP_NODE_DHT_K", "3");
 
   pbr::ApplyPpNodeConfigEnvOverlays(config);
 
@@ -99,4 +101,5 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EXPECT_EQ(config.mesh.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   EXPECT_TRUE(config.mesh.mesh_publish);
   EXPECT_EQ(config.registration.base_url, "https://www-en.qa.peoplepost.org/api/relay");
+  EXPECT_EQ(config.mesh.dht.k_bucket_size, 3);
 }

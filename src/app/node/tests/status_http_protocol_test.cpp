@@ -138,6 +138,33 @@ TEST(StatusHttpProtocolTest, ParseRequestExtractsAuthorization) {
   EXPECT_EQ(req->authorization, "Bearer tok");
 }
 
+// Lab only: off unless pp-node sets the action; a PeerId must be base58.
+TEST(StatusHttpProtocolTest, DhtFindIsOffUnlessSetAndTakesOnlyAPeerId) {
+  pbr::StatusHttpSnapshot snap;
+  pbr::StatusHttpRequest find{.method = "GET", .path = "/dht/find?peer_id=QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP",
+                              .authorization = {}};
+  EXPECT_EQ(pbr::HandleStatusHttpRequest(find, {}, snap).status_code, 404);
+
+  std::vector<std::string> asked;
+  pbr::StatusHttpActions actions;
+  actions.dht_find = [&](const std::string& peer_id) {
+    asked.push_back(peer_id);
+    return true;
+  };
+  auto started = pbr::HandleStatusHttpRequest(find, {}, snap, actions);
+  EXPECT_EQ(started.status_code, 202);
+  ASSERT_EQ(asked.size(), 1u);
+  EXPECT_EQ(asked.front(), "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP");
+
+  pbr::StatusHttpRequest bad{.method = "GET", .path = "/dht/find?peer_id=Qm0l&x=1", .authorization = {}};
+  EXPECT_EQ(pbr::HandleStatusHttpRequest(bad, {}, snap, actions).status_code, 400);
+  EXPECT_EQ(asked.size(), 1u) << "not asked";
+
+  pbr::StatusHttpAuthConfig auth;
+  auth.bearer_token = "secret";
+  EXPECT_EQ(pbr::HandleStatusHttpRequest(find, auth, snap, actions).status_code, 401) << "behind the token too";
+}
+
 TEST(StatusHttpProtocolTest, UnknownPathAndMethod) {
   pbr::StatusHttpSnapshot snap;
   pbr::StatusHttpRequest missing{.method = "GET", .path = "/nope", .authorization = {}};
