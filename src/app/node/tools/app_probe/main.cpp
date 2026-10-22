@@ -1,5 +1,5 @@
-// pp-app-probe: the app with no GUI. The same Bootstrap, ProductStack, facade and CallUiBackend the
-// desktop app runs — messaging over a real relay, the control lane, AutoKey sessions, the mesh —
+// pp-app-probe: the app with no GUI. The same Bootstrap, ProductStack, facade, CallUiBackend and
+// CallPresenter (what the call surface shows, what its buttons do) the desktop app runs — messaging over a real relay, the control lane, AutoKey sessions, the mesh —
 // driven by one scripted user through line commands on stdin. A lab driver (scripts/test/
 // pp_app_lab.py) runs one probe per user and checks the outcomes.
 //
@@ -37,10 +37,12 @@
 #include "domain/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
+#include "feature/calls/CallPresenter.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/SessionStore.h"
@@ -88,21 +90,23 @@ void ReplyError(int64_t id, const std::string& message) {
   Emit(out);
 }
 
-const char* SurfaceKindName(CallUiBackend::Surface::Kind kind) {
+const char* NoticeKindName(CallNotice::Kind kind) {
   switch (kind) {
-  case CallUiBackend::Surface::Kind::None:
-    return "none";
-  case CallUiBackend::Surface::Kind::Ringing:
-    return "ringing";
-  case CallUiBackend::Surface::Kind::Answering:
-    return "answering";
-  case CallUiBackend::Surface::Kind::InCall:
-    return "in_call";
+  case CallNotice::Kind::Error:
+    return "error";
+  case CallNotice::Kind::StickyError:
+    return "sticky_error";
+  case CallNotice::Kind::PeerEnded:
+    return "peer_ended";
+  case CallNotice::Kind::PeerDeclined:
+    return "peer_declined";
+  case CallNotice::Kind::IncomingCall:
+    return "incoming_call";
   }
   return "?";
 }
 
-/** One scripted user: the app's objects, and what the GUI's CallController would remember. */
+/** One scripted user: the app's objects; its call buttons and call screen are the GUI's (CallPresenter). */
 class Probe {
 public:
   Probe() {
@@ -112,6 +116,22 @@ public:
     facade_ = std::make_unique<ConversationsFacade>(product_->Hub());
     product_->BindFacade(*facade_);
     calls_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
+    presenter_.BindPorts(MakeCallFunctionalPorts(*calls_, product_->Hub(), &store_));
+    CallPresenter::Callbacks callbacks;
+    callbacks.on_changed = [this]() { EmitSurface(); };
+    callbacks.notify = [this](const CallNotice& notice) {
+      if (notice.kind == CallNotice::Kind::Error || notice.kind == CallNotice::Kind::StickyError) {
+        last_error_ = notice.key.empty() ? notice.text : notice.key;
+      }
+      Object event;
+      event.set("event", "notice");
+      event.set("kind", NoticeKindName(notice.kind));
+      event.set("key", notice.key);
+      event.set("text", notice.text);
+      event.set("identity", notice.identity);
+      Emit(event);
+    };
+    presenter_.BindCallbacks(std::move(callbacks));
   }
 
   ConversationsHub& Hub() { return product_->Hub(); }
@@ -133,75 +153,37 @@ public:
       event.set("ready", facade_->IsMeshReady());
       Emit(event);
     });
-    // The GUI refreshes the call surface on these (CallController::BindToMessaging, OnCallWake,
-    // ChatController's messages-changed): so does the probe.
-    Hub().SetOnCallWake([this]() { AppRuntime::PostUI([this]() { Settle(); }); });
+    // The GUI refreshes the call surface on these (ChatController's messages-changed,
+    // Application's call wake → CallController::OnCallWake): so does the probe.
+    Hub().SetOnCallWake([this]() { presenter_.OnCallWake(); });
   }
 
-  /** CallController::BindToMessaging: (re)bind ring callbacks when the session manager changes. */
-  void BindCalls() {
-    if (!calls_->Available()) {
-      bound_calls_ = nullptr;
-      return;
-    }
-    const void* identity = calls_->SessionsIdentity();
-    if (identity == bound_calls_) {
-      return;
-    }
-    calls_->SetOnRingChanged([this]() { AppRuntime::PostUI([this]() { Settle(); }); });
-    calls_->SetOnChromeRefresh([this]() { Settle(); });
-    bound_calls_ = identity;
-    Settle();
-  }
+  /** CallController::BindToMessaging. */
+  void BindCalls() { presenter_.BindToMessaging(); }
 
-  /** CallController::Tick: sweep every frame; refresh while a call is tracked. */
-  void Tick() {
-    BindCalls();
-    if (!calls_->Available()) {
-      return;
-    }
-    calls_->SweepExpiredInvites();
-    if (!active_call_id_.empty()) {
-      Settle();
-    }
-  }
+  /** CallController::Tick: expired rings; the in-call screen every frame. */
+  void Tick() { presenter_.Tick(); }
 
-  void Settle() {
-    BindCalls();
-    if (!calls_->Available()) {
-      return;
-    }
-    const CallUiBackend::Surface surface = calls_->Settle();
-    std::string call_id;
-    switch (surface.kind) {
-    case CallUiBackend::Surface::Kind::Ringing:
-    case CallUiBackend::Surface::Kind::Answering:
-      call_id = surface.invite->call_id;
-      ringing_call_id_ = call_id;
-      if (surface.active) {
-        active_call_id_ = surface.active->call_id;
-      }
-      break;
-    case CallUiBackend::Surface::Kind::InCall:
-      call_id = surface.active->call_id;
-      active_call_id_ = call_id;
-      ringing_call_id_.clear();
-      break;
-    case CallUiBackend::Surface::Kind::None:
-      active_call_id_.clear();
-      ringing_call_id_.clear();
-      break;
-    }
-    const std::string phase = CallPhaseName(calls_->Phase());
-    const std::string status = CallMediaStatusName(calls_->MediaStatus());
-    const std::string kind = SurfaceKindName(surface.kind);
-    if (kind == last_kind_ && call_id == last_call_id_ && phase == last_phase_ && status == last_status_) {
+  /** CallController::RefreshPendingRing: the screen from the call stack now. */
+  void Settle() { presenter_.Refresh(); }
+
+  /** The screen the GUI would render: an event on every change. */
+  void EmitSurface() {
+    const CallScreen& screen = presenter_.Screen();
+    const std::string kind = CallScreenKindName(screen.kind);
+    const std::string call_id = screen.kind == CallScreen::Kind::InCall ? screen.call_id : screen.ring_call_id;
+    const std::string phase = calls_->Available() ? CallPhaseName(calls_->Phase()) : "";
+    const std::string status = calls_->Available() ? CallMediaStatusName(calls_->MediaStatus()) : "";
+    const std::string line = screen.kind == CallScreen::Kind::InCall ? CallScreenStatusName(screen.status) : "";
+    if (kind == last_kind_ && call_id == last_call_id_ && phase == last_phase_ && status == last_status_ &&
+        line == last_line_) {
       return;
     }
     last_kind_ = kind;
     last_call_id_ = call_id;
     last_phase_ = phase;
     last_status_ = status;
+    last_line_ = line;
     Object event = SurfaceObject();
     event.set("event", "surface");
     Emit(event);
@@ -213,6 +195,13 @@ public:
     out.set("call_id", last_call_id_);
     out.set("phase", last_phase_);
     out.set("media_status", last_status_);
+    // What the call screen says (CallScreen): the status line and the buttons it offers.
+    const CallScreen& screen = presenter_.Screen();
+    out.set("status", last_line_);
+    out.set("conflict", screen.conflict);
+    out.set("show_retry", screen.show_retry);
+    out.set("show_invite", screen.show_invite);
+    out.set("group", screen.group);
     if (calls_->Available()) {
       if (CallMediaEngine* media = product_->Calls().Stack().MediaEngine()) {
         const auto health = media->HealthSnapshot();
@@ -238,7 +227,7 @@ public:
         }
       }
       out.set("participants", ArrayValue(std::move(joined)));
-      out.set("last_error", calls_->LastError());
+      out.set("last_error", last_error_);
     }
     return out;
   }
@@ -371,6 +360,8 @@ public:
   /** Application::Shutdown's order, minus the GUI. */
   void Shutdown() {
     AppRuntime::BeginShutdown();
+    presenter_.BindCallbacks({});
+    presenter_.BindPorts({});
     calls_.reset();
     Hub().SetOnMessagingReady(nullptr);
     Hub().SetOnMeshReady(nullptr);
@@ -486,71 +477,58 @@ private:
   }
 
   /**
-   * CallController::StartCallDirect; a group's call button opens the picker, which places the call
-   * to the picked members (StartCallWithInvitees) — here every other member, or `accounts`.
+   * A chat's call button (CallPresenter::StartCall): a 1:1 call, the group's call to join, or the
+   * member picker — which here picks `accounts`, else everyone in the group but us.
    */
   void StartCall(int64_t id, const std::string& thread_id, bool video, std::vector<std::string> accounts) {
-    BindCalls();
-    if (!calls_->Available()) {
-      ReplyError(id, "calls unavailable");
-      return;
-    }
-    auto thread = facade_->GetThread(thread_id);
-    if (!thread || !*thread) {
-      ReplyError(id, "no such chat: " + thread_id);
-      return;
-    }
-    std::vector<std::string> invitees;
-    if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-      if (accounts.empty()) {
-        auto roster = facade_->ListGroupRoster(*(*thread)->group_id);
-        if (!roster) {
-          ReplyError(id, roster.error().message);
-          return;
-        }
-        const std::string self = facade_->LoadProfileIdentityView().account_id;
-        for (const GroupRosterMember& member : *roster) {
-          if (member.member_identity != self && !member.member_identity.empty()) {
-            invitees.push_back(member.member_identity);
-          }
-        }
-      } else {
-        invitees = std::move(accounts);
-      }
-    } else if ((*thread)->kind == ThreadKind::Direct && !(*thread)->peer_identity_value.empty()) {
-      invitees = {(*thread)->peer_identity_value};
-    }
-    if (invitees.empty()) {
-      ReplyError(id, "nobody to call in " + thread_id);
-      return;
-    }
-    calls_->StartCall(thread_id, video, invitees, [this, id](Roe<CallSession> started) {
-      if (!started) {
-        ReplyError(id, started.error().message);
+    auto finish = [id](const CallStartResult& result) {
+      if (result.kind == CallStartResult::Kind::Started || result.kind == CallStartResult::Kind::Joined) {
+        Object out = Reply(id, true);
+        out.set("call_id", result.call_id);
+        out.set("joined", result.kind == CallStartResult::Kind::Joined);
+        Emit(out);
         return;
       }
-      active_call_id_ = started->call_id;
-      Object out = Reply(id, true);
-      out.set("call_id", started->call_id);
-      Emit(out);
-      Settle();
+      ReplyError(id, result.error_key.empty() ? result.error_text : result.error_key);
+    };
+    presenter_.StartCall(thread_id, video,
+                         [this, thread_id, video, accounts = std::move(accounts), finish](const CallStartResult& result) {
+      if (result.kind != CallStartResult::Kind::PickPeople) {
+        finish(result);
+        return;
+      }
+      presenter_.StartCallWithInvitees(thread_id, video, accounts.empty() ? OtherMembers(thread_id) : accounts,
+                                       finish);
     });
   }
 
-  /** CallController::InviteIdentitiesToActiveCall (the in-call "add people" picker). */
-  void InviteToCall(int64_t id, const std::string& account) {
-    BindCalls();
-    std::string call_id = active_call_id_;
-    if (call_id.empty() && calls_->Available()) {
-      if (auto active = calls_->ActiveLocalCall(); active && active->has_value()) {
-        call_id = (*active)->call_id;
+  /** The member picker's default: everyone in the chat's group but us. */
+  std::vector<std::string> OtherMembers(const std::string& thread_id) {
+    std::vector<std::string> members;
+    auto thread = facade_->GetThread(thread_id);
+    if (!thread || !*thread || !(*thread)->group_id) {
+      return members;
+    }
+    auto roster = facade_->ListGroupRoster(*(*thread)->group_id);
+    if (!roster) {
+      return members;
+    }
+    const std::string self = facade_->LoadProfileIdentityView().account_id;
+    for (const GroupRosterMember& member : *roster) {
+      if (member.member_identity != self && !member.member_identity.empty()) {
+        members.push_back(member.member_identity);
       }
     }
-    if (!calls_->Available() || call_id.empty() || account.empty()) {
-      ReplyError(id, "no call in progress, or no account");
+    return members;
+  }
+
+  /** The in-call "add people" picker's choice (CallPresenter::InviteToActiveCall). */
+  void InviteToCall(int64_t id, const std::string& account) {
+    if (account.empty()) {
+      ReplyError(id, "account required");
       return;
     }
-    calls_->InviteParticipant(call_id, account, [id](Roe<void> invited) {
+    presenter_.InviteToActiveCall({account}, [id](Roe<void> invited) {
       invited ? Emit(Reply(id, true)) : ReplyError(id, invited.error().message);
     });
   }
@@ -639,58 +617,39 @@ private:
         });
   }
 
-  /** CallController::AcceptIncomingImpl. */
+  /** The ring's answer buttons (CallPresenter::Accept). */
   void Accept(int64_t id, bool voice_only) {
-    BindCalls();
-    std::string call_id = ringing_call_id_.empty() ? calls_->LastRingCallId() : ringing_call_id_;
-    if (!calls_->Available() || call_id.empty()) {
-      ReplyError(id, "nothing ringing");
-      return;
-    }
-    calls_->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
-    calls_->SetPendingAcceptVoiceOnly(voice_only);
-    calls_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
-    Object out = Reply(id, true);
-    out.set("call_id", call_id);
-    Emit(out);
-  }
-
-  /** CallController::DeclineIncoming. */
-  void Decline(int64_t id) {
-    BindCalls();
-    std::string call_id = ringing_call_id_;
-    if (call_id.empty() && calls_->Available()) {
-      call_id = calls_->LastRingCallId();
-    }
+    const std::string call_id = presenter_.Accept(voice_only);
     if (call_id.empty()) {
       ReplyError(id, "nothing ringing");
       return;
     }
-    ringing_call_id_.clear();
-    calls_->Apply(CallLifecycleEvent::DeclineClicked, call_id);
     Object out = Reply(id, true);
     out.set("call_id", call_id);
     Emit(out);
   }
 
-  /** CallController::LeaveActive. */
-  void Leave(int64_t id) {
-    BindCalls();
-    std::string call_id = active_call_id_;
-    if (call_id.empty() && calls_->Available()) {
-      call_id = calls_->ActiveCallId();
+  void Decline(int64_t id) {
+    const std::string call_id = presenter_.Decline();
+    if (call_id.empty()) {
+      ReplyError(id, "nothing ringing");
+      return;
     }
+    Object out = Reply(id, true);
+    out.set("call_id", call_id);
+    Emit(out);
+  }
+
+  /** The call panel's End (CallPresenter::Leave). */
+  void Leave(int64_t id) {
+    const std::string call_id = presenter_.Leave();
     if (call_id.empty()) {
       ReplyError(id, "no call");
       return;
     }
-    calls_->StopCallMedia(call_id);
-    active_call_id_.clear();
-    calls_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
     Object out = Reply(id, true);
     out.set("call_id", call_id);
     Emit(out);
-    Settle();
   }
 
   SessionStore store_;
@@ -698,10 +657,10 @@ private:
   std::unique_ptr<ProductStack> product_;
   std::unique_ptr<ConversationsFacade> facade_;
   std::unique_ptr<CallUiBackend> calls_;
-  const void* bound_calls_ = nullptr;
-  std::string active_call_id_;
-  std::string ringing_call_id_;
+  CallPresenter presenter_;
   std::string last_kind_ = "none";
+  std::string last_line_;
+  std::string last_error_;
   std::string last_call_id_;
   std::string last_phase_;
   std::string last_status_;

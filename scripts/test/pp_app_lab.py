@@ -327,12 +327,18 @@ class Lab:
 # --- outcome checks -------------------------------------------------------------------------------
 
 def assert_idle(*users, timeout=30):
-    """Nobody is left ringing or in a call."""
+    """Nobody is left ringing or in a call. The screen clears on the End click (as in the app);
+    the call stack follows a moment later."""
     for u in users:
         u.wait_surface("none", timeout)
-        s = u.state()
-        if s.get("phase") not in ("Idle", None, ""):
-            raise ProbeError("%s: phase %s after the call" % (u.name, s.get("phase")))
+        deadline = time.time() + 10
+        while True:
+            s = u.state()
+            if s.get("phase") in ("Idle", None, ""):
+                break
+            if time.time() > deadline:
+                raise ProbeError("%s: phase %s after the call" % (u.name, s.get("phase")))
+            time.sleep(0.2)
 
 
 def assert_media_flows(*users, timeout=30):

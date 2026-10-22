@@ -8,6 +8,7 @@
 #include "domain/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
+#include "feature/calls/CallPresenter.h"
 #include "gui/CallChromeSync.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
@@ -24,7 +25,11 @@ namespace pbr {
 class CallMediaEngine;
 class CallUiBackend;
 
-/** Shell-level call ring / in-call chrome. */
+/**
+ * Shell-level call ring / in-call chrome: renders CallPresenter's screen (words, avatars, video,
+ * chrome modes) and owns the devices around it (ringtone, ringback, levels, metrics). What the call
+ * surface shows and what its buttons do is decided in CallPresenter, which pp-app-probe drives too.
+ */
 class CallController : public Module {
 public:
   CallController();
@@ -83,12 +88,11 @@ public:
   void ShowCallDetails();
 
 private:
-  bool StartCallDirect(const std::string& thread_id, bool video_allowed);
-  /** Backend StartCall (no invitees: join the group's call that goes on, V053). */
-  void RequestStartCall(const std::string& thread_id, bool video_allowed,
-                        const std::vector<std::string>& invitee_identities);
-  /** Shared AcceptIncoming/AcceptIncomingVoiceOnly body (charge decision is always Waive here). */
-  void AcceptIncomingImpl(bool voice_only);
+  /** The presenter's screen into the shell's ring / in-call state. */
+  void Render();
+  void RenderRing(const CallScreen& screen);
+  void RenderInCall(const CallScreen& screen, CallUiBackend& backend);
+  void ShowNotice(const CallNotice& notice);
   void SyncShellState();
   void ClearRing();
   /** Device vitals, re-read at most every 2 s. */
@@ -114,15 +118,12 @@ private:
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
 
-  bool MessagingInitialized() const;
   CallUiBackend* Backend();
 
-  bool pending_call_wake_notify_ = false;
-  /** Last CallSessionManager identity we installed OnRingChanged on (recreated across unlock). */
-  const void* bound_calls_ = nullptr;
-  std::string ringing_call_id_;
-  std::string active_call_id_;
-  int64_t ring_started_ms_ = 0;
+  CallPresenter presenter_;
+  /** What the chat header last heard about (it shows "In call"): refreshed when this changes. */
+  CallScreen::Kind header_kind_ = CallScreen::Kind::None;
+  std::string header_call_id_;
   int64_t last_pulse_toggle_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
   /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
@@ -148,15 +149,6 @@ private:
   int64_t video_start_since_ms_ = 0;
   /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
   bool camera_sync_off_done_ = false;
-  /**
-   * 2026-09-28: video calls start with the local camera on (supersedes V009's old "join with
-   * camera off" default) — set once by the caller (video StartCall) or the callee (non-voice-only
-   * accept of a video call); consumed (camera enabled, flag cleared) on the first Tick where the
-   * call is connected. Cleared on voice-only accept and on ClearInCall.
-   */
-  bool auto_camera_pending_ = false;
-  /** Call id auto_camera_pending_ applies to. */
-  std::string auto_camera_call_id_;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
@@ -174,17 +166,6 @@ private:
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;
-  /** Call intents report on UI later (calls owner); results for a destroyed controller are dropped. */
-  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
-  /** Run `fn` only while this controller lives (captured into async call-intent results). */
-  template <typename Fn>
-  auto WhileAlive(Fn fn) {
-    return [weak = std::weak_ptr<int>(alive_), fn = std::move(fn)](auto&&... args) {
-      if (weak.lock()) {
-        fn(std::forward<decltype(args)>(args)...);
-      }
-    };
-  }
 };
 
 } // namespace pbr

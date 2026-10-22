@@ -29,7 +29,8 @@ What the device shows about calls is a **projection of its calls** ([`LiveCalls`
 | **LiveCall / LiveCalls** | Per call: call state + media Status / progress; projection (`Phase`, `Status`, `Shown`); path gates (`AllowsDirectPath` / `AllowsHopPath` / `SoftMigrateMayArm`, armed planner); media cancel generation; change hook |
 | **CallSessionManager** | UI intents (`Apply`: Accept in flight + dedupe, Decline, Leave, Retry / PeerReconnected restart, answerer kick after accept); binds the path arming ports over `LiveCalls`; persist session/invite/roster; encode/send controls |
 | **CallStack** | Publishes the projection in `CallUiState`; on a change refreshes chrome (UI) and wakes N025 listen when `WantEphemeralListen` (a call is shown) flips |
-| **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
+| **CallPresenter** | What the call surface shows and what its buttons do, headless: `CallScreen` (ring / answering / in call / none, conflict, pricing, roster, the status line from `DecideInCallStatus`) + one-shot `CallNotice`s; the buttons (start / join / picker, accept, decline, leave, retry, mute, camera, speaker, add people) → `Apply(event)`; the auto camera of video calls. pp-app-probe drives the same presenter |
+| **CallController** | Renders `CallScreen` (words, avatars, video, chrome modes) and owns the devices around it (ringtone, ringback, levels, metrics); Rml clicks → `CallPresenter`; chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallMediaBridge** | Media-key defer, channel connect/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
 | **CallMediaConnectCoordinator** | Both directions of the 1:1 bundle. Outbound: per attempt reach a link then open the bundle; watchdog (B42), 5 retries, fresh-link feedback (B39). Inbound: owns the transport handler — a hello is an event on the calls owner, parked until its epoch key is available, via `CallMediaInboundPorts` |
 | **PeerReachCoordinator** | Call-agnostic link establishment to one peer (dial → circuit → punch, seed park); `Reach` / `Await` modes |
@@ -367,7 +368,7 @@ Single A/V device for the process (owned by the seat’s bound call):
 - Capture/playback and camera stay off the libp2p IO thread (mic TCC can block).
 
 ### CallController / shell
-Maps ring + in-call chrome from `CallUiBackend::Settle` (the surface) + the session snapshot. **Layer appear/disappear** uses `ShellHost::RemountCallChrome` (dedicated mounts only) via `apply_chrome_update(Remount)`. **Labels / pulse / meters / icon toggles** use `DirtyCallChrome` while a layer is already mounted. Clicks → `CallSessionManager::Apply` (via `CallUiBackend`); attach-wait / connect health are **planner SM timers** (V039) — CallController must not poll them on UI tick. CallController notifies ShellHost; it does not call grab-bag `DirtyWindow`.
+`CallPresenter` (feature/calls) decides the call screen from `CallUiBackend::Settle` (the surface) + the session snapshot and runs the buttons; `CallController` renders it. The presenter is what the app lab (`pp-app-probe`) presses and reads, so the decisions behind the chrome are under the lab's scenarios; only the words, layout and devices are GUI-only. **Layer appear/disappear** uses `ShellHost::RemountCallChrome` (dedicated mounts only) via `apply_chrome_update(Remount)`. **Labels / pulse / meters / icon toggles** use `DirtyCallChrome` while a layer is already mounted. Clicks → `CallSessionManager::Apply` (via `CallUiBackend`); attach-wait / connect health are **planner SM timers** (V039) — CallController must not poll them on UI tick. CallController notifies ShellHost; it does not call grab-bag `DirtyWindow`.
 
 **Do not** rely on always-mounted `data-if="call_ring_active"` alone to show Accept — dogfood showed C++ `active=true` + Present alive while the overlay stayed `display:none`. **Do not** full-shell `SyncLayout` for call chrome (Samsung Accept hit-test).
 
@@ -565,7 +566,9 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallHopRanking.*` | Media hops ranked (contacts ∪ directory ∪ DHT ∪ seeds, V030 ads, dialable), hop scope / LAN confirmation for the call's peers — shared by Topology, SoftMigrate and planning |
 | `src/feature/calls/CallHopPlanning.*` | V050: planned hop at StartCall, invitee probes while ringing, accept reports, join resolution (keep / one adjustment / refuse), hop-hint member filter |
 | `src/domain/calls/CallPathMobility.*` | k6: this device's mobility class (attachment, rebinds, override, timed re-evaluation) and each call peer's → the call's path policy; the stack reacts to a flip (caps update + re-plan) |
-| `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
+| `src/feature/calls/CallPresenter.*` | The call surface's decisions (`CallScreen`, `CallNotice`) and the call buttons, headless — shared by the GUI and pp-app-probe |
+| `src/domain/calls/CallScreen.*` | The screen model and `DecideInCallStatus` (the in-call status line, pure) |
+| `src/gui/CallController.*` | Renders `CallScreen` (ring + in-call UI, ringtone, levels, video, metrics) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
 | `src/domain/calls/CallSessionStore.*` | Persistence |
