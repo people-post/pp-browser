@@ -956,6 +956,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   bool min_rx_met = false;
   bool was_in_call = false;
+  std::chrono::steady_clock::time_point next_alone_check{};
   MediaFlowMonitor flow("answerer", rx_stall_ms_, rx_watch_ms_);
   PublisherRxGate gate("answerer", gate_streams_, gate_frames_, gate_window_ms_);
   auto gates_ok = [&]() {
@@ -1006,6 +1007,16 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
       } else if (was_in_call && ui_->Phase() == CallPhase::Idle) {
         std::cout << "ok  product-stack answerer: offerer left rx_frames=" << RxAudioFrames() << "\n";
         return gates_ok() ? 0 : 1;
+      }
+      // V053: the last one in a group call stays in it — everyone else gone is the end of the hold.
+      if (was_in_call && std::chrono::steady_clock::now() >= next_alone_check) {
+        next_alone_check = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        if (auto joined = ui_->ListJoinedParticipants(call_id); joined && joined->size() <= 1) {
+          const uint64_t rx_before_leave = RxAudioFrames();  // the engine stops on Leave
+          LeaveAndFlush(call_id);
+          std::cout << "ok  product-stack answerer: the others left rx_frames=" << rx_before_leave << "\n";
+          return gates_ok() ? 0 : 1;
+        }
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));

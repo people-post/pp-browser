@@ -205,6 +205,8 @@ public:
   MeshDeliveryOrchestrator* MeshMessagingOrNull() { return mesh_messaging_.get(); }
   SystemControlRegistry& SystemControls() { return system_controls_; }
   SqlitePskSessionStore* PskSessions() { return psk_store_.get(); }
+  /** The group rosters (from stores open to hub teardown; null outside that). */
+  GroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
   std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
