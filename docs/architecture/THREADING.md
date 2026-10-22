@@ -106,7 +106,7 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 
 Drives periodic **policy** (not Amp UDP drain):
 
-- Relay poll: foreground ~2s; background none — push only, a wake resumes the paused work for 20 s (`MessagingLimits.h`, P010) — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
+- Relay poll: foreground ~2s; background none — push only, a wake resumes the paused work for 20 s (`MessagingLimits.h`, P010); ~2s during a call in the background, 30 s when staying connected — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
 - Hub policy: peer sweep, mDNS, reachability UX — `ConversationsHub` (~1s)
 - Peer idle sweep: ~15s internal where applicable
 
@@ -122,7 +122,7 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 - **Coordinator** runs fast policy only; must not block — enqueue to pool.
 - **Amp MeshPump** runs short `Drive` only; must not run curl / Argon2 / long DB.
 - **No mesh waits on threads:** a dial / association / probe / key arrival is a completion (callback, `PostAfter` deadline). `AmpParkUntil` survives only in manual-drive test harnesses, where the waiter is the sole Amp driver.
-- **Pause/resume:** `AppLifecycle` uses `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` on background/foreground. The mesh pump follows mesh lifetime (stop with `MeshHost::Stop`), same idea as media.
+- **Pause/resume:** `AppLifecycle` uses `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` on background/foreground. In the background the work keeps running while something holds it — stay connected (P011), a call (`SetCallInProgress`, from `CallStack`; 5 s grace after it ends), a push's wake window (`OpenWakeWindow`) — and pauses when the last one lets go (one locked reconcile; pause/resume only set flags, so any thread may call). The mesh pump follows mesh lifetime (stop with `MeshHost::Stop`), same idea as media.
 
 ### UI delivery pipeline
 

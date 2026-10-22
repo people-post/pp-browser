@@ -699,6 +699,8 @@ def scenario_push_wakes_background_callee(lab):
 
 # The app's background wake window (MessagingLimits.h kBackgroundWakeWindowMs).
 BACKGROUND_WAKE_WINDOW_S = 20
+# After a call ends in the background the app keeps working this long (AppLifecycle kCallEndGraceMs).
+CALL_END_GRACE_S = 5
 
 
 def scenario_background_is_push_only(lab):
@@ -751,6 +753,54 @@ def scenario_stay_connected_rings_in_background(lab):
     assert_idle(a, b)
     b.cmd("stay_connected", on=False)
     return {"ring_s": round(rang, 2)}
+
+
+def scenario_peer_hangs_up_while_backgrounded(lab):
+    """Alice's phone app is in the background mid-call when Bob hangs up: her call ends then (a call
+    keeps the app working in the background), not when she next opens the app. Once it is over the
+    app sleeps again: Bob's next call reaches her by push only."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    connect(a, a_thread, b)
+    a.cmd("background")
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)  # past any wake window: only the call keeps it awake
+    for u in (a, b):
+        assert_hears(u, 1, timeout=10)
+    b.cmd("leave")
+    assert_idle(a, b)
+    time.sleep(CALL_END_GRACE_S + 3)
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    try:
+        a.wait_surface("ringing", 8, call_id=call_id)
+        raise ProbeError("alice: rang with the app asleep in the background (no push for it)")
+    except ProbeError as e:
+        if "rang with" in str(e):
+            raise
+    a.cmd("push_wake")
+    a.wait_surface("ringing", 20, call_id=call_id)
+    a.cmd("foreground")
+    a.cmd("decline")
+    assert_idle(a, b)
+
+
+def scenario_answered_in_background(lab):
+    """Bob's phone app is in the background; Alice's call wakes it by push and he answers without
+    opening the app (the phone's own call screen, CallKit on iPhone). The call outlasts the push's
+    wake window, and ends when Alice hangs up."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("background")
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    time.sleep(2)  # the push takes a moment to arrive
+    b.cmd("push_wake")
+    b.wait_surface("ringing", 20, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)
+    for u in (a, b):
+        assert_hears(u, 1, timeout=10)
+    a.cmd("leave")
+    assert_idle(a, b)
 
 
 def scenario_background_mid_call(lab):
@@ -1311,6 +1361,8 @@ SCENARIOS = [
     ("minimized_still_rings", scenario_minimized_still_rings),
     ("push_wakes_background_callee", scenario_push_wakes_background_callee),
     ("background_mid_call", scenario_background_mid_call),
+    ("peer_hangs_up_while_backgrounded", scenario_peer_hangs_up_while_backgrounded),
+    ("answered_in_background", scenario_answered_in_background),
     ("background_is_push_only", scenario_background_is_push_only),
     ("stay_connected_rings_in_background", scenario_stay_connected_rings_in_background),
     ("network_drops_mid_call", scenario_network_drops_mid_call),

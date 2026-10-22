@@ -44,8 +44,6 @@ private:
   SyncFn handler_;
   uint64_t relay_poll_timer_id_ = 0;
   uint64_t last_poll_ms_ = 0;
-  /** The latest background wake window (a newer wake extends it). */
-  std::atomic<uint64_t> wake_window_{0};
   bool pending_call_wake_ = false;
 };
 

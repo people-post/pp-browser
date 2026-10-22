@@ -58,14 +58,7 @@ void BackgroundSyncScheduler::RequestWakeSync() {
   // enough to fetch the inbox and ring, then pause again: in the background a phone is reached by
   // push only (power).
   if (!AppLifecycle::IsForeground()) {
-    const uint64_t window = wake_window_.fetch_add(1) + 1;
-    AppRuntime::ResumeBackgroundWork();
-    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kBackgroundWakeWindowMs), [this, window]() {
-      if (window == wake_window_.load() && !AppLifecycle::IsForeground() && !AppLifecycle::StaysConnected()) {
-        log().info << "background wake window over: work paused again";
-        AppRuntime::PauseBackgroundWork();
-      }
-    });
+    AppLifecycle::OpenWakeWindow(std::chrono::milliseconds(kBackgroundWakeWindowMs));
   }
   AppRuntime::PostCoordinatorCritical([this]() { RunScheduledSync(true); });
 }
@@ -91,13 +84,16 @@ void BackgroundSyncScheduler::RunScheduledSync(bool force) {
   }
   if (!force) {
     // In the background a phone is reached by push only (P010): no poll of its own, even inside a
-    // wake window (the wake's own sync fetched the inbox) — unless it stays connected (P011).
+    // wake window (the wake's own sync fetched the inbox) — unless a call is on (its signaling may
+    // come through the relay) or it stays connected (P011).
     const bool foreground = AppLifecycle::IsForeground();
-    if (!foreground && !AppLifecycle::StaysConnected()) {
+    const bool call = AppLifecycle::CallInProgress();
+    if (!foreground && !call && !AppLifecycle::StaysConnected()) {
       return;
     }
     const uint64_t now = util::NowUnixMs();
-    const uint64_t interval = foreground ? kForegroundRelayPollIntervalMs : kStayConnectedRelayPollIntervalMs;
+    const uint64_t interval =
+        foreground || call ? kForegroundRelayPollIntervalMs : kStayConnectedRelayPollIntervalMs;
     if (now - last_poll_ms_ < interval) {
       return;
     }
