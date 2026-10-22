@@ -48,6 +48,9 @@ TEST(CallHopJoinLogicTest, OurAcceptStaysDirectUntilThreeJoined) {
   EXPECT_EQ(DecideLocalAcceptHop(2, true), LocalAcceptHopAction::StayDirect) << "a hint never makes 1:1 a group";
   EXPECT_EQ(DecideLocalAcceptHop(3, true), LocalAcceptHopAction::AttachToInviteHint);
   EXPECT_EQ(DecideLocalAcceptHop(3, false), LocalAcceptHopAction::JoinGroup);
+  // V053: a group call on its hop, joined back at two (someone was waiting alone): join it there.
+  EXPECT_EQ(DecideLocalAcceptHop(2, true, /*group_call=*/true), LocalAcceptHopAction::AttachToInviteHint);
+  EXPECT_EQ(DecideLocalAcceptHop(2, false, /*group_call=*/true), LocalAcceptHopAction::StayDirect);
 
   JoinWithoutHintInput in;
   EXPECT_EQ(DecideJoinWithoutHint(in), JoinWithoutHintAction::WaitForAttach) << "phones wait for the owner";
@@ -72,6 +75,10 @@ TEST(CallHopJoinLogicTest, APeersAcceptOfOurCall) {
   EXPECT_EQ(DecideRemoteAcceptHop(in), RemoteAcceptHopAction::JoinFlight) << "no second resolve or migrate";
   in.on_hop_for_call = true;
   EXPECT_EQ(DecideRemoteAcceptHop(in), RemoteAcceptHopAction::RefreshOnHop);
+  in.migrate_in_flight = false;
+  in.n_joined = 2;
+  EXPECT_EQ(DecideRemoteAcceptHop(in), RemoteAcceptHopAction::RefreshOnHop)
+      << "V053: on the hop, a call stays there when someone rejoins one waiting alone";
 }
 
 TEST(CallHopJoinLogicTest, TheRosterMigratesOnlyAFirstGroup) {

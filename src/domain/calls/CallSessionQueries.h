@@ -52,6 +52,23 @@ bool SenderIsInCall(const CallSessionStore& sessions, const std::string& call_id
                     const std::string& sender_identity);
 
 /**
+ * V053: `sender_identity` may ask to join group call `call_id`: the call was offered to them (they
+ * hold a participant row, in any state — declined, missed, left too) or they started it.
+ */
+bool SenderMayJoin(const CallSessionStore& sessions, const std::string& call_id, const std::string& sender_identity);
+
+/** How long a group call this device dropped out of stays joinable without word that it ended. */
+inline constexpr int64_t kJoinableGroupCallMs = 6LL * 60 * 60 * 1000;
+
+/**
+ * V053: the newest call of group `group_id` this device may join: offered to it, it is not in it
+ * (declined, missed, left), someone else was last known to be in it, and it started within
+ * kJoinableGroupCallMs. Word that the call ended marks everyone left, so it is no longer joinable.
+ */
+std::optional<CallSession> JoinableGroupCall(const CallSessionStore& sessions, const std::string& group_id,
+                                             const std::string& local_identity, int64_t now_ms);
+
+/**
  * Calling each other at once: a 1:1 call this device placed to `peer` (not `except_call_id`, not a
  * group's) that `peer` has not answered yet and nobody else is in.
  */

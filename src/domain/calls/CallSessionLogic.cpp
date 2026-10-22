@@ -77,16 +77,21 @@ CallSessionState CallSessionLogic::TransitionOnRemoteJoined(const CallSessionSta
   return CallSessionState::Active;
 }
 
+bool CallSessionLogic::IsGroupCall(const CallSession& session, const size_t offered_participants) {
+  return (session.origin_group_id && !session.origin_group_id->empty()) || offered_participants > 2;
+}
+
 CallSessionState CallSessionLogic::TransitionOnLeave(const CallSessionState current,
-                                                     const size_t remaining_joined) {
+                                                     const size_t remaining_joined, const bool group) {
   if (current == CallSessionState::Ended) {
     return CallSessionState::Ended;
   }
   if (remaining_joined == 0) {
     return CallSessionState::Ended;
   }
-  // Active 1:1 (or last-remote leave): do not leave a sole survivor in-call with a dead peer.
-  if (current == CallSessionState::Active && remaining_joined == 1) {
+  // Active 1:1 (or last-remote leave): do not leave a sole survivor in-call with a dead peer. A group
+  // call goes on with whoever is left, alone too (V053).
+  if (!group && current == CallSessionState::Active && remaining_joined == 1) {
     return CallSessionState::Ended;
   }
   return current == CallSessionState::Ringing ? CallSessionState::Ringing : CallSessionState::Active;

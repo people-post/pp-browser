@@ -100,6 +100,8 @@ public:
   // --- Durable state (stores, read-only) ---------------------------------------------------------
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<CallSession>> ActiveLocalCall();
+  /** V053: a group call this device may join from `thread_id`: StartCall on it joins (the button reads Join). */
+  std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;

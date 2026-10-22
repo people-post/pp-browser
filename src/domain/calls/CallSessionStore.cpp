@@ -271,6 +271,33 @@ Roe<std::vector<CallSession>> CallSessionStore::ListActiveSessions() const {
   return rows;
 }
 
+Roe<std::vector<CallSession>> CallSessionStore::ListSessionsForGroup(const std::string& group_id,
+                                                                     const size_t limit) const {
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*db,
+                         "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
+                         "planned_hop_ma, initiator_identity FROM call_sessions WHERE origin_group_id = ? "
+                         "ORDER BY created_at DESC LIMIT ?;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(*db);
+    return Error("Failed to prepare group call list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(limit));
+  std::vector<CallSession> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(SessionFromStmt(stmt));
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(*db);
+  return rows;
+}
+
 Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant) const {
   auto db = OpenDb();
   if (!db) {

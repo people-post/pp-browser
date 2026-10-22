@@ -144,6 +144,55 @@ bool SenderIsInCall(const CallSessionStore& sessions, const std::string& call_id
   return false;
 }
 
+bool SenderMayJoin(const CallSessionStore& sessions, const std::string& call_id, const std::string& sender_identity) {
+  if (call_id.empty() || sender_identity.empty()) {
+    return false;
+  }
+  auto session = sessions.LoadSession(call_id);
+  if (!session || !session->has_value() || !(*session)->origin_group_id || (*session)->origin_group_id->empty()) {
+    return false;
+  }
+  if ((*session)->initiator_identity == sender_identity) {
+    return true;
+  }
+  auto participant = sessions.FindParticipant(call_id, sender_identity);
+  return participant && participant->has_value();
+}
+
+std::optional<CallSession> JoinableGroupCall(const CallSessionStore& sessions, const std::string& group_id,
+                                             const std::string& local_identity, const int64_t now_ms) {
+  if (group_id.empty() || local_identity.empty()) {
+    return std::nullopt;
+  }
+  auto calls = sessions.ListSessionsForGroup(group_id);
+  if (!calls) {
+    return std::nullopt;
+  }
+  for (const CallSession& call : *calls) {
+    if (call.created_at > 0 && now_ms - call.created_at > kJoinableGroupCallMs) {
+      break;  // newest first: the rest are older still
+    }
+    auto participants = sessions.ListParticipants(call.call_id);
+    if (!participants) {
+      continue;
+    }
+    bool offered_and_out = false;
+    bool someone_in = false;
+    for (const CallParticipant& row : *participants) {
+      if (row.identity == local_identity) {
+        offered_and_out = row.state == CallParticipantState::Declined || row.state == CallParticipantState::Missed ||
+                          row.state == CallParticipantState::Left;
+      } else if (row.state == CallParticipantState::Joined) {
+        someone_in = true;
+      }
+    }
+    if (offered_and_out && someone_in) {
+      return call;
+    }
+  }
+  return std::nullopt;
+}
+
 namespace {
 
 bool Unanswered(const CallParticipantState state) {
@@ -212,8 +261,9 @@ bool PeerStillToAnswerOurCall(const CallSessionStore& sessions, const std::strin
 
 Roe<void> ApplyCallRosterToStore(const CallSessionStore& sessions, const CallRosterDetail& roster,
                                  const std::string& local_identity) {
-  if (auto session = sessions.LoadSession(roster.call_id); session && session->has_value()) {
-    (*session)->media_epoch = roster.media_epoch;
+  if (auto session = sessions.LoadSession(roster.call_id);
+      session && session->has_value() && roster.media_epoch > (*session)->media_epoch) {
+    (*session)->media_epoch = roster.media_epoch;  // epochs only move forward
     (void)sessions.UpsertSession(**session);
   }
   for (const CallRosterEntry& entry : roster.participants) {
@@ -236,8 +286,15 @@ Roe<void> ApplyCallRosterToStore(const CallSessionStore& sessions, const CallRos
       if (auto existing = sessions.FindParticipant(roster.call_id, entry.identity);
           existing && existing->has_value()) {
         const CallParticipantState prior = (*existing)->state;
-        if (prior == CallParticipantState::Left || prior == CallParticipantState::Declined ||
-            prior == CallParticipantState::Missed) {
+        // V053: joined again — the one who let them in stamped a join newer than the one we know
+        // (who left had joined: a stale roster carries that old stamp). Who declined or missed never
+        // joined, so no stale roster lists them joined.
+        const bool rejoined =
+            entry.state == CallParticipantState::Joined && entry.joined_at &&
+            (prior == CallParticipantState::Left ? (*existing)->joined_at && *entry.joined_at > *(*existing)->joined_at
+                                                 : true);
+        if (!rejoined && (prior == CallParticipantState::Left || prior == CallParticipantState::Declined ||
+                          prior == CallParticipantState::Missed)) {
           continue;
         }
         // A joiner's roster still lists earlier invitees as Ringing: a peer that accepted stays

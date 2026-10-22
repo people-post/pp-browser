@@ -48,7 +48,7 @@ enum class LocalAcceptHopAction {
   StayDirect,
 };
 
-LocalAcceptHopAction DecideLocalAcceptHop(size_t n_joined, bool has_invite_hint);
+LocalAcceptHopAction DecideLocalAcceptHop(size_t n_joined, bool has_invite_hint, bool group_call = false);
 
 struct JoinWithoutHintInput {
   /** Media already runs on a hop for this call. */

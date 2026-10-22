@@ -759,6 +759,11 @@ def scenario_group_one_declines(lab):
         assert_hears(u, 1)
     c.wait_surface("none", 20)
     a.cmd("leave")
+    a.wait_surface("none", 20)
+    time.sleep(2)
+    if b.state().get("call_id") != call_id:
+        raise ProbeError("%s: left the group call when Alice did (the last one in stays)" % b.name)
+    b.cmd("leave")
     assert_idle(a, b, c)
     assert_group_history(c, threads[c.name], "declined")
     assert_group_history(a, threads[a.name], "completed")
@@ -864,6 +869,108 @@ def scenario_group_hop_down_mid_call(lab):
     return outcome
 
 
+# --- V053: join while it lasts, stay when alone ----------------------------------------------------
+
+
+def join(u, thread, call_id=None, timeout=40):
+    """The call button on the group: joins the call that goes on (no ring)."""
+    got = u.cmd("call", thread=thread)["call_id"]
+    if call_id is not None and got != call_id:
+        raise ProbeError("%s: the call button placed a new call %s instead of joining %s" % (u.name, got, call_id))
+    u.wait_surface("in_call", timeout, call_id=got)
+    return got
+
+
+def scenario_group_decline_then_join(lab):
+    """Carol declines, then thinks better of it: the group's call button gets her into that call."""
+    (a, b, c), threads = open_group(lab)
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    for u in (b, c):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    c.cmd("decline")
+    b.cmd("accept_voice")
+    for u in (a, b):
+        assert_hears(u, 1, timeout=40)
+    c.wait_surface("none", 20)
+    started = time.time()
+    join(c, threads[c.name], call_id)
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    took = round(time.time() - started, 2)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    return {"join_to_all_hear_s": took}
+
+
+def scenario_group_leave_and_rejoin(lab):
+    """Bob drops out of a three-way call and comes back to the same call."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    b.cmd("leave")
+    b.wait_surface("none", 20)
+    for u in (a, c):
+        assert_hears(u, 1)
+    join(b, threads[b.name], call_id)
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
+def scenario_group_last_one_waits(lab):
+    """Alice and Bob leave; Carol stays in the call, waiting. Bob comes back: the two talk again."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    a.cmd("leave")
+    b.cmd("leave")
+    for u in (a, b):
+        u.wait_surface("none", 20)
+    time.sleep(3)
+    s = c.state()
+    if s.get("kind") != "in_call" or s.get("call_id") != call_id:
+        raise ProbeError("%s: left the call when she was the last one in (%s)" % (c.name, s))
+    join(b, threads[b.name], call_id)
+    for u in (b, c):
+        assert_hears(u, 1, timeout=40)
+    for u in (b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
+def scenario_group_late_starter(lab):
+    """Carol's app is closed through the whole ring. She opens it later and joins the call that is
+    still going (her ring has long expired)."""
+    (a, b, c), threads = open_group(lab)
+    c.quit()
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    b.wait_surface("ringing", 40, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        assert_hears(u, 1, timeout=40)
+    time.sleep(65)  # past the 60 s ring
+    c.start()
+    c.wait_ready()
+    # Her app catches up (the invite comes in too late to ring): the group offers Join.
+    offered = wait_for(lambda: c.cmd("joinable", thread=threads[c.name])["call_id"] or None, 60,
+                       "%s: the group's call offered to join" % c.name)
+    if offered != call_id:
+        raise ProbeError("%s: offered %s, the call is %s" % (c.name, offered, call_id))
+    if c.state().get("kind") != "none":
+        raise ProbeError("%s: a ring that ran out rang anyway (%s)" % (c.name, c.state()))
+    join(c, threads[c.name], call_id, timeout=60)
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
@@ -883,6 +990,10 @@ SCENARIOS = [
     ("group_add_someone_mid_call", scenario_group_add_someone_mid_call),
     ("group_member_crashes", scenario_group_member_crashes),
     ("group_hop_down_mid_call", scenario_group_hop_down_mid_call),
+    ("group_decline_then_join", scenario_group_decline_then_join),
+    ("group_leave_and_rejoin", scenario_group_leave_and_rejoin),
+    ("group_last_one_waits", scenario_group_last_one_waits),
+    ("group_late_starter", scenario_group_late_starter),
 ]
 
 # Scenarios run only when named (--only).

@@ -798,6 +798,14 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   const std::string& call_id = at.call_id;
   live_keys_ = at.keys;  // a rotation from now on reaches this attach's frames
   live_keys_call_id_ = call_id;
+  // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
+  // join request — V053) names the hop the call is on, not only the picker's.
+  if (auto session = sessions_.LoadSession(call_id);
+      session && session->has_value() && !at.attach.hop_peer_id.empty() &&
+      (*session)->sfu_hint.value_or("") != at.attach.hop_peer_id) {
+    (*session)->sfu_hint = at.attach.hop_peer_id;
+    (void)sessions_.UpsertSession(**session);
+  }
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
   host_.note_media_attempted(call_id);

@@ -137,6 +137,21 @@ TEST_F(CallSessionQueriesTest, APeerRosterNeverOverridesOurOwnStateNorResurrects
   EXPECT_EQ(StateOf("account:dave"), CallParticipantState::Left) << "not resurrected";
   EXPECT_EQ(StateOf("account:carol"), CallParticipantState::Invited) << "new co-invitee listed";
   EXPECT_EQ(calls_->LoadSession(kCall).value()->media_epoch, 3u);
+
+  // V053: back in — a join stamped after the one we know; and the epoch never moves back.
+  Participant("account:erin", CallParticipantState::Left, 25);
+  Participant("account:fay", CallParticipantState::Declined);
+  roster.media_epoch = 2;
+  roster.participants = {entry("account:erin", CallParticipantState::Joined, 25, false),  // stale
+                         entry("account:dave", CallParticipantState::Joined, 30, false)};
+  ASSERT_TRUE(ApplyCallRosterToStore(*calls_, roster, "account:me"));
+  EXPECT_EQ(StateOf("account:erin"), CallParticipantState::Left) << "the old stamp: not back";
+  EXPECT_EQ(calls_->LoadSession(kCall).value()->media_epoch, 3u) << "an older epoch is not the key now";
+  roster.participants = {entry("account:erin", CallParticipantState::Joined, 60, false),
+                         entry("account:fay", CallParticipantState::Joined, 61, false)};
+  ASSERT_TRUE(ApplyCallRosterToStore(*calls_, roster, "account:me"));
+  EXPECT_EQ(StateOf("account:erin"), CallParticipantState::Joined) << "joined again, later";
+  EXPECT_EQ(StateOf("account:fay"), CallParticipantState::Joined) << "declined, then joined";
 }
 
 TEST_F(CallSessionQueriesTest, CallingEachOtherAndAnEarlyHello) {
@@ -172,6 +187,37 @@ TEST(CallSessionLogicRosterTest, StampsAndCoInvitees) {
   ASSERT_EQ(roster.size(), 2u);
   EXPECT_EQ(roster[1].identity, "account:bob");
   EXPECT_EQ(roster[1].state, CallParticipantState::Invited);
+}
+
+// V053: who dropped out of a group call may ask back in while someone is in it; a stranger, a 1:1
+// call, an ended call (everyone left) or one too old are not joinable.
+TEST_F(CallSessionQueriesTest, WhoMayJoinAGroupCallAndWhichCallIsJoinable) {
+  const int64_t now = 1'000'000;
+  auto session = calls_->LoadSession(kCall);
+  ASSERT_TRUE(session && session->has_value());
+  EXPECT_FALSE(call_queries::SenderMayJoin(*calls_, kCall, "account:bob")) << "not offered";
+  Participant("account:bob", CallParticipantState::Declined);
+  EXPECT_FALSE(call_queries::SenderMayJoin(*calls_, kCall, "account:bob")) << "a 1:1 call";
+  CallSession group = **session;
+  group.origin_group_id = "group-1";
+  group.created_at = now - 1000;
+  ASSERT_TRUE(calls_->UpsertSession(group));
+  EXPECT_TRUE(call_queries::SenderMayJoin(*calls_, kCall, "account:bob")) << "offered, declined";
+  EXPECT_TRUE(call_queries::SenderMayJoin(*calls_, kCall, "account:alice")) << "started it";
+  EXPECT_FALSE(call_queries::SenderMayJoin(*calls_, kCall, "account:mallory"));
+
+  // From bob's side: he declined, alice is in it.
+  Participant("account:alice", CallParticipantState::Joined, 1);
+  auto joinable = call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob", now);
+  ASSERT_TRUE(joinable);
+  EXPECT_EQ(joinable->call_id, kCall);
+  EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:alice", now)) << "alice is in it";
+  EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-2", "account:bob", now));
+  EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob",
+                                               now + call_queries::kJoinableGroupCallMs))
+      << "too old without word that it ended";
+  Participant("account:alice", CallParticipantState::Left);
+  EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob", now)) << "nobody left in it";
 }
 
 } // namespace

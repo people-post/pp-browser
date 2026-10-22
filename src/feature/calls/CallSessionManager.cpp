@@ -172,6 +172,7 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+  ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
   ports.sync_inbox_from_wake = [this]() {
     if (delivery_.sync_inbox_from_wake) {
       delivery_.sync_inbox_from_wake(true);
@@ -1105,6 +1106,11 @@ Roe<std::vector<PendingCallInvite>> CallSessionManager::ListPendingInvites() {
   return sessions_.ListPendingInvitesForInvitee(*local);
 }
 
+std::optional<std::string> CallSessionManager::JoinableCallInThread(const std::string& thread_id) const {
+  auto call = workflow_.JoinableCallInThread(thread_id);
+  return call ? std::optional<std::string>(call->call_id) : std::nullopt;
+}
+
 Roe<std::optional<CallSession>> CallSessionManager::ActiveLocalCall() const {
   return workflow_.ActiveLocalCall();
 }
@@ -1331,7 +1337,10 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   // Everything but an invite (and the stream's summary) speaks about a call the sender is in: its
   // initiator or a current participant. A peer who declined or left it, or never was in it, does not
   // end it, change its roster or steer its media.
-  if (*type != CallControlType::CallInvite && *type != CallControlType::CallSummary &&
+  // V053: who dropped out of a group call may ask to join it, and its end reaches them too.
+  const bool from_offered = (*type == CallControlType::CallJoinRequest || *type == CallControlType::CallEnded) &&
+                            SenderMayJoin(detail_json, sender_identity);
+  if (*type != CallControlType::CallInvite && *type != CallControlType::CallSummary && !from_offered &&
       !SenderIsInCall(detail_json, sender_identity)) {
     log().info << "call control dropped (sender not in the call) type=" << static_cast<int>(*type)
                << " from=" << sender_identity;
@@ -1350,6 +1359,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
                                *local);
   case CallControlType::CallAccept:
     return HandleInboundAccept(detail_json, sender_identity, *local);
+  case CallControlType::CallJoinRequest:
+    return workflow_.HandleInboundJoinRequest(detail_json, sender_identity, *local);
   case CallControlType::CallDecline:
     return HandleInboundDecline(detail_json, sender_identity);
   case CallControlType::CallLeave:
@@ -1386,6 +1397,12 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   return {};
 }
 
+
+bool CallSessionManager::SenderMayJoin(const std::string& detail_json, const std::string& sender_identity) const {
+  auto detail = TryParseObject(detail_json);
+  auto call_id = detail ? detail->getString("call_id") : std::nullopt;
+  return call_id && call_queries::SenderMayJoin(sessions_, *call_id, sender_identity);
+}
 
 bool CallSessionManager::SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const {
   auto detail = TryParseObject(detail_json);

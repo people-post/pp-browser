@@ -85,6 +85,11 @@ enum class CallControlType {
    * ignore it and keep the caps from invite / accept.
    */
   CallCapsUpdate,
+  /**
+   * V053: someone a group call was offered to (declined, missed, left) asks to join it while it
+   * lasts; a participant answers with a fresh CallInvite. Additive — old peers ignore it.
+   */
+  CallJoinRequest,
 };
 
 struct CallParticipantMedia {
@@ -261,6 +266,16 @@ struct CallDeclineDetail {
 struct CallLeaveDetail {
   std::string call_id;
   std::string identity;
+};
+
+/**
+ * V053: the sender asks to join `call_id` again (it was offered to them). The earliest joiner in
+ * the call answers (the one that picks the hop) — `any`: everyone in it may (a retry).
+ */
+struct CallJoinRequestDetail {
+  std::string call_id;
+  std::string identity;
+  bool any = false;
 };
 
 struct CallRosterDetail {

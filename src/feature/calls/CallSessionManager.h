@@ -228,6 +228,8 @@ public:
 
   Roe<std::vector<PendingCallInvite>> ListPendingInvites();
   Roe<std::optional<CallSession>> ActiveLocalCall() const;
+  /** V053: the group call this device may join from `thread_id` — the call button reads Join. */
+  std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const { return workflow_.PeekTopPendingInvite(); }
 
@@ -297,6 +299,8 @@ private:
   // Topology HostPorts helpers (V046 — not CallTopologyHost overrides)
   /** The control's call (its detail's call_id) has `sender_identity` as initiator or current participant. */
   bool SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const;
+  /** V053: the call was offered to the sender (a group call): it may ask to join, or say it ended. */
+  bool SenderMayJoin(const std::string& detail_json, const std::string& sender_identity) const;
   Roe<std::string> TopologyLocalIdentity() const;
   Roe<void> TopologyLeaveCall(const std::string& call_id);
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,

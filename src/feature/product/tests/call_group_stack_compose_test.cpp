@@ -1057,7 +1057,7 @@ TEST_F(CallGroupStackComposeTest, EachMemberKeepsItsOwnSummaryOfAGroupCall) {
   }
 }
 
-TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeaveEndsAll) {
+TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenTheLastWaitsAlone) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
 
@@ -1082,7 +1082,16 @@ TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeave
   EXPECT_GE(RxAudioFrames(kA), a_before + kMinRxFrames) << "A stopped hearing B after C left:" << Describe(call_id);
   EXPECT_GE(RxAudioFrames(kB), b_before + kMinRxFrames) << "B stopped hearing A after C left:" << Describe(call_id);
 
+  // V053: the initiator leaves; B, the last one in, waits alone (a group call is hostless).
   sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::Idle && !relays_[kA]->IsAttached();
+  });
+  EXPECT_EQ(sides_[kA].ui->Phase(), CallPhase::Idle);
+  EXPECT_TRUE(sides_[kB].stack->HasActiveLocalCall()) << "the last one in stays in the call:" << Describe(call_id);
+
+  sides_[kB].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   DrainUntil([&]() {
     PumpWire();
     for (size_t i : members_) {
@@ -1098,6 +1107,84 @@ TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeave
     EXPECT_FALSE(sides_[i].stack->HasActiveLocalCall()) << "side " << i;
     EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " still attached to the hop";
   }
+}
+
+// V053: C declines; A and B talk. C presses call on the group's thread: it joins that call (a
+// participant answers its join request with an invite, accepted without ringing) — no second call.
+TEST_F(CallGroupStackComposeTest, ADeclinerJoinsTheCallThatGoesOn) {
+  group_id_ = "group-1";
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kC].ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  sides_[kC].ui->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
+  ASSERT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::optional<std::string>(call_id));
+
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  EXPECT_EQ(joined->call_id, call_id) << "the call button joins, it does not place a second call";
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id)) << "C never got into the call:" << Describe(call_id);
+}
+
+// V053: once the last one leaves, the end reaches who declined too: nothing is left to join.
+TEST_F(CallGroupStackComposeTest, AnEndedCallIsNoLongerJoinable) {
+  group_id_ = "group-1";
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kC].ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  sides_[kC].ui->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(sides_[kC].ui->JoinableCallInThread("thread-group-call"));
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::Idle;
+  });
+  EXPECT_TRUE(sides_[kC].ui->JoinableCallInThread("thread-group-call")) << "B is still in it";
+  sides_[kB].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return !sides_[kC].ui->JoinableCallInThread("thread-group-call");
+  });
+  EXPECT_FALSE(sides_[kC].ui->JoinableCallInThread("thread-group-call")) << "the last leave ended it for C too";
+}
+
+// V053: C leaves a live three-way call and joins it again: everyone hears everyone on the hop.
+TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  sides_[kC].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kC].ui->Phase() == CallPhase::Idle && !relays_[kC]->IsAttached();
+  });
+  ASSERT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::optional<std::string>(call_id));
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  EXPECT_EQ(joined->call_id, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
 }
 
 } // namespace

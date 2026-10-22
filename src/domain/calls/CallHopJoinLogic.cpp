@@ -37,11 +37,14 @@ bool IsHopActiveCall(const HopActiveCallInput& in) {
   return in.call_session_active;
 }
 
-LocalAcceptHopAction DecideLocalAcceptHop(const size_t n_joined, const bool has_invite_hint) {
-  if (!ShouldArmHopPlanner(n_joined)) {
-    return LocalAcceptHopAction::StayDirect;
+LocalAcceptHopAction DecideLocalAcceptHop(const size_t n_joined, const bool has_invite_hint, const bool group_call) {
+  // A group call's invite naming the hop it is on: the call went there and never comes back
+  // (V050) — whoever joins it now joins it there, however few are in it (V053: someone waiting
+  // alone). A 1:1's hint is stale: a hint never makes 1:1 a group (V025 / V038).
+  if (has_invite_hint && (group_call || ShouldArmHopPlanner(n_joined))) {
+    return LocalAcceptHopAction::AttachToInviteHint;
   }
-  return has_invite_hint ? LocalAcceptHopAction::AttachToInviteHint : LocalAcceptHopAction::JoinGroup;
+  return ShouldArmHopPlanner(n_joined) ? LocalAcceptHopAction::JoinGroup : LocalAcceptHopAction::StayDirect;
 }
 
 JoinWithoutHintAction DecideJoinWithoutHint(const JoinWithoutHintInput& in) {
@@ -58,11 +61,12 @@ RemoteAcceptHopAction DecideRemoteAcceptHop(const RemoteAcceptHopInput& in) {
   if (!in.active_call) {
     return RemoteAcceptHopAction::IgnoreNotActive;
   }
-  if (!ShouldArmHopPlanner(in.n_joined)) {
-    return RemoteAcceptHopAction::StayDirect;
-  }
+  // On the hop already: the call stays there whoever joins (V050 monotonic; V053 a rejoin at 2).
   if (in.on_hop_for_call) {
     return RemoteAcceptHopAction::RefreshOnHop;
+  }
+  if (!ShouldArmHopPlanner(in.n_joined)) {
+    return RemoteAcceptHopAction::StayDirect;
   }
   return in.migrate_in_flight ? RemoteAcceptHopAction::JoinFlight : RemoteAcceptHopAction::ResolveAndMigrate;
 }

@@ -1,6 +1,7 @@
 #include "feature/calls/CallTopologyController.h"
 
 #include "domain/calls/CallHopJoinLogic.h"
+#include "domain/calls/CallSessionLogic.h"
 #include "domain/calls/CallSessionQueries.h"
 #include "mesh/types/MediaChannel.h"
 #include "domain/calls/CallMediaPlannerSelectLogic.h"
@@ -810,7 +811,12 @@ bool CallTopologyController::ExpectsGroupMedia(const std::string& call_id) const
 bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
                                                  const std::optional<std::string>& sfu_hint) {
   Apply(CallHopPlannerEvent::LocalAcceptN3, call_id);
-  switch (DecideLocalAcceptHop(n_joined, sfu_hint && !sfu_hint->empty())) {
+  bool group_call = false;
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    auto offered = sessions_.ListParticipants(call_id);
+    group_call = CallSessionLogic::IsGroupCall(**session, offered ? offered->size() : 0);
+  }
+  switch (DecideLocalAcceptHop(n_joined, sfu_hint && !sfu_hint->empty(), group_call)) {
   case LocalAcceptHopAction::AttachToInviteHint:
     AttachFromInviteHint(call_id, *sfu_hint);
     return true;

@@ -25,6 +25,8 @@ public:
 
   static Roe<std::string> EncodeLeave(const CallLeaveDetail& detail);
   static Roe<CallLeaveDetail> DecodeLeave(const std::string& detail_json);
+  static Roe<std::string> EncodeJoinRequest(const CallJoinRequestDetail& detail);
+  static Roe<CallJoinRequestDetail> DecodeJoinRequest(const std::string& detail_json);
 
   static Roe<std::string> EncodeRoster(const CallRosterDetail& detail);
   static Roe<CallRosterDetail> DecodeRoster(const std::string& detail_json);

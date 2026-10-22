@@ -14,6 +14,7 @@
 //   call {thread, video, [accounts]}    the call button: a 1:1 chat, or a group (every other member,
 //                                       or the picked `accounts`)
 //   invite_to_call {account}            add someone to the call in progress
+//   joinable {thread}                   the group call the call button would join {call_id} ("" none)
 //   accept / accept_voice / decline     the ring's buttons
 //   leave                               the call panel's End
 //   create_group {title, accounts}      a group with these contacts (each invited)
@@ -294,6 +295,13 @@ public:
       }
       StartCall(id, request->getString("thread").value_or(""), request->getIf<bool>("video").value_or(false),
                 std::move(accounts));
+    } else if (cmd == "joinable") {
+      BindCalls();
+      Object out = Reply(id, true);
+      const auto call = calls_->Available() ? calls_->JoinableCallInThread(request->getString("thread").value_or(""))
+                                            : std::nullopt;
+      out.set("call_id", call.value_or(""));
+      Emit(out);
     } else if (cmd == "invite_to_call") {
       InviteToCall(id, request->getString("account").value_or(""));
     } else if (cmd == "create_group") {
