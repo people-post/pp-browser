@@ -36,7 +36,7 @@
 
 namespace {
 
-constexpr const char* kProbeBridgeProtocol = "/pp-browser/pp-node-probe-bridge/1.0.0";
+constexpr const char* kProbeBridgeProtocol = "/test/node-probe-bridge/1.0.0";
 
 enum class ProbeMode {
   L1,

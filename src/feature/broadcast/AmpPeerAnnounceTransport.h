@@ -19,7 +19,7 @@
 namespace pbr {
 
 /**
- * `/pp-browser/rpc/peer-announce/1.0.0` tip push/ack over AMP ChannelSession (Spine B 1:1).
+ * `/pp/rpc/peer-announce/1.0.0` tip push/ack over AMP ChannelSession (Spine B 1:1).
  * Domain codecs/feed stay Amp-free; this feature service owns OpenChannel fan-out only.
  */
 class AmpPeerAnnounceTransport {

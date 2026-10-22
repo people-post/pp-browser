@@ -139,9 +139,9 @@ Local store is written **before** send. Server rejections do not delete history.
 | User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
 | Scroll backfill | **Load older messages** banner at transcript top (D052/post-v6c) |
 
-**Transport:** libp2p peer-direct `/pp-browser/rpc/history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
+**Transport:** libp2p peer-direct `/pp/rpc/history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
 
-### Direct live send (`/pp-browser/rpc/chat/1.0.0`)
+### Direct live send (`/pp/rpc/chat/1.0.0`)
 
 Outbound `SendUserMessage` tries libp2p direct first when the peer has a registered dialable multiaddr (`Contact.multiaddrs` / `RegisterPeerDirectEndpoint`); on failure falls back to `IRelayClient::Send`. Inbound direct envelopes use the same `RelayEnvelope` shape and `RelayReceivePipeline` with `MessageTransport::Direct`.
 
@@ -216,7 +216,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/domain/messaging/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
 | `src/domain/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/chat/1.0.0` push |
+| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
 | `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
 | `src/domain/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |

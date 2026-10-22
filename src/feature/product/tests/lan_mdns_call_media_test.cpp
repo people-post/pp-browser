@@ -9,12 +9,12 @@ namespace pbr {
 namespace {
 
 TEST(LanMdnsDiscoveryTest, EncodeDecodeDnsName) {
-  auto encoded = mesh::LanMdnsDiscovery::EncodeDnsName("_pp-browser._tcp.local");
+  auto encoded = mesh::LanMdnsDiscovery::EncodeDnsName("_pp-mesh._tcp.local");
   ASSERT_TRUE(encoded);
   size_t next = 0;
   auto decoded = mesh::LanMdnsDiscovery::DecodeDnsName(*encoded, 0, &next);
   ASSERT_TRUE(decoded);
-  EXPECT_EQ(*decoded, "_pp-browser._tcp.local");
+  EXPECT_EQ(*decoded, "_pp-mesh._tcp.local");
   EXPECT_EQ(next, encoded->size());
 }
 
@@ -55,10 +55,10 @@ TEST(CallMediaFrameCryptoTest, RoundTripAudioFrame) {
 }
 
 TEST(AmpCircuitHopRegistryTest, KeyIncludesProtocol) {
-  EXPECT_EQ(mesh::AmpCircuitHopRegistry::Key("QmA", "/pp-browser/realtime/1.0.0"),
-            "QmA\x1f/pp-browser/realtime/1.0.0");
-  EXPECT_NE(mesh::AmpCircuitHopRegistry::Key("QmA", "/pp-browser/datagram-relay/1.0.0"),
-            mesh::AmpCircuitHopRegistry::Key("QmA", "/pp-browser/realtime/1.0.0"));
+  EXPECT_EQ(mesh::AmpCircuitHopRegistry::Key("QmA", "/pp/realtime/1.0.0"),
+            "QmA\x1f/pp/realtime/1.0.0");
+  EXPECT_NE(mesh::AmpCircuitHopRegistry::Key("QmA", "/pp-mesh/datagram-relay/1.0.0"),
+            mesh::AmpCircuitHopRegistry::Key("QmA", "/pp/realtime/1.0.0"));
 }
 
 } // namespace

@@ -17,7 +17,7 @@
 
 namespace pbr {
 
-/** D060 peer-direct history on `/pp-browser/rpc/history/1.0.0` — product path when Amp is attached ([A020]). */
+/** D060 peer-direct history on `/pp/rpc/history/1.0.0` — product path when Amp is attached ([A020]). */
 class AmpChatHistoryTransport : public IChatHistoryPeerClient {
 public:
   using IoPump = std::function<void()>;

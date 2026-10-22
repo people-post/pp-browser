@@ -188,7 +188,7 @@ TEST(PeerAnnounceTest, RpcTipPushAckRoundTrip) {
   ASSERT_TRUE(decoded_ack);
   ASSERT_TRUE(std::holds_alternative<PeerAnnounceTipAck>(*decoded_ack));
   EXPECT_TRUE(std::get<PeerAnnounceTipAck>(*decoded_ack).ok);
-  EXPECT_STREQ(kRpcPeerAnnounceProtocolId, "/pp-browser/rpc/peer-announce/1.0.0");
+  EXPECT_STREQ(kRpcPeerAnnounceProtocolId, "/pp/rpc/peer-announce/1.0.0");
 }
 
 /** Stored signing keys (base64) by identity kind and value. */

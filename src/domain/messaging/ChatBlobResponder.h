@@ -35,7 +35,7 @@ struct ChatBlobRequester {
 };
 
 /**
- * Authz + local blob serve for `/pp-browser/blob/1.0.0`. Fetch serves only attachments this device
+ * Authz + local blob serve for `/pp/blob/1.0.0`. Fetch serves only attachments this device
  * sent in the signing requester's thread; Push stores into that thread.
  */
 class ChatBlobResponder {

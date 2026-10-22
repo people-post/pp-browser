@@ -18,7 +18,7 @@ Target (planned):      A ──circuit──► R1 ──…──► R2 ──�
 
 Example: **A** (mobile, outbound-only) can dial contact **R1**. **R1** cannot dial target **B**, but **R1** can dial org seed **R2**, and **R2** can dial **B**. A single-hop bridge through **R1** fails today even though a path exists.
 
-This doc plans **multi-hop custom circuit** (`/pp-browser/circuit-relay`) evolution. Implementation is a later phase ([PHASES.md § L3.5](PHASES.md#l35--multi-hop-circuit-v2)).
+This doc plans **multi-hop custom circuit** (`/pp-mesh/circuit-relay`) evolution. Implementation is a later phase ([PHASES.md § L3.5](PHASES.md#l35--multi-hop-circuit-v2)).
 
 ## Goals
 
@@ -29,7 +29,7 @@ This doc plans **multi-hop custom circuit** (`/pp-browser/circuit-relay`) evolut
 
 ## Non-goals (v1 plan)
 
-- libp2p circuit v2 as the product path (stay on custom `/pp-browser/circuit-relay` evolution).
+- libp2p circuit v2 as the product path (stay on custom `/pp-mesh/circuit-relay` evolution).
 - Consumer-visible hop-by-hop quote UI (A sees one quote from R1).
 - Hardcoded maximum relay count in protocol or binary (limit comes from **config only**).
 - Multi-hop **media bit paths** through several SFUs for **group calls** — brokered calls still use **one** subcontracted blind `media_relay` hop B behind R1; circuit multi-hop is reachability plumbing ([H005](DECISIONS.md#h005--circuit-last-resort-bill-media-hop) direct vs brokered). Live **broadcast** may use a degree-capped media tree under [peer-scoped-broadcast MEDIA_TREE](../peer-scoped-broadcast/MEDIA_TREE.md) (Spine F) — still not via circuit legs.
@@ -129,7 +129,7 @@ Counting convention (illustrative): each **relay node** on the path consumes one
 
 ## Protocol sketch (circuit v2 — not implemented)
 
-Extend `/pp-browser/circuit/1.0.0` with a **v2** frame family (exact JSON fields TBD at implementation):
+Extend `/pp-mesh/circuit/1.0.0` with a **v2** frame family (exact JSON fields TBD at implementation):
 
 | Op | Direction | Purpose |
 |----|-----------|---------|

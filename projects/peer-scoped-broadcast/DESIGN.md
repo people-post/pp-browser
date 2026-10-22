@@ -249,7 +249,7 @@ Summary locked there:
 - Carrying live video (or large blobs) on announce/gossip  
 - Putting live chat bitstreams on realtime media frames  
 - Replacing chat DM, mesh DHT `FIND_PEER`, or content-cas provide/fetch  
-- Minting a new L4 kind such as `/pp-browser/broadcast/…` (use rpc + realtime + blob)  
+- Minting a new L4 kind such as `/pp/broadcast/…` (use rpc + realtime + blob)  
 - Multi-SFU media trees for **group calls** (broadcast tree is [MEDIA_TREE.md](MEDIA_TREE.md) / Spine F — not a call SoftMigrate extension)
 
 ---

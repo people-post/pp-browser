@@ -82,8 +82,8 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D5 — L4 port: chat + history
 
-- [x] `/pp-browser/rpc/chat/1.0.0` on ChannelSession
-- [x] `/pp-browser/rpc/history/1.0.0`
+- [x] `/pp/rpc/chat/1.0.0` on ChannelSession
+- [x] `/pp/rpc/history/1.0.0`
 - [x] Port gtests; single transport entry ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 
 ### D6 — L4 port: call-media
@@ -114,7 +114,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 - [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](DECISIONS.md#a016--channel-0--capability--identify-plane))
 - [x] Ingest remote ADP listen addrs under authenticated PeerId (`PreferredMultiaddr` / peer-id dial)
-- [x] AMP dial-back protocol (`AmpDialBackProtocol` / `/pp-browser/reach/1.0.0`) + Me→Network / pp-node probe
+- [x] AMP dial-back protocol (`AmpDialBackProtocol` / `/pp-mesh/reach/1.0.0`) + Me→Network / pp-node probe
 - [x] UPnP **UDP** mapping attempt during reachability probe (`TryUpnpUdpPortMapping`)
 - [ ] Listen policy polish / mDNS-only edge cases (follow-on)
 

@@ -30,7 +30,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
 | **Call phase projection** | **V052:** `LiveCall::Phase` projects call state + per-call media progress (V037 State+Status); intents on `CallSessionManager::Apply`; `media_cancel_gen` on `LiveCalls`; N025 from "a call is shown"; gtest `call_lifecycle_test` |
-| **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/realtime/1.0.0` — **dogfood OK 2026-08-02** |
+| **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp/realtime/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 | **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
 | **Call media health UI** | Quality bars + Fair/Poor/NoAudio; Call details **Path** = direct / punched / circuit / media_relay (**`media_relay` only when hop.attached** — 1:1 Amp `sfu_mode` alone is not relay); subtitle shows path when seat Live; NoAudio/SendingOnly overrides Connected claim |

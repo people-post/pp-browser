@@ -30,7 +30,7 @@ struct CallMediaPathState {
 };
 
 /**
- * Non-blocking `/pp-browser/realtime/1.0.0` over AMP channel bundles on MeshRuntime.
+ * Non-blocking `/pp/realtime/1.0.0` over AMP channel bundles on MeshRuntime.
  * One call attempt = call_id-keyed control+media bundle ([A021]).
  * Product uses CallMediaAmpTransport as the single entry when MeshHost Amp is up ([A020]).
  */

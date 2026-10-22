@@ -336,7 +336,7 @@ Example libp2p / client JSON:
 | `timestamp_ms` | integer | peer-direct | Signing time; refused beyond ±5 min of the responder's clock |
 | `signature` | string | peer-direct | ML-DSA-65 by the requester's account key over `PeerRequestAuth::SignBytes` (domain `"pp-browser:peer-request-sign-v1"`, kind `history`, the three fields above, then every request field LenUtf8 / BE ints) |
 
-**Peer-direct requests are authenticated** (history and `/pp-browser/blob/1.0.0` alike): the Amp link proves a device, not an account, so the body's `requester_identity_*` is never trusted on its own. The responder verifies the signature with the account's known signing key, requires `requester_peer_id` to be the link's peer and the time to be recent, then serves only that account's direct thread. A blob fetch serves only attachments this device sent in that thread. Every refusal answers the same (blob: `{"ok":false,"error":"Not available"}`; history: no answer). The relay's HTTP history path is authenticated by the relay and does not use these fields.
+**Peer-direct requests are authenticated** (history and `/pp/blob/1.0.0` alike): the Amp link proves a device, not an account, so the body's `requester_identity_*` is never trusted on its own. The responder verifies the signature with the account's known signing key, requires `requester_peer_id` to be the link's peer and the time to be recent, then serves only that account's direct thread. A blob fetch serves only attachments this device sent in that thread. Every refusal answers the same (blob: `{"ok":false,"error":"Not available"}`; history: no answer). The relay's HTTP history path is authenticated by the relay and does not use these fields.
 
 ### Stream history (HTTP relay)
 
@@ -408,7 +408,7 @@ Chat-shaped response (libp2p / documentation):
 
 ---
 
-## `PeerAnnounceTip` (`/pp-browser/rpc/peer-announce/1.0.0`, `schema_version: 1`)
+## `PeerAnnounceTip` (`/pp/rpc/peer-announce/1.0.0`, `schema_version: 1`)
 
 A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/domain/broadcast/PeerAnnounceCodec.cpp`.
 
@@ -430,7 +430,7 @@ A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine 
 
 **Canonical signed bytes:** `key=value\n` lines in this order — `v`, `peer_id`, `topic_id`, `program_id`, `state`, `seq`, `epoch`, `created_at_ms`, `join_handle`, then `hop_peer_id`, `l1_hop_peer_ids` (comma-joined), `video_levels` (comma-joined), `kind`, `viewer_peer_id`, `viewer_msg_id` **only when non-empty**, then `body`, `content_id_hex`. Every optional field present is signed: a verifier must rebuild the bytes from all of them.
 
-## `media_relay` control (`/pp-browser/datagram-relay/1.0.0`)
+## `media_relay` control (`/pp-mesh/datagram-relay/1.0.0`)
 
 JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: pp-cpp-mesh `l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
 
@@ -444,7 +444,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 
 **Data frames** (not JSON): `MediaDataFrame` — `stream_id` u32, `channel_id` u16, `channel_type`, `seq` u32, `mark` u8, payload (`EncodeMediaDataFrame`, `MediaRelayTypes.h`). `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
 
-**Call-media** (`/pp-browser/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
+**Call-media** (`/pp/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
 
 ## Versioning matrix
 
@@ -455,7 +455,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 | `ChatPayload` | `payload_version` | Body binary layout or required tail fields change (D087) |
 | Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto DESIGN](../../projects/e2e-message-crypto/DESIGN.md) |
-| libp2p history | protocol id `/pp-browser/rpc/history/1.0.0` | Request/response breaking change → new protocol id |
+| libp2p history | protocol id `/pp/rpc/history/1.0.0` | Request/response breaking change → new protocol id |
 | App release | `PP_BROWSER_RELEASE_VERSION` | Packaging + About + User-Agent; compared to `min_client_version` |
 | Client-compat | `schema_version` on `GET /v1/client-compat` | Product floor / soft update nudge ([SERVICE_ENDPOINTS](SERVICE_ENDPOINTS.md#client-compatibility-discovery)) |
 | Protocol gen | `kProtocolGen` | App constant; future in-band messaging hello — not directory profile |

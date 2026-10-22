@@ -15,7 +15,7 @@
 namespace pbr {
 
 /**
- * `/pp-browser/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
+ * `/pp/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
  * Product single-entry when MeshHost Amp is attached ([A020]); legacy path remains for tests/fallback.
  *
  * Prefer SendEnvelopeAsync when MeshPump + PostToIo are available; sync SendEnvelope parks.

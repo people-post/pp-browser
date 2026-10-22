@@ -185,7 +185,7 @@ Invitees who are not in the origin group still use **direct** E2E only.
 
 | | 1:1 Amp call-media | SFU / group |
 |--|--------------------|-------------|
-| Backend | `/pp-browser/realtime/1.0.0` (direct / circuit) | N021 `media_relay` channels |
+| Backend | `/pp/realtime/1.0.0` (direct / circuit) | N021 `media_relay` channels |
 | Producer | audio; then lo/hi by uplink | same |
 | Receiver demand | health / focus | subscribe `(stream_id, channel_id)` |
 | Path QoS | local rate + playout; drop stale video, FIFO audio | relay `latest_lossy` / `reliable_ordered` |
