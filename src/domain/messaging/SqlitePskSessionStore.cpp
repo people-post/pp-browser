@@ -216,6 +216,8 @@ Roe<sqlite3*> SqlitePskSessionStore::OpenDb() const {
   if (sqlite3_open(profile_db_path_.c_str(), &db_) != SQLITE_OK) {
     return Error("Failed to open profile.db for PSK store");
   }
+  // profile.db has other writers (group rosters, call sessions): wait for them, as they wait for us.
+  sqlite3_busy_timeout(db_, 5000);
   return db_;
 }
 
