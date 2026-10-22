@@ -554,31 +554,16 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer
     if (lan_mdns_contact_peer_ids_.find(peer.peer_id_base58) == lan_mdns_contact_peer_ids_.end()) {
       return;
     }
-    auto ma = mesh::LanMdnsDiscovery::BuildMultiaddr(peer);
-    auto adp = mesh::LanMdnsDiscovery::BuildAdpMultiaddr(peer);
-    if (!ma && !adp) {
+    const auto adp = mesh::LanMdnsDiscovery::BuildAdpMultiaddr(peer);
+    if (!adp || !mesh_messaging_) {
       return;
     }
-    const std::string probe_ma = adp ? *adp : (ma ? *ma : "");
-    const std::string mdns_ip = mesh::IpHostFromMultiaddrPrefix(probe_ma);
-    if (mesh::IsLikelyUndialableLanIpv4(mdns_ip)) {
-      log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << probe_ma;
+    if (mesh::IsLikelyUndialableLanIpv4(mesh::IpHostFromMultiaddrPrefix(*adp))) {
+      log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << *adp;
       return;
     }
-    if (!(mesh_messaging_ && (adp || ma))) {
-      return;
-    }
-    log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58
-               << " ma=" << (ma ? *ma : "") << " adp=" << (adp ? *adp : "");
-    if (mesh_messaging_) {
-      if (ma) {
-        mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
-      }
-      if (adp) {
-        log().info << "LAN mDNS amp dial peer=" << peer.peer_id_base58 << " ma=" << *adp;
-        mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
-      }
-    }
+    log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58 << " ma=" << *adp;
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
     if (contacts_) {
       if (auto listed = contacts_->List(); listed) {
         for (const Contact& contact : *listed) {
@@ -591,14 +576,7 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer
               target.peer_identity_value == peer.peer_id_base58) {
             continue;
           }
-          if (mesh_messaging_) {
-            if (ma) {
-              mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
-            }
-            if (auto adp2 = mesh::LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
-              mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp2);
-            }
-          }
+          mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp);
           log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
                         << " dial_key=" << target.peer_identity_value;
         }

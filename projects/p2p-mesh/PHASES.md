@@ -180,7 +180,7 @@ Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circu
 
 Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.md) (`link` scope).
 
-- [x] `_pp-mesh._tcp` mDNS announce when Node or mobile ephemeral listen active
+- [x] `_pp-mesh._udp` mDNS announce when Node or mobile ephemeral listen active
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
 - [x] Wire `ConversationsHub::TickMesh` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)

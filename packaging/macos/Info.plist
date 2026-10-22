@@ -36,7 +36,7 @@
   <string>PP uses the local network for peer-to-peer calls and messaging with nearby devices.</string>
   <key>NSBonjourServices</key>
   <array>
-    <string>_pp-mesh._tcp</string>
+    <string>_pp-mesh._udp</string>
   </array>
 </dict>
 </plist>
