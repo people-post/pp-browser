@@ -14,7 +14,7 @@ std::string McpToolProvider::Id() const {
 }
 
 std::vector<ToolDescriptor> McpToolProvider::ListTools() {
-  return McpToolAdapter::ListTools(client_, options_, {}, id_, default_domain_);
+  return McpToolAdapter::ListTools(client_, options_, {}, id_, default_domain_, &listed_);
 }
 
 } // namespace pbr

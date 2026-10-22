@@ -37,10 +37,13 @@
 #include "foundation/runtime/AppVersion.h"
 #include "common/Metrics.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
+#include <utility>
 #include "common/ValueJson.h"
 
 #include <unordered_set>
@@ -100,6 +103,8 @@ struct AgentSession::Impl : public Module {
   int configure_inflight = 0;
   /** Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger). */
   std::mutex configure_work_mutex;
+  std::chrono::milliseconds missing_tool_wait{10'000};
+  std::chrono::milliseconds missing_tool_poll{500};
 
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
@@ -119,6 +124,7 @@ struct AgentSession::Impl : public Module {
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
+  bool configure_failed = false; // the last ConfigureOnIO threw; guarded by configure_work_mutex
   bool submit_when_ready = false;
   std::chrono::steady_clock::time_point planner_started{};
   std::chrono::steady_clock::time_point synthesis_started{};
@@ -689,7 +695,7 @@ void AgentSession::ContinueAfterExecution(const std::shared_ptr<Impl>& state) {
   RunSynthesisStep(state);
 }
 
-Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) {
+Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled) {
   if (state->pending_user_payload && !state->pending_user_payload->empty()) {
     if (auto payload_plan = TryBuildPlanFromPayload(state->pending_user_text, *state->pending_user_payload)) {
       auto validated = ValidateTurnPlan(*payload_plan, AllowedToolNames(state));
@@ -698,7 +704,20 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
       }
       if (payload_plan->response_goal == ResponseGoal::DisplayFeed) {
         // The feed tool comes from the promoted MCP server; without it there is nothing to show, and asking the
-        // model instead would only produce a confusing answer.
+        // model instead would only produce a confusing answer. Right after launch the server may simply not have
+        // been reachable yet when the session was configured, so give it a bounded chance to list its tools.
+        switch (RelistMissingFeedTools(state, *payload_plan)) {
+        case FeedRelist::Listed:
+          if (auto relisted = ValidateTurnPlan(*payload_plan, AllowedToolNames(state))) {
+            return relisted;
+          }
+          break;
+        case FeedRelist::Cancelled:
+          cancelled = true;
+          return Error("Turn cancelled");
+        case FeedRelist::Unavailable:
+          break;
+        }
         Error unavailable = validated.error();
         unavailable.user = TrOrDefault("feed.unavailable", "Briefs are unavailable right now.");
         return unavailable;
@@ -719,13 +738,102 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
   return plan;
 }
 
+AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_ptr<Impl>& state,
+                                                              const TurnPlan& plan) {
+  // A short request bound: the launch case is a network that is not up yet, where one tools/list could otherwise
+  // block for the transport's default 30 s while holding configure_work_mutex.
+  constexpr long kRelistTimeoutS = 3;
+
+  // Caller holds configure_work_mutex: ConfigureOnIO clears and rebuilds the registry under it.
+  const auto missing = [&] {
+    const std::vector<std::string> allowed = AllowedToolNames(state);
+    std::string names;
+    for (const PlannedToolCall& call : plan.tools) {
+      if (std::find(allowed.begin(), allowed.end(), call.name) == allowed.end()) {
+        names += (names.empty() ? "" : ", ") + call.name;
+      }
+    }
+    return names;
+  };
+
+  // This turn's own flag: a new Submit after Cancel() replaces it (and clears `cancelled`), this one stays set.
+  std::shared_ptr<std::atomic<bool>> cancel;
+  {
+    std::lock_guard lock(state->stream_cancel_mutex);
+    cancel = state->stream_cancel;
+  }
+
+  const auto started = std::chrono::steady_clock::now();
+  bool first = true;
+  while (true) {
+    if (cancel->load()) {
+      state->Log().info << "Turn stopped while re-listing the promoted MCP tools";
+      return FeedRelist::Cancelled;
+    }
+    {
+      // A concurrent Configure() stops and replaces the MCP clients and rebuilds the registry.
+      std::lock_guard work_lock(state->configure_work_mutex);
+      const std::string wanted = missing();
+      if (wanted.empty()) {
+        return FeedRelist::Listed; // a Configure() that ran meanwhile listed them
+      }
+      McpClient* promoted = state->mcp.PromotedPtr();
+      if (!promoted || !promoted->IsRunning()) {
+        return FeedRelist::Unavailable; // disabled or not configured: nothing to wait for
+      }
+      if (promoted->IsStdio()) {
+        return FeedRelist::Unavailable; // a local server ignores the short bound (30 s reads): do not wait on it
+      }
+      if (first) {
+        state->Log().warning << "Planned tool(s) not registered: " << wanted
+                             << "; re-listing the promoted MCP server for up to "
+                             << state->missing_tool_wait.count() << " ms";
+        first = false;
+      }
+      // A turn that replaced this one after Cancel() may already read the registry: register nothing then.
+      const bool answered = RegisterPromotedMcpTools(state->tools, *promoted, kRelistTimeoutS, cancel.get());
+      if (cancel->load()) {
+        state->Log().info << "Turn stopped while re-listing the promoted MCP tools";
+        return FeedRelist::Cancelled;
+      }
+      const std::string still = missing();
+      if (still.empty()) {
+        state->Log().info << "Promoted MCP tools listed after " << ElapsedMs(started) << " ms";
+        return FeedRelist::Listed;
+      }
+      if (answered) {
+        // The server is reachable (it listed, or answered with an error) and does not offer the tool: waiting
+        // longer cannot help.
+        state->Log().warning << "Promoted MCP server listed its tools without: " << still;
+        return FeedRelist::Unavailable;
+      }
+    }
+    if (std::chrono::steady_clock::now() - started + state->missing_tool_poll > state->missing_tool_wait) {
+      break;
+    }
+    std::this_thread::sleep_for(state->missing_tool_poll);
+  }
+  state->Log().warning << "Promoted MCP server still not listing its tools after " << ElapsedMs(started) << " ms";
+  return FeedRelist::Unavailable;
+}
+
 void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
   state->turn_trace = TurnTrace{};
   state->turn_trace.turn_id = util::GenerateUuid();
   state->turn_trace.entry_id = state->pending_entry_id;
   state->turn_trace.thread_id = state->pending_thread_id;
 
-  auto plan = ResolveTurnPlan(state);
+  const uint64_t generation = state->turn_generation.load(std::memory_order_acquire);
+  bool cancelled = false;
+  auto plan = ResolveTurnPlan(state, cancelled);
+  if (cancelled) {
+    // Stopped while waiting for the feed tools: nothing to report. As with a stopped stream, only a turn that
+    // was not replaced ends here; after Cancel() and a new Submit the state belongs to the new turn.
+    if (state->turn_generation.load(std::memory_order_acquire) == generation) {
+      FinishTurn(state);
+    }
+    return;
+  }
   if (!plan) {
     PushError(state, plan.error());
     FinishTurn(state);
@@ -1144,6 +1252,26 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
   }
 }
 
+// A submit made while ConfigureOnIO runs must not be lost: checking `configured` and setting
+// submit_when_ready under configure_work_mutex (which ConfigureOnIO holds until it has consumed the flag)
+// means the flag is either set before ConfigureOnIO looks at it, or the turn sees `configured` and starts.
+// True: start the turn now (outside the lock: the turn may take configure_work_mutex itself). After a failed
+// configure nothing would start a queued turn, so it ends here with the error instead of staying busy.
+bool AgentSession::StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state) {
+  std::unique_lock work_lock(state->configure_work_mutex);
+  if (state->configured) {
+    return true;
+  }
+  if (!state->configure_failed) {
+    state->submit_when_ready = true;
+    return false;
+  }
+  work_lock.unlock();
+  PushError(state, "Agent configure failed");
+  FinishTurn(state);
+  return false;
+}
+
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Configure() counted this run and releases it when the posted closure is destroyed.
   // Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger).
@@ -1153,7 +1281,16 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Do not PauseBackgroundWork here: this already runs on a worker pool thread. Pausing blocked
   // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
   // unlock_in_progress stuck on Android.
-  std::lock_guard work_lock(state->configure_work_mutex);
+  std::unique_lock work_lock(state->configure_work_mutex);
+  // A failed configure ends a question queued for it (its error, then loading off) instead of leaving it busy.
+  const auto end_queued_submit = [&] {
+    const bool queued = std::exchange(state->submit_when_ready, false);
+    work_lock.unlock();
+    if (queued) {
+      FinishTurn(state);
+    }
+  };
+  state->configure_failed = false;
   try {
     LlmConfig llm_config = state->config.llm;
     if (ResolvePreset(state->config) == "brief") {
@@ -1173,8 +1310,12 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     const AppConfig defaults = Config::DefaultAppConfig();
     McpClient::SetHttpPost([](const std::string& url, const std::string& body,
-                                  const std::map<std::string, std::string>& headers) {
-      return HttpClient::Post(url, body, headers);
+                              const std::map<std::string, std::string>& headers, const long timeout_s) {
+      HttpTimeout timeout;
+      if (timeout_s > 0) {
+        timeout.total_s = timeout_s;
+      }
+      return HttpClient::Post(url, body, headers, kMaxHttpClientBodyBytes, timeout);
     });
     state->mcp.Start(state->config, defaults);
 
@@ -1198,32 +1339,43 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
   } catch (const std::exception& e) {
     state->configured = false;
+    state->configure_failed = true;
     state->mcp.Stop();
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: " << e.what();
     PushError(state, std::string("Agent configure failed: ") + e.what());
+    end_queued_submit();
     return;
   } catch (...) {
     state->configured = false;
+    state->configure_failed = true;
     state->mcp.Stop();
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: unknown exception";
     PushError(state, "Agent configure failed");
+    end_queued_submit();
     return;
   }
 
-  if (state->submit_when_ready && !state->pending_user_text.empty()) {
-    state->submit_when_ready = false;
-    if (!state->cancelled) {
-      StartTurn(state);
-    } else {
-      // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
-      state->busy = false;
-    }
+  const bool submit = state->submit_when_ready && !state->pending_user_text.empty();
+  state->submit_when_ready = false;
+  // The turn runs outside the lock: a feed turn's re-list takes configure_work_mutex itself.
+  work_lock.unlock();
+  // Wake the UI loop (PostUI requests a frame) so a send ChatController held while configuring goes out now,
+  // not after the power-save wait.
+  AppRuntime::PostUI([] {});
+  if (!submit) {
+    return;
+  }
+  if (!state->cancelled) {
+    StartTurn(state);
+  } else {
+    // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
+    state->busy = false;
   }
 }
 
@@ -1269,6 +1421,11 @@ void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
 
 void AgentSession::SetBriefAiStream(BriefAiStreamFn fn) {
   impl_->brief_stream_override = std::move(fn);
+}
+
+void AgentSession::SetMissingToolWait(const std::chrono::milliseconds total, const std::chrono::milliseconds poll) {
+  impl_->missing_tool_wait = total;
+  impl_->missing_tool_poll = poll;
 }
 
 void AgentSession::SetToolPermissions(ToolPermissionsPrefs permissions) {
@@ -1355,8 +1512,7 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
   impl_->pending_thread_id.clear();
 
   AppRuntime::PostWorkerNormal([impl = impl_]() {
-    if (!impl->configured) {
-      impl->submit_when_ready = true;
+    if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
     StartTurn(impl);
@@ -1378,8 +1534,7 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
   impl_->turn_mode = AgentTurnMode::Thread;
 
   AppRuntime::PostWorkerNormal([impl = impl_]() {
-    if (!impl->configured) {
-      impl->submit_when_ready = true;
+    if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
     StartTurn(impl);
@@ -1402,8 +1557,7 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
   impl_->assist_mode = mode;
 
   AppRuntime::PostWorkerNormal([impl = impl_]() {
-    if (!impl->configured) {
-      impl->submit_when_ready = true;
+    if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
     StartTurn(impl);

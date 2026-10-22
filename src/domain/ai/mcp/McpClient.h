@@ -47,12 +47,20 @@ public:
   bool StartHttp(const std::string& url);
   void Stop();
   bool IsRunning() const { return running_; }
+  /** A local process server (its reads keep kMcpReadTimeoutMs whatever request bound is asked). */
+  bool IsStdio() const { return running_ && !http_ && !mock_; }
+  /**
+   * Whether the last request reached the server and got an answer, even a failing one (an HTTP status of any
+   * kind, a JSON-RPC error). False when it never got there: no connection, a timeout, a dead process.
+   */
+  bool LastRequestAnswered() const { return answered_; }
 
   /** Feature/app wires HttpClient::Post so mcp does not include base/net. */
   static void SetHttpPost(HttpPostFn post);
 
   Roe<void> Initialize();
-  Roe<std::vector<McpTool>> ListTools();
+  /** `timeout_s`: an HTTP server's request bound (0 = the transport's default); stdio keeps kMcpReadTimeoutMs. */
+  Roe<std::vector<McpTool>> ListTools(long timeout_s = 0);
   Roe<Object> CallTool(const std::string& name, const Object& arguments);
 
   static McpClient& MockInstance();
@@ -66,11 +74,12 @@ public:
   static Roe<Object> ReadStdioResponse(const McpReadFn& read, int64_t expected_id, std::string& carry);
 
 private:
-  Roe<Object> Request(const std::string& method, const Object& params);
+  Roe<Object> Request(const std::string& method, const Object& params, long timeout_s = 0);
 
   bool running_ = false;
   bool mock_ = false;
   bool http_ = false;
+  bool answered_ = false;
   std::string http_url_;
   int request_id_ = 1;
   os::OsProcessPipe process_;

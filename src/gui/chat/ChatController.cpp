@@ -130,6 +130,15 @@ std::string ToolActivityLabel(const std::string& tool_name, const std::string& s
   if (tool_name == "get_quote") {
     return Tr("chat.status.getting_quote");
   }
+  if (tool_name == "blog_articles") {
+    // The briefs feed: never show the raw tool name to the user.
+    if (status == "running") {
+      return Tr("chat.tool.fetching_briefs");
+    }
+    if (status == "done") {
+      return Tr("chat.tool.briefs_fetched");
+    }
+  }
   if (tool_name == "web_search") {
     if (status == "running") {
       return Tr("chat.tool.searching_web");
@@ -461,6 +470,11 @@ bool ChatController::AgentCloudReady() const {
   } else if (!AgentConfigured()) {
     return false;
   }
+  return AgentHasCredentials();
+}
+
+bool ChatController::AgentHasCredentials() const {
+  const AppConfig& config = Store().Snapshot().config;
   if (ResolvePreset(config) == "brief") {
     std::string registered;
     std::string guest;
@@ -3385,10 +3399,16 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
 void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload,
                                   bool from_home_chip) {
   const std::string trimmed = util::Trim(text);
-  if (trimmed.empty() || chat_.loading) {
+  if (trimmed.empty()) {
+    log().info << "Send ignored: empty text";
+    return;
+  }
+  if (chat_.loading) {
+    log().info << "Send ignored: a reply is still loading";
     return;
   }
   if (chat_.compose_disabled && messaging_ready_) {
+    log().info << "Send ignored: the composer is disabled in this thread";
     return;
   }
   if (!messaging_ready_) {
@@ -3409,6 +3429,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
 
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
     if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
+      log().info << "Send ignored: could not open a thread from Home";
       return;
     }
   }
@@ -3427,6 +3448,17 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
 
   // Peer relay send only needs messaging_ready; AI / Brief / mock turns need agent_cloud_ready.
   if (expect_agent_work && !AgentCloudReady()) {
+    // Right after launch (and after unlock applies the Brief key) the agent is reconfiguring for about a
+    // second: hold the send and show that it is connecting, instead of dropping the tap.
+    if (AgentReady() && Store().IsInitialized() && !AgentConfigured() && AgentHasCredentials()) {
+      log().info << "Send held: the assistant is still connecting";
+      held_agent_send_.Hold({.text = trimmed, .payload = std::move(user_payload), .from_home_chip = from_home_chip,
+                             .thread_id = ActiveThreadId()},
+                            std::chrono::steady_clock::now());
+      UserFeedback::NeedsSetup(Tr("chat.status.connecting"), /*sticky=*/true);
+      return;
+    }
+    log().info << "Send ignored: the assistant is not set up";
     RefreshLlmSetupBanner();
     return;
   }
@@ -4499,8 +4531,45 @@ void ChatController::OnApplicationPause() {
   }
 }
 
+void ChatController::FlushHeldAgentSend() {
+  if (!held_agent_send_.Holding()) {
+    return;
+  }
+  HeldAgentSend::Send send;
+  const HeldAgentSend::Step step =
+      held_agent_send_.Poll(AgentCloudReady(), std::chrono::steady_clock::now(), send);
+  if (step == HeldAgentSend::Step::Idle || step == HeldAgentSend::Step::Wait) {
+    return;
+  }
+  if (step == HeldAgentSend::Step::Expired) {
+    log().info << "Held send given up: the assistant did not connect in time";
+    UserFeedback::NeedsSetup(Tr("chat.hint.assistant_not_connected"));
+    return;
+  }
+  if (ChromeSnapshot().banner_message == Tr("chat.status.connecting") && shell_feedback_.dismiss_banner) {
+    shell_feedback_.dismiss_banner();
+  }
+  switch (HeldSendFateOf(send, ActiveThreadId(), chat_.loading)) {
+  case HeldSendFate::Send:
+    log().info << "Sending the held message: the assistant is connected";
+    SendUserText(send.text, std::move(send.payload), send.from_home_chip);
+    return;
+  case HeldSendFate::BackToDraft: {
+    log().info << "Held send put back in the composer: another thread is open, or a reply is loading";
+    const std::string draft = chat_.draft.c_str();
+    chat_.draft = (draft.empty() ? send.text : send.text + "\n" + draft).c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+    return;
+  }
+  case HeldSendFate::Drop:
+    log().info << "Held chip send dropped: another thread is open, or a reply is loading";
+    return;
+  }
+}
+
 void ChatController::Update() {
   FlushStreamingRow();
+  FlushHeldAgentSend();
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
@@ -4558,6 +4627,7 @@ void ChatController::Shutdown() {
   messaging_ready_ = false;
   mesh_ready_ = false;
   pending_reply_.reset();
+  held_agent_send_.Clear();
   streaming_.reset();
   chat_links_.clear();
   context_ = nullptr;
