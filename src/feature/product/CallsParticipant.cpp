@@ -68,6 +68,17 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
       }
       return std::nullopt;
     };
+    deps.delivery.group_members = [&hub](const std::string& group_id) -> std::optional<std::set<std::string>> {
+      auto roster = hub.Groups().ListRoster(group_id);
+      if (!roster || roster->empty()) {
+        return std::nullopt;
+      }
+      std::set<std::string> members;
+      for (const GroupRosterMember& member : *roster) {
+        members.insert(member.member_identity);
+      }
+      return members;
+    };
     deps.delivery.sync_inbox_from_wake = [&hub](bool force) {
       if (auto* messaging = hub.MeshMessagingOrNull()) {
         messaging->SyncInboxFromWake(force);

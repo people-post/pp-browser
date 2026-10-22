@@ -21,6 +21,7 @@
 //   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
 //   group_roster {group_id}             the members this user knows of
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
+//   remove_member {thread, account}     the owner removes a member from the group
 //   state                               the call surface + media counters (joined participants,
 //                                       per-stream rx frames)
 //   quit                                quit the app (orderly shutdown)
@@ -328,6 +329,17 @@ public:
         Object out = Reply(id, true);
         out.set("members", ArrayValue(std::move(members)));
         Emit(out);
+      }
+    } else if (cmd == "remove_member") {
+      auto thread = facade_->GetThread(request->getString("thread").value_or(""));
+      if (!thread || !*thread || !(*thread)->group_id) {
+        ReplyError(id, "not a group chat");
+      } else if (auto removed = facade_->RemoveMemberByIdentity(*(*thread)->group_id,
+                                                                request->getString("account").value_or(""));
+                 !removed) {
+        ReplyError(id, removed.error().message);
+      } else {
+        Emit(Reply(id, true));
       }
     } else if (cmd == "accept_group_invite") {
       AcceptGroupInvite(id, request->getString("nonce").value_or(""), request->getString("group_id").value_or(""));

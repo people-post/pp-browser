@@ -171,6 +171,7 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
     return *thread;
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
+  ports.group_members = delivery_.group_members;
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
   ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
   ports.sync_inbox_from_wake = [this]() {

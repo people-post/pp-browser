@@ -260,6 +260,16 @@ protected:
       StackSideOptions options;
       options.seed_dial_ok = true;
       options.relay = relays_[i].get();
+      options.group_members = [this, i](const std::string& /*group_id*/) -> std::optional<std::set<std::string>> {
+        if (!group_of_[i].empty()) {
+          return group_of_[i];
+        }
+        std::set<std::string> everyone;
+        for (const StackSide& side : sides_) {
+          everyone.insert(side.local_identity);
+        }
+        return everyone;
+      };
       BuildStackSide(sides_[i], tags[i], static_cast<uint8_t>(0xa0 + 0x10 * i), options);
     }
     for (size_t i = 0; i < kSides; ++i) {
@@ -321,6 +331,9 @@ protected:
       DestroyStackSide(side);
     }
   }
+
+  /** Who side i sees in the group; empty: every side. */
+  std::set<std::string> group_of_[kSides];
 
   static std::string MeshPeerIdOf(size_t i) { return std::string("12D3KooWGroupSide") + static_cast<char>('A' + i); }
 
@@ -1185,6 +1198,78 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
+}
+
+// V053: the owner removes C from the group mid-call. A and B learn of it; C's device has not (it
+// keeps its side of the call): A and B take C as gone, and the media key moves on without C.
+TEST_F(CallGroupStackComposeTest, RemovedFromTheGroupIsOutOfTheCall) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  auto sweep = [&]() {
+    for (StackSide& side : sides_) {
+      side.ui->SweepExpiredInvites();
+    }
+    PumpWire();
+  };
+  // Each side sees the group as it is during the call once.
+  const int64_t seen_at = util::NowUnixMs();
+  DrainUntil([&]() {
+    sweep();
+    return util::NowUnixMs() - seen_at > 1200;
+  });
+  for (size_t i : {kA, kB}) {
+    group_of_[i] = {sides_[kA].local_identity, sides_[kB].local_identity, sides_[kD].local_identity};
+  }
+  auto state_of_c = [&](size_t i) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto row = sessions.FindParticipant(call_id, sides_[kC].local_identity);
+    return row && row->has_value() ? (*row)->state : CallParticipantState::Invited;
+  };
+  auto epoch2 = [&](size_t i) { return sides_[i].stack->MediaKeys()->LoadEpochKey(call_id, 2); };
+  DrainUntil(
+      [&]() {
+        sweep();
+        auto a = epoch2(kA);
+        auto b = epoch2(kB);
+        return state_of_c(kA) == CallParticipantState::Left && state_of_c(kB) == CallParticipantState::Left && a &&
+               a->has_value() && b && b->has_value();
+      },
+      10000);
+  EXPECT_EQ(state_of_c(kA), CallParticipantState::Left) << Describe(call_id);
+  EXPECT_EQ(state_of_c(kB), CallParticipantState::Left) << Describe(call_id);
+  auto a = epoch2(kA);
+  auto b = epoch2(kB);
+  ASSERT_TRUE(a && a->has_value()) << "the key did not move on:" << Describe(call_id);
+  ASSERT_TRUE(b && b->has_value()) << "B has no epoch-2 key:" << Describe(call_id);
+  EXPECT_EQ(**a, **b);
+  auto c = epoch2(kC);
+  EXPECT_FALSE(c && c->has_value()) << "C got the key of a call it was removed from";
+  EXPECT_NE(sides_[kA].ui->Phase(), CallPhase::Idle) << "A and B go on";
+  EXPECT_NE(sides_[kB].ui->Phase(), CallPhase::Idle);
+}
+
+// V053: the device of the one removed leaves the group's call, and is no longer offered to join it.
+TEST_F(CallGroupStackComposeTest, TheOneRemovedLeavesTheCall) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const int64_t seen_at = util::NowUnixMs();
+  DrainUntil([&]() {
+    sides_[kC].ui->SweepExpiredInvites();
+    PumpWire();
+    return util::NowUnixMs() - seen_at > 1200;
+  });
+  group_of_[kC] = {sides_[kA].local_identity, sides_[kB].local_identity};
+  DrainUntil(
+      [&]() {
+        sides_[kC].ui->SweepExpiredInvites();
+        PumpWire();
+        return sides_[kC].ui->Phase() == CallPhase::Idle;
+      },
+      10000);
+  EXPECT_EQ(sides_[kC].ui->Phase(), CallPhase::Idle) << Describe(call_id);
+  EXPECT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
 }
 
 } // namespace

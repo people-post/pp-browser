@@ -971,6 +971,28 @@ def scenario_group_late_starter(lab):
     assert_idle(a, b, c)
 
 
+def scenario_group_member_removed(lab):
+    """Alice (the owner) removes Carol from the group mid-call: Carol is out of the call and cannot
+    join it again; Alice and Bob go on."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    a.cmd("remove_member", thread=threads[a.name], account=c.account)
+    c.wait_surface("none", 30)
+    for u in (a, b):
+        wait_for(lambda: len(u.state().get("participants", [])) == 2 or None, 20,
+                 "%s: Carol out of the call" % u.name)
+        assert_hears(u, 1)
+    if c.cmd("joinable", thread=threads[c.name])["call_id"]:
+        raise ProbeError("%s: offered to join the call of a group she was removed from" % c.name)
+    for u in (a, b):
+        if u.state().get("call_id") != call_id:
+            raise ProbeError("%s: not in the call any more (%s)" % (u.name, u.state()))
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
@@ -994,6 +1016,7 @@ SCENARIOS = [
     ("group_leave_and_rejoin", scenario_group_leave_and_rejoin),
     ("group_last_one_waits", scenario_group_last_one_waits),
     ("group_late_starter", scenario_group_late_starter),
+    ("group_member_removed", scenario_group_member_removed),
 ]
 
 # Scenarios run only when named (--only).

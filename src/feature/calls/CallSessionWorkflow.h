@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -57,6 +58,8 @@ public:
     std::function<std::optional<std::string>(const std::string& inviter, const std::optional<std::string>& group_id)>
         resolve_call_thread;
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
+    /** Who is in a group now; none when unknown. Unset: group membership is not checked. */
+    std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
     std::function<void()> sync_inbox_from_wake;
     std::function<void()> clear_media_activity;
     /** What the call chrome shows the user went wrong (e.g. "That call has ended"). */
@@ -224,6 +227,17 @@ private:
   void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
+  /** Whether `identity` is in the group now (true when membership is not checked). */
+  bool InGroup(const std::string& group_id, const std::string& identity) const;
+  /**
+   * V053: who is no longer in the group is no longer in its call — they are taken as gone (the
+   * key rotates without them); this device, if it is the one, leaves. Only who this device saw in
+   * the group drops: a member it has not heard of yet is not taken for a removed one.
+   */
+  void DropWhoLeftTheGroup(const std::string& local_identity, int64_t now);
+  /** `identity` is no longer in the call (left, or out of its group). */
+  Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity,
+                            const std::string& local_identity);
   /** V053: a group call's invite that arrived too late to ring: recorded as missed, still joinable. */
   void RecordMissedGroupCall(const CallInviteDetail& invite, const std::string& sender_identity,
                              const std::string& local_identity, int64_t created_at);
@@ -345,6 +359,9 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** V053: the group's members at the last check, per group call this device is in or rung for. */
+  std::unordered_map<std::string, std::set<std::string>> group_members_seen_;
+  int64_t group_members_checked_ms_ = 0;
 };
 
 } // namespace pbr

@@ -30,6 +30,8 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <optional>
+#include <set>
 #include <memory>
 #include <optional>
 #include <string>
@@ -202,6 +204,8 @@ struct StackSideOptions {
   bool seed_dial_ok = false;
   /** Stands in for the hub's media_relay client (group calls); null = none. */
   mesh::IMediaRelayClient* relay = nullptr;
+  /** The hub's group roster as the calls see it (who is in a group now); unset = not checked. */
+  std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
 };
 
 /** Build `side` (tag = profile id, dirs under temp). Set `side.app_config` / `on_send` before. */
@@ -242,6 +246,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     }
     return {};
   };
+  deps.delivery.group_members = options.group_members;
   deps.delivery.send_to_thread = [&side](const std::string& thread_id, const std::string& text,
                                          const SendRelayOptions& send_options) -> Roe<ThreadMessage> {
     ThreadMessage msg;
