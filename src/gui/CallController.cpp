@@ -938,6 +938,10 @@ bool CallController::StartCallDirect(const std::string& thread_id, const bool vi
     return false;
   }
   if ((*thread)->kind == ThreadKind::Group) {
+    if (backend->JoinableCallInThread(thread_id)) {
+      RequestStartCall(thread_id, false, {});  // V053: the group's call goes on — join it
+      return true;
+    }
     OpenGroupCallPicker(thread_id, video_allowed);
     return true;
   }
@@ -964,14 +968,31 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     UserFeedback::Fail(Tr("call.error.select_person"));
     return false;
   }
+  RequestStartCall(thread_id, video_allowed, invitee_identities);
+  return true;
+}
+
+bool CallController::CallJoinableInThread(const std::string& thread_id) {
+  auto* backend = Backend();
+  return backend && backend->Available() && backend->JoinableCallInThread(thread_id).has_value();
+}
+
+void CallController::RequestStartCall(const std::string& thread_id, const bool video_allowed,
+                                      const std::vector<std::string>& invitee_identities) {
+  // No invitees: joining the group's call that goes on (not an outbound call).
+  const bool joining = invitee_identities.empty();
   // Requested: the calls owner starts it and reports back on UI (failure shown there).
-  backend->StartCall(thread_id, video_allowed, invitee_identities,
-                      WhileAlive([this, video_allowed](Roe<CallSession> started) {
+  Backend()->StartCall(thread_id, video_allowed, invitee_identities,
+                       WhileAlive([this, video_allowed, joining](Roe<CallSession> started) {
     if (!started) {
       UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
       return;
     }
     active_call_id_ = started->call_id;
+    if (joining) {
+      RefreshPendingRing();
+      return;
+    }
     const int64_t now = util::NowUnixMs();
     EmitMetrics(metrics_.NoteOutbound(started->call_id, video_allowed, now, Vitals(now)));
     if (video_allowed) {
@@ -982,7 +1003,6 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     }
     RefreshPendingRing();
   }));
-  return true;
 }
 
 void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video_allowed) {

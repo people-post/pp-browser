@@ -2947,12 +2947,30 @@ void ChatController::OnOpenThreadActionsMenu(ui::Event& ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
+void ChatController::RefreshCallJoinable(const std::chrono::steady_clock::time_point now) {
+  if (now - last_call_joinable_poll_ < std::chrono::seconds(1)) {
+    return;
+  }
+  last_call_joinable_poll_ = now;
+  const std::string& thread_id = ActiveThreadId();
+  const bool joinable = chat_.thread_is_group && chat_.show_call_actions && !thread_id.empty() &&
+                        call_actions_.call_joinable && call_actions_.call_joinable(thread_id);
+  if (joinable != chat_.call_joinable) {
+    chat_.call_joinable = joinable;
+    DataModelHost::Instance().Dirty("chat", "call_joinable");
+  }
+}
+
 void ChatController::OnStartCall(ui::Event& ev) {
   const std::string thread_id = ActiveThreadId();
   if (thread_id.empty() || !call_actions_.start_call) {
     return;
   }
   auto start_call = call_actions_.start_call;
+  if (chat_.call_joinable) {
+    (void)start_call(thread_id, false);  // Join: into the call that goes on, no voice / video choice
+    return;
+  }
   const bool video_available =
       !call_actions_.video_call_available || call_actions_.video_call_available();
   if (!video_available) {
@@ -4120,6 +4138,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
         ctor.Bind("show_peer_sheet", &controller.chat_.show_peer_sheet);
         ctor.Bind("show_call_actions", &controller.chat_.show_call_actions);
+        ctor.Bind("call_joinable", &controller.chat_.call_joinable);
         ctor.Bind("show_forget_memory", &controller.chat_.show_forget_memory);
         ctor.Bind("show_sync_with_peer", &controller.chat_.show_sync_with_peer);
         ctor.Bind("show_thread_menu", &controller.chat_.show_thread_menu);
@@ -4513,6 +4532,7 @@ void ChatController::Update() {
       if (chrome_.MaybePollPeerLink(now)) {
         DirtyChatHeader();
       }
+      RefreshCallJoinable(now);
     }
   }
 

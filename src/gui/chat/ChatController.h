@@ -187,6 +187,8 @@ private:
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
+    /** A group call goes on here that this device may join: the call button reads "Join" (V053). */
+    bool call_joinable = false;
     bool show_forget_memory = false;
     bool show_sync_with_peer = false;
     bool show_thread_menu = false;
@@ -376,6 +378,9 @@ private:
   void SyncDisplayFromThread();
   /** Last time a display sync ran the whole-thread attachment backfill. */
   std::chrono::steady_clock::time_point last_attachment_backfill_{};
+  std::chrono::steady_clock::time_point last_call_joinable_poll_{};
+  /** Each second: whether the open group chat has a call this device may join (calls change it). */
+  void RefreshCallJoinable(std::chrono::steady_clock::time_point now);
   void OnStopTurn();
   void OpenChatLink(const std::string& entry_id, int link_index);
   /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */

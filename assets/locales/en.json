@@ -720,6 +720,7 @@
     "call.title.video": "Video call",
     "call.title.group_voice": "Group voice call",
     "call.title.group_video": "Group video call",
+    "call.join": "Join",
     "call.start.voice": "Voice call",
     "call.start.video": "Video call",
     "call.ring.incoming_voice": "Incoming voice call",

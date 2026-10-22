@@ -263,6 +263,14 @@ select selectbox option {
   height: 18dp;
 }
 
+/* V053: a group call goes on in this chat — the call button joins it. */
+.chat-header-call-btn--join {
+  width: auto;
+  padding: 0 14dp;
+  gap: 6dp;
+  font-weight: bold;
+}
+
 .shell-profile-btn {
   position: relative;
   flex-shrink: 0;

@@ -49,6 +49,8 @@ public:
   void PrepareForShutdown();
 
   bool StartCall(const std::string& thread_id, bool video_allowed);
+  /** A group call goes on in this chat that this device may join (V053): the call button joins it. */
+  bool CallJoinableInThread(const std::string& thread_id);
   /** Start with explicit invitee relay identities (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -82,6 +84,9 @@ public:
 
 private:
   bool StartCallDirect(const std::string& thread_id, bool video_allowed);
+  /** Backend StartCall (no invitees: join the group's call that goes on, V053). */
+  void RequestStartCall(const std::string& thread_id, bool video_allowed,
+                        const std::vector<std::string>& invitee_identities);
   /** Shared AcceptIncoming/AcceptIncomingVoiceOnly body (charge decision is always Waive here). */
   void AcceptIncomingImpl(bool voice_only);
   void SyncShellState();

@@ -884,6 +884,7 @@ void Application::WireCalls() {
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
     call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
+    call_actions.call_joinable = [this](const std::string& thread_id) { return call_->CallJoinableInThread(thread_id); };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
