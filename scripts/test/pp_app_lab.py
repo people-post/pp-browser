@@ -650,6 +650,220 @@ def scenario_seed_dies_in_use(lab):
     return {"inside_link_window": inside, "after_link_gone": after}
 
 
+# --- group calls ----------------------------------------------------------------------------------
+# docs/architecture/CALLS.md (V050): the first answer is a 1:1 call; the third person moves the call
+# onto the planned hop (media_relay). Hostless: whoever placed it may leave and the rest go on.
+
+
+def open_group(lab, n=3, title="lab group"):
+    """n people; the first creates a group with the others, who accept its invites."""
+    names = ["alice", "bob", "carol", "dave", "erin"][:n]
+    users = [lab.user(name) for name in names]
+    for u in users:
+        u.wait_mesh()
+    owner, members = users[0], users[1:]
+    for m in members:
+        owner.cmd("open_chat", account=m.account)
+        m.cmd("open_chat", account=owner.account)
+    created = owner.cmd("create_group", title=title, accounts=[m.account for m in members])
+    group_id = created["group_id"]
+    threads = {owner.name: created["thread"]}
+    for m in members:
+        invite = wait_for(lambda: next((i for i in m.cmd("group_invites")["invites"] if i["group_id"] == group_id),
+                                       None), 40, "%s: the group invite" % m.name)
+        threads[m.name] = m.cmd("accept_group_invite", nonce=invite["nonce"], group_id=group_id)["thread"]
+        if not threads[m.name]:
+            raise ProbeError("%s: no group thread after accepting" % m.name)
+    everyone = sorted(u.account for u in users)
+    for u in users:
+        wait_for(lambda: sorted(u.cmd("group_roster", group_id=group_id)["members"]) == everyone or None, 40,
+                 "%s: the whole roster" % u.name)
+    return users, threads
+
+
+def wait_for(fn, timeout, what):
+    deadline = time.time() + timeout
+    while True:
+        got = fn()
+        if got:
+            return got
+        if time.time() > deadline:
+            raise ProbeError("timed out waiting for %s" % what)
+        time.sleep(0.5)
+
+
+def live_streams(u):
+    return {row["stream_id"]: row["rx_frames"] for row in u.state().get("streams", [])}
+
+
+def assert_hears(u, speakers, timeout=30):
+    """`u` is in a call and hears `speakers` others: that many streams keep receiving."""
+    first = live_streams(u)
+    deadline = time.time() + timeout
+    while True:
+        time.sleep(1.0)
+        now = live_streams(u)
+        growing = [sid for sid, rx in now.items() if rx > first.get(sid, 0)]
+        s = u.surface
+        if s.get("kind") == "in_call" and len(growing) >= speakers:
+            return
+        if time.time() > deadline:
+            raise ProbeError("%s: hears %d of %d (streams %s, surface %s)" % (u.name, len(growing), speakers, now, s))
+        first = now
+
+
+def group_call(caller, thread, answerers, timeout=40, **call_args):
+    """`caller` calls the group; each of `answerers` answers in turn. Returns the call id."""
+    call_id = caller.cmd("call", thread=thread, **call_args)["call_id"]
+    for u in answerers:
+        u.wait_surface("ringing", timeout, call_id=call_id)
+    for u in answerers:
+        u.cmd("accept_voice")
+        u.wait_surface("in_call", timeout, call_id=call_id)
+    caller.wait_surface("in_call", timeout, call_id=call_id)
+    return call_id
+
+
+def assert_group_history(u, thread, outcome, timeout=20):
+    got = summaries_settle(u, thread, 1, timeout)
+    if len(got) != 1 or got[0].get("outcome") != outcome:
+        raise ProbeError("%s's history: %s (wanted one %s)" % (u.name, got, outcome))
+
+
+def scenario_group_call_three(lab):
+    """Alice calls the group; Bob and Carol answer: everyone hears both others."""
+    (a, b, c), threads = open_group(lab)
+    started = time.time()
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    took = round(time.time() - started, 2)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    for u in (a, b, c):
+        assert_group_history(u, threads[u.name], "completed")
+    return {"all_hear_all_s": took}
+
+
+def scenario_group_one_declines(lab):
+    """Carol declines; Alice and Bob talk. Carol's history says she declined."""
+    (a, b, c), threads = open_group(lab)
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    for u in (b, c):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    c.cmd("decline")
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+        assert_hears(u, 1)
+    c.wait_surface("none", 20)
+    a.cmd("leave")
+    assert_idle(a, b, c)
+    assert_group_history(c, threads[c.name], "declined")
+    assert_group_history(a, threads[a.name], "completed")
+
+
+def scenario_group_leave_one_by_one(lab):
+    """Bob leaves a three-way call: Alice and Carol go on, still on the hop. Then they leave."""
+    (a, b, c), threads = open_group(lab)
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    b.cmd("leave")
+    b.wait_surface("none", 20)
+    for u in (a, c):
+        assert_hears(u, 1)
+        if not u.state().get("sfu_mode"):
+            raise ProbeError("%s: left the hop when Bob left (N→2 stays on the hop)" % u.name)
+    a.cmd("leave")
+    c.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
+def scenario_group_caller_leaves_first(lab):
+    """Alice placed the call and leaves first: Bob and Carol go on (no one hosts the call)."""
+    (a, b, c), threads = open_group(lab)
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    a.cmd("leave")
+    a.wait_surface("none", 20)
+    for u in (b, c):
+        assert_hears(u, 1)
+    b.cmd("leave")
+    c.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
+def scenario_group_add_someone_mid_call(lab):
+    """Alice calls Bob only; mid-call she adds Carol, who answers: the call moves onto the hop."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b], accounts=[b.account])
+    for u in (a, b):
+        assert_hears(u, 1)
+    a.cmd("invite_to_call", account=c.account)
+    c.wait_surface("ringing", 40, call_id=call_id)
+    c.cmd("accept_voice")
+    c.wait_surface("in_call", 40, call_id=call_id)
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
+def scenario_group_member_crashes(lab):
+    """Bob's app dies mid-call: Alice and Carol keep talking; Bob comes back to nothing stuck."""
+    (a, b, c), threads = open_group(lab)
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    b.crash()
+    for u in (a, c):
+        assert_hears(u, 1)
+    b.start()
+    b.wait_ready()
+    b.wait_surface("none", 40)
+    for u in (a, c):
+        assert_hears(u, 1)
+    a.cmd("leave")
+    c.cmd("leave", check=False)
+    assert_idle(a, b, c)
+
+
+def scenario_group_hop_down_mid_call(lab):
+    """The hop carrying a three-way call goes down and comes back: each person ends up either back
+    in the call hearing the others or out of it — never in a call that carries nothing."""
+    (a, b, c), threads = open_group(lab)
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    stop_hop(lab)
+    try:
+        time.sleep(5)
+    finally:
+        start_hop(lab)
+    outcome = {}
+    for u in (a, b, c):
+        deadline = time.time() + 90
+        while True:
+            if u.surface.get("kind") == "none":
+                outcome[u.name.split("-")[0]] = "ended"
+                break
+            try:
+                assert_hears(u, 2, timeout=5)
+                outcome[u.name.split("-")[0]] = "recovered"
+                break
+            except ProbeError:
+                if time.time() > deadline:
+                    raise ProbeError("%s: still in a call that carries nothing (%s)" % (u.name, u.state()))
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    return outcome
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
@@ -662,6 +876,13 @@ SCENARIOS = [
     ("decline_then_call_back", scenario_decline_then_call_back),
     ("seed_down", scenario_seed_down),
     ("seed_dies_in_use", scenario_seed_dies_in_use),
+    ("group_call_three", scenario_group_call_three),
+    ("group_one_declines", scenario_group_one_declines),
+    ("group_leave_one_by_one", scenario_group_leave_one_by_one),
+    ("group_caller_leaves_first", scenario_group_caller_leaves_first),
+    ("group_add_someone_mid_call", scenario_group_add_someone_mid_call),
+    ("group_member_crashes", scenario_group_member_crashes),
+    ("group_hop_down_mid_call", scenario_group_hop_down_mid_call),
 ]
 
 # Scenarios run only when named (--only).

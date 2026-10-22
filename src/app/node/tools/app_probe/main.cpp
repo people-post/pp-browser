@@ -11,10 +11,17 @@
 //   open_chat {account}                 find the person in the directory and open the chat
 //   send {thread, text}                 a text message
 //   threads / messages {thread}         what this user sees
-//   call {thread, video}                the call button on a 1:1 chat
+//   call {thread, video, [accounts]}    the call button: a 1:1 chat, or a group (every other member,
+//                                       or the picked `accounts`)
+//   invite_to_call {account}            add someone to the call in progress
 //   accept / accept_voice / decline     the ring's buttons
 //   leave                               the call panel's End
-//   state                               the call surface + media counters
+//   create_group {title, accounts}      a group with these contacts (each invited)
+//   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
+//   group_roster {group_id}             the members this user knows of
+//   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
+//   state                               the call surface + media counters (joined participants,
+//                                       per-stream rx frames)
 //   quit                                quit the app (orderly shutdown)
 //   crash                               the process dies now (force-quit, OOM kill)
 //
@@ -25,6 +32,9 @@
 #include "common/directory/DirectoryJson.h"
 #include "domain/calls/CallLifecycleTypes.h"
 #include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/GroupMembershipCodec.h"
+#include "feature/conversations/ContactActionDispatcher.h"
+#include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -207,7 +217,25 @@ public:
         out.set("media_active", media->IsActive());
         out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
         out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
+        out.set("sfu_mode", health.sfu_mode);
+        std::vector<Value> streams;
+        for (const CallMediaStreamHealth& stream : health.streams) {
+          Object row;
+          row.set("stream_id", static_cast<int64_t>(stream.stream_id));
+          row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
+          streams.push_back(ObjectValue(std::move(row)));
+        }
+        out.set("streams", ArrayValue(std::move(streams)));
       }
+      std::vector<Value> joined;
+      if (!last_call_id_.empty()) {
+        if (auto participants = calls_->ListJoinedParticipants(last_call_id_)) {
+          for (const CallParticipant& participant : *participants) {
+            joined.emplace_back(participant.identity);
+          }
+        }
+      }
+      out.set("participants", ArrayValue(std::move(joined)));
       out.set("last_error", calls_->LastError());
     }
     return out;
@@ -256,7 +284,45 @@ public:
     } else if (cmd == "messages") {
       ListMessages(id, request->getString("thread").value_or(""));
     } else if (cmd == "call") {
-      StartCall(id, request->getString("thread").value_or(""), request->getIf<bool>("video").value_or(false));
+      std::vector<std::string> accounts;
+      if (const Array* picked = request->getArray("accounts")) {
+        for (const Value& item : picked->elements) {
+          if (auto account = asString(item)) {
+            accounts.push_back(*account);
+          }
+        }
+      }
+      StartCall(id, request->getString("thread").value_or(""), request->getIf<bool>("video").value_or(false),
+                std::move(accounts));
+    } else if (cmd == "invite_to_call") {
+      InviteToCall(id, request->getString("account").value_or(""));
+    } else if (cmd == "create_group") {
+      std::vector<std::string> accounts;
+      if (const Array* members = request->getArray("accounts")) {
+        for (const Value& item : members->elements) {
+          if (auto account = asString(item)) {
+            accounts.push_back(*account);
+          }
+        }
+      }
+      CreateGroup(id, request->getString("title").value_or("group"), accounts);
+    } else if (cmd == "group_invites") {
+      ListGroupInvites(id);
+    } else if (cmd == "group_roster") {
+      auto roster = facade_->ListGroupRoster(request->getString("group_id").value_or(""));
+      if (!roster) {
+        ReplyError(id, roster.error().message);
+      } else {
+        std::vector<Value> members;
+        for (const GroupRosterMember& member : *roster) {
+          members.emplace_back(member.member_identity);
+        }
+        Object out = Reply(id, true);
+        out.set("members", ArrayValue(std::move(members)));
+        Emit(out);
+      }
+    } else if (cmd == "accept_group_invite") {
+      AcceptGroupInvite(id, request->getString("nonce").value_or(""), request->getString("group_id").value_or(""));
     } else if (cmd == "accept" || cmd == "accept_voice") {
       Accept(id, cmd == "accept_voice");
     } else if (cmd == "decline") {
@@ -399,19 +465,46 @@ private:
     Emit(out);
   }
 
-  /** CallController::StartCallDirect. */
-  void StartCall(int64_t id, const std::string& thread_id, bool video) {
+  /**
+   * CallController::StartCallDirect; a group's call button opens the picker, which places the call
+   * to the picked members (StartCallWithInvitees) — here every other member, or `accounts`.
+   */
+  void StartCall(int64_t id, const std::string& thread_id, bool video, std::vector<std::string> accounts) {
     BindCalls();
     if (!calls_->Available()) {
       ReplyError(id, "calls unavailable");
       return;
     }
     auto thread = facade_->GetThread(thread_id);
-    if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct || (*thread)->peer_identity_value.empty()) {
-      ReplyError(id, "not a 1:1 chat: " + thread_id);
+    if (!thread || !*thread) {
+      ReplyError(id, "no such chat: " + thread_id);
       return;
     }
-    calls_->StartCall(thread_id, video, {(*thread)->peer_identity_value}, [this, id](Roe<CallSession> started) {
+    std::vector<std::string> invitees;
+    if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
+      if (accounts.empty()) {
+        auto roster = facade_->ListGroupRoster(*(*thread)->group_id);
+        if (!roster) {
+          ReplyError(id, roster.error().message);
+          return;
+        }
+        const std::string self = facade_->LoadProfileIdentityView().account_id;
+        for (const GroupRosterMember& member : *roster) {
+          if (member.member_identity != self && !member.member_identity.empty()) {
+            invitees.push_back(member.member_identity);
+          }
+        }
+      } else {
+        invitees = std::move(accounts);
+      }
+    } else if ((*thread)->kind == ThreadKind::Direct && !(*thread)->peer_identity_value.empty()) {
+      invitees = {(*thread)->peer_identity_value};
+    }
+    if (invitees.empty()) {
+      ReplyError(id, "nobody to call in " + thread_id);
+      return;
+    }
+    calls_->StartCall(thread_id, video, invitees, [this, id](Roe<CallSession> started) {
       if (!started) {
         ReplyError(id, started.error().message);
         return;
@@ -422,6 +515,108 @@ private:
       Emit(out);
       Settle();
     });
+  }
+
+  /** CallController::InviteIdentitiesToActiveCall (the in-call "add people" picker). */
+  void InviteToCall(int64_t id, const std::string& account) {
+    BindCalls();
+    std::string call_id = active_call_id_;
+    if (call_id.empty() && calls_->Available()) {
+      if (auto active = calls_->ActiveLocalCall(); active && active->has_value()) {
+        call_id = (*active)->call_id;
+      }
+    }
+    if (!calls_->Available() || call_id.empty() || account.empty()) {
+      ReplyError(id, "no call in progress, or no account");
+      return;
+    }
+    calls_->InviteParticipant(call_id, account, [id](Roe<void> invited) {
+      invited ? Emit(Reply(id, true)) : ReplyError(id, invited.error().message);
+    });
+  }
+
+  /** PeopleController's "New group": the picked contacts are invited to it. */
+  void CreateGroup(int64_t id, const std::string& title, const std::vector<std::string>& accounts) {
+    std::vector<std::string> contact_ids;
+    for (const std::string& account : accounts) {
+      auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "not a contact: " + account);
+        return;
+      }
+      contact_ids.push_back((*contact)->id);
+    }
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
+        WorkerLane::Normal, [this, title, contact_ids]() { return Hub().Groups().CreateGroup(title, contact_ids); },
+        [id](Roe<Thread> thread) {
+          if (!thread) {
+            ReplyError(id, thread.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("thread", thread->id);
+          out.set("group_id", thread->group_id.value_or(""));
+          Emit(out);
+        });
+  }
+
+  /** The invite cards in this user's chats. */
+  void ListGroupInvites(int64_t id) {
+    auto threads = facade_->ListThreads();
+    if (!threads) {
+      ReplyError(id, threads.error().message);
+      return;
+    }
+    std::vector<Value> rows;
+    for (const Thread& thread : *threads) {
+      if (thread.kind != ThreadKind::Direct) {
+        continue;
+      }
+      auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 200);
+      if (!page) {
+        continue;
+      }
+      for (const ThreadMessage& message : *page) {
+        auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
+        if (!invite) {
+          continue;
+        }
+        Object row;
+        row.set("nonce", invite->invite_nonce);
+        row.set("group_id", invite->group_id);
+        row.set("title", invite->group_title);
+        row.set("from", invite->inviter_identity);
+        rows.push_back(ObjectValue(std::move(row)));
+      }
+    }
+    Object out = Reply(id, true);
+    out.set("invites", ArrayValue(std::move(rows)));
+    Emit(out);
+  }
+
+  /** The invite card's Accept (ContactActionDispatcher accept_group_invite). */
+  void AcceptGroupInvite(int64_t id, const std::string& nonce, const std::string& group_id) {
+    Object action;
+    action.set("type", "accept_group_invite");
+    action.set("invite_nonce", nonce);
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<std::string>>>(
+        WorkerLane::Normal, [this, action]() { return Hub().Actions().Dispatch(DumpJson(action)); },
+        [this, id, group_id](Roe<std::optional<std::string>> accepted) {
+          if (!accepted) {
+            ReplyError(id, accepted.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          if (auto threads = facade_->ListThreads()) {
+            for (const Thread& thread : *threads) {
+              if (thread.kind == ThreadKind::Group && thread.group_id == group_id) {
+                out.set("thread", thread.id);
+                break;
+              }
+            }
+          }
+          Emit(out);
+        });
   }
 
   /** CallController::AcceptIncomingImpl. */
