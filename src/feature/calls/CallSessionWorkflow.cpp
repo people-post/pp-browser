@@ -1172,7 +1172,8 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
 std::optional<CallSession> CallSessionWorkflow::CrossedCall(const CallInviteDetail& invite, const std::string& peer,
                                                             const std::string& local_identity) const {
   if (invite.origin_group_id && !invite.origin_group_id->empty()) {
-    return std::nullopt;
+    // V053: one call per group — the same rule as two people calling each other.
+    return call_queries::OurUnansweredGroupCall(sessions_, *invite.origin_group_id, local_identity, invite.call_id);
   }
   for (const CallRosterEntry& entry : invite.participants) {
     if (entry.identity != peer && entry.identity != local_identity) {

@@ -171,6 +171,27 @@ TEST_F(CallSessionQueriesTest, CallingEachOtherAndAnEarlyHello) {
   EXPECT_FALSE(call_queries::PeerStillToAnswerOurCall(*calls_, kCall, "account:bob", "account:alice")) << "1:1 only";
 }
 
+// V053: two of a group calling it at once — our call of that group nobody has joined yet.
+TEST_F(CallSessionQueriesTest, CallingTheSameGroupAtOnce) {
+  auto session = calls_->LoadSession(kCall);
+  ASSERT_TRUE(session && session->has_value());
+  CallSession group = **session;
+  group.origin_group_id = "group-1";
+  ASSERT_TRUE(calls_->UpsertSession(group));
+  Participant("account:alice", CallParticipantState::Joined, 10);
+  Participant("account:bob", CallParticipantState::Ringing);
+  Participant("account:carol", CallParticipantState::Declined);
+  auto crossed = call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:alice", "call:bobs");
+  ASSERT_TRUE(crossed);
+  EXPECT_EQ(crossed->call_id, kCall);
+  EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-2", "account:alice", "call:bobs")) << "another group";
+  EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:alice", kCall)) << "not itself";
+  EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:bob", "call:x")) << "not ours";
+  Participant("account:bob", CallParticipantState::Joined, 20);
+  EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:alice", "call:bobs"))
+      << "someone joined: it is the group's call now";
+}
+
 TEST(CallSessionLogicRosterTest, StampsAndCoInvitees) {
   std::vector<CallRosterEntry> roster(1);
   roster[0].identity = "account:alice";

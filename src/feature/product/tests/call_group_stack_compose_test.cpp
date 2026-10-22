@@ -1272,5 +1272,47 @@ TEST_F(CallGroupStackComposeTest, TheOneRemovedLeavesTheCall) {
   EXPECT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
 }
 
+// V053: A and B call the group at the same moment. Both keep the call with the lower id: the
+// other one's starter answers it, and C's ring for the other one stops.
+TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
+  group_id_ = "group-1";
+  Thread thread;
+  thread.id = "thread-group-call";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = *group_id_;
+  thread.updated_at = util::NowUnixMs();
+  for (size_t i : {kA, kB, kC}) {
+    ASSERT_TRUE(sides_[i].store->UpsertThread(thread));
+  }
+  auto a = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  auto b = StartCallNow(*sides_[kB].ui, thread.id, false, {sides_[kA].local_identity, sides_[kC].local_identity});
+  ASSERT_TRUE(a) << a.error().message;
+  ASSERT_TRUE(b) << b.error().message;
+  ASSERT_NE(a->call_id, b->call_id);
+  const std::string winner = std::min(a->call_id, b->call_id);
+  const std::string loser = std::max(a->call_id, b->call_id);
+  auto ringing = [&](size_t i, const std::string& call_id) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto session = sessions.LoadSession(call_id);
+    auto row = sessions.FindParticipant(call_id, sides_[i].local_identity);
+    return session && session->has_value() && (*session)->state != CallSessionState::Ended && row &&
+           row->has_value() && (*row)->state == CallParticipantState::Ringing;
+  };
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::InCall && sides_[kB].ui->Phase() == CallPhase::InCall &&
+           ringing(kC, winner) && !ringing(kC, loser);
+  });
+  for (size_t i : {kA, kB}) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto me = sessions.FindParticipant(winner, sides_[i].local_identity);
+    EXPECT_TRUE(me && me->has_value() && (*me)->state == CallParticipantState::Joined)
+        << "side " << i << " is not in the winning call:" << Describe(winner);
+  }
+  EXPECT_TRUE(ringing(kC, winner)) << "C does not ring for the call that goes on:" << Describe(winner);
+  EXPECT_FALSE(ringing(kC, loser)) << "C still rings for the call that gave way";
+}
+
 } // namespace
 } // namespace pbr

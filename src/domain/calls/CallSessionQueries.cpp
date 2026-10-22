@@ -235,6 +235,25 @@ std::optional<CallSession> OurUnansweredCallTo(const CallSessionStore& sessions,
   return std::nullopt;
 }
 
+std::optional<CallSession> OurUnansweredGroupCall(const CallSessionStore& sessions, const std::string& group_id,
+                                                  const std::string& local_identity, const std::string& except_call_id) {
+  auto active = sessions.ListActiveSessions();
+  if (!active || group_id.empty()) {
+    return std::nullopt;
+  }
+  for (const CallSession& session : *active) {
+    if (session.call_id == except_call_id || session.initiator_identity != local_identity ||
+        session.origin_group_id != group_id) {
+      continue;
+    }
+    auto joined = JoinedRemoteIdentities(sessions, session.call_id, local_identity);
+    if (joined.empty()) {
+      return session;
+    }
+  }
+  return std::nullopt;
+}
+
 bool PeerStillToAnswerOurCall(const CallSessionStore& sessions, const std::string& call_id, const std::string& peer,
                               const std::string& local_identity) {
   auto session = sessions.LoadSession(call_id);

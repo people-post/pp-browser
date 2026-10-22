@@ -993,6 +993,25 @@ def scenario_group_member_removed(lab):
     assert_idle(a, b, c)
 
 
+def scenario_group_calling_at_once(lab):
+    """Alice and Bob press Call on the group at the same moment: they end up in one call (the same
+    one on each side), and Carol answers that call."""
+    (a, b, c), threads = open_group(lab)
+    ids = [a.cmd("call", thread=threads[a.name])["call_id"], b.cmd("call", thread=threads[b.name])["call_id"]]
+    winner = min(ids)
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=winner)
+    c.wait_surface("ringing", 40, call_id=winner)
+    c.cmd("accept_voice")
+    c.wait_surface("in_call", 40, call_id=winner)
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    return {"two_calls_placed": ids[0] != ids[1]}
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
@@ -1017,6 +1036,7 @@ SCENARIOS = [
     ("group_last_one_waits", scenario_group_last_one_waits),
     ("group_late_starter", scenario_group_late_starter),
     ("group_member_removed", scenario_group_member_removed),
+    ("group_calling_at_once", scenario_group_calling_at_once),
 ]
 
 # Scenarios run only when named (--only).

@@ -76,6 +76,13 @@ std::optional<CallSession> OurUnansweredCallTo(const CallSessionStore& sessions,
                                                const std::string& local_identity, const std::string& except_call_id);
 
 /**
+ * V053: two of a group calling it at once — a call of `group_id` this device placed (not
+ * `except_call_id`) that nobody else has joined yet.
+ */
+std::optional<CallSession> OurUnansweredGroupCall(const CallSessionStore& sessions, const std::string& group_id,
+                                                  const std::string& local_identity, const std::string& except_call_id);
+
+/**
  * B30: a 1:1 call we are in whose one remote, `peer`, is still invited or ringing (its call-media
  * hello arriving first is it accepting).
  */

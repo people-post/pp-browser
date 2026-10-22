@@ -285,7 +285,8 @@ private:
   // --- HandleInboundInvite steps ---
   /**
    * This device's own unanswered 1:1 call to `peer`, when `peer` just invited us to another one:
-   * both called each other at once. Both sides keep the call with the lower id (the same choice on
+   * both called each other at once. For a group's invite: our call of that group nobody has joined
+   * yet (V053: one call per group). Both sides keep the call with the lower id (the same choice on
    * each side, no message needed): the loser's side answers the winner and drops its own.
    */
   std::optional<CallSession> CrossedCall(const CallInviteDetail& invite, const std::string& peer,
