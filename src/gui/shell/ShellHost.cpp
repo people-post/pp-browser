@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <utility>
 #include "gui/shell/ShellHost.h"
+#include "foundation/runtime/FramePacing.h"
 
 #include "common/Metrics.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -2999,7 +3000,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
   if (state_.call_ring.active || state_.call_in_progress.active) {
-    delay_sec = std::min(delay_sec, 0.55);
+    delay_sec = std::min(delay_sec, kCallChromeFrameIntervalSec);
   }
 
   if (std::isfinite(delay_sec)) {

@@ -1,6 +1,7 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "foundation/platform/ScreenKeyboard.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/runtime/FramePacing.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
@@ -558,7 +559,7 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
 	if (force_frame)
 		has_event = SDL_PollEvent(&ev);
 	else if (power_save) {
-		constexpr double k_max_power_save_wait_sec = 2.0;
+		constexpr double k_max_power_save_wait_sec = pbr::kIdleFrameMaxWaitSec;
 		double delay_sec = context->GetNextUpdateDelay();
 		if (!std::isfinite(delay_sec) || delay_sec > k_max_power_save_wait_sec) {
 			delay_sec = k_max_power_save_wait_sec;

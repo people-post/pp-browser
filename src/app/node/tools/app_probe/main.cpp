@@ -17,6 +17,10 @@
 //   joinable {thread}                   the group call the call button would join {call_id} ("" none)
 //   accept / accept_voice / decline     the ring's buttons
 //   leave                               the call panel's End
+//   show_chat {thread}                  the chat on screen (opens the thread)
+//   background / foreground             a phone's OS sends the app to the background / brings it back
+//   minimize / restore                  a desktop window minimized / restored
+//   push_wake                           a call push arrives (what FCM's wake does)
 //   create_group {title, accounts}      a group with these contacts (each invited)
 //   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
 //   group_roster {group_id}             the members this user knows of
@@ -48,7 +52,10 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/runtime/FramePacing.h"
 
 #include <SDL3/SDL_hints.h>
 
@@ -344,6 +351,30 @@ public:
       out.set("id", id);
       out.set("ok", true);
       Emit(out);
+    } else if (cmd == "show_chat") {
+      // The chat on screen (ChatController opening a thread).
+      auto opened = facade_->OpenThread(request->getString("thread").value_or(""));
+      opened ? Emit(Reply(id, true)) : ReplyError(id, opened.error().message);
+    } else if (cmd == "background" || cmd == "foreground" || cmd == "minimize" || cmd == "restore") {
+      // What the OS tells the app (SdlAppEvents): a phone's WILL_ENTER_BACKGROUND /
+      // DID_ENTER_FOREGROUND, a desktop window minimized / restored.
+      if (cmd == "background") {
+        AppLifecycle::OnWillEnterBackground();
+      } else if (cmd == "foreground") {
+        AppLifecycle::OnDidEnterForeground();
+      } else if (cmd == "minimize") {
+        AppLifecycle::OnDesktopMinimized();
+      } else {
+        AppLifecycle::OnDesktopRestored();
+      }
+      Object out = Reply(id, true);
+      out.set("foreground", AppLifecycle::IsForeground());
+      out.set("attentive", AppLifecycle::IsUserAttentive());
+      Emit(out);
+    } else if (cmd == "push_wake") {
+      // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
+      BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      Emit(Reply(id, true));
     } else if (cmd == "quit") {
       Emit(Reply(id, true));
       quit_ = true;
@@ -356,6 +387,8 @@ public:
   }
 
   bool QuitRequested() const { return quit_; }
+  /** A ring or a call panel shows (the app then runs frames faster). */
+  bool CallShown() const { return presenter_.Screen().kind != CallScreen::Kind::None; }
 
   /** Application::Shutdown's order, minus the GUI. */
   void Shutdown() {
@@ -737,15 +770,19 @@ int main(int argc, char** argv) {
     out.set("event", "booted");
     pbr::Emit(out);
   }
-  auto last_tick = std::chrono::steady_clock::now();
+  // Frames as the app runs them (Application's loop, BrowserHost's power save): at once when UI
+  // work is posted, else after kCallChromeFrameIntervalSec while a ring / call panel shows, or
+  // kIdleFrameMaxWaitSec when idle. Each frame runs the UI tasks, then ticks (CallController::Tick).
   while (!probe->QuitRequested() && !stdin_closed) {
-    pbr::AppRuntime::RunUITasks();
-    const auto now = std::chrono::steady_clock::now();
-    if (now - last_tick >= std::chrono::milliseconds(50)) {  // ~ a frame at idle power-save pace
-      probe->Tick();
-      last_tick = now;
+    const double wait_sec = probe->CallShown() ? pbr::kCallChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(wait_sec * 1000.0));
+    while (!pbr::AppRuntime::HasPendingUITasks() && std::chrono::steady_clock::now() < deadline &&
+           !probe->QuitRequested() && !stdin_closed) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    pbr::AppRuntime::RunUITasks();
+    probe->Tick();
   }
   probe->Shutdown();
   {

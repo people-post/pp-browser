@@ -247,6 +247,14 @@ class Lab:
         if args.nat:
             os.makedirs(args.nat_share, exist_ok=True)
         self.root = tempfile.mkdtemp(prefix="pp-app-lab-", dir=args.nat_share if args.nat else None)
+        # --nat: each container's network as it starts, so a scenario that changes it is undone.
+        self.networks = {}
+        for i, container in enumerate(self.containers):
+            address, gw = container_network(container)
+            if not address or not gw:  # left broken by an earlier run: the compose file's own
+                address, gw = "10.119.%d.10/24" % (i + 1), "10.119.%d.254" % (i + 1)
+                restore_network(container, address, gw)
+            self.networks[container] = (address, gw)
         self.keep = args.keep
         self.relay_container = args.relay_container
         self.hop_container = args.hop_container
@@ -319,6 +327,8 @@ class Lab:
                 u.quit()
             except ProbeError:
                 u.crash()
+        for container, (address, gw) in self.networks.items():
+            restore_network(container, address, gw)
         if ok and not self.keep:
             shutil.rmtree(self.root, ignore_errors=True)
         self.users = []
@@ -629,6 +639,182 @@ def scenario_decline_then_call_back(lab):
     outcomes = sorted(s.get("outcome") for s in got)
     if outcomes != ["completed", "declined"]:
         raise ProbeError("alice's history: %s" % got)
+
+
+def scenario_minimized_still_rings(lab):
+    """Bob's desktop window is minimized: Alice's call still rings (a notification, as any
+    messenger's would); he restores the window and answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    if b.cmd("minimize").get("attentive"):
+        raise ProbeError("bob: a minimized window reads as attended")
+    started = time.time()
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 20, call_id=call_id)
+    rang = time.time() - started
+    b.cmd("restore")
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"ring_s": round(rang, 2)}
+
+
+def scenario_push_wakes_background_callee(lab):
+    """Bob's phone has the app in the background (its work paused): Alice's call reaches him by push.
+    The push wakes the app, which rings; he opens it and answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("background")
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    time.sleep(2)  # the push takes a moment to arrive
+    woke = time.time()
+    b.cmd("push_wake")
+    b.wait_surface("ringing", 20, call_id=call_id)
+    rang = time.time() - woke
+    b.cmd("foreground")  # he taps the call notification
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"ring_after_push_s": round(rang, 2)}
+
+
+def scenario_background_mid_call(lab):
+    """Alice's phone app goes to the background mid-call (she looks something up) and comes back:
+    the call goes on both ways the whole time."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    call_id, _ = connect(a, a_thread, b)
+    a.cmd("background")
+    for _ in range(3):
+        for u in (a, b):
+            assert_hears(u, 1, timeout=10)
+        if a.surface.get("call_id") != call_id or b.surface.get("call_id") != call_id:
+            raise ProbeError("the call did not survive the background (%s / %s)" % (a.surface, b.surface))
+    a.cmd("foreground")
+    for u in (a, b):
+        assert_hears(u, 1, timeout=10)
+    a.cmd("leave")
+    assert_idle(a, b)
+
+
+# --- the user's network (--nat: each user is a container behind its own NAT) ---------------------
+
+def container_network(container):
+    """(address/prefix, default gateway) of a user container's eth0."""
+    r = subprocess.run(["docker", "exec", "--user", "0", container, "sh", "-c",
+                        "ip -4 -o addr show eth0 | awk '{print $4; exit}'; "
+                        "ip route show default | awk '{print $3; exit}'"],
+                       capture_output=True, text=True, check=True)
+    address, gw = (r.stdout.split() + ["", ""])[:2]
+    return address, gw
+
+
+def restore_network(container, address, gw):
+    """The container's link up with its own address and route again (after net_drop / change_address)."""
+    subprocess.run(["docker", "exec", "--user", "0", container, "sh", "-c",
+                    "ip link set eth0 up; ip addr flush dev eth0; ip addr add %s dev eth0; "
+                    "ip route replace default via %s" % (address, gw)],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def net(u, script):
+    """Run `script` as root in the user's container (its network namespace is the app's)."""
+    if not u.container:
+        raise ProbeError("%s: network changes need --nat (a container per user)" % u.name)
+    r = subprocess.run(["docker", "exec", "--user", "0", u.container, "sh", "-c", script],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise ProbeError("%s: %s: %s" % (u.name, script, r.stderr.strip()))
+    return r.stdout.strip()
+
+
+def net_drop(u, seconds, during=None):
+    """The user's link goes down (Wi-Fi drops) for `seconds`, then comes back. `during` runs halfway."""
+    gw = net(u, "ip route show default | awk '{print $3; exit}'")
+    net(u, "ip link set eth0 down")
+    time.sleep(seconds / 2)
+    if during:
+        during()
+    time.sleep(seconds / 2)
+    net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
+
+
+def not_connected_while_down(u):
+    """With its network down, the user's call must not read Connected (nothing flows)."""
+    def check():
+        s = u.state()
+        if s.get("kind") == "in_call" and s.get("status") == "connected":
+            raise ProbeError("%s: the call reads Connected with the network down (%s)" % (u.name, s))
+    return check
+
+
+def change_address(u):
+    """The user's address on its LAN changes (a DHCP renewal, another access point): its NAT maps it
+    anew, so the outside sees it from another port."""
+    old = net(u, "ip -4 -o addr show eth0 | awk '{print $4; exit}'")  # e.g. 10.119.1.10/24
+    gw = net(u, "ip route show default | awk '{print $3; exit}'")
+    ip, prefix = old.split("/")
+    parts = ip.split(".")
+    new = ".".join(parts[:3] + [str(20 + (int(parts[3]) + 1) % 200)])
+    # Delete first: deleting the primary address also deletes the secondaries on its subnet.
+    net(u, "ip addr del %s dev eth0 && ip addr add %s/%s dev eth0 && ip route replace default via %s src %s"
+        % (old, new, prefix, gw, new))
+    return new
+
+
+def still_in_call(users, call_id, timeout):
+    """The same call comes back for everyone: in the call, hearing the others."""
+    for u in users:
+        u.wait_surface("in_call", timeout, call_id=call_id)
+    for u in users:
+        assert_hears(u, len(users) - 1, timeout=timeout)
+
+
+def scenario_network_drops_mid_call(lab):
+    """Bob's network drops for 6 s mid-call (behind his NAT) and comes back: the same call recovers,
+    audio both ways."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    call_id, _ = connect(a, a_thread, b)
+    started = time.time()
+    net_drop(b, 6, during=not_connected_while_down(b))
+    still_in_call((a, b), call_id, 45)
+    recovered = time.time() - started - 6
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"recovered_after_up_s": round(recovered, 1)}
+
+
+def scenario_address_changes_mid_call(lab):
+    """Bob's address changes mid-call (his NAT maps him anew): the same call goes on, audio both ways."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    call_id, _ = connect(a, a_thread, b)
+    started = time.time()
+    change_address(b)
+    still_in_call((a, b), call_id, 45)
+    recovered = time.time() - started
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"recovered_s": round(recovered, 1)}
+
+
+def scenario_group_member_network_drops(lab):
+    """Carol's network drops for 6 s in a three-way call (on the hop) and comes back: everyone hears
+    everyone again in the same call."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    started = time.time()
+    net_drop(c, 6, during=not_connected_while_down(c))
+    still_in_call((a, b, c), call_id, 60)
+    recovered = time.time() - started - 6
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    return {"recovered_after_up_s": round(recovered, 1)}
 
 
 # Past a seed link's liveness: Amp keeps a hot link alive every 20 s and drops it after missed echoes.
@@ -1051,6 +1237,12 @@ SCENARIOS = [
     ("caller_restarts_mid_call", scenario_caller_restarts_mid_call),
     ("peer_vanishes_mid_call", scenario_peer_vanishes_mid_call),
     ("decline_then_call_back", scenario_decline_then_call_back),
+    ("minimized_still_rings", scenario_minimized_still_rings),
+    ("push_wakes_background_callee", scenario_push_wakes_background_callee),
+    ("background_mid_call", scenario_background_mid_call),
+    ("network_drops_mid_call", scenario_network_drops_mid_call),
+    ("address_changes_mid_call", scenario_address_changes_mid_call),
+    ("group_member_network_drops", scenario_group_member_network_drops),
     ("seed_down", scenario_seed_down),
     ("seed_dies_in_use", scenario_seed_dies_in_use),
     ("group_call_three", scenario_group_call_three),
@@ -1074,6 +1266,8 @@ OPT_IN = set()
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.
 NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
+# Scenarios that change a user's network: they need a container per user (--nat).
+NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops"}
 
 
 def main():
@@ -1103,7 +1297,7 @@ def main():
             peer = json.load(r)["peer_id"]
         args.hop = "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (args.hop_ip, peer)
 
-    skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else set())
+    skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else NEEDS_NAT)
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
