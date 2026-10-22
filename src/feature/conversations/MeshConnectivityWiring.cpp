@@ -59,27 +59,55 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
   const auto dht_nodes = in.list_dht_nodes ? in.list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   const bool include_seeds = !in.seed_dial_ok || in.seed_dial_ok();
 
+  // One list (pp-cpp-mesh docs/PEER_REACH.md § 3.3): the rendezvous surface in its order, then
+  // anyone allowed another role only; each candidate carries the roles its sources allow.
   mesh::MeshHopPolicy policy;
-  policy.rendezvous_candidates =
+  auto grant = [&policy](const mesh::MeshHopCandidate& hop, const uint32_t role) {
+    if (hop.peer_id.empty()) {
+      return;
+    }
+    auto it = std::find_if(policy.candidates.begin(), policy.candidates.end(),
+                           [&hop](const mesh::MeshHopCandidate& c) { return c.peer_id == hop.peer_id; });
+    if (it == policy.candidates.end()) {
+      policy.candidates.push_back(hop);
+      policy.candidates.back().roles = role;
+    } else {
+      it->roles |= role;
+    }
+  };
+
+  std::vector<mesh::MeshHopCandidate> rendezvous =
       BuildCircuitHopList(contacts, directory_nodes, dht_nodes, ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes),
                           mesh_cfg.prefer_contacts_for_routing, include_seeds);
   // Trusted relays only: the configured org seeds, not the directory's volunteers merged into them.
   // Seeds known unreachable are no park target either: Accept would wait out the park for nothing.
-  policy.bootstrap_seeds = CollectSeedHopCandidates(
+  std::vector<mesh::MeshHopCandidate> seeds = CollectSeedHopCandidates(
       mesh_cfg.trusted_relays_only ? mesh_cfg.bootstrap_peers : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes));
   if (!include_seeds) {
     const std::vector<std::string> org = PeerIds(CollectSeedHopCandidates(mesh_cfg.bootstrap_peers));
-    std::erase_if(policy.bootstrap_seeds, [&org](const mesh::MeshHopCandidate& hop) {
+    std::erase_if(seeds, [&org](const mesh::MeshHopCandidate& hop) {
       return std::find(org.begin(), org.end(), hop.peer_id) != org.end();
     });
   }
-  policy.punch_introducers.contact_peer_ids = PeerIds(CollectContactHopCandidates(contacts));
-  policy.punch_introducers.seed_peer_ids = PeerIds(CollectSeedHopCandidates(mesh_cfg.bootstrap_peers));
+  std::vector<mesh::MeshHopCandidate> contact_introducers = CollectContactHopCandidates(contacts);
   if (mesh_cfg.trusted_relays_only) {  // privacy T4; an introducer sees both ends' addresses
     const auto trusted = TrustedRelayPeerIds(contacts, mesh_cfg.bootstrap_peers);
-    policy.rendezvous_candidates = KeepTrustedRelays(std::move(policy.rendezvous_candidates), trusted);
-    std::erase_if(policy.punch_introducers.contact_peer_ids,
-                  [&trusted](const std::string& id) { return !trusted.contains(id); });
+    rendezvous = KeepTrustedRelays(std::move(rendezvous), trusted);
+    std::erase_if(contact_introducers, [&trusted](const mesh::MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
+  }
+
+  for (const auto& hop : rendezvous) {
+    grant(hop, mesh::kReachRoleRendezvous);
+  }
+  for (const auto& hop : seeds) {
+    grant(hop, mesh::kReachRoleSeed);
+  }
+  for (auto hop : contact_introducers) {
+    hop.affinity = mesh::MeshHopAffinity::Contact;  // asked before the seeds
+    grant(hop, mesh::kReachRoleIntroducer);
+  }
+  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+    grant(hop, mesh::kReachRoleIntroducer);
   }
   return policy;
 }
