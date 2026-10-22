@@ -169,7 +169,7 @@ protected:
     CallMediaConnectHooks h;
     h.before_attempt = [this](const CallMediaDirectConnectParams&) { ++before_attempts_; };
     h.on_link_ready = [this](mesh::PeerLinkKind kind) { last_kind_ = kind; };
-    h.on_finished = [this](Roe<void> r) {
+    h.on_finished = [this](CallMediaRoe r) {
       ++finished_;
       result_ = std::move(r);
     };
@@ -211,7 +211,7 @@ protected:
   std::unique_ptr<CallsLoopbackOutbox<ConnectEvent>> events_;
   int before_attempts_ = 0;
   int finished_ = 0;
-  std::optional<Roe<void>> result_;
+  std::optional<CallMediaRoe> result_;
   mesh::PeerLinkKind last_kind_ = mesh::PeerLinkKind::Unknown;
 };
 
@@ -260,9 +260,25 @@ TEST_F(CallMediaConnectCoordinatorTest, GivesUpAfterAllAttempts) {
   OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(20)));
   ASSERT_TRUE(result_);
-  EXPECT_FALSE(*result_);
+  ASSERT_FALSE(*result_);
+  EXPECT_EQ(result_->error().GetCode(), transport_->fail_code) << "the last attempt's code, not its text";
   EXPECT_EQ(transport_->connect_calls, 5);
   EXPECT_FALSE(connect_->InFlight());
+}
+
+// A peer reach that found no link ends the sequence with this layer's code (the reach's chain kept).
+TEST(CallMediaConnectWrapTest, AReachFailureIsWrappedAsCallMediaCodes) {
+  using ReachErr = mesh::PeerReachCoordinator::Err;
+  const auto wrap = [](ReachErr code) {
+    return CallMediaConnectCoordinator::WrapReachFailure(mesh::PeerReachCoordinator::Failure::Of(code, "why"));
+  };
+  EXPECT_EQ(wrap(ReachErr::NoEndpoint).GetCode(), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(ReachErr::NotConnected).GetCode(), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(ReachErr::CircuitFailed).GetCode(), CallMediaErr::Unreachable);
+  EXPECT_EQ(wrap(ReachErr::NoAnswer).GetCode(), CallMediaErr::Timeout);
+  EXPECT_EQ(wrap(ReachErr::TransportFailed).GetCode(), CallMediaErr::StaleLink);
+  EXPECT_EQ(wrap(ReachErr::Cancelled).GetCode(), CallMediaErr::Aborted);
+  EXPECT_NE(wrap(ReachErr::NoAnswer).message.find("why"), std::string::npos);
 }
 
 // THREADING.md Cancel / Abort: abort clears InFlight itself and completes nothing.

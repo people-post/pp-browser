@@ -1201,7 +1201,7 @@ CallMediaConnectHooks CallMediaBridge::MakeConnectHooks(const std::string& call_
     host_.P2pResendMediaKey(params.call_id, key_peer);
   };
   hooks.on_link_ready = [this](const mesh::PeerLinkKind kind) { reach_kind_ = kind; };
-  hooks.on_finished = [this, call_id](Roe<void> result) {
+  hooks.on_finished = [this, call_id](CallMediaRoe result) {
     if (DirectMediaReady()) {
       CommitDirectConnected(call_id);
       return;

@@ -167,19 +167,25 @@ The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 
 ### Phase 3 — Feature Amp services
 
-- [ ] `AmpChatHistoryTransport`, `AmpChatBlobTransport` (`AmpDirectChatTransport` done; `AmpCircuitHopReach` is pp-cpp-mesh's, done):
-      `WrapL4Failure` (or wrap link where L4 not yet coded).
-- [ ] Retry/backoff branches on **`DialInBackoff`**, **`AssociationNotReady`**, **`EndpointNotRegistered`**
-      via port/coordinator code — not message substring alone.
-- [ ] Stop stripping codes at `Error(child.message)` unless converting to `AppError` with mapped category.
-      Known strips: `CallMediaConnectCoordinator::OnLinkReady` and `BroadcastHub`'s reach port
-      (a peer reach failure becomes text), `ConversationsHub::RequestCircuitBridgePreferred`.
+- [x] Retry / backoff decisions read codes, not message text. No message-substring branch is left on
+      a transport path: group-membership controls dispatch on their control type
+      (`RelayReceivePipeline`), and a call's clean stream close is `CallMediaErr::StreamClosed`,
+      read by the call bridge (it matched "stream closed" / "read_eof").
+- [x] No code strips at `Error(child.message)`: `CallMediaConnectCoordinator` wraps a peer reach
+      failure (`WrapReachFailure`) and finishes with `CallMediaRoe`; the broadcast viewer's
+      `reach_peer` port passes the reach's own result through; `ICallMediaTransport::on_failed`
+      carries the `CallMediaFailure`. `ConversationsHub::RequestCircuitBridgePreferred` (unused)
+      is gone.
 - [x] `CallMediaConnectCoordinator` decides "dial a fresh link next time" by `CallMediaErr::StaleLink`.
 - [x] Chat send notices by code: the direct send reports `DirectSendErr` (`IDirectMessageClient`;
       `AmpDirectChatTransport::WrapLinkFailure`), the relay send `AppError` codes
       (`HttpRelayClient::Send`: rate limited, not configured, HTTP status; network failures were
       coded already), and `domain/messaging/DeliveryNotice` maps them (`SendFailureFromDirect`,
       `SendFailureFromRelay`). With no relay route, the notice says why the direct send failed.
+- [ ] `AmpChatHistoryTransport`, `AmpChatBlobTransport`: still text. Their callers
+      (`ChatSyncWorkflow`, `AttachmentFetch`, `AttachmentClient`) fall back to the relay / CDN on
+      any peer failure, so nothing branches yet; code them (as `IDirectMessageClient`) when a caller
+      or the UI mapping (Phase 4) needs to tell the failures apart.
 
 ### Phase 4 — UI boundary
 

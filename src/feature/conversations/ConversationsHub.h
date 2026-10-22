@@ -320,14 +320,6 @@ public:
   mesh::MeshHost* Mesh() { return mesh_.get(); }
   const mesh::MeshHost* Mesh() const { return mesh_.get(); }
 
-  /**
-   * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
-   * Registers hop endpoints as needed; returns first successful Amp bridge.
-   */
-  Roe<mesh::CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
-                                                              const std::string& target_multiaddr,
-                                                              int timeout_ms = 8000);
-
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
   void BindAgentInbound(AgentInboundPorts ports);

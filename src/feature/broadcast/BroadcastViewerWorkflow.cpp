@@ -227,7 +227,8 @@ void BroadcastViewerWorkflow::FetchTicket() {
     RequestTicket();
     return;
   }
-  ports_.reach_peer(status_.target.publisher_peer_id, [outbox = outbox_, watch = watch_](Roe<void> reached) {
+  ports_.reach_peer(status_.target.publisher_peer_id,
+                    [outbox = outbox_, watch = watch_](mesh::PeerReachCoordinator::ReachRoe reached) {
     outbox.Emit(viewer_event::Reached{watch, std::move(reached)});
   });
 }

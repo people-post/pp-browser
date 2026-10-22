@@ -304,7 +304,7 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
 void CallMediaConnectCoordinator::OnLinkReady(const uint64_t seq, const int attempt,
                                               mesh::PeerReachCoordinator::ReachRoe reached) {
   if (!reached) {
-    Finish(seq, Roe<void>(Error(reached.error().message)));
+    Finish(seq, WrapReachFailure(reached.error()));
     return;
   }
   attempt_reused_link_ = reached->reused_link;
@@ -397,13 +397,48 @@ void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const in
     log().info << "next attempt needs a fresh link peer=" << request_.params.peer_key << " attempt=" << attempt;
   }
   if (attempt >= kConnectAttempts) {
-    Finish(seq, Error(connected.error().message));
+    Finish(seq, connected.error());
     return;
   }
   retry_timer_id_ = outbox_.After(std::chrono::milliseconds(kRetryDelayMs), connect_event::RetryDue{seq, attempt});
 }
 
-void CallMediaConnectCoordinator::Finish(const uint64_t seq, Roe<void> result) {
+CallMediaFailure CallMediaConnectCoordinator::WrapReachFailure(const mesh::PeerReachCoordinator::Failure& child) {
+  using ReachErr = mesh::PeerReachCoordinator::Err;
+  CallMediaErr code = CallMediaErr::Generic;
+  switch (child.GetCode()) {
+    case ReachErr::Unavailable:
+      code = CallMediaErr::NotStarted;
+      break;
+    case ReachErr::BadRequest:
+      code = CallMediaErr::BadRequest;
+      break;
+    case ReachErr::Cancelled:
+      code = CallMediaErr::Aborted;
+      break;
+    case ReachErr::NoEndpoint:
+    case ReachErr::DialInBackoff:
+    case ReachErr::DialBusy:
+    case ReachErr::Refused:
+    case ReachErr::CircuitFailed:
+    case ReachErr::NotConnected:
+      code = CallMediaErr::Unreachable;
+      break;
+    case ReachErr::NoAnswer:
+      code = CallMediaErr::Timeout;
+      break;
+    case ReachErr::TransportFailed:
+      code = CallMediaErr::StaleLink;
+      break;
+    case ReachErr::Ok:
+    case ReachErr::Generic:
+    default:
+      break;
+  }
+  return CallMediaFailure::Of(code, detail::AppendFrom("call-media: peer not reached", "reach", child.message));
+}
+
+void CallMediaConnectCoordinator::Finish(const uint64_t seq, CallMediaRoe result) {
   if (!Current(seq) || !InFlight()) {
     return;  // superseded, or already finished (duplicate completion)
   }

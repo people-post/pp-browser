@@ -185,7 +185,7 @@ struct RetryDue {
 /** Sequence `seq` ended: hand its result to the owner (never inside the step that ended it). */
 struct Finished {
   uint64_t seq = 0;
-  Roe<void> result;
+  CallMediaRoe result;
 };
 
 } // namespace connect_event
