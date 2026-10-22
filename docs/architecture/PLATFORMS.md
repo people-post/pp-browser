@@ -100,7 +100,7 @@ iOS builds use CMake + Xcode toolchains from the repo root (no separate Gradle-s
 | Renderer | OpenGL 3.3 | OpenGL ES 3 (SDL) |
 | libp2p | Built and linked | Built and linked |
 | MCP | stdio + HTTP | HTTP URL only |
-| Push | N/A (desktop local notify) | APNs token via `IosPushDeviceRegistrar` + silent wake → `BackgroundSyncScheduler` |
+| Push | N/A (desktop local notify) | APNs token via `IosPushDeviceRegistrar` + silent wake → `BackgroundSyncScheduler`; call invites arrive as a visible alert (P012); `IosLocalNotifier` banners |
 | HTTPS (curl + BoringSSL) | Secure Transport (macOS) | `os::ApplyPlatformCurlSsl` → Security.framework `SecTrust` verify callback (system roots / MDM); no bundled CA file |
 
 ### Mobile HTTPS trust (curl + BoringSSL)

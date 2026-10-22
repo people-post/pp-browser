@@ -198,7 +198,7 @@ The relay cannot tell a call invite from a message (the control type is inside t
 | `platform` | Provider shape |
 |------------|----------------|
 | `android` | FCM **data** message `{ "type": "…" }` |
-| `ios` | `inbox_wake`: APNs silent push (`content-available: 1`, `apns-push-type: background`, priority 5) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `interruption-level: time-sensitive`, `sound`, `alert.loc-key: CALL_INCOMING` — worded on the device, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and may never wake the app for one |
+| `ios` | `inbox_wake`: APNs silent push (`content-available: 1`, `apns-push-type: background`, priority 5) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `apns-collapse-id: pp-call`, `aps.interruption-level: time-sensitive`, `aps.sound: default`, `aps.alert: { title-loc-key: CALL_INCOMING_TITLE, loc-key: CALL_INCOMING_BODY }` — worded on the device from `packaging/ios/*.lproj`, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and does not wake an app the user swiped away. The collapse id is the app's own incoming-call banner id, so the two replace each other |
 
 Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 

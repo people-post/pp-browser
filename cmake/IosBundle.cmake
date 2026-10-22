@@ -66,6 +66,16 @@ function(pp_browser_configure_ios_app target)
     VERBATIM
   )
 
+  # Words for the relay's call alert (its push carries only loc-keys; P012).
+  foreach(_lproj en zh-Hans)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${CMAKE_SOURCE_DIR}/packaging/ios/${_lproj}.lproj"
+        "$<TARGET_BUNDLE_DIR:${target}>/${_lproj}.lproj"
+      VERBATIM
+    )
+  endforeach()
+
   install(TARGETS ${target} BUNDLE DESTINATION .)
   install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets/"
     DESTINATION "${PP_BROWSER_IOS_BUNDLE_NAME}.app/assets"

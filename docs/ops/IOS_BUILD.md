@@ -164,7 +164,7 @@ Do this at [developer.apple.com/account](https://developer.apple.com/account) af
 
 Client registration is in-tree (`IosPushDeviceRegistrar` + SDL app-delegate hooks). The **.p8** stays on the www/relay host:
 
-1. **Identifiers → App ID** → enable **Push Notifications**; regenerate Development + App Store profiles (`aps-environment`)
+1. **Identifiers → App ID** → enable **Push Notifications** and **Time Sensitive Notifications** (incoming-call alerts break through Focus, P012); regenerate Development + App Store profiles (`aps-environment`, `com.apple.developer.usernotifications.time-sensitive`)
 2. **Keys → + → Apple Push Notifications service (APNs)** → download **`AuthKey_XXXX.p8`** (once)
 3. On www: set `BRF_WWW_APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `BUNDLE_ID` (see www README). Use `BRF_WWW_APNS_USE_SANDBOX=1` only for USB development tokens.
 

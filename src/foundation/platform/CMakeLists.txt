@@ -271,6 +271,7 @@ if(PP_BROWSER_IS_IOS)
   target_sources(pp_foundation_platform PRIVATE
     NetworkConnectivity_Ios.mm
     IosPushDeviceRegistrar.mm
+    IosLocalNotifier.mm
     IosApnsAppDelegate.mm)
   target_link_libraries(pp_foundation_platform PUBLIC
     "-framework UserNotifications"
