@@ -111,6 +111,10 @@ if(PP_BROWSER_BUILD_TESTS)
   pp_browser_enable_googletest()
 endif()
 
+# iPhone: ring incoming calls on CallKit's screen, reached by VoIP push (P013). Off for builds
+# sold in China, where App Store review rejects CallKit: those ring by the alert push (P012).
+option(PP_BROWSER_IOS_CALLKIT "iOS: CallKit + PushKit for incoming calls" ON)
+
 # Runtime asset paths: read by foundation/platform/DesktopPathProvider.cpp and the app
 # target, so it must be declared before add_subdirectory(src).
 option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)

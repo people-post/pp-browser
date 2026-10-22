@@ -11,7 +11,9 @@
 #include "domain/calls/CallHopAttachLogic.h"
 #include "domain/people/AvatarGlyph.h"
 #include "domain/people/ContactTypes.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "gui/CallStatusHint.h"
 #include "domain/ui/ShellTypes.h"
@@ -44,7 +46,18 @@
 
 namespace pbr {
 
-CallController::CallController() {
+CallController::CallController()
+    : system_call_screen_(ICallSystemUi::Instance(),
+                          {
+                              .accept = [this](const bool voice_only) { (void)presenter_.Accept(voice_only); },
+                              .decline = [this]() { (void)presenter_.Decline(); },
+                              .leave = [this]() { (void)presenter_.Leave(); },
+                              .toggle_mute = [this]() { presenter_.ToggleMute(); },
+                              .display_name = [this](const std::string& identity) {
+                                return DisplayNameForIdentity(identity);
+                              },
+                              .now_ms = {},
+                          }) {
   redirectLogger("CallController");
   CallPresenter::Callbacks callbacks;
   callbacks.on_changed = [this]() { Render(); };
@@ -387,7 +400,8 @@ void CallController::SyncRingtone() {
   }
   // CallRingtone::Stop is async (never joins on Accept/UI) so mobile is safe — see
   // CallRingtone.cpp Samsung Accept hang notes. Do not skip playback here.
-  const bool should_ring = ring_.active;
+  // The phone's own call screen rings it (CallKit's ringtone): the app's stays quiet.
+  const bool should_ring = ring_.active && !system_call_screen_.SystemRings(presenter_.Screen().ring_call_id);
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
   } else if (!should_ring && ringtone_.IsPlaying()) {
@@ -474,6 +488,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
     return;
   }
   case CallNotice::Kind::IncomingCall: {
+    if (system_call_screen_.TakesRing(AppLifecycle::IsForeground())) {
+      return;  // the phone's own call screen rings it (CallKit)
+    }
     const std::string caller = DisplayNameForIdentity(notice.identity);
     const std::string body =
         caller.empty() ? Tr("call.notify.body_unknown") : Tr("call.notify.body_named", {{"name", caller}});
@@ -485,6 +502,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
 
 void CallController::Render() {
   const CallScreen& screen = presenter_.Screen();
+  system_call_screen_.Sync(screen, presenter_.ActiveCallId(), AppLifecycle::IsForeground());
   // The chat header shows "In call": tell it when the call on screen changes.
   if (screen.kind != header_kind_ || presenter_.ActiveCallId() != header_call_id_) {
     header_kind_ = screen.kind;

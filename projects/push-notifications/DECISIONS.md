@@ -66,7 +66,8 @@
 **Decision:** In the background a phone app's work is paused (`AppLifecycle::OnWillEnterBackground`) and it has no relay poll of its own: it is reached by push. A push (`inbox_wake` / `call_wake`) or a WorkManager run resumes the work for `kBackgroundWakeWindowMs` (20 s) — enough to sync the inbox and ring — then the work pauses again unless the app came to the foreground; a newer wake extends the window. WorkManager stays as the safety net for missed pushes. A minimized desktop window is not background (it keeps working and notifies).  
 **Rationale:** The OS enforces it anyway (iOS suspends, Android Doze batches network), and the messengers people compare against work this way. The 45 s in-process poll never ran (its timer lived on the paused coordinator), and a push could not wake the app (its sync was posted to that paused coordinator); once that was fixed, one push kept the phone awake for good.  
 Every ring raises the "Incoming call" notice (`CallPresenter`), however its invite arrived; the platform's notifier shows it only when the user is not looking. So the relay needs no call class (it could not see one: the control type is end-to-end encrypted).  
-**Cross-link:** app lab `background_is_push_only`, `push_wakes_background_callee`, `minimized_still_rings` (`scripts/test/pp_app_lab.py`).
+**Amended 2026-10-23:** a call (any phase but Idle) holds the work running in the background like a wake window does, and lets go 5 s after it ends (`AppLifecycle::SetCallInProgress`); the relay is polled every 2 s meanwhile. Before, a call went on in the background on media threads alone: the other side's hang-up reached the app only when the user opened it, and a call answered without opening the app (the lock screen; CallKit) went silent when the wake window closed.  
+**Cross-link:** app lab `background_is_push_only`, `push_wakes_background_callee`, `minimized_still_rings`, `peer_hangs_up_while_backgrounded`, `answered_in_background` (`scripts/test/pp_app_lab.py`).
 
 ## P011 — Stay connected in the background (opt-in, Android)
 
@@ -83,3 +84,23 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 **Decision:** A call invite sent through the relay is marked `urgent` (`CallControlClient` → `send_control(…, urgent)` → `RelayEnvelope::relay_wake_urgent` → `"urgent": true` on `POST /v1/messages`). The flag is a hint beside the send record, not in its signature or the end-to-end envelope: the relay learns "this one should ring", never what it is or who calls. A relay that honours it (rate-limited per sender → recipient) wakes Android with `call_wake` and sends iOS a visible time-sensitive "Incoming call" alert (`loc-key`, worded on the device). Tapping it opens the app, which syncs and rings; in the foreground the app drops the alert (it rings anyway). iOS gets its own notifier (`IosLocalNotifier`) for what a silent wake syncs; its incoming-call banner and the alert share an id (`pp-call`). VoIP push + CallKit (a full-screen ring) may follow for builds where CallKit is allowed.  
 **Rationale:** iOS throttles silent pushes and does not deliver them to an app the user swiped away, so a call invite could go unnoticed. An alert is always shown. Keeping the hint opaque and unsigned leaves older relays and older clients working unchanged; the sender could already wake the recipient with any message, so trusting the hint costs no more than the rate limit allows.  
 **Cross-link:** `docs/contracts/SERVICE_ENDPOINTS.md` (push wake types); unit test `P2pRelayWireTest.UrgentWakeIsARelayHintOutsideTheEnvelope`.
+
+## P013 — CallKit + VoIP push on iPhone (where allowed)
+
+**Date:** 2026-10-23  
+**Status:** Accepted (product owner: alert push first, CallKit later — this is the later)  
+**Decision:** iPhone builds with `PP_BROWSER_IOS_CALLKIT` (on by default; off for builds sold in China, where App Store review rejects CallKit) ring incoming calls on CallKit's screen — full screen, on the lock screen too, answered or declined there.
+- **Token:** PushKit gives a VoIP token, registered as a second device (`platform: ios_voip`, `device_id: <ios device id>.voip`). The relay sends that phone's urgent wakes (P012) to it as a VoIP push instead of the alert, and sends it nothing else.
+- **Push:** a VoIP push puts "Incoming call" on the CallKit screen at once, since iOS requires a call for every VoIP push, and wakes the app to sync. The app fills that call in with the ring it finds: caller name, video.
+- **Bridge:** `CallSystemUiBridge` (feature/calls, unit-tested) keeps the CallKit screen in step with `CallPresenter`'s.
+  - A ring goes there when the app is not in the foreground, or when a push's call is waiting.
+  - Answered there, it stays there; answered in the app, CallKit lets it go.
+  - Declined or hung up there, the presenter declines or leaves.
+  - Answered or declined before its ring was known (the app still waking, or PIN-locked, P003), the choice applies to the ring once it shows, within 60 s.
+  - The app's own ringtone stays quiet while CallKit rings.
+- **Privacy:** a generic handle, and no calls in the phone's recents or iCloud call history.
+
+**Rationale:** the alert (P012) is easy to miss and needs a tap and an unlock before the call can be answered. A call should ring like a call.  
+**Depends on:** a call holds the app's work running in the background (P010 amendment, 2026-10-23) — a call answered on the lock screen goes on with the app never opened.  
+**Cross-link:** `CallSystemUi.h`, `CallSystemUi_Ios.mm`, `call_system_ui_bridge_test.cpp`; relay `planPushWakes` (www).
+

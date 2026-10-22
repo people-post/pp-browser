@@ -9,6 +9,7 @@
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/calls/CallPresenter.h"
+#include "feature/calls/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
@@ -121,6 +122,8 @@ private:
   CallUiBackend* Backend();
 
   CallPresenter presenter_;
+  /** The phone's own call screen (CallKit), kept in step with the presenter's (P013). */
+  CallSystemUiBridge system_call_screen_;
   /** What the chat header last heard about (it shows "In call"): refreshed when this changes. */
   CallScreen::Kind header_kind_ = CallScreen::Kind::None;
   std::string header_call_id_;

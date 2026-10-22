@@ -14,6 +14,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallTopologyController.cpp
     CallUiBackend.cpp
     CallPresenter.cpp
+    CallSystemUiBridge.cpp
     LiveCallMedia.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp

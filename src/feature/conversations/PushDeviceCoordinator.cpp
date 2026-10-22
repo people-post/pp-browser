@@ -41,7 +41,18 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   if (reg.relay_user_id.empty()) {
     return Error("Relay user not registered");
   }
-  return client->RegisterDevice(reg);
+  auto registered = client->RegisterDevice(reg);
+  // A CallKit iPhone's calls come by VoIP push, to their own token (P013).
+  if (const std::string call_token = IPushDeviceRegistrar::Instance().CallPushToken(); !call_token.empty()) {
+    PushDeviceRegistration call_reg = reg;
+    call_reg.platform = IPushDeviceRegistrar::kCallPushPlatform;
+    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kCallPushDeviceSuffix;
+    call_reg.push_token = call_token;
+    if (auto call_registered = client->RegisterDevice(call_reg); !call_registered && registered) {
+      return call_registered;
+    }
+  }
+  return registered;
 }
 
 } // namespace pbr

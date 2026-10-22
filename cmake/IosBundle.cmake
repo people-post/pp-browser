@@ -9,6 +9,13 @@ if(NOT PP_BROWSER_IOS_DEPLOYMENT_TARGET)
     "Minimum iOS version (IPHONEOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET)")
 endif()
 
+# Info.plist: PushKit VoIP pushes need the `voip` background mode (CallKit builds only, P013).
+if(PP_BROWSER_IOS_CALLKIT)
+  set(PP_BROWSER_IOS_VOIP_BACKGROUND_MODE "\n    <string>voip</string>")
+else()
+  set(PP_BROWSER_IOS_VOIP_BACKGROUND_MODE "")
+endif()
+
 function(pp_browser_configure_ios_app target)
   if(NOT PP_BROWSER_IS_IOS)
     return()

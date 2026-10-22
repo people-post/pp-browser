@@ -199,6 +199,7 @@ The relay cannot tell a call invite from a message (the control type is inside t
 |------------|----------------|
 | `android` | FCM **data** message `{ "type": "…" }` |
 | `ios` | `inbox_wake`: APNs silent push (`content-available: 1`, `apns-push-type: background`, priority 5) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `apns-collapse-id: pp-call`, `aps.interruption-level: time-sensitive`, `aps.sound: default`, `aps.alert: { title-loc-key: CALL_INCOMING_TITLE, loc-key: CALL_INCOMING_BODY }` — worded on the device from `packaging/ios/*.lproj`, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and does not wake an app the user swiped away. The collapse id is the app's own incoming-call banner id, so the two replace each other |
+| `ios_voip` | PushKit token of a CallKit build (P013), `device_id` = its `ios` device id + `.voip`. Calls only: `call_wake` as a VoIP push (`apns-push-type: voip`, priority 10, topic `<bundle id>.voip`, `{ "type": "call_wake" }`), which then replaces that phone's `ios` call alert. Never anything else — iOS requires the app to report a CallKit call for every VoIP push |
 
 Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 

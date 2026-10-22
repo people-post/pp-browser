@@ -12,6 +12,9 @@
 #import <UserNotifications/UserNotifications.h>
 
 #include "foundation/platform/IosLocalNotifier.h"
+#if defined(PP_IOS_CALLKIT)
+#include "foundation/platform/IosCallSystemUi.h"
+#endif
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
@@ -45,6 +48,10 @@ bool IsCallWake(NSDictionary* userInfo) {
   UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
   // Before launch returns, so a tap that launched the app is delivered.
   center.delegate = self;
+#if defined(PP_IOS_CALLKIT)
+  // Likewise a VoIP push that launched it (P013).
+  pbr::InstallIosCallSystemUi();
+#endif
   [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound |
                                            UNAuthorizationOptionBadge)
                         completionHandler:^(BOOL /*granted*/, NSError* /*error*/) {

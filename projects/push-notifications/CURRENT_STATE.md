@@ -13,7 +13,7 @@
 | Messaging | `SyncInboxFromWake`, background unread → OS notify when alerts on |
 | Relay contract | Client calls `/v1/devices/register|unregister`; expects opaque wakes from the provider when tokens are registered |
 | Android | FCM (opt-in via `google-services.json`), WorkManager, NotificationCompat, JNI wake/token |
-| iOS | APNs token via `IosPushDeviceRegistrar` + `IosApnsAppDelegate` (SDLUIKitDelegate subclass); silent `inbox_wake` → `BackgroundSyncScheduler`; the relay's `call_wake` alert (P012): tap or foreground → call wake sync; `IosLocalNotifier` posts banners after a wake (tap → open thread) |
+| iOS | APNs token via `IosPushDeviceRegistrar` + `IosApnsAppDelegate` (SDLUIKitDelegate subclass); silent `inbox_wake` → `BackgroundSyncScheduler`; the relay's `call_wake` alert (P012): tap or foreground → call wake sync; `IosLocalNotifier` posts banners after a wake (tap → open thread); CallKit builds: PushKit token (`ios_voip`) + CallKit screen via `CallSystemUiBridge` (P013) |
 | www relay | `FcmPushSender` + `ApnsPushSender` (HTTP/2 + .p8 JWT); branch on `platform` |
 | Desktop local banners | Native OS APIs (Linux Freedesktop/D-Bus, macOS `UNUserNotificationCenter`, Windows WinRT toasts); tap → raise + open thread; `ClearForThread` on select |
 | Desktop lifecycle | Minimize / focus-lost read as not attentive so banners fire; the app keeps working (calls ring) — not background (P010) |
@@ -43,4 +43,4 @@
 - FCM/APNs token refresh → automatic re-register after native start (handler exists; harden cold-start race)
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
 - Relay (www): honour `urgent` — `call_wake` to Android, the time-sensitive alert to iOS, rate limit (P012)
-- iOS: VoIP push + CallKit (full-screen ring) where CallKit is allowed (after P012)
+- iOS CallKit (P013): verify on a device — lock-screen answer (audio via CallKit's session), PIN-locked answer, decline; in-app mute is not mirrored to CallKit's screen yet
