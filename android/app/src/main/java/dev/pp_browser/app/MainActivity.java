@@ -156,12 +156,14 @@ public class MainActivity extends SDLActivity {
         applyNavigationBarColor();
         ensureNotificationChannel();
         InboxSyncWorker.schedule(this, true);
+        PpLinkBridge.deliver(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        PpLinkBridge.deliver(intent);
     }
 
     @Override

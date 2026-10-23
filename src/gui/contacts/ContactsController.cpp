@@ -922,6 +922,36 @@ void ContactsController::AddContactByQuery(const std::string& query) {
       });
 }
 
+void ContactsController::OfferInvite(const std::string& link) {
+  auto locator = FindContactLocator(link);
+  if (!locator) {
+    return;
+  }
+  const std::string name = locator->nickname.empty() ? locator->account_id : locator->nickname;
+  auto ask = [this, link, name, account_id = locator->account_id]() {
+    ShowConfirm(Tr("contacts.invite.open_title"),
+                Tr("contacts.invite.open_body", {{"name", name}, {"account", account_id}}),
+                [this, link](const bool ok) {
+                  if (!ok) {
+                    return;
+                  }
+                  if (shell_navigation_.select_nav_tab) {
+                    shell_navigation_.select_nav_tab(NavTab::Contacts);
+                  }
+                  AddContactByQuery(link);
+                });
+  };
+  if (!unlock_ensure_.ensure_unlocked) {
+    ask();
+    return;
+  }
+  unlock_ensure_.ensure_unlocked([ask = std::move(ask)](const bool unlocked) {
+    if (unlocked) {
+      ask();
+    }
+  });
+}
+
 void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added) {
   if (!added) {
     UserFeedback::Fail(added.error().message.empty() ? Tr("contacts.err.add") : added.error().message);

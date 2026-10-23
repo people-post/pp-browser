@@ -140,6 +140,9 @@ private:
     ui::String profile_registration_expires;
     ui::String profile_register_label = "Register on network";
     bool profile_show_register = true;
+    /** The invite's QR code (QrSvgContent), and whether it is shown. */
+    ui::String profile_qr_svg_rml;
+    bool profile_show_qr = false;
     bool profile_show_rotate = false;
     ui::String profile_icon_src;
     bool profile_has_icon = false;
@@ -302,6 +305,8 @@ private:
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;
+  /** The locator the QR code in bindings_ was made from (made again only when it changes). */
+  std::string profile_qr_locator_;
   ui::String status_;
   ui::Context* context_ = nullptr;
   /** Pane hydrate gate; also mirrored into UiEditSession remount depth. */

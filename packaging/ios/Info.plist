@@ -106,5 +106,16 @@
     <string>remote-notification</string>
     <string>audio</string>@PP_BROWSER_IOS_VOIP_BACKGROUND_MODE@
   </array>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>dev.pp-browser.ios.contact-invite</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>pp-browser-contact-v1</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>

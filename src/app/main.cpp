@@ -6,6 +6,7 @@
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
+#include "foundation/platform/IncomingLink.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -82,6 +83,8 @@ int main(int argc, char** argv) {
       ++i;
     } else if (std::strncmp(argv[i], "--mobility=", 11) == 0) {
       pbr::SetMobilityCliOverride(argv[i] + 11);
+    } else if (pbr::IncomingLink::LooksLikeLink(argv[i])) {
+      pbr::IncomingLink::Deliver(argv[i]);  // a desktop launcher's %u: an invite link opened with the app
     }
   }
 

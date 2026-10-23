@@ -10,6 +10,7 @@ pp_browser_add_lib_library(pp_lib_ui
     ContextMenuHost.cpp
     EmojiCatalog.cpp
     InputCoordinator.cpp
+    QrSvg.cpp
     RmlVariantHelpers.cpp
     ShellInterruption.cpp
     ShellLayout.cpp
@@ -20,6 +21,8 @@ pp_browser_add_lib_library(pp_lib_ui
     pp_foundation_platform
     pp_foundation_i18n
     ui::core)
+
+target_link_libraries(pp_lib_ui PRIVATE qrcodegen)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

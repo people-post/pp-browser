@@ -28,6 +28,7 @@ set(_pp_platform_gui_sources
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
   ILocalNotifier.cpp
+  IncomingLink.cpp
   IosAssetLocator.cpp
   IosPathProvider.cpp
   IPushDeviceRegistrar.cpp

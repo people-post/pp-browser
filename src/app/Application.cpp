@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 
@@ -1114,6 +1115,12 @@ void Application::WireUnlockPinAndFlow() {
     contacts_->BindUnlockEnsure(unlock_ensure);
     people_picker_->BindUnlockEnsure(std::move(unlock_ensure));
   }
+  // Invite links the OS opens the app with (QR codes, tapped links); those from a cold start waited.
+  IncomingLink::SetHandler([this](const std::string& link) {
+    if (contacts_) {
+      contacts_->OfferInvite(link);
+    }
+  });
   {
     MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
     shell_messaging.open_network_settings = [this]() {
@@ -1757,6 +1764,7 @@ void Application::Shutdown() {
   if (contacts_) {
     contacts_->BindUnlockEnsure({});
   }
+  IncomingLink::SetHandler({});
   call_ui_.reset();
   shell_->BindShellMessaging({});
   ShellHost::ClearInstance();

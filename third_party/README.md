@@ -21,6 +21,7 @@ Imported by [`scripts/vendor/vendor_import.sh`](../scripts/vendor/vendor_import.
 | `curl/` | [curl/curl](https://github.com/curl/curl) | `curl-8_11_1` | curl license | HTTP (LLM, Brief, pp-node directory publish) |
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain | Thread store, sessions |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD | Call audio |
+| `qrcodegen/` | [nayuki/QR-Code-generator](https://github.com/nayuki/QR-Code-generator) (C++ only) | `v1.8.0` | MIT | Invite QR codes |
 
 ## Shared libraries
 

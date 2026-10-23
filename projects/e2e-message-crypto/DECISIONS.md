@@ -491,7 +491,7 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 | C2 | `sender_keys` with `key_init`; receive checks and keeps it — **landed 2026-10-23** (`first_message_brings_keys`) |
 | C3 | Contact card v2: *Share contact*, *Add* from a card — **landed 2026-10-23** (`friend_shares_a_contact`) |
 | C4 | Card exchange over Amp; card devices registered as the account's dial keys — **landed 2026-10-23** (`devices_hand_over_their_cards`); idle reach: phones by push, desktops opt in to *Reachable without the relay* (seed reservation renewed every 20 s) |
-| C5 | Locator: invite text (Me → Profile, onboarding share) carries it; pasting an invite in *Add contact* adds the person and fetches the card via C4 or the directory — **landed 2026-10-23** (`strangers_meet_by_invite`); QR display / scan and a URL-scheme deep link later |
+| C5 | Locator: invite text (Me → Profile, onboarding share) carries it; pasting an invite in *Add contact* adds the person and fetches the card via C4 or the directory — **landed 2026-10-23** (`strangers_meet_by_invite`); then (same day) a QR code of it under *Me → Profile*, and its scheme registered so a phone's camera or a tapped link opens the app and offers to add the person |
 | C6 | Roster adds (`member_joined`) carry members' cards and relay routes — **landed 2026-10-23** (`group_members_key_each_other`); invites carry none. With it, group copies go member by member through the delivery outbox (Amp first) on a per-member relay stream — before, every copy shared one stream and the relay kept only the first |
 
 Each phase lands with an app-lab scenario run **without a relay directory** where it applies (C2 onward).

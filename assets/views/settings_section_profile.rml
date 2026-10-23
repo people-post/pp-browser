@@ -81,10 +81,18 @@
             <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
             {{i18n:common.share}}
           </button>
+          <button class="btn btn-secondary" type="button" data-if="profile_qr_svg_rml != ''"
+                  data-class-btn-active="profile_show_qr"
+                  data-event-click="toggle_profile_qr()">{{i18n:settings.profile.show_qr}}</button>
           <button class="btn btn-primary" type="button" data-if="profile_show_register"
                   data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
           <button class="btn btn-secondary" type="button" data-if="advanced && profile_show_rotate"
                   data-event-click="rotate_brief_llm_key()">{{i18n:settings.llm.rotate_brief_key}}</button>
+        </div>
+        <div class="me-invite-qr" data-if="profile_show_qr && profile_qr_svg_rml != ''">
+          <svg class="me-invite-qr-code" viewBox="0 0 100 100" width="200" height="200"
+               data-rml="profile_qr_svg_rml"></svg>
+          <p class="text muted settings-help">{{i18n:settings.profile.qr_help}}</p>
         </div>
       </div>
 

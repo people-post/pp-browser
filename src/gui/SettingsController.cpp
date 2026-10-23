@@ -2,6 +2,7 @@
 #include "gui/SettingsController.h"
 
 #include "lib/ui/DataEvent.h"
+#include "lib/ui/QrSvg.h"
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
@@ -340,6 +341,11 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
+  if (ui_state_.profile_contact_locator != profile_qr_locator_) {
+    profile_qr_locator_ = ui_state_.profile_contact_locator;
+    auto qr = profile_qr_locator_.empty() ? Roe<std::string>(std::string()) : QrSvgContent(profile_qr_locator_);
+    bindings_.profile_qr_svg_rml = qr ? qr->c_str() : "";
+  }
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
   bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
   bindings_.profile_has_icon = ui_state_.profile_has_icon;
@@ -532,6 +538,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
+    ctor.Bind("profile_qr_svg_rml", &controller.bindings_.profile_qr_svg_rml);
+    ctor.Bind("profile_show_qr", &controller.bindings_.profile_show_qr);
+    ctor.BindEventCallback("toggle_profile_qr", DataEvent<>([this]() {
+      bindings_.profile_show_qr = !bindings_.profile_show_qr;
+      DataModelHost::Instance().Dirty("settings", "profile_show_qr");
+    }));
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
     ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
     ctor.Bind("profile_has_icon", &controller.bindings_.profile_has_icon);
@@ -688,6 +700,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   }
   host.Dirty("settings", "profile_peer_id");
   host.Dirty("settings", "profile_relay_id");
+  host.Dirty("settings", "profile_qr_svg_rml");
   host.Dirty("settings", "profile_public_key");
   host.Dirty("settings", "profile_registered");
   host.Dirty("settings", "profile_registration_status");

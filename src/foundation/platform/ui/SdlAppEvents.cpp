@@ -1,6 +1,7 @@
 #include "foundation/platform/ui/SdlAppEvents.h"
 
 #include "foundation/platform/AppEventHooks.h"
+#include "foundation/platform/IncomingLink.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
@@ -88,6 +89,13 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
   case SDL_EVENT_LOW_MEMORY:
     AppLifecycle::OnLowMemory();
     return true;
+  case SDL_EVENT_DROP_FILE:
+    // macOS and iOS hand over an opened URL (a registered scheme) as a drop.
+    if (event.drop.data && IncomingLink::LooksLikeLink(event.drop.data)) {
+      IncomingLink::Deliver(event.drop.data);
+      return true;
+    }
+    break;
   case SDL_EVENT_MOUSE_BUTTON_DOWN:
     if (event.button.button == SDL_BUTTON_RIGHT && context && hooks.on_context_pointer) {
       const float scale = context->GetDensityIndependentPixelRatio();

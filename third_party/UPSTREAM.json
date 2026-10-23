@@ -12,5 +12,10 @@
     "repository": "https://github.com/xiph/opus.git",
     "tag": "v1.5.2",
     "commit": "ddbe48383984d56acd9e1ab6a090c54ca6b735a6"
+  },
+  "qrcodegen": {
+    "repository": "https://github.com/nayuki/QR-Code-generator.git",
+    "tag": "v1.8.0",
+    "commit": "720f62bddb7226106071d4728c292cb1df519ceb"
   }
 }

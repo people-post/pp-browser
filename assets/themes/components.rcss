@@ -3310,6 +3310,18 @@ input.checkbox {
   flex-wrap: wrap;
 }
 
+.me-invite-qr {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8dp;
+  margin-top: 12dp;
+}
+
+.me-invite-qr-code {
+  width: 200dp;
+  height: 200dp;
+}
+
 .me-profile-avatar-row {
   align-items: center;
   flex-wrap: wrap;

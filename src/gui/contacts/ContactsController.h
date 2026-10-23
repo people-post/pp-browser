@@ -112,6 +112,11 @@ public:
   void OnDetailDismissed();
 
   /** Contacts → find people; also the first-run wizard's "Find friends". */
+  /**
+   * An invite link the OS opened the app with (a scanned QR code, a tapped link): once unlocked, asks
+   * whether to add the person it names, then adds them as a pasted invite would. Anything else is ignored.
+   */
+  void OfferInvite(const std::string& link);
   void OnFindSomeone();
 
 private:
