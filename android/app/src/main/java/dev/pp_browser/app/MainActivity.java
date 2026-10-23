@@ -183,8 +183,12 @@ public class MainActivity extends SDLActivity {
      * {@code visible.top} / resting nav gap as SDL safe-area inset the shell a second time
      * (blank strip at top, black strip at bottom) — observed on moto g(7) play / API 28.
      *
-     * Only the soft-keyboard occlusion is added to bottom; static safe area stays
-     * machine-prefs (API &lt; 30) or {@link SDLSurface} system insets (API 30+).
+     * While this publisher is installed it is the only one: {@link SDLSurface} skips its own
+     * publish ({@code sActivityPublishesInsets}) because it runs after this listener in the same
+     * frame and some OEM IMEs (vivo OriginOS, {@code adjustNothing}) report
+     * {@code WindowInsets.Type.ime()} as 0 while the keyboard is visible, which overwrote the
+     * keyboard-aware value with 0. Static safe area: machine-prefs (API &lt; 30) or the same
+     * system-inset types SDLSurface used (API 30+); the soft keyboard is max'd into bottom.
      */
     private void installKeyboardSafeAreaPublisher() {
         if (mLayout == null) {
@@ -192,6 +196,7 @@ public class MainActivity extends SDLActivity {
             return;
         }
         final View root = mLayout;
+        org.libsdl.app.SDLSurface.sActivityPublishesInsets = true;
 
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, windowInsets) -> {
             publishSafeAreaFromWindowInsets(windowInsets);
@@ -218,6 +223,7 @@ public class MainActivity extends SDLActivity {
     }
 
     private void uninstallKeyboardSafeAreaPublisher() {
+        org.libsdl.app.SDLSurface.sActivityPublishesInsets = false;
         mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
         if (mLayout != null) {
             ViewCompat.setOnApplyWindowInsetsListener(mLayout, null);
@@ -238,8 +244,12 @@ public class MainActivity extends SDLActivity {
         // API < 30: content is window-fitted; system-bar WindowInsets would double-count
         // (moto g7 play blank top / black bottom). Only IME + visible-frame keyboard.
         if (Build.VERSION.SDK_INT >= 30) {
+            // Same type set SDLSurface.onApplyWindowInsets publishes, minus ime (handled below).
             final Insets sys = windowInsets.getInsets(
                     WindowInsetsCompat.Type.systemBars()
+                            | WindowInsetsCompat.Type.systemGestures()
+                            | WindowInsetsCompat.Type.mandatorySystemGestures()
+                            | WindowInsetsCompat.Type.tappableElement()
                             | WindowInsetsCompat.Type.displayCutout());
             mHaveSystemInsets = true;
             mSysLeft = Math.max(0, sys.left);
@@ -266,13 +276,18 @@ public class MainActivity extends SDLActivity {
      * {@code InputMethodManager#getInputMethodWindowVisibleHeight} and SDL's keyboard flag.
      */
     private int probeKeyboardHeightPx(View root, int imeBottomFromInsets) {
-        int keyboardBottom = Math.max(0, imeBottomFromInsets);
-
+        // WindowInsets measure the IME from the window's bottom edge, but the SDL surface is a
+        // fitted view that already ends above the navigation bar (vivo S15e, 3-button nav:
+        // surface is 2182 of 2404 px). Only the part above that gap covers the surface:
+        // 979 - 126 = 853.
+        final int surfaceGap = surfaceGapBelowWindowPx(root);
+        int imeFromInsets = Math.max(0, imeBottomFromInsets);
         final WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(root);
         if (rootInsets != null) {
-            keyboardBottom = Math.max(keyboardBottom,
+            imeFromInsets = Math.max(imeFromInsets,
                     rootInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom);
         }
+        int keyboardBottom = Math.max(0, imeFromInsets - surfaceGap);
 
         final Rect visible = new Rect();
         root.getWindowVisibleDisplayFrame(visible);
@@ -288,18 +303,41 @@ public class MainActivity extends SDLActivity {
             keyboardBottom = Math.max(keyboardBottom, Math.max(0, gapBottom - baseline));
         }
 
-        final int immHeight = probeImmKeyboardHeightPx();
-        if (immHeight > keyboardThreshold) {
-            keyboardBottom = Math.max(keyboardBottom, immHeight);
-        } else if (immHeight > 0 && isScreenKeyboardShown()) {
-            keyboardBottom = Math.max(keyboardBottom, immHeight);
-        }
+        // Hidden IMM height only when WindowInsets reported no keyboard (API < 30 / broken
+        // OEM dispatch): its reference edge varies by OEM (vivo: surface-relative 853, others:
+        // the full IME window), so it cannot be corrected by the gap.
+        if (imeFromInsets == 0) {
+            final int immHeight = probeImmKeyboardHeightPx();
+            if (immHeight > keyboardThreshold) {
+                keyboardBottom = Math.max(keyboardBottom, immHeight);
+            } else if (immHeight > 0 && isScreenKeyboardShown()) {
+                keyboardBottom = Math.max(keyboardBottom, immHeight);
+            }
 
-        // Last resort when visible-frame is sticky under adjustNothing but SDL says IME is up.
-        if (keyboardBottom == 0 && isScreenKeyboardShown() && immHeight > 0) {
-            keyboardBottom = immHeight;
+            // Last resort when visible-frame is sticky under adjustNothing but SDL says IME is up.
+            if (keyboardBottom == 0 && isScreenKeyboardShown() && immHeight > 0) {
+                keyboardBottom = immHeight;
+            }
         }
         return keyboardBottom;
+    }
+
+    /**
+     * Distance from the SDL surface's bottom edge to the window's (decor view's) bottom edge:
+     * the navigation bar on a fitted window, 0 edge-to-edge. Window-relative, so split-screen
+     * and freeform windows are handled the same as full screen.
+     */
+    private int surfaceGapBelowWindowPx(View root) {
+        final View surface = mSurface;
+        final View decor = root.getRootView();
+        if (surface == null || decor == null || surface.getHeight() <= 0) {
+            return 0;
+        }
+        final int[] surfaceLoc = new int[2];
+        final int[] decorLoc = new int[2];
+        surface.getLocationOnScreen(surfaceLoc);
+        decor.getLocationOnScreen(decorLoc);
+        return Math.max(0, (decorLoc[1] + decor.getHeight()) - (surfaceLoc[1] + surface.getHeight()));
     }
 
     /**
