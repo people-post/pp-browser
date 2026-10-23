@@ -7,6 +7,7 @@
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
@@ -55,7 +56,7 @@ namespace pbr {
 
 class InputCoordinator;
 
-class ChatController : public Module, private AgentTurnHost {
+class ChatController : public Module, private AgentTurnHost, private ChatMenusHost {
 public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
@@ -85,7 +86,7 @@ public:
   /** Append a normalized emoji glyph to the composer draft (used by emoji picker).
    *  @param restore_composer_focus When true (popover), focus the composer after insert.
    *         When false (keyboard panel), advance caret only so the OSK stays dismissed. */
-  void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true);
+  void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) override;
   /** Toggle a reaction from the emoji picker (public for Application wiring). */
   void ReactWithEmoji(const std::string& message_id, const std::string& emoji);
   void BindShellSetup(ShellSetupPorts ports);
@@ -111,14 +112,13 @@ public:
   void FinalizeThreadDisplay();
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
-  void OnFindSomeone();
+  void OnFindSomeone() override;
   void OnSelectThread(const std::string& thread_id);
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
   void OnMessagingReady();
   void OnMeshReady();
-  /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
 
@@ -176,23 +176,16 @@ private:
   static void JumpToLatestCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void OnSendMessage();
-  void OnNewChat();
-  void OnNewMessage();
-  void OnOpenNewSessionMenu(ui::Event& ev);
-  void OnOpenThreadActionsMenu(ui::Event& ev);
-  void OnStartCall(ui::Event& ev);
+  void OnNewChat() override;
+  void OnNewMessage() override;
   void OnOpenPeerSheet(ui::Event& ev);
-  void OnCloseThread(const std::string& thread_id);
+  void OnCloseThread(const std::string& thread_id) override;
   void OnClearHistory();
   /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
-  void ClearHistoryOf(const std::string& thread_id);
+  void ClearHistoryOf(const std::string& thread_id) override;
   void AfterHistoryCleared(const std::string& thread_id);
-  /** Context menu for a row in the sessions list (right-click / long-press); `position` anchors a second step. */
-  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
-  /** Second step of "Mute": 8 hours / 1 week / Always. */
-  void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
   /** After a chat's settings changed (the presenter refreshed its list): badges and the surface follow. */
-  void AfterThreadPrefsChanged();
+  void AfterThreadPrefsChanged() override;
   /** Run a close (`action`) and, when it went through, clear what the open chat held; tells the user
    *  when it failed (`show_error_text`: the action's own message, else "could not delete"). */
   void CloseChatWith(const std::string& thread_id, const std::function<Roe<void>()>& action,
@@ -201,8 +194,8 @@ private:
   void ApplySessionList();
   void OnToggleArchived();
   static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  void OnForgetMemory();
-  void OnSyncWithPeer();
+  void OnForgetMemory() override;
+  void OnSyncWithPeer() override;
   void OnRetryGapSync();
   void OnStartNewSecureChat();
   void OnPauseIntegrityOnly();
@@ -211,15 +204,13 @@ private:
   void OnImportPsk();
   void OnVerifyPsk();
   void OnRotatePskExport();
-  void OnLockPublicToThisDevice();
-  /** From Home landing: mint AI thread, switch to Sessions, open chat. */
+  void OnLockPublicToThisDevice() override;
   /** Opens the AI thread a send from Home goes to: `chip_message`'s own earlier thread when there is one, else a new thread. */
   bool EnsureHomeOutboundSession(const std::string& chip_message = {}) override;
   /** `from_home_chip`: a Home chip (not typed text) is being sent, so it continues that chip's own thread. */
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
-  void ToggleReaction(const std::string& message_id, const std::string& emoji);
-  void OpenEmojiInsertMenu(ui::Event* ev);
+  void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
@@ -234,19 +225,17 @@ private:
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState() override;
+  void DeleteMessageForMe(const std::string& message_id) override;
+  void DeleteMessageForEveryone(const std::string& message_id) override;
+  bool IsDeletedMessage(const std::string& message_id) const override;
   /** What the user reads in a message of the active thread ("" when not found). */
-  void OnDeleteMessage(const std::string& message_id, ui::Vector2i position);
-  void DeleteMessageForEveryone(const std::string& message_id);
-  bool IsDeletedMessage(const std::string& message_id) const;
-  std::string MessagePlainText(const std::string& message_id) const;
+  std::string MessagePlainText(const std::string& message_id) const override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
    * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
    */
-  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
+  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) override;
   void CancelQuoteReply();
-  /** Share: lists the direct chats (most recent first); picking one sends `text` there. */
-  void OpenShareTargets(const std::string& text, ui::Vector2i position);
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
   static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -254,8 +243,6 @@ private:
   void OpenMessageLink(const std::string& message_id, int link_index);
   static void OpenMessageLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  /** The message being replied to (full text); empty when no reply is pending. */
-  void ShowReactionMorePrompt(const std::string& message_id);
   void SyncDisplayFromThread() override;
   /** Last time a display sync ran the whole-thread attachment backfill. */
   std::chrono::steady_clock::time_point last_attachment_backfill_{};
@@ -285,7 +272,7 @@ private:
 
   ShellChromeSnapshot ChromeSnapshot() const override;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
-  void NotifySurfaceChanged();
+  void NotifySurfaceChanged() override;
   /** The call site is passed on as the request's reason (ShellHost::RequestSyncLayout). */
   void ShellSyncLayout(bool restore_focus_after = false, std::source_location where = std::source_location::current());
   void ShellSelectNavTab(NavTab tab);
@@ -294,8 +281,8 @@ private:
   void ShellCloseCompactChat();
   void ShellSetActivity(bool visible, const ui::String& message = {}) override;
   void ShellRemountNavRail();
-  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
-  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short) override;
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result) override;
   void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
                                bool checkbox_default, std::function<void(bool, bool)> on_result);
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
@@ -338,7 +325,10 @@ private:
   std::map<std::string, std::vector<std::string>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
-  // AgentTurnHost
+  /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
+  ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
+                   call_actions_};
+  // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }
   void RegisterMessagingTools(ToolRegistry& tools) override {

@@ -363,7 +363,7 @@ public:
                                                                       : ReplyError(id, "could not open the chat");
     } else if (cmd == "pin" || cmd == "unpin" || cmd == "mute" || cmd == "unmute" || cmd == "archive" ||
                cmd == "unarchive" || cmd == "mark_unread" || cmd == "mark_read") {
-      // A chat row's menu (ChatController::SessionMenuActions → ChatPresenter).
+      // A chat row's menu (ChatMenus::SessionActions → ChatPresenter).
       const std::string thread = request->getString("thread").value_or("");
       if (cmd == "pin" || cmd == "unpin") {
         chats_.SetPinned(thread, cmd == "pin");
