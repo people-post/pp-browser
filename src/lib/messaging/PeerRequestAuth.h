@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "common/thread/ChatBlobTypes.h"
 #include "common/thread/ChatHistoryTypes.h"
+#include "lib/messaging/AccountCardRequest.h"
 
 #include <cstdint>
 #include <functional>
@@ -27,6 +28,7 @@ inline constexpr int64_t kMaxSkewMs = 5 * 60 * 1000;
 
 Roe<std::vector<uint8_t>> SignBytes(const ChatHistoryRequest& request);
 Roe<std::vector<uint8_t>> SignBytes(const ChatBlobRequest& request);
+Roe<std::vector<uint8_t>> SignBytes(const AccountCardRequest& request);
 
 using SignFn = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
 
@@ -38,11 +40,16 @@ Roe<void> Sign(ChatHistoryRequest& request, const std::string& account_id, const
                int64_t now_ms, const SignFn& sign);
 Roe<void> Sign(ChatBlobRequest& request, const std::string& account_id, const std::string& local_peer_id,
                int64_t now_ms, const SignFn& sign);
+Roe<void> Sign(AccountCardRequest& request, const std::string& account_id, const std::string& local_peer_id,
+               int64_t now_ms, const SignFn& sign);
 
 /** Verified, from `remote_peer_id`, recent: the request's `requester_account_id` may be trusted. */
 Roe<void> Verify(const ChatHistoryRequest& request, const std::string& remote_peer_id, int64_t now_ms,
                  IPeerSigningKeyResolver& keys);
 Roe<void> Verify(const ChatBlobRequest& request, const std::string& remote_peer_id, int64_t now_ms,
+                 IPeerSigningKeyResolver& keys);
+/** As above; the requester's own key card in the request, when it proves itself, stands in for a lookup. */
+Roe<void> Verify(const AccountCardRequest& request, const std::string& remote_peer_id, int64_t now_ms,
                  IPeerSigningKeyResolver& keys);
 
 } // namespace PeerRequestAuth

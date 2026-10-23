@@ -116,6 +116,11 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
   deps.list_dht_nodes = reach.list_dht_nodes;
   deps.seed_dial_ok = reach.seed_dial_ok;
   deps.note_lan_mdns_peer_id = reach.note_lan_peer_id;
+  deps.note_peer_device = [&hub](const std::string& account, const std::string& peer_id) {
+    if (auto* messaging = hub.MeshMessagingOrNull()) {
+      messaging->AccountCards().NoteDevice(account, peer_id);
+    }
+  };
   deps.prefetch_peer_reachability = [&hub](const std::string& identity) { hub.PrefetchPeerReachability(identity); };
   deps.sync_mobile_ephemeral_listen = [&hub]() { hub.SyncMobileEphemeralListen(); };
   deps.connectivity = &hub.Connectivity();

@@ -734,7 +734,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing; direct_connections — who may connect directly and so learn this device's IP: everyone, contacts, friendly, or nobody (always relay); and trusted_relays_only — only org servers and Friendly contacts' nodes relay.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"},"direct_connections":{"type":"string","enum":["everyone","contacts","friendly","nobody"]},"trusted_relays_only":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing; direct_connections — who may connect directly and so learn this device's IP: everyone, contacts, friendly, or nobody (always relay); trusted_relays_only — only org servers and Friendly contacts' nodes relay; and reachable_without_relay — desktop: stay reachable by contacts with no relay (the mesh seeds see when it is online).", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"},"direct_connections":{"type":"string","enum":["everyone","contacts","friendly","nobody"]},"trusted_relays_only":{"type":"boolean"},"reachable_without_relay":{"type":"boolean"}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
@@ -747,9 +747,10 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return Error("direct_connections must be everyone, contacts, friendly, or nobody");
          }
          const auto trusted_relays = BoolFromArgs(arguments, {"trusted_relays_only"});
-         if (!circuit && !media && !dht && !prefer && !audience && !trusted_relays) {
+         const auto reachable = BoolFromArgs(arguments, {"reachable_without_relay"});
+         if (!circuit && !media && !dht && !prefer && !audience && !trusted_relays && !reachable) {
            return Error("provide at least one of circuit_relay, media_relay, dht, prefer_contacts_for_routing, "
-                        "direct_connections");
+                        "direct_connections, trusted_relays_only, reachable_without_relay");
          }
          auto store = RequireStore(ports);
          if (!store) {
@@ -774,6 +775,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (trusted_relays) {
            config.mesh.trusted_relays_only = *trusted_relays;
          }
+         if (reachable) {
+           config.mesh.reachable_without_relay = *reachable;
+         }
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
@@ -784,6 +788,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          ok.set("prefer_contacts_for_routing", config.mesh.prefer_contacts_for_routing);
          ok.set("direct_connections", mesh::DirectAudienceName(config.mesh.direct_connections));
          ok.set("trusted_relays_only", config.mesh.trusted_relays_only);
+         ok.set("reachable_without_relay", config.mesh.reachable_without_relay);
          return DumpJson(OkJson(std::move(ok)));
        }));
 

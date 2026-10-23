@@ -411,6 +411,7 @@ void CallStack::BindCallControlInbound() {
 
 /** What the sessions read about this node: listen addrs, mesh PeerId, caps; and where peers' addrs go. */
 void CallStack::BindSessionProviders() {
+  call_sessions_->SetOnPeerDevice(deps_.note_peer_device);
   call_sessions_->SetPrefetchPeerReachability([prefetch = deps_.prefetch_peer_reachability](const std::string& identity) {
     // Warm only (async association / DHT lookup) — on the hub's thread, which owns what it reads.
     // Captures the hub's port, not this stack: a teardown may race the post.

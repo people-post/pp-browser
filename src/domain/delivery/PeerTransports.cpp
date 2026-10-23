@@ -68,15 +68,20 @@ bool PeerTransports::Attach(mesh::IChatPeerLinks* links, std::function<void()> i
   history->Start();
   history_ = std::move(history);
 
+  auto cards = std::make_unique<AmpAccountCardTransport>(people, io_pump, worker_post, post_io, post_after);
+  cards->Start();
+  account_card_ = std::move(cards);
+
   auto chat = std::make_unique<AmpDirectChatTransport>(people, io_pump, worker_post, post_io, post_after);
-  chat->SetInboundHandler([this](RelayEnvelope envelope) {
+  chat->SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     if (inbound_) {
-      inbound_(std::move(envelope));
+      inbound_(std::move(envelope), std::move(from_peer_id));
     }
   });
+  chat->SetDevicesOf(devices_of_);
   chat->Start();
   direct_chat_ = std::move(chat);
-  log().info << "direct chat/history/blob transport=amp";
+  log().info << "direct chat/history/blob/account-card transport=amp";
   return true;
 }
 
@@ -85,6 +90,7 @@ void PeerTransports::Detach() {
   direct_chat_.reset();
   history_.reset();
   blob_.reset();
+  account_card_.reset();
   people_links_.reset();  // after the transports that hold it
   links_ = nullptr;
 }

@@ -62,6 +62,8 @@ struct SettingsUiState {
   std::string direct_connections = "contacts";
   /** projects/privacy T4: "on" = only org seeds and Friendly contacts' nodes relay for us. */
   std::string trusted_relays_only = "off";
+  /** Desktop: stay reachable by contacts with no relay (mesh.reachable_without_relay). */
+  std::string reachable_without_relay = "off";
   bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;

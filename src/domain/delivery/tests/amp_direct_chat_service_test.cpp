@@ -70,7 +70,7 @@ TEST_F(AmpDirectChatTransportTest, SendEnvelopeRoundTrip) {
   bool got = false;
   RelayEnvelope received;
 
-  b_chat_->SetInboundHandler([&](RelayEnvelope envelope) {
+  b_chat_->SetInboundHandler([&](RelayEnvelope envelope, std::string /*from_peer_id*/) {
     std::lock_guard lock(mu);
     received = std::move(envelope);
     got = true;
@@ -85,6 +85,32 @@ TEST_F(AmpDirectChatTransportTest, SendEnvelopeRoundTrip) {
     ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got; }));
   }
   EXPECT_EQ(received.message_id, "msg-1");
+}
+
+// A send to an account goes over a link to one of its known devices; the receiver learns which device sent it.
+TEST_F(AmpDirectChatTransportTest, AnAccountIsReachedThroughItsKnownDevices) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  std::string from;
+  b_chat_->SetInboundHandler([&](RelayEnvelope, std::string from_peer_id) {
+    std::lock_guard lock(mu);
+    from = std::move(from_peer_id);
+    got = true;
+    cv.notify_one();
+  });
+  EXPECT_FALSE(a_chat_->IsPeerReachable("account:bob")) << "no devices known yet";
+  a_chat_->SetDevicesOf([](const std::string& key) {
+    return key == "account:bob" ? std::vector<std::string>{"b"} : std::vector<std::string>{};
+  });
+  EXPECT_EQ(a_chat_->ReachableKey("account:bob"), "b");
+  const auto sent = a_chat_->SendEnvelope("account:bob", MakeTestEnvelope("msg-3", "via a device"));
+  ASSERT_TRUE(sent) << sent.error().message;
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got; }));
+  }
+  EXPECT_EQ(from, harness_->peer_id_a) << "the link's authenticated PeerId";
 }
 
 // A send to a peer with no address, or with the transport stopped, says so by its code.

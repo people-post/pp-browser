@@ -300,7 +300,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
                                                    chat_deps->io.post_worker, chat_deps->io.post_io,
                                                    chat_deps->io.post_after);
   chat_->Start();
-  chat_->SetInboundHandler([this](RelayEnvelope env) { OnChatInbound(std::move(env)); });
+  chat_->SetInboundHandler([this](RelayEnvelope env, std::string /*from_peer_id*/) { OnChatInbound(std::move(env)); });
 
   std::cout << "ok  product-stack CallStack+CallUiBackend wired account=" << local_account_
             << " peer_id=" << local_peer_id_ << "\n";

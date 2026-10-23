@@ -75,6 +75,8 @@ struct CallStackDeps {
   std::function<void(const std::string& identity)> prefetch_peer_reachability;
   std::function<void()> sync_mobile_ephemeral_listen;
   std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
+  /** A call's peer named its device: ask that device for the account's card (AccountCardService). */
+  std::function<void(const std::string& account, const std::string& peer_id)> note_peer_device;
 
   /**
    * Neutral mesh objects — owned by the product hub, outlive the stack (L015): connectivity (dial,

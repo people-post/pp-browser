@@ -98,6 +98,13 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
+  /**
+   * A call learned that `account` speaks from device `peer_id` (its signed invite / accept named it): the
+   * account's card, asked of that device, confirms it (any thread).
+   */
+  void SetOnPeerDevice(std::function<void(const std::string& account, const std::string& peer_id)> callback) {
+    on_peer_device_ = std::move(callback);
+  }
   /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshConnectivity. */
   using EnsureCircuitReadyFn = std::function<void()>;
   void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
@@ -430,6 +437,7 @@ private:
   mesh::PeerMediaRelayCaps media_relay_caps_;
   /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
   PeerAccountBook peer_accounts_;
+  std::function<void(const std::string& account, const std::string& peer_id)> on_peer_device_;
   std::optional<std::string> last_media_error_;
   // --- UI intents (V037) ---
   std::string last_error_;

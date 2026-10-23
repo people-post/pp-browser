@@ -37,6 +37,8 @@
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/directory/DirectoryJson.h"
+#include "lib/messaging/PeerRequestAuth.h"
+#include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/messaging/GroupMembershipCodec.h"
@@ -258,6 +260,45 @@ public:
       out.set("registered", view.registered);
       out.set("messaging_ready", Hub().IsMessagingReady());
       out.set("mesh_ready", Hub().IsMeshReady());
+      if (auto identity = Hub().Identity().Get()) {
+        out.set("peer_id", PeerRequestAuth::DevicePeerId(identity->public_key_b64).valueOr(""));
+      }
+      Emit(out);
+    } else if (cmd == "fetch_card") {
+      // Ask device `peer` for `account`'s card over Amp (ACCOUNT_CARD.md); kept when it proves itself.
+      if (!Hub().IsMessagingReady()) {
+        ReplyError(id, "messaging not ready");
+        return;
+      }
+      Hub().MeshMessaging().AccountCards().Fetch(
+          request->getString("peer").value_or(""), request->getString("account").value_or(""),
+          [id](Roe<PeerCardRecord> kept) {
+            AppRuntime::PostUI([id, kept = std::move(kept)]() {
+              if (!kept) {
+                ReplyError(id, kept.error().message);
+                return;
+              }
+              Object out = Reply(id, true);
+              std::vector<Value> devices;
+              for (const std::string& peer_id : kept.value().devices) {
+                devices.emplace_back(peer_id);
+              }
+              out.set("devices", ArrayValue(std::move(devices)));
+              out.set("nickname", kept.value().nickname);
+              Emit(out);
+            });
+          });
+    } else if (cmd == "kept_card") {
+      // What this device keeps for `account` (its devices, from the cards it checked).
+      Object out = Reply(id, true);
+      std::vector<Value> devices;
+      if (Hub().IsMessagingReady()) {
+        for (const std::string& peer_id :
+             Hub().MeshMessaging().AccountCards().DevicesOf(request->getString("account").value_or(""))) {
+          devices.emplace_back(peer_id);
+        }
+      }
+      out.set("devices", ArrayValue(std::move(devices)));
       Emit(out);
     } else if (cmd == "register") {
       const std::string nickname = request->getString("nickname").value_or("");
@@ -691,6 +732,9 @@ private:
       out.set("type", ChatContentTypeToDb(row.message.content_type));
       out.set("text", row.message.text);
       out.set("from", row.message.sender_contact_id);
+      if (row.message.transport) {
+        out.set("transport", MessageTransportToString(*row.message.transport));
+      }
       std::vector<Value> reactions;
       for (const TranscriptReaction& reaction : row.reactions) {
         Object r;

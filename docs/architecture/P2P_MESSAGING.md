@@ -186,8 +186,11 @@ forwards in a chat.
   any carrier will do: the card store, the first message of a session (`sender_keys`), a contact card,
   the account's own devices over Amp (`/pp/account-card/1.0.0`), and the relay directory when one is
   configured ([ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md#resolving-keys)).
-- *Devices* are the Peer IDs in the card; they are reached the mesh's ways — a link already up, LAN
-  mDNS among contacts, circuit rendezvous and hole punching through seeds
+- *Devices* are the Peer IDs in the card — learned from the devices themselves when a call or a verified
+  message names one (`/pp/account-card/1.0.0`); a send to the account goes over a live link to any of
+  them. They are reached the mesh's ways — a link already up, LAN mDNS among contacts, circuit rendezvous
+  and hole punching through seeds (an idle desktop stays parked there with *Reachable without the relay*;
+  a phone is woken by push)
   ([PEER_REACH](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/PEER_REACH.md)), addresses
   from call invites, and the DHT where the device is a Node. Mesh seeds stay the bootstrap (N029 L0).
 

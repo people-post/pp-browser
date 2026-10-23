@@ -131,8 +131,30 @@ request and reply per stream:
   requesters that are not blocked get the **account card**; unauthenticated requests get nothing, unless
   this account's address audience is *Everyone*, when they get the **key card** (the keys the directory
   publishes, no devices). A blocked account and an unauthenticated one get the same `not_available`.
-- A device appears in the card it serves; a card that does not list the answering device is ignored.
-- Rate limited like the directory (30 requests / 10 s per peer).
+- A device appears in the card it serves; a card that does not list the device asked about is ignored.
+- The request carries the requester's key card (`auth.requester_keys`), so a device checks a stranger with
+  no lookup; it is kept once the request verifies.
+
+**When a device asks.** A call names each side's device (its signed invite / accept), and a verified
+message can arrive over a link with a device: when the account's kept card does not list that device yet,
+this device asks it for the card — over its own link first, then the account's dial key — and the card,
+not the call or the message, ties the device to the account. A device that answered is not asked again
+for 10 minutes; one not reached (its link still coming up) is tried again after 15 s, up to 3 times.
+
+**Using the devices.** A send to an account goes over a live link to any device its kept card lists
+(`AmpDirectChatTransport::ReachableKey`); the contact's endpoint rows follow the card, so dials to those
+devices pass the address audience.
+
+## Reaching an idle device
+
+With a PeerId and no address, the mesh reaches a device through a relay circuit on a seed it is
+parked on. Between calls nothing keeps a device parked, so:
+
+- **Phones** are woken through the relay's push (the platforms' push services); relay-free reach covers
+  them while they are online.
+- **Desktops** can stay reachable with no relay: *Me → Network → Reachable without the relay*
+  (`mesh.reachable_without_relay`, off by default) renews a reservation on the seeds every 20 s. The seeds
+  see when the computer is online.
 
 ## Storing cards
 

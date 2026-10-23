@@ -39,6 +39,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     PeerKemKeyStore.cpp
     AccountCard.cpp
     PeerCardStore.cpp
+    AccountCardRequest.cpp
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp

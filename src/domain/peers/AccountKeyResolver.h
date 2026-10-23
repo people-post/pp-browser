@@ -39,12 +39,22 @@ public:
   Roe<PeerCardRecord> AddDirectoryHit(const mesh::DirectoryHit& hit);
 
   IPeerSigningKeyResolver& Signing() { return signing_; }
+  /** Signing keys from kept cards only — never a lookup (for checks on an I/O or worker thread). */
+  IPeerSigningKeyResolver& KeptSigning() { return kept_signing_; }
   IPeerKemKeyResolver& Kem() { return kem_; }
 
 private:
   class SigningView : public IPeerSigningKeyResolver {
   public:
     explicit SigningView(AccountKeyResolver& owner) : owner_(owner) {}
+    Roe<PeerSigningKeyRecord> Resolve(const std::string& kind, const std::string& value) override;
+
+  private:
+    AccountKeyResolver& owner_;
+  };
+  class KeptSigningView : public IPeerSigningKeyResolver {
+  public:
+    explicit KeptSigningView(AccountKeyResolver& owner) : owner_(owner) {}
     Roe<PeerSigningKeyRecord> Resolve(const std::string& kind, const std::string& value) override;
 
   private:
@@ -68,6 +78,7 @@ private:
   PeerCardStore& cards_;
   mesh::IDirectoryClient& directory_;
   SigningView signing_{*this};
+  KeptSigningView kept_signing_{*this};
   KemView kem_{*this};
 };
 

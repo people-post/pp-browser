@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/delivery/AmpAccountCardTransport.h"
 #include "common/Module.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/chat/RelayEnvelope.h"
@@ -47,8 +48,12 @@ public:
 
   /** People-facing transports see the links through this gate (set before Attach). */
   void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
-  /** Direct-chat envelopes from peers (an I/O thread). */
-  void SetInboundHandler(std::function<void(RelayEnvelope)> handler) { inbound_ = std::move(handler); }
+  /** Direct-chat envelopes from peers, with the PeerId of the link each came over (a worker thread). */
+  void SetInboundHandler(std::function<void(RelayEnvelope, std::string)> handler) { inbound_ = std::move(handler); }
+  /** An account's known devices, so chat reaches an account over a live link to one of them (set before Attach). */
+  void SetDevicesOf(std::function<std::vector<std::string>(const std::string&)> devices_of) {
+    devices_of_ = std::move(devices_of);
+  }
   void SetProfileDataDir(std::string profile_data_dir);
 
   /** Build the transports on `links` (idempotent while attached to the same links). False: no links. */
@@ -62,6 +67,8 @@ public:
   IChatHistoryPeerClient* History() const { return history_.get(); }
   IChatBlobPeerClient* BlobClient() const;
   IChatBlobPeerService* BlobService() const;
+  /** `/pp/account-card/1.0.0` (null while detached). */
+  AmpAccountCardTransport* AccountCards() const { return account_card_.get(); }
 
   // --- dial endpoints ------------------------------------------------------------------------
 
@@ -79,7 +86,9 @@ private:
   IPeerSigningKeyResolver& signing_key_resolver_;
   IPskSessionStore& psk_store_;
   const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
-  std::function<void(RelayEnvelope)> inbound_;
+  std::function<void(RelayEnvelope, std::string)> inbound_;
+  std::function<std::vector<std::string>(const std::string&)> devices_of_;
+  std::unique_ptr<AmpAccountCardTransport> account_card_;
   std::string profile_data_dir_;
   mesh::IChatPeerLinks* links_ = nullptr;
   /** `links_` limited to the audience, for the people-facing transports (outlives them). */

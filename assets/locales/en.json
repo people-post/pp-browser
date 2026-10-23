@@ -210,6 +210,8 @@
     "settings.network.direct_connections.nobody": "Nobody (always through a server)",
     "settings.network.trusted_relays": "Only trusted relays",
     "settings.network.trusted_relays.help": "A relay sees both ends' network addresses. When on, only our servers and your Friendly contacts' devices relay for you; connections may be slower.",
+    "settings.network.reachable_without_relay": "Reachable without the relay",
+    "settings.network.reachable_without_relay.help": "Keeps this computer reachable by your contacts directly, even when the relay is down. It stays registered with our network servers, which see when it is online.",
     "settings.security.protection": "PIN:",
     "settings.security.current_pin": "Current PIN",
     "settings.security.new_pin": "New PIN",

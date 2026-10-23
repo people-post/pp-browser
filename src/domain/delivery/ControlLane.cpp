@@ -14,7 +14,7 @@
 
 namespace pbr {
 
-ControlLane::ControlLane(IdentityStore& identity, OwnKeyCard& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
+ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
                          E2ePublicSessionKeys& keys, PeerTransports& transports, DeliveryOutbox& outbox)
     : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), transports_(transports),
       outbox_(outbox) {
@@ -71,7 +71,7 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   params.session_epoch = session->epoch;
   params.master_psk = std::move(session->master_psk);
   if (key_init) {
-    if (auto own = own_keys_.Get()) {
+    if (auto own = own_keys_.Keys()) {
       params.sender_keys = std::move(own.value());
     }
   }

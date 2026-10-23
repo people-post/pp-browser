@@ -485,6 +485,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
+  object.set("reachable_without_relay", config.reachable_without_relay);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
   object.set("mobility", config.mobility);
@@ -521,6 +522,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;
+  }
+  if (auto reachable = object.getIf<bool>("reachable_without_relay")) {
+    config.reachable_without_relay = *reachable;
   }
   if (auto trusted = object.getIf<bool>("trusted_relays_only")) {
     config.trusted_relays_only = *trusted;

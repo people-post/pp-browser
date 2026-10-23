@@ -99,6 +99,12 @@ struct MeshConfig {
    */
   bool trusted_relays_only = false;
   /**
+   * Desktop: keep a reservation on the mesh seeds so contacts can reach this device by its PeerId with no
+   * relay (docs/contracts/ACCOUNT_CARD.md). Costs a little traffic and tells the seeds when it is online;
+   * phones are woken by push instead.
+   */
+  bool reachable_without_relay = false;
+  /**
    * Peer mesh on/off. When true, MeshHost hard-requires Amp UDP bind (D10).
    * When false, peer mesh underlay stays off. Requires device ML-DSA keys.
    */

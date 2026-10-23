@@ -225,7 +225,7 @@ TEST_F(AmpDirectChatCircuitNestedTest, NestedConnectedWithoutEndpointIsReachable
   std::condition_variable cv;
   bool got = false;
   RelayEnvelope received;
-  b_chat_->SetInboundHandler([&](RelayEnvelope envelope) {
+  b_chat_->SetInboundHandler([&](RelayEnvelope envelope, std::string /*from_peer_id*/) {
     std::lock_guard lock(mu);
     received = std::move(envelope);
     got = true;

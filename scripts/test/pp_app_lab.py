@@ -1215,6 +1215,31 @@ def scenario_friend_shares_a_contact(lab):
     wait_for(lambda: transcript_row(a, ab_thread, reply), 20, "alice: bob's answer")
 
 
+def scenario_devices_hand_over_their_cards(lab):
+    """A call names each side's device; each asks that device for its account card over Amp, and the card
+    — not the call's word — ties the device to the account. With the cards kept, a message to the account
+    goes over the live link to its device."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a_peer = a.cmd("whoami")["peer_id"]
+    b_peer = b.cmd("whoami")["peer_id"]
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 40, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    wait_for(lambda: a_peer in b.cmd("kept_card", account=a.account)["devices"], 40,
+             "bob: alice's device, from her card")
+    wait_for(lambda: b_peer in a.cmd("kept_card", account=b.account)["devices"], 40,
+             "alice: bob's device, from his card")
+    sent = a.cmd("send", thread=a_thread, text="over the call's link")["message_id"]
+    row = wait_for(lambda: transcript_row(b, b_thread, sent), 20, "bob: alice's message")
+    if row.get("transport") != "direct":
+        raise ProbeError("bob: alice's message came by %s, not over the link" % row.get("transport"))
+    for u in (a, b):
+        u.cmd("leave", check=False)
+    assert_idle(a, b)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1570,6 +1595,7 @@ SCENARIOS = [
     ("chat_quote_reply", scenario_chat_quote_reply),
     ("first_message_brings_keys", scenario_first_message_brings_keys),
     ("friend_shares_a_contact", scenario_friend_shares_a_contact),
+    ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

@@ -1,6 +1,7 @@
 #include "lib/messaging/PeerRequestAuth.h"
 
 #include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/messaging/AccountCard.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
 #include "common/thread/ThreadChannel.h"
@@ -65,18 +66,18 @@ Roe<void> SignImpl(Request& request, const std::string& account_id, const std::s
 
 template <typename Request>
 Roe<void> VerifyImpl(const Request& request, const std::string& remote_peer_id, const int64_t now_ms,
-                     IPeerSigningKeyResolver& keys) {
+                     const std::function<Roe<std::string>()>& signing_key_b64) {
   // One answer for every refusal: the reason stays in our log, not with the asker.
   if (request.signature.empty() || request.requester_account_id.empty() || remote_peer_id.empty() ||
       request.requester_peer_id != remote_peer_id || std::llabs(now_ms - request.timestamp_ms) > kMaxSkewMs) {
     return Error("Request not authorized");
   }
-  auto key = keys.Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), request.requester_account_id);
+  auto key = signing_key_b64();
   if (!key) {
     return Error("Request not authorized");
   }
   auto bytes = SignBytes(request);
-  auto public_key = Base64Decode(key->signing_public_key_b64);
+  auto public_key = Base64Decode(*key);
   auto signature = Base64Decode(request.signature);
   if (!bytes || !public_key || !signature) {
     return Error("Request not authorized");
@@ -86,6 +87,16 @@ Roe<void> VerifyImpl(const Request& request, const std::string& remote_peer_id, 
     return Error("Request not authorized");
   }
   return {};
+}
+
+std::function<Roe<std::string>()> ResolvedKey(IPeerSigningKeyResolver& keys, const std::string& account_id) {
+  return [&keys, account_id]() -> Roe<std::string> {
+    auto key = keys.Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), account_id);
+    if (!key) {
+      return key.error();
+    }
+    return key->signing_public_key_b64;
+  };
 }
 
 } // namespace
@@ -144,12 +155,35 @@ Roe<void> Sign(ChatBlobRequest& request, const std::string& account_id, const st
 
 Roe<void> Verify(const ChatHistoryRequest& request, const std::string& remote_peer_id, const int64_t now_ms,
                  IPeerSigningKeyResolver& keys) {
-  return VerifyImpl(request, remote_peer_id, now_ms, keys);
+  return VerifyImpl(request, remote_peer_id, now_ms, ResolvedKey(keys, request.requester_account_id));
 }
 
 Roe<void> Verify(const ChatBlobRequest& request, const std::string& remote_peer_id, const int64_t now_ms,
                  IPeerSigningKeyResolver& keys) {
-  return VerifyImpl(request, remote_peer_id, now_ms, keys);
+  return VerifyImpl(request, remote_peer_id, now_ms, ResolvedKey(keys, request.requester_account_id));
+}
+
+Roe<std::vector<uint8_t>> SignBytes(const AccountCardRequest& request) {
+  auto oss = Begin("account-card", request.requester_account_id, request.requester_peer_id, request.timestamp_ms);
+  OutputArchive ar(oss);
+  Put(ar, request.account_id);
+  return Bytes(oss);
+}
+
+Roe<void> Sign(AccountCardRequest& request, const std::string& account_id, const std::string& local_peer_id,
+               const int64_t now_ms, const SignFn& sign) {
+  return SignImpl(request, account_id, local_peer_id, now_ms, sign);
+}
+
+Roe<void> Verify(const AccountCardRequest& request, const std::string& remote_peer_id, const int64_t now_ms,
+                 IPeerSigningKeyResolver& keys) {
+  // The requester's own key card, when it proves itself for the requester: no lookup for a stranger.
+  if (request.requester_keys && request.requester_keys->account_id == request.requester_account_id &&
+      VerifyKeyCard(*request.requester_keys)) {
+    const std::string key = request.requester_keys->signing_public_key_b64;
+    return VerifyImpl(request, remote_peer_id, now_ms, [key]() -> Roe<std::string> { return key; });
+  }
+  return VerifyImpl(request, remote_peer_id, now_ms, ResolvedKey(keys, request.requester_account_id));
 }
 
 } // namespace pbr::PeerRequestAuth

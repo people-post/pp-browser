@@ -106,6 +106,16 @@
         </div>
         <p class="text muted settings-help">{{i18n:settings.network.trusted_relays.help}}</p>
 
+        <div class="settings-toggle-row row" data-if="show_node_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.reachable_without_relay}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="reachable_without_relay == 'on'"
+                  data-event-click="toggle_reachable_without_relay()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_node_toggle">{{i18n:settings.network.reachable_without_relay.help}}</p>
+
         <div class="stack" data-if="advanced">
         <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>

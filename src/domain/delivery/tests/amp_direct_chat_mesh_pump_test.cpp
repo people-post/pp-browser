@@ -112,7 +112,7 @@ TEST(AmpDirectChatMeshPumpTest, SyncSendFromNonDriveThreadIsAcked) {
   ASSERT_NE(a_chat, nullptr);
   ASSERT_NE(b_chat, nullptr);
   std::atomic<bool> received{false};
-  b_chat->SetInboundHandler([&received](RelayEnvelope) { received.store(true, std::memory_order_release); });
+  b_chat->SetInboundHandler([&received](RelayEnvelope, std::string) { received.store(true, std::memory_order_release); });
   a_chat->Start();
   b_chat->Start();
 

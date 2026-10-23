@@ -110,6 +110,22 @@ Roe<PeerSigningKeyRecord> AccountKeyResolver::SigningView::Resolve(const std::st
   return Error("Signing key does not match the account");
 }
 
+Roe<PeerSigningKeyRecord> AccountKeyResolver::KeptSigningView::Resolve(const std::string& kind,
+                                                                     const std::string& value) {
+  if (auto cached = owner_.signing_keys_.Get(kind, value)) {
+    return *cached;
+  }
+  if (IsAccountKind(kind)) {
+    if (auto kept = owner_.cards_.Get(value); kept && *kept) {
+      owner_.Remember(**kept);
+      if (auto key = owner_.signing_keys_.Get(kind, value)) {
+        return *key;
+      }
+    }
+  }
+  return Error("No kept signing key");
+}
+
 Roe<PeerKemKeyRecord> AccountKeyResolver::KemView::Resolve(const std::string& kind, const std::string& value) {
   if (auto cached = owner_.kem_keys_.Get(kind, value)) {
     return *cached;

@@ -6,6 +6,8 @@ include(PpBrowserDomain)
 pp_browser_add_domain_library(pp_domain_delivery
   SOURCES
     AmpDirectChatTransport.cpp
+    AmpAccountCardTransport.cpp
+    AccountCardService.cpp
     AmpChatHistoryTransport.cpp
     PeerRouteBook.cpp
     PeerTransports.cpp

@@ -55,15 +55,14 @@ struct AmpDirectChatTransport::Impl {
 
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
   pp::Lifetime deferred;
-  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::LinkHandle link, const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
-    *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, policy,
-        [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+    *session_holder = links->BindChannelOnLink(link, channel_id, policy,
+        [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
@@ -71,7 +70,7 @@ struct AmpDirectChatTransport::Impl {
           auto body = std::move(*frame);
           // Keep the channel open for the worker's ack (InboundReply.h); `reply` closes it.
           auto reply = mesh::MakeInboundReply(session, post_io);
-          RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
+          RunWorker(post_worker, [this, reply, remote_peer_id, body = std::move(body)]() mutable {
             if (stopped.load(std::memory_order_acquire)) {
               return;
             }
@@ -94,7 +93,7 @@ struct AmpDirectChatTransport::Impl {
             reply->Send(JsonToBody(kAck));
             reply->Close();
             if (handler) {
-              handler(std::move(*envelope));
+              handler(std::move(*envelope), remote_peer_id);
             }
           });
           return true;
@@ -125,10 +124,10 @@ void AmpDirectChatTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kDirectChatProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
                                                 const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
-        impl->HandleInboundChannel(remote_peer_id, channel_id);
+        impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
 }
 
@@ -186,10 +185,36 @@ DirectSendFailure AmpDirectChatTransport::WrapLinkFailure(const mesh::IChatPeerL
   return DirectSendFailure::Of(code, detail::AppendFrom("amp direct chat: link failed", "link", link.message));
 }
 
+void AmpDirectChatTransport::SetDevicesOf(DevicesOf devices_of) {
+  devices_of_ = std::move(devices_of);
+}
+
+std::string AmpDirectChatTransport::ReachableKey(const std::string& key) const {
+  const auto reaches = [this](const std::string& k) {
+    return links_.IsReachable(k) || links_.GetLinkSnapshot(k).has_endpoint || links_.IsConnected(k);
+  };
+  if (key.empty() || reaches(key)) {
+    return key.empty() ? std::string() : key;
+  }
+  if (!devices_of_) {
+    return {};
+  }
+  const std::vector<std::string> devices = devices_of_(key);
+  for (const std::string& device : devices) {
+    if (links_.IsConnected(device)) {
+      return device;
+    }
+  }
+  for (const std::string& device : devices) {
+    if (reaches(device)) {
+      return device;
+    }
+  }
+  return {};
+}
+
 bool AmpDirectChatTransport::IsPeerReachable(const std::string& peer_identity_value) const {
-  return links_.IsReachable(peer_identity_value) ||
-         links_.GetLinkSnapshot(peer_identity_value).has_endpoint ||
-         links_.IsConnected(peer_identity_value);
+  return !ReachableKey(peer_identity_value).empty();
 }
 
 void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_user_id,
@@ -227,7 +252,7 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
     (*finish_once)(std::move(value));
   };
 
-  const std::string peer_key = peer_relay_user_id;
+  const std::string peer_key = ReachableKey(peer_relay_user_id);
   links_.OpenChannel(peer_key, kDirectChatProtocolId, pp::amp::ControlJsonChannelPolicy(),
                      [this, peer_key, envelope_json, finish, settled, session_holder,
                       deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {

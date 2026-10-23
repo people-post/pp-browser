@@ -979,7 +979,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
-    chat->SetInboundHandler([&](pbr::RelayEnvelope /*env*/) {
+    chat->SetInboundHandler([&](pbr::RelayEnvelope /*env*/, std::string /*from_peer_id*/) {
       chat_received.fetch_add(1, std::memory_order_acq_rel);
     });
   }

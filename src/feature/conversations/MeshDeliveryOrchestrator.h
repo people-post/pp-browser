@@ -15,7 +15,8 @@
 #include "lib/messaging/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
-#include "domain/peers/OwnKeyCard.h"
+#include "domain/peers/OwnCards.h"
+#include "domain/delivery/AccountCardService.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
@@ -144,7 +145,13 @@ public:
    * projects/privacy T1: chat, attachments and history dial only peers this gate allows (others over
    * a link that is already up, else the Brief relay). Set before AttachAmpTransports. Not owned.
    */
-  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { transports_.SetAddressDisclosure(gate); }
+  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) {
+    transports_.SetAddressDisclosure(gate);
+    card_service_.SetAudienceEveryone(
+        [gate]() { return gate && gate->Snapshot()->audience == mesh::DirectAudience::Everyone; });
+  }
+  /** Account cards between devices (the card exchange over Amp). */
+  AccountCardService& AccountCards() { return card_service_; }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -267,7 +274,7 @@ private:
   Roe<void> MaybeSendPublicAutoRekey(const std::string& thread_id);
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
-  void HandleDirectInbound(RelayEnvelope envelope);
+  void HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id);
   void LoadPersistedRelayCursor(const std::string& relay_user_id);
   void PersistRelayCursor(const std::string& relay_user_id);
 
@@ -311,8 +318,9 @@ private:
   PeerRouteBook routes_;
   /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
   E2ePublicSessionKeys session_keys_;
-  /** Our key card, carried with every key_init. */
-  OwnKeyCard own_key_card_;
+  /** Our cards: the key card carried with every key_init, the account card served to who asks. */
+  OwnCards own_cards_;
+  AccountCardService card_service_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
   ControlLane control_lane_;
   uint64_t last_relay_poll_ms_ = 0;

@@ -65,6 +65,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.prefer_contacts_for_routing = false;
   config.mesh.direct_connections = pp::mesh::DirectAudience::Friendly;
   config.mesh.trusted_relays_only = true;
+  config.mesh.reachable_without_relay = true;
   config.mesh.mesh_enabled = false;
   config.mesh.amp_udp_port = 18518;
   config.mesh.capabilities.circuit_relay = true;
@@ -111,6 +112,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_FALSE(parsed.mesh.prefer_contacts_for_routing);
   EXPECT_EQ(parsed.mesh.direct_connections, pp::mesh::DirectAudience::Friendly);
   EXPECT_TRUE(parsed.mesh.trusted_relays_only);
+  EXPECT_TRUE(parsed.mesh.reachable_without_relay);
   EXPECT_FALSE(parsed.mesh.mesh_enabled);
   EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);
   EXPECT_TRUE(parsed.mesh.capabilities.circuit_relay);

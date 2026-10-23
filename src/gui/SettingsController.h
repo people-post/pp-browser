@@ -134,6 +134,7 @@ private:
     ui::String direct_connections = "contacts";
     ui::String direct_connections_label;
     ui::String trusted_relays_only = "off";
+    ui::String reachable_without_relay = "off";
     bool show_prefer_contacts_toggle = false;
     ui::String profile_nickname;
     ui::String profile_peer_id;
@@ -252,6 +253,7 @@ private:
   static void ToggleDhtCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void TogglePreferContactsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleTrustedRelaysCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleReachableWithoutRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnProfileNicknameCommitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnRegisterProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

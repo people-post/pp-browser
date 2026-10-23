@@ -259,6 +259,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.prefer_contacts_for_routing = bindings_.prefer_contacts_for_routing.c_str();
   ui_state_.direct_connections = bindings_.direct_connections.c_str();
   ui_state_.trusted_relays_only = bindings_.trusted_relays_only.c_str();
+  ui_state_.reachable_without_relay = bindings_.reachable_without_relay.c_str();
   ui_state_.show_prefer_contacts_toggle = bindings_.show_prefer_contacts_toggle;
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
@@ -342,6 +343,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.prefer_contacts_for_routing = ui_state_.prefer_contacts_for_routing.c_str();
   bindings_.direct_connections = ui_state_.direct_connections.c_str();
   bindings_.trusted_relays_only = ui_state_.trusted_relays_only.c_str();
+  bindings_.reachable_without_relay = ui_state_.reachable_without_relay.c_str();
   bindings_.direct_connections_label = DirectConnectionsDisplayLabel(ui_state_.direct_connections).c_str();
   bindings_.show_prefer_contacts_toggle = ui_state_.show_prefer_contacts_toggle;
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
@@ -534,6 +536,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
     ctor.Bind("direct_connections_label", &controller.bindings_.direct_connections_label);
     ctor.Bind("trusted_relays_only", &controller.bindings_.trusted_relays_only);
+    ctor.Bind("reachable_without_relay", &controller.bindings_.reachable_without_relay);
     ctor.Bind("show_prefer_contacts_toggle", &controller.bindings_.show_prefer_contacts_toggle);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
     ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
@@ -633,6 +636,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_dht", &SettingsController::ToggleDhtCallback);
     ctor.BindEventCallback("toggle_prefer_contacts", &SettingsController::TogglePreferContactsCallback);
     ctor.BindEventCallback("toggle_trusted_relays", &SettingsController::ToggleTrustedRelaysCallback);
+    ctor.BindEventCallback("toggle_reachable_without_relay", &SettingsController::ToggleReachableWithoutRelayCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -693,6 +697,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "prefer_contacts_for_routing");
   host.Dirty("settings", "direct_connections_label");
   host.Dirty("settings", "trusted_relays_only");
+  host.Dirty("settings", "reachable_without_relay");
   host.Dirty("settings", "show_prefer_contacts_toggle");
   if (push_nick) {
     host.Dirty("settings", "profile_nickname");
@@ -1780,6 +1785,7 @@ void SettingsController::ApplyReachability() {
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
     ui_state_.direct_connections = mesh::DirectAudienceName(cfg.direct_connections);
     ui_state_.trusted_relays_only = cfg.trusted_relays_only ? "on" : "off";
+    ui_state_.reachable_without_relay = cfg.reachable_without_relay ? "on" : "off";
   }
   PushUiStateToBindings();
   ApplySectionAttention();
@@ -1940,6 +1946,16 @@ void SettingsController::TogglePreferContactsCallback(ui::DataModelHandle /*mode
   }
   controller.bindings_.prefer_contacts_for_routing =
       controller.bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleReachableWithoutRelayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                             const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.reachable_without_relay =
+      controller.bindings_.reachable_without_relay == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();

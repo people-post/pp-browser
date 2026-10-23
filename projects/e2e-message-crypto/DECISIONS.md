@@ -490,7 +490,7 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 | C1 | Card codec and checks; persisted card store feeding the key stores at unlock; resolvers as a chain; hub runs with no directory configured — **landed 2026-10-23** |
 | C2 | `sender_keys` with `key_init`; receive checks and keeps it — **landed 2026-10-23** (`first_message_brings_keys`) |
 | C3 | Contact card v2: *Share contact*, *Add* from a card — **landed 2026-10-23** (`friend_shares_a_contact`) |
-| C4 | Card exchange over Amp; card devices registered as the account's dial keys |
+| C4 | Card exchange over Amp; card devices registered as the account's dial keys — **landed 2026-10-23** (`devices_hand_over_their_cards`); idle reach: phones by push, desktops opt in to *Reachable without the relay* (seed reservation renewed every 20 s) |
 | C5 | Locator: QR, invite link, onboarding share; scan / paste → card via C4 or the directory |
 | C6 | Group invites and roster adds carry members' key cards |
 

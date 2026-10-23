@@ -98,8 +98,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       account_keys_(account_keys), psk_store_(psk_store), group_roster_(group_roster),
       transports_(store, identity, account_keys.Signing(), psk_store), outbox_([this]() { return transports_.DirectChat(); }),
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
-      session_keys_(psk_store, account_keys.Kem()), own_key_card_(identity),
-      control_lane_(identity, own_key_card_, contacts, routes_, session_keys_, transports_, outbox_) {
+      session_keys_(psk_store, account_keys.Kem()), own_cards_(identity),
+      card_service_(identity, own_cards_, account_keys, contacts),
+      control_lane_(identity, own_cards_, contacts, routes_, session_keys_, transports_, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, account_keys_.Signing(), psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
@@ -114,7 +115,11 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
   receive_pipeline_->SetOnMessageRetracted(
       [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
-  transports_.SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
+  transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
+    HandleDirectInbound(std::move(envelope), from_peer_id);
+  });
+  // Chat reaches an account over a live link to one of the devices its card lists.
+  transports_.SetDevicesOf([this](const std::string& key) { return card_service_.DevicesOf(key); });
   outbox_.SetRelayClient(relay_);
   // On the worker that finished the send: the row is marked before the UI hears of it.
   outbox_.SetOnOutcome([this](const DeliveryOutcome& outcome) {
@@ -142,7 +147,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
 }
 
 std::optional<KeyCard> MeshDeliveryOrchestrator::OwnKeys() {
-  auto card = own_key_card_.Get();
+  auto card = own_cards_.Keys();
   if (!card) {
     log().warning << "own key card unavailable: " << card.error().message;
     return std::nullopt;
@@ -337,7 +342,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
   }
 }
 
-void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
+void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id) {
   auto identity = identity_.Get();
   if (!identity) {
     return;
@@ -345,6 +350,11 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
   routes_.RememberFromEnvelope(envelope, outcome);
+  // A verified message over a link with a device its account's card does not list yet: ask that device
+  // for the card (it proves the device is the account's; the envelope signature alone does not).
+  if (outcome.sender_verified) {
+    card_service_.NoteDevice(envelope.sender_contact_id, from_peer_id);
+  }
   MaybePublishMemberJoinedAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
@@ -1420,12 +1430,14 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
   if (chat_sync_) {
     chat_sync_->SetPeerHistoryClient(transports_.History());
   }
+  card_service_.Attach(transports_.AccountCards());
 }
 
 void MeshDeliveryOrchestrator::DetachAmpTransports() {
   if (chat_sync_) {
     chat_sync_->SetPeerHistoryClient(nullptr);
   }
+  card_service_.Attach(nullptr);
   transports_.Detach();
 }
 

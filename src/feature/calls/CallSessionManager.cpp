@@ -956,6 +956,9 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
 }
 
 void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id) {
+  if (on_peer_device_ && relay_identity.rfind("account:", 0) == 0) {
+    on_peer_device_(relay_identity, peer_id);
+  }
   if (!peer_accounts_.Learn(relay_identity, peer_id)) {
     return;
   }

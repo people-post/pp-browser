@@ -210,6 +210,8 @@
     "settings.network.direct_connections.nobody": "无人（都经服务器转接）",
     "settings.network.trusted_relays": "只用可信的服务器转接",
     "settings.network.trusted_relays.help": "转接服务器能看到双方的网络地址。开启后，只由我们的服务器和你信任的联系人的设备为你转接；连接可能更慢。",
+    "settings.network.reachable_without_relay": "不经中转服务器也能联系到我",
+    "settings.network.reachable_without_relay.help": "让联系人在中转服务器不可用时也能直接联系到这台电脑。它会一直在我们的网络服务器上登记，服务器能看到它何时在线。",
     "settings.security.protection": "PIN 码：",
     "settings.security.current_pin": "当前 PIN",
     "settings.security.new_pin": "新 PIN",

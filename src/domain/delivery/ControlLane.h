@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/peers/OwnKeyCard.h"
+#include "domain/peers/OwnCards.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/ThreadTypes.h"
@@ -28,7 +28,7 @@ class PeerTransports;
  */
 class ControlLane : public Module {
 public:
-  ControlLane(IdentityStore& identity, OwnKeyCard& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
+  ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
               E2ePublicSessionKeys& keys, PeerTransports& transports, DeliveryOutbox& outbox);
 
   /**
@@ -42,7 +42,7 @@ private:
   uint64_t NextOrderKey();
 
   IdentityStore& identity_;
-  OwnKeyCard& own_keys_;
+  OwnCards& own_keys_;
   ContactsStore& contacts_;
   PeerRouteBook& routes_;
   E2ePublicSessionKeys& keys_;

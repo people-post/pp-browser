@@ -22,7 +22,10 @@ namespace pbr {
  */
 class AmpDirectChatTransport : public IDirectMessageClient {
 public:
-  using InboundHandler = IDirectMessageClient::InboundHandler;
+  /** A peer's envelope, with the PeerId of the link it came over (authenticated by the link). */
+  using InboundHandler = std::function<void(RelayEnvelope envelope, std::string from_peer_id)>;
+  /** The PeerIds of an account's devices this device knows (its kept cards), for a key the links do not resolve. */
+  using DevicesOf = std::function<std::vector<std::string>(const std::string& key)>;
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
   using IoPost = std::function<void(std::function<void()>)>;
@@ -39,6 +42,12 @@ public:
   void Stop();
 
   void SetInboundHandler(InboundHandler handler);
+  void SetDevicesOf(DevicesOf devices_of);
+  /**
+   * The link key a send to `key` uses: `key` when the links reach it, else one of its devices — one with a
+   * live link first; "" when none.
+   */
+  std::string ReachableKey(const std::string& key) const;
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
@@ -57,6 +66,7 @@ private:
   WorkerPost post_worker_;
   IoPost post_io_;
   IoAfter post_after_;
+  DevicesOf devices_of_;
   bool started_ = false;
 };
 

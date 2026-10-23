@@ -680,7 +680,37 @@ std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
   return mesh_config_snapshot_;
 }
 
+void ConversationsHub::SyncStayReachable() {
+  const bool want = config_.mesh.reachable_without_relay && Platform::IsDesktop() && mesh_ && mesh_ready_ &&
+                    !shutdown_requested_.load(std::memory_order_acquire);
+  if (!want) {
+    if (stay_reachable_timer_ != 0) {
+      AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
+      stay_reachable_timer_ = 0;
+    }
+    return;
+  }
+  if (stay_reachable_timer_ != 0) {
+    return;
+  }
+  // A seed reservation lasts about 30 s; renewing every 20 s keeps contacts able to reach this device by
+  // its PeerId through a seed, with no relay (docs/contracts/ACCOUNT_CARD.md).
+  const auto renew = [this]() {
+    AppRuntime::PostUI([this]() {
+      if (stay_reachable_timer_ != 0 && mesh_ && mesh_ready_) {
+        mesh_connectivity_->Rendezvous().ReserveOnBootstrapSeeds();
+      }
+    });
+  };
+  renew();
+  stay_reachable_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::seconds(20), renew);
+}
+
 void ConversationsHub::StopMesh() {
+  if (stay_reachable_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
+    stay_reachable_timer_ = 0;
+  }
   StopNetworkMonitor();
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
@@ -1406,6 +1436,7 @@ void ConversationsHub::ScheduleMeshBringUp() {
         mesh_ready_ = false;
       }
       NotifyMeshReady();
+      SyncStayReachable();
     });
   });
 }
@@ -2464,7 +2495,9 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
   config_.mesh.direct_connections = next.direct_connections;
   config_.mesh.trusted_relays_only = next.trusted_relays_only;
-  PublishMeshConfig();  // republishes who may learn our address too
+  config_.mesh.reachable_without_relay = next.reachable_without_relay;
+  PublishMeshConfig();
+  SyncStayReachable();  // republishes who may learn our address too
 
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_);
@@ -2517,6 +2550,7 @@ ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
   out.direct_connections = config.mesh.direct_connections;
   out.trusted_relays_only = config.mesh.trusted_relays_only;
+  out.reachable_without_relay = config.mesh.reachable_without_relay;
   return out;
 }
 

@@ -105,13 +105,15 @@ public:
     bool prefer_contacts_for_routing = true;
     mesh::DirectAudience direct_connections = mesh::DirectAudience::Contacts;
     bool trusted_relays_only = false;
+    bool reachable_without_relay = false;
 
     bool operator==(const NetworkConfig& other) const {
       return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
              prefer_contacts_for_routing == other.prefer_contacts_for_routing &&
-             direct_connections == other.direct_connections && trusted_relays_only == other.trusted_relays_only;
+             direct_connections == other.direct_connections && trusted_relays_only == other.trusted_relays_only &&
+             reachable_without_relay == other.reachable_without_relay;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
@@ -376,6 +378,8 @@ private:
   void PublishNodeAdvertisedAddrs();
   /** Point mesh connectivity and the hop-policy feed at the current messaging / mesh. */
   void WireMeshConnectivity();
+  /** Start or stop renewing the seed reservation (mesh.reachable_without_relay, desktop, mesh up). UI thread. */
+  void SyncStayReachable();
   void NoteLanMdnsPeerId(const std::string& peer_id);
   std::vector<HubParticipant*> Participants() const;
   /** Participants in reverse registration order (the way down). */
@@ -508,6 +512,8 @@ private:
   uint64_t lifecycle_background_id_ = 0;
   uint64_t lifecycle_foreground_id_ = 0;
   bool mesh_ready_ = false;
+  /** Renews our reservation on the mesh seeds while mesh.reachable_without_relay is on (desktop). */
+  uint64_t stay_reachable_timer_ = 0;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
   uint64_t hub_policy_timer_id_ = 0;
