@@ -373,11 +373,11 @@ Wave 7  horizons                          (placeholders)
 
 ---
 
-## Soft designs — Phase 4 browser E2E (Gate C = thin client)
+## Multi-process call probes
 
-**Decision:** Option A — thin client (`pp-call-probe`), not full GUI.
+Multi-process call tests drive a thin client (`pp-call-probe`), not the full GUI; the app lab drives `pp-app-probe` (the app with no GUI).
 
-| Step | Status |
+| Purpose | Coverage |
 |------|--------|
 | B-CALL-DIRECT multi-process | **Scaffold** — `pp-call-probe` + `pp_call_direct_smoke.sh` |
 | B-CALL-HOP | **Scaffold** — `pp-call-probe --via-hop` + `pp_call_hop_smoke.sh`; `--cycles` teardown on hop path |
@@ -394,22 +394,9 @@ From the first capacity sweeps (`--suite cap`): a hop serves **N₀ = 8** partic
 
 ---
 
-## Explicit non-goals (until later)
+## Non-goals
 
 - Replacing in-process gtests with Docker
 - PR-blocking large-N capacity
 - Full GUI as primary stress vehicle
 - One merged suite with shared pass criteria for node and browser
-- Hard-lab netem / multi-hop / CGNAT before Wave 1 forced-hop is green
-- Claiming hole punch or multi-SFU media paths in hard lab before those features ship
-
----
-
-## Delivery sequence (reference)
-
-1. **Phase 0** — this doc + IMAGE_SMOKE cross-link.
-2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
-3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
-4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
-5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
-6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 `--suite hard`; Wave 2 `--suite hard-w2`; Wave 3 STALE/SEED `--suite hard-w3`; Wave 5 CGNAT `--suite hard-w5`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

@@ -121,3 +121,33 @@ No per-act corpus yet.
 
 1. Finish d0: record I001+ in [DECISIONS.md](DECISIONS.md); confirm v1 matrix in DESIGN.
 2. Implement v1 per [PHASES.md](PHASES.md) — start with planner catalog + act field + PeerId Operate path.
+
+## Working set panel — follow-ups (from docs/ui/WORKING_SET_PANEL.md)
+
+| Feature | Approach |
+|---------|----------|
+| **Transient drill-down** | Row tap → [`ShellHost::PushTransient`](../../src/gui/shell/ShellHost.h) with detail RML; list stays in auxiliary |
+| **Pin working set** | User pins panel content; new replies update chat but not panel until unpinned |
+| **Multi-block navigator** | Tabs or list when one message has 2+ eligible blocks |
+| **Explicit `surface` field** | Block JSON or TurnPlan overrides heuristics |
+| **Multi-select in panel** | Selection state on working set model; batch actions back to chat/agent |
+| **Persist working set anchor** | Store `entry_id + block_index` in thread metadata for reload |
+| **Rename pane** | `preview` → `working_set` in ViewCatalog / RegisterPane |
+
+---
+
+### Phase 1 changed (history)
+
+| File | Change |
+|------|--------|
+| `src/common/ui/WorkingSetTypes.h` | Core types |
+| `src/base/ai/WorkingSetPolicy.h/.cpp` (new) | Goal + block routing |
+| `src/base/ai/StructuredTextParser.h/.cpp` | Candidates, dual render, teasers |
+| `src/feature/ai/AgentSession.h/.cpp` | Pass `response_goal` / `render_mode` in `AgentEvent` |
+| `src/gui/chat/WorkingSetController.h/.cpp` | Sticky lifecycle, apply/open/clear |
+| `src/gui/chat/ChatController.h/.cpp` | Owns WorkingSetController; RML callbacks + reply hooks |
+| `assets/views/preview.rml` | Dynamic working set chrome |
+| `assets/themes/base.rcss` | Panel + chip styles |
+| `src/base/ai/PromptBuilder.cpp` | Side panel guidance for LLM |
+| `docs/ui/WINDOW_SHELL.md`, `docs/ui/CHAT_TEMPLATES.md` | Cross-links and behavior notes |
+| `tests/structured_text_parser_test.cpp`, new policy test | Coverage |
