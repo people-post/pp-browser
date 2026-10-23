@@ -36,7 +36,6 @@ struct PeopleDiscoveryLabels {
   std::string refine_label = "Refine search…";
   std::string refine_message = "Search for someone more specifically by nickname or account id";
   std::string found_one = "Found 1 person on the network:";
-  std::string found_many_partial = "Found {count} people — showing the first {shown}. Add more of the name or account id to narrow it down.";
   std::string found_many_paged = "Found {count} people — showing {from}–{to}:";
   std::string show_more_label = "Show more ({rest} left)";
   std::string show_more_message = "Show the next people";

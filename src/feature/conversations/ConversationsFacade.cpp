@@ -11,12 +11,10 @@
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
-#include <unordered_set>
 
 namespace pbr {
 

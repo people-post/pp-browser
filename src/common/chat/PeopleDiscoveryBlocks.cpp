@@ -424,8 +424,10 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
 
   if (!filtered_hits.empty()) {
     const size_t total = filtered_hits.size();
-    // A page: rows [offset, offset + visible). The last page has no "show more".
-    const size_t offset = std::min(options.offset, total);
+    // A page: rows [offset, offset + visible). The last page has no "show more". A re-run that found
+    // fewer people than the previous page started at shows the last page rather than nothing.
+    const size_t offset =
+        options.offset < total ? options.offset : (total > max_visible ? total - max_visible : 0);
     const size_t visible = std::min(total - offset, max_visible);
     const size_t rest = total - offset - visible;
     const bool paged = offset > 0 || rest > 0;
@@ -463,7 +465,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
       footer = PagedFooter(labels, options.query, offset + visible, rest);
     }
     blocks.push_back(ObjectValue(BuildLongListBlock(
-        paged ? labels.results_title_partial : labels.results_title, ArrayValue(std::move(items)),
+        rest > 0 ? labels.results_title_partial : labels.results_title, ArrayValue(std::move(items)),
         std::move(footer))));
   } else if (!contacts.empty()) {
     const size_t total = contacts.size();

@@ -10,6 +10,9 @@
 namespace pbr {
 
 Roe<std::vector<mesh::DirectoryHit>> SearchDirectoryPeople(ConversationsHub& hub, const std::string& query) {
+  if (!hub.HasDirectory()) {
+    return Error("Directory not configured");
+  }
   std::vector<mesh::DirectoryHit> hits;
   if (LooksLikeExactPeopleId(query)) {
     const std::string id = util::Trim(query);

@@ -231,6 +231,8 @@ public:
   IPskSessionStore* PskStore();
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
+  /** False when no HTTP directory provider is configured (Directory() must not be called then). */
+  bool HasDirectory() const { return directory_ != nullptr; }
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
