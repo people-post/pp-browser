@@ -5,7 +5,7 @@
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/pricing/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"
-#include "domain/people/DirectoryHitRank.h"
+#include "feature/conversations/PeopleSearch.h"
 #include "domain/people/LinkDeviceCoordinator.h"
 #include "domain/people/LocalAccountBackup.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
@@ -696,39 +696,7 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 // --- Messaging tools helpers ------------------------------------------------
 
 Roe<std::vector<mesh::DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
-  Roe<std::vector<mesh::DirectoryHit>> hits = std::vector<mesh::DirectoryHit>{};
-  if (LooksLikeExactPeopleId(query)) {
-    // A full id: an exact lookup, one hit or none (the directory's "not found" is an empty list, not an error).
-    const std::string id = util::Trim(query);
-    auto hit = id.rfind("account:", 0) == 0 ? hub_.Directory().LookupByAccount(id) : hub_.Directory().LookupRelayUser(id);
-    if (hit) {
-      hits->push_back(*hit);
-    } else if (hit.error().message.find("not found") == std::string::npos) {
-      return hit.error();
-    }
-  } else {
-    hits = hub_.Directory().SearchPeople(query);
-    if (!hits) {
-      return hits.error();
-    }
-    RankDirectoryHits(*hits, query);
-  }
-  std::unordered_set<std::string> self_ids;
-  if (auto identity = hub_.Identity().Get()) {
-    self_ids = SelfIdentityValuesFromLocal(*identity);
-  }
-  if (self_ids.empty()) {
-    return hits;
-  }
-  std::vector<mesh::DirectoryHit> filtered;
-  filtered.reserve(hits->size());
-  for (mesh::DirectoryHit& hit : *hits) {
-    if (DirectoryHitMatchesIdentities(hit, self_ids)) {
-      continue;
-    }
-    filtered.push_back(std::move(hit));
-  }
-  return filtered;
+  return SearchDirectoryPeople(hub_, query);
 }
 
 Roe<std::vector<Contact>> ConversationsFacade::SearchLocalContacts(const std::string& query) {
