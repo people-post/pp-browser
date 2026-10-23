@@ -24,6 +24,7 @@
 #include "common/chat/SystemControl.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
 #include "domain/delivery/PeerRouteBook.h"
+#include "domain/delivery/PeerTransports.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
@@ -140,7 +141,7 @@ public:
    * projects/privacy T1: chat, attachments and history dial only peers this gate allows (others over
    * a link that is already up, else the Brief relay). Set before AttachAmpTransports. Not owned.
    */
-  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
+  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { transports_.SetAddressDisclosure(gate); }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -241,6 +242,8 @@ private:
   };
 
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
+  /** The direct-chat transport is attached and reaches `peer_key` now. */
+  bool AmpReaches(const std::string& peer_key) const;
   /** The pair's e2e_public session as the lane and media-key wraps use it. */
   struct E2ePublicSession {
     ChatTargetKey target_key;
@@ -298,16 +301,12 @@ private:
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
-  mesh::IChatPeerLinks* amp_links_ = nullptr;
-  const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
-  /** `amp_links_` limited to the audience, for the people-facing transports (outlives them). */
-  std::unique_ptr<mesh::DisclosureGatedPeerLinks> people_links_;
   /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
   std::unique_ptr<ControlLaneSeenStore> control_lane_seen_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
-  std::unique_ptr<IChatHistoryPeerClient> peer_history_;
-  std::unique_ptr<IChatBlobPeerService> peer_blob_;
-  std::unique_ptr<IDirectMessageClient> direct_chat_;
+  /** The mesh transports (direct chat, history, blobs) and the peers' dial endpoints; after the
+   *  pipeline their inbound handler feeds, so they go first. */
+  PeerTransports transports_;
   std::unique_ptr<ChatSyncWorkflow> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

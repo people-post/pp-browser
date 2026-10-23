@@ -98,7 +98,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
-      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), amp_links_(amp_links),
+      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster),
+      transports_(store, identity, signing_key_resolver, psk_store),
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
@@ -108,6 +109,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
   receive_pipeline_->SetOnMessageRetracted(
       [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
+  transports_.SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -116,7 +118,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
   chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
-                                                 peer_history_.get());
+                                                 transports_.History());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
       AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -152,7 +154,7 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
   }
   if (chat_sync_) {
     chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
-                                                 peer_history_.get());
+                                                 transports_.History());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
         AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -183,17 +185,15 @@ void MeshDeliveryOrchestrator::SetProfileDataDir(std::string profile_data_dir) {
   if (receive_pipeline_) {
     receive_pipeline_->SetControlLaneSeen(control_lane_seen_.get());
   }
-  if (peer_blob_) {
-    peer_blob_->SetProfileDataDir(profile_data_dir_);
-  }
+  transports_.SetProfileDataDir(profile_data_dir_);
 }
 
 IChatBlobPeerClient* MeshDeliveryOrchestrator::PeerBlobClient() const {
-  return peer_blob_.get();
+  return transports_.BlobClient();
 }
 
 IChatBlobPeerService* MeshDeliveryOrchestrator::PeerBlobService() const {
-  return peer_blob_.get();
+  return transports_.BlobService();
 }
 
 void MeshDeliveryOrchestrator::LoadPersistedRelayCursor(const std::string& relay_user_id) {
@@ -215,87 +215,16 @@ void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& relay_user_
 
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
-  const bool is_adp = mesh::IsAdpMultiaddr(multiaddr);
-  // B6: never register undialable ADP hosts (0.0.0.0 / :: / link-local) into the dial book.
-  if (is_adp && !mesh::IsUsableAdpListen(multiaddr)) {
-    return;
-  }
-  if (amp_links_ && is_adp) {
-    (void)amp_links_->RegisterEndpoint(peer_relay_user_id, multiaddr);
-  } else if (amp_links_) {
-    if (auto* amp_history = dynamic_cast<AmpChatHistoryTransport*>(peer_history_.get())) {
-      amp_history->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
-    }
-  }
+  transports_.RegisterEndpoint(peer_relay_user_id, multiaddr);
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(
     const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs) {
-  if (peer_relay_user_id.empty() || multiaddrs.empty()) {
-    return;
-  }
-  std::vector<std::string> usable;
-  usable.reserve(multiaddrs.size());
-  bool any_non_adp = false;
-  for (const std::string& ma : multiaddrs) {
-    if (ma.empty()) {
-      continue;
-    }
-    if (mesh::IsAdpMultiaddr(ma)) {
-      if (!mesh::IsUsableAdpListen(ma)) {
-        continue;
-      }
-      usable.push_back(ma);
-    } else {
-      any_non_adp = true;
-      usable.push_back(ma);
-    }
-  }
-  if (usable.empty()) {
-    return;
-  }
-  if (amp_links_ && !any_non_adp) {
-    // B28: atomic best-first candidate list (callers pass RankAmpDialMultiaddrs order).
-    (void)amp_links_->RegisterEndpoints(peer_relay_user_id, usable);
-    return;
-  }
-  // Non-ADP / history path: last RegisterEndpoint wins Preferred — register worst→best.
-  for (auto it = usable.rbegin(); it != usable.rend(); ++it) {
-    RegisterPeerDirectEndpoint(peer_relay_user_id, *it);
-  }
+  transports_.RegisterEndpoints(peer_relay_user_id, multiaddrs);
 }
 
 void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& contact) {
-  const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
-  if (target.peer_identity_value.empty()) {
-    return;
-  }
-  const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
-  auto register_ranked = [&](const std::string& dial_key, const std::vector<std::string>& multiaddrs) {
-    if (dial_key.empty() || multiaddrs.empty()) {
-      return;
-    }
-    RegisterPeerDirectEndpoints(dial_key, mesh::RankAmpDialMultiaddrs(multiaddrs, local_ctx));
-  };
-  if (!contact.remote.endpoints.empty()) {
-    for (const mesh::DirectoryEndpoint& endpoint : contact.remote.endpoints) {
-      const auto ranked = mesh::RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
-      RegisterPeerDirectEndpoints(endpoint.peer_id, ranked);
-      RegisterPeerDirectEndpoints(target.peer_identity_value, ranked);
-    }
-  } else {
-    register_ranked(target.peer_identity_value, contact.multiaddrs);
-  }
-  for (const std::string& peer_id : PeerIdsFromContact(contact)) {
-    if (amp_links_) {
-      if (auto ma = amp_links_->PreferredMultiaddr(peer_id)) {
-        RegisterPeerDirectEndpoint(peer_id, *ma);
-        if (target.peer_identity_value != peer_id) {
-          RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
-        }
-      }
-    }
-  }
+  transports_.RegisterContactEndpoints(contact);
 }
 
 void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory) {
@@ -426,12 +355,17 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
   }
 }
 
+bool MeshDeliveryOrchestrator::AmpReaches(const std::string& peer_key) const {
+  IDirectMessageClient* chat = transports_.DirectChat();
+  return chat && chat->IsPeerReachable(peer_key);
+}
+
 void MeshDeliveryOrchestrator::TickMesh() {
   // Amp mesh pump is MeshHost::Tick via ConversationsHub; no PeerSessionManager.
 }
 
 void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
-  if (!amp_links_) {
+  if (!transports_.Attached()) {
     return;
   }
   auto thread = store_.GetThread(thread_id);
@@ -446,13 +380,7 @@ void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
 }
 
 void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
-  if (!amp_links_ || peer_key.empty()) {
-    return;
-  }
-  amp_links_->MarkWarm(peer_key);
-  if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
-    amp_links_->EnsureAssociation(peer_key, [](mesh::IChatPeerLinks::LinkRoe) {});
-  }
+  transports_.WarmByKey(peer_key);
 }
 
 Roe<MeshDeliveryOrchestrator::E2ePublicSession> MeshDeliveryOrchestrator::ResolveE2ePublicSession(
@@ -546,7 +474,7 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
     route_view.participant_contact_ids = {(*contact)->id};
   }
   const auto peer_relay_id = routes_.ResolveWithDirectory(route_view);
-  const bool amp_reachable = direct_chat_ && direct_chat_->IsPeerReachable(peer_identity);
+  const bool amp_reachable = AmpReaches(peer_identity);
   if (!peer_relay_id && !amp_reachable) {
     return Error("No route to the peer");
   }
@@ -584,12 +512,12 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
                                       .attempt_count = 1});
       }
     };
-    const bool try_amp = !peer_relay_id && direct_chat_ && direct_chat_->IsPeerReachable(peer_identity);
+    const bool try_amp = !peer_relay_id && AmpReaches(peer_identity);
     if (!try_amp) {
       via_relay();
       return;
     }
-    direct_chat_->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](DirectSendRoe direct) {
+    transports_.DirectChat()->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](DirectSendRoe direct) {
       if (!direct) {
         log().warning << "control lane Amp send failed message_id=" << envelope.message_id
                       << " err=" << direct.error().message;
@@ -608,11 +536,12 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   const std::string& peer = (*thread)->peer_identity_value;
   // The same route a send would use (contacts, learned from verified senders, the directory cache).
   view.relay_available = relay_ != nullptr && routes_.Resolve(**thread).has_value();
-  if (peer.empty() || !amp_links_) {
+  mesh::IChatPeerLinks* links = transports_.Links();
+  if (peer.empty() || !links) {
     view.path_kind = view.relay_available && !peer.empty() ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
     return view;
   }
-  const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+  const mesh::MeshPeerLinkSnapshot snap = links->GetLinkSnapshot(peer);
   view.phase = snap.phase;
   view.has_direct_endpoint = snap.has_endpoint;
   view.carrier_backed = snap.carrier_backed;
@@ -642,7 +571,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
 }
 
 void MeshDeliveryOrchestrator::RetryPeerDial(const std::string& thread_id) {
-  if (!amp_links_) {
+  if (!transports_.Attached()) {
     return;
   }
   auto thread = store_.GetThread(thread_id);
@@ -1123,7 +1052,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   }
   auto peer_relay_id = routes_.ResolveWithDirectory(**thread);
   const std::string amp_peer_key = (*thread)->peer_identity_value;
-  const bool amp_reachable = direct_chat_ && direct_chat_->IsPeerReachable(amp_peer_key);
+  const bool amp_reachable = AmpReaches(amp_peer_key);
   if (!peer_relay_id && !amp_reachable) {
     return FailOutbound(store_, *appended, Error("Direct thread missing peer relay id"));
   }
@@ -1195,14 +1124,14 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     // Call-control (critical_lane): Amp chat Open+ack-per-message races SoftMigrate/media and
     // burns up to ~4s before Brief — noisy WARNINGs for 10–20s while signaling still works via
     // relay. Prefer Brief when a relay route is known; Amp remains for Amp-only peers.
-    const bool try_amp = DirectSendTriesAmpFirst(direct_chat_ && direct_chat_->IsPeerReachable(amp_peer_key),
+    const bool try_amp = DirectSendTriesAmpFirst(AmpReaches(amp_peer_key),
                                                  peer_relay_id.has_value(), critical_lane);
     if (!try_amp) {
       finish_relay(std::nullopt);
       return;
     }
     // Fire-and-forget Amp send: free this worker while MeshPump drives Open+ack.
-    direct_chat_->SendEnvelopeAsync(
+    transports_.DirectChat()->SendEnvelopeAsync(
         amp_peer_key, envelope,
         [this, thread_id, message_id, amp_peer_key, critical_lane, post_continue,
          finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
@@ -1549,11 +1478,10 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
         (*process)(index + 1);
       };
 
-      if (item.envelope.recipient_contact_id && direct_chat_ &&
-          direct_chat_->IsPeerReachable(*item.envelope.recipient_contact_id)) {
+      if (item.envelope.recipient_contact_id && AmpReaches(*item.envelope.recipient_contact_id)) {
         const std::string peer_key = *item.envelope.recipient_contact_id;
         const RelayEnvelope envelope = item.envelope;
-        direct_chat_->SendEnvelopeAsync(
+        transports_.DirectChat()->SendEnvelopeAsync(
             peer_key, envelope,
             [this, still_pending, process, index, item = std::move(item),
              try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
@@ -1774,55 +1702,20 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
                                                    std::function<void(std::function<void()>)> amp_worker_post,
                                                    std::function<void(std::function<void()>)> amp_post_io,
                                                    std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after) {
-  if (!amp_links) {
-    log().warning << "AttachAmpTransports: amp_links is null";
+  if (!transports_.Attach(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
+                          std::move(amp_post_after))) {
     return;
   }
-  // Idempotent when already bound to the same PeerLinks with live transports.
-  if (amp_links_ == amp_links && direct_chat_ && peer_history_ && peer_blob_) {
-    return;
-  }
-  DetachAmpTransports();
-  amp_links_ = amp_links;
-  if (address_disclosure_) {
-    people_links_ = std::make_unique<mesh::DisclosureGatedPeerLinks>(*amp_links_, *address_disclosure_);
-  }
-  mesh::IChatPeerLinks& people = people_links_ ? static_cast<mesh::IChatPeerLinks&>(*people_links_) : *amp_links_;
-
-  auto worker = std::move(amp_worker_post);
-  if (!worker) {
-    worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
-  }
-
-  auto blob = std::make_unique<AmpChatBlobTransport>(people, amp_io_pump, store_, identity_, signing_key_resolver_,
-                                                     worker, amp_post_io, amp_post_after);
-  blob->Start();
-  peer_blob_ = std::move(blob);
-
-  auto history = std::make_unique<AmpChatHistoryTransport>(people, amp_io_pump, store_, identity_, psk_store_,
-                                                         signing_key_resolver_, worker, amp_post_io, amp_post_after);
-  history->Start();
-  auto chat = std::make_unique<AmpDirectChatTransport>(people, amp_io_pump, worker, amp_post_io, amp_post_after);
-  chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
-  chat->Start();
-  peer_history_ = std::move(history);
-  direct_chat_ = std::move(chat);
   if (chat_sync_) {
-    chat_sync_->SetPeerHistoryClient(peer_history_.get());
+    chat_sync_->SetPeerHistoryClient(transports_.History());
   }
-  log().info << "direct chat/history/blob transport=amp";
 }
 
 void MeshDeliveryOrchestrator::DetachAmpTransports() {
   if (chat_sync_) {
     chat_sync_->SetPeerHistoryClient(nullptr);
   }
-  // Destructors call Stop() → RemoveProtocolHandler on PeerLinks; Amp must still be alive.
-  direct_chat_.reset();
-  peer_history_.reset();
-  peer_blob_.reset();
-  people_links_.reset();  // after the transports that hold it
-  amp_links_ = nullptr;
+  transports_.Detach();
 }
 
 void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome) {
