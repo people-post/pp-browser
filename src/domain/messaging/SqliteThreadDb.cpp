@@ -160,7 +160,8 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
       return version.error();
     }
   } else if (user_version != kSqliteThreadProfileUserVersion) {
-    return Error("Incompatible profile.db — wipe profile data directory");
+    return Error("Incompatible profile.db (schema " + std::to_string(user_version) + ", expected " +
+                 std::to_string(kSqliteThreadProfileUserVersion) + ") — reset chats in Me → Storage");
   }
   // Additive chat_targets columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
   (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
@@ -235,7 +236,8 @@ Roe<sqlite3*> SqliteThreadDb::OpenThreadDb(const std::string& thread_id) const {
       }
     } else if (user_version != kSqliteThreadUserVersion) {
       sqlite3_close(handle.db);
-      return Error("Incompatible thread.db — wipe profile data directory");
+      return Error("Incompatible thread.db (schema " + std::to_string(user_version) + ", expected " +
+                   std::to_string(kSqliteThreadUserVersion) + ") — reset chats in Me → Storage");
     }
     thread_dbs_[thread_id] = handle;
     it = thread_dbs_.find(thread_id);

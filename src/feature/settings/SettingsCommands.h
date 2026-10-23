@@ -52,6 +52,8 @@ struct SettingsCommands {
   std::function<void()> try_upnp_port_mapping;
   /** Wipe profile data and reinit hub/secrets — app owns that lifecycle. */
   std::function<Roe<void>()> reset_active_profile;
+  /** Wipe the profile's chat data only (account, keys, contacts, settings stay) — app owns that lifecycle. */
+  std::function<Roe<void>()> reset_chat_data;
   /** Display label for a language pref (`system` or BCP-47 tag). App → LocalizationService. */
   std::function<std::string(const std::string& language_pref)> language_display_label;
   std::function<std::vector<LocaleInfo>()> available_locales;

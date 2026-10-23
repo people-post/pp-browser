@@ -266,6 +266,7 @@ private:
   static void OnClearUndeliveredCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnResetToolPermissionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnResetProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnResetChatsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenSupportChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void InitSections();
@@ -316,6 +317,8 @@ private:
   void OnResetToolPermissions();
   void OnResetProfile();
   void PerformResetProfile();
+  void OnResetChats();
+  void PerformResetChats();
   void OnChooseTheme(ui::Event& ev);
   void ApplyThemeChoice(const std::string& appearance_pref);
   void OnChooseLanguage(ui::Event& ev);

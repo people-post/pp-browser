@@ -647,6 +647,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("clear_undelivered_older_than", &SettingsController::OnClearUndeliveredCallback);
     ctor.BindEventCallback("reset_tool_permissions", &SettingsController::OnResetToolPermissionsCallback);
     ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
+    ctor.BindEventCallback("reset_chats", &SettingsController::OnResetChatsCallback);
   });
 }
 
@@ -2414,6 +2415,46 @@ void SettingsController::PerformResetProfile() {
   UserFeedback::Ok(Tr("settings.storage.profile_reset"));
   if (shell_navigation_.request_sync_layout) {
     shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_profile_reset");
+  }
+}
+
+void SettingsController::OnResetChatsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
+  Instance().OnResetChats();
+}
+
+void SettingsController::OnResetChats() {
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(Tr("settings.storage.reset_chats_confirm_title"),
+                               Tr("settings.storage.reset_chats_confirm_message"),
+                               [this](const bool ok) {
+                                 if (!ok) {
+                                   return;
+                                 }
+                                 PerformResetChats();
+                               },
+                               Tr("settings.storage.reset_chats_confirm_ok"));
+}
+
+void SettingsController::PerformResetChats() {
+  if (!commands_.reset_chat_data) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Chat reset is not available"));
+    return;
+  }
+
+  log().info << "Requesting chat data reset";
+  if (auto reset = commands_.reset_chat_data(); !reset) {
+    ReportFailure(reset.error());
+    return;
+  }
+
+  SyncBindingsFromSession();
+  DirtyAll();
+  UserFeedback::Ok(Tr("settings.storage.chats_reset"));
+  if (shell_navigation_.request_sync_layout) {
+    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_chats_reset");
   }
 }
 

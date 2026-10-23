@@ -69,6 +69,11 @@ public:
   void ShutdownMessaging();
   /** Wipe active profile data dir and reinitialize secrets + hub (app-owned lifecycle). */
   Roe<void> ResetActiveProfile();
+  /**
+   * Wipe the active profile's chat data ({profile}/threads/: chats, outbox, peer sessions) and
+   * reinitialize the hub; the account, keys, contacts and settings stay, and the vault stays open.
+   */
+  Roe<void> ResetChatData();
 
   static std::string AssetsPath(const std::string& relative);
 
@@ -82,6 +87,13 @@ private:
   void WireAgentAndConfig();
   bool MountPresenters(ui::Context* context);
   void WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap);
+  /** The hub's event callbacks; its Shutdown clears them, so a reset sets them again. */
+  void WireHubCallbacks();
+  /**
+   * Stop messaging behind the teardown quiesce, as quit does, but the process lives on. With
+   * `with_secrets`, the profile secrets stop too (a profile reset re-creates them).
+   */
+  Roe<void> StopMessagingForReset(bool with_secrets);
 
   bool initialized_ = false;
   SessionStore store_;

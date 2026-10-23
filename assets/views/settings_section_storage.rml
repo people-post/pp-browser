@@ -62,6 +62,8 @@
           </p>
           <div class="settings-actions stack">
             <button class="btn btn-danger-soft settings-action-bar" type="button"
+                    data-event-click="reset_chats()">{{i18n:settings.storage.reset_chats}}</button>
+            <button class="btn btn-danger-soft settings-action-bar" type="button"
                     data-event-click="reset_profile()">{{i18n:settings.storage.reset_profile}}</button>
           </div>
         </div>

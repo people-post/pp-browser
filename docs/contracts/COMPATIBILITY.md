@@ -34,9 +34,9 @@ Expected layout: [DATA_LAYOUT.md](DATA_LAYOUT.md).
 | Orphan `threads/{id}/` with `thread.db` | Re-cataloged as AI threads |
 | Corrupt / **newer** `manifest` / prefs / `profiles.json` / `config_version` | Bootstrap **error** → process exit 1 (not a crash) |
 | Wrong `vault.bin` magic/version; bad `identity.enc` | Unlock **error** |
-| SQLite `user_version` | Wipe-out: CREATE TABLE at the current schema (`profile.db` **4** includes encrypted `preview_enc`; `thread.db` **2** uses `content_enc` / `value_enc` — D102). Leftover older DBs are not a supported upgrade — wipe the profile (`{profile}/threads/` or whole profile dir). Additive `ALTER` may still run locally as a convenience, not a dual-parser promise. |
+| SQLite `user_version` | Wipe-out: CREATE TABLE at the current schema (`profile.db` **4** includes encrypted `preview_enc`; `thread.db` **2** uses `content_enc` / `value_enc` — D102). Leftover older DBs are not a supported upgrade — clear them with Me → Storage → **Reset chats** (`{profile}/threads/`; the account, contacts and settings stay) or **Reset my data** (the whole profile dir). Additive `ALTER` may still run locally as a convenience, not a dual-parser promise. |
 
-**Policy:** unknown junk is safe. Official filenames with unsupported **newer** schemas fail bootstrap until the profile/data dir is reset (Me → Storage, or delete data dir in development). See D016 (no legacy JSON/wire import) vs D069 (migrate shippable SQLite).
+**Policy:** unknown junk is safe. Official filenames with unsupported **newer** schemas fail bootstrap until the profile/data dir is reset (Me → Storage, or delete data dir in development); an unsupported chat-store schema (`profile.db` / `thread.db`) fails each chat operation, and is logged at startup, until Me → Storage → Reset chats. See D016 (no legacy JSON/wire import) vs D069 (migrate shippable SQLite).
 
 ### Dev wipe after Brief PQ / Account ID hard cut
 
