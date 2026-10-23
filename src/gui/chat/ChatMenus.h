@@ -21,7 +21,7 @@
 
 namespace pbr {
 
-/** What ChatMenus needs from the chat screen it is part of (ChatController). UI thread. */
+/** What ChatMenus and ChatPeerSheet need from the chat screen they are part of (ChatController). UI thread. */
 class ChatMenusHost {
 public:
   virtual ~ChatMenusHost() = default;
@@ -35,6 +35,8 @@ public:
   virtual void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short) = 0;
   virtual void ShowConfirm(const std::string& title, const std::string& message,
                            std::function<void(bool)> on_result) = 0;
+  virtual void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
+                          std::function<void(bool, std::string)> on_result) = 0;
 
   // What the menus' items do.
   virtual void OnNewChat() = 0;

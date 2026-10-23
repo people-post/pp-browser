@@ -12,6 +12,8 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
+#include "common/directory/DirectoryJson.h"
+#include "lib/messaging/GroupTypes.h"
 
 #include <algorithm>
 #include <utility>
@@ -265,6 +267,83 @@ void ChatPresenter::MarkRead(const std::string& thread_id) {
     facade_->MarkThreadRead(thread_id);
   }
   UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = false; });
+}
+
+Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
+  if (!facade_ || peer_id.empty()) {
+    return Error("chat.error.add_contact_failed");
+  }
+  mesh::DirectoryHit hit;
+  if (auto shadow = facade_->GetDirectoryShadow(peer_id)) {
+    hit = *shadow;
+  } else {
+    hit.hit_id = peer_id;
+    if (peer_id.rfind("account:", 0) == 0) {
+      hit.account_id = peer_id;
+      hit.ids = {{mesh::ContactIdKind::Account, peer_id, true}};
+    } else {
+      hit.ids = {{mesh::ContactIdKind::RelayUser, peer_id, false}};
+    }
+  }
+  auto created = facade_->AddContactFromDirectoryHit(hit);
+  if (!created) {
+    return Error("chat.error.add_contact_failed");
+  }
+  if (hit.nickname.empty()) {
+    facade_->EnsureDirectoryLookup(peer_id); // the hit fills the nickname in when it arrives
+  }
+  const bool carries_keys = (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) ||
+                            (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty());
+  if (carries_keys && (!hit.account_id || hit.account_id->empty())) {
+    return Error("chat.error.directory_missing_account");
+  }
+  const std::string account_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
+    facade_->RegisterPeerSigningKey(account_kind, *hit.account_id, *hit.signing_public_key_b64, "directory");
+  }
+  if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
+    facade_->RegisterPeerKemKey(account_kind, *hit.account_id, *hit.kem_public_key_b64, "directory");
+  }
+  facade_->RegisterContactDirectEndpoints(*created);
+  // The direct chat with a stranger (no participants) belongs to the new contact from now on.
+  ThreadChannel channel = ThreadChannel::E2ePublic;
+  if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
+    channel = active->channel;
+  }
+  (void)facade_->FindOrCreateDirectThread(created->id, channel);
+  facade_->NotifyThreadChanged();
+  return created->id;
+}
+
+ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
+  ChatGroupSheet sheet;
+  if (!facade_) {
+    return sheet;
+  }
+  std::string local_identity;
+  if (auto identity = facade_->GetIdentity()) {
+    local_identity = identity->account_id;
+    if (auto roster = facade_->ListGroupRoster(group_id)) {
+      sheet.is_owner = std::any_of(roster->begin(), roster->end(), [&](const GroupRosterMember& member) {
+        return member.member_identity == local_identity && member.role == MemberRole::Owner;
+      });
+    }
+  }
+  sheet.owner_unreachable = facade_->IsOwnerUnreachable(group_id);
+  if (!sheet.is_owner) {
+    return sheet;
+  }
+  for (const std::string& identity : facade_->ListUnreachableMembers(group_id)) {
+    if (identity == local_identity) {
+      continue;
+    }
+    std::string name;
+    if (auto contact = facade_->FindContactByIdentity(identity, mesh::ContactIdKind::Account); contact && *contact) {
+      name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+    }
+    sheet.unreachable_members.emplace_back(identity, name.empty() ? identity : name);
+  }
+  return sheet;
 }
 
 Roe<void> ChatPresenter::ToggleReaction(const std::string& message_id, const std::string& emoji) {

@@ -8,6 +8,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/ChatMenus.h"
+#include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
@@ -178,7 +179,6 @@ private:
   void OnSendMessage();
   void OnNewChat() override;
   void OnNewMessage() override;
-  void OnOpenPeerSheet(ui::Event& ev);
   void OnCloseThread(const std::string& thread_id) override;
   void OnClearHistory();
   /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
@@ -286,7 +286,7 @@ private:
   void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
                                bool checkbox_default, std::function<void(bool, bool)> on_result);
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
-                  std::function<void(bool, std::string)> on_result);
+                  std::function<void(bool, std::string)> on_result) override;
 
 
 
@@ -328,6 +328,7 @@ private:
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};
+  ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

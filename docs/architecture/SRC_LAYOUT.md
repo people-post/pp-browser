@@ -200,7 +200,7 @@ Module map: [`src/gui/README.md`](../../src/gui/README.md).
 | `gui/` | Shared presenters (settings, call, pin, emoji, badges, flow, …) |
 | `gui/shell/` | ShellHost, mount, shell ports |
 | `gui/contacts/` | Contacts + people-picker |
-| `gui/chat/` | ChatController + screen helpers |
+| `gui/chat/` | ChatController, its parts (AgentTurnController, ChatMenus, ChatPeerSheet) + screen helpers |
 
 `pp_gui` links `pp_feature_*` (and lib/foundation as needed). Feature must not link or include `gui/`.
 

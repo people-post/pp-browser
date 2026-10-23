@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -67,6 +68,15 @@ struct CloseChatPlan {
   std::vector<std::string> successors;
 };
 const char* CloseChatPlanKindName(CloseChatPlan::Kind kind);
+
+/** A group's side of the open chat's peer sheet. */
+struct ChatGroupSheet {
+  /** This device owns the group. */
+  bool is_owner = false;
+  bool owner_unreachable = false;
+  /** Members the owner may remove for being unreachable (never this device): identity, then the name to show. */
+  std::vector<std::pair<std::string, std::string>> unreachable_members;
+};
 
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);
@@ -137,6 +147,17 @@ public:
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
   std::optional<ThreadLocalPrefs> PrefsOf(const std::string& thread_id);
+
+  // --- the open chat's peer sheet (the header's person / group button) --------------------------
+
+  /**
+   * "Add to contacts" for the person of a direct chat who is not a contact yet: from the directory
+   * entry this device holds for `peer_id` (else the id alone), with the keys and endpoints it carries;
+   * the open direct chat is then bound to the new contact. The contact's id; an error's message is an
+   * i18n key.
+   */
+  Roe<std::string> AddPeerToContacts(const std::string& peer_id);
+  ChatGroupSheet GroupSheetOf(const std::string& group_id);
 
   // --- a message's buttons (the open chat) ------------------------------------------------------
 

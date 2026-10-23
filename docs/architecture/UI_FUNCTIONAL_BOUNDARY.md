@@ -38,7 +38,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 | Surface | Module | Role |
 |---------|--------|------|
 | `ShellHost` | `gui/` | Window chrome, pane layout, global feedback |
-| `ChatController` | `gui/chat/` | Chat screen presenter |
+| `ChatController` | `gui/chat/` | Chat screen presenter: owns the data model and routes its events; its parts (`AgentTurnController`: the agent's turns; `ChatMenus` / `ChatPeerSheet`: the menus) reach back through narrow host interfaces (`AgentTurnHost`, `ChatMenusHost`) |
 | `SettingsController` | `gui/` | Me tab / settings presenter |
 | `ContactsController` | `gui/` | Contacts tab presenter |
 | `PeoplePickerController` | `gui/` | People picker presenter |
@@ -116,7 +116,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 **Existing examples:**
 
 - `ConversationsHub::NetworkConfig`, `PolicyPrefs`, `NotificationPrefs`
-- `ShellHost::ChromePrefs`, `ChatController::AgentConfig`, `LocalizationService::Prefs`
+- `ShellHost::ChromePrefs`, `AgentTurnController::AgentConfig`, `LocalizationService::Prefs`
 - [RUNTIME_COMPOSITION.md — Settings / prefs hot-reload](RUNTIME_COMPOSITION.md#settings--prefs-hot-reload)
 
 **Quick blocking set:** Section flush in settings is synchronous on the UI thread but only touches `SessionStore`; heavy apply work stays inside service `Apply` implementations (must not block the UI thread for long — post to IO if needed).

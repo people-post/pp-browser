@@ -9,6 +9,7 @@ pp_browser_add_feature_library(pp_gui
     CallController.cpp
     chat/AgentTurnController.cpp
     chat/ChatMenus.cpp
+    chat/ChatPeerSheet.cpp
     chat/ChatController.cpp
     chat/ChatDataModel.cpp
     chat/ChatThreadChrome.cpp

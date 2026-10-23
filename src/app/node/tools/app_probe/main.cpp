@@ -432,6 +432,18 @@ public:
       }
       out.set("successors", ArrayValue(std::move(successors)));
       Emit(out);
+    } else if (cmd == "group_sheet") {
+      // A group's side of the chat header's sheet (ChatPeerSheet): owner, and who the owner may remove.
+      const ChatGroupSheet sheet = chats_.GroupSheetOf(request->getString("group_id").value_or(""));
+      Object out = Reply(id, true);
+      out.set("is_owner", sheet.is_owner);
+      out.set("owner_unreachable", sheet.owner_unreachable);
+      std::vector<Value> unreachable;
+      for (const auto& member : sheet.unreachable_members) {
+        unreachable.emplace_back(member.first);
+      }
+      out.set("unreachable", ArrayValue(std::move(unreachable)));
+      Emit(out);
     } else if (cmd == "close_chat") {
       // Close a chat the way its plan says (an owner names a `successor`, or dismisses with none).
       const std::string thread = request->getString("thread").value_or("");

@@ -1028,6 +1028,11 @@ def scenario_group_owner_hands_over(lab):
         raise ProbeError("alice (owner): close plan %s" % plan)
     if b.cmd("close_plan", thread=threads[b.name])["kind"] != "leave":
         raise ProbeError("bob (member): close plan is not leave")
+    # The chat header's sheet offers the owner's items (rename for everyone) to Alice only.
+    if not a.cmd("group_sheet", group_id=plan_group(a, threads[a.name]))["is_owner"]:
+        raise ProbeError("alice: her group's sheet does not see her as the owner")
+    if b.cmd("group_sheet", group_id=plan_group(b, threads[b.name]))["is_owner"]:
+        raise ProbeError("bob: his group's sheet sees him as the owner before the hand-over")
     a.cmd("close_chat", thread=threads[a.name], successor=b.account)
     for u in (b, c):
         wait_for(lambda: (lambda r: r.get("owner") == b.account and a.account not in r["members"])(
@@ -1036,6 +1041,8 @@ def scenario_group_owner_hands_over(lab):
         raise ProbeError("alice: the group chat is still there after handing it over")
     if b.cmd("close_plan", thread=threads[b.name])["kind"] != "leave_as_owner":
         raise ProbeError("bob: not the owner after the hand-over")
+    if not b.cmd("group_sheet", group_id=plan_group(b, threads[b.name]))["is_owner"]:
+        raise ProbeError("bob: his group's sheet does not see him as the owner after the hand-over")
     if c.cmd("close_plan", thread=threads[c.name])["kind"] != "leave":
         raise ProbeError("carol: no longer a plain member")
 
