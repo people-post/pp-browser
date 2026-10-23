@@ -1,8 +1,10 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 
 #include "foundation/crypto/PinDefaults.h"
+#include "foundation/error/AppError.h"
 #include "common/StartupTiming.h"
 
+#include <memory>
 #include <stdexcept>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -327,13 +329,22 @@ void ProfileUnlockGate::CompleteRestoreBackup(const std::string& pin, const bool
   SetUnlockInProgress(true);
   StartupMark("local_backup_restore_begin");
 
-  auto work = [this, pin]() -> Roe<void> {
+  auto wrong_pin = std::make_shared<bool>(false);
+  auto work = [this, pin, wrong_pin]() -> Roe<void> {
     if (auto restored = ports_.restore_local_backup(pin); !restored) {
+      *wrong_pin = AppError::CategoryOf(restored.error()) == ErrorCategory::Pin;
       return restored.error();
     }
     return UnlockAndReady(pin);
   };
-  auto on_done = [this, set_default_pin](Roe<void> result) {
+  auto on_done = [this, set_default_pin, wrong_pin](Roe<void> result) {
+    if (!result && *wrong_pin && ports_.ui.show_restore_pin) {
+      // Not the default PIN: ask for the account's PIN; a typed PIN that is wrong keeps the page up.
+      StartupMark("local_backup_restore_pin");
+      SetUnlockInProgress(false);
+      ports_.ui.show_restore_pin(/*wrong_pin=*/!set_default_pin);
+      return;
+    }
     if (!result) {
       StartupMark("local_backup_restore_fail");
       ReportError(result.error().message);

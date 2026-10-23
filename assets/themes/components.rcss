@@ -3394,13 +3394,6 @@ input.checkbox {
   min-width: 0;
 }
 
-.chat-contact-card-avatar {
-  width: 48dp;
-  height: 48dp;
-  border-radius: 24dp;
-  margin-bottom: 8dp;
-}
-
 .chat-attachment-card {
   max-width: 320dp;
 }

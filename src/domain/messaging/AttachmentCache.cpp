@@ -6,6 +6,8 @@
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/platform/VideoPosterExtractor.h"
+#include "foundation/platform/os/OsDownloadMark.h"
+#include "common/Logger.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <algorithm>
@@ -361,6 +363,10 @@ Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const 
   const auto view_path = view_root / AttachmentFilename(content_hash, mime, filename);
   if (auto written = WriteBytesAtomic(view_path, *plain); !written) {
     return written.error();
+  }
+  // Best effort: a failed mark must not lose the file the user is waiting for.
+  if (auto marked = os::MarkFileAsDownloaded(view_path.string()); !marked) {
+    logging::getLogger("AttachmentCache").warning << marked.error().message << ": " << view_path.filename().string();
   }
   return view_path.string();
 }

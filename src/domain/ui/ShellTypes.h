@@ -154,6 +154,8 @@ struct PinGateState {
   bool create_mode = false;
   /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
   bool link_paste_mode = false;
+  /** Restore: enter the PIN the account used (one field, with Back). */
+  bool restore_pin_mode = false;
   ui::String title;
   ui::String message;
   ui::String error;

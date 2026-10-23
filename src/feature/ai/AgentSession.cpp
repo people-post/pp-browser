@@ -169,7 +169,7 @@ void AgentSession::PushToolActivity(const std::shared_ptr<Impl>& state, const st
 
 void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
                                       const std::string& text, const std::string& finish_reason,
-                                      std::vector<BriefAiSource> sources) {
+                                      std::vector<BriefAiSource> sources, const bool from_model) {
   PushEvent(state, AgentEvent{.type = AgentEventType::AssistantReady,
                               .text = text,
                               .entry_id = entry_id,
@@ -179,7 +179,8 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
                               .shared_ai_mode = state->assist_mode,
                               .response_goal = state->turn_plan.response_goal,
                               .render_mode = state->turn_plan.render_mode,
-                              .sources = std::move(sources)});
+                              .sources = std::move(sources),
+                              .from_model = from_model});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable,
@@ -288,7 +289,7 @@ void AgentSession::ParkForPermission(const std::shared_ptr<Impl>& state, TurnExe
     state->parked_approval = std::move(park);
   }
 
-  ValidateAndFinishAssistant(state, blocks, "stop", false);
+  ValidateAndFinishAssistant(state, blocks, "stop", false, false);
 }
 
 void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& state, std::string approval_id,
@@ -356,7 +357,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
       state->parked_approval.reset();
     }
     append_decision_user(decision_label.empty() ? Tr("chat.permission.deny") : decision_label);
-    ValidateAndFinishAssistant(state, BuildToolPermissionDeniedBlocks(park.offered_tools), "stop", false);
+    ValidateAndFinishAssistant(state, BuildToolPermissionDeniedBlocks(park.offered_tools), "stop", false, false);
     return;
   }
 
@@ -492,10 +493,10 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
 }
 
 void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
-                                         const std::string& finish_reason) {
+                                         const std::string& finish_reason, const bool from_model) {
   if (state->turn_mode == AgentTurnMode::Conversation) {
     state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, assistant_raw);
-    PushAssistantReady(state, state->pending_entry_id, assistant_raw, finish_reason);
+    PushAssistantReady(state, state->pending_entry_id, assistant_raw, finish_reason, {}, from_model);
     FinishTurn(state);
     return;
   }
@@ -503,7 +504,7 @@ void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, con
   std::string assistant_message_id;
   const std::string thread_id = state->pending_thread_id;
   PersistAssistantToThread(state, assistant_raw, &assistant_message_id);
-  PushAssistantReady(state, assistant_message_id, assistant_raw, finish_reason);
+  PushAssistantReady(state, assistant_message_id, assistant_raw, finish_reason, {}, from_model);
   if (state->turn_mode == AgentTurnMode::Thread && state->compaction && !thread_id.empty()) {
     state->compaction->MaybeCompactAsync(thread_id);
   }
@@ -511,7 +512,8 @@ void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, con
 }
 
 void AgentSession::ValidateAndFinishAssistant(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
-                                              const std::string& finish_reason, const bool allow_repair) {
+                                              const std::string& finish_reason, const bool allow_repair,
+                                              const bool from_model) {
   const ParseResult parsed = StructuredTextParser::ParseFromLlmOutput(assistant_raw);
   state->turn_trace.parse_ok = parsed.ok;
 
@@ -524,7 +526,7 @@ void AgentSession::ValidateAndFinishAssistant(const std::shared_ptr<Impl>& state
     state->Log().warning << "Assistant output parse failed: " << parsed.error;
   }
 
-  FinishAssistantOutput(state, assistant_raw, finish_reason);
+  FinishAssistantOutput(state, assistant_raw, finish_reason, from_model);
 }
 
 void AgentSession::RunOutputRepair(const std::shared_ptr<Impl>& state, const std::string& raw_output,
@@ -687,7 +689,7 @@ void AgentSession::RunSynthesisStep(const std::shared_ptr<Impl>& state) {
 
 void AgentSession::ContinueAfterExecution(const std::shared_ptr<Impl>& state) {
   if (state->people_list_blocks) {
-    ValidateAndFinishAssistant(state, *state->people_list_blocks, "stop", false);
+    ValidateAndFinishAssistant(state, *state->people_list_blocks, "stop", false, false);
     return;
   }
 

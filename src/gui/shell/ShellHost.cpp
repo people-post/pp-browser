@@ -156,6 +156,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
+    ctor.Bind("pin_gate_restore_pin_mode", &host.state_.pin_gate.restore_pin_mode);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -767,7 +768,7 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
-        state_.pin_gate.link_paste_mode) {
+        state_.pin_gate.link_paste_mode || state_.pin_gate.restore_pin_mode) {
       if (pin_gate_actions_.on_cancel) {
         pin_gate_actions_.on_cancel();
       }
@@ -866,6 +867,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_restore_pin_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
@@ -2030,7 +2032,7 @@ std::string ShellHost::SerializePinGate() const {
   out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode || pin_gate_restore_pin_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("common.back") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")

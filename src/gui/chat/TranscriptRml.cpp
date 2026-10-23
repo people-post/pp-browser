@@ -179,10 +179,7 @@ std::string ContactCardRml(const ThreadMessage& message) {
       fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
   const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
   std::string html = "<div class=\"chat-card chat-contact-card\">";
-  if (fields && !fields->avatar_url.empty()) {
-    html += "<img class=\"chat-contact-card-avatar\" src=\"" +
-            StructuredTextParser::EscapeText(fields->avatar_url) + "\"/>";
-  }
+  // The card's avatar_url is a peer-supplied string; it is never used as a local image path.
   html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(name) + "</h3>";
   if (!relay.empty()) {
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";

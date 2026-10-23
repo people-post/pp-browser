@@ -724,13 +724,17 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  settings_commands.change_pin = [this](const std::string& current_pin,
-                                        const std::string& new_pin) -> Roe<void> {
+  settings_commands.change_pin = [this, &facade](const std::string& current_pin,
+                                                  const std::string& new_pin) -> Roe<void> {
     DataKeyVault* vault = secrets_->Vault();
     if (vault == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
     }
-    return vault->ChangePin(current_pin, new_pin);
+    if (auto changed = vault->ChangePin(current_pin, new_pin); !changed) {
+      return changed.error();
+    }
+    facade.WriteLocalBackupAsync(); // the backup keeps a copy of the vault: refresh it under the new PIN
+    return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
@@ -1008,6 +1012,7 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_identity_restore = [this](const std::string& nickname) {
     pin_gate_->ShowIdentityRestore(nickname);
   };
+  unlock_ports.ui.show_restore_pin = [this](const bool wrong_pin) { pin_gate_->ShowRestorePin(wrong_pin); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
