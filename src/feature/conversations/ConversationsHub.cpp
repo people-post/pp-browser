@@ -1061,7 +1061,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   {
     StartupPhase phase("ConversationsHub::ReconcileOutbox");
-    (void)store_->ReconcileOutbox();
+    // Also the first open of profile.db: an unusable chat store shows here, not only at its first use.
+    if (auto reconciled = store_->ReconcileOutbox(); !reconciled) {
+      log().warning << "Chat store: " << reconciled.error().message;
+    }
   }
 
   InstallOrgBackendClients(config);

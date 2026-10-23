@@ -3401,10 +3401,12 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
     }
   }
   if (!reuse_id.empty()) {
-    if (!facade_->OpenThread(reuse_id)) {
+    if (auto opened = facade_->OpenThread(reuse_id); !opened) {
+      log().warning << "Home: could not reopen thread " << reuse_id << ": " << opened.error().message;
       return false;
     }
-  } else if (!facade_->CreateNewAiThread()) {
+  } else if (auto created = facade_->CreateNewAiThread(); !created) {
+    log().warning << "Home: could not create an AI thread: " << created.error().message;
     return false;
   }
   ShellSelectNavTab(NavTab::Sessions);

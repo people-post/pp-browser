@@ -19,6 +19,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/messaging/ChatPayloadValidator.h"
+#include "domain/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "domain/ui/InputCoordinator.h"
@@ -324,19 +325,9 @@ Roe<void> Application::ResetActiveProfile() {
     }
   }
 
-  if (messaging_) {
-    messaging_->RequestShutdown();
+  if (auto stopped = StopMessagingForReset(/*with_secrets=*/true); !stopped) {
+    return stopped.error();
   }
-  // Same teardown quiesce as quit, but the process lives on: reopen before re-initializing.
-  if (!AppRuntime::QuiesceForTeardown(kProfileResetQuiesceBudget)) {
-    AppRuntime::ReopenAfterTeardown();
-    if (messaging_) {
-      messaging_->CancelShutdownRequest();
-    }
-    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
-  }
-  ShutdownMessaging();
-  AppRuntime::ReopenAfterTeardown();
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
@@ -358,6 +349,7 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
     return hub.error();
   }
+  WireHubCallbacks();
 
   if (auto prefs = store_.ReloadProfilePrefs(); !prefs) {
     return prefs.error();
@@ -365,6 +357,65 @@ Roe<void> Application::ResetActiveProfile() {
 
   chat_->OnProfileDataReset();
   contacts_->Refresh();
+  return {};
+}
+
+Roe<void> Application::ResetChatData() {
+  const BootstrapResult& bootstrap = store_.Snapshot();
+  const std::string profile_dir = bootstrap.profile_data_dir;
+  const AppConfig config = bootstrap.config;
+
+  if (profile_dir.empty()) {
+    return AppError::Storage(Err::Storage::Unavailable, "Profile path unavailable");
+  }
+
+  const std::string chats_dir = SqliteThreadsRoot(profile_dir);
+  log().info << "Resetting chat data at " << chats_dir;
+
+  if (auto stopped = StopMessagingForReset(/*with_secrets=*/false); !stopped) {
+    return stopped.error();
+  }
+
+  // profile.db (catalog, outbox, peer sessions, group rosters) and one thread.db per chat; the
+  // account (identity.enc, vault.bin), contacts.json and the preferences live beside threads/.
+  std::error_code ec;
+  std::filesystem::remove_all(chats_dir, ec);
+  if (ec) {
+    log().error << "remove_all(" << chats_dir << "): " << ec.message();
+    return AppError::Storage(Err::Storage::Failed, "Failed to delete chat data: " + ec.message());
+  }
+
+  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+    return hub.error();
+  }
+  WireHubCallbacks();
+
+  chat_->OnProfileDataReset();
+  contacts_->Refresh();
+  // The vault is still open: bring messaging back now rather than at the next send.
+  unlock_gate_->EnsureUnlocked(nullptr);
+  return {};
+}
+
+Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  if (messaging_) {
+    messaging_->RequestShutdown();
+  }
+  // Same teardown quiesce as quit, but the process lives on: reopen before re-initializing.
+  if (!AppRuntime::QuiesceForTeardown(kProfileResetQuiesceBudget)) {
+    AppRuntime::ReopenAfterTeardown();
+    if (messaging_) {
+      messaging_->CancelShutdownRequest();
+    }
+    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
+  }
+  if (with_secrets) {
+    ShutdownMessaging();
+  } else if (messaging_ && messaging_->IsInitialized()) {
+    StartupPhase phase("Shutdown::ConversationsHub");
+    messaging_->Shutdown();
+  }
+  AppRuntime::ReopenAfterTeardown();
   return {};
 }
 
@@ -589,6 +640,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
+  settings_commands.reset_chat_data = [this]() { return ResetChatData(); };
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
   };
@@ -1308,26 +1360,8 @@ bool Application::MountPresenters(ui::Context* context) {
   return true;
 }
 
-void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
+void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
-  ShellHost& shell = *shell_;
-  ChatSessionPorts chat_ports;
-  chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
-  chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
-  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
-  contacts_->BindChatPorts(chat_ports);
-  people_picker_->BindChatPorts(std::move(chat_ports));
-
-  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
-  shell_->SetOnBottomChromeDismissed([this]() {
-    if (emoji_picker_) {
-      emoji_picker_->Close();
-    }
-  });
-
-  // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
-  config_apply_->InstallListeners();
-
   messaging.SetOnMessagingReady([this]() {
     chat_->OnMessagingReady();
     contacts_->Refresh();
@@ -1380,6 +1414,28 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
       }
     });
   });
+}
+
+void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
+  ShellHost& shell = *shell_;
+  ChatSessionPorts chat_ports;
+  chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
+  chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
+  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
+  contacts_->BindChatPorts(chat_ports);
+  people_picker_->BindChatPorts(std::move(chat_ports));
+
+  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
+  shell_->SetOnBottomChromeDismissed([this]() {
+    if (emoji_picker_) {
+      emoji_picker_->Close();
+    }
+  });
+
+  // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
+  config_apply_->InstallListeners();
+
+  WireHubCallbacks();
 
   LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
     settings_->RefreshLocalizedChrome();
