@@ -99,7 +99,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), amp_links_(amp_links),
-      epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store) {
+      epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
@@ -299,28 +299,12 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
 }
 
 void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory) {
-  directory_shadows_ = shadows;
-  directory_ = directory;
+  routes_.SetSources(shadows, directory);
 }
 
 void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_id,
                                                 const std::string& relay_user_id) {
-  if (!IsAccountIdentityValue(account_id) || !IsRelayUserIdValue(relay_user_id)) {
-    return;
-  }
-  // A route only — never a directory answer: the directory cache holds what the directory said.
-  std::lock_guard lock(account_relay_mutex_);
-  account_to_relay_[account_id] = relay_user_id;
-}
-
-void MeshDeliveryOrchestrator::RememberRouteFromEnvelope(const RelayEnvelope& envelope,
-                                                          const RelayReceiveOutcome& outcome) {
-  // Learned only from an envelope whose signature verified: its sender_relay_id is then the
-  // sender's own signed claim, not whatever an unauthenticated envelope said.
-  if (!outcome.sender_verified) {
-    return;
-  }
-  NoteAccountRelayRoute(envelope.sender_contact_id, envelope.sender_relay_id);
+  routes_.NoteAccountRoute(account_id, relay_user_id);
 }
 
 namespace {
@@ -418,7 +402,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
   }
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
-  RememberRouteFromEnvelope(envelope, outcome);
+  routes_.RememberFromEnvelope(envelope, outcome);
   MaybePublishMemberJoinedAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
@@ -561,7 +545,7 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
   if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account); contact && *contact) {
     route_view.participant_contact_ids = {(*contact)->id};
   }
-  const auto peer_relay_id = ResolvePeerRelayIdWithDirectory(route_view);
+  const auto peer_relay_id = routes_.ResolveWithDirectory(route_view);
   const bool amp_reachable = direct_chat_ && direct_chat_->IsPeerReachable(peer_identity);
   if (!peer_relay_id && !amp_reachable) {
     return Error("No route to the peer");
@@ -623,7 +607,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
   const std::string& peer = (*thread)->peer_identity_value;
   // The same route a send would use (contacts, learned from verified senders, the directory cache).
-  view.relay_available = relay_ != nullptr && ResolvePeerRelayId(**thread).has_value();
+  view.relay_available = relay_ != nullptr && routes_.Resolve(**thread).has_value();
   if (peer.empty() || !amp_links_) {
     view.path_kind = view.relay_available && !peer.empty() ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
     return view;
@@ -933,49 +917,6 @@ void MeshDeliveryOrchestrator::RetryGapSync(const std::string& thread_id,
               std::move(on_complete));
 }
 
-std::optional<std::string> MeshDeliveryOrchestrator::ResolvePeerRelayId(const Thread& thread) const {
-  std::unordered_map<std::string, std::string> learned;
-  {
-    std::lock_guard lock(account_relay_mutex_);
-    learned = account_to_relay_;
-  }
-  if (auto from_local = ResolvePeerBriefRoute(thread, contacts_, learned)) {
-    return from_local;
-  }
-  if (directory_shadows_ && IsAccountIdentityValue(thread.peer_identity_value)) {
-    if (auto hit = directory_shadows_->Get(thread.peer_identity_value)) {
-      if (auto relay = RelayUserIdFromDirectoryHit(*hit)) {
-        return relay;
-      }
-    }
-  }
-  return std::nullopt;
-}
-
-std::optional<std::string> MeshDeliveryOrchestrator::ResolvePeerRelayIdWithDirectory(const Thread& thread) {
-  if (auto resolved = ResolvePeerRelayId(thread)) {
-    return resolved;
-  }
-  if (!directory_ || !IsAccountIdentityValue(thread.peer_identity_value)) {
-    return std::nullopt;
-  }
-  auto hit = directory_->LookupByAccount(thread.peer_identity_value);
-  if (!hit) {
-    log().warning << "LookupByAccount for Brief route failed peer=" << thread.peer_identity_value
-                  << " err=" << hit.error().message;
-    return std::nullopt;
-  }
-  auto relay = RelayUserIdFromDirectoryHit(*hit);
-  if (!relay) {
-    return std::nullopt;
-  }
-  NoteAccountRelayRoute(thread.peer_identity_value, *relay);
-  if (directory_shadows_) {
-    directory_shadows_->Put(*hit);  // the directory's own answer
-  }
-  return relay;
-}
-
 TrustLevel MeshDeliveryOrchestrator::ResolveThreadTrust(const Thread& thread) const {
   if (thread.participant_contact_ids.empty()) {
     return TrustLevel::Unknown;
@@ -1180,7 +1121,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   if (!identity) {
     return FailOutbound(store_, *appended, identity.error());
   }
-  auto peer_relay_id = ResolvePeerRelayIdWithDirectory(**thread);
+  auto peer_relay_id = routes_.ResolveWithDirectory(**thread);
   const std::string amp_peer_key = (*thread)->peer_identity_value;
   const bool amp_reachable = direct_chat_ && direct_chat_->IsPeerReachable(amp_peer_key);
   if (!peer_relay_id && !amp_reachable) {
@@ -1741,7 +1682,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
-          RememberRouteFromEnvelope(envelope, outcome);
+          routes_.RememberFromEnvelope(envelope, outcome);
           MaybePublishMemberJoinedAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {

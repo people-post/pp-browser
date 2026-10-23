@@ -23,6 +23,7 @@
 #include "lib/messaging/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
+#include "domain/delivery/PeerRouteBook.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
@@ -239,10 +240,6 @@ private:
     int attempt_count = 0;
   };
 
-  std::optional<std::string> ResolvePeerRelayId(const Thread& thread) const;
-  /** Sync directory LookupByAccount when contacts/learned/shadow miss (send path). */
-  std::optional<std::string> ResolvePeerRelayIdWithDirectory(const Thread& thread);
-  void RememberRouteFromEnvelope(const RelayEnvelope& envelope, const RelayReceiveOutcome& outcome);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The pair's e2e_public session as the lane and media-key wraps use it. */
   struct E2ePublicSession {
@@ -316,8 +313,6 @@ private:
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
   const SystemControlRegistry* controls_ = nullptr;
-  DirectoryShadowCache* directory_shadows_ = nullptr;
-  mesh::IDirectoryClient* directory_ = nullptr;
   std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
@@ -328,9 +323,8 @@ private:
   std::atomic<uint64_t> control_order_key_{0};
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
-  mutable std::mutex account_relay_mutex_;
-  /** Inbound-learned Account ID → Brief `relay:` (non-contact call/message). */
-  std::unordered_map<std::string, std::string> account_to_relay_;
+  /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
+  PeerRouteBook routes_;
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};

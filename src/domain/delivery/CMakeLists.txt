@@ -7,7 +7,9 @@ pp_browser_add_domain_library(pp_domain_delivery
   SOURCES
     AmpDirectChatTransport.cpp
     AmpChatHistoryTransport.cpp
+    PeerRouteBook.cpp
   PUBLIC_LIBS
+    pp_domain_peers
     pp_lib_messaging
     pp_lib_people
     pp_lib_net
