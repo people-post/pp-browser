@@ -3,6 +3,7 @@
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
+#include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
 #include "gui/CallActionsPorts.h"
@@ -246,17 +247,8 @@ private:
 
 
   ui::Element* ShellRoot() const;
-  std::string SerializeShellRoot() const;
-  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false,
-                                int flex_width_dp = 0) const;
-  std::string SerializeExpandedBase() const;
-  std::string SerializeCompactBase() const;
-  std::string SerializeAccountSheet() const;
-  std::string SerializeOverlays() const;
-  std::string SerializeBottomChrome() const;
-  std::string SerializeDialog() const;
-  std::string SerializePinGate() const;
-  std::string SerializeTransientLayer() const;
+  /** The shell's markup from its state now. */
+  ShellLayoutRml Rml() const;
   const char* NavContentKey() const;
   void MountPaneBodies();
   void RemountBottomChrome();

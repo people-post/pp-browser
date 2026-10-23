@@ -42,6 +42,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellBottomSheetGesture.cpp
     shell/ShellCallChromeGesture.cpp
     shell/ShellCallChromeRml.cpp
+    shell/ShellLayoutRml.cpp
     shell/ShellStatusbar.cpp
     shell/ShellCallChromePorts.cpp
     shell/ShellChromeApplyPorts.cpp
