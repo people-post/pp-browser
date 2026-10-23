@@ -6,6 +6,8 @@
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
 #include "gui/SettingsCasLibrary.h"
+#include "gui/SettingsHost.h"
+#include "gui/SettingsSecurityActions.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -33,7 +35,7 @@ class Context;
 
 namespace pbr {
 
-class SettingsController : public Module {
+class SettingsController : public Module, public SettingsHost {
 public:
   struct SectionListRow {
     ui::String id;
@@ -168,9 +170,6 @@ private:
     bool pin_protection_not_setup = false;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
-    ui::String pin_change_old;
-    ui::String pin_change_new;
-    ui::String pin_change_confirm;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
     ui::String call_invite_policy = "everyone";
@@ -217,7 +216,12 @@ private:
   void ApplySupportDiscovery();
   void ApplySectionAttention();
   bool ComputeNetworkAttention() const;
-  SessionStore& Store();
+  // SettingsHost
+  SessionStore& Store() override;
+  void ShowStatus(const std::string& status) override;
+  void Resync() override;
+  void RequestSyncLayout(const char* reason) override;
+  Roe<void> ForgetToolPermissions() override;
   void FinishPaneResync();
   /** Mount selected section RML into #settings-section-mount (one section at a time). */
   void MountSelectedSettingsSection();
@@ -235,7 +239,7 @@ private:
   /** Blur / leave-Me: flush nickname only when it differs from last loaded/saved. */
   void CommitProfileNickname(bool show_toast = false);
   void MaybeShowSaveToast(const std::string& section_id);
-  void ReportFailure(const Error& err);
+  void ReportFailure(const Error& err) override;
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
   void OnRegisterProfile();
@@ -247,15 +251,6 @@ private:
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
-  void OnChangePin();
-  void OnExportLinkDevice();
-  void EnsureSecurityUnlocked(std::function<void()> then);
-  void OnClearUndeliveredOlderThan();
-  void OnResetToolPermissions();
-  void OnResetProfile();
-  void PerformResetProfile();
-  void OnResetChats();
-  void PerformResetChats();
   void OnChooseTheme(ui::Event& ev);
   void ApplyThemeChoice(const std::string& appearance_pref);
   void OnChooseLanguage(ui::Event& ev);
@@ -302,6 +297,7 @@ private:
   UnlockEnsurePorts unlock_ensure_;
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
+  SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
 
 };
 

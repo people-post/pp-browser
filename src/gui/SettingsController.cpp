@@ -575,9 +575,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_visible", &controller.bindings_.support_visible);
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
-    ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
-    ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
-    ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
+    security_actions_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
@@ -623,12 +621,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("share_profile", DataEventAt([this](ui::Event& ev) { OnShareProfile(ShareAnchorFromEvent(ev)); }));
     ctor.BindEventCallback("add_mcp_server", DataEvent<>([this]() { OnAddMcpServer(); }));
     ctor.BindEventCallback("remove_mcp_server", DataEvent<int>([this](int index) { OnRemoveMcpServer(index); }));
-    ctor.BindEventCallback("change_pin", DataEvent<>([this]() { OnChangePin(); }));
-    ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { OnExportLinkDevice(); }));
-    ctor.BindEventCallback("clear_undelivered_older_than", DataEvent<>([this]() { OnClearUndeliveredOlderThan(); }));
-    ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { OnResetToolPermissions(); }));
-    ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { OnResetProfile(); }));
-    ctor.BindEventCallback("reset_chats", DataEvent<>([this]() { OnResetChats(); }));
   });
 }
 
@@ -2096,272 +2088,35 @@ void SettingsController::OnRemoveMcpServer(const int index) {
   MarkSectionDirty("integrations");
 }
 
-void SettingsController::OnResetToolPermissions() {
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(
-      Tr("settings.security.tool_permissions.reset_title"),
-      Tr("settings.security.tool_permissions.reset_message"),
-      [this](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
-        if (!security) {
-          return;
-        }
-        PullBindingsToUiState();
-        if (auto reset = security->ResetToolPermissions(ui_state_, Store()); !reset) {
-          ReportFailure(reset.error());
-          return;
-        }
-        PushUiStateToBindings();
-        DirtyAll(false);
-        MaybeShowSaveToast("security");
-      },
-      {});
+void SettingsController::ShowStatus(const std::string& status) {
+  status_ = status.c_str();
+  DataModelHost::Instance().Dirty("settings", "status");
 }
 
-void SettingsController::OnClearUndeliveredOlderThan() {
-  if (!commands_.clear_undelivered_older_than) {
-    ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
-    return;
-  }
-
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(
-      Tr("settings.security.clear_undelivered_confirm_title"),
-      Tr("settings.security.clear_undelivered_confirm_message"),
-      [this](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        AppRuntime::PostWorkerNormal([this]() {
-          auto result = commands_.clear_undelivered_older_than
-                            ? commands_.clear_undelivered_older_than(7)
-                            : Roe<void>{Error("Messaging is not ready")};
-          AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-            if (!result) {
-              ReportFailure(result.error());
-              return;
-            }
-            UserFeedback::Ok(Tr("settings.security.clear_undelivered_done"));
-            status_ = "";
-            DirtyAll();
-          });
-        });
-      },
-      {});
-}
-
-void SettingsController::OnResetProfile() {
-  if (!shell_feedback_.show_confirm_with_checkbox) {
-    return;
-  }
-  shell_feedback_.show_confirm_with_checkbox(
-      Tr("settings.storage.reset_confirm_title"), Tr("settings.storage.reset_confirm_message"),
-      Tr("settings.storage.reset_confirm_check"), false,
-      [this](const bool confirmed, const bool checked) {
-        if (!confirmed) {
-          return;
-        }
-        if (!checked) {
-          UserFeedback::Fail(Tr("settings.storage.reset_confirm_check"));
-          return;
-        }
-        PerformResetProfile();
-      });
-}
-
-void SettingsController::PerformResetProfile() {
-  if (!commands_.reset_active_profile) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile reset is not available"));
-    return;
-  }
-
-  log().info << "Requesting active profile reset";
-  if (auto reset = commands_.reset_active_profile(); !reset) {
-    ReportFailure(reset.error());
-    return;
-  }
-
-  bindings_.pin_change_old = "";
-  bindings_.pin_change_new = "";
-  bindings_.pin_change_confirm = "";
-  status_ = "";
+void SettingsController::Resync() {
   SyncBindingsFromSession();
   DirtyAll();
-  UserFeedback::Ok(Tr("settings.storage.profile_reset"));
+}
+
+void SettingsController::RequestSyncLayout(const char* reason) {
   if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_profile_reset");
+    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, reason);
   }
 }
 
-void SettingsController::OnResetChats() {
-  if (!shell_feedback_.show_confirm) {
-    return;
+Roe<void> SettingsController::ForgetToolPermissions() {
+  auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
+  if (!security) {
+    return Error("Security settings unavailable");
   }
-  shell_feedback_.show_confirm(Tr("settings.storage.reset_chats_confirm_title"),
-                               Tr("settings.storage.reset_chats_confirm_message"),
-                               [this](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 PerformResetChats();
-                               },
-                               Tr("settings.storage.reset_chats_confirm_ok"));
-}
-
-void SettingsController::PerformResetChats() {
-  if (!commands_.reset_chat_data) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Chat reset is not available"));
-    return;
+  PullBindingsToUiState();
+  if (auto reset = security->ResetToolPermissions(ui_state_, Store()); !reset) {
+    return reset.error();
   }
-
-  log().info << "Requesting chat data reset";
-  if (auto reset = commands_.reset_chat_data(); !reset) {
-    ReportFailure(reset.error());
-    return;
-  }
-
-  SyncBindingsFromSession();
-  DirtyAll();
-  UserFeedback::Ok(Tr("settings.storage.chats_reset"));
-  if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_chats_reset");
-  }
-}
-
-void SettingsController::EnsureSecurityUnlocked(std::function<void()> then) {
-  const PinProtectionView pin_state =
-      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
-  if (!pin_state.ready) {
-    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
-                      .WithUser(Tr("settings.security.link_device.not_ready")));
-    return;
-  }
-  if (!pin_state.unlocked) {
-    if (!unlock_ensure_.ensure_unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
-                        .WithUser(Tr("settings.security.link_device.not_ready")));
-      return;
-    }
-    unlock_ensure_.ensure_unlocked([this, then = std::move(then)](const bool unlocked) {
-      if (!unlocked) {
-        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
-                          .WithUser(Tr("settings.security.link_device.not_ready")));
-        return;
-      }
-      then();
-    });
-    return;
-  }
-  then();
-}
-
-void SettingsController::OnExportLinkDevice() {
-  EnsureSecurityUnlocked([this]() {
-    if (!commands_.export_link_device) {
-      ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
-      return;
-    }
-    if (!shell_feedback_.show_confirm) {
-      return;
-    }
-    shell_feedback_.show_confirm(
-        Tr("settings.security.link_device.export_confirm_title"),
-        Tr("settings.security.link_device.export_confirm_message"),
-        [this](const bool ok) {
-          if (!ok) {
-            return;
-          }
-          AppRuntime::PostWorkerNormal([this]() {
-            auto result = commands_.export_link_device ? commands_.export_link_device()
-                                                       : Roe<std::string>{Error("Messaging is not ready")};
-            AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-              if (!result) {
-                ReportFailure(result.error());
-                return;
-              }
-              if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-                system->SetClipboardText(result->c_str());
-              }
-              UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-              status_ = "";
-              DirtyAll();
-            });
-          });
-        },
-        {});
-  });
-}
-
-void SettingsController::OnChangePin() {
-  const PinProtectionView pin_state =
-      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
-  if (!pin_state.ready) {
-    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
-                      .WithUser(Tr("settings.security.pin_setup_first")));
-    return;
-  }
-  if (!pin_state.unlocked) {
-    if (!unlock_ensure_.ensure_unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
-      return;
-    }
-    unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-      if (!unlocked) {
-        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
-        return;
-      }
-      OnChangePin();
-    });
-    return;
-  }
-
-  const std::string old_pin = bindings_.pin_change_old.c_str();
-  const std::string new_pin = bindings_.pin_change_new.c_str();
-  const std::string confirm = bindings_.pin_change_confirm.c_str();
-  if (old_pin.empty() || new_pin.empty()) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "Current and new PIN are required")
-                      .WithUser(Tr("settings.security.pin_both_required")));
-    return;
-  }
-  if (new_pin != confirm) {
-    ReportFailure(AppError::Pin(Err::Pin::Mismatch, "New PINs do not match"));
-    return;
-  }
-  if (new_pin.size() < 4) {
-    ReportFailure(AppError::Pin(Err::Pin::TooShort, "Use at least 4 characters"));
-    return;
-  }
-
-  if (!commands_.change_pin) {
-    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
-    return;
-  }
-  if (auto changed = commands_.change_pin(old_pin, new_pin); !changed) {
-    ReportFailure(changed.error());
-    return;
-  }
-
-  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
-  prefs.pin_is_default = false;
-  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
-    ReportFailure(saved.error());
-    return;
-  }
-
-  bindings_.pin_change_old = "";
-  bindings_.pin_change_new = "";
-  bindings_.pin_change_confirm = "";
-  status_ = Tr("settings.security.pin_updated").c_str();
-  SyncBindingsFromSession();
-  DirtyAll();
-  UserFeedback::Ok(Tr("settings.security.pin_updated"));
+  PushUiStateToBindings();
+  DirtyAll(false);
+  MaybeShowSaveToast("security");
+  return {};
 }
 
 } // namespace pbr

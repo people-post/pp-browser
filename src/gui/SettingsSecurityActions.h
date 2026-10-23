@@ -1,0 +1,57 @@
+#pragma once
+
+#include "feature/settings/SettingsCommands.h"
+#include "gui/SettingsHost.h"
+#include "gui/UnlockEnsurePorts.h"
+#include "gui/shell/ShellFeedbackPorts.h"
+
+#include <ui/base/Types.h>
+
+#include <functional>
+#include "common/PbrCompat.h"
+
+namespace ui {
+class DataModelConstructor;
+}
+
+namespace pbr {
+
+/**
+ * Me → Security and Storage's destructive actions: change the PIN (its three fields are this part's),
+ * copy a link-device bundle, clear old undelivered messages, forget tool permissions, reset the profile
+ * or the chats. Each asks first; the PIN-guarded ones unlock first.
+ *
+ * UI thread.
+ */
+class SettingsSecurityActions {
+public:
+  SettingsSecurityActions(SettingsHost& host, const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
+                          const UnlockEnsurePorts& unlock);
+
+  /** Its fields and events in the settings model. */
+  void Bind(ui::DataModelConstructor& ctor);
+
+private:
+  void ChangePin();
+  void ExportLinkDevice();
+  void ClearUndeliveredOlderThan();
+  void ResetToolPermissions();
+  void ResetProfile();
+  void PerformResetProfile();
+  void ResetChats();
+  void PerformResetChats();
+  /** Runs `then` once the vault is open (asks for the PIN when it is not); reports why not otherwise. */
+  void EnsureUnlocked(const std::string& not_ready_message, std::function<void()> then);
+  void ClearPinFields();
+
+  SettingsHost& host_;
+  const SettingsCommands& commands_;
+  const ShellFeedbackPorts& feedback_;
+  const UnlockEnsurePorts& unlock_;
+
+  ui::String pin_change_old_;
+  ui::String pin_change_new_;
+  ui::String pin_change_confirm_;
+};
+
+} // namespace pbr
