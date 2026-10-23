@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `lib` implements independent product capabilities; `domain` combines them into capabilities features share; `feature` composes those into what the user does; **`gui` presents** them; `app` constructs the graph.
 
-> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). Lib peer allowlist is empty.
+> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt).
 
 ## Layers
 
@@ -144,7 +144,7 @@ Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-pos
 
 RmlUi is a hard fork in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`rmlui/`); Amp L1–L3 + link are [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) (both FetchContent). Their product glue:
 
-| Path (today) | Role |
+| Path | Role |
 |--------------|------|
 | `foundation/platform/ui/gl/` | Mobile GL lifecycle helpers |
 | `foundation/platform/ui/renderer/` | Product overlays (loupe, call video tiles) |
@@ -279,13 +279,9 @@ Say **serve / server** for the answering side — not "host" (MeshHost, host ses
 
 Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `ChatAttachmentPrepare`) over `*Util` / `*Helper` grab-bags. Keep `*Codec` / `*Json` / `*Cache` when that is the job. Rare `*Util` is OK for small pure shared bags (`CryptoUtil`). Place by layer ownership; merge only within one capability, never “one Utilities.cpp per folder.”
 
-## Migration order (when coding starts)
+## Open layout work
 
-1. Enforce lib peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/conversations`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.
-2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
-3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
-4. Move the peer folders out of the aggregate “base” folder. **Done**; renamed `src/domain/` → `src/lib/` (`pp_lib`, 2026-10-23) so that `domain` can name the cross-lib tier.
-5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; `CallStack` / `BroadcastHub` moved out of the hub to `feature/product` (participants); remaining: optional gui bands, inbox presentation.
+Remaining moves and their history: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) ([CURRENT_STATE](../../projects/feature-layer-reorg/CURRENT_STATE.md)).
 
 ## Related
 
