@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <optional>
 #include <memory>
 #include <string>
 #include "common/MeshAlias.h"
@@ -112,6 +113,46 @@ TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard)
   auto passed_on = AccountCardFromJson(*TryParseObject(shared->card_json));
   ASSERT_TRUE(passed_on) << "the signed card, passed on as received";
   EXPECT_TRUE(VerifyAccountCard(*passed_on, kNow));
+}
+
+TEST_F(ContactCardExchangeTest, AnInviteAddsThePersonAndFetchesTheirCardFromAListedDevice) {
+  const AccountCard card = SignedCard(bob_, {"QmBobLaptop"});
+  std::vector<std::string> asked;
+  exchange_->SetCardFetcher([&](const std::string& peer_id, const std::string& account_id,
+                                std::function<void(Roe<PeerCardRecord>)> done) {
+    asked.push_back(peer_id);
+    if (peer_id != "QmBobLaptop") {
+      done(Error("not reached"));
+      return;
+    }
+    done(keys_->AddAccountCard(card, kNow, "device"));
+  });
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id, .nickname = "bob",
+                                           .devices = {"QmBobPhone", "QmBobLaptop"}},
+                            [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(*result) << result->error().message;
+  EXPECT_TRUE((*result)->keys_known);
+  EXPECT_EQ(asked, (std::vector<std::string>{"QmBobPhone", "QmBobLaptop"})) << "listed devices, in turn";
+  const std::string kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  EXPECT_TRUE(kem_.Get(kind, bob_.account_id).has_value());
+}
+
+TEST_F(ContactCardExchangeTest, AnInviteWithNoDeviceReachedStillAddsThePerson) {
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  // No device reached and no directory: the answer comes back without keys.
+  exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id, .devices = {"QmBobPhone"}},
+                            [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(*result) << result->error().message;
+  EXPECT_FALSE((*result)->keys_known);
+  ASSERT_EQ((*result)->contact.remote.endpoints.size(), 1u);
+  EXPECT_EQ((*result)->contact.remote.endpoints[0].peer_id, "QmBobPhone");
 }
 
 } // namespace

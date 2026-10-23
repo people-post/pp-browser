@@ -40,6 +40,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     AccountCard.cpp
     PeerCardStore.cpp
     AccountCardRequest.cpp
+    ContactLocator.cpp
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp

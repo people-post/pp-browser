@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/chat/ChatPayloadTypes.h"
+#include "lib/messaging/ContactLocator.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "lib/people/ContactsStore.h"
 
@@ -8,7 +9,9 @@
 #include "common/Module.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -31,7 +34,31 @@ public:
    */
   Roe<Contact> Add(const ChatContactCardFields& card, int64_t now_ms);
 
+  /** Asks device `peer_id` for `account_id`'s card over Amp (AccountCardService::Fetch); `done` once, any thread. */
+  using CardFetcher = std::function<void(const std::string& peer_id, const std::string& account_id,
+                                         std::function<void(Roe<PeerCardRecord>)> done)>;
+  void SetCardFetcher(CardFetcher fetcher) { fetch_card_ = std::move(fetcher); }
+  /** Where a blocking step (a directory lookup) runs; the background worker unless a test says otherwise. */
+  void SetBlockingPost(std::function<void(std::function<void()>)> post) { post_blocking_ = std::move(post); }
+
+  /** What adding from a locator came to: the contact, and whether its keys are known yet. */
+  struct LocatorAdded {
+    Contact contact;
+    bool keys_known = false;
+  };
+  /**
+   * Adds the person a locator names (QR code, invite line): the contact (its listed devices as endpoint
+   * rows), then the account's card — from a listed device over Amp, else the directory when one is
+   * configured. Without keys yet the contact still stands; the person's first message brings them. `done`
+   * once, on a worker or I/O thread.
+   */
+  void AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done);
+
 private:
+  void FetchFromDevices(std::vector<std::string> devices, const std::string& account_id,
+                        std::function<void(bool kept)> done);
+  CardFetcher fetch_card_;
+  std::function<void(std::function<void()>)> post_blocking_;
   ContactsStore& contacts_;
   AccountKeyResolver& keys_;
 };

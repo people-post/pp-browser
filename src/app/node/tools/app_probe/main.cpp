@@ -38,6 +38,7 @@
 #include "common/Logger.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/messaging/PeerRequestAuth.h"
+#include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/media/CallMediaEngine.h"
@@ -264,6 +265,31 @@ public:
         out.set("peer_id", PeerRequestAuth::DevicePeerId(identity->public_key_b64).valueOr(""));
       }
       Emit(out);
+    } else if (cmd == "locator") {
+      // This account's locator, as a QR code or an invite line carries it.
+      auto locator = facade_->OwnContactLocator();
+      if (!locator) {
+        ReplyError(id, locator.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("locator", *locator);
+      Emit(out);
+    } else if (cmd == "add_from_locator") {
+      // "Add contact" with a pasted invite: the contact, then the account's card from a listed device.
+      facade_->AddContactFromLocator(
+          request->getString("text").value_or(""), [id](Roe<ContactCardExchange::LocatorAdded> added) {
+            AppRuntime::PostUI([id, added = std::move(added)]() {
+              if (!added) {
+                ReplyError(id, added.error().message);
+                return;
+              }
+              Object out = Reply(id, true);
+              out.set("contact", added.value().contact.id);
+              out.set("keys_known", added.value().keys_known);
+              Emit(out);
+            });
+          });
     } else if (cmd == "fetch_card") {
       // Ask device `peer` for `account`'s card over Amp (ACCOUNT_CARD.md); kept when it proves itself.
       if (!Hub().IsMessagingReady()) {

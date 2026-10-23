@@ -15,6 +15,8 @@ struct ProfileIdentityView {
   std::string relay_id;
   /** Portable person id when minted (M002); preferred avatar color seed. */
   std::string account_id;
+  /** This account's locator for an invite (ACCOUNT_CARD.md): Account ID, nickname, devices. */
+  std::string contact_locator;
   std::string public_key_b64;
   std::string registered = "no";
   std::string registration_status = "not registered";

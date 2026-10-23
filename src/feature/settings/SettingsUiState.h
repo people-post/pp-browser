@@ -68,6 +68,8 @@ struct SettingsUiState {
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;
+  /** This account's locator, shared with the invite (not shown). */
+  std::string profile_contact_locator;
   /** Account id for avatar tone seed; not shown in RML. */
   std::string profile_account_id;
   std::string profile_public_key;

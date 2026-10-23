@@ -1,6 +1,8 @@
 #include <stdexcept>
 #include "gui/contacts/ContactsController.h"
 
+#include "lib/messaging/ContactLocator.h"
+
 #include "gui/BadgeAggregator.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/PskFingerprint.h"
@@ -899,7 +901,17 @@ void ContactsController::OnAddContact() {
 }
 
 void ContactsController::AddContactByQuery(const std::string& query) {
-  if (query.empty() || !contacts_ports_.search_people) {
+  if (query.empty()) {
+    return;
+  }
+  // A pasted invite names the person and their devices: no directory needed (ACCOUNT_CARD.md).
+  if (query.find(kContactLocatorPrefix) != std::string::npos && contacts_ports_.add_from_locator) {
+    contacts_ports_.add_from_locator(query, [](Roe<std::pair<std::string, bool>> added) {
+      AppRuntime::PostUI([added = std::move(added)]() { ContactsController::Instance().OnAddedFromInvite(added); });
+    });
+    return;
+  }
+  if (!contacts_ports_.search_people) {
     return;
   }
   // The directory is an HTTP call: off the UI thread, the outcome comes back here.
@@ -908,6 +920,18 @@ void ContactsController::AddContactByQuery(const std::string& query) {
       [query](Roe<std::vector<mesh::DirectoryHit>> hits) {
         ContactsController::Instance().OnPeopleSearched(query, std::move(hits));
       });
+}
+
+void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added) {
+  if (!added) {
+    UserFeedback::Fail(added.error().message.empty() ? Tr("contacts.err.add") : added.error().message);
+    return;
+  }
+  SyncFromStore();
+  OnSelectContact(added.value().first);
+  // Without keys yet the contact stands; their first message brings them (or they come online).
+  ShowToast(Tr(added.value().second ? "contacts.invite.added" : "contacts.invite.added_pending"));
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {

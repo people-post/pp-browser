@@ -11,6 +11,7 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "lib/messaging/ContactLocator.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
@@ -246,6 +247,24 @@ Roe<ThreadMessage> ConversationsFacade::SendUserMessage(const std::string& threa
 
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
   return hub_.ShareContact(thread_id, contact_id);
+}
+
+Roe<std::string> ConversationsFacade::OwnContactLocator() {
+  return hub_.OwnContactLocator();
+}
+
+void ConversationsFacade::AddContactFromLocator(const std::string& text,
+                                                std::function<void(Roe<ContactCardExchange::LocatorAdded>)> done) {
+  if (!hub_.IsInitialized()) {
+    done(Error("Messaging not ready"));
+    return;
+  }
+  auto locator = FindContactLocator(text);
+  if (!locator) {
+    done(locator.error());
+    return;
+  }
+  hub_.ContactCards().AddFromLocator(*locator, std::move(done));
 }
 
 Roe<Contact> ConversationsFacade::AddContactFromCard(const std::string& thread_id, const std::string& message_id) {

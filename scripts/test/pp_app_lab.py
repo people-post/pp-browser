@@ -49,7 +49,7 @@ NO_DIRECTORY = "http://127.0.0.1:9/api/relay"
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name, container=None, directory=True):
+    def __init__(self, lab, name, container=None, directory=True, reachable=False):
         self.lab = lab
         self.name = name
         self.container = container  # --nat: the user's own NAT'd container (None: a host process)
@@ -57,7 +57,7 @@ class User:
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
         with open(self.config, "w") as f:
-            json.dump(lab.config_for(self.dir, directory), f, indent=2)
+            json.dump(lab.config_for(self.dir, directory, reachable), f, indent=2)
         self.proc = None
         self.next_id = 1
         self.replies = {}
@@ -265,7 +265,7 @@ class Lab:
         self.hop_status = args.hop_status
         self.users = []
 
-    def config_for(self, data_dir, directory=True):
+    def config_for(self, data_dir, directory=True, reachable=False):
         return {
             "config_version": 1,
             "data_dir": data_dir,
@@ -279,6 +279,8 @@ class Lab:
                 "amp_udp_port": 0,
                 "bootstrap_peers": [self.hop],
                 "capabilities": {"dht": False},
+                # Me → Network → Reachable without the relay: keep a reservation on the seed (the lab hop).
+                "reachable_without_relay": reachable,
             },
         }
 
@@ -313,11 +315,12 @@ class Lab:
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name, directory=True):
-        """A registered user; directory=False: one whose directory never answers."""
+    def user(self, name, directory=True, reachable=False):
+        """A registered user; directory=False: one whose directory never answers; reachable=True: one that
+        stays reachable without the relay (parked on the lab's seed)."""
         self.fresh_registration()
         container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory)
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -1240,6 +1243,26 @@ def scenario_devices_hand_over_their_cards(lab):
     assert_idle(a, b)
 
 
+def scenario_strangers_meet_by_invite(lab):
+    """Neither has a directory. Bob's computer stays reachable without the relay; he sends Alice his invite
+    line. She pastes it: her device asks his for his card over the mesh, checks it against his account, and
+    writes to him; he answers. No lookup anywhere."""
+    a = lab.user("alice", directory=False)
+    b = lab.user("bob", directory=False, reachable=True)
+    for u in (a, b):
+        u.wait_mesh()
+    invite = "Add me on PP: " + b.cmd("locator")["locator"]
+    added = a.cmd("add_from_locator", text=invite, timeout=60)
+    if not added["keys_known"]:
+        raise ProbeError("alice: bob's card not fetched from his device (%s)" % added)
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob, from your invite")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 30, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's message")
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1596,6 +1619,7 @@ SCENARIOS = [
     ("first_message_brings_keys", scenario_first_message_brings_keys),
     ("friend_shares_a_contact", scenario_friend_shares_a_contact),
     ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
+    ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

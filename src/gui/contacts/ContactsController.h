@@ -147,6 +147,8 @@ private:
   void AddContactFromHit(const mesh::DirectoryHit& hit);
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
+  /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
+  void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
   void OnSetTrust(const std::string& trust);
   void OnRemoveContact();
   void OnOpenThread(const std::string& thread_id);

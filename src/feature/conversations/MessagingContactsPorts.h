@@ -11,6 +11,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -53,6 +54,12 @@ struct MessagingContactsPorts {
   std::function<void(const Contact& contact)> register_contact_direct_endpoints;
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;
   std::function<Roe<void>(const std::string& thread_id)> ensure_psk_generated;
+  /**
+   * Add the person a pasted invite names (a locator, ACCOUNT_CARD.md): the contact's id, and whether its keys
+   * are known yet. `done` once, on a worker or I/O thread.
+   */
+  std::function<void(const std::string& text, std::function<void(Roe<std::pair<std::string, bool>>)> done)>
+      add_from_locator;
   /** Share a contact into a chat as a contact card. */
   std::function<Roe<void>(const std::string& thread_id, const std::string& contact_id)> share_contact;
   /** The keys a directory entry carries for its account (each kept only when it proves to be the account's). */

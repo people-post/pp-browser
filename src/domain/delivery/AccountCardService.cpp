@@ -70,12 +70,32 @@ AccountCardReply AccountCardService::Answer(const AccountCardRequest& request, c
 
 void AccountCardService::Fetch(const std::string& peer_id, const std::string& account_id,
                                std::function<void(Roe<PeerCardRecord>)> on_done) {
-  // The device's own link first, then the account's dial key (a call registers that one).
-  FetchOver({peer_id, account_id}, peer_id, account_id, [on_done](Outcome, Roe<PeerCardRecord> result) {
+  FetchReaching(peer_id, account_id, [on_done](Outcome, Roe<PeerCardRecord> result) {
     if (on_done) {
       on_done(std::move(result));
     }
   });
+}
+
+void AccountCardService::FetchReaching(const std::string& peer_id, const std::string& account_id,
+                                       std::function<void(Outcome, Roe<PeerCardRecord>)> on_done) {
+  // The device's own link first, then the account's dial key (a call registers that one).
+  FetchOver({peer_id, account_id}, peer_id, account_id,
+            [this, alive = std::weak_ptr<int>(alive_), peer_id, account_id,
+             on_done](Outcome outcome, Roe<PeerCardRecord> result) {
+              if (outcome != Outcome::NotReached || !reach_ || alive.expired()) {
+                on_done(outcome, std::move(result));
+                return;
+              }
+              // No link up: reach the device (it may be parked on a seed), then ask it once more.
+              reach_(peer_id, [this, alive, peer_id, account_id, on_done, result](bool reached) mutable {
+                if (!reached || alive.expired()) {
+                  on_done(Outcome::NotReached, std::move(result));
+                  return;
+                }
+                FetchOver({peer_id}, peer_id, account_id, on_done);
+              });
+            });
 }
 
 void AccountCardService::FetchOver(std::vector<std::string> link_keys, const std::string& peer_id,
@@ -150,7 +170,7 @@ void AccountCardService::NoteDevice(const std::string& account_id, const std::st
     }
     asking.next_allowed_ms = now + kAskAgainAfterMs;  // until this ask settles
   }
-  FetchOver({peer_id, account_id}, peer_id, account_id,
+  FetchReaching(peer_id, account_id,
             [this, alive = std::weak_ptr<int>(alive_), account_id, peer_id](Outcome outcome, Roe<PeerCardRecord> result) {
               if (alive.expired()) {
                 return;

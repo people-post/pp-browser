@@ -31,6 +31,13 @@ public:
 
   /** Our address audience is Everyone (then an unauthenticated asker gets our key card). */
   void SetAudienceEveryone(std::function<bool()> everyone) { audience_everyone_ = std::move(everyone); }
+  /**
+   * Make a device reachable when no link to it is up (a circuit through the seed it is parked on, then a
+   * punch): `done(true)` once a link is up. Without it, only devices already linked are asked.
+   */
+  void SetReach(std::function<void(const std::string& peer_id, std::function<void(bool reached)> done)> reach) {
+    reach_ = std::move(reach);
+  }
   /** Serve and ask over `transport`; null while the mesh is down. */
   void Attach(AmpAccountCardTransport* transport);
 
@@ -66,6 +73,10 @@ private:
   AccountKeyResolver& keys_;
   ContactsStore& contacts_;
   std::function<bool()> audience_everyone_;
+  std::function<void(const std::string&, std::function<void(bool)>)> reach_;
+  /** FetchOver, and when nothing was reached, once more after making `peer_id` reachable. */
+  void FetchReaching(const std::string& peer_id, const std::string& account_id,
+                     std::function<void(Outcome, Roe<PeerCardRecord>)> on_done);
   std::mutex mutex_;
   AmpAccountCardTransport* transport_ = nullptr;
   struct Asking {

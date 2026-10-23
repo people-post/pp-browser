@@ -2275,7 +2275,7 @@ void SettingsController::OnShareProfile(const ShareAnchor anchor) {
     return;
   }
   ShareInviteOrCopy(
-      AccountInviteText(bindings_.profile_nickname.c_str(), account_id),
+      AccountInviteText(bindings_.profile_nickname.c_str(), account_id, ui_state_.profile_contact_locator),
       [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
       anchor, [](const std::string& text) {
         if (ui::SystemInterface* system = ui::GetSystemInterface()) {

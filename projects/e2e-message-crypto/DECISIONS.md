@@ -491,7 +491,7 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 | C2 | `sender_keys` with `key_init`; receive checks and keeps it — **landed 2026-10-23** (`first_message_brings_keys`) |
 | C3 | Contact card v2: *Share contact*, *Add* from a card — **landed 2026-10-23** (`friend_shares_a_contact`) |
 | C4 | Card exchange over Amp; card devices registered as the account's dial keys — **landed 2026-10-23** (`devices_hand_over_their_cards`); idle reach: phones by push, desktops opt in to *Reachable without the relay* (seed reservation renewed every 20 s) |
-| C5 | Locator: QR, invite link, onboarding share; scan / paste → card via C4 or the directory |
+| C5 | Locator: invite text (Me → Profile, onboarding share) carries it; pasting an invite in *Add contact* adds the person and fetches the card via C4 or the directory — **landed 2026-10-23** (`strangers_meet_by_invite`); QR display / scan and a URL-scheme deep link later |
 | C6 | Group invites and roster adds carry members' key cards |
 
 Each phase lands with an app-lab scenario run **without a relay directory** where it applies (C2 onward).

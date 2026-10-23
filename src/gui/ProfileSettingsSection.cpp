@@ -60,6 +60,7 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_nickname = view.nickname;
   state.profile_peer_id = view.peer_id;
   state.profile_relay_id = view.relay_id;
+  state.profile_contact_locator = view.contact_locator;
   state.profile_account_id = view.account_id;
   state.profile_public_key = view.public_key_b64;
   state.profile_registered = view.registered;

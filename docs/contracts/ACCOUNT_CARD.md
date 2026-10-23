@@ -103,6 +103,14 @@ Unsigned: the Account ID is what the person showed or sent. The receiver fetches
 from a listed device ([card exchange](#card-exchange-over-amp)) or, when one is configured, from the
 relay directory, and accepts it only for that `account_id`. Listed devices are hints; the card decides.
 
+- **Sharing:** the invite text (*Me → Profile → Invite*, and the share at the end of onboarding) ends
+  with the locator line, so pasting the whole message works.
+- **Adding:** *Add contact* finds a locator anywhere in pasted text (`FindContactLocator`). The person is
+  added at once under the locator's nickname; the card is fetched from the listed devices (each reached
+  through the mesh if no link is up), then the directory. With neither answering the contact stays and
+  the user is told they can write once a device is reachable; keys are then resolved as below.
+- `[later]` QR display and scan, and a URL-scheme deep link, carry the same string.
+
 ## Where cards travel
 
 | Carrier | What | When |

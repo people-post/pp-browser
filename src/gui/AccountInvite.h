@@ -12,10 +12,18 @@
 
 namespace pbr {
 
-/** The sentence a user sends to a friend: name and account id in plain words (`settings.profile.invite_text`). */
-inline std::string AccountInviteText(const std::string& nickname, const std::string& account_id) {
-  return Tr("settings.profile.invite_text",
-            {{"name", nickname.empty() ? account_id : nickname}, {"id", account_id}});
+/**
+ * What a user sends to a friend (`settings.profile.invite_text`): name and account id in plain words, and the
+ * locator a friend pastes into *Add contact* to find them with no directory (ACCOUNT_CARD.md).
+ */
+inline std::string AccountInviteText(const std::string& nickname, const std::string& account_id,
+                                     const std::string& locator) {
+  std::string text = Tr("settings.profile.invite_text",
+                        {{"name", nickname.empty() ? account_id : nickname}, {"id", account_id}});
+  if (!locator.empty()) {
+    text += "\n" + Tr("settings.profile.invite_locator", {{"locator", locator}});
+  }
+  return text;
 }
 
 /** The clicked button's rectangle, so the share sheet points at it (window centre when unknown). */

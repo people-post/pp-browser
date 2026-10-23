@@ -1,6 +1,8 @@
 #include "feature/conversations/MessagingContactsPorts.h"
 
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/ContactCardExchange.h"
+#include "lib/messaging/ContactLocator.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -54,6 +56,21 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
       return Roe<void>(result.error());
     }
     return Roe<void>();
+  };
+  ports.add_from_locator = [&hub](const std::string& text,
+                                  std::function<void(Roe<std::pair<std::string, bool>>)> done) {
+    auto locator = FindContactLocator(text);
+    if (!locator) {
+      done(locator.error());
+      return;
+    }
+    hub.ContactCards().AddFromLocator(*locator, [done](Roe<ContactCardExchange::LocatorAdded> added) {
+      if (!added) {
+        done(added.error());
+        return;
+      }
+      done(std::make_pair(added.value().contact.id, added.value().keys_known));
+    });
   };
   ports.share_contact = [&hub](const std::string& thread_id, const std::string& contact_id) -> Roe<void> {
     if (auto sent = hub.ShareContact(thread_id, contact_id); !sent) {

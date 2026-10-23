@@ -21,6 +21,8 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "lib/messaging/ContactLocator.h"
+#include "lib/messaging/PeerRequestAuth.h"
 #include "lib/messaging/PeerCardStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
@@ -1229,6 +1231,14 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   account_keys_->LoadKeptCards();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
+  contact_cards_->SetCardFetcher([this](const std::string& peer_id, const std::string& account_id,
+                                        std::function<void(Roe<PeerCardRecord>)> done) {
+    if (!mesh_messaging_) {
+      done(Error("Messaging not ready"));
+      return;
+    }
+    mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+  });
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
@@ -1290,6 +1300,18 @@ void ConversationsHub::BuildMessagingObjects() {
                                                 *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
+  // A device with no link up is reached through the seed it is parked on (on the hub's thread).
+  mesh_messaging_->AccountCards().SetReach([this](const std::string& peer_id, std::function<void(bool)> done) {
+    AppRuntime::PostUI([this, peer_id, done = std::move(done)]() {
+      if (!mesh_ || !mesh_ready_) {
+        done(false);
+        return;
+      }
+      mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [done](mesh::CircuitReachRoe reached) {
+        done(static_cast<bool>(reached));
+      });
+    });
+  });
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
@@ -1721,6 +1743,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.peer_id = identity->peer_id;
   view.relay_id = identity->relay_user_id;
   view.account_id = identity->account_id;
+  view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
   FillRegistrationFields(view, *identity);
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
@@ -2770,6 +2793,27 @@ ProfileSecretsEngine* ConversationsHub::Secrets() {
 
 ContactCardExchange& ConversationsHub::ContactCards() {
   return *contact_cards_;
+}
+
+Roe<std::string> ConversationsHub::OwnContactLocator() {
+  auto identity = Identity().Get();
+  if (!identity || identity->account_id.empty()) {
+    return Error("Account not set up");
+  }
+  ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
+  if (auto self = PeerRequestAuth::DevicePeerId(identity->public_key_b64)) {
+    locator.devices.push_back(*self);
+  }
+  if (account_keys_) {
+    if (auto kept = account_keys_->Kept(identity->account_id); kept && *kept) {
+      for (const std::string& peer_id : (*kept)->devices) {
+        if (std::find(locator.devices.begin(), locator.devices.end(), peer_id) == locator.devices.end()) {
+          locator.devices.push_back(peer_id);
+        }
+      }
+    }
+  }
+  return EncodeContactLocator(locator);
 }
 
 Roe<ThreadMessage> ConversationsHub::ShareContact(const std::string& thread_id, const std::string& contact_id) {

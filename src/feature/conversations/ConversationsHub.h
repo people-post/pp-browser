@@ -236,6 +236,8 @@ public:
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
   ContactCardExchange& ContactCards();
+  /** This account's locator (ACCOUNT_CARD.md#locator-qr-code-invite-link): Account ID, nickname, devices. */
+  Roe<std::string> OwnContactLocator();
   /** Share contact `contact_id` into chat `thread_id` as a contact card (ACCOUNT_CARD.md). */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** False when no HTTP directory provider is configured (Directory() must not be called then). */

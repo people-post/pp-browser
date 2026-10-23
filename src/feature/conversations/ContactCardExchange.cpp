@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/messaging/AccountCard.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <utility>
 
@@ -109,6 +110,68 @@ Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t
     hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = peer_id});
   }
   return contacts_.AddFromDirectoryHit(hit);
+}
+
+void ContactCardExchange::FetchFromDevices(std::vector<std::string> devices, const std::string& account_id,
+                                           std::function<void(bool kept)> done) {
+  if (devices.empty() || !fetch_card_) {
+    done(false);
+    return;
+  }
+  const std::string device = devices.front();
+  devices.erase(devices.begin());
+  fetch_card_(device, account_id,
+              [this, devices = std::move(devices), account_id, done = std::move(done)](Roe<PeerCardRecord> kept) mutable {
+                if (kept) {
+                  done(true);
+                  return;
+                }
+                FetchFromDevices(std::move(devices), account_id, std::move(done));
+              });
+}
+
+void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done) {
+  mesh::DirectoryHit hit;
+  hit.hit_id = locator.account_id;
+  hit.account_id = locator.account_id;
+  hit.nickname = locator.nickname;
+  hit.display_name = locator.nickname;
+  hit.ids = {{mesh::ContactIdKind::Account, locator.account_id, true}};
+  for (const std::string& peer_id : locator.devices) {
+    hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = peer_id});
+  }
+  auto existing = contacts_.FindByIdentity(locator.account_id, mesh::ContactIdKind::Account);
+  if (!existing) {
+    done(existing.error());
+    return;
+  }
+  auto contact = *existing ? Roe<Contact>(**existing) : contacts_.AddFromDirectoryHit(hit);
+  if (!contact) {
+    done(contact.error());
+    return;
+  }
+  const auto finish = [this, account_id = locator.account_id, done](bool keys_known) {
+    auto latest = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
+    if (!latest || !*latest) {
+      done(Error("Contact vanished"));
+      return;
+    }
+    done(LocatorAdded{.contact = **latest, .keys_known = keys_known});
+  };
+  if (auto kept = keys_.Kept(locator.account_id); kept && *kept) {
+    finish(true);
+    return;
+  }
+  FetchFromDevices(locator.devices, locator.account_id, [this, account_id = locator.account_id, finish](bool kept) {
+    if (kept) {
+      finish(true);
+      return;
+    }
+    // No listed device answered: the directory, when there is one, has the keys too (an HTTP call: off
+    // the I/O thread this callback may be on).
+    auto task = [this, account_id, finish]() { finish(static_cast<bool>(keys_.Resolve(account_id))); };
+    post_blocking_ ? post_blocking_(std::move(task)) : AppRuntime::PostWorkerBackground(std::move(task));
+  });
 }
 
 } // namespace pbr
