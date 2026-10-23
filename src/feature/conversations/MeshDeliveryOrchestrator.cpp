@@ -940,10 +940,18 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     }
   }
 
-  auto appended = AppendOutboundMessage(
-      store_, NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs()));
+  ThreadMessage outbound = NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs());
+  if (options.stored_payload_json) {
+    outbound.payload_json = *options.stored_payload_json;
+  }
+  auto appended = AppendOutboundMessage(store_, std::move(outbound));
   if (!appended) {
     return appended.error();
+  }
+  // What goes on the wire: the row as numbered, with everything the send carries.
+  ThreadMessage wire = *appended;
+  if (options.payload_json) {
+    wire.payload_json = *options.payload_json;
   }
   if (options.update_preview) {
     (void)inbox_.UpdatePreview(thread_id, text);
@@ -959,7 +967,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   if (!peer_relay_id && !amp_reachable) {
     return FailOutbound(store_, *appended, Error("Direct thread missing peer relay id"));
   }
-  auto sealed = SealDirectPayload(*appended, **thread, identity->account_id, options, psk_store_,
+  auto sealed = SealDirectPayload(wire, **thread, identity->account_id, options, psk_store_,
                                   [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); });
   if (!sealed) {
     return FailOutbound(store_, *appended, sealed.error());

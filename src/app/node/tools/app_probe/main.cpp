@@ -763,6 +763,7 @@ private:
       out.set("type", ChatContentTypeToDb(row.message.content_type));
       out.set("text", row.message.text);
       out.set("from", row.message.sender_contact_id);
+      out.set("payload_bytes", static_cast<int64_t>(row.message.payload_json.size()));
       if (row.message.transport) {
         out.set("transport", MessageTransportToString(*row.message.transport));
       }

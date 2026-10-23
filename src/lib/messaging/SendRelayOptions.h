@@ -18,6 +18,11 @@ struct SendRelayOptions {
   std::optional<ChatContentType> content_type;
   std::optional<std::string> payload_json;
   /**
+   * What the transcript row keeps instead of `payload_json`, when the row should not hold everything
+   * sent (a member_joined's cards: kept as cards, not as a copy in the chat). Direct sends only.
+   */
+  std::optional<std::string> stored_payload_json;
+  /**
    * Route outbound send onto Critical workers (call-control / charge_required).
    * Avoids Accept/MediaKey sitting behind PollInbox. Transport is still Amp-first when dialable,
    * then Brief when a `relay:` route is known.

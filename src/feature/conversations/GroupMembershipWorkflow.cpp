@@ -440,7 +440,8 @@ Roe<void> GroupMembershipWorkflow::ResolveInviteCard(const std::string& inviter_
 Roe<void> GroupMembershipWorkflow::SendMembershipDirectMessage(const std::string& peer_identity,
                                                               const GroupMembershipControlType control_type,
                                                               const std::string& detail_json,
-                                                              const std::string& display) {
+                                                              const std::string& display,
+                                                              const std::optional<std::string>& stored_detail_json) {
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
@@ -466,15 +467,20 @@ Roe<void> GroupMembershipWorkflow::SendMembershipDirectMessage(const std::string
   if (!local) {
     return local.error();
   }
-  Object payload;
-  payload.set("control_type", GroupMembershipControlTypeToWire(control_type));
-  payload.set("detail", detail_json);
-  const std::string payload_json = DumpJson(payload);
+  auto payload_with = [control_type](const std::string& detail) {
+    Object payload;
+    payload.set("control_type", GroupMembershipControlTypeToWire(control_type));
+    payload.set("detail", detail);
+    return DumpJson(payload);
+  };
   SendRelayOptions opts;
   opts.generation = "system";
   opts.update_preview = false;
   opts.content_type = ChatContentType::System;
-  opts.payload_json = payload_json;
+  opts.payload_json = payload_with(detail_json);
+  if (stored_detail_json) {
+    opts.stored_payload_json = payload_with(*stored_detail_json);
+  }
   opts.sender_contact_id = *local;
   auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
@@ -1081,10 +1087,11 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
   (void)FanOutPairwise(SelectPairwiseFanoutTargets(identities, *local), PairwiseFanoutMode::BestEffort,
                        [&](const std::string& identity) {
                          return SendMembershipDirectMessage(identity, GroupMembershipControlType::MemberJoined,
-                                                            *members_detail, "Member joined the group");
+                                                            *members_detail, "Member joined the group", *plain);
                        });
+  // Our copies keep the roster, not the cards (they are kept as cards on the other side).
   (void)SendMembershipDirectMessage(member_identity, GroupMembershipControlType::MemberJoined, *newcomer_detail,
-                                    "Member joined the group");
+                                    "Member joined the group", *plain);
   return {};
 }
 

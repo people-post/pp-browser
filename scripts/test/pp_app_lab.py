@@ -1292,6 +1292,12 @@ def scenario_group_members_key_each_other(lab):
                  "%s: the whole roster" % u.name)
     wait_for(lambda: b.cmd("kept_card", account=c.account).get("account_id") or None, 30,
              "bob: carol's card, from the roster")
+    # Alice keeps her copies of the roster notices without the cards (they are kept as cards).
+    for m in (b, c):
+        for row in a.cmd("transcript", thread=thread_with(a, m.account))["rows"]:
+            if row["type"] == "system" and row["payload_bytes"] > 8000:
+                raise ProbeError("alice: %d bytes kept in her chat with %s (%s)" % (row["payload_bytes"], m.name,
+                                                                                    row["text"]))
     wait_for(lambda: c.cmd("kept_card", account=b.account).get("account_id") or None, 30,
              "carol: bob's card, from the roster")
     def said(u, text):

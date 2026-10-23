@@ -108,7 +108,7 @@ Delivered as **`ChatPayload` system messages** (`content_type=system`) with `con
 | `group_invite` | owner | See InvitePayload |
 | `group_invite_accept` | invitee | `{ "invite_nonce", "group_id" }` |
 | `group_invite_decline` | invitee | `{ "invite_nonce", "group_id" }` |
-| `member_joined` | owner | `{ "group_id", "member_identity", "role", "roster_epoch", "members"? }` — `members`: the roster, `[{ "member_identity", "role", "card"?, "relay_user_id"? }]`; `card` is the member's card as the owner keeps it (the members get the newcomer's, the newcomer everyone's, ~128 KB at most), `relay_user_id` the owner's relay route to them ([ACCOUNT_CARD.md](../../docs/contracts/ACCOUNT_CARD.md#groups)). Receivers keep a card only for its own row once it proves itself, take the route as a contact card's, and store the event without the cards |
+| `member_joined` | owner | `{ "group_id", "member_identity", "role", "roster_epoch", "members"? }` — `members`: the roster, `[{ "member_identity", "role", "card"?, "relay_user_id"? }]`; `card` is the member's card as the owner keeps it (the members get the newcomer's, the newcomer everyone's, ~128 KB at most), `relay_user_id` the owner's relay route to them ([ACCOUNT_CARD.md](../../docs/contracts/ACCOUNT_CARD.md#groups)). Receivers keep a card only for its own row once it proves itself, take the route as a contact card's, and store the event without the cards (as does the owner's copy) |
 | `member_left` | member | `{ "group_id", "member_identity", "roster_epoch" }` |
 | `member_removed` | owner | `{ "group_id", "member_identity", "roster_epoch" }` |
 | `owner_transferred` | owner | `{ "group_id", "new_owner_identity", "roster_epoch", "leave_previous"? }` |

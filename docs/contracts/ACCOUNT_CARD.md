@@ -172,7 +172,7 @@ has every member's card from their invite chats — gives them out with the rost
 members get the newcomer's card, the newcomer everyone's (the newest account card the owner keeps, else
 the key card; about 128 KB of cards at most, the rest keyed as before), each with the owner's relay route
 to that member. A receiver keeps a card only for the roster row it came in, once it proves itself, and
-stores the event without the cards. The invite carries none: an invitee who declines learns no one's keys.
+stores the event without the cards; so does the owner's copy (`SendRelayOptions::stored_payload_json`). The invite carries none: an invitee who declines learns no one's keys.
 
 ## Storing cards
 
