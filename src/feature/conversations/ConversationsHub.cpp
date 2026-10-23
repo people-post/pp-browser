@@ -19,8 +19,8 @@
 #include "domain/peers/GroupInviteStanding.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
-#include "domain/peers/RelayDirectoryKemKeyResolver.h"
-#include "domain/peers/RelayDirectorySigningKeyResolver.h"
+#include "domain/peers/AccountKeyResolver.h"
+#include "lib/messaging/PeerCardStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -293,23 +293,20 @@ void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
       backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
     }
     if (backends.empty()) {
-      directory_owned_.reset();
       http_directory_url_.clear();
-      directory_ = nullptr;
+      directory_.SetBackend(nullptr);
       log().warning << "directory providers empty; directory client disabled";
-    } else if (!directory_owned_ || http_directory_url_ != fingerprint) {
+    } else if (!directory_.Configured() || http_directory_url_ != fingerprint) {
       http_directory_url_ = std::move(fingerprint);
       if (backends.size() == 1) {
-        directory_owned_ = std::move(backends.front());
+        directory_.SetBackend(std::shared_ptr<mesh::IDirectoryClient>(std::move(backends.front())));
       } else {
-        directory_owned_ = std::make_unique<FailoverDirectoryClient>(std::move(backends));
+        directory_.SetBackend(std::make_shared<FailoverDirectoryClient>(std::move(backends)));
       }
-      directory_ = directory_owned_.get();
     }
   } else {
-    directory_owned_.reset();
     http_directory_url_.clear();
-    directory_ = nullptr;
+    directory_.SetBackend(nullptr);
     log().warning << "directory.base_url is empty; directory client disabled";
   }
 
@@ -1078,7 +1075,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     }
   }
   group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
-  directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
+  directory_shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
   inbox_->SetSystemControls(&system_controls_);
@@ -1121,13 +1118,13 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     }
   });
 
-  if (directory_) {
+  if (directory_.Configured()) {
     mesh_directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([this]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
       // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
-      if (!directory_) {
+      if (!directory_.Configured()) {
         return std::vector<mesh::MeshDirectoryNode>{};
       }
-      mesh::DirectoryClientNameDirectory names(*directory_);
+      mesh::DirectoryClientNameDirectory names(directory_);
       auto records = names.ListService("mesh_node");
       if (!records) {
         return records.error();
@@ -1142,11 +1139,11 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     mesh_directory_cache_->SetAsyncFetcher([this](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
       auto fetch_http = [this, done]() {
         AppRuntime::PostWorkerNormal([this, done]() {
-          if (!directory_) {
+          if (!directory_.Configured()) {
             done(std::vector<mesh::MeshDirectoryNode>{});
             return;
           }
-          mesh::DirectoryClientNameDirectory names(*directory_);
+          mesh::DirectoryClientNameDirectory names(directory_);
           auto records = names.ListService("mesh_node");
           if (!records) {
             done(records.error());
@@ -1196,9 +1193,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       }
     }
   }
-  signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   BindPricingFamilies();
-  kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
+  peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
+  account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
+  account_keys_->LoadKeptCards();
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
@@ -1257,13 +1255,13 @@ void ConversationsHub::NotifyMeshReady() {
 
 void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
-                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
+                                                *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
+  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_);
@@ -2158,11 +2156,11 @@ Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,
 }
 
 AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
-  return [resolver = signing_resolver_.get()](const std::string& account_id) -> Roe<ByteVector> {
-    if (!resolver) {
+  return [keys = account_keys_.get()](const std::string& account_id) -> Roe<ByteVector> {
+    if (!keys) {
       return Error("account signing keys unavailable");
     }
-    auto record = resolver->Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), account_id);
+    auto record = keys->Signing().Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), account_id);
     if (!record) {
       return record.error();
     }
@@ -2651,8 +2649,8 @@ void ConversationsHub::Shutdown() {
   group_invite_gate_.reset();
   group_roster_.reset();
   thread_prefs_.reset();
-  signing_resolver_.reset();
-  kem_resolver_.reset();
+  account_keys_.reset();
+  peer_cards_.reset();
   // Participants free the rest (media engine, key and session stores) after DEK unregister above.
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnShutdown();
@@ -2666,14 +2664,13 @@ void ConversationsHub::Shutdown() {
   directory_shadows_.reset();
   mesh_directory_cache_.reset();
   http_relay_.reset();
-  directory_owned_.reset();
   http_registration_.reset();
   http_push_devices_.reset();
   http_client_compat_.reset();
   relay_ = nullptr;
   push_devices_ = nullptr;
   client_compat_ = nullptr;
-  directory_ = nullptr;
+  directory_.SetBackend(nullptr);
   registration_ = nullptr;
   http_relay_url_.clear();
   http_directory_url_.clear();
@@ -2735,7 +2732,7 @@ ProfileSecretsEngine* ConversationsHub::Secrets() {
 }
 
 mesh::IDirectoryClient& ConversationsHub::Directory() {
-  return *directory_;
+  return directory_;
 }
 
 DirectoryShadowCache& ConversationsHub::DirectoryShadows() {

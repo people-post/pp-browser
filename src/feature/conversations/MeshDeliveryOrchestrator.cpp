@@ -87,25 +87,22 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 } // namespace
 
 MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                         IRelayClient* relay, InboxController& inbox,
-                                         PeerSigningKeyStore& signing_key_store,
-                                         IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                                         IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                                         IRelayClient* relay, InboxController& inbox, AccountKeyResolver& account_keys,
+                                         IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post,
                                          std::function<void(std::function<void()>)> amp_post_io,
                                          std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
-      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
-      psk_store_(psk_store), group_roster_(group_roster),
-      transports_(store, identity, signing_key_resolver, psk_store), outbox_([this]() { return transports_.DirectChat(); }),
+      account_keys_(account_keys), psk_store_(psk_store), group_roster_(group_roster),
+      transports_(store, identity, account_keys.Signing(), psk_store), outbox_([this]() { return transports_.DirectChat(); }),
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
-      session_keys_(psk_store, kem_key_resolver),
+      session_keys_(psk_store, account_keys.Kem()),
       control_lane_(identity, contacts, routes_, session_keys_, transports_, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
-      std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
+      std::make_unique<RelayReceivePipeline>(store_, account_keys_.Signing(), psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
@@ -139,24 +136,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit) {
-  const auto account_id = PrimaryAccountIdFromHit(hit);
-  if (!account_id || !hit.signing_public_key_b64 || hit.signing_public_key_b64->empty()) {
-    return;
-  }
-  const std::string kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-  PeerSigningKeyRecord signing;
-  signing.signing_public_key_b64 = *hit.signing_public_key_b64;
-  signing.source = "directory";
-  (void)signing_key_store_.Put(kind, *account_id, std::move(signing));
-  if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-    PeerKemKeyRecord kem;
-    kem.kem_public_key_b64 = *hit.kem_public_key_b64;
-    kem.signing_public_key_b64 = *hit.signing_public_key_b64;
-    kem.binding_signature_b64 = hit.kem_binding_signature_b64.value_or("");
-    kem.source = "directory";
-    if (!kem_key_store_.Put(kind, *account_id, std::move(kem))) {
-      log().warning << "Directory KEM key for " << *account_id << " is not bound to the account; not kept";
-    }
+  if (auto kept = account_keys_.AddDirectoryHit(hit); !kept) {
+    log().warning << "Directory entry's keys not kept: " << kept.error().message;
   }
 }
 

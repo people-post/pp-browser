@@ -46,6 +46,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   threads/
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
+                            # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)

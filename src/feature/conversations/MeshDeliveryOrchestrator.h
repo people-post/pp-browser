@@ -14,6 +14,7 @@
 #include "lib/messaging/PeerSigningKeyStore.h"
 #include "lib/messaging/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
+#include "domain/peers/AccountKeyResolver.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
@@ -84,9 +85,7 @@ class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, PeerSigningKeyStore& signing_key_store,
-                      IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                      InboxController& inbox, AccountKeyResolver& account_keys, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
@@ -278,9 +277,7 @@ private:
   IdentityStore& identity_;
   IRelayClient* relay_ = nullptr;
   InboxController& inbox_;
-  PeerSigningKeyStore& signing_key_store_;
-  IPeerSigningKeyResolver& signing_key_resolver_;
-  PeerKemKeyStore& kem_key_store_;
+  AccountKeyResolver& account_keys_;
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;

@@ -41,6 +41,7 @@
 #include "lib/net/BlobQuota.h"
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/SwitchableDirectoryClient.h"
 #include "lib/net/IPushDeviceClient.h"
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/reachability/LanMdnsDiscovery.h"
@@ -70,8 +71,8 @@ namespace pbr {
 
 class IPskSessionStore;
 class ProfileSecretsEngine;
-class RelayDirectoryKemKeyResolver;
-class RelayDirectorySigningKeyResolver;
+class AccountKeyResolver;
+class PeerCardStore;
 class SqlitePskSessionStore;
 
 /**
@@ -232,7 +233,7 @@ public:
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
   /** False when no HTTP directory provider is configured (Directory() must not be called then). */
-  bool HasDirectory() const { return directory_ != nullptr; }
+  bool HasDirectory() const { return directory_.Configured(); }
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
@@ -442,8 +443,10 @@ private:
   std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
-  std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
-  std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
+  /** Account cards this device has checked and kept (profile.db). */
+  std::unique_ptr<PeerCardStore> peer_cards_;
+  /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
+  std::unique_ptr<AccountKeyResolver> account_keys_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
@@ -452,14 +455,13 @@ private:
   std::string http_registration_url_;
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
-  std::unique_ptr<mesh::IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
-  mesh::IDirectoryClient* directory_ = nullptr;
+  /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
+  SwitchableDirectoryClient directory_;
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;

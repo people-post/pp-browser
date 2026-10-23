@@ -13,6 +13,7 @@ pp_browser_add_lib_library(pp_lib_net
     RegistrationSignPayload.cpp
     OrgBackendClientFactory.cpp
     OrgBackendClientsImpl.cpp
+    SwitchableDirectoryClient.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_foundation_data

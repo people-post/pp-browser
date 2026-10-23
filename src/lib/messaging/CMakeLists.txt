@@ -37,6 +37,8 @@ pp_browser_add_lib_library(pp_lib_messaging
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
     PeerKemKeyStore.cpp
+    AccountCard.cpp
+    PeerCardStore.cpp
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
