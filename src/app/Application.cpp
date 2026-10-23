@@ -244,7 +244,6 @@ Application::Application() {
   call_ = std::make_unique<CallController>();
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
-  SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
@@ -266,7 +265,6 @@ Application::~Application() {
   EmojiPickerController::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
-  SettingsController::ClearInstance();
   Shutdown();
   messaging_facade_.reset();
   messaging_ = nullptr;
@@ -1764,7 +1762,6 @@ void Application::Shutdown() {
   ShellHost::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
-  SettingsController::ClearInstance();
   g_input_coordinator = nullptr;
   if (unlock_gate_) {
     unlock_gate_->BindPorts({});

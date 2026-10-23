@@ -275,7 +275,7 @@ ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.
 
 The handler runs only when the event carries its arguments with their types. The captured presenter must
 outlive the context: `Application` removes the context (and with it every model and handler) at shutdown,
-before it frees the presenters. `ChatController` binds this way; the other
+before it frees the presenters. `ChatController` and `SettingsController` bind this way; the other
 presenters still carry static adapters behind an `InstallInstance` / `Instance()` shim, which goes as they
 move over.
 

@@ -63,11 +63,6 @@ public:
   SettingsController();
   ~SettingsController() override = default;
 
-  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
-  static void InstallInstance(SettingsController& controller);
-  static void ClearInstance();
-  static SettingsController& Instance();
-
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
   /** Shell layout / navigation without ShellHost::Instance(). Clear via BindShellNavigation({}). */
@@ -197,32 +192,27 @@ private:
     ui::String support_subtitle;
   };
 
-  static void SelectSectionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ResetSectionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnLlmFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnLlmPresetChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseThemeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseLanguageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseGroupInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseCallInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseDirectConnectionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                       const ui::VariantList& args);
-  static void DrainPendingAttachmentMediaCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                  const ui::VariantList& args);
-  static void ClearDownloadedAttachmentsCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                 const ui::VariantList& args);
-  static void SetCasLibraryFilterCallback(ui::DataModelHandle model, ui::Event& ev,
-                                         const ui::VariantList& args);
-  static void ShareCasPubliclyCallback(ui::DataModelHandle model, ui::Event& ev,
-                                      const ui::VariantList& args);
-  static void UnpublishCasCallback(ui::DataModelHandle model, ui::Event& ev,
-                                  const ui::VariantList& args);
-  static void CopyCasTipCallback(ui::DataModelHandle model, ui::Event& ev,
-                               const ui::VariantList& args);
-  static void FetchCasTipCallback(ui::DataModelHandle model, ui::Event& ev,
-                                const ui::VariantList& args);
+  // Data-model events with more to them than one call.
+  void OnLlmPresetChanged(ui::Event& ev);
+  void ToggleNodeEnabled();
+  void RetestReachability();
+  void TryUpnpPort();
+  void ShowReachabilityHelp();
+  void DismissReachabilityHelp();
+  void ToggleCircuitRelay();
+  void ToggleMediaRelay();
+  void ToggleDht();
+  void TogglePreferContacts();
+  void ToggleReachableWithoutRelay();
+  void ToggleTrustedRelays();
+  void ToggleShowNotifications();
+  void ToggleStayConnected();
+  void ToggleReduceTransparency();
+  void ToggleCallDiagnostics();
+  void ToggleShowAdvancedSettings();
+  void ToggleCrashReports();
+  void ToggleAutoRenewRegistration();
+
   void RefreshCasLibrary();
   void PushCasLibraryBindings();
   void OnSetCasLibraryFilter(const std::string& filter);
@@ -233,43 +223,6 @@ private:
   void PerformShareCasPublicly(const std::string& content_id_hex);
   void PerformUnpublishCas(const std::string& content_id_hex);
   void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
-  static void ToggleShowNotificationsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleStayConnectedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleReduceTransparencyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleCallDiagnosticsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleShowAdvancedSettingsCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                 const ui::VariantList& args);
-  static void ToggleCrashReportsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleAutoRenewRegistrationCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnIntegrationsFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnNetworkFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleNodeEnabledCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetestReachabilityCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TryUpnpPortCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ShowReachabilityHelpCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DismissReachabilityHelpCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleCircuitRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleMediaRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleDhtCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TogglePreferContactsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleTrustedRelaysCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleReachableWithoutRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnProfileNicknameCommitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnRegisterProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnRotateBriefLlmKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnCopyProfileIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnPickProfileIconCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnClearProfileIconCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnShareProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnAddMcpServerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnRemoveMcpServerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChangePinCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnExportLinkDeviceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnClearUndeliveredCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnResetToolPermissionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnResetProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnResetChatsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenSupportChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -364,7 +317,6 @@ private:
   ShellFeedbackPorts shell_feedback_;
   UnlockEnsurePorts unlock_ensure_;
 
-  static SettingsController* installed_instance_;
 };
 
 } // namespace pbr
