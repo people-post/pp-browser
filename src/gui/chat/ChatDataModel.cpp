@@ -1,5 +1,7 @@
 #include "gui/chat/ChatDataModel.h"
 
+#include "feature/conversations/ChatPresenter.h"
+
 #include "gui/shell/DataModelHost.h"
 
 namespace pbr {
@@ -87,21 +89,7 @@ void DirtyShell() {
 }
 
 ui::String SessionVisualKind(const Thread& thread) {
-  switch (thread.kind) {
-  case ThreadKind::Ai:
-    return "ai";
-  case ThreadKind::Group:
-    return "group";
-  case ThreadKind::Direct:
-    if (thread.channel == ThreadChannel::E2e) {
-      return "private";
-    }
-    if (thread.channel == ThreadChannel::E2ePublic) {
-      return "public";
-    }
-    return "public";
-  }
-  return "public";
+  return ChatSessionKindName(thread).c_str();
 }
 
 } // namespace pbr

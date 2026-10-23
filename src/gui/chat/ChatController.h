@@ -4,6 +4,7 @@
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
+#include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
@@ -291,22 +292,12 @@ private:
   std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
   /** Second step of "Mute": 8 hours / 1 week / Always. */
   void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
-  /**
-   * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store can
-   * be listed, then kept in step with every write. Empty, and read again next time, while it cannot.
-   */
-  const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
-  /** One thread's settings: from the cache, or from the store while the cache is unavailable; nullopt when
-   *  neither can be read. */
-  std::optional<ThreadLocalPrefs> ThreadPrefsOf(const std::string& thread_id);
-  /** Reads, changes and writes one thread's settings, then refreshes the list; tells the user when the
-   *  store refused. */
-  void UpdateThreadPrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
-  /** Writes the settings and the cache only; false when the store refused. */
-  bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
+  /** After a chat's settings changed (the presenter refreshed its list): badges and the surface follow. */
+  void AfterThreadPrefsChanged();
+  /** Copy the presenter's chats list into the shell's data model. */
+  void ApplySessionList();
   void OnToggleArchived();
   static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> thread_prefs_;
   void OnForgetMemory();
   void OnSyncWithPeer();
   void OnRetryGapSync();
@@ -455,6 +446,8 @@ private:
 
   ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
+  /** The chats list's decisions and buttons (pp-app-probe drives the same presenter). */
+  ChatPresenter sessions_;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;

@@ -1,4 +1,4 @@
-#include "gui/chat/SessionListText.h"
+#include "feature/conversations/SessionListText.h"
 
 #include <gtest/gtest.h>
 

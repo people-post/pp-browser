@@ -43,6 +43,7 @@
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/calls/CallPresenter.h"
+#include "feature/conversations/ChatPresenter.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -140,6 +141,7 @@ public:
       Emit(event);
     };
     presenter_.BindCallbacks(std::move(callbacks));
+    chats_.BindFacade(facade_.get());
   }
 
   ConversationsHub& Hub() { return product_->Hub(); }
@@ -353,9 +355,34 @@ public:
       out.set("ok", true);
       Emit(out);
     } else if (cmd == "show_chat") {
-      // The chat on screen (ChatController opening a thread).
-      auto opened = facade_->OpenThread(request->getString("thread").value_or(""));
-      opened ? Emit(Reply(id, true)) : ReplyError(id, opened.error().message);
+      // The chat on screen: what tapping it in the chats list does (ChatPresenter).
+      chats_.SelectThread(request->getString("thread").value_or("")) ? Emit(Reply(id, true))
+                                                                      : ReplyError(id, "could not open the chat");
+    } else if (cmd == "pin" || cmd == "unpin" || cmd == "mute" || cmd == "unmute" || cmd == "archive" ||
+               cmd == "unarchive" || cmd == "mark_unread" || cmd == "mark_read") {
+      // A chat row's menu (ChatController::SessionMenuActions → ChatPresenter).
+      const std::string thread = request->getString("thread").value_or("");
+      if (cmd == "pin" || cmd == "unpin") {
+        chats_.SetPinned(thread, cmd == "pin");
+      } else if (cmd == "mute") {
+        chats_.Mute(thread, SessionMuteChoice::Always);
+      } else if (cmd == "unmute") {
+        chats_.Unmute(thread);
+      } else if (cmd == "archive" || cmd == "unarchive") {
+        chats_.SetArchived(thread, cmd == "archive");
+      } else if (cmd == "mark_unread") {
+        chats_.MarkUnread(thread);
+      } else {
+        chats_.MarkRead(thread);
+      }
+      ListThreads(id);
+    } else if (cmd == "home") {
+      // The Home tab: back to the chats list.
+      chats_.ShowHome();
+      ListThreads(id);
+    } else if (cmd == "show_archived") {
+      chats_.ToggleArchived();
+      ListThreads(id);
     } else if (cmd == "background" || cmd == "foreground" || cmd == "minimize" || cmd == "restore") {
       // What the OS tells the app (SdlAppEvents): a phone's WILL_ENTER_BACKGROUND /
       // DID_ENTER_FOREGROUND, a desktop window minimized / restored.
@@ -481,12 +508,18 @@ private:
         });
   }
 
+  /**
+   * Every thread, and the chats list as the user sees it (ChatPresenter: order, unread, pin, mute;
+   * `listed` false for one in the other list — archived, or not while the archived list shows).
+   */
   void ListThreads(int64_t id) {
     auto threads = facade_->ListThreads();
     if (!threads) {
       ReplyError(id, threads.error().message);
       return;
     }
+    chats_.Refresh();
+    const ChatListScreen& list = chats_.List();
     std::vector<Value> rows;
     for (const Thread& thread : *threads) {
       Object row;
@@ -494,10 +527,28 @@ private:
       row.set("title", thread.title);
       row.set("kind", thread.kind == ThreadKind::Direct ? "direct" : thread.kind == ThreadKind::Group ? "group" : "other");
       row.set("peer", thread.peer_identity_value);
+      row.set("listed", false);
+      for (size_t i = 0; i < list.rows.size(); ++i) {
+        const ChatSessionRow& shown = list.rows[i];
+        if (shown.id != thread.id) {
+          continue;
+        }
+        row.set("listed", true);
+        row.set("position", static_cast<int64_t>(i));
+        row.set("shown_title", shown.title);
+        row.set("preview", shown.preview);
+        row.set("unread", static_cast<int64_t>(shown.unread_count));
+        row.set("unread_dot", shown.unread_dot);
+        row.set("pinned", shown.pinned);
+        row.set("muted", shown.muted);
+        row.set("active", shown.active);
+      }
       rows.push_back(ObjectValue(std::move(row)));
     }
     Object out = Reply(id, true);
     out.set("threads", ArrayValue(std::move(rows)));
+    out.set("archived_count", static_cast<int64_t>(list.archived_count));
+    out.set("showing_archived", list.showing_archived);
     Emit(out);
   }
 
@@ -705,6 +756,8 @@ private:
   std::unique_ptr<ConversationsFacade> facade_;
   std::unique_ptr<CallUiBackend> calls_;
   CallPresenter presenter_;
+  /** The chats list, as ChatController shows it. */
+  ChatPresenter chats_;
   std::string last_kind_ = "none";
   std::string last_line_;
   std::string last_error_;

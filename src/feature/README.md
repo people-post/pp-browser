@@ -41,7 +41,7 @@ src/feature/
 │   └── bindings/
 ├── calls/            Call session (`pp_feature_calls`)
 ├── broadcast/        Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
-├── conversations/    Conversations hub + delivery; ConversationsFacade; `HubParticipant` (what rides the hub)
+├── conversations/    Conversations hub + delivery; ConversationsFacade; `HubParticipant` (what rides the hub); `ChatPresenter` (the chats list's decisions + buttons, headless — ChatController renders it, pp-app-probe drives it)
 └── product/          `ProductStack` (`pp_feature_product`): the hub with calls and broadcast as its participants — the one module that sees all three; only app/ and gui/ include it
 ```
 

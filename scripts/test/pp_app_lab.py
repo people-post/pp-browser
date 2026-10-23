@@ -1028,6 +1028,52 @@ def wait_for(fn, timeout, what):
         time.sleep(0.5)
 
 
+def chat_row(u, thread, reply=None):
+    """The chats-list row of `thread` as `u` sees it (ChatPresenter), and the list's own fields."""
+    got = reply or u.cmd("threads")
+    for row in got["threads"]:
+        if row["id"] == thread:
+            return row, got
+    raise ProbeError("%s: no thread %s" % (u.name, thread))
+
+
+def scenario_chat_list_settings(lab):
+    """Bob's chats list as he sees it: Alice's message shows unread; he reads it, marks it unread by
+    hand (a dot) and opening it clears that; he pins, mutes and archives the chat, opens the archived
+    list and brings it back."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("home")  # the chat is not open: its new messages count
+    a.cmd("send", thread=a_thread, text="hello from the list")
+    wait_for(lambda: chat_row(b, b_thread)[0].get("unread", 0) > 0, 20, "bob: alice's message unread")
+    row, _ = chat_row(b, b_thread, b.cmd("mark_read", thread=b_thread))
+    if row.get("unread") or row.get("unread_dot"):
+        raise ProbeError("bob: still unread after Mark as read: %s" % row)
+    row, _ = chat_row(b, b_thread, b.cmd("mark_unread", thread=b_thread))
+    if not row.get("unread_dot") or row.get("unread"):
+        raise ProbeError("bob: Mark as unread shows no dot (or a count): %s" % row)
+    b.cmd("show_chat", thread=b_thread)
+    row, _ = chat_row(b, b_thread)
+    if row.get("unread_dot") or not row.get("active"):
+        raise ProbeError("bob: opening the chat kept the dot / did not open it: %s" % row)
+    row, _ = chat_row(b, b_thread, b.cmd("pin", thread=b_thread))
+    if not row.get("pinned") or row.get("position") != 0:
+        raise ProbeError("bob: a pinned chat is not first: %s" % row)
+    row, _ = chat_row(b, b_thread, b.cmd("mute", thread=b_thread))
+    if not row.get("muted"):
+        raise ProbeError("bob: mute did not take: %s" % row)
+    row, got = chat_row(b, b_thread, b.cmd("archive", thread=b_thread))
+    if row.get("listed") or got.get("archived_count") != 1:
+        raise ProbeError("bob: an archived chat is still in the list: %s / %s" % (row, got.get("archived_count")))
+    row, got = chat_row(b, b_thread, b.cmd("show_archived"))
+    if not row.get("listed") or not got.get("showing_archived"):
+        raise ProbeError("bob: the archived list does not show the chat: %s" % row)
+    row, got = chat_row(b, b_thread, b.cmd("unarchive", thread=b_thread))
+    if not row.get("listed") or got.get("archived_count") != 0 or got.get("showing_archived"):
+        raise ProbeError("bob: unarchived, the list did not come back: %s / %s" % (row, got))
+    b.cmd("unpin", thread=b_thread)
+    b.cmd("unmute", thread=b_thread)
+
+
 def live_streams(u):
     return {row["stream_id"]: row["rx_frames"] for row in u.state().get("streams", [])}
 
@@ -1350,6 +1396,7 @@ def scenario_group_calling_at_once(lab):
 
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
+    ("chat_list_settings", scenario_chat_list_settings),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

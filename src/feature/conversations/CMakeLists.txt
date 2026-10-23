@@ -1,5 +1,6 @@
 pp_browser_add_feature_library(pp_feature_conversations
   SOURCES
+    ChatPresenter.cpp
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     GroupMembershipWorkflow.cpp

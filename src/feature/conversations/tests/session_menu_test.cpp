@@ -1,4 +1,4 @@
-#include "gui/chat/SessionMenu.h"
+#include "feature/conversations/SessionMenu.h"
 
 #include <gtest/gtest.h>
 
