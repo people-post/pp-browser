@@ -44,7 +44,6 @@
 #include <filesystem>
 #include <functional>
 #include "common/PbrCompat.h"
-#include "lib/content/CasLibrary.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
@@ -188,7 +187,6 @@ SessionStore& SettingsController::Store() {
   }
   return commands_.session_store();
 }
-
 
 SettingsSectionHandler* SettingsController::FindHandler(const std::string& section_id) {
   const auto it = section_handlers_by_id_.find(section_id);
@@ -402,7 +400,7 @@ void SettingsController::PushUiStateToBindings() {
 
 void SettingsController::SyncBindingsFromSession() {
   if (selected_id_ == "storage") {
-    RefreshCasLibrary();
+    cas_library_.Refresh();
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -478,19 +476,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       mcp_handle.RegisterMember("args_text", &McpServerRow::args_text);
       mcp_handle.RegisterMember("enabled", &McpServerRow::enabled);
     }
-    if (auto cas_handle = ctor.RegisterStruct<CasLibraryRow>()) {
-      cas_handle.RegisterMember("content_id_hex", &CasLibraryRow::content_id_hex);
-      cas_handle.RegisterMember("title", &CasLibraryRow::title);
-      cas_handle.RegisterMember("detail", &CasLibraryRow::detail);
-      cas_handle.RegisterMember("realm_label", &CasLibraryRow::realm_label);
-      cas_handle.RegisterMember("pin_label", &CasLibraryRow::pin_label);
-      cas_handle.RegisterMember("can_share_publicly", &CasLibraryRow::can_share_publicly);
-      cas_handle.RegisterMember("can_unpublish", &CasLibraryRow::can_unpublish);
-      cas_handle.RegisterMember("can_copy_tip", &CasLibraryRow::can_copy_tip);
-    }
     ctor.RegisterArray<std::vector<SectionListRow>>();
     ctor.RegisterArray<std::vector<McpServerRow>>();
-    ctor.RegisterArray<std::vector<CasLibraryRow>>();
     ctor.Bind("sections", &controller.sections_);
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
@@ -504,8 +491,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("promoted_mcp_url", &controller.bindings_.promoted_mcp_url);
     ctor.Bind("search_provider", &controller.bindings_.search_provider);
     ctor.Bind("mcp_servers", &controller.bindings_.mcp_servers);
-    ctor.Bind("cas_library_rows", &controller.bindings_.cas_library_rows);
-    ctor.Bind("cas_library_empty_label", &controller.bindings_.cas_library_empty_label);
+    cas_library_.Bind(ctor);
     ctor.Bind("relay_base_url", &controller.bindings_.relay_base_url);
     ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
@@ -607,11 +593,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
     ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
     ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
-    ctor.BindEventCallback("set_cas_library_filter", DataEvent<std::string>([this](const std::string& filter) { OnSetCasLibraryFilter(filter); }));
-    ctor.BindEventCallback("share_cas_publicly", DataEvent<int>([this](int index) { OnShareCasPublicly(index); }));
-    ctor.BindEventCallback("unpublish_cas", DataEvent<int>([this](int index) { OnUnpublishCas(index); }));
-    ctor.BindEventCallback("copy_cas_tip", DataEvent<int>([this](int index) { OnCopyCasTip(index); }));
-    ctor.BindEventCallback("fetch_cas_tip", DataEvent<>([this]() { OnFetchCasTip(); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
@@ -670,8 +651,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "promoted_mcp_url");
   host.Dirty("settings", "search_provider");
   host.Dirty("settings", "mcp_servers");
-  host.Dirty("settings", "cas_library_rows");
-  host.Dirty("settings", "cas_library_empty_label");
   host.Dirty("settings", "relay_base_url");
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
@@ -1278,10 +1257,6 @@ void SettingsController::OnBackToList() {
   }
 }
 
-
-
-
-
 void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   if (suppress_auto_save_) {
     return;
@@ -1320,7 +1295,6 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
 
   FlushSection("llm");
 }
-
 
 void SettingsController::OnChooseTheme(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
@@ -1363,7 +1337,6 @@ void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
   FlushPending();
   DirtyAll();
 }
-
 
 void SettingsController::OnChooseLanguage(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
@@ -1423,7 +1396,6 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
-
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
@@ -1455,7 +1427,6 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
   DirtyAll();
 }
 
-
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
@@ -1485,7 +1456,6 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
   FlushPending();
   DirtyAll();
 }
-
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
@@ -1526,7 +1496,6 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   DirtyAll();
 }
 
-
 void SettingsController::OnChooseAttachmentDownloadPolicy(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current = bindings_.attachment_download_policy.empty()
@@ -1556,19 +1525,6 @@ void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& 
   if (suppress_auto_save_) {
     return;
   }
-  bindings_.cas_library_rows.clear();
-  bindings_.cas_library_rows.reserve(ui_state_.cas_library_rows.size());
-  for (const CasLibraryRowUiState& row : ui_state_.cas_library_rows) {
-    bindings_.cas_library_rows.push_back({.content_id_hex = row.content_id_hex.c_str(),
-                                          .title = row.title.c_str(),
-                                          .detail = row.detail.c_str(),
-                                          .realm_label = row.realm_label.c_str(),
-                                          .pin_label = row.pin_label.c_str(),
-                                          .can_share_publicly = row.can_share_publicly,
-                                          .can_unpublish = row.can_unpublish,
-                                          .can_copy_tip = row.can_copy_tip});
-  }
-  bindings_.cas_library_empty_label = ui_state_.cas_library_empty_label.c_str();
   bindings_.attachment_download_policy = policy.c_str();
   bindings_.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(policy).c_str();
   PullBindingsToUiState();
@@ -1576,7 +1532,6 @@ void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& 
   FlushPending();
   DirtyAll();
 }
-
 
 void SettingsController::OnDrainPendingAttachmentMedia() {
   if (!commands_.drain_pending_attachment_media) {
@@ -1586,7 +1541,6 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
   commands_.drain_pending_attachment_media();
   UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
 }
-
 
 void SettingsController::OnClearDownloadedAttachments() {
   if (!shell_feedback_.show_confirm) {
@@ -1652,7 +1606,6 @@ void SettingsController::ApplySupportDiscovery() {
       discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
 }
 
-
 void SettingsController::OnOpenSupportChat() {
   if (!commands_.open_support_chat) {
     ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
@@ -1675,8 +1628,6 @@ void SettingsController::OpenNetworkSettings() {
   }
   OnSelectSection("network");
 }
-
-
 
 void SettingsController::ApplyReachability() {
   const bool mesh_ready = commands_.mesh_ready ? commands_.mesh_ready()
@@ -1873,7 +1824,6 @@ void SettingsController::ToggleTrustedRelays() {
   DirtyAll();
 }
 
-
 void SettingsController::ToggleShowNotifications() {
   bindings_.show_notifications =
       bindings_.show_notifications == "on" ? "off" : "on";
@@ -1930,14 +1880,6 @@ void SettingsController::ToggleAutoRenewRegistration() {
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();
 }
-
-
-
-
-
-
-
-
 
 void SettingsController::OnRegisterProfile() {
   CommitProfileNickname(/*show_toast=*/false);
@@ -2154,10 +2096,6 @@ void SettingsController::OnRemoveMcpServer(const int index) {
   MarkSectionDirty("integrations");
 }
 
-
-
-
-
 void SettingsController::OnResetToolPermissions() {
   if (!shell_feedback_.show_confirm) {
     return;
@@ -2219,7 +2157,6 @@ void SettingsController::OnClearUndeliveredOlderThan() {
       {});
 }
 
-
 void SettingsController::OnResetProfile() {
   if (!shell_feedback_.show_confirm_with_checkbox) {
     return;
@@ -2262,7 +2199,6 @@ void SettingsController::PerformResetProfile() {
     shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_profile_reset");
   }
 }
-
 
 void SettingsController::OnResetChats() {
   if (!shell_feedback_.show_confirm) {
@@ -2426,215 +2362,6 @@ void SettingsController::OnChangePin() {
   SyncBindingsFromSession();
   DirtyAll();
   UserFeedback::Ok(Tr("settings.security.pin_updated"));
-}
-
-
-void SettingsController::PushCasLibraryBindings() {
-  bindings_.cas_library_rows.clear();
-  bindings_.cas_library_rows.reserve(ui_state_.cas_library_rows.size());
-  for (const CasLibraryRowUiState& row : ui_state_.cas_library_rows) {
-    bindings_.cas_library_rows.push_back({.content_id_hex = row.content_id_hex.c_str(),
-                                          .title = row.title.c_str(),
-                                          .detail = row.detail.c_str(),
-                                          .realm_label = row.realm_label.c_str(),
-                                          .pin_label = row.pin_label.c_str(),
-                                          .can_share_publicly = row.can_share_publicly,
-                                          .can_unpublish = row.can_unpublish,
-                                          .can_copy_tip = row.can_copy_tip});
-  }
-  bindings_.cas_library_empty_label = ui_state_.cas_library_empty_label.c_str();
-}
-
-void SettingsController::RefreshCasLibrary() {
-  if (!commands_.list_cas_library) {
-    ui_state_.cas_library_rows.clear();
-    ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
-    return;
-  }
-  auto listed = commands_.list_cas_library(ui_state_.cas_library_filter);
-  ui_state_.cas_library_rows.clear();
-  if (!listed) {
-    ReportFailure(listed.error());
-    ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
-    return;
-  }
-  ui_state_.cas_library_rows.reserve(listed->size());
-  for (const CasLibraryItemView& row : *listed) {
-    ui_state_.cas_library_rows.push_back({.content_id_hex = row.content_id_hex,
-                                         .title = row.title,
-                                         .detail = row.detail,
-                                         .realm_label = row.realm_label,
-                                         .pin_label = row.pin_label,
-                                         .can_share_publicly = row.can_share_publicly,
-                                         .can_unpublish = row.can_unpublish,
-                                         .can_copy_tip = row.can_copy_tip});
-  }
-  ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
-}
-
-
-void SettingsController::OnSetCasLibraryFilter(const std::string& filter) {
-  ui_state_.cas_library_filter = filter.empty() ? "all" : filter;
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-}
-
-
-
-
-void SettingsController::OnShareCasPublicly(const int index) {
-  if (index < 0 || index >= static_cast<int>(ui_state_.cas_library_rows.size())) {
-    return;
-  }
-  const std::string content_id_hex = ui_state_.cas_library_rows[static_cast<size_t>(index)].content_id_hex;
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(Tr("settings.storage.library.share_confirm_title"),
-                               Tr("settings.storage.library.share_confirm_message"),
-                               [this, content_id_hex](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 if (!unlock_ensure_.ensure_unlocked) {
-                                   PerformShareCasPublicly(content_id_hex);
-                                   return;
-                                 }
-                                 unlock_ensure_.ensure_unlocked([this, content_id_hex](const bool unlocked) {
-                                   if (!unlocked) {
-                                     return;
-                                   }
-                                   PerformShareCasPublicly(content_id_hex);
-                                 });
-                               },
-                               {});
-}
-
-void SettingsController::OnUnpublishCas(const int index) {
-  if (index < 0 || index >= static_cast<int>(ui_state_.cas_library_rows.size())) {
-    return;
-  }
-  const std::string content_id_hex = ui_state_.cas_library_rows[static_cast<size_t>(index)].content_id_hex;
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(Tr("settings.storage.library.unpublish_confirm_title"),
-                               Tr("settings.storage.library.unpublish_confirm_message"),
-                               [this, content_id_hex](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 PerformUnpublishCas(content_id_hex);
-                               },
-                               {});
-}
-
-void SettingsController::PerformShareCasPublicly(const std::string& content_id_hex) {
-  if (!commands_.share_cas_publicly) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS share is not available"));
-    return;
-  }
-  if (auto shared = commands_.share_cas_publicly(content_id_hex); !shared) {
-    ReportFailure(shared.error());
-    return;
-  }
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-  UserFeedback::Ok(Tr("settings.storage.library.share_done"));
-}
-
-
-void SettingsController::PerformUnpublishCas(const std::string& content_id_hex) {
-  if (!commands_.unpublish_cas) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS unpublish is not available"));
-    return;
-  }
-  if (auto unpublished = commands_.unpublish_cas(content_id_hex); !unpublished) {
-    ReportFailure(unpublished.error());
-    return;
-  }
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-  UserFeedback::Ok(Tr("settings.storage.library.unpublish_done"));
-}
-
-
-
-
-
-void SettingsController::OnCopyCasTip(const int index) {
-  if (index < 0 || index >= static_cast<int>(ui_state_.cas_library_rows.size())) {
-    return;
-  }
-  const auto& row = ui_state_.cas_library_rows[static_cast<size_t>(index)];
-  if (!row.can_copy_tip) {
-    return;
-  }
-  const std::string tip = FormatCasPublicTip(row.content_id_hex);
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(tip.c_str());
-  }
-  UserFeedback::Ok(Tr("settings.storage.library.copy_tip_done"));
-}
-
-void SettingsController::OnFetchCasTip() {
-  if (!shell_feedback_.show_prompt) {
-    return;
-  }
-  shell_feedback_.show_prompt(
-      Tr("settings.storage.library.fetch_tip_title"),
-      Tr("settings.storage.library.fetch_tip_message"), "",
-      [this](const bool confirmed, std::string tip) {
-        if (!confirmed) {
-          return;
-        }
-        while (!tip.empty() && (tip.back() == '\n' || tip.back() == '\r' || tip.back() == ' ')) {
-          tip.pop_back();
-        }
-        if (tip.empty()) {
-          return;
-        }
-        shell_feedback_.show_prompt(
-            Tr("settings.storage.library.fetch_tip_peer_title"),
-            Tr("settings.storage.library.fetch_tip_peer_message"), "",
-            [this, tip](const bool peer_ok, std::string peer) {
-              if (!peer_ok) {
-                return;
-              }
-              while (!peer.empty() && (peer.back() == '\n' || peer.back() == '\r' || peer.back() == ' ')) {
-                peer.pop_back();
-              }
-              if (peer.empty()) {
-                return;
-              }
-              PerformFetchCasTip(tip, peer);
-            });
-      });
-}
-
-void SettingsController::PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id) {
-  if (!commands_.fetch_cas_public_tip) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS tip fetch is not available"));
-    return;
-  }
-  // Answered on UI once the mesh fetch lands (the singleton outlives the request).
-  commands_.fetch_cas_public_tip(tip, peer_relay_user_id, [this](Roe<void> fetched) {
-    if (!fetched) {
-      ReportFailure(fetched.error());
-      return;
-    }
-    RefreshCasLibrary();
-    PushCasLibraryBindings();
-    DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-    DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-    UserFeedback::Ok(Tr("settings.storage.library.fetch_tip_done"));
-  });
 }
 
 } // namespace pbr

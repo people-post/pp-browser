@@ -5,6 +5,7 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
+#include "gui/SettingsCasLibrary.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -49,16 +50,6 @@ public:
     bool enabled = true;
   };
 
-  struct CasLibraryRow {
-    ui::String content_id_hex;
-    ui::String title;
-    ui::String detail;
-    ui::String realm_label;
-    ui::String pin_label;
-    bool can_share_publicly = false;
-    bool can_unpublish = false;
-    bool can_copy_tip = false;
-  };
 
   SettingsController();
   ~SettingsController() override = default;
@@ -105,8 +96,6 @@ private:
     ui::String promoted_mcp_url;
     ui::String search_provider = "duckduckgo";
     std::vector<McpServerRow> mcp_servers;
-    std::vector<CasLibraryRow> cas_library_rows;
-    ui::String cas_library_empty_label;
     ui::String relay_base_url;
     ui::String directory_base_url;
     ui::String registration_base_url;
@@ -216,16 +205,6 @@ private:
   void ToggleCrashReports();
   void ToggleAutoRenewRegistration();
 
-  void RefreshCasLibrary();
-  void PushCasLibraryBindings();
-  void OnSetCasLibraryFilter(const std::string& filter);
-  void OnShareCasPublicly(int index);
-  void OnUnpublishCas(int index);
-  void OnCopyCasTip(int index);
-  void OnFetchCasTip();
-  void PerformShareCasPublicly(const std::string& content_id_hex);
-  void PerformUnpublishCas(const std::string& content_id_hex);
-  void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -321,6 +300,8 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   UnlockEnsurePorts unlock_ensure_;
+  SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
+                                  [this](const Error& err) { ReportFailure(err); }};
 
 };
 

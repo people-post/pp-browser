@@ -31,6 +31,7 @@ pp_browser_add_feature_library(pp_gui
     onboarding/OnboardingController.cpp
     ProfileSettingsSection.cpp
     SecuritySettingsSection.cpp
+    SettingsCasLibrary.cpp
     SettingsController.cpp
     shell/DataModelHost.cpp
     shell/DeferredStartup.cpp
