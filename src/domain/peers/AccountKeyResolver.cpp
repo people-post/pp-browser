@@ -44,6 +44,16 @@ void AccountKeyResolver::LoadKeptCards() {
   }
 }
 
+Roe<PeerCardRecord> AccountKeyResolver::AddAccountCard(const AccountCard& card, int64_t now_ms,
+                                                      const std::string& source) {
+  auto kept = cards_.AddAccountCard(card, now_ms, source);
+  if (!kept) {
+    return kept.error();
+  }
+  Remember(*kept);
+  return kept;
+}
+
 Roe<PeerCardRecord> AccountKeyResolver::AddKeyCard(const KeyCard& card, const std::string& source) {
   auto kept = cards_.AddKeyCard(card, source);
   if (!kept) {

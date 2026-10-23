@@ -55,6 +55,12 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
     }
     return Roe<void>();
   };
+  ports.share_contact = [&hub](const std::string& thread_id, const std::string& contact_id) -> Roe<void> {
+    if (auto sent = hub.ShareContact(thread_id, contact_id); !sent) {
+      return sent.error();
+    }
+    return {};
+  };
   ports.register_peer_keys_from_directory = [&hub](const mesh::DirectoryHit& hit) {
     hub.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
   };

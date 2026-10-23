@@ -21,6 +21,9 @@ Object RecordToJson(const PeerCardRecord& record) {
   }
   json.set("devices", ArrayValue(std::move(devices)));
   json.set("source", record.source);
+  if (record.newest_card) {
+    json.set("newest_card", AccountCardToJson(*record.newest_card));
+  }
   return json;
 }
 
@@ -41,6 +44,11 @@ Roe<PeerCardRecord> RecordFromJson(const Object& json) {
     }
   }
   record.source = json.getString("source").value_or("");
+  if (const Object* newest = json.getObject("newest_card")) {
+    if (auto card = AccountCardFromJson(*newest)) {
+      record.newest_card = std::move(card.value());
+    }
+  }
   return record;
 }
 
@@ -77,6 +85,7 @@ PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const Accou
     merged.nickname = card.nickname;
     merged.issued_at = card.issued_at;
     merged.source = source;
+    merged.newest_card = card;
   } else {
     add(merged.devices);
     add(card.devices);

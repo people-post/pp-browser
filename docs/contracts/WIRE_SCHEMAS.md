@@ -247,7 +247,8 @@ AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b6
 |-------|----------|-------|
 | `sub_version` | `u8` = **`2`** | `1` (local `contact_id`, `relay_user_id`, `avatar_url`, never sent) is retired |
 | `display_name` | **LenUtf8** | the sharer's name for the person — a label, not an identity |
-| `account_card` | **LenUtf8** | the person's account card (JSON); the receiver checks it before offering *Add* |
+| `card` | **LenUtf8** | the person's account card, or their key card when the sharer has none (JSON); checked before *Add* |
+| `relay_user_id` | **LenUtf8** | where the relay delivers to the person, when the sharer knows it (empty when not) — the sharer's word, unsigned: taken for a new contact only, never to reroute a known one |
 
 **`content_type = annotation`:**
 

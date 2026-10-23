@@ -161,6 +161,10 @@ public:
 
   // --- a message's buttons (the open chat) ------------------------------------------------------
 
+  /** *Add to contacts* on a contact card in the open chat: the contact's id (added, or already known). */
+  Roe<std::string> AddContactFromCard(const std::string& message_id);
+  /** *Share contact*: contact `contact_id` as a card into chat `thread_id`. */
+  Roe<void> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** React with `emoji` on a message of the open chat, or take this device's reaction back. */
   Roe<void> ToggleReaction(const std::string& message_id, const std::string& emoji);
   Roe<void> DeleteForMe(const std::string& message_id);

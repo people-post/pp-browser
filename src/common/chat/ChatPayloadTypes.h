@@ -17,11 +17,14 @@ struct ChatAnnotationFields {
   std::string value;
 };
 
+/** Someone's contact, shared in a chat (WIRE_SCHEMAS.md contact_card sub_version 2, ACCOUNT_CARD.md). */
 struct ChatContactCardFields {
-  std::string contact_id;
+  /** The sharer's name for the person: a label, not an identity. */
   std::string display_name;
+  /** The person's account card — or key card when the sharer has none — as JSON; checked before *Add*. */
+  std::string card_json;
+  /** Where the relay delivers to the person, when the sharer knows it (a hint; empty when not). */
   std::string relay_user_id;
-  std::string avatar_url;
 };
 
 struct ChatCryptoTxFields {

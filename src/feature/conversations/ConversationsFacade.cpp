@@ -10,6 +10,7 @@
 #include "lib/people/LocalAccountBackup.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
@@ -241,6 +242,25 @@ void ConversationsFacade::MaybeTailSync(const std::string& thread_id) { hub_.Mes
 Roe<ThreadMessage> ConversationsFacade::SendUserMessage(const std::string& thread_id, const std::string& text,
                                                     SendRelayOptions opts) {
   return hub_.MeshMessaging().SendUserMessage(thread_id, text, opts);
+}
+
+Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
+  return hub_.ShareContact(thread_id, contact_id);
+}
+
+Roe<Contact> ConversationsFacade::AddContactFromCard(const std::string& thread_id, const std::string& message_id) {
+  if (!hub_.IsInitialized()) {
+    return Error("Messaging not ready");
+  }
+  auto message = GetMessage(thread_id, message_id);
+  if (!message || !*message || (*message)->content_type != ChatContentType::ContactCard) {
+    return Error("Not a contact card");
+  }
+  auto fields = ChatPayloadCodec::DecodeContactCardJson((*message)->payload_json);
+  if (!fields) {
+    return fields.error();
+  }
+  return hub_.ContactCards().Add(*fields, util::NowUnixMs());
 }
 
 Roe<ThreadMessage> ConversationsFacade::SendReaction(const std::string& thread_id, const std::string& target_message_id,

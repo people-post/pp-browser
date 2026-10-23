@@ -108,6 +108,12 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   more.quick = true;
   actions.push_back(std::move(more));
 
+  // A contact card: its person can be added (the card is checked first).
+  if (host_.IsContactCard(message_id)) {
+    actions.push_back({"add_contact_from_card", Tr("chat.menu.add_to_contacts"), nullptr,
+                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/contacts.svg"});
+  }
+
   // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
   std::string text;
   if (request.context) {

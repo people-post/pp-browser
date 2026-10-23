@@ -339,6 +339,28 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   return sheet;
 }
 
+Roe<std::string> ChatPresenter::AddContactFromCard(const std::string& message_id) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  if (thread_id.empty() || message_id.empty()) {
+    return Error("No contact card to add");
+  }
+  auto contact = facade_->AddContactFromCard(thread_id, message_id);
+  if (!contact) {
+    return contact.error();
+  }
+  return contact->id;
+}
+
+Roe<void> ChatPresenter::ShareContact(const std::string& thread_id, const std::string& contact_id) {
+  if (!facade_ || thread_id.empty() || contact_id.empty()) {
+    return Error("Nothing to share");
+  }
+  if (auto sent = facade_->ShareContact(thread_id, contact_id); !sent) {
+    return sent.error();
+  }
+  return {};
+}
+
 Roe<void> ChatPresenter::ToggleReaction(const std::string& message_id, const std::string& emoji) {
   const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
   const std::string key = NormalizeEmojiKey(emoji);

@@ -53,6 +53,8 @@ struct MessagingContactsPorts {
   std::function<void(const Contact& contact)> register_contact_direct_endpoints;
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;
   std::function<Roe<void>(const std::string& thread_id)> ensure_psk_generated;
+  /** Share a contact into a chat as a contact card. */
+  std::function<Roe<void>(const std::string& thread_id, const std::string& contact_id)> share_contact;
   /** The keys a directory entry carries for its account (each kept only when it proves to be the account's). */
   std::function<void(const mesh::DirectoryHit& hit)> register_peer_keys_from_directory;
 

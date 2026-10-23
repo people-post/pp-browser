@@ -20,6 +20,7 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
+#include "feature/conversations/ContactCardExchange.h"
 #include "lib/messaging/PeerCardStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
@@ -1197,6 +1198,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   account_keys_->LoadKeptCards();
+  contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
@@ -2649,6 +2651,7 @@ void ConversationsHub::Shutdown() {
   group_invite_gate_.reset();
   group_roster_.reset();
   thread_prefs_.reset();
+  contact_cards_.reset();
   account_keys_.reset();
   peer_cards_.reset();
   // Participants free the rest (media engine, key and session stores) after DEK unregister above.
@@ -2729,6 +2732,31 @@ IPskSessionStore* ConversationsHub::PskStore() {
 
 ProfileSecretsEngine* ConversationsHub::Secrets() {
   return secrets_;
+}
+
+ContactCardExchange& ConversationsHub::ContactCards() {
+  return *contact_cards_;
+}
+
+Roe<ThreadMessage> ConversationsHub::ShareContact(const std::string& thread_id, const std::string& contact_id) {
+  if (!IsInitialized() || !contact_cards_ || !mesh_messaging_) {
+    return Error("Messaging not ready");
+  }
+  auto card = contact_cards_->CardFor(contact_id);
+  if (!card) {
+    return card.error();
+  }
+  auto thread = store_->GetThread(thread_id);
+  if (!thread || !*thread) {
+    return Error("Thread not found");
+  }
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::ContactCard;
+  opts.payload_json = ChatPayloadCodec::ContactCardFieldsToJson(*card);
+  if ((*thread)->kind == ThreadKind::Group) {
+    return mesh_messaging_->SendGroupMessage(thread_id, card->display_name, opts);
+  }
+  return mesh_messaging_->SendUserMessage(thread_id, card->display_name, opts);
 }
 
 mesh::IDirectoryClient& ConversationsHub::Directory() {

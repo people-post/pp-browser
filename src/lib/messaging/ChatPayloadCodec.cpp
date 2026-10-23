@@ -62,6 +62,7 @@ constexpr uint8_t kContentTypeCryptoTx = 4;
 constexpr uint8_t kContentTypeAttachment = 5;
 
 constexpr uint8_t kSubVersion = 1;
+constexpr uint8_t kContactCardSubVersion = 2;
 
 void WriteLenUtf8(OutputArchive& ar, const std::string& value) {
   WireLenUtf8 field{value};
@@ -123,10 +124,7 @@ std::string PayloadJsonForMessage(const ThreadMessage& message) {
     }
   } else if (message.content_type == ChatContentType::ContactCard) {
     if (auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json)) {
-      payload.set("contact_id", fields->contact_id);
-      payload.set("display_name", fields->display_name);
-      payload.set("relay_user_id", fields->relay_user_id);
-      payload.set("avatar_url", fields->avatar_url);
+      payload = *TryParseObject(ChatPayloadCodec::ContactCardFieldsToJson(*fields));
     }
   } else if (message.content_type == ChatContentType::CryptoTx) {
     if (auto fields = ChatPayloadCodec::DecodeCryptoTxJson(message.payload_json)) {
@@ -171,11 +169,10 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeAnnotation(const ChatAnnotatio
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeContactCard(const ChatContactCardFields& fields,
                                                               const std::string& text) {
   return EncodePayloadBytes(kContentTypeContactCard, text, [&](OutputArchive& ar) {
-    ar & kSubVersion;
-    WriteLenUtf8(ar, fields.contact_id);
+    ar & kContactCardSubVersion;
     WriteLenUtf8(ar, fields.display_name);
+    WriteLenUtf8(ar, fields.card_json);
     WriteLenUtf8(ar, fields.relay_user_id);
-    WriteLenUtf8(ar, fields.avatar_url);
   });
 }
 
@@ -315,7 +312,9 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
 
   uint8_t sub_version = 0;
   ar & sub_version;
-  if (ar.failed() || sub_version != kSubVersion) {
+  // A contact card is sub_version 2 (its 1, never sent, is retired); every other type is 1.
+  const uint8_t expected_sub_version = content_type == kContentTypeContactCard ? kContactCardSubVersion : kSubVersion;
+  if (ar.failed() || sub_version != expected_sub_version) {
     return Error("Unsupported ChatPayload sub-version");
   }
 
@@ -349,16 +348,10 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
   if (content_type == kContentTypeContactCard) {
     message.content_type = ChatContentType::ContactCard;
     ChatContactCardFields fields;
-    fields.contact_id = ReadLenUtf8(ar);
     fields.display_name = ReadLenUtf8(ar);
+    fields.card_json = ReadLenUtf8(ar);
     fields.relay_user_id = ReadLenUtf8(ar);
-    fields.avatar_url = ReadLenUtf8(ar);
-    Object payload;
-    payload.set("contact_id", fields.contact_id);
-    payload.set("display_name", fields.display_name);
-    payload.set("relay_user_id", fields.relay_user_id);
-    payload.set("avatar_url", fields.avatar_url);
-    message.payload_json = DumpJson(payload);
+    message.payload_json = ContactCardFieldsToJson(fields);
     return ReadExactEnd(ar);
   }
 
@@ -425,14 +418,27 @@ Roe<ChatContactCardFields> ChatPayloadCodec::DecodeContactCardJson(const std::st
     return Error("Invalid contact_card JSON");
   }
   ChatContactCardFields fields;
-  fields.contact_id = json->getString("contact_id").value_or("");
   fields.display_name = json->getString("display_name").value_or("");
+  if (const Object* card = json->getObject("card")) {
+    fields.card_json = DumpJson(*card);
+  }
   fields.relay_user_id = json->getString("relay_user_id").value_or("");
-  fields.avatar_url = json->getString("avatar_url").value_or("");
-  if (fields.contact_id.empty() || fields.display_name.empty()) {
+  if (fields.display_name.empty() || fields.card_json.empty()) {
     return Error("Invalid contact_card payload");
   }
   return fields;
+}
+
+std::string ChatPayloadCodec::ContactCardFieldsToJson(const ChatContactCardFields& fields) {
+  Object payload;
+  payload.set("display_name", fields.display_name);
+  if (auto card = TryParseObject(fields.card_json)) {
+    payload.set("card", ObjectValue(std::move(*card)));
+  }
+  if (!fields.relay_user_id.empty()) {
+    payload.set("relay_user_id", fields.relay_user_id);
+  }
+  return DumpJson(payload);
 }
 
 Roe<ChatCryptoTxFields> ChatPayloadCodec::DecodeCryptoTxJson(const std::string& payload_json) {

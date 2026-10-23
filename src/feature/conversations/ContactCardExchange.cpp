@@ -1,0 +1,114 @@
+#include "feature/conversations/ContactCardExchange.h"
+
+#include "common/ValueJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "lib/messaging/AccountCard.h"
+
+#include <utility>
+
+namespace pbr {
+
+namespace {
+
+std::string IdOfKind(const Contact& contact, mesh::ContactIdKind kind) {
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == kind && !id.value.empty()) {
+      return id.value;
+    }
+  }
+  return {};
+}
+
+} // namespace
+
+ContactCardExchange::ContactCardExchange(ContactsStore& contacts, AccountKeyResolver& keys)
+    : contacts_(contacts), keys_(keys) {
+  redirectLogger("ContactCardExchange");
+}
+
+Roe<ChatContactCardFields> ContactCardExchange::CardFor(const std::string& contact_id) {
+  auto found = contacts_.Get(contact_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!*found) {
+    return Error("Contact not found");
+  }
+  const Contact& contact = **found;
+  const std::string account_id = IdOfKind(contact, mesh::ContactIdKind::Account);
+  if (account_id.empty()) {
+    return Error("Contact has no account to share");
+  }
+  auto kept = keys_.Kept(account_id);
+  if (!kept || !*kept) {
+    // Not met yet: the directory's keys, when there is one, are as good as any.
+    auto resolved = keys_.Resolve(account_id);
+    if (!resolved) {
+      return Error("No card for this contact yet");
+    }
+    kept = std::optional<PeerCardRecord>(std::move(resolved.value()));
+  }
+  ChatContactCardFields fields;
+  fields.display_name = contact.local.display_name.empty() ? contact.remote.nickname : contact.local.display_name;
+  if (fields.display_name.empty()) {
+    fields.display_name = account_id;
+  }
+  fields.card_json = DumpJson((*kept)->newest_card ? AccountCardToJson(*(*kept)->newest_card)
+                                                   : KeyCardToJson((*kept)->keys));
+  fields.relay_user_id = IdOfKind(contact, mesh::ContactIdKind::RelayUser);
+  return fields;
+}
+
+Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t now_ms) {
+  auto json = TryParseObject(card.card_json);
+  if (!json) {
+    return Error("contact card: not a card");
+  }
+  // An account card when it is signed as one, else a key card.
+  PeerCardRecord kept;
+  if (json->contains("card_signature_b64")) {
+    auto account_card = AccountCardFromJson(*json);
+    if (!account_card) {
+      return account_card.error();
+    }
+    auto added = keys_.AddAccountCard(*account_card, now_ms, "contact_card");
+    if (!added) {
+      return added.error();
+    }
+    kept = std::move(added.value());
+  } else {
+    auto key_card = KeyCardFromJson(*json);
+    if (!key_card) {
+      return key_card.error();
+    }
+    auto added = keys_.AddKeyCard(*key_card, "contact_card");
+    if (!added) {
+      return added.error();
+    }
+    kept = std::move(added.value());
+  }
+
+  const std::string& account_id = kept.keys.account_id;
+  auto existing = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
+  if (!existing) {
+    return existing.error();
+  }
+  if (*existing) {
+    return **existing;  // known already: its keys are refreshed above, its route stays its own
+  }
+  mesh::DirectoryHit hit;
+  hit.hit_id = account_id;
+  hit.account_id = account_id;
+  hit.display_name = card.display_name;
+  hit.nickname = kept.nickname.empty() ? card.display_name : kept.nickname;
+  hit.ids = {{mesh::ContactIdKind::Account, account_id, true}};
+  if (!card.relay_user_id.empty()) {
+    hit.ids.push_back({mesh::ContactIdKind::RelayUser, card.relay_user_id, false});
+  }
+  for (const std::string& peer_id : kept.devices) {
+    hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = peer_id});
+  }
+  return contacts_.AddFromDirectoryHit(hit);
+}
+
+} // namespace pbr

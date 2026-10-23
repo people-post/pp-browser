@@ -55,6 +55,10 @@ public:
   virtual bool IsDeletedMessage(const std::string& message_id) const = 0;
   /** What the user reads in a message of the active thread ("" when not found). */
   virtual std::string MessagePlainText(const std::string& message_id) const = 0;
+  /** A contact card (someone's contact, shared in the chat). */
+  virtual bool IsContactCard(const std::string& message_id) const = 0;
+  /** *Add to contacts* on a contact card: checks it, adds the person, shows them. */
+  virtual void AddContactFromCard(const std::string& message_id) = 0;
 };
 
 /**

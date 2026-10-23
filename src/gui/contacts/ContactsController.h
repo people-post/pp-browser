@@ -146,7 +146,7 @@ private:
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
   void AddContactFromHit(const mesh::DirectoryHit& hit);
   void OnCopyId();
-  void OnShareContact();
+  void OnShareContact(ui::Vector2i position);
   void OnSetTrust(const std::string& trust);
   void OnRemoveContact();
   void OnOpenThread(const std::string& thread_id);

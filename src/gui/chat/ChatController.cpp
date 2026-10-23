@@ -1471,6 +1471,29 @@ void ChatController::DeleteMessageForEveryone(const std::string& message_id) {
   });
 }
 
+bool ChatController::IsContactCard(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  return found && found->has_value() && (*found)->content_type == ChatContentType::ContactCard;
+}
+
+void ChatController::AddContactFromCard(const std::string& message_id) {
+  auto added = presenter_.AddContactFromCard(message_id);
+  if (!added) {
+    UserFeedback::Fail(added.error().message);
+    return;
+  }
+  if (contacts_notify_.refresh) {
+    contacts_notify_.refresh();
+  }
+  if (contacts_notify_.select_contact) {
+    contacts_notify_.select_contact(*added);
+  }
+  NotifySurfaceChanged();
+}
+
 bool ChatController::IsDeletedMessage(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return false;

@@ -27,8 +27,12 @@ public:
 
   /** Fills the key stores from every kept card (at unlock). */
   void LoadKeptCards();
+  /** What is kept for `account_id` (no lookup). */
+  Roe<std::optional<PeerCardRecord>> Kept(const std::string& account_id) { return cards_.Get(account_id); }
   /** The keys of `account_id`: a kept card, else the directory's entry, kept as a card. */
   Roe<PeerCardRecord> Resolve(const std::string& account_id);
+  /** Keeps an account card that came another way (a contact card, a device, a locator's fetch). */
+  Roe<PeerCardRecord> AddAccountCard(const AccountCard& card, int64_t now_ms, const std::string& source);
   /** Keeps a key card that came another way (a first message's sender_keys, a contact card). */
   Roe<PeerCardRecord> AddKeyCard(const KeyCard& card, const std::string& source);
   /** Keeps the keys a directory entry carries for its account (search hit, contact sync). */

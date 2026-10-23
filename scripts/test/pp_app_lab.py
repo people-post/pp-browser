@@ -1183,6 +1183,38 @@ def scenario_first_message_brings_keys(lab):
     assert_idle(a, b)
 
 
+def scenario_friend_shares_a_contact(lab):
+    """Alice has no directory. Carol, who knows Bob, shares his contact card in her chat with Alice;
+    Alice adds Bob from it (his keys checked against his account, his route from Carol's card) and they
+    talk, with no lookup on Alice's side."""
+    c = lab.user("carol")
+    b = lab.user("bob")
+    a = lab.user("alice", directory=False)
+    for u in (a, b, c):
+        u.wait_mesh()
+    c.cmd("open_chat", account=b.account)  # Carol knows Bob (her contacts)
+    c_thread = c.cmd("open_chat", account=a.account)["thread"]
+    hello = c.cmd("send", thread=c_thread, text="meet bob")["message_id"]
+    a_thread = wait_for(lambda: thread_with(a, c.account), 30, "alice: carol's chat")
+    wait_for(lambda: transcript_row(a, a_thread, hello), 20, "alice: carol's message")
+    c.cmd("share_contact", thread=c_thread, account=b.account)
+
+    def card_row():
+        for row in a.cmd("transcript", thread=a_thread)["rows"]:
+            if row["type"] == "contact_card":
+                return row
+        return None
+    card = wait_for(card_row, 20, "alice: bob's contact card")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("add_from_card", message=card["id"])
+    ab_thread = a.cmd("chat_with", account=b.account)["thread"]
+    first = a.cmd("send", thread=ab_thread, text="hi bob, carol sent me your card")["message_id"]
+    ba_thread = wait_for(lambda: thread_with(b, a.account), 30, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, ba_thread, first), 20, "bob: alice's message")
+    reply = b.cmd("send", thread=ba_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, ab_thread, reply), 20, "alice: bob's answer")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1537,6 +1569,7 @@ SCENARIOS = [
     ("chat_message_actions", scenario_chat_message_actions),
     ("chat_quote_reply", scenario_chat_quote_reply),
     ("first_message_brings_keys", scenario_first_message_brings_keys),
+    ("friend_shares_a_contact", scenario_friend_shares_a_contact),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

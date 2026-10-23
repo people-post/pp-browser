@@ -677,9 +677,9 @@ void ContactsController::CopyIdCallback(ui::DataModelHandle /*model*/, ui::Event
   Instance().OnCopyId();
 }
 
-void ContactsController::ShareContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void ContactsController::ShareContactCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                               const ui::VariantList& /*args*/) {
-  Instance().OnShareContact();
+  Instance().OnShareContact(MenuPositionBelowEvent(ev));
 }
 
 void ContactsController::SetTrustCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1063,38 +1063,45 @@ void ContactsController::OnCopyId() {
   ShowToast(Tr("contacts.toast.id_copied", {{"label", label}}));
 }
 
-void ContactsController::OnShareContact() {
-  if (selected_.id.empty()) {
+// Share: the contact's card into one of your chats (ACCOUNT_CARD.md) — the person can add them with no
+// directory; the direct chats, most recent first, not the contact's own.
+void ContactsController::OnShareContact(const ui::Vector2i position) {
+  if (selected_.id.empty() || !contacts_ports_.list_threads || !contacts_ports_.share_contact) {
     return;
   }
-  std::string invite = selected_.display_name.c_str();
-  if (invite.empty()) {
-    invite = selected_.nickname.c_str();
-  }
-  const std::string relay = selected_.relay_id.c_str();
-  const std::string peer = selected_.peer_id.c_str();
-  if (!peer.empty()) {
-    if (!invite.empty()) {
-      invite += " (" + peer + ")";
-    } else {
-      invite = peer;
+  constexpr size_t kMaxShareTargets = 30;
+  const std::string contact_id = selected_.id.c_str();
+  std::vector<Thread> targets;
+  if (auto threads = contacts_ports_.list_threads()) {
+    for (const Thread& thread : *threads) {
+      const bool own_chat = std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(),
+                                      contact_id) != thread.participant_contact_ids.end();
+      if (thread.kind == ThreadKind::Direct && !own_chat && !(thread.local_title.empty() && thread.title.empty())) {
+        targets.push_back(thread);
+      }
     }
   }
-  if (!relay.empty()) {
-    if (!invite.empty()) {
-      invite += " [" + relay + "]";
-    } else {
-      invite = relay;
-    }
+  std::sort(targets.begin(), targets.end(), [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  if (targets.size() > kMaxShareTargets) {
+    targets.resize(kMaxShareTargets);
   }
-  if (invite.empty()) {
-    ShowToast(Tr("contacts.toast.nothing_share"));
+  if (targets.empty()) {
+    ShowToast(Tr("contacts.share.no_chats"));
     return;
   }
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(invite.c_str());
+  std::vector<ContextMenuAction> actions;
+  for (const Thread& thread : targets) {
+    const std::string name = thread.local_title.empty() ? thread.title : thread.local_title;
+    actions.push_back({"share_contact_to_" + thread.id, name, nullptr,
+                       [share = contacts_ports_.share_contact, thread_id = thread.id, contact_id, name]() {
+                         if (auto sent = share(thread_id, contact_id); !sent) {
+                           UserFeedback::Fail(sent.error().message);
+                           return;
+                         }
+                         ContactsController::Instance().ShowToast(Tr("contacts.share.sent", {{"name", name}}));
+                       }});
   }
-  ShowToast(Tr("contacts.toast.copied"));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {

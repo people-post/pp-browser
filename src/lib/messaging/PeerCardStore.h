@@ -26,6 +26,8 @@ struct PeerCardRecord {
   std::vector<std::string> devices;
   /** Where the newest information came from (directory, envelope, contact_card, device, locator). */
   std::string source;
+  /** The newest signed account card as received, to pass on (a contact card); none while only key cards are known. */
+  std::optional<AccountCard> newest_card;
 
   bool operator==(const PeerCardRecord&) const = default;
 };

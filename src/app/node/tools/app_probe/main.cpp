@@ -381,6 +381,42 @@ public:
       ListThreads(id);
     } else if (cmd == "transcript") {
       Transcript(id, request->getString("thread").value_or(""));
+    } else if (cmd == "share_contact") {
+      // *Share contact* (ChatPresenter): contact `account` as a card into chat `thread`.
+      auto contact = facade_->FindContactByIdentity(request->getString("account").value_or(""),
+                                                    mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      auto done = chats_.ShareContact(request->getString("thread").value_or(""), (*contact)->id);
+      done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
+    } else if (cmd == "add_from_card") {
+      // *Add to contacts* on a contact card in the open chat (ChatPresenter): the card checked, keys kept.
+      auto added = chats_.AddContactFromCard(request->getString("message").value_or(""));
+      if (!added) {
+        ReplyError(id, added.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("contact", *added);
+      Emit(out);
+    } else if (cmd == "chat_with") {
+      // A direct chat with contact `account`, as from the contacts screen (no directory lookup).
+      auto contact = facade_->FindContactByIdentity(request->getString("account").value_or(""),
+                                                    mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      auto thread = facade_->FindOrCreateDirectThread((*contact)->id, ThreadChannel::E2ePublic);
+      if (!thread) {
+        ReplyError(id, thread.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("thread", thread->id);
+      Emit(out);
     } else if (cmd == "react") {
       // A message's reaction button in the open chat (ChatPresenter): adds, or takes ours back.
       auto done = chats_.ToggleReaction(request->getString("message").value_or(""),

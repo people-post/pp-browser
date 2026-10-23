@@ -194,12 +194,22 @@ std::string ContactCardRml(const ThreadMessage& message) {
   auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
   const std::string name =
       fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
-  const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
+  // The person's own name and Account ID, from the card (checked before *Add*; shown escaped).
+  std::string nickname;
+  std::string account_id;
+  if (fields) {
+    if (auto card = TryParseObject(fields->card_json)) {
+      nickname = card->getString("nickname").value_or("");
+      account_id = card->getString("account_id").value_or("");
+    }
+  }
   std::string html = "<div class=\"chat-card chat-contact-card\">";
-  // The card's avatar_url is a peer-supplied string; it is never used as a local image path.
   html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(name) + "</h3>";
-  if (!relay.empty()) {
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";
+  if (!nickname.empty() && nickname != name) {
+    html += "<p class=\"text\">" + StructuredTextParser::EscapeText(nickname) + "</p>";
+  }
+  if (!account_id.empty()) {
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(account_id) + "</p>";
   }
   html += "</div>";
   return html;

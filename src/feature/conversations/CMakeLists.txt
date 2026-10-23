@@ -3,6 +3,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     ChatPresenter.cpp
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
+    ContactCardExchange.cpp
     GroupMembershipWorkflow.cpp
     InboxController.cpp
     MessageRouter.cpp

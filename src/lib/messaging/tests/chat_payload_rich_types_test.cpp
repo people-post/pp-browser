@@ -64,8 +64,8 @@ TEST(ChatPayloadRichTypesTest, ContactCardRoundTrip) {
   using namespace pbr;
 
   ChatContactCardFields fields;
-  fields.contact_id = "contact:abc";
   fields.display_name = "Alice";
+  fields.card_json = R"({"account_id":"account:alice","signing_public_key_b64":"c2ln"})";
   fields.relay_user_id = "relay:alice";
 
   auto bytes = ChatPayloadCodec::EncodeContactCard(fields, "Alice");
@@ -75,6 +75,17 @@ TEST(ChatPayloadRichTypesTest, ContactCardRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(message));
   EXPECT_EQ(message->content_type, ChatContentType::ContactCard);
   EXPECT_EQ(message->text, "Alice");
+  auto decoded = ChatPayloadCodec::DecodeContactCardJson(message->payload_json);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->display_name, "Alice");
+  EXPECT_EQ(decoded->relay_user_id, "relay:alice");
+  EXPECT_NE(decoded->card_json.find("account:alice"), std::string::npos);
+
+  ChatContactCardFields no_card = fields;
+  no_card.card_json.clear();
+  auto without = ChatPayloadCodec::EncodeContactCard(no_card, "Alice");
+  ASSERT_TRUE(without);
+  EXPECT_FALSE(ChatPayloadValidator::DecodeValidated(*without)) << "a contact card carries the person's card";
 }
 
 TEST(ChatPayloadRichTypesTest, CryptoTxRoundTrip) {

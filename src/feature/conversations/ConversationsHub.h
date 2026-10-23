@@ -72,6 +72,7 @@ namespace pbr {
 class IPskSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
+class ContactCardExchange;
 class PeerCardStore;
 class SqlitePskSessionStore;
 
@@ -232,6 +233,9 @@ public:
   IPskSessionStore* PskStore();
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
+  ContactCardExchange& ContactCards();
+  /** Share contact `contact_id` into chat `thread_id` as a contact card (ACCOUNT_CARD.md). */
+  Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** False when no HTTP directory provider is configured (Directory() must not be called then). */
   bool HasDirectory() const { return directory_.Configured(); }
   DirectoryShadowCache& DirectoryShadows();
@@ -447,6 +451,8 @@ private:
   std::unique_ptr<PeerCardStore> peer_cards_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
+  /** Contacts passed hand to hand (contact cards). */
+  std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;

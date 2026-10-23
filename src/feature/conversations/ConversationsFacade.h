@@ -122,6 +122,10 @@ public:
   // --- P2P ------------------------------------------------------------------
   void MaybeTailSync(const std::string& thread_id);
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
+  Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
+  /** *Add* on a contact card in a chat: checks the card, keeps the account's keys, adds (or finds) the contact. */
+  Roe<Contact> AddContactFromCard(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
                                   const std::string& emoji);
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
