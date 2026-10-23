@@ -1,9 +1,9 @@
-#include "feature/conversations/AttachmentFetch.h"
+#include "domain/attachments/AttachmentFetch.h"
 
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "feature/conversations/ChatBlobRequest.h"
+#include "domain/attachments/ChatBlobRequest.h"
 #include "lib/net/HttpClient.h"
 #include "common/PbrCompat.h"
 

@@ -1,6 +1,6 @@
-#include "feature/conversations/AttachmentClient.h"
+#include "domain/attachments/AttachmentClient.h"
 
-#include "feature/conversations/ChatBlobRequest.h"
+#include "domain/attachments/ChatBlobRequest.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <algorithm>

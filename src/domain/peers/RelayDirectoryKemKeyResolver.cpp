@@ -1,4 +1,4 @@
-#include "feature/conversations/RelayDirectoryKemKeyResolver.h"
+#include "domain/peers/RelayDirectoryKemKeyResolver.h"
 
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"

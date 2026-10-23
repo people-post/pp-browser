@@ -23,7 +23,7 @@
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "feature/conversations/PeerDisplaySources.h"
+#include "domain/peers/PeerDisplaySources.h"
 #include "lib/messaging/PskSessionCoordinator.h"
 #include "mesh/reachability/Reachability.h"
 

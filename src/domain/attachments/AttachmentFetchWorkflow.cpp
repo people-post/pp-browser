@@ -1,5 +1,5 @@
-#include "feature/conversations/AttachmentFetchWorkflow.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
+#include "domain/attachments/AttachmentContent.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -8,7 +8,7 @@
 #include "lib/content/CasStore.h"
 #include "lib/messaging/AiImageRef.h"
 #include "lib/messaging/ChatPayloadCodec.h"
-#include "feature/conversations/AttachmentFetch.h"
+#include "domain/attachments/AttachmentFetch.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <sodium.h>

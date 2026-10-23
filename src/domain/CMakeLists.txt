@@ -7,11 +7,20 @@ add_subdirectory(registration)
 add_subdirectory(node)
 add_subdirectory(call_media)
 
+# The rest need the full product libs (not in headless configures).
+if(NOT PP_BROWSER_HEADLESS)
+  add_subdirectory(peers)
+  add_subdirectory(attachments)
+endif()
+
 set(_pp_domain_modules
   pp_domain_registration
   pp_domain_node
   pp_domain_call_media
 )
+if(NOT PP_BROWSER_HEADLESS)
+  list(APPEND _pp_domain_modules pp_domain_peers pp_domain_attachments)
+endif()
 
 # Aggregate for this build's domain modules (mirrors pp_lib).
 add_library(pp_domain INTERFACE)

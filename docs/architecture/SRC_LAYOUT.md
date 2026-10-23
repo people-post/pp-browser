@@ -18,7 +18,7 @@
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every lib peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
 | **Lib** | [`src/lib/`](../../src/lib/) | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui) — single-purpose engines/stores/clients |
-| **Domain** | [`src/domain/`](../../src/domain/) | **Shared capabilities** composed from libs: registration, node services, call media (next: delivery, attachments, directory) — no hub / session lifecycle, Rml-free |
+| **Domain** | [`src/domain/`](../../src/domain/) | **Shared capabilities** composed from libs: registration, node services, call media, peers, attachments — no hub / session lifecycle, Rml-free |
 | Feature | [`src/feature/`](../../src/feature/) | **Top-level features**: hubs, sessions, presenters' decisions; **wires** common contracts to concrete lib / domain types (Rml-free at module edge) |
 | **GUI** | [`src/gui/`](../../src/gui/) | Product Rml/SDL presenters + shell ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); name **gui** avoids clash with `lib/ui` |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
@@ -126,7 +126,7 @@ crypto
 | `lib/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec and its system-control family (`CallControlFamily`), session and media-key stores and what a call's rows say (`CallSessionQueries`: who is in it, a peer's roster applied), the media key exchange (`CallMediaKeyExchange`, its control-lane sends through a port), the call-to-media seat (`CallMediaSeat`), the calls on this device and what they show (`LiveCalls`: call state, media Status, path gates), pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `CallPathMobility`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
 | `lib/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
 | `lib/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
-| `lib/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`feature/conversations/AttachmentContent`, `ChatBlobContentSource`) |
+| `lib/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`domain/attachments/AttachmentContent`, `ChatBlobContentSource`) |
 | `lib/net/` | HTTP client, service clients (no people/messaging policy) |
 | `lib/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `lib/ai/` | LLM client, turn types, parsers, payload plan builder; turn planning and the Brief turn runner (`TurnPlanner`, `BriefTurnRunner`); tool permissions and their prompt (`ToolPermissionPolicy`, `ToolPermissionPrompt`, `ParkedApproval`); `conversation/`, `mcp/` and `tools/` (web search, MCP tool adapters, the registry built from them) sublibs |
@@ -161,6 +161,8 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/registration/` | Registration finish / renew / nickname (`pp_domain_registration`) — **headless**, linked by pp-node |
 | `domain/node/` | Node-role mesh services (`pp_domain_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
 | `domain/call_media/` | pp-browser's realtime protocol on the mesh (`pp_domain_call_media`): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it; headless (pp-call-probe links it) |
+| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames and display names, relay-directory signing / KEM keys, profile icons; the people → messaging bridges |
+| `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
 
 The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
 

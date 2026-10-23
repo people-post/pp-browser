@@ -23,7 +23,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Files | Why |
 |-------|-----|
-| `feature/conversations/ProfileIconFetch.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
+| `domain/peers/ProfileIconFetch.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
 
 **Not doing for f1–f3:** `lib/calls`, `domain/psk`, new `pp_lib_*` targets, or a messaging internal subfolder migration.
 

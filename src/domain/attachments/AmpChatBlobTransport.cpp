@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpChatBlobTransport.h"
+#include "domain/attachments/AmpChatBlobTransport.h"
 
 #include "lib/messaging/PeerRequestAuth.h"
 
@@ -7,7 +7,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/content/CasLibrary.h"
 #include "lib/messaging/ChatBlobResponder.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "common/chat/MessagingJson.h"
 #include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"

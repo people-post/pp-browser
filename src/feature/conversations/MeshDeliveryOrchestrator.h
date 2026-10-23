@@ -14,7 +14,7 @@
 #include "lib/messaging/PeerSigningKeyStore.h"
 #include "lib/messaging/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
-#include "feature/conversations/DirectoryShadowCache.h"
+#include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
 #include "common/chat/IDirectMessageClient.h"

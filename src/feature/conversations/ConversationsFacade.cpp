@@ -8,7 +8,7 @@
 #include "feature/conversations/PeopleSearch.h"
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "lib/people/LocalAccountBackup.h"
-#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "common/Utilities.h"

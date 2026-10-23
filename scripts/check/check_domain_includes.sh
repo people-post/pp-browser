@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FAIL=0
 
 # The domain modules, in their order: a module may include only the ones before it.
-ORDER=(registration node call_media)
+ORDER=(registration node call_media peers attachments)
 
 check_absent() {
   local label="$1"

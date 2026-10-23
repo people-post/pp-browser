@@ -2,9 +2,9 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
-#include "feature/conversations/DirectoryShadowCache.h"
+#include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
-#include "feature/conversations/PeerDisplaySources.h"
+#include "domain/peers/PeerDisplaySources.h"
 #include "gui/chat/TranscriptRml.h"
 #include "common/Utilities.h"
 

@@ -1,5 +1,5 @@
 #include "foundation/crypto/AttachmentContentHash.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"

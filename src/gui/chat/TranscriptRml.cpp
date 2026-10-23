@@ -14,7 +14,7 @@
 #include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <algorithm>

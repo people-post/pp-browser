@@ -1,4 +1,4 @@
-#include "feature/conversations/ProfileIconFetch.h"
+#include "domain/peers/ProfileIconFetch.h"
 
 #include "lib/net/HttpClient.h"
 #include "common/Utilities.h"

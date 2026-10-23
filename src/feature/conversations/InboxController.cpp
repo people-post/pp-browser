@@ -1,9 +1,9 @@
 #include "feature/conversations/InboxController.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
-#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"

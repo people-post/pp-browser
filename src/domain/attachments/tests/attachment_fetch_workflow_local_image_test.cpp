@@ -1,4 +1,4 @@
-#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
 
 #include "lib/messaging/AiImageRef.h"
 #include "foundation/crypto/CryptoConstants.h"

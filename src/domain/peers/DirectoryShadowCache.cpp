@@ -1,4 +1,4 @@
-#include "feature/conversations/DirectoryShadowCache.h"
+#include "domain/peers/DirectoryShadowCache.h"
 
 #include "lib/people/ContactIdentity.h"
 #include "foundation/runtime/AppRuntime.h"

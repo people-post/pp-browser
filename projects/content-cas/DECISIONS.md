@@ -146,7 +146,7 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 4. **Leave behind in messaging / feature:** chat-specific policy — attachment download/suppression, chat blob responders, thread UX gates that call into content via `common` contracts + feature wiring.
 5. **No premature empty peer** that messaging still monopolizes; extract when the second consumer compiles against content without linking messaging codecs/stores.
 
-**Update (2026-10-20):** peeled as part of the calls / media / messaging boundary cleanup. `lib/content` (`pp_lib_content`) holds `CasStore`, `ObjectIndex`, `CasTypes`, `CasLibrary` and `PrivateContent` (private content by hash); its consumers already compile against it without messaging (settings' library, feature attachments). Messaging keeps the chat policy — views, posters, suppression, the RAM plaintext cache — and never includes content: `feature/conversations/AttachmentContent` wires attachments to the store and `ChatBlobResponder` takes a `ChatBlobContentSource`.
+**Update (2026-10-20):** peeled as part of the calls / media / messaging boundary cleanup. `lib/content` (`pp_lib_content`) holds `CasStore`, `ObjectIndex`, `CasTypes`, `CasLibrary` and `PrivateContent` (private content by hash); its consumers already compile against it without messaging (settings' library, feature attachments). Messaging keeps the chat policy — views, posters, suppression, the RAM plaintext cache — and never includes content: `domain/attachments/AttachmentContent` wires attachments to the store and `ChatBlobResponder` takes a `ChatBlobContentSource`.
 
 **Rationale:** Avoids cross-peer edges and churn during private cutover (P1–P2 / C011). Aligns peel with the moment public CAS stops being “messaging storage with a fancy path.”
 

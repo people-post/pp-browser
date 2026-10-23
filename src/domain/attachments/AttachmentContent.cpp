@@ -1,4 +1,4 @@
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 
 #include "lib/content/PrivateContent.h"
 #include "lib/messaging/AttachmentCache.h"
