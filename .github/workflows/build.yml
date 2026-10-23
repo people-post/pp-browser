@@ -86,6 +86,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Feature include edges
         run: ./scripts/check/check_feature_includes.sh
+      - name: Domain include edges
+        run: ./scripts/check/check_domain_includes.sh
       - name: Foundation/lib include edges
         run: |
           ./scripts/check/check_base_includes.sh

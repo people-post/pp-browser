@@ -31,7 +31,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
   target_link_libraries(pp-call-probe PRIVATE
     ${_pp_probe_libs}
     pp_foundation_platform_core
-    pp_feature_call_media
+    pp_domain_call_media
   )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
   if(TARGET pp_feature_calls)

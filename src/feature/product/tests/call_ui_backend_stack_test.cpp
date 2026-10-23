@@ -2,7 +2,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/messaging/SqlitePskSessionStore.h"

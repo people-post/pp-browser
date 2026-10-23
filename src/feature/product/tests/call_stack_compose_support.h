@@ -9,7 +9,7 @@
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"

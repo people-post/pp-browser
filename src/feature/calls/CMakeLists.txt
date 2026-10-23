@@ -31,7 +31,7 @@ pp_browser_add_feature_library(pp_feature_calls
     pp_lib_calls
     pp_amp_link
     pp_mesh
-    pp_feature_call_media
+    pp_domain_call_media
     pp_lib_people
     pp_foundation_runtime_core
     pp_foundation_runtime)

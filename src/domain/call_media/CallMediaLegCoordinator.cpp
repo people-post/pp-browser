@@ -1,4 +1,4 @@
-#include "feature/call_media/CallMediaLegCoordinator.h"
+#include "domain/call_media/CallMediaLegCoordinator.h"
 #include "mesh/types/MediaChannel.h"
 
 #include "mesh/l4/shared/ChannelSessionSlot.h"
@@ -7,7 +7,7 @@
 #include "amp/link/PeerLink.h"
 #include "lib/calls/CallMediaBundleLogic.h"
 #include "lib/calls/CallMediaControlCodec.h"
-#include "feature/call_media/CallMediaFrameCrypto.h"
+#include "domain/call_media/CallMediaFrameCrypto.h"
 #include "lib/calls/CallMediaSessionLogic.h"
 #include "common/LengthPrefixedCodec.h"
 #include "common/Logger.h"

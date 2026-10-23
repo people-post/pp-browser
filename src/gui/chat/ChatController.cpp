@@ -55,7 +55,7 @@
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/ContactJson.h"
-#include "feature/registration/RegistrationClient.h"
+#include "domain/registration/RegistrationClient.h"
 #include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"

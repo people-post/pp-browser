@@ -1,8 +1,8 @@
 #pragma once
 
 #include "amp/link/MeshRuntime.h"
-#include "feature/call_media/CallMediaLegCoordinator.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/CallMediaLegCoordinator.h"
+#include "domain/call_media/ICallMediaTransport.h"
 
 #include <atomic>
 #include <functional>

@@ -43,9 +43,9 @@ check_absent "conversations must not include retired feature/ui/" \
 check_absent "conversations must not include gui/" \
   '#include "gui/' src/feature/conversations
 # Calls and broadcast ride the hub as participants, wired in feature/product (ProductStack).
-check_absent "conversations must not include feature/calls|broadcast|call_media|product/" \
-  '#include "feature/(calls|broadcast|call_media|product)/' src/feature/conversations
-for module in calls broadcast call_media settings ai registration node; do
+check_absent "conversations must not include feature/calls|broadcast|product/ or domain/call_media/" \
+  '#include "(feature/(calls|broadcast|product)|domain/call_media)/' src/feature/conversations
+for module in calls broadcast settings ai; do
   check_absent "$module must not include feature/product/ (only app/ and gui/ compose it)" \
     '#include "feature/product/' "src/feature/$module"
 done
@@ -56,16 +56,6 @@ check_absent "calls must not include feature/ai/" \
   '#include "feature/ai/' src/feature/calls
 check_absent "calls must not include gui/" \
   '#include "gui/' src/feature/calls
-
-# Headless modules (pp-node links them without pp_base): no other feature module, no UI domains.
-check_absent "registration must not include other feature/ modules" \
-  '#include "feature/(ai|settings|calls|broadcast|conversations|node)/' src/feature/registration
-check_absent "node must not include other feature/ modules except registration" \
-  '#include "feature/(ai|settings|calls|broadcast|conversations)/' src/feature/node
-check_absent "node must not include lib/ui|media|messaging/" \
-  '#include "lib/(ui|media|messaging)/' src/feature/node
-check_absent "registration must not include lib/ui|media/" \
-  '#include "lib/(ui|media)/' src/feature/registration
 
 # Broadcast is a sibling of calls (media-client-layers L001 / B008): shared layers only.
 check_absent "broadcast must not include calls/" \
@@ -86,6 +76,9 @@ check_absent "must not include retired feature/ui/ path" \
   '#include "feature/ui/' src
 check_absent "must not include retired feature/messaging/ path" \
   '#include "feature/messaging/' src
+for moved in registration node call_media; do
+  check_absent "feature/$moved/ moved to domain/$moved/" "#include \"feature/$moved/" src
+done
 check_absent "must not include retired nested conversations/calls/ path" \
   '#include "feature/conversations/calls/' src
 

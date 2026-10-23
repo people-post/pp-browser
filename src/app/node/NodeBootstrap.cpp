@@ -1,5 +1,5 @@
 #include "app/node/NodeBootstrap.h"
-#include "feature/node/AppRuntimeMeshExecutors.h"
+#include "domain/node/AppRuntimeMeshExecutors.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/node/NodeEnvOverlay.h"
 
@@ -10,7 +10,7 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/SchemaVersion.h"
-#include "feature/node/NodeMeshServices.h"
+#include "domain/node/NodeMeshServices.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 

@@ -1,4 +1,4 @@
-#include "feature/registration/RegistrationClient.h"
+#include "domain/registration/RegistrationClient.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
 #include "lib/net/testing/MockOrgBackendClients.h"

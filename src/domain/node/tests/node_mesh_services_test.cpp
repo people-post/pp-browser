@@ -1,4 +1,4 @@
-#include "feature/node/NodeMeshServices.h"
+#include "domain/node/NodeMeshServices.h"
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"

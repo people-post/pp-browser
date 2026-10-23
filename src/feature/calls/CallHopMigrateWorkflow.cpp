@@ -11,7 +11,7 @@
 #include "lib/pricing/InitiationPricing.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "lib/calls/SoftMigrateLogic.h"
-#include "feature/call_media/CallMediaFrameCrypto.h"
+#include "domain/call_media/CallMediaFrameCrypto.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformUserHints.h"

@@ -1,9 +1,9 @@
-include(PpBrowserFeature)
+include(PpBrowserDomain)
 
 # Call media: pp-browser's realtime protocol on the mesh's links — the Amp transport, the per-call
 # leg coordinator (bundles, failover, frame crypto). A client of the mesh (its io lane, L4 helpers),
 # not part of it (docs/architecture/MESH.md § Extraction). Headless: pp-call-probe links it.
-pp_browser_add_headless_feature_library(pp_feature_call_media
+pp_browser_add_domain_library(pp_domain_call_media
   SOURCES
     CallMediaAmpTransport.cpp
     CallMediaFrameCrypto.cpp

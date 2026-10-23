@@ -10,7 +10,7 @@ namespace pbr {
 
 /**
  * The vocabulary of a call's 1:1 media session (V033): its phases and events, the kind of link it
- * rides and what a connect names. The transport (feature/call_media) runs it; the pure decisions
+ * rides and what a connect names. The transport (domain/call_media) runs it; the pure decisions
  * over it (CallMediaSessionLogic, CallMediaBundleLogic) live beside it.
  */
 

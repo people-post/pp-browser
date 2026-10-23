@@ -31,8 +31,8 @@ pp_browser_add_feature_library(pp_feature_conversations
     AttachmentContent.cpp
     MeshNetworkReaction.cpp
   PUBLIC_LIBS
-    pp_feature_registration
-    pp_feature_node
+    pp_domain_registration
+    pp_domain_node
     pp_foundation_crypto
     pp_lib_media
     pp_lib_messaging

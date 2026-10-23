@@ -13,8 +13,8 @@
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/call_media/CallMediaAmpTransport.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/CallMediaAmpTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshHost.h"
 #include "mesh/types/MeshHopTypes.h"
 

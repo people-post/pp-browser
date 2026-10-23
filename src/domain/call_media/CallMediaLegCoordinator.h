@@ -2,7 +2,7 @@
 
 #include "amp/link/MeshRuntime.h"
 #include "lib/calls/CallMediaBundleLogic.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 
 #include <atomic>
 #include <chrono>

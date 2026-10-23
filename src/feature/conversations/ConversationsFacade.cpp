@@ -4,7 +4,7 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
-#include "feature/registration/RegistrationClient.h"
+#include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "lib/people/LocalAccountBackup.h"

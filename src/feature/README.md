@@ -1,9 +1,9 @@
 # `src/feature`
 
-Product **orchestration** for pp-browser: hubs, sessions, and workflows that **wire** lib peers (and foundation). Presenters / shell live in **`src/gui/`** ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
+pp-browser's **top-level features**: hubs, sessions, and the decisions of their screens, composed from [`src/domain/`](../domain/README.md) capabilities and [`src/lib/`](../lib/README.md) peers. Capabilities two features share live in `domain/`. Presenters / shell live in **`src/gui/`** ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
 
 ```
-app → gui → feature → lib → foundation → common → pp_common
+app → gui → feature → domain → lib → foundation → common → pp_common
 feature    ← you are here
 ```
 
@@ -35,9 +35,6 @@ Top-level folders (+ calls band). Two sub-trees under `ai/`.
 
 ```
 src/feature/
-├── registration/     Registration finish / renew / nickname (`pp_feature_registration`, headless — pp-node links it)
-├── node/             Node-role mesh services (`pp_feature_node`, headless): hosting, DHT / directory, self row — pp-node + desktop Node
-├── call_media/       pp-browser's realtime protocol on the mesh (`pp_feature_call_media`, headless): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it
 ├── settings/         Config apply logic, section handlers + SettingsTools
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
@@ -82,28 +79,28 @@ Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"
 ### Cross-layer direction
 
 ```
-app → gui → feature → lib → foundation → common
+app → gui → feature → domain → lib → foundation → common
 ```
 
-Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). **Headless** modules shared with pp-node (`registration`, `node`) use `pp_browser_add_headless_feature_library` instead: they link only the lib peers they name, never `pp_base`, and are built in `PP_BROWSER_HEADLESS` configures too. Production code has no upward `#include` edges: `foundation/`/`lib/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Lib peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
+Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)), and the domain modules they use. Headless capabilities shared with pp-node (`registration`, `node`) are domain modules ([`src/domain/`](../domain/README.md)). Production code has no upward `#include` edges: `foundation/`/`lib/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Lib peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 
 ### Intra-feature direction
 
 ```
-registration            (headless; no feature/* includes)
-node                    (headless; may use registration)
 settings
 ai/tools → ai/bindings → ai
 calls
 conversations → calls   (delivery / inbound ports; no reverse include)
-conversations → registration, node
 ```
+
+Feature modules use domain modules directly (`conversations → domain/registration, domain/node`; `calls → domain/call_media`).
 
 Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Calls bind their control messages as a system-control family (`common/chat/SystemControl.h`, [P2P_MESSAGING § System-control families](../../docs/architecture/P2P_MESSAGING.md#system-control-families)): the receive path, delivery and the inbox route by the registry, not by call types.
 
 ### Guards
 
-- [`scripts/check/check_feature_includes.sh`](../../scripts/check/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, headless modules → other `feature/*`, retired paths
+- [`scripts/check/check_feature_includes.sh`](../../scripts/check/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, retired paths (incl. the moved `feature/{registration,node,call_media}`)
+- [`scripts/check/check_domain_includes.sh`](../../scripts/check/check_domain_includes.sh) — domain's order and downward edges
 - [`scripts/check/check_gui_includes.sh`](../../scripts/check/check_gui_includes.sh) — bans `gui → app`
 
 ---

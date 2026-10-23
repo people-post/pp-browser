@@ -3,13 +3,13 @@
 Product **GUI** layer for pp-browser: Rml/SDL presenters, shell chrome, and screen controllers.
 
 ```
-app → gui → feature → lib → foundation → common → pp_common
+app → gui → feature → domain → lib → foundation → common → pp_common
 gui    ← you are here
 ```
 
 Named **`gui`** (not `ui`) so it does not collide with lib peer `lib/ui` (non-Rml presentation policy). See [F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature) and [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md).
 
-**Rule:** dependencies flow downward only. GUI may use `feature/`, `lib/`, `foundation/`, and `common/`; it must not `#include` from `app/`. Feature must not `#include` from `gui/`.
+**Rule:** dependencies flow downward only. GUI may use `feature/`, `domain/`, `lib/`, `foundation/`, and `common/`; it must not `#include` from `app/`. Feature must not `#include` from `gui/`.
 
 Aggregate library: **`pp_gui`**. Includes use the repo root: `#include "gui/shell/ShellHost.h"`.
 

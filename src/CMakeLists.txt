@@ -1,4 +1,4 @@
-# Source layers: common → foundation → lib → feature → gui → app.
+# Source layers: common → foundation → lib → domain → feature → gui → app.
 # Convenience INTERFACE `pp_base` = foundation + Amp + mesh + lib (feature/app link).
 add_subdirectory(common)
 add_subdirectory(foundation)
@@ -17,10 +17,8 @@ target_link_libraries(pp_base INTERFACE
   pp_lib
 )
 
-# Headless feature modules: built in every configuration (pp-node links them without pp_base).
-add_subdirectory(feature/registration)
-add_subdirectory(feature/node)
-add_subdirectory(feature/call_media)
+# Domain: capabilities composed from libs, shared by features (and pp-node / the probes).
+add_subdirectory(domain)
 
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)

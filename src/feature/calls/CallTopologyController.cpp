@@ -21,7 +21,7 @@
 #include "common/Utilities.h"
 #include "mesh/types/MeshHopDial.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
-#include "feature/call_media/CallMediaFrameCrypto.h"
+#include "domain/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>

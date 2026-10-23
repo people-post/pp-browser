@@ -3,7 +3,7 @@
 #include "mesh/host/MeshPorts.h"
 #include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "mesh/reach/MeshReachPorts.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "mesh/l4/media_relay/MediaRelayTypes.h"

@@ -16,7 +16,7 @@ src/foundation/crypto/               @yhw1630 @gzdemon77
 src/foundation/identity/             @yhw1630 @gzdemon77
 src/lib/people/IdentityStore.*    @yhw1630 @gzdemon77
 src/lib/people/AccountBackup*     @yhw1630 @gzdemon77
-src/feature/registration/            @yhw1630 @gzdemon77
+src/domain/registration/            @yhw1630 @gzdemon77
 
 # Apple platform, media, call UI, AI client, GUI, assets.
 src/lib/media/                    @gzdemon77

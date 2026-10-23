@@ -145,7 +145,7 @@ carrier — not string copy alone.
 | Punch walk | `reach/PunchIntroducerWalk`, `PunchErr` | `PunchIntroducerWalk::Err` | **done** (pp-cpp-mesh) — the introducer's refusal is a wire `code` |
 | Peer reach | `reach/PeerReachCoordinator` | `PeerReachCoordinator::Err` | **done** (pp-cpp-mesh); `IDialRegistry` passes link codes through |
 | Media relay | `l4/media_relay/client/MediaRelayClientCoordinator`, `IMediaRelayClient`, `media_plane/MediaRelayAttach` | `MediaRelayErr` | **done** (pp-cpp-mesh) — the hop's refusal is a wire `code` |
-| Call-media leg | `feature/call_media/CallMediaLegCoordinator`, `ICallMediaTransport` | `CallMediaErr` | **done** — connects; migrations still report text |
+| Call-media leg | `domain/call_media/CallMediaLegCoordinator`, `ICallMediaTransport` | `CallMediaErr` | **done** — connects; migrations still report text |
 
 The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 

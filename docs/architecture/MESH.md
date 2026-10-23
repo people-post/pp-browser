@@ -71,7 +71,7 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 |------|----------|-----|
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
-| Call-media transport | `CallMediaAmpTransport` via `CallStack` | `feature/call_media` (a client of the mesh's io lane and L4 helpers); `CallMediaBridge` in `feature/calls` |
+| Call-media transport | `CallMediaAmpTransport` via `CallStack` | `domain/call_media` (a client of the mesh's io lane and L4 helpers); `CallMediaBridge` in `feature/calls` |
 | App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media: `ProductMeshProtocols`) beside the mesh's own |
 | Dial / reach / parking | `MeshConnectivity` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::connectivity`); hop candidates injected by `MakeMeshConnectivityDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
 | Media relay | `MeshMediaRelay` (owned by `ConversationsHub`, built on `MeshConnectivity`) | Borrowed by `CallStack` (`CallStackDeps::media_relay`) and broadcast (`RelayAttachPorts`) |
@@ -108,7 +108,7 @@ Hard lab: hard-w5 Phase-11 FLIP (peer-a changes address mid-call → reconnected
 Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See [NETWORKING.md](NETWORKING.md) and [projects/adp/STACK.md](../../projects/adp/STACK.md).
 
 **Ledger role** (pp-ledger platform-integration pi4): with `--ledger-role relay|miner`, pp-node runs
-one pp-ledger role on its mesh runtime (`feature/node/NodeLedgerRole`, over pp-ledger's
+one pp-ledger role on its mesh runtime (`domain/node/NodeLedgerRole`, over pp-ledger's
 `RoleRunner`): the node's identity and address, pp-ledger's handlers bound on the runtime, and the
 ledger's protocols advertised through `MeshHost::SetAppProtocols` only while they are bound — the
 mesh refuses opens for protocols nothing serves. It stops (stop → join) before `MeshHost::Stop`.
@@ -133,7 +133,7 @@ pin, local-checkout override).
 | `pp-cpp-amp` | L1–L3 + link; links name peers by their PeerId (`PeerIdFromIdentityKey`); `PeerIdFromMultiaddr` |
 | `pp-cpp-crypto` | ML-DSA / ML-KEM, the AEAD (`XChaCha20Poly1305`), and the PeerId derivation ([MESH_IDENTITY.md](MESH_IDENTITY.md)) |
 | `pp-cpp-mesh` | host, connectivity, DHT, discovery, reach, reachability, circuit and media relay (both ends), media plane, the vocabulary it shares with apps (`types/`) and test harnesses (`testing/`) |
-| `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`feature/call_media`: pp-browser's realtime protocol, a client of the mesh), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
+| `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`domain/call_media`: pp-browser's realtime protocol, a client of the mesh), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
 
 The library depends on pp-cpp-common, pp-cpp-crypto and pp-cpp-amp only; it carries protocols and
 bytes, product types stay in pp-browser; its threads and rules are its
@@ -144,7 +144,7 @@ bytes, product types stay in pp-browser; its threads and rules are its
 | Mesh config types out of the app's `Config` (now `mesh/types/MeshConfigTypes.h`) | done |
 | `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
 | Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)): control on the io lane, `work` / `blocking` executors per instance, one driver | done |
-| `l4/call_media` out of the mesh (now `feature/call_media`); `host` names no app protocol (`MeshHost::SetAppProtocols`; pp-node advertises none); product `common/` types (chat, thread, media health) out of mesh code (`MediaRelayClientHealth`) | done |
+| `l4/call_media` out of the mesh (now `domain/call_media`); `host` names no app protocol (`MeshHost::SetAppProtocols`; pp-node advertises none); product `common/` types (chat, thread, media health) out of mesh code (`MediaRelayClientHealth`) | done |
 | PeerId derivation into pp-cpp-crypto (below the network stack: product code derives PeerIds too) and the link hook / multiaddr helper into pp-cpp-amp; ML-DSA and the AEAD from pp-cpp-crypto (`XChaCha20Poly1305`, which `MessageCipher` now forwards to) | done |
 | Generic helpers into pp-cpp-common v1.2.0 (`ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry`) | done |
 | Metrics per mesh instance (`MeshHost(executors, metrics)`; the relay, punch and link-event counters go to that registry; the app passes `MetricsRegistry::Global()`) | done |

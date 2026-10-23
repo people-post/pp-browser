@@ -11,7 +11,7 @@
 #include "lib/calls/CallSessionStore.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/messaging/SqliteThreadStore.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"

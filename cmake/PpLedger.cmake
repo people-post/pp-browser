@@ -1,6 +1,6 @@
 # Fetch people-post/pp-ledger for pp-node's ledger role (pp-ledger projects/platform-integration pi4):
 # one relay or miner per node, on the node's mesh runtime. Target: pp_server (pp::server, with
-# RoleRunner); only pp_feature_node_ledger links it, privately.
+# RoleRunner); only pp_domain_node_ledger links it, privately.
 #
 # Pin a release tag from pp-ledger's main line (PP_LEDGER_GIT_TAG, its `release/vX.Y.Z` names);
 # override with PP_LEDGER_SOURCE_DIR (local checkout). Include after pp-cpp-common, pp-cpp-crypto and

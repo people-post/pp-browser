@@ -1,0 +1,10 @@
+include(PpBrowserTesting)
+
+add_executable(pp_browser_domain_registration_test registration_client_test.cpp)
+target_link_libraries(pp_browser_domain_registration_test PRIVATE
+  pp_domain_registration
+  pp_lib_net_testing
+  GTest::gtest
+  GTest::gtest_main)
+pp_browser_apply_warnings(pp_browser_domain_registration_test)
+pp_browser_add_gtest(pp_browser_domain_registration_test)

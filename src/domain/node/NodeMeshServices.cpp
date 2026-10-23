@@ -1,4 +1,4 @@
-#include "feature/node/NodeMeshServices.h"
+#include "domain/node/NodeMeshServices.h"
 
 #include "mesh/types/RelayScope.h"
 #include "mesh/types/MediaChannel.h"

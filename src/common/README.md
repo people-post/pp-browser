@@ -3,7 +3,7 @@
 pp-browser **shared language**: tiny helpers and **contracts** (ports / vocabulary DTOs). Namespace / CMake: `pp_pbr_common`.
 
 ```
-app → feature → lib → foundation → common → pp_common
+app → feature → domain → lib → foundation → common → pp_common
 ```
 
 **Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON), and other `common/` headers. It must **never** `#include` `foundation/`, `lib/`, `feature/`, or `app/`.

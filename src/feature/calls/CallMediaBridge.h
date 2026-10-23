@@ -13,7 +13,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
 

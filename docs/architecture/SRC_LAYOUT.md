@@ -4,9 +4,9 @@
 
 `src/` is organized in **product layers** (folders). Dependencies flow downward only. See [independence rules](#independence-inside-a-layer) before adding includes.
 
-**North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `lib` implements independent product capabilities; `feature` composes them; **`gui` presents** them; `app` constructs the graph.
+**North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `lib` implements independent product capabilities; `domain` combines them into capabilities features share; `feature` composes those into what the user does; **`gui` presents** them; `app` constructs the graph.
 
-> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). Lib peer allowlist is empty.
+> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). Lib peer allowlist is empty.
 
 ## Layers
 
@@ -18,16 +18,18 @@
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every lib peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
 | **Lib** | [`src/lib/`](../../src/lib/) | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui) — single-purpose engines/stores/clients |
-| Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions; **wires** common contracts to concrete lib types (Rml-free at module edge) |
+| **Domain** | [`src/domain/`](../../src/domain/) | **Shared capabilities** composed from libs: registration, node services, call media (next: delivery, attachments, directory) — no hub / session lifecycle, Rml-free |
+| Feature | [`src/feature/`](../../src/feature/) | **Top-level features**: hubs, sessions, presenters' decisions; **wires** common contracts to concrete lib / domain types (Rml-free at module edge) |
 | **GUI** | [`src/gui/`](../../src/gui/) | Product Rml/SDL presenters + shell ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); name **gui** avoids clash with `lib/ui` |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
 
 ## Dependency rule
 
 ```
-app → gui → feature → lib → foundation → common → pp_common (FetchContent)
-          gui → feature / lib / foundation / common
-          feature → foundation / common     (allowed; no gui)
+app → gui → feature → domain → lib → foundation → common → pp_common (FetchContent)
+          gui     → feature / domain / lib / foundation / common
+          feature → domain / lib / foundation / common     (no gui)
+          domain  → lib / foundation / common               (no feature)
           lib     → foundation / common
 ```
 
@@ -37,10 +39,10 @@ Convenience link aggregate (not a folder layer):
 pp_base INTERFACE = pp_foundation + pp_amp_{l1,l2,l3,link} + pp_lib
 ```
 
-Foundation uses `pp_foundation_*` and `#include "foundation/…"`. Domain uses `pp_lib_*` and `#include "lib/…"`. Amp uses FetchContent targets `pp_amp_*`.
+Foundation uses `pp_foundation_*` and `#include "foundation/…"`. Lib uses `pp_lib_*` and `#include "lib/…"`. Domain uses `pp_domain_*` and `#include "domain/…"`; each module names what it links (`pp_browser_add_domain_library`, no `pp_base`). Amp uses FetchContent targets `pp_amp_*`.
 
 ```
-app → gui → feature → (pp_base) → lib / foundation / amp → pp_pbr_common → pp_common
+app → gui → feature → (pp_base, pp_domain) → domain → lib / foundation / amp → pp_pbr_common → pp_common
 ```
 
 `common` may use `third_party`. No upward `#include` across layers.
@@ -56,6 +58,7 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 | **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ `pp_crypto` for wire Base64) and other common headers. |
 | **foundation** | **Exception:** small **ordered bands** (not peer-independent). Config/paths/crypto naturally stack. Documented below. |
 | **lib** | **Strict independence.** Peers must not `#include` or `PUBLIC_LIBS`-link each other. Cross-need → contract/DTO in `common`; wire in `feature` (or `app` for lifetimes). |
+| **domain** | **Ordered**, acyclic: a module uses only the ones before it in [`src/domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt) (`check_domain_includes.sh` holds the order). |
 | **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. Must not include `gui/`. |
 | **gui** | May use feature/lib/foundation; must not include `app/`. Bands share `pp_gui` for now. |
 | **app** | Single composition root. |
@@ -66,7 +69,8 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 - **Common (in-tree):** shared language or seam; **no ownership** of durable state / I/O engines. “Could two lib peers need this name without owning the lifecycle?”
 - **Foundation:** owned kernel every lib peer may use. Opens paths, holds config/session, crypto primitives, process runtime — **not** messaging policy or HTTP product clients.
 - **Lib:** owns a store, client, codec, or engine; **heavy** product coding. Single purpose.
-- **Feature:** coordinates multiple lib (and foundation) modules into a workflow or screen.
+- **Domain:** combines two or more libs into a capability, or is used by two or more features — and owns **no user-facing lifecycle** (no hub, session, screen). "Would a second feature want this without the first one's hub?" Yes → domain. It owns a hub / session / screen → feature.
+- **Feature:** a top-level thing the user does (conversations, a call, a broadcast, the agent, settings): its hub / session and its screen's decisions, composed from domain and lib.
 - **App:** exists only to run and wire the product.
 
 ## What `src/common` provides
@@ -148,6 +152,18 @@ RmlUi is a hard fork in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) 
 
 Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) lives under `src/gui/shell/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
 
+## Domain subfolders
+
+Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Order (a module uses only the ones above it):
+
+| Path | Contents |
+|------|----------|
+| `domain/registration/` | Registration finish / renew / nickname (`pp_domain_registration`) — **headless**, linked by pp-node |
+| `domain/node/` | Node-role mesh services (`pp_domain_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
+| `domain/call_media/` | pp-browser's realtime protocol on the mesh (`pp_domain_call_media`): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it; headless (pp-call-probe links it) |
+
+The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
+
 ## Feature subfolders
 
 Module map, dependency rules, and test placement: [`src/feature/README.md`](../../src/feature/README.md).
@@ -160,10 +176,6 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports, bindings |
-| `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
-| `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
-
-**Headless modules** (`registration`, `node`) use `pp_browser_add_headless_feature_library` (no `pp_base`) and build in `PP_BROWSER_HEADLESS` configures. pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 
@@ -172,8 +184,9 @@ settings
 ai/tools → ai/bindings → ai
 calls
 conversations → calls
-conversations → registration, node   (headless; they include no other feature module)
 ```
+
+Feature modules use domain modules directly (`conversations → domain/registration, domain/node`; `calls → domain/call_media`).
 
 ## GUI subfolders
 

@@ -1,7 +1,7 @@
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "lib/calls/CallMediaBundleLogic.h"
-#include "feature/call_media/CallMediaLegCoordinator.h"
+#include "domain/call_media/CallMediaLegCoordinator.h"
 #include "lib/calls/CallMediaSessionLogic.h"
 #include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
