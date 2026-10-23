@@ -194,8 +194,9 @@ forwards in a chat.
   ([PEER_REACH](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/PEER_REACH.md)), addresses
   from call invites, and the DHT where the device is a Node. Mesh seeds stay the bootstrap (N029 L0).
 
-Still on the relay: the offline inbox (a message to a peer with no device online) and group delivery.
-A profile with no relay configured messages contacts whose devices it can reach.
+A group message goes member by member the same way. Still on the relay: the offline inbox (a message to
+a peer with no device online). A profile with no relay configured messages contacts whose devices it can
+reach.
 
 ## Messaging UX
 

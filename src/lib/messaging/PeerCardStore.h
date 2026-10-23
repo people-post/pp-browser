@@ -43,6 +43,9 @@ PeerCardRecord MergeKeyCard(std::optional<PeerCardRecord> known, const KeyCard& 
  */
 PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card, const std::string& source);
 
+/** What a message carries for a kept account: its newest account card, else its key card. */
+Object CarriedCardJson(const PeerCardRecord& record);
+
 /**
  * Persisted cards, one row per account in profile.db (`peer_cards`; public material, plaintext like
  * contacts.json). Every card is checked before it is kept. Thread-safe.

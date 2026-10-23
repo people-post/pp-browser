@@ -51,6 +51,8 @@ public:
   void NoteDevice(const std::string& account_id, const std::string& peer_id);
   /** The PeerIds of `account_id`'s devices this device knows (kept cards). */
   std::vector<std::string> DevicesOf(const std::string& account_id);
+  /** What is kept for `account_id` (no lookup). */
+  Roe<std::optional<PeerCardRecord>> Kept(const std::string& account_id) { return keys_.Kept(account_id); }
 
   /** How long a device that answered is not asked again. */
   static constexpr int64_t kAskAgainAfterMs = 10 * 60 * 1000;

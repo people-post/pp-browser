@@ -94,6 +94,10 @@ PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const Accou
   return merged;
 }
 
+Object CarriedCardJson(const PeerCardRecord& record) {
+  return record.newest_card ? AccountCardToJson(*record.newest_card) : KeyCardToJson(record.keys);
+}
+
 PeerCardStore::PeerCardStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {
   redirectLogger("PeerCardStore");
 }

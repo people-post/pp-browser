@@ -54,8 +54,7 @@ Roe<ChatContactCardFields> ContactCardExchange::CardFor(const std::string& conta
   if (fields.display_name.empty()) {
     fields.display_name = account_id;
   }
-  fields.card_json = DumpJson((*kept)->newest_card ? AccountCardToJson(*(*kept)->newest_card)
-                                                   : KeyCardToJson((*kept)->keys));
+  fields.card_json = DumpJson(CarriedCardJson(**kept));
   fields.relay_user_id = IdOfKind(contact, mesh::ContactIdKind::RelayUser);
   return fields;
 }
@@ -65,29 +64,11 @@ Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t
   if (!json) {
     return Error("contact card: not a card");
   }
-  // An account card when it is signed as one, else a key card.
-  PeerCardRecord kept;
-  if (json->contains("card_signature_b64")) {
-    auto account_card = AccountCardFromJson(*json);
-    if (!account_card) {
-      return account_card.error();
-    }
-    auto added = keys_.AddAccountCard(*account_card, now_ms, "contact_card");
-    if (!added) {
-      return added.error();
-    }
-    kept = std::move(added.value());
-  } else {
-    auto key_card = KeyCardFromJson(*json);
-    if (!key_card) {
-      return key_card.error();
-    }
-    auto added = keys_.AddKeyCard(*key_card, "contact_card");
-    if (!added) {
-      return added.error();
-    }
-    kept = std::move(added.value());
+  auto added = keys_.AddCarriedCard(*json, now_ms, "contact_card");
+  if (!added) {
+    return added.error();
   }
+  const PeerCardRecord& kept = added.value();
 
   const std::string& account_id = kept.keys.account_id;
   auto existing = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);

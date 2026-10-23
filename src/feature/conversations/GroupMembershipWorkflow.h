@@ -7,6 +7,7 @@
 #include "lib/people/IdentityStore.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "domain/peers/AccountKeyResolver.h"
 
 #include "common/Module.h"
 
@@ -24,7 +25,8 @@ namespace pbr {
 class GroupMembershipWorkflow : public Module {
 public:
   GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                         GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging);
+                         GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
+                         AccountKeyResolver& account_keys);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
 
@@ -101,6 +103,7 @@ private:
   GroupRosterStore& roster_;
   GroupInviteGate& invite_gate_;
   MeshDeliveryOrchestrator& mesh_messaging_;
+  AccountKeyResolver& account_keys_;
 
   mutable std::mutex unreachable_mutex_;
   std::set<std::pair<std::string, std::string>> unreachable_;

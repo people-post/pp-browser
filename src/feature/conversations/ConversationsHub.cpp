@@ -1318,7 +1318,7 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *mesh_messaging_);
+                                                               *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   NotifyMessagingBuilt();

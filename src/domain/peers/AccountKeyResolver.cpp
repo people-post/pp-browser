@@ -63,6 +63,28 @@ Roe<PeerCardRecord> AccountKeyResolver::AddKeyCard(const KeyCard& card, const st
   return kept;
 }
 
+Roe<PeerCardRecord> AccountKeyResolver::AddCarriedCard(const Object& json, int64_t now_ms, const std::string& source,
+                                                      const std::string& account_id) {
+  if (json.contains("card_signature_b64")) {
+    auto card = AccountCardFromJson(json);
+    if (!card) {
+      return card.error();
+    }
+    if (!account_id.empty() && card->keys.account_id != account_id) {
+      return Error("card is for another account");
+    }
+    return AddAccountCard(*card, now_ms, source);
+  }
+  auto card = KeyCardFromJson(json);
+  if (!card) {
+    return card.error();
+  }
+  if (!account_id.empty() && card->account_id != account_id) {
+    return Error("card is for another account");
+  }
+  return AddKeyCard(*card, source);
+}
+
 Roe<PeerCardRecord> AccountKeyResolver::AddDirectoryHit(const mesh::DirectoryHit& hit) {
   const auto account_id = PrimaryAccountIdFromHit(hit);
   if (!account_id) {

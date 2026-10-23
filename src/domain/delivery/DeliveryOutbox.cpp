@@ -40,7 +40,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     // `direct`: the direct send's failure when it was tried — what the notice says when the relay
     // cannot carry the envelope either.
     auto finish_relay = [this, request](std::optional<DirectSendFailure> direct) {
-      DeliveryOutcome outcome{.thread_id = request.thread_id, .message_id = request.message_id};
+      DeliveryOutcome outcome{.thread_id = request.thread_id, .message_id = request.message_id,
+                              .group_member = request.group_member};
       outcome.relay_after_direct = direct.has_value();
       if (!request.relay_route) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::NoAddress;
@@ -59,7 +60,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
                       << " err=" << sent.error().message << " (queued for retry)";
         Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
-                        .thread_id = request.thread_id, .attempt_count = 1});
+                        .thread_id = request.thread_id, .attempt_count = 1,
+                        .amp_peer_key = request.amp_peer_key, .group_member = request.group_member});
         outcome.failure = SendFailureFromRelay(sent.error());
         outcome.detail = sent.error().message;
         Report(std::move(outcome));
@@ -86,7 +88,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
           post_continue([this, request, direct = std::move(direct), finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
               Report(DeliveryOutcome{.thread_id = request.thread_id, .message_id = request.message_id, .ok = true,
-                                     .transport = MessageTransport::Direct});
+                                     .transport = MessageTransport::Direct, .group_member = request.group_member});
               return;
             }
             log().info << "direct send failed message_id=" << request.message_id << " peer=" << request.amp_peer_key
@@ -153,19 +155,22 @@ void DeliveryOutbox::Retry() {
         auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
         if (result) {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
-                                 .transport = MessageTransport::Relay, .relay_after_direct = tried_direct});
+                                 .transport = MessageTransport::Relay, .relay_after_direct = tried_direct,
+                                 .group_member = item.group_member});
         } else if (OutboxRetryAgain(item.attempt_count)) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
         } else {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id,
-                                 .failure = SendFailureFromRelay(result.error()), .detail = result.error().message});
+                                 .failure = SendFailureFromRelay(result.error()), .detail = result.error().message,
+                                 .group_member = item.group_member});
         }
         (*process)(index + 1);
       };
       IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
-      if (item.envelope.recipient_contact_id && chat && chat->IsPeerReachable(*item.envelope.recipient_contact_id)) {
-        const std::string peer_key = *item.envelope.recipient_contact_id;
+      const std::string peer_key =
+          !item.amp_peer_key.empty() ? item.amp_peer_key : item.envelope.recipient_contact_id.value_or("");
+      if (!peer_key.empty() && chat && chat->IsPeerReachable(peer_key)) {
         const RelayEnvelope envelope = item.envelope;
         chat->SendEnvelopeAsync(
             peer_key, envelope,
@@ -174,7 +179,7 @@ void DeliveryOutbox::Retry() {
                                             direct = std::move(direct)]() mutable {
                 if (direct) {
                   Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
-                                         .transport = MessageTransport::Direct});
+                                         .transport = MessageTransport::Direct, .group_member = item.group_member});
                   (*process)(index + 1);
                   return;
                 }

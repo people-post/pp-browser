@@ -207,11 +207,24 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayl
       Object row;
       row.set("member_identity", entry.member_identity);
       row.set("role", MemberRoleToString(entry.role));
+      if (entry.card) {
+        row.set("card", ObjectValue(*entry.card));
+      }
+      if (!entry.relay_user_id.empty()) {
+        row.set("relay_user_id", entry.relay_user_id);
+      }
       members.push_back(ObjectValue(std::move(row)));
     }
     json.set("members", ArrayValue(std::move(members)));
   }
   return DumpJson(json);
+}
+
+Roe<std::string> GroupMembershipCodec::WithoutCards(MemberJoinedPayload payload) {
+  for (MemberJoinedEntry& entry : payload.members) {
+    entry.card.reset();
+  }
+  return EncodeMemberJoined(payload);
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeMemberLeft(const std::string& group_id,
@@ -278,6 +291,10 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
       if (auto role = row->getString("role")) {
         entry.role = MemberRoleFromString(*role);
       }
+      if (const Object* card = row->getObject("card")) {
+        entry.card = *card;
+      }
+      entry.relay_user_id = row->getString("relay_user_id").value_or("");
       payload.members.push_back(std::move(entry));
     }
   }

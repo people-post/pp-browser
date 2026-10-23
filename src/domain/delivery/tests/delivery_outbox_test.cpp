@@ -100,6 +100,23 @@ TEST_F(DeliveryOutboxTest, ARefusedSendIsReportedFailedThenDeliveredByARetry) {
   EXPECT_EQ(relay.sent.size(), 2u);
 }
 
+TEST_F(DeliveryOutboxTest, AGroupMembersCopyReportsForThatMemberThroughItsRetry) {
+  FakeRelay relay(1);
+  auto outbox = MakeOutbox(relay);
+  DeliveryRequest request = ToRelay("group-thread", "m1");
+  request.group_member = "account:carol";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_EQ(Outcomes()[0].group_member, "account:carol") << "the member missed, not the message";
+  outbox->Retry();
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 2u);
+  EXPECT_TRUE(Outcomes()[1].ok);
+  EXPECT_EQ(Outcomes()[1].group_member, "account:carol");
+}
+
 TEST_F(DeliveryOutboxTest, CancelAndPurgeDropQueuedSends) {
   FakeRelay relay(2);
   auto outbox = MakeOutbox(relay);

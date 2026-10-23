@@ -118,5 +118,24 @@ TEST_F(AccountKeyResolverTest, WithNoDirectoryOnlyKeptCardsAnswer) {
   EXPECT_TRUE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 }
 
+TEST_F(AccountKeyResolverTest, KeepsACarriedCardOnlyForTheAccountItWasCarriedFor) {
+  directory_.SetBackend(nullptr);
+  const Object card = KeyCardToJson(alice_.Card());
+
+  EXPECT_FALSE(resolver_->AddCarriedCard(card, 0, "group_roster", mallory_.account_id))
+      << "Alice's card under Mallory's roster row";
+  EXPECT_FALSE(cards_->Get(alice_.account_id).value().has_value());
+
+  KeyCard swapped = alice_.Card();
+  swapped.kem_public_key_b64 = mallory_.KemPublicB64();
+  EXPECT_FALSE(resolver_->AddCarriedCard(KeyCardToJson(swapped), 0, "group_roster", alice_.account_id))
+      << "a KEM key Alice never bound";
+
+  auto kept = resolver_->AddCarriedCard(card, 0, "group_roster", alice_.account_id);
+  ASSERT_TRUE(kept) << kept.error().message;
+  EXPECT_EQ(kept->source, "group_roster");
+  EXPECT_TRUE(resolver_->Kem().Resolve(kind_, alice_.account_id));
+}
+
 } // namespace
 } // namespace pbr

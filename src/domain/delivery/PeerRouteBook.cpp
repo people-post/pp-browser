@@ -53,6 +53,25 @@ std::optional<std::string> PeerRouteBook::Resolve(const Thread& thread) const {
   return std::nullopt;
 }
 
+namespace {
+
+Thread AsPeer(const std::string& account_id) {
+  Thread thread;
+  thread.kind = ThreadKind::Direct;
+  thread.peer_identity_value = account_id;
+  return thread;
+}
+
+} // namespace
+
+std::optional<std::string> PeerRouteBook::ResolveAccount(const std::string& account_id) const {
+  return Resolve(AsPeer(account_id));
+}
+
+std::optional<std::string> PeerRouteBook::ResolveAccountWithDirectory(const std::string& account_id) {
+  return ResolveWithDirectory(AsPeer(account_id));
+}
+
 std::optional<std::string> PeerRouteBook::ResolveWithDirectory(const Thread& thread) {
   if (auto resolved = Resolve(thread)) {
     return resolved;

@@ -120,7 +120,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |
 | Locator | account id, nickname, devices | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |
-| Group invite / roster add | members' key cards | from the inviter, so members key pairwise |
+| Roster add (`member_joined`) | members' cards | from the group owner, so members key pairwise ([Groups](#groups)) |
 
 ## Card exchange over Amp
 
@@ -163,6 +163,16 @@ parked on. Between calls nothing keeps a device parked, so:
 - **Desktops** can stay reachable with no relay: *Me → Network → Reachable without the relay*
   (`mesh.reachable_without_relay`, off by default) renews a reservation on the seeds every 20 s. The seeds
   see when the computer is online.
+
+## Groups
+
+Members encrypt to and verify each other pairwise, and two members may never have met. The owner — who
+has every member's card from their invite chats — gives them out with the roster (`member_joined`,
+[group chat DESIGN](../../projects/group-chat/DESIGN.md#membership-event-wire-schema)): the existing
+members get the newcomer's card, the newcomer everyone's (the newest account card the owner keeps, else
+the key card; about 128 KB of cards at most, the rest keyed as before), each with the owner's relay route
+to that member. A receiver keeps a card only for the roster row it came in, once it proves itself, and
+stores the event without the cards. The invite carries none: an invitee who declines learns no one's keys.
 
 ## Storing cards
 

@@ -29,6 +29,8 @@ struct DeliveryRequest {
   std::optional<std::string> relay_route;
   /** Call signaling: the critical worker lane, and the relay first when a route is known. */
   bool critical_lane = false;
+  /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
+  std::string group_member;
 };
 
 /** How a request (or its retry) ended. Reported on a worker thread, in send order per request. */
@@ -41,6 +43,8 @@ struct DeliveryOutcome {
   bool relay_after_direct = false;
   SendFailure failure = SendFailure::NoAddress;
   std::string detail;
+  /** As the request's. */
+  std::string group_member;
 };
 
 /**
@@ -75,6 +79,9 @@ private:
     std::string message_id;
     std::string thread_id;
     int attempt_count = 0;
+    /** The request's Amp dial key (empty: the envelope's recipient) and group member. */
+    std::string amp_peer_key;
+    std::string group_member;
   };
 
   void Report(DeliveryOutcome outcome);

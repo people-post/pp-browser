@@ -315,12 +315,17 @@ public:
             });
           });
     } else if (cmd == "kept_card") {
-      // What this device keeps for `account` (its devices, from the cards it checked).
+      // What this device keeps for `account`: where its card came from, and its devices.
       Object out = Reply(id, true);
       std::vector<Value> devices;
       if (Hub().IsMessagingReady()) {
-        for (const std::string& peer_id :
-             Hub().MeshMessaging().AccountCards().DevicesOf(request->getString("account").value_or(""))) {
+        const std::string account = request->getString("account").value_or("");
+        auto& cards = Hub().MeshMessaging().AccountCards();
+        if (auto kept = cards.Kept(account); kept && *kept) {
+          out.set("account_id", (*kept)->keys.account_id);
+          out.set("source", (*kept)->source);
+        }
+        for (const std::string& peer_id : cards.DevicesOf(account)) {
           devices.emplace_back(peer_id);
         }
       }

@@ -3,6 +3,7 @@
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/E2eIngestClassifier.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
@@ -104,6 +105,13 @@ public:
   void SetContactTrust(IContactTrustAccess* trust) { contact_trust_ = trust; }
   /** A sender's key card that verified the envelope it came with (docs/contracts/ACCOUNT_CARD.md): keep it. */
   void SetOnSenderKeys(std::function<void(const KeyCard&)> callback) { on_sender_keys_ = std::move(callback); }
+  /**
+   * Another member as the group owner's roster (member_joined) gives them: their card — keep it if it
+   * proves itself (docs/contracts/ACCOUNT_CARD.md) — and their relay route.
+   */
+  void SetOnRosterMember(std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> callback) {
+    on_roster_member_ = std::move(callback);
+  }
   /** Called after a sender's retract wiped one of their messages here (`original` = the row before). */
   void SetOnMessageRetracted(std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
     on_message_retracted_ = std::move(callback);
@@ -120,6 +128,7 @@ private:
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const KeyCard&)> on_sender_keys_;
+  std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                             bool authorized_older_backfill, MessageTransport transport);

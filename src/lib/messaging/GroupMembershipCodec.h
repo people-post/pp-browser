@@ -4,6 +4,7 @@
 #include "common/thread/ThreadTypes.h"
 
 #include "common/Error.h"
+#include "common/Value.h"
 
 #include <optional>
 #include <string>
@@ -30,6 +31,13 @@ public:
   struct MemberJoinedEntry {
     std::string member_identity;
     MemberRole role = MemberRole::Member;
+    /**
+     * The member's card as the owner keeps it (CarriedCardJson), so members key each other with no
+     * lookup. Unchecked here: the receiver keeps it only for `member_identity`, once it proves itself.
+     */
+    std::optional<Object> card;
+    /** Where the owner reaches the member on the relay (`relay:`), as a contact card carries it. */
+    std::string relay_user_id;
   };
   struct MemberJoinedPayload {
     std::string group_id;
@@ -44,6 +52,8 @@ public:
                                              MemberRole role, uint64_t roster_epoch);
   /** Encode member_joined; optional `members` is a full active-roster snapshot for late joiners. */
   static Roe<std::string> EncodeMemberJoined(const MemberJoinedPayload& payload);
+  /** The same member_joined with no cards: what is stored once they are kept. */
+  static Roe<std::string> WithoutCards(MemberJoinedPayload payload);
   static Roe<std::string> EncodeMemberLeft(const std::string& group_id, const std::string& member_identity,
                                            uint64_t roster_epoch);
   static Roe<std::string> EncodeMemberRemoved(const std::string& group_id, const std::string& member_identity,

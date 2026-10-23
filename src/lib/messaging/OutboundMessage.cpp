@@ -236,7 +236,8 @@ bool DirectSendTriesAmpFirst(const bool amp_reachable, const bool has_relay_rout
 
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       std::string payload_b64, std::optional<std::string> key_init_b64) {
+                                       const std::string& route_party, std::string payload_b64,
+                                       std::optional<std::string> key_init_b64) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender);
   envelope.route.kind = "group";
   envelope.route.group_id = group_id;
@@ -246,8 +247,8 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
     envelope.body.e2e.key_init_b64 = std::move(*key_init_b64);
     envelope.body.e2e.sender_keys = sender.keys;
   }
-  envelope.stream_key = BuildGroupRelayStreamKey(group_id, envelope.session_epoch);
-  envelope.recipient_contact_id = recipient;
+  envelope.stream_key = BuildGroupRelayStreamKey(group_id, envelope.session_epoch, recipient);
+  envelope.recipient_contact_id = route_party;
   return envelope;
 }
 

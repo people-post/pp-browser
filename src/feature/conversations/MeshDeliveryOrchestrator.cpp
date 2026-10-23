@@ -112,6 +112,18 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "sender's key card not kept: " << kept.error().message;
     }
   });
+  receive_pipeline_->SetOnRosterMember([this](const GroupMembershipCodec::MemberJoinedEntry& member) {
+    if (member.card) {
+      if (auto kept = account_keys_.AddCarriedCard(*member.card, util::NowUnixMs(), "group_roster",
+                                                   member.member_identity);
+          !kept) {
+        log().warning << "roster card not kept: " << kept.error().message;
+      }
+    }
+    if (IsRelayUserIdValue(member.relay_user_id)) {
+      routes_.NoteAccountRoute(member.member_identity, member.relay_user_id);
+    }
+  });
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
   receive_pipeline_->SetOnMessageRetracted(
       [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
@@ -123,7 +135,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   outbox_.SetRelayClient(relay_);
   // On the worker that finished the send: the row is marked before the UI hears of it.
   outbox_.SetOnOutcome([this](const DeliveryOutcome& outcome) {
-    if (outcome.ok) {
+    if (!outcome.group_member.empty()) {
+      ApplyGroupMemberOutcome(outcome);
+    } else if (outcome.ok) {
       ApplySendSucceeded(outcome.thread_id, outcome.message_id, outcome.transport, outcome.relay_after_direct);
     } else {
       ApplySendFailed(outcome.thread_id, outcome.message_id, outcome.failure, outcome.detail);
@@ -144,6 +158,10 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
   });
+}
+
+std::optional<std::string> MeshDeliveryOrchestrator::RelayRouteOf(const std::string& account_id) const {
+  return routes_.ResolveAccount(account_id);
 }
 
 std::optional<KeyCard> MeshDeliveryOrchestrator::OwnKeys() {
@@ -1113,49 +1131,83 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     }
   }
 
+  // Each member's copy goes as a direct message does: over a link to one of their devices, else the
+  // relay under their `relay:` id (DeliveryOutbox). The row is marked once a copy is out.
   const EnvelopeSender sender{identity->relay_user_id, identity->account_id, OwnKeys()};
+  bool any_missed = !encrypted->failed_member_identities.empty();
   for (const auto& [recipient, payload_b64] : encrypted->member_payloads) {
     std::optional<std::string> key_init;
     if (auto found = encrypted->member_key_inits.find(recipient); found != encrypted->member_key_inits.end()) {
       key_init = found->second;
     }
-    RelayEnvelope envelope =
-        BuildGroupMemberEnvelope(message, sender, group_id, recipient, payload_b64, std::move(key_init));
-
+    const std::optional<std::string> relay_route = routes_.ResolveAccountWithDirectory(recipient);
+    if (!relay_route && !AmpReaches(recipient)) {
+      MarkGroupMemberMissed(group_id, recipient);
+      any_missed = true;
+      continue;
+    }
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, sender, group_id, recipient,
+                                                      relay_route.value_or(recipient), payload_b64,
+                                                      std::move(key_init));
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
-      if (groups_) {
-        groups_->MarkMemberUnreachable(group_id, recipient);
-      }
+      MarkGroupMemberMissed(group_id, recipient);
+      any_missed = true;
       continue;
     }
     if (auto signature = identity_.SignBytes(*sign_bytes)) {
       envelope.signature = *signature;
     }
-    if (relay_) {
-      (void)relay_->Send(envelope);
-    }
-    if (groups_) {
-      groups_->ClearMemberUnreachable(group_id, recipient);
-    }
+    outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
+                                 .thread_id = thread_id,
+                                 .message_id = message.id,
+                                 .amp_peer_key = recipient,
+                                 .relay_route = relay_route,
+                                 .group_member = recipient});
   }
-
-  if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
-    AppRuntime::PostUI([this]() {
-      if (on_delivery_notice_) {
-        DeliveryNotice notice;
-        notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
-        on_delivery_notice_(notice);
-      }
-    });
+  if (any_missed) {
+    NotifyGroupMembersMissed();
   }
-
-  appended->delivery = MessageDelivery::Relayed;
-  (void)store_.UpdateMessage(*appended);
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *appended;
+}
+
+void MeshDeliveryOrchestrator::MarkGroupMemberMissed(const std::string& group_id, const std::string& member) {
+  if (groups_) {
+    groups_->MarkMemberUnreachable(group_id, member);
+  }
+}
+
+void MeshDeliveryOrchestrator::NotifyGroupMembersMissed() {
+  AppRuntime::PostUI([this]() {
+    if (on_delivery_notice_) {
+      DeliveryNotice notice;
+      notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
+      on_delivery_notice_(notice);
+    }
+  });
+}
+
+void MeshDeliveryOrchestrator::ApplyGroupMemberOutcome(const DeliveryOutcome& outcome) {
+  auto thread = store_.GetThread(outcome.thread_id);
+  const std::optional<std::string> group_id =
+      thread && *thread && (*thread)->group_id ? (*thread)->group_id : std::nullopt;
+  if (!outcome.ok) {
+    if (group_id) {
+      MarkGroupMemberMissed(*group_id, outcome.group_member);
+    }
+    NotifyGroupMembersMissed();
+    return;
+  }
+  if (groups_ && group_id) {
+    groups_->ClearMemberUnreachable(*group_id, outcome.group_member);
+  }
+  // The first copy out marks the row; one member's failure does not unmark it.
+  if (MarkDelivery(outcome.thread_id, outcome.message_id, true, outcome.transport) && on_messages_changed_) {
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
+  }
 }
 
 namespace {

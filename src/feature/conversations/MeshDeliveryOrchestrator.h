@@ -150,6 +150,8 @@ public:
     card_service_.SetAudienceEveryone(
         [gate]() { return gate && gate->Snapshot()->audience == mesh::DirectAudience::Everyone; });
   }
+  /** Where an account is reached on the relay, from what is known here (no lookup). */
+  std::optional<std::string> RelayRouteOf(const std::string& account_id) const;
   /** Account cards between devices (the card exchange over Amp). */
   AccountCardService& AccountCards() { return card_service_; }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
@@ -260,6 +262,10 @@ private:
   /** `detail`: the transport's own text, for the log. */
   void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
                        const std::string& detail);
+  /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
+  void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
+  void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
+  void NotifyGroupMembersMissed();
   /** The message row's delivery state; false when there is no row (a control-lane send). */
   bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);

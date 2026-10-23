@@ -484,6 +484,54 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedAddsPeerToRoster) {
   EXPECT_EQ((*meta)->roster_epoch, 2u);
 }
 
+TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresNone) {
+  PartyHarness member("joined_cards", "account:carol", "account:alice");
+  std::vector<std::string> handed;
+  std::string bob_route;
+  member.pipeline.SetOnRosterMember([&](const GroupMembershipCodec::MemberJoinedEntry& entry) {
+    handed.push_back(entry.member_identity);
+    if (entry.member_identity == "account:bob") {
+      bob_route = entry.relay_user_id;
+    }
+  });
+
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "account:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(member.roster.UpsertMetadata(metadata));
+  ASSERT_TRUE(member.roster.UpsertMember(
+      "group:hike", GroupRosterMember{.member_identity = "account:alice", .role = MemberRole::Owner}));
+  ASSERT_TRUE(member.roster.UpsertMember(
+      "group:hike", GroupRosterMember{.member_identity = "account:carol", .role = MemberRole::Member}));
+
+  Object card;
+  card.set("account_id", "account:bob");
+  GroupMembershipCodec::MemberJoinedPayload payload{.group_id = "group:hike",
+                                                    .member_identity = "account:carol",
+                                                    .roster_epoch = 2};
+  payload.members = {{.member_identity = "account:alice", .role = MemberRole::Owner},
+                     {.member_identity = "account:bob", .card = card, .relay_user_id = "relay:bob"},
+                     {.member_identity = "account:carol", .card = card}};
+  auto detail = GroupMembershipCodec::EncodeMemberJoined(payload);
+  ASSERT_TRUE(detail);
+  const RelayReceiveOutcome outcome = member.pipeline.ProcessEnvelope(
+      member.MakeSystemEnvelope("member_joined", *detail, "Member joined the group", 1), "account:carol");
+  ASSERT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
+
+  EXPECT_EQ(handed, std::vector<std::string>{"account:bob"}) << "each other member the owner says something of";
+  EXPECT_EQ(bob_route, "relay:bob");
+  ASSERT_TRUE(outcome.persisted_message.has_value());
+  auto stored = GroupMembershipCodec::DecodeMemberJoinedFromMessage(*outcome.persisted_message);
+  ASSERT_TRUE(stored) << stored.error().message;
+  ASSERT_EQ(stored->members.size(), 3u) << "the roster stays";
+  for (const auto& entry : stored->members) {
+    EXPECT_FALSE(entry.card.has_value()) << entry.member_identity;
+  }
+  EXPECT_EQ(stored->members[1].relay_user_id, "relay:bob");
+}
+
 TEST(GroupInviteIngestTest, InboundOwnerTransferredLeavePreviousUpdatesRoster) {
   PartyHarness member("xfer_member", "account:bob", "account:alice");
 

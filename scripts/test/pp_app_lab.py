@@ -1263,6 +1263,48 @@ def scenario_strangers_meet_by_invite(lab):
     wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
 
 
+def scenario_group_members_key_each_other(lab):
+    """Bob and Carol have no directory and have never met. Alice (who has one) writes to each, and each
+    adds her from her invite line (group invites come from contacts only); she makes a group of the three:
+    her roster notice carries each member's card, so Bob and Carol write to the group — encrypted to and
+    checked against each other — with no lookup."""
+    a = lab.user("alice", reachable=True)
+    b = lab.user("bob", directory=False)
+    c = lab.user("carol", directory=False)
+    for u in (a, b, c):
+        u.wait_mesh()
+    for m in (b, c):
+        a_thread = a.cmd("open_chat", account=m.account)["thread"]
+        hello = a.cmd("send", thread=a_thread, text="hi %s" % m.name)["message_id"]
+        m_thread = wait_for(lambda: thread_with(m, a.account), 30, "%s: alice's chat" % m.name)
+        wait_for(lambda: transcript_row(m, m_thread, hello), 20, "%s: alice's message" % m.name)
+        m.cmd("add_from_locator", text=a.cmd("locator")["locator"], timeout=60)
+    created = a.cmd("create_group", title="no lookups", accounts=[b.account, c.account])
+    group_id = created["group_id"]
+    threads = {a.account: created["thread"]}
+    for m in (b, c):
+        invite = wait_for(lambda: next((i for i in m.cmd("group_invites")["invites"] if i["group_id"] == group_id),
+                                       None), 40, "%s: the group invite" % m.name)
+        threads[m.account] = m.cmd("accept_group_invite", nonce=invite["nonce"], group_id=group_id)["thread"]
+    everyone = sorted(u.account for u in (a, b, c))
+    for u in (a, b, c):
+        wait_for(lambda: sorted(u.cmd("group_roster", group_id=group_id)["members"]) == everyone or None, 40,
+                 "%s: the whole roster" % u.name)
+    wait_for(lambda: b.cmd("kept_card", account=c.account).get("account_id") or None, 30,
+             "bob: carol's card, from the roster")
+    wait_for(lambda: c.cmd("kept_card", account=b.account).get("account_id") or None, 30,
+             "carol: bob's card, from the roster")
+    def said(u, text):
+        return next((r for r in u.cmd("transcript", thread=threads[u.account])["rows"] if r.get("text") == text), None)
+    b.cmd("show_chat", thread=threads[b.account])
+    b.cmd("compose_send", text="hi carol, from the group")
+    wait_for(lambda: said(c, "hi carol, from the group"), 30, "carol: bob's group message")
+    wait_for(lambda: said(a, "hi carol, from the group"), 30, "alice: bob's group message")
+    c.cmd("show_chat", thread=threads[c.account])
+    c.cmd("compose_send", text="hi bob")
+    wait_for(lambda: said(b, "hi bob"), 30, "bob: carol's group message")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1620,6 +1662,7 @@ SCENARIOS = [
     ("friend_shares_a_contact", scenario_friend_shares_a_contact),
     ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
+    ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

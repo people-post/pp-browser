@@ -210,6 +210,23 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberJoinedToRoster(group_roster_, *joined, actor_identity); !applied) {
       return applied.error();
     }
+    // What the owner says of the other members: kept; the cards are then left out of what is stored.
+    bool carried_cards = false;
+    for (const GroupMembershipCodec::MemberJoinedEntry& entry : joined->members) {
+      carried_cards = carried_cards || entry.card.has_value();
+      if (entry.member_identity != local_account && (entry.card || !entry.relay_user_id.empty()) &&
+          on_roster_member_) {
+        on_roster_member_(entry);
+      }
+    }
+    if (carried_cards) {
+      if (auto stripped = GroupMembershipCodec::WithoutCards(*joined); stripped) {
+        Object payload;
+        payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::MemberJoined));
+        payload.set("detail", *stripped);
+        message.payload_json = DumpJson(payload);
+      }
+    }
     auto thread = store_.FindGroupThread(joined->group_id);
     if (thread && *thread) {
       auto detail = GroupMembershipCodec::EncodeMemberJoined(joined->group_id, joined->member_identity, joined->role,

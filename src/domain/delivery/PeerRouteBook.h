@@ -39,6 +39,10 @@ public:
   std::optional<std::string> Resolve(const Thread& thread) const;
   /** As Resolve, then a directory lookup by account (blocking: the send path, off the UI thread). */
   std::optional<std::string> ResolveWithDirectory(const Thread& thread);
+  /** As Resolve, for an account (no lookup). */
+  std::optional<std::string> ResolveAccount(const std::string& account_id) const;
+  /** As ResolveWithDirectory, for an account with no thread of its own here (a group member). */
+  std::optional<std::string> ResolveAccountWithDirectory(const std::string& account_id);
 
 private:
   ContactsStore& contacts_;

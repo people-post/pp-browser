@@ -35,6 +35,12 @@ public:
   Roe<PeerCardRecord> AddAccountCard(const AccountCard& card, int64_t now_ms, const std::string& source);
   /** Keeps a key card that came another way (a first message's sender_keys, a contact card). */
   Roe<PeerCardRecord> AddKeyCard(const KeyCard& card, const std::string& source);
+  /**
+   * Keeps a card as a message carries it (CarriedCardJson): an account card when signed as one, else a
+   * key card. With `account_id`, a card for any other account is refused.
+   */
+  Roe<PeerCardRecord> AddCarriedCard(const Object& json, int64_t now_ms, const std::string& source,
+                                     const std::string& account_id = {});
   /** Keeps the keys a directory entry carries for its account (search hit, contact sync). */
   Roe<PeerCardRecord> AddDirectoryHit(const mesh::DirectoryHit& hit);
 

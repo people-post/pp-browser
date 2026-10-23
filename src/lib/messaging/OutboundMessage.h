@@ -91,10 +91,14 @@ bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool crit
 
 // --- A group send -------------------------------------------------------------------------------------
 
-/** One member's copy of a group send (its pairwise payload, and key_init when it has no session yet). */
+/**
+ * One member's copy of a group send (its pairwise payload under the member's account, and key_init when
+ * it has no session yet). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
+ */
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       std::string payload_b64, std::optional<std::string> key_init_b64);
+                                       const std::string& route_party, std::string payload_b64,
+                                       std::optional<std::string> key_init_b64);
 
 // --- The outbox: sends queued after a failed relay attempt ----------------------------------------
 

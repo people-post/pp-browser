@@ -19,10 +19,21 @@
 
 namespace pbr {
 
+namespace {
+
+/**
+ * Cards a member_joined may carry for the rest of the roster: about 9-13 KB each, so a large group
+ * sends the first ones and its other members are keyed as before (a first message, the directory).
+ */
+constexpr size_t kRosterCardsBudgetBytes = 128 * 1024;
+
+} // namespace
+
 GroupMembershipWorkflow::GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                                GroupRosterStore& roster, GroupInviteGate& invite_gate,
-                                               MeshDeliveryOrchestrator& mesh_messaging)
-    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate), mesh_messaging_(mesh_messaging) {
+                                               MeshDeliveryOrchestrator& mesh_messaging, AccountKeyResolver& account_keys)
+    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate),
+      mesh_messaging_(mesh_messaging), account_keys_(account_keys) {
   redirectLogger("GroupMembershipWorkflow");
 }
 
@@ -997,33 +1008,83 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
   if (!local) {
     return local.error();
   }
+  auto roster = roster_.ListMembers(group_id);
+  if (!roster) {
+    return roster.error();
+  }
   GroupMembershipCodec::MemberJoinedPayload payload;
   payload.group_id = group_id;
   payload.member_identity = member_identity;
   payload.role = MemberRole::Member;
   payload.roster_epoch = roster_epoch;
-  if (auto roster = roster_.ListMembers(group_id); roster) {
-    payload.members.reserve(roster->size());
-    for (const GroupRosterMember& row : *roster) {
-      GroupMembershipCodec::MemberJoinedEntry entry;
-      entry.member_identity = row.member_identity;
-      entry.role = row.role;
-      payload.members.push_back(std::move(entry));
-    }
+  payload.members.reserve(roster->size());
+  for (const GroupRosterMember& row : *roster) {
+    payload.members.push_back({.member_identity = row.member_identity, .role = row.role});
   }
-  auto detail = GroupMembershipCodec::EncodeMemberJoined(payload);
-  if (!detail) {
-    return detail.error();
+  auto plain = GroupMembershipCodec::EncodeMemberJoined(payload);
+  if (!plain) {
+    return plain.error();
   }
   auto thread = store_.FindGroupThread(group_id);
   if (thread && *thread) {
     (void)AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberJoined,
-                                      "Member joined the group", *detail, *local);
+                                      "Member joined the group", *plain, *local);
   }
-  // Fan out to every other active member (including the new member). Best-effort.
-  // Snapshot in detail backfills prior co-invitees for late joiners.
-  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberJoined, *detail, "Member joined the group",
-                              *local, member_identity);
+
+  // Members key each other pairwise: the members get the newcomer's card, the newcomer everyone's
+  // (docs/contracts/ACCOUNT_CARD.md). The snapshot backfills prior co-invitees for late joiners.
+  auto kept_card = [this](const std::string& account_id) -> std::optional<Object> {
+    auto kept = account_keys_.Kept(account_id);
+    if (!kept || !*kept) {
+      return std::nullopt;
+    }
+    return CarriedCardJson(**kept);
+  };
+  GroupMembershipCodec::MemberJoinedPayload for_members = payload;
+  GroupMembershipCodec::MemberJoinedPayload for_newcomer = payload;
+  size_t card_bytes = 0;
+  for (size_t i = 0; i < payload.members.size(); ++i) {
+    const std::string& identity = payload.members[i].member_identity;
+    if (identity == *local) {
+      continue;  // the newcomer has the owner's keys and route from the invite's chat
+    }
+    if (auto route = mesh_messaging_.RelayRouteOf(identity)) {
+      for_members.members[i].relay_user_id = *route;
+      for_newcomer.members[i].relay_user_id = *route;
+    }
+    auto card = kept_card(identity);
+    if (!card) {
+      continue;
+    }
+    if (identity == member_identity) {
+      for_members.members[i].card = std::move(card);
+      continue;
+    }
+    card_bytes += DumpJson(*card).size();
+    if (card_bytes <= kRosterCardsBudgetBytes) {
+      for_newcomer.members[i].card = std::move(card);
+    }
+  }
+  auto members_detail = GroupMembershipCodec::EncodeMemberJoined(for_members);
+  auto newcomer_detail = GroupMembershipCodec::EncodeMemberJoined(for_newcomer);
+  if (!members_detail || !newcomer_detail) {
+    return Error("member_joined: could not encode");
+  }
+  // Best-effort, like every membership event.
+  std::vector<std::string> identities;
+  identities.reserve(roster->size());
+  for (const GroupRosterMember& row : *roster) {
+    if (row.member_identity != member_identity) {
+      identities.push_back(row.member_identity);
+    }
+  }
+  (void)FanOutPairwise(SelectPairwiseFanoutTargets(identities, *local), PairwiseFanoutMode::BestEffort,
+                       [&](const std::string& identity) {
+                         return SendMembershipDirectMessage(identity, GroupMembershipControlType::MemberJoined,
+                                                            *members_detail, "Member joined the group");
+                       });
+  (void)SendMembershipDirectMessage(member_identity, GroupMembershipControlType::MemberJoined, *newcomer_detail,
+                                    "Member joined the group");
   return {};
 }
 
