@@ -179,6 +179,14 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     }
 
     PeopleDiscoveryBuildOptions people_options;
+    // The page: a "show more" payload re-runs search_people with the next offset.
+    for (const PlannedToolCall& call : executed_calls) {
+      if (call.name == "search_people") {
+        people_options.query = call.arguments.getString("query").value_or("");
+        people_options.offset = static_cast<size_t>(call.arguments.getNonNegInt("offset").value_or(0));
+        break;
+      }
+    }
     // Silent local lookup so directory rows can show "In contacts" and prefer Message.
     if (!hits.empty() && contacts.empty() && FindTool(tools, "list_contacts")) {
       auto local = tools.Execute("list_contacts", Object{});

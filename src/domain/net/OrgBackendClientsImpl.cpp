@@ -11,6 +11,12 @@
 #include "common/directory/DirectoryJson.h"
 
 #include "common/Logger.h"
+
+namespace pbr {
+namespace {
+std::string EncodePathSegment(const std::string& value);
+} // namespace
+} // namespace pbr
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -87,6 +93,10 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
     return AppError::Auth(Err::Auth::RateLimited, "Relay rate limit exceeded");
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    // Which recipient the relay refused (a group fan-out sends one envelope per member).
+    logging::getLogger("HttpRelayClient").warning << "relay send rejected status=" << response.value().status_code
+                  << " recipient=" << record->recipient_contact_id << " route=" << envelope.route.kind
+                  << " body=" << response.value().body.substr(0, 160);
     return RelayHttpStatusError("send", response.value().status_code, response.value().body);
   }
   return {};
@@ -402,7 +412,7 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
-  const std::string url = base_url_ + "/v1/search?q=" + query;
+  const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query);  // free text from the user
   const auto response = HttpClient::Get(url);
   if (!response) {
     return response.error();

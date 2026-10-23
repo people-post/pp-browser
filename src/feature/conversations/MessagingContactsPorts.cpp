@@ -1,6 +1,7 @@
 #include "feature/conversations/MessagingContactsPorts.h"
 
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/PeopleSearch.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -13,7 +14,10 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.search_contacts = [&hub](const std::string& query) { return hub.Contacts().SearchLocal(query); };
   ports.get_contact = [&hub](const std::string& contact_id) { return hub.Contacts().Get(contact_id); };
   ports.upsert_contact = [&hub](const Contact& contact) { return hub.Contacts().Upsert(contact); };
-  ports.add_empty_contact = [&hub]() { return hub.Contacts().AddEmpty(); };
+  ports.search_people = [&hub](const std::string& query) { return SearchDirectoryPeople(hub, query); };
+  ports.add_contact_from_directory_hit = [&hub](const mesh::DirectoryHit& hit) {
+    return hub.Contacts().AddFromDirectoryHit(hit);
+  };
   ports.remove_contact = [&hub](const std::string& contact_id) { return hub.Contacts().Remove(contact_id); };
   ports.list_threads = [&hub]() { return hub.Inbox().ListThreads(); };
   ports.sum_unread_for_contact = [&hub](const std::string& contact_id) {

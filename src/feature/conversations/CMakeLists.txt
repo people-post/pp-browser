@@ -17,6 +17,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp
+    PeopleSearch.cpp
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp

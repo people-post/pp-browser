@@ -8,10 +8,13 @@
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
+#include "common/directory/ShortRelayId.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/AvatarGlyph.h"
 #include "domain/people/ContactJson.h"
 #include "domain/people/ContactTypes.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "domain/people/ContactIdentity.h"
 #include "domain/people/PeerDisplayLabel.h"
 #include "domain/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
@@ -96,20 +99,6 @@ std::string TrustDisplayLabel(const TrustLevel level) {
     return Tr("contacts.trust.unknown");
   }
   return Tr("contacts.trust.unknown");
-}
-
-std::string PrimaryIdOfKind(const Contact& contact, const mesh::ContactIdKind kind) {
-  for (const mesh::ContactId& id : contact.ids) {
-    if (id.kind == kind && id.primary) {
-      return id.value;
-    }
-  }
-  for (const mesh::ContactId& id : contact.ids) {
-    if (id.kind == kind) {
-      return id.value;
-    }
-  }
-  return {};
 }
 
 std::string PrimaryIdentityValue(const Contact& contact) {
@@ -894,19 +883,97 @@ void ContactsController::OnAddContactMenu(ui::Event& ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
+// "Add contact" asks the directory first: an account id or nickname is looked up and the person is
+// added from the hit; no empty contacts (Kenneth 2026-10-23, TODO #33).
 void ContactsController::OnAddContact() {
-  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.add_empty_contact) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.search_people ||
+      !contacts_ports_.add_contact_from_directory_hit || !shell_feedback_.show_prompt) {
     return;
   }
-  auto created = contacts_ports_.add_empty_contact();
-  if (!created) {
-    UserFeedback::Fail(Tr("contacts.err.add"));
+  shell_feedback_.show_prompt(Tr("contacts.add_by_id_title"), Tr("contacts.add_by_id_message"), "",
+                              [](const bool confirmed, std::string value) {
+                                if (confirmed) {
+                                  ContactsController::Instance().AddContactByQuery(util::Trim(value));
+                                }
+                              });
+}
+
+void ContactsController::AddContactByQuery(const std::string& query) {
+  if (query.empty() || !contacts_ports_.search_people) {
     return;
+  }
+  // The directory is an HTTP call: off the UI thread, the outcome comes back here.
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<std::vector<mesh::DirectoryHit>>>(
+      WorkerLane::Normal, [search = contacts_ports_.search_people, query]() { return search(query); },
+      [query](Roe<std::vector<mesh::DirectoryHit>> hits) {
+        ContactsController::Instance().OnPeopleSearched(query, std::move(hits));
+      });
+}
+
+void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
+  (void)query;
+  if (!hits) {
+    UserFeedback::Fail(hits.error().message.empty() ? Tr("contacts.err.add") : hits.error().message);
+    return;
+  }
+  if (hits->empty()) {
+    UserFeedback::Fail(Tr("contacts.err.user_not_found"));
+    return;
+  }
+  if (hits->size() == 1) {
+    AddContactFromHit(hits->front());
+    return;
+  }
+  // Several people match: pick one (name · short id). The hits are ranked, exact matches first,
+  // so the first ten are the ones worth offering.
+  constexpr size_t kMaxChoices = 10;
+  std::vector<ContextMenuAction> actions;
+  for (size_t i = 0; i < hits->size() && i < kMaxChoices; ++i) {
+    const mesh::DirectoryHit& hit = (*hits)[i];
+    const std::string name = !hit.display_name.empty()
+                                 ? hit.display_name
+                                 : (!hit.nickname.empty() ? hit.nickname : Tr("people.result.unknown_person"));
+    const std::string id = PrimaryAccountIdFromHit(hit).value_or(PrimaryRelayIdFromHit(hit).value_or(""));
+    const std::string label = id.empty() ? name : name + " · " + ShortRelayId(id);
+    actions.push_back({"add_hit_" + hit.hit_id, label, nullptr,
+                       [hit]() { ContactsController::Instance().AddContactFromHit(hit); }, "../icons/contacts.svg"});
+  }
+  actions.push_back({"add_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(160, 120), std::move(actions));
+}
+
+void ContactsController::AddContactFromHit(const mesh::DirectoryHit& hit) {
+  if (!contacts_ports_.add_contact_from_directory_hit) {
+    return;
+  }
+  // Same steps as ContactActionDispatcher's add_contact: keys first, then the contact, then its direct endpoints.
+  if (const auto account_id = PrimaryAccountIdFromHit(hit)) {
+    if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
+      contacts_ports_.register_peer_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id,
+                                                *hit.signing_public_key_b64, "directory");
+    }
+    if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
+      contacts_ports_.register_peer_kem_key(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id,
+                                            *hit.kem_public_key_b64, "directory");
+    }
+  }
+  auto created = contacts_ports_.add_contact_from_directory_hit(hit);
+  if (!created) {
+    UserFeedback::Fail(created.error().message.empty() ? Tr("contacts.err.add") : created.error().message);
+    return;
+  }
+  if (contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(*created);
+  }
+  if (contacts_ports_.ensure_directory_hit_icon_cached) {
+    contacts_ports_.ensure_directory_hit_icon_cached(hit);
   }
   SyncFromStore();
   OnSelectContact(created->id);
   DirtyAll();
   NotifySurfaceChanged();
+  const std::string name = !created->display_name.empty() ? created->display_name : hit.nickname;
+  ShowToast(Tr("contacts.added", {{"name", name}}).c_str());
 }
 
 void ContactsController::OnStartChat() {

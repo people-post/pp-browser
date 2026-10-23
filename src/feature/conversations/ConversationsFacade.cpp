@@ -5,17 +5,16 @@
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/pricing/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"
+#include "feature/conversations/PeopleSearch.h"
 #include "domain/people/LinkDeviceCoordinator.h"
 #include "domain/people/LocalAccountBackup.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
-#include <unordered_set>
 
 namespace pbr {
 
@@ -695,26 +694,7 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 // --- Messaging tools helpers ------------------------------------------------
 
 Roe<std::vector<mesh::DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
-  auto hits = hub_.Directory().SearchPeople(query);
-  if (!hits) {
-    return hits.error();
-  }
-  std::unordered_set<std::string> self_ids;
-  if (auto identity = hub_.Identity().Get()) {
-    self_ids = SelfIdentityValuesFromLocal(*identity);
-  }
-  if (self_ids.empty()) {
-    return hits;
-  }
-  std::vector<mesh::DirectoryHit> filtered;
-  filtered.reserve(hits->size());
-  for (mesh::DirectoryHit& hit : *hits) {
-    if (DirectoryHitMatchesIdentities(hit, self_ids)) {
-      continue;
-    }
-    filtered.push_back(std::move(hit));
-  }
-  return filtered;
+  return SearchDirectoryPeople(hub_, query);
 }
 
 Roe<std::vector<Contact>> ConversationsFacade::SearchLocalContacts(const std::string& query) {

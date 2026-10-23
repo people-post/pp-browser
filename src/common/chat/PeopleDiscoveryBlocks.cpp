@@ -356,6 +356,21 @@ Value RefineSearchFooter(const PeopleDiscoveryLabels& labels) {
   return ArrayValue({ObjectValue(std::move(refine))});
 }
 
+/** "Show more (N left)" re-runs the same search from `next_offset` (a payload turn), then "Refine search…". */
+Value PagedFooter(const PeopleDiscoveryLabels& labels, const std::string& query, const size_t next_offset,
+                  const size_t rest) {
+  Object payload;
+  payload.set("tool", "search_people");
+  payload.set("query", query);
+  payload.set("offset", static_cast<int64_t>(next_offset));
+  Object more = MakeAction(Fill(labels.show_more_label, "rest", std::to_string(rest)), labels.show_more_message,
+                           std::move(payload), "primary");
+  Object refine;
+  refine.set("label", labels.refine_label);
+  refine.set("message", labels.refine_message);
+  return ArrayValue({ObjectValue(std::move(more)), ObjectValue(std::move(refine))});
+}
+
 } // namespace
 
 std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity& identity) {
@@ -409,15 +424,22 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
 
   if (!filtered_hits.empty()) {
     const size_t total = filtered_hits.size();
-    const size_t visible = std::min(total, max_visible);
+    // A page: rows [offset, offset + visible). The last page has no "show more". A re-run that found
+    // fewer people than the previous page started at shows the last page rather than nothing.
+    const size_t offset =
+        options.offset < total ? options.offset : (total > max_visible ? total - max_visible : 0);
+    const size_t visible = std::min(total - offset, max_visible);
+    const size_t rest = total - offset - visible;
+    const bool paged = offset > 0 || rest > 0;
 
     Object paragraph;
     paragraph.set("type", "paragraph");
     if (total == 1) {
       paragraph.set("text", labels.found_one);
-    } else if (visible < total) {
-      paragraph.set("text", Fill(Fill(labels.found_many_partial, "count", std::to_string(total)), "shown",
-                                  std::to_string(visible)));
+    } else if (paged) {
+      paragraph.set("text", Fill(Fill(Fill(labels.found_many_paged, "count", std::to_string(total)), "from",
+                                       std::to_string(offset + 1)),
+                                  "to", std::to_string(offset + visible)));
     } else {
       paragraph.set("text", Fill(labels.found_many, "count", std::to_string(total)));
     }
@@ -425,7 +447,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
 
     std::vector<Value> items;
     items.reserve(visible);
-    for (size_t i = 0; i < visible; ++i) {
+    for (size_t i = offset; i < offset + visible; ++i) {
       const mesh::DirectoryHit& hit = filtered_hits[i];
       const bool already =
           IdentityKnown(hit.ids, hit.account_id, known) ||
@@ -439,11 +461,11 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
     }
 
     Value footer;
-    if (visible < total) {
-      footer = RefineSearchFooter(labels);
+    if (rest > 0) {
+      footer = PagedFooter(labels, options.query, offset + visible, rest);
     }
     blocks.push_back(ObjectValue(BuildLongListBlock(
-        visible < total ? labels.results_title_partial : labels.results_title, ArrayValue(std::move(items)),
+        rest > 0 ? labels.results_title_partial : labels.results_title, ArrayValue(std::move(items)),
         std::move(footer))));
   } else if (!contacts.empty()) {
     const size_t total = contacts.size();

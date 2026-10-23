@@ -28,7 +28,9 @@ struct MessagingContactsPorts {
   std::function<Roe<std::vector<Contact>>(const std::string& query)> search_contacts;
   std::function<Roe<std::optional<Contact>>(const std::string& contact_id)> get_contact;
   std::function<Roe<Contact>(const Contact& contact)> upsert_contact;
-  std::function<Roe<Contact>()> add_empty_contact;
+  /** Directory search (exact id or ranked name search, self dropped) for "add contact". */
+  std::function<Roe<std::vector<mesh::DirectoryHit>>(const std::string& query)> search_people;
+  std::function<Roe<Contact>(const mesh::DirectoryHit& hit)> add_contact_from_directory_hit;
   std::function<Roe<bool>(const std::string& contact_id)> remove_contact;
   std::function<Roe<Contact>(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms)>
       apply_remote_snapshot;

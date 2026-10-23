@@ -25,6 +25,15 @@ selection {
   background-color: #b4d5fe;
 }
 
+.shell-dialog-prompt {
+  background-color: #ffffff;
+  border-color: #c7cbd3;
+}
+
+.shell-dialog-prompt:focus {
+  border-color: #4a6cf7;
+}
+
 .prompt-composer-input scrollbarvertical sliderbar {
   background-color: #00000040;
 }

@@ -2103,6 +2103,19 @@ select selectbox option {
   margin-bottom: 8dp;
 }
 
+/* The prompt dialog's text field: a visible box (it was invisible against the dialog, Kenneth 2026-10-23). */
+.shell-dialog-prompt {
+  display: block;
+  width: 100%;
+  min-height: 40dp;
+  margin: 4dp 0 12dp 0;
+  padding: 8dp 12dp;
+  border-width: 1dp;
+  border-radius: 8dp;
+  box-sizing: border-box;
+  cursor: text;
+}
+
 .shell-call-meters {
   display: block;
   margin-top: 12dp;
