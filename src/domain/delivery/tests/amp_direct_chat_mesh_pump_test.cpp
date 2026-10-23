@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpDirectChatTransport.h"
+#include "domain/delivery/AmpDirectChatTransport.h"
 #include "domain/node/AppRuntimeMeshExecutors.h"
 
 #include "amp/L1/Clock.h"

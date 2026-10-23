@@ -3,8 +3,8 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "domain/attachments/AmpChatBlobTransport.h"
-#include "feature/conversations/AmpChatHistoryTransport.h"
-#include "feature/conversations/AmpDirectChatTransport.h"
+#include "domain/delivery/AmpChatHistoryTransport.h"
+#include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
 

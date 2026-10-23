@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpDirectChatTransport.h"
+#include "domain/delivery/AmpDirectChatTransport.h"
 
 #include "common/chat/MessagingJson.h"
 #include "lib/messaging/RelayWirePayload.h"

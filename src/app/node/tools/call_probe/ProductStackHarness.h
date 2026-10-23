@@ -17,7 +17,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "feature/broadcast/AmpBroadcastTransport.h"
-#include "feature/conversations/AmpDirectChatTransport.h"
+#include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "foundation/data/Config.h"
 #include "common/MeshAlias.h"

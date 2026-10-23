@@ -18,7 +18,7 @@
 #include "lib/calls/CallTypes.h"
 #include "amp/link/PeerId.h"
 #include "crypto/PeerId.h"
-#include "feature/conversations/AmpDirectChatTransport.h"
+#include "domain/delivery/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/Utilities.h"
 

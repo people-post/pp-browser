@@ -1,5 +1,5 @@
 #include "lib/messaging/PeerSigningKeyStore.h"
-#include "feature/conversations/AmpChatHistoryTransport.h"
+#include "domain/delivery/AmpChatHistoryTransport.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"

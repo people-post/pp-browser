@@ -41,7 +41,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_conversations)
   else()
     target_sources(pp-call-probe PRIVATE
-      ${CMAKE_SOURCE_DIR}/src/feature/conversations/AmpDirectChatTransport.cpp)
+      ${CMAKE_SOURCE_DIR}/src/domain/delivery/AmpDirectChatTransport.cpp)
     target_link_libraries(pp-call-probe PRIVATE pp_lib_messaging pp_lib_calls pp_lib_broadcast pp_lib_pricing)
   endif()
   pp_browser_apply_warnings(pp-call-probe)

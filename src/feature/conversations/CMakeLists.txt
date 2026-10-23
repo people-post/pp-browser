@@ -5,8 +5,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     ContactActionDispatcher.cpp
     GroupMembershipWorkflow.cpp
     InboxController.cpp
-    AmpDirectChatTransport.cpp
-    AmpChatHistoryTransport.cpp
     MessageRouter.cpp
     MessagingTools.cpp
     ConversationsHub.cpp
@@ -24,6 +22,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_domain_registration
     pp_domain_peers
     pp_domain_attachments
+    pp_domain_delivery
     pp_domain_node
     pp_foundation_crypto
     pp_lib_media

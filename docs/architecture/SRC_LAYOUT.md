@@ -163,6 +163,7 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/call_media/` | pp-browser's realtime protocol on the mesh (`pp_domain_call_media`): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it; headless (pp-call-probe links it) |
 | `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames and display names, relay-directory signing / KEM keys, profile icons; the people → messaging bridges |
 | `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
+| `domain/delivery/` | Delivery (`pp_domain_delivery`): the mesh transports for direct chat and chat history; the send path (routes, outbox and retries, the control lane) |
 
 The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
 

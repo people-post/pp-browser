@@ -11,6 +11,7 @@ add_subdirectory(call_media)
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(peers)
   add_subdirectory(attachments)
+  add_subdirectory(delivery)
 endif()
 
 set(_pp_domain_modules
@@ -19,7 +20,7 @@ set(_pp_domain_modules
   pp_domain_call_media
 )
 if(NOT PP_BROWSER_HEADLESS)
-  list(APPEND _pp_domain_modules pp_domain_peers pp_domain_attachments)
+  list(APPEND _pp_domain_modules pp_domain_peers pp_domain_attachments pp_domain_delivery)
 endif()
 
 # Aggregate for this build's domain modules (mirrors pp_lib).
