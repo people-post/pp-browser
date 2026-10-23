@@ -337,6 +337,27 @@ std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenu
   return actions;
 }
 
+float ContextMenuHost::BottomInsetPx() const {
+  if (!context_) {
+    return 0.f;
+  }
+  const float dp = context_->GetDensityIndependentPixelRatio();
+  float inset = static_cast<float>(bottom_inset_dp_) * dp;
+  // The on-screen keyboard also insets the document itself (ShellHost lifts its bottom edge). A fixed
+  // layer then already ends above the keyboard: counting the inset again pushed the attach sheet to
+  // the top of a phone screen (B90, 2026-10-23). Only the part below the layer's edge is still owed.
+  if (layer_ && inset > 0.f) {
+    const ui::Vector2i dims = context_->GetDimensions();
+    const float layer_bottom =
+        layer_->GetAbsoluteOffset(ui::BoxArea::Border).y + layer_->GetBox().GetSize(ui::BoxArea::Border).y;
+    const float already = static_cast<float>(dims.y) - layer_bottom;
+    if (already > 0.f) {
+      inset = std::max(0.f, inset - already);
+    }
+  }
+  return inset;
+}
+
 void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   if (!panel_ || !context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -346,6 +367,8 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   document->UpdateDocument();
 
   ui::Vector2i dims = context_->GetDimensions();
+  // Positioned by `top` from the layer's top edge: the keyboard's top is at dims.y - inset whatever the
+  // document's lift (only the bottom-anchored sheet measures against the layer's bottom edge).
   dims.y -= static_cast<int>(static_cast<float>(bottom_inset_dp_) * context_->GetDensityIndependentPixelRatio());
   const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
   if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
@@ -466,9 +489,11 @@ void ContextMenuHost::LayoutAnchored(ui::Vector2i touch) {
 }
 
 void ContextMenuHost::LayoutActionSheet() {
-  if (!panel_ || !context_) {
+  if (!panel_ || !context_ || context_->GetNumDocuments() == 0) {
     return;
   }
+  // The layer was just appended: lay it out so BottomInsetPx() measures a real bottom edge.
+  context_->GetDocument(0)->UpdateDocument();
 
   const ui::Vector2i dims = context_->GetDimensions();
   if (dims.x <= 0 || dims.y <= 0) {
@@ -477,7 +502,7 @@ void ContextMenuHost::LayoutActionSheet() {
 
   const float dp = context_->GetDensityIndependentPixelRatio();
   const float inset = kActionSheetInsetDp * dp;
-  const float bottom = (kActionSheetBottomDp + static_cast<float>(bottom_inset_dp_)) * dp;
+  const float bottom = kActionSheetBottomDp * dp + BottomInsetPx();
   const float max_width = kActionSheetMaxWidthDp * dp;
   float width = static_cast<float>(dims.x) - inset * 2.f;
   if (width > max_width) {

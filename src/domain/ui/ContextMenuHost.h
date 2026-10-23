@@ -92,6 +92,8 @@ private:
   void LayoutBar(ui::Vector2i touch);
   void LayoutAnchored(ui::Vector2i touch);
   void LayoutActionSheet();
+  /// Keyboard inset in px still to be cleared below the layer's bottom edge (0 when the document was already lifted above the keyboard).
+  float BottomInsetPx() const;
   int FindMenuItemIndex(ui::Element* target) const;
   void HandleMenuAction(int index);
   void RequestDismiss(bool restore_focus = false);

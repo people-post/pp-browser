@@ -68,6 +68,29 @@ TEST(CallScreenTest, ActivityShowsUntilMediaIsLive) {
   EXPECT_EQ(out.status, Status::Activity);
 }
 
+TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
+  InCallSignals s;
+  s.media_status = CallMediaStatus::Failed;
+  EXPECT_EQ(Decide(s).status, Status::CouldntConnect) << "never connected: the user may retry";
+  s.was_connected = true;
+  EXPECT_EQ(Decide(s).status, Status::Disconnected);
+  InCallSignals seat;
+  seat.seat_media = MediaState::Failed;
+  seat.was_connected = true;
+  EXPECT_EQ(Decide(seat).status, Status::Disconnected);
+  InCallSignals mesh;  // the mesh path reports the failure after the reconnect window: still "disconnected"
+  mesh.p2p_connect_failed = true;
+  mesh.was_connected = true;
+  const InCallStatus out = Decide(mesh);
+  EXPECT_EQ(out.status, Status::Disconnected);
+  EXPECT_FALSE(out.show_retry);
+  InCallSignals hop;  // a stale seat failure while the hop path carries media: still connected
+  hop.seat_media = MediaState::Failed;
+  hop.media_chrome_live = true;
+  hop.was_connected = true;
+  EXPECT_EQ(Decide(hop).status, Status::Connected);
+}
+
 TEST(CallScreenTest, ReconnectingKeepsTheTimerAndOutranksConnected) {
   InCallSignals s;
   s.media_status = CallMediaStatus::Reconnecting;

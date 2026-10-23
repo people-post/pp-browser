@@ -137,6 +137,8 @@ private:
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
   std::string active_call_id_;
+  /** The active call once its media connected (latched; a later failure reads as Disconnected). */
+  std::string live_call_id_;
   bool ring_shown_ = false;
   /**
    * The ring the user just answered / declined: the stack's state reads Ringing for it until the

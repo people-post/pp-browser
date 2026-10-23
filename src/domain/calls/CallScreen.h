@@ -26,6 +26,8 @@ struct CallScreen {
     Reconnecting,
     SendingOnly,
     CouldntConnect,
+    /** Was connected, then lost its path for good: the screen closes by itself (B89). */
+    Disconnected,
     /** The call stack's own words (`activity`), e.g. a path switch in progress. */
     Activity,
     /** The media engine's connection state as it reads (`raw_state`). */
@@ -105,6 +107,8 @@ struct InCallSignals {
   std::string connection_state;
   /** The call stack's activity line (empty: none). */
   std::string activity;
+  /** Media was live at some point in this call (a later failure is "disconnected", not "couldn't connect"). */
+  bool was_connected = false;
 };
 
 struct InCallStatus {

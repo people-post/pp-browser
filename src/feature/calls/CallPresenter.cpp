@@ -220,6 +220,7 @@ void CallPresenter::Refresh() {
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();
+    live_call_id_.clear();
     ringing_call_id_.clear();
     ring_shown_ = false;
   }
@@ -275,7 +276,11 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   signals.sfu_attach_wait_active = backend.IsSfuAttachWaitActive();
   signals.connection_state = backend.Media().ConnectionState();
   signals.activity = backend.PeekMediaActivity();
+  signals.was_connected = live_call_id_ == call_id;
   const InCallStatus decided = DecideInCallStatus(signals);
+  if (decided.media_connected) {
+    live_call_id_ = call_id;
+  }
   if (decided.activity_spent) {
     backend.ClearMediaActivity();
   }

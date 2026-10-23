@@ -34,6 +34,8 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
     return "sending_only";
   case CallScreen::Status::CouldntConnect:
     return "couldnt_connect";
+  case CallScreen::Status::Disconnected:
+    return "disconnected";
   case CallScreen::Status::Activity:
     return "activity";
   case CallScreen::Status::Raw:
@@ -60,7 +62,13 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.activity_spent = true;
     activity = false;
   }
-  if (s.p2p_connect_failed) {
+  const bool failed = s.seat_media == MediaState::Failed || s.media_status == CallMediaStatus::Failed;
+  if (s.was_connected && !out.media_connected && (s.p2p_connect_failed || failed)) {
+    // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
+    out.status = Status::Disconnected;
+    out.show_retry = false;
+    out.show_invite = false;
+  } else if (s.p2p_connect_failed) {
     out.status = Status::CouldntConnect;
     out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::P2pConnect;
     out.show_invite = false;
@@ -76,7 +84,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.status = Status::Connected;
     out.show_elapsed = true;
     out.show_retry = false;
-  } else if (s.seat_media == MediaState::Failed || s.media_status == CallMediaStatus::Failed) {
+  } else if (failed) {
     out.status = Status::CouldntConnect;
   } else if (s.seat_media == MediaState::Idle && !s.media_active && s.media_status == CallMediaStatus::None) {
     out.status = Status::Calling;
