@@ -294,6 +294,10 @@ private:
   void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
   /** After a chat's settings changed (the presenter refreshed its list): badges and the surface follow. */
   void AfterThreadPrefsChanged();
+  /** Run a close (`action`) and, when it went through, clear what the open chat held; tells the user
+   *  when it failed (`show_error_text`: the action's own message, else "could not delete"). */
+  void CloseChatWith(const std::string& thread_id, const std::function<Roe<void>()>& action,
+                     bool show_error_text = false);
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
   void OnToggleArchived();

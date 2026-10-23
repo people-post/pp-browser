@@ -49,6 +49,25 @@ struct ChatListScreen {
   bool operator==(const ChatListScreen&) const = default;
 };
 
+/** What closing a chat does (the GUI asks before it does it). */
+struct CloseChatPlan {
+  enum class Kind {
+    /** Delete the conversation (a person's; `DeleteAi`: the agent's). */
+    Delete,
+    DeleteAi,
+    /** Leave the group (the owner stays). */
+    Leave,
+    /** Drop the group here only: an orphaned or solo group — no owner on the roster, or nobody reachable. */
+    Dismiss,
+    /** The owner leaves: hand the group to one of `successors` (reachable members), or dismiss it here. */
+    LeaveAsOwner,
+  };
+  Kind kind = Kind::Delete;
+  std::string group_id;
+  std::vector<std::string> successors;
+};
+const char* CloseChatPlanKindName(CloseChatPlan::Kind kind);
+
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);
 
@@ -105,6 +124,16 @@ public:
   void MarkRead(const std::string& thread_id);
   /** A chat was closed / deleted: forget its settings. */
   void ForgetThread(const std::string& thread_id);
+
+  // --- closing a chat ---------------------------------------------------------------------------
+
+  CloseChatPlan PlanClose(const std::string& thread_id);
+  /** Delete / close the chat here (and forget its settings). */
+  Roe<void> CloseThread(const std::string& thread_id);
+  /** Leave the group, then close the chat; a leave that cannot be sent dismisses the group here. */
+  Roe<void> LeaveGroupAndClose(const std::string& thread_id, const std::string& group_id);
+  Roe<void> DismissGroupAndClose(const std::string& thread_id, const std::string& group_id);
+  Roe<void> HandOverAndClose(const std::string& thread_id, const std::string& group_id, const std::string& successor);
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
   std::optional<ThreadLocalPrefs> PrefsOf(const std::string& thread_id);

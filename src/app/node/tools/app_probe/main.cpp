@@ -327,6 +327,9 @@ public:
         }
         Object out = Reply(id, true);
         out.set("members", ArrayValue(std::move(members)));
+        if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
+          out.set("owner", *owner);
+        }
         Emit(out);
       }
     } else if (cmd == "remove_member") {
@@ -418,6 +421,40 @@ public:
       chats_.CancelQuoteReply();
       auto sent = chats_.SendToChat(out_text);
       sent ? Emit(Reply(id, true)) : ReplyError(id, sent.error().message);
+    } else if (cmd == "close_plan") {
+      // What closing a chat would do (ChatController asks with this before it closes).
+      const CloseChatPlan plan = chats_.PlanClose(request->getString("thread").value_or(""));
+      Object out = Reply(id, true);
+      out.set("kind", CloseChatPlanKindName(plan.kind));
+      std::vector<Value> successors;
+      for (const std::string& s : plan.successors) {
+        successors.emplace_back(s);
+      }
+      out.set("successors", ArrayValue(std::move(successors)));
+      Emit(out);
+    } else if (cmd == "close_chat") {
+      // Close a chat the way its plan says (an owner names a `successor`, or dismisses with none).
+      const std::string thread = request->getString("thread").value_or("");
+      const std::string successor = request->getString("successor").value_or("");
+      const CloseChatPlan plan = chats_.PlanClose(thread);
+      Roe<void> done;
+      switch (plan.kind) {
+      case CloseChatPlan::Kind::Delete:
+      case CloseChatPlan::Kind::DeleteAi:
+        done = chats_.CloseThread(thread);
+        break;
+      case CloseChatPlan::Kind::Dismiss:
+        done = chats_.DismissGroupAndClose(thread, plan.group_id);
+        break;
+      case CloseChatPlan::Kind::Leave:
+        done = chats_.LeaveGroupAndClose(thread, plan.group_id);
+        break;
+      case CloseChatPlan::Kind::LeaveAsOwner:
+        done = successor.empty() ? chats_.DismissGroupAndClose(thread, plan.group_id)
+                                 : chats_.HandOverAndClose(thread, plan.group_id, successor);
+        break;
+      }
+      done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
     } else if (cmd == "home") {
       // The Home tab: back to the chats list.
       chats_.ShowHome();
@@ -569,6 +606,9 @@ private:
       row.set("title", thread.title);
       row.set("kind", thread.kind == ThreadKind::Direct ? "direct" : thread.kind == ThreadKind::Group ? "group" : "other");
       row.set("peer", thread.peer_identity_value);
+      if (thread.group_id) {
+        row.set("group_id", *thread.group_id);
+      }
       row.set("listed", false);
       for (size_t i = 0; i < list.rows.size(); ++i) {
         const ChatSessionRow& shown = list.rows[i];

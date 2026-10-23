@@ -1017,6 +1017,34 @@ def open_group(lab, n=3, title="lab group"):
     return users, threads
 
 
+def scenario_group_owner_hands_over(lab):
+    """Alice owns a group with Bob and Carol and closes it: she must hand it over (to a reachable member)
+    or drop it; members just leave. She hands it to Bob: Bob owns it, Alice is off the roster and her
+    chat is gone; Carol (a member) would still just leave."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    plan = a.cmd("close_plan", thread=threads[a.name])
+    if plan["kind"] != "leave_as_owner" or sorted(plan["successors"]) != sorted([b.account, c.account]):
+        raise ProbeError("alice (owner): close plan %s" % plan)
+    if b.cmd("close_plan", thread=threads[b.name])["kind"] != "leave":
+        raise ProbeError("bob (member): close plan is not leave")
+    a.cmd("close_chat", thread=threads[a.name], successor=b.account)
+    for u in (b, c):
+        wait_for(lambda: (lambda r: r.get("owner") == b.account and a.account not in r["members"])(
+            u.cmd("group_roster", group_id=plan_group(u, threads[u.name]))), 40, "%s: bob owns, alice left" % u.name)
+    if any(t["id"] == threads[a.name] for t in a.cmd("threads")["threads"]):
+        raise ProbeError("alice: the group chat is still there after handing it over")
+    if b.cmd("close_plan", thread=threads[b.name])["kind"] != "leave_as_owner":
+        raise ProbeError("bob: not the owner after the hand-over")
+    if c.cmd("close_plan", thread=threads[c.name])["kind"] != "leave":
+        raise ProbeError("carol: no longer a plain member")
+
+
+def plan_group(u, thread):
+    """The group id of `u`'s group chat `thread`."""
+    return next(t for t in u.cmd("threads")["threads"] if t["id"] == thread)["group_id"]
+
+
 def wait_for(fn, timeout, what):
     deadline = time.time() + timeout
     while True:
@@ -1496,6 +1524,7 @@ SCENARIOS = [
     ("group_last_one_waits", scenario_group_last_one_waits),
     ("group_late_starter", scenario_group_late_starter),
     ("group_member_removed", scenario_group_member_removed),
+    ("group_owner_hands_over", scenario_group_owner_hands_over),
     ("group_calling_at_once", scenario_group_calling_at_once),
 ]
 

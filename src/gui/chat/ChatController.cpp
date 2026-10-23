@@ -971,186 +971,109 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   }
 }
 
+void ChatController::CloseChatWith(const std::string& thread_id, const std::function<Roe<void>()>& action,
+                                   const bool show_error_text) {
+  // Closing may change the active thread, so decide before it: a row closed from the sessions list
+  // may not be the open chat, and only the open chat has a draft, a reply in flight or widgets to drop.
+  const bool was_open = thread_id == ActiveThreadId();
+  if (auto done = action(); !done) {
+    UserFeedback::Fail(show_error_text ? done.error().message : Tr("chat.error.delete_failed"));
+    NotifySurfaceChanged();
+    return;
+  }
+  if (was_open) {
+    chat_.draft = "";
+    chat_.status = "";
+    chat_.loading = false;
+    pending_reply_.reset();
+    working_set_.ClearAll();
+    widgets_.ClearAll();
+    chat_.turns.clear();
+  }
+  RefreshFromMessaging();
+  if (shell_.sessions.empty()) {
+    ShellSelectNavTab(NavTab::Home);
+    ShellCloseCompactChat();
+  }
+  ShellSyncLayout();
+  NotifySurfaceChanged();
+}
+
 void ChatController::OnCloseThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
-
-  auto finish_close = [this, thread_id]() {
-    // Closing may change the active thread, so decide before it: a row closed from the sessions list
-    // may not be the open chat, and only the open chat has a draft, a reply in flight or widgets to drop.
-    const bool was_open = thread_id == ActiveThreadId();
-    if (!facade_->CloseThread(thread_id)) {
-      UserFeedback::Fail(Tr("chat.error.delete_failed"));
-      NotifySurfaceChanged();
-      return;
-    }
-    presenter_.ForgetThread(thread_id);
-    if (was_open) {
-      chat_.draft = "";
-      chat_.status = "";
-      chat_.loading = false;
-      pending_reply_.reset();
-      working_set_.ClearAll();
-      widgets_.ClearAll();
-      chat_.turns.clear();
-    }
-    RefreshFromMessaging();
-    if (shell_.sessions.empty()) {
-      ShellSelectNavTab(NavTab::Home);
-      ShellCloseCompactChat();
-    }
-    ShellSyncLayout();
-    NotifySurfaceChanged();
+  const CloseChatPlan plan = presenter_.PlanClose(thread_id);
+  const std::string group_id = plan.group_id;
+  auto confirm_then = [this](const std::string& title_key, const std::string& body_key, std::function<void()> run) {
+    ShowConfirm(Tr(title_key), Tr(body_key), [run = std::move(run)](const bool ok) {
+      if (ok) {
+        run();
+      }
+    });
   };
-
-  auto dismiss_and_close = [this, finish_close](const std::string& group_id) {
-    (void)facade_->DismissLocalGroup(group_id);
-    finish_close();
-  };
-
-  auto thread = facade_->GetThread(thread_id);
-  if (thread && *thread && (*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-    const std::string group_id = *(*thread)->group_id;
-    std::string local_identity;
-    if (auto identity = facade_->GetIdentity()) {
-      local_identity = identity->account_id;
-    }
-
-    bool is_owner = false;
-    if (auto owner = facade_->IsLocalOwner(group_id)) {
-      is_owner = *owner;
-    } else if (auto roster = facade_->ListGroupRoster(group_id)) {
-      for (const GroupRosterMember& member : *roster) {
-        if (member.member_identity == local_identity && member.role == MemberRole::Owner) {
-          is_owner = true;
-          break;
-        }
-      }
-    }
-
-    std::vector<GroupRosterMember> members;
-    if (auto roster = facade_->ListGroupRoster(group_id)) {
-      members = *roster;
-    }
-
-    std::vector<GroupRosterMember> successors;
-    for (const GroupRosterMember& member : members) {
-      if (member.member_identity == local_identity) {
-        continue;
-      }
-      if (facade_->IsMemberUnreachable(group_id, member.member_identity)) {
-        continue;
-      }
-      successors.push_back(member);
-    }
-
-    bool owner_on_roster = false;
-    if (auto owner_id = facade_->OwnerIdentity(group_id)) {
-      for (const GroupRosterMember& member : members) {
-        if (member.member_identity == *owner_id) {
-          owner_on_roster = true;
-          break;
-        }
-      }
-    }
-
-    // Not the owner: normal leave — unless this is an orphaned/solo shell (owner missing or no
-    // reachable peers), then dismiss locally. Covers "both sides solo, neither is owner".
-    if (!is_owner) {
-      const bool orphaned_shell = successors.empty() || !owner_on_roster;
-      if (orphaned_shell) {
-        ShowConfirm(Tr("chat.group.dismiss_title"),
-                                   Tr("chat.group.dismiss_confirm"), [dismiss_and_close, group_id](bool ok) {
-                                     if (!ok) {
-                                       return;
-                                     }
-                                     dismiss_and_close(group_id);
-                                   });
-      } else {
-        ShowConfirm(Tr("chat.group.leave_title"),
-                                   Tr("chat.group.leave_confirm"),
-                                   [this, finish_close, dismiss_and_close, group_id](bool ok) {
-                                     if (!ok) {
-                                       return;
-                                     }
-                                     if (auto left = facade_->LeaveGroup(group_id); !left) {
-                                       dismiss_and_close(group_id);
-                                       return;
-                                     }
-                                     finish_close();
-                                   });
-      }
-      return;
-    }
-
-    // Solo or only-unreachable peers: local dismiss — no transfer into a ghost roster.
-    if (successors.empty()) {
-      ShowConfirm(Tr("chat.group.dismiss_title"),
-                                 Tr("chat.group.dismiss_confirm"), [dismiss_and_close, group_id](bool ok) {
-                                   if (!ok) {
-                                     return;
-                                   }
-                                   dismiss_and_close(group_id);
-                                 });
-      return;
-    }
-
-    ShowConfirm(Tr("chat.group.leave_title"), Tr("chat.group.leave_owner_confirm"),
-        [this, finish_close, dismiss_and_close, group_id, successors](bool ok) {
-          if (!ok) {
-            return;
-          }
-          std::vector<ContextMenuAction> actions;
-          for (const GroupRosterMember& member : successors) {
-            std::string label = member.member_identity;
-            if (auto contact = facade_->FindContactByIdentity(member.member_identity,
-                                                                                  mesh::ContactIdKind::Account)) {
-              if (*contact) {
-                label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-                if (label.empty()) {
-                  label = member.member_identity;
-                }
-              }
-            }
-            const std::string successor = member.member_identity;
-            actions.push_back({
-                "transfer_" + successor,
-                Tr("chat.group.transfer_to", {{"name", label}}),
-                nullptr,
-                [this, finish_close, group_id, successor]() {
-                  if (auto left = facade_->LeaveAsOwner(group_id, successor); !left) {
-                    UserFeedback::Fail(left.error().message);
-                    NotifySurfaceChanged();
-                    return;
-                  }
-                  finish_close();
-                },
-                "../icons/contacts.svg",
-            });
-          }
-          actions.push_back({
-              "dismiss_local",
-              Tr("chat.group.dismiss_local"),
-              nullptr,
-              [dismiss_and_close, group_id]() { dismiss_and_close(group_id); },
-              "../icons/trash.svg",
-              true,
-          });
-          ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
-          NotifySurfaceChanged();
-        });
+  switch (plan.kind) {
+  case CloseChatPlan::Kind::Delete:
+  case CloseChatPlan::Kind::DeleteAi:
+    confirm_then("chat.delete_conversation",
+                 plan.kind == CloseChatPlan::Kind::DeleteAi ? "chat.delete_confirm_ai" : "chat.delete_confirm",
+                 [this, thread_id]() { CloseChatWith(thread_id, [this, thread_id]() { return presenter_.CloseThread(thread_id); }); });
+    return;
+  case CloseChatPlan::Kind::Dismiss:
+    confirm_then("chat.group.dismiss_title", "chat.group.dismiss_confirm", [this, thread_id, group_id]() {
+      CloseChatWith(thread_id, [this, thread_id, group_id]() { return presenter_.DismissGroupAndClose(thread_id, group_id); });
+    });
+    return;
+  case CloseChatPlan::Kind::Leave:
+    confirm_then("chat.group.leave_title", "chat.group.leave_confirm", [this, thread_id, group_id]() {
+      CloseChatWith(thread_id, [this, thread_id, group_id]() { return presenter_.LeaveGroupAndClose(thread_id, group_id); });
+    });
+    return;
+  case CloseChatPlan::Kind::LeaveAsOwner:
+    confirm_then("chat.group.leave_title", "chat.group.leave_owner_confirm",
+                 [this, thread_id, group_id, successors = plan.successors]() {
+                   std::vector<ContextMenuAction> actions;
+                   for (const std::string& successor : successors) {
+                     std::string label = successor;
+                     if (auto contact = facade_->FindContactByIdentity(successor, mesh::ContactIdKind::Account);
+                         contact && *contact) {
+                       label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+                       if (label.empty()) {
+                         label = successor;
+                       }
+                     }
+                     actions.push_back({
+                         "transfer_" + successor,
+                         Tr("chat.group.transfer_to", {{"name", label}}),
+                         nullptr,
+                         [this, thread_id, group_id, successor]() {
+                           CloseChatWith(
+                               thread_id,
+                               [this, thread_id, group_id, successor]() {
+                                 return presenter_.HandOverAndClose(thread_id, group_id, successor);
+                               },
+                               /*show_error_text=*/true);
+                         },
+                         "../icons/contacts.svg",
+                     });
+                   }
+                   actions.push_back({
+                       "dismiss_local",
+                       Tr("chat.group.dismiss_local"),
+                       nullptr,
+                       [this, thread_id, group_id]() {
+                         CloseChatWith(thread_id, [this, thread_id, group_id]() {
+                           return presenter_.DismissGroupAndClose(thread_id, group_id);
+                         });
+                       },
+                       "../icons/trash.svg",
+                       true,
+                   });
+                   ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
+                   NotifySurfaceChanged();
+                 });
     return;
   }
-
-  const bool is_ai = thread && *thread && (*thread)->kind == ThreadKind::Ai;
-  ShowConfirm(Tr("chat.delete_conversation"),
-                             Tr(is_ai ? "chat.delete_confirm_ai" : "chat.delete_confirm"), [finish_close](bool ok) {
-                               if (!ok) {
-                                 return;
-                               }
-                               finish_close();
-                             });
 }
 
 void ChatController::AfterThreadPrefsChanged() {

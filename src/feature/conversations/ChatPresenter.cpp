@@ -56,6 +56,22 @@ bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::str
   return active;
 }
 
+const char* CloseChatPlanKindName(const CloseChatPlan::Kind kind) {
+  switch (kind) {
+  case CloseChatPlan::Kind::Delete:
+    return "delete";
+  case CloseChatPlan::Kind::DeleteAi:
+    return "delete_ai";
+  case CloseChatPlan::Kind::Leave:
+    return "leave";
+  case CloseChatPlan::Kind::Dismiss:
+    return "dismiss";
+  case CloseChatPlan::Kind::LeaveAsOwner:
+    return "leave_as_owner";
+  }
+  return "?";
+}
+
 ChatPresenter::ChatPresenter() {
   redirectLogger("ChatPresenter");
 }
@@ -344,6 +360,101 @@ Roe<void> ChatPresenter::SendToChat(const std::string& text) {
     return Error("No chat is open");
   }
   return facade_->RouteMessage(thread_id, text, std::nullopt);
+}
+
+CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
+  CloseChatPlan plan;
+  auto thread = facade_ ? facade_->GetThread(thread_id) : Roe<std::optional<Thread>>(std::optional<Thread>{});
+  if (!thread || !*thread) {
+    return plan;
+  }
+  if ((*thread)->kind == ThreadKind::Ai) {
+    plan.kind = CloseChatPlan::Kind::DeleteAi;
+    return plan;
+  }
+  if ((*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return plan;
+  }
+  plan.group_id = *(*thread)->group_id;
+  std::string me;
+  if (auto identity = facade_->GetIdentity()) {
+    me = identity->account_id;
+  }
+  std::vector<GroupRosterMember> members;
+  if (auto roster = facade_->ListGroupRoster(plan.group_id)) {
+    members = *roster;
+  }
+  bool is_owner = false;
+  if (auto owner = facade_->IsLocalOwner(plan.group_id)) {
+    is_owner = *owner;
+  } else {
+    is_owner = std::any_of(members.begin(), members.end(), [&](const GroupRosterMember& member) {
+      return member.member_identity == me && member.role == MemberRole::Owner;
+    });
+  }
+  for (const GroupRosterMember& member : members) {
+    if (member.member_identity != me && !facade_->IsMemberUnreachable(plan.group_id, member.member_identity)) {
+      plan.successors.push_back(member.member_identity);
+    }
+  }
+  if (is_owner) {
+    // Solo, or only unreachable peers: no transfer into a ghost roster.
+    plan.kind = plan.successors.empty() ? CloseChatPlan::Kind::Dismiss : CloseChatPlan::Kind::LeaveAsOwner;
+    return plan;
+  }
+  bool owner_on_roster = false;
+  if (auto owner_id = facade_->OwnerIdentity(plan.group_id)) {
+    owner_on_roster = std::any_of(members.begin(), members.end(),
+                                  [&](const GroupRosterMember& member) { return member.member_identity == *owner_id; });
+  }
+  // Not the owner: leave — unless the group is an orphaned or solo shell (no owner on the roster, or
+  // nobody reachable): then drop it here. Covers "both sides solo, neither is owner".
+  plan.kind = plan.successors.empty() || !owner_on_roster ? CloseChatPlan::Kind::Dismiss : CloseChatPlan::Kind::Leave;
+  if (plan.kind != CloseChatPlan::Kind::LeaveAsOwner) {
+    plan.successors.clear();
+  }
+  return plan;
+}
+
+Roe<void> ChatPresenter::CloseThread(const std::string& thread_id) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  if (auto closed = facade_->CloseThread(thread_id); !closed) {
+    return closed.error();
+  }
+  ForgetThread(thread_id);
+  Refresh();
+  return {};
+}
+
+Roe<void> ChatPresenter::LeaveGroupAndClose(const std::string& thread_id, const std::string& group_id) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  if (auto left = facade_->LeaveGroup(group_id); !left) {
+    return DismissGroupAndClose(thread_id, group_id);
+  }
+  return CloseThread(thread_id);
+}
+
+Roe<void> ChatPresenter::DismissGroupAndClose(const std::string& thread_id, const std::string& group_id) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  (void)facade_->DismissLocalGroup(group_id);
+  return CloseThread(thread_id);
+}
+
+Roe<void> ChatPresenter::HandOverAndClose(const std::string& thread_id, const std::string& group_id,
+                                          const std::string& successor) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  if (auto left = facade_->LeaveAsOwner(group_id, successor); !left) {
+    return left.error();
+  }
+  return CloseThread(thread_id);
 }
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
