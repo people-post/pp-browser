@@ -23,6 +23,7 @@
 #include "gui/CallChromeSync.h"
 #include "gui/CallMetricsTracker.h"
 #include "domain/ui/CallConflictCopy.h"
+#include "domain/calls/CallMediaErrorText.h"
 #include "domain/ui/PaymentFeedback.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
@@ -181,6 +182,12 @@ std::string LevelHint(int level, bool remote, bool muted) {
   return Tr("call.level.loud");
 }
 
+/** "0:43 · 重新连接中…" — the call timer keeps running while the path is being found again. */
+std::string ReconnectingSubtitle(const std::string& elapsed) {
+  const std::string reconnecting = Tr("call.status.reconnecting");
+  return elapsed.empty() ? reconnecting : elapsed + " · " + reconnecting;
+}
+
 std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
   std::string hint;
   for (const char* key : P2pStatusHintKeys(missing_mic, seed_unreachable)) {
@@ -238,6 +245,7 @@ void CallController::Tick() {
     }
   }
   SyncRingtone();
+  EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();
     const bool call_live = ring_.active || !presenter_.ActiveCallId().empty() ||
@@ -473,11 +481,17 @@ void CallController::ShowNotice(const CallNotice& notice) {
   case CallNotice::Kind::Error:
     UserFeedback::Fail(notice.key.empty() ? PaymentErrorUserMessage(notice.text) : Tr(notice.key));
     return;
-  case CallNotice::Kind::StickyError:
+  case CallNotice::Kind::StickyError: {
     // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
-    // users can read multi-hop diagnostics.
-    UserFeedback::NeedsSetup(PaymentErrorUserMessage(notice.text), /*sticky=*/true);
+    // users can read multi-hop diagnostics. Transport text ("amp call-media: no path within the
+    // reconnect window") stays in the log; the banner gets a plain sentence (B89).
+    const char* key = notice.key.empty() ? CallMediaErrorUserKey(notice.text) : notice.key.c_str();
+    if (key && notice.key.empty()) {
+      log().info << "call media error shown as " << key << " raw=" << notice.text;
+    }
+    UserFeedback::NeedsSetup(key ? Tr(key) : PaymentErrorUserMessage(notice.text), /*sticky=*/true);
     return;
+  }
   case CallNotice::Kind::PeerEnded:
   case CallNotice::Kind::PeerDeclined: {
     const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
@@ -716,14 +730,13 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
       in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
     }
     break;
-  case Status::Reconnecting: {
+  case Status::Reconnecting:
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
-    const std::string reconnecting = Tr("call.status.reconnecting");
-    in_call.subtitle = in_call.elapsed.empty()
-                           ? reconnecting.c_str()
-                           : (std::string(in_call.elapsed.c_str()) + " · " + reconnecting).c_str();
+    in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
     break;
-  }
+  case Status::Disconnected:
+    in_call.subtitle = Tr("call.status.disconnected").c_str();
+    break;
   case Status::SendingOnly:
     in_call.subtitle = Tr("call.quality.hint.sending_only").c_str();
     break;
@@ -813,6 +826,25 @@ void CallController::AcceptIncomingWithCharge() {
 
 void CallController::DeclineIncoming() {
   (void)presenter_.Decline();
+}
+
+// A call that was connected and then lost its path for good says "disconnected" for a moment
+// and closes by itself; one that never connected stays open so the user can retry (B89).
+void CallController::EndDisconnectedCall(const int64_t now_ms) {
+  const CallScreen& screen = presenter_.Screen();
+  if (screen.kind != CallScreen::Kind::InCall || screen.status != CallScreen::Status::Disconnected) {
+    disconnected_since_ms_ = 0;
+    return;
+  }
+  if (disconnected_since_ms_ == 0) {
+    disconnected_since_ms_ = now_ms;
+    return;
+  }
+  if (now_ms - disconnected_since_ms_ >= kDisconnectedCloseMs) {
+    log().info << "call closed by itself after a failed reconnect call_id=" << screen.call_id;
+    disconnected_since_ms_ = 0;
+    LeaveActive();
+  }
 }
 
 void CallController::LeaveActive() {
@@ -943,8 +975,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool mesh_messaging_failed =
       backend && backend->Available() && backend->IsP2pConnectFailed() &&
       !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode();
+  const bool path_lost =
+      backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
   const bool media_reconnect =
-      !mesh_messaging_failed && (stalling || missing_after_video || conn == "disconnected");
+      !mesh_messaging_failed && (stalling || missing_after_video || conn == "disconnected" || path_lost);
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -1057,8 +1091,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.peer_hint = LevelHint(in_call.peer_level, true, false).c_str();
   if (mesh_messaging_failed) {
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
-  } else if (media_reconnect && !media.IsConnected()) {
-    in_call.subtitle = Tr("call.status.reconnecting").c_str();
+  } else if (path_lost || (media_reconnect && !media.IsConnected())) {
+    // The media layer lost its path (the engine may still say connected) or the engine itself did.
+    in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
+    in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (backend && backend->Available() &&
@@ -1181,7 +1217,7 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
     path_key = "call.details.path.direct";
   }
   const bool show_path =
-      path_key && backend && backend->Available() &&
+      path_key && backend && backend->Available() && backend->MediaStatus() != CallMediaStatus::Reconnecting &&
       (backend->MediaChromeLive() || backend->SeatMediaLive(presenter_.ActiveCallId()) ||
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   if (show_path) {

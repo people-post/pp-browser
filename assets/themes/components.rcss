@@ -2823,6 +2823,27 @@ input.checkbox {
   margin: 8dp 0;
 }
 
+/* A call in the transcript: icon + duration (or outcome), a pill on the starter's side. */
+.chat-call-row {
+  display: inline-block;
+  padding: 6dp 12dp;
+  border-radius: 14dp;
+  background-color: rgba(128, 128, 128, 0.12);
+  font-size: 13dp;
+}
+
+.chat-call-row-icon {
+  display: inline-block;
+  width: 16dp;
+  height: 16dp;
+  margin-right: 6dp;
+  vertical-align: middle;
+}
+
+.chat-call-row-text {
+  vertical-align: middle;
+}
+
 .chat-card {
   border-radius: 8dp;
   padding: 10dp 12dp;

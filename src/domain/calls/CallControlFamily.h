@@ -28,6 +28,19 @@ SystemControlFamily MakeCallControlFamily(CallControlFamilyPorts ports);
 /** A call summary's transcript line; none when the message is no summary. */
 std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const SystemControlLabels& labels);
 
+/**
+ * A call summary as the transcript draws it (2026-10-23): an icon for voice / video, the duration
+ * or a one-word outcome, on the starter's side of the chat like a message. `ours` = this user
+ * started the call (the row sits right); `connected` = it had a duration (else drawn muted).
+ */
+struct CallSummaryRow {
+  bool ours = false;
+  bool video = false;
+  bool connected = false;
+  std::string text;
+};
+std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message);
+
 /** A summary the reader should hear about (unread, notice): a call to them that they missed. */
 bool CallSummaryIsNews(const ThreadMessage& message);
 

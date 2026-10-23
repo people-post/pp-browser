@@ -72,6 +72,7 @@ public:
   void AcceptIncomingWithCharge();
   void DeclineIncoming();
   void LeaveActive();
+  void EndDisconnectedCall(int64_t now_ms);
   void RetryConnect();
   void ToggleMute();
   void ToggleCamera();
@@ -128,6 +129,9 @@ private:
   CallScreen::Kind header_kind_ = CallScreen::Kind::None;
   std::string header_call_id_;
   int64_t last_pulse_toggle_ms_ = 0;
+  /** When the screen turned Disconnected (0: not); it closes after kDisconnectedCloseMs. */
+  int64_t disconnected_since_ms_ = 0;
+  static constexpr int64_t kDisconnectedCloseMs = 3000;
   int64_t last_media_health_log_ms_ = 0;
   /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
   CallAudioFaultToastGate audio_fault_gate_;

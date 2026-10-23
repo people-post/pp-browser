@@ -103,6 +103,41 @@ std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const S
   return line("failed");
 }
 
+std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message) {
+  const auto summary = SummaryOf(message);
+  if (!summary) {
+    return std::nullopt;
+  }
+  CallSummaryRow row;
+  // A group summary is always written by this device (about its own part): the side is whether we
+  // started the call. A 1:1 summary is the starter's message.
+  row.ours = summary->group ? summary->started : message.sender_contact_id == kLocalSelfContactId;
+  row.video = summary->media_mode == CallMediaMode::Video;
+  row.connected = summary->outcome == CallOutcome::Completed && summary->duration_ms.has_value();
+  std::string outcome;
+  switch (summary->outcome) {
+  case CallOutcome::Completed:
+    outcome = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : Tr("call.row.failed");
+    break;
+  case CallOutcome::Missed:
+    outcome = Tr(summary->group ? (summary->started ? "call.row.no_answer" : "call.row.missed")
+                                : (row.ours ? "call.row.no_answer" : "call.row.missed"));
+    break;
+  case CallOutcome::Cancelled:
+    outcome = Tr(summary->group ? (summary->started ? "call.row.cancelled" : "call.row.missed")
+                                : (row.ours ? "call.row.cancelled" : "call.row.missed"));
+    break;
+  case CallOutcome::Declined:
+    outcome = Tr(summary->group ? "call.row.declined" : (row.ours ? "call.row.declined_by_peer" : "call.row.declined"));
+    break;
+  case CallOutcome::Failed:
+    outcome = Tr("call.row.failed");
+    break;
+  }
+  row.text = summary->group ? Tr("call.row.group") + " · " + outcome : outcome;
+  return row;
+}
+
 bool CallSummaryIsNews(const ThreadMessage& message) {
   const auto summary = SummaryOf(message);
   if (!summary || summary->group || message.sender_contact_id == kLocalSelfContactId) {

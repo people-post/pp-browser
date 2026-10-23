@@ -34,6 +34,8 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
     return "sending_only";
   case CallScreen::Status::CouldntConnect:
     return "couldnt_connect";
+  case CallScreen::Status::Disconnected:
+    return "disconnected";
   case CallScreen::Status::Activity:
     return "activity";
   case CallScreen::Status::Raw:
@@ -77,7 +79,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.show_elapsed = true;
     out.show_retry = false;
   } else if (s.seat_media == MediaState::Failed || s.media_status == CallMediaStatus::Failed) {
-    out.status = Status::CouldntConnect;
+    out.status = s.was_connected ? Status::Disconnected : Status::CouldntConnect;
   } else if (s.seat_media == MediaState::Idle && !s.media_active && s.media_status == CallMediaStatus::None) {
     out.status = Status::Calling;
   } else if (s.soft_migrate_in_flight || s.sfu_attach_wait_active || media_connecting) {

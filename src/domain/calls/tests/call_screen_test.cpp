@@ -68,6 +68,18 @@ TEST(CallScreenTest, ActivityShowsUntilMediaIsLive) {
   EXPECT_EQ(out.status, Status::Activity);
 }
 
+TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
+  InCallSignals s;
+  s.media_status = CallMediaStatus::Failed;
+  EXPECT_EQ(Decide(s).status, Status::CouldntConnect) << "never connected: the user may retry";
+  s.was_connected = true;
+  EXPECT_EQ(Decide(s).status, Status::Disconnected);
+  InCallSignals seat;
+  seat.seat_media = MediaState::Failed;
+  seat.was_connected = true;
+  EXPECT_EQ(Decide(seat).status, Status::Disconnected);
+}
+
 TEST(CallScreenTest, ReconnectingKeepsTheTimerAndOutranksConnected) {
   InCallSignals s;
   s.media_status = CallMediaStatus::Reconnecting;

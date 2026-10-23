@@ -4,6 +4,7 @@
 #include "common/ValueJson.h"
 
 #include "domain/ai/StructuredTextParser.h"
+#include "domain/calls/CallControlFamily.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/GroupMembershipCodec.h"
@@ -121,9 +122,24 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
 }
 
+/** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
+std::string CallRowRml(const CallSummaryRow& row) {
+  std::string html = "<div class=\"chat-call-row";
+  if (!row.connected) {
+    html += " muted";
+  }
+  html += "\"><svg class=\"chat-call-row-icon\" src=\"";
+  html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
+  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(row.text) + "</span></div>";
+  return html;
+}
+
 std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts) {
   const ThreadMessage& message = entry.message;
   if (entry.control) {
+    if (const auto call_row = CallSummaryRowOf(message)) {
+      return CallRowRml(*call_row);
+    }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
     return SystemLineRml(line.value_or(message.text));
