@@ -147,10 +147,7 @@ bool CallHopMigrateWorkflow::PassSoftMigrateArmingGate(const std::string& call_i
   case SoftMigrateArming::Proceed:
     return true;
   case SoftMigrateArming::ArmAndProceed:
-    ops_.apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-    if (arming_ports->report_progress) {
-      arming_ports->report_progress(CallHopPlannerPhase::Migrating, call_id);
-    }
+    ops_.apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);  // reports Migrating
     return true;
   case SoftMigrateArming::StayDirect:
     log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
@@ -1007,10 +1004,7 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
     seat_ports->note_live(call_id);
     seat_ports->end_attach_if_matching(call_id, at.attach.hop_peer_id);
   }
-  ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-  if (arming_ports->report_progress) {
-    arming_ports->report_progress(CallHopPlannerPhase::Live, call_id);
-  }
+  ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);  // reports Live
 }
 
 void CallHopMigrateWorkflow::ReleaseDirectFor(const std::string& call_id) {

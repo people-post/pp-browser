@@ -340,6 +340,12 @@ void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& ca
     log().info << "planner=Hop keep phase=" << CallHopPlannerPhaseName(sfu_.hop_planner_phase)
                << " event=" << CallHopPlannerEventName(ev) << " call_id=" << call_id;
   }
+  // The call's media status follows every transition the planner decides, here and only here
+  // (a status without a planner transition — a join decision, a guest's reattach — is reported
+  // where it is decided).
+  if (out.decision == CallHopPlannerDecision::Transition) {
+    ReportHopProgress(out.next, call_id);
+  }
   if (ev == CallHopPlannerEvent::Stop) {
     CancelAttachWaitTimer();
   }
@@ -918,7 +924,6 @@ void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, si
     ClearSfuAttachWait();
     SyncSfuSubscriptions(call_id);
     Apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-    ReportHopProgress(CallHopPlannerPhase::Live, call_id);
     return;
   case JoinWithoutHintAction::KeepFlight:
     // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes; bumping
@@ -1035,7 +1040,6 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   }
   host_.note_media_attempted(call_id);
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-  ReportHopProgress(CallHopPlannerPhase::Migrating, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::RemoteAcceptObserved, {}, gen,
                              [this, call_id, joiner_identity, gen](Roe<void> mig) {
@@ -1164,7 +1168,6 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   host_.SetMediaActivity(Tr("call.status.setting_up_group"));
   host_.NotifyRingChanged();
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-  ReportHopProgress(CallHopPlannerPhase::Migrating, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, gen,
                              [this, call_id, gen](Roe<void> mig) {
@@ -1205,9 +1208,6 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     return {};
   }
   Apply(CallHopPlannerEvent::SfuAttachInbound, call_id);
-  if (sfu_.hop_planner_phase == CallHopPlannerPhase::Attaching) {
-    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
-  }
   if (!LeaveHopForOwnerMove(call_id, attach, sender) && SettleInboundSfuAttachWithoutDial(call_id, attach)) {
     return {};
   }
