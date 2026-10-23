@@ -85,6 +85,7 @@ public:
                                              const std::string& nickname, const std::string& signature,
                                              int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
                                              const std::string& kem_public_key_b64 = "",
+                                             const std::string& kem_binding_signature_b64 = "",
                                              const std::string& peer_id = "",
                                              const std::vector<std::string>& multiaddrs = {},
                                              int64_t initiation_floor = 0,

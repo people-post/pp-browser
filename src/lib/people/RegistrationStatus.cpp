@@ -96,6 +96,10 @@ bool ShouldRenewRegistration(const LocalIdentity& identity, int64_t now_ms) {
   return status == RegistrationStatus::ExpiringSoon || status == RegistrationStatus::Expired;
 }
 
+bool ShouldPublishKemBinding(const LocalIdentity& identity) {
+  return identity.registered && !identity.kem_binding_published;
+}
+
 std::string RegistrationStatusLabel(RegistrationStatus status) {
   switch (status) {
   case RegistrationStatus::Unregistered:

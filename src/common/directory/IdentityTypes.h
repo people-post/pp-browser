@@ -46,6 +46,11 @@ struct LocalIdentity {
    * Dogfood via AppConfig.initiation_floor; published on register/renew when server supports it.
    */
   int64_t initiation_floor = 0;
+  /**
+   * The relay's directory entry carries this account's KEM key binding (foundation/crypto/KemKeyBinding.h):
+   * peers take the KEM key only with it. A registration from before bindings re-registers once.
+   */
+  bool kem_binding_published = false;
 };
 
 } // namespace pbr

@@ -17,3 +17,7 @@ pp_browser_add_domain_library(pp_domain_peers
     pp_lib_messaging
     pp_mesh
     pp_foundation_runtime_core)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

@@ -1,5 +1,6 @@
 #include "domain/registration/RegistrationClient.h"
 
+#include "foundation/crypto/KemKeyBinding.h"
 #include "lib/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 
@@ -21,6 +22,9 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
   }
   if (result.initiation_floor_present) {
     identity.initiation_floor = result.initiation_floor;
+  }
+  if (result.success) {
+    identity.kem_binding_published = result.kem_bound;
   }
 }
 
@@ -57,8 +61,19 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return signature.error();
   }
 
+  // The account binds its KEM key to itself; the directory hands the binding to peers with the key.
+  const auto binding_bytes = KemBindingSignBytes(loaded->account_signing_public_key_b64, loaded->kem_public_key_b64);
+  if (binding_bytes.empty()) {
+    return Error("Failed to build KEM key binding");
+  }
+  auto kem_binding = identity.SignBytes(binding_bytes);
+  if (!kem_binding) {
+    return kem_binding.error();
+  }
+
   return registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
                                          *signature, timestamp, start->signature_alg, loaded->kem_public_key_b64,
+                                         *kem_binding,
                                          loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
 }
 
@@ -90,10 +105,8 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
   if (!loaded) {
     return loaded.error();
   }
-  if (!ShouldRenewRegistration(*loaded)) {
-    return false;
-  }
-  if (!auto_renew_enabled) {
+  // A registration from before KEM key bindings publishes one now: peers take the KEM key only with it.
+  if (!ShouldPublishKemBinding(*loaded) && (!ShouldRenewRegistration(*loaded) || !auto_renew_enabled)) {
     return false;
   }
 

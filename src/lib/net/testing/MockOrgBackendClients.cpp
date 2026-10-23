@@ -346,6 +346,7 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                                                                    int64_t /*timestamp*/,
                                                                    const std::string& /*signature_alg*/,
                                                                    const std::string& /*kem_public_key_b64*/,
+                                                                   const std::string& /*kem_binding_signature_b64*/,
                                                                    const std::string& /*peer_id*/,
                                                                    const std::vector<std::string>& /*multiaddrs*/,
                                                                    int64_t initiation_floor,
@@ -356,7 +357,8 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                             .llm_api_key = "brf_llm_mock_key",
                             .expires_at = "2099-01-01T00:00:00.000Z",
                             .initiation_floor = initiation_floor,
-                            .initiation_floor_present = true};
+                            .initiation_floor_present = true,
+                            .kem_bound = true};
 }
 
 Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string& new_nickname,

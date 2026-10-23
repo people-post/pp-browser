@@ -581,6 +581,9 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
     if (auto kem = obj->getString("kem_public_key_b64")) {
       hit.kem_public_key_b64 = *kem;
     }
+    if (auto binding = obj->getString("kem_binding_signature_b64")) {
+      hit.kem_binding_signature_b64 = *binding;
+    }
     if (const Object* caps = obj->getObject("capabilities")) {
       if (auto circuit = caps->getIf<bool>("circuit_relay")) {
         hit.capabilities.circuit_relay = *circuit;
@@ -693,6 +696,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                                                                    int64_t timestamp,
                                                                    const std::string& signature_alg,
                                                                    const std::string& kem_public_key_b64,
+                                                                   const std::string& kem_binding_signature_b64,
                                                                    const std::string& peer_id,
                                                                    const std::vector<std::string>& multiaddrs,
                                                                    int64_t initiation_floor,
@@ -708,6 +712,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
   body.set("timestamp", timestamp);
   body.set("signature_alg", signature_alg);
   body.set("kem_public_key_b64", kem_public_key_b64);
+  if (!kem_binding_signature_b64.empty()) {
+    body.set("kem_binding_signature_b64", kem_binding_signature_b64);
+  }
   body.set("initiation_floor", initiation_floor);
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
@@ -755,6 +762,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
       result.initiation_floor = *floor;
       result.initiation_floor_present = true;
     }
+    result.kem_bound = root->getIf<bool>("kem_bound").value_or(false);
   }
   return result;
 }

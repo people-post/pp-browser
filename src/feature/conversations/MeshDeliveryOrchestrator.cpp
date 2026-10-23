@@ -138,22 +138,26 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   });
 }
 
-void MeshDeliveryOrchestrator::RegisterPeerSigningKey(const std::string& peer_identity_kind,
-                                               const std::string& peer_identity_value,
-                                               const std::string& signing_public_key_b64, const std::string& source) {
-  PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = signing_public_key_b64;
-  record.source = source;
-  signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
-}
-
-void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identity_kind,
-                                           const std::string& peer_identity_value,
-                                           const std::string& kem_public_key_b64, const std::string& source) {
-  PeerKemKeyRecord record;
-  record.kem_public_key_b64 = kem_public_key_b64;
-  record.source = source;
-  kem_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
+void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit) {
+  const auto account_id = PrimaryAccountIdFromHit(hit);
+  if (!account_id || !hit.signing_public_key_b64 || hit.signing_public_key_b64->empty()) {
+    return;
+  }
+  const std::string kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  PeerSigningKeyRecord signing;
+  signing.signing_public_key_b64 = *hit.signing_public_key_b64;
+  signing.source = "directory";
+  (void)signing_key_store_.Put(kind, *account_id, std::move(signing));
+  if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
+    PeerKemKeyRecord kem;
+    kem.kem_public_key_b64 = *hit.kem_public_key_b64;
+    kem.signing_public_key_b64 = *hit.signing_public_key_b64;
+    kem.binding_signature_b64 = hit.kem_binding_signature_b64.value_or("");
+    kem.source = "directory";
+    if (!kem_key_store_.Put(kind, *account_id, std::move(kem))) {
+      log().warning << "Directory KEM key for " << *account_id << " is not bound to the account; not kept";
+    }
+  }
 }
 
 void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {

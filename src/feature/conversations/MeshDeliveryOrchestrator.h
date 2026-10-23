@@ -163,10 +163,11 @@ public:
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
   void SetOnBackgroundUnread(
       std::function<void(std::string title, std::string body, std::string thread_id)> callback);
-  void RegisterPeerSigningKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                              const std::string& signing_public_key_b64, const std::string& source = "manual");
-  void RegisterPeerKemKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                          const std::string& kem_public_key_b64, const std::string& source = "manual");
+  /**
+   * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
+   * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
+   */
+  void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);
 
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
 

@@ -55,14 +55,8 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
     }
     return Roe<void>();
   };
-  ports.register_peer_signing_key = [&hub](const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                                           const std::string& signing_public_key_b64,
-                                           const std::string& source) {
-    hub.MeshMessaging().RegisterPeerSigningKey(peer_identity_kind, peer_identity_value, signing_public_key_b64, source);
-  };
-  ports.register_peer_kem_key = [&hub](const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                                        const std::string& kem_public_key_b64, const std::string& source) {
-    hub.MeshMessaging().RegisterPeerKemKey(peer_identity_kind, peer_identity_value, kem_public_key_b64, source);
+  ports.register_peer_keys_from_directory = [&hub](const mesh::DirectoryHit& hit) {
+    hub.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
   };
   ports.is_contact_reachable = [&hub](const Contact& contact) { return hub.IsContactReachable(contact); };
   return ports;

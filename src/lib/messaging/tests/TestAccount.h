@@ -6,6 +6,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
+#include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
 
 #include <gtest/gtest.h>
@@ -45,6 +46,11 @@ struct TestAccount {
   std::string SigningPublicB64() const { return Base64Encode(signing_public); }
   std::string KemPublicB64() const { return Base64Encode(kem_public); }
   std::string DevicePublicB64() const { return Base64Encode(device_public); }
+
+  /** The account's binding of its KEM key to itself, base64 (as the directory carries it). */
+  std::string KemBindingB64() const {
+    return Sign(KemBindingSignBytes(SigningPublicB64(), KemPublicB64())).value();
+  }
 
   /** The account key's signature over `bytes`, base64 (as an envelope carries it). */
   Roe<std::string> Sign(const std::vector<uint8_t>& bytes) const {

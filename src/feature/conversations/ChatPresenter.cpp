@@ -12,7 +12,6 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
-#include "common/directory/DirectoryJson.h"
 #include "lib/messaging/GroupTypes.h"
 
 #include <algorithm>
@@ -297,13 +296,7 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
   if (carries_keys && (!hit.account_id || hit.account_id->empty())) {
     return Error("chat.error.directory_missing_account");
   }
-  const std::string account_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-  if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-    facade_->RegisterPeerSigningKey(account_kind, *hit.account_id, *hit.signing_public_key_b64, "directory");
-  }
-  if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-    facade_->RegisterPeerKemKey(account_kind, *hit.account_id, *hit.kem_public_key_b64, "directory");
-  }
+  facade_->RegisterPeerKeysFromDirectory(hit);
   facade_->RegisterContactDirectEndpoints(*created);
   // The direct chat with a stranger (no participants) belongs to the new contact from now on.
   ThreadChannel channel = ThreadChannel::E2ePublic;

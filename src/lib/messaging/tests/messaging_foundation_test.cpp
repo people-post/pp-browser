@@ -3,10 +3,13 @@
 #include "lib/messaging/PlainTextLinks.h"
 #include "lib/messaging/QuoteReply.h"
 #include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "lib/messaging/RelayWirePayload.h"
 
 #include <functional>
+#include "lib/messaging/tests/TestAccount.h"
+
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -194,13 +197,34 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
       << "no Brief route yet is allowed";
 }
 
-// Kind and value are kept apart in the cache key.
-TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsKindAndValueApart) {
+// The store keeps an account's KEM key only under that account's own binding.
+TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsOnlyKeysTheAccountBound) {
+  const test::TestAccount alice = test::TestAccount::Make();
+  const test::TestAccount mallory = test::TestAccount::Make();
+  const std::string account = ContactIdKindToString(mesh::ContactIdKind::Account);
+  const PeerKemKeyRecord bound{.kem_public_key_b64 = alice.KemPublicB64(),
+                               .signing_public_key_b64 = alice.SigningPublicB64(),
+                               .binding_signature_b64 = alice.KemBindingB64(),
+                               .source = "test"};
   PeerKemKeyStore store;
-  store.Put("ab", "c", PeerKemKeyRecord{.kem_public_key_b64 = "k1", .source = "test"});
-  EXPECT_FALSE(store.Get("a", "bc").has_value());
-  ASSERT_TRUE(store.Get("ab", "c").has_value());
-  EXPECT_EQ(store.Get("ab", "c")->kem_public_key_b64, "k1");
+
+  PeerKemKeyRecord unbound = bound;
+  unbound.binding_signature_b64.clear();
+  EXPECT_FALSE(store.Put(account, alice.account_id, unbound));
+  PeerKemKeyRecord substituted = bound;
+  substituted.kem_public_key_b64 = mallory.KemPublicB64();
+  EXPECT_FALSE(store.Put(account, alice.account_id, substituted)) << "another key under Alice's binding";
+  const PeerKemKeyRecord mallory_own{.kem_public_key_b64 = mallory.KemPublicB64(),
+                                  .signing_public_key_b64 = mallory.SigningPublicB64(),
+                                  .binding_signature_b64 = mallory.KemBindingB64(),
+                                  .source = "test"};
+  EXPECT_FALSE(store.Put(account, alice.account_id, mallory_own)) << "Mallory's own binding, claimed for Alice";
+  EXPECT_FALSE(store.Put("relay_user", alice.account_id, bound)) << "accounts only";
+  EXPECT_FALSE(store.Get(account, alice.account_id).has_value());
+
+  EXPECT_TRUE(store.Put(account, alice.account_id, bound));
+  ASSERT_TRUE(store.Get(account, alice.account_id).has_value());
+  EXPECT_EQ(store.Get(account, alice.account_id)->kem_public_key_b64, alice.KemPublicB64());
 }
 
 } // namespace pbr

@@ -151,10 +151,8 @@ public:
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
   void SetSupportAccountId(std::string account_id);
   void RegisterContactDirectEndpoints(const Contact& contact);
-  void RegisterPeerSigningKey(const std::string& kind, const std::string& value, const std::string& key_b64,
-                              const std::string& source);
-  void RegisterPeerKemKey(const std::string& kind, const std::string& value, const std::string& key_b64,
-                          const std::string& source);
+  /** The keys a directory entry carries for its account, each kept only when it proves to be the account's. */
+  void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);
   Roe<Contact> AddContactFromDirectoryHit(const mesh::DirectoryHit& hit);
   /** Block / unblock / trust from wherever the person is shown (chat row menu, contact detail). */
   Roe<void> SetContactTrust(const std::string& contact_id, TrustLevel level);

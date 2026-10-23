@@ -174,6 +174,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getIf<int64_t>("initiation_floor")) {
     identity.initiation_floor = *v;
   }
+  if (auto v = root.getIf<bool>("kem_binding_published")) {
+    identity.kem_binding_published = *v;
+  }
   return identity;
 }
 
@@ -194,6 +197,7 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("registered", identity.registered);
   root.set("registration_expires_at", identity.registration_expires_at);
   root.set("initiation_floor", identity.initiation_floor);
+  root.set("kem_binding_published", identity.kem_binding_published);
   return root;
 }
 

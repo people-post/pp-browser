@@ -159,7 +159,7 @@ Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
 `signature` on wire: base64 over the 3309-byte ML-DSA-65 signature. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes below are frozen.
 
-Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`) — whichever source offers it (directory, contact card, sync) — and a directory answer must be for the account asked. The account KEM key is not bound this way yet: that needs the directory to return the account's signature over it.
+Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`) — whichever source offers it (directory, contact card, sync) — and a directory answer must be for the account asked. The account KEM key is kept only with the account's own binding (`PeerKemKeyStore`, `foundation/crypto/KemKeyBinding.h`): its ML-DSA signature over domain `pp-browser:kem-binding-v1\0`, version u8 `1`, the raw ML-DSA-65 account public key and the raw ML-KEM-768 public key, made with the account signing key whose hash is the Account ID. The relay stores the binding from `register/finish` and returns it with every directory entry (`kem_binding_signature_b64`); a key without a valid binding is refused, so the relay cannot substitute one.
 
 ## Send / receive pipeline (e2e)
 

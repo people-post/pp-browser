@@ -4,6 +4,7 @@
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/KemKeyBinding.h"
 
 #include <filesystem>
 
@@ -138,6 +139,87 @@ TEST_F(RevokeRegistrationTest, RegisteredIdentitySignsAndCallsTheRelay) {
   auto after = identity_->Get();
   ASSERT_TRUE(static_cast<bool>(after));
   EXPECT_TRUE(after->registered);
+}
+
+// Records what register/finish sent; the relay stores the binding when `relay_stores_binding`.
+class BindingRecordingClient : public MockRegistrationClient {
+public:
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg,
+                                             const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs, int64_t initiation_floor,
+                                             const RegistrationPublishOpts& publish) override {
+    ++finish_calls;
+    last_kem_public_key_b64 = kem_public_key_b64;
+    last_binding = kem_binding_signature_b64;
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature,
+                                                             timestamp, signature_alg, kem_public_key_b64,
+                                                             kem_binding_signature_b64, peer_id, multiaddrs,
+                                                             initiation_floor, publish);
+    if (result) {
+      result->kem_bound = relay_stores_binding;
+    }
+    return result;
+  }
+  bool relay_stores_binding = true;
+  int finish_calls = 0;
+  std::string last_kem_public_key_b64;
+  std::string last_binding;
+};
+
+class KemBindingPublishTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_kem_binding_publish_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    identity_ = std::make_unique<IdentityStore>(dir_.string(), "test-profile");
+    ASSERT_TRUE(static_cast<bool>(identity_->SetDek(ByteVector(kDataEncryptionKeySize, 7))));
+    auto created = identity_->LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
+    // Registered before bindings existed, and far from expiry.
+    LocalIdentity identity = *created;
+    identity.registered = true;
+    identity.relay_user_id = "relay:u1";
+    identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
+    ASSERT_TRUE(static_cast<bool>(identity_->Update(identity)));
+  }
+  void TearDown() override {
+    identity_.reset();
+    std::filesystem::remove_all(dir_);
+  }
+  std::filesystem::path dir_;
+  std::unique_ptr<IdentityStore> identity_;
+  BindingRecordingClient client_;
+};
+
+TEST_F(KemBindingPublishTest, AnOlderRegistrationPublishesItsBindingOnceEvenWithoutAutoRenew) {
+  auto renewed = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/false);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  EXPECT_TRUE(*renewed);
+  ASSERT_EQ(client_.finish_calls, 1);
+
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_TRUE(after.kem_binding_published);
+  EXPECT_EQ(client_.last_kem_public_key_b64, after.kem_public_key_b64);
+  EXPECT_TRUE(VerifyKemBinding(after.account_id, after.account_signing_public_key_b64, after.kem_public_key_b64,
+                               client_.last_binding))
+      << "register/finish carries the account's own binding";
+
+  renewed = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/false);
+  ASSERT_TRUE(static_cast<bool>(renewed));
+  EXPECT_FALSE(*renewed);
+  EXPECT_EQ(client_.finish_calls, 1) << "published: no further registration";
+}
+
+TEST_F(KemBindingPublishTest, ARelayThatDidNotStoreItLeavesItToPublishAgain) {
+  client_.relay_stores_binding = false;
+  ASSERT_TRUE(static_cast<bool>(MaybeAutoRenewRegistration(client_, *identity_, false)));
+  EXPECT_FALSE(identity_->Get().value().kem_binding_published);
+  EXPECT_TRUE(ShouldPublishKemBinding(identity_->Get().value()));
 }
 
 } // namespace

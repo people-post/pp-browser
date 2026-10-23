@@ -947,15 +947,8 @@ void ContactsController::AddContactFromHit(const mesh::DirectoryHit& hit) {
     return;
   }
   // Same steps as ContactActionDispatcher's add_contact: keys first, then the contact, then its direct endpoints.
-  if (const auto account_id = PrimaryAccountIdFromHit(hit)) {
-    if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
-      contacts_ports_.register_peer_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id,
-                                                *hit.signing_public_key_b64, "directory");
-    }
-    if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
-      contacts_ports_.register_peer_kem_key(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id,
-                                            *hit.kem_public_key_b64, "directory");
-    }
+  if (contacts_ports_.register_peer_keys_from_directory) {
+    contacts_ports_.register_peer_keys_from_directory(hit);
   }
   auto created = contacts_ports_.add_contact_from_directory_hit(hit);
   if (!created) {
@@ -1143,21 +1136,14 @@ void ContactsController::OnSyncRemote() {
     UserFeedback::Fail(hit.error().message.empty() ? Tr("contacts.err.sync") : hit.error().message);
     return;
   }
-  if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
-    if (!hit->account_id || hit->account_id->empty()) {
-      UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
-      return;
-    }
-    contacts_ports_.register_peer_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), *hit->account_id,
-                                              *hit->signing_public_key_b64, "directory");
+  const bool carries_keys = (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty()) ||
+                            (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty());
+  if (carries_keys && (!hit->account_id || hit->account_id->empty())) {
+    UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
+    return;
   }
-  if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
-    if (!hit->account_id || hit->account_id->empty()) {
-      UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
-      return;
-    }
-    contacts_ports_.register_peer_kem_key(ContactIdKindToString(mesh::ContactIdKind::Account), *hit->account_id,
-                                          *hit->kem_public_key_b64, "directory");
+  if (contacts_ports_.register_peer_keys_from_directory) {
+    contacts_ports_.register_peer_keys_from_directory(*hit);
   }
   auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
   if (!applied) {

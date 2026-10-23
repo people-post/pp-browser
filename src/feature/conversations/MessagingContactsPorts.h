@@ -53,12 +53,8 @@ struct MessagingContactsPorts {
   std::function<void(const Contact& contact)> register_contact_direct_endpoints;
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;
   std::function<Roe<void>(const std::string& thread_id)> ensure_psk_generated;
-  std::function<void(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                     const std::string& signing_public_key_b64, const std::string& source)>
-      register_peer_signing_key;
-  std::function<void(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                     const std::string& kem_public_key_b64, const std::string& source)>
-      register_peer_kem_key;
+  /** The keys a directory entry carries for its account (each kept only when it proves to be the account's). */
+  std::function<void(const mesh::DirectoryHit& hit)> register_peer_keys_from_directory;
 
   std::function<bool(const Contact& contact)> is_contact_reachable;
 };

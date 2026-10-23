@@ -12,6 +12,9 @@ namespace pbr {
 
 struct PeerKemKeyRecord {
   std::string kem_public_key_b64;
+  /** The account's ML-DSA key and its signature binding the KEM key to it (foundation/crypto/KemKeyBinding.h). */
+  std::string signing_public_key_b64;
+  std::string binding_signature_b64;
   std::string source;
   std::optional<std::string> source_ref;
 };
@@ -19,7 +22,11 @@ struct PeerKemKeyRecord {
 /** Local cache of **account** KEM public keys, keyed by communicating identity (E024 / M015). */
 class PeerKemKeyStore {
 public:
-  void Put(const std::string& peer_identity_kind, const std::string& peer_identity_value, PeerKemKeyRecord record);
+  /**
+   * Keeps an account's KEM key only when the account bound it to itself (VerifyKemBinding): whoever
+   * passes the key on (the directory, a contact card) cannot substitute one. False when refused.
+   */
+  bool Put(const std::string& peer_identity_kind, const std::string& peer_identity_value, PeerKemKeyRecord record);
   std::optional<PeerKemKeyRecord> Get(const std::string& peer_identity_kind,
                                       const std::string& peer_identity_value) const;
   void Clear();

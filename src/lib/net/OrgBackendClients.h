@@ -107,6 +107,8 @@ struct RegistrationResult {
   /** Echoed initiation floor when server supports it; missing → leave unset (0). */
   int64_t initiation_floor = 0;
   bool initiation_floor_present = false;
+  /** The directory entry now carries the account's KEM key binding (the relay stored it). */
+  bool kem_bound = false;
 };
 
 struct RegistrationStartResult {
@@ -130,6 +132,7 @@ public:
                                                      const std::string& signature, int64_t timestamp,
                                                      const std::string& signature_alg = "ml-dsa-65",
                                                      const std::string& kem_public_key_b64 = "",
+                                                     const std::string& kem_binding_signature_b64 = "",
                                                      const std::string& peer_id = "",
                                                      const std::vector<std::string>& multiaddrs = {},
                                                      int64_t initiation_floor = 0,

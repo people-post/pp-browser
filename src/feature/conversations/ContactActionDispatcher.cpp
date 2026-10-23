@@ -43,18 +43,7 @@ void RegisterKeysFromHit(MeshDeliveryOrchestrator* mesh_messaging, const mesh::D
   if (!mesh_messaging) {
     return;
   }
-  const auto account_id = PrimaryAccountIdFromHit(hit);
-  if (!account_id) {
-    return;
-  }
-  if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-    mesh_messaging->RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id,
-                                *hit.signing_public_key_b64, "directory");
-  }
-  if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-    mesh_messaging->RegisterPeerKemKey(ContactIdKindToString(mesh::ContactIdKind::Account), *account_id, *hit.kem_public_key_b64,
-                            "directory");
-  }
+  mesh_messaging->RegisterPeerKeysFromDirectory(hit);
 }
 
 } // namespace

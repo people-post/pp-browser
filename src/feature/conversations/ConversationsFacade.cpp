@@ -345,14 +345,8 @@ void ConversationsFacade::RegisterContactDirectEndpoints(const Contact& contact)
   hub_.MeshMessaging().RegisterContactDirectEndpoints(contact);
 }
 
-void ConversationsFacade::RegisterPeerSigningKey(const std::string& kind, const std::string& value,
-                                             const std::string& key_b64, const std::string& source) {
-  hub_.MeshMessaging().RegisterPeerSigningKey(kind, value, key_b64, source);
-}
-
-void ConversationsFacade::RegisterPeerKemKey(const std::string& kind, const std::string& value,
-                                         const std::string& key_b64, const std::string& source) {
-  hub_.MeshMessaging().RegisterPeerKemKey(kind, value, key_b64, source);
+void ConversationsFacade::RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit) {
+  hub_.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
 }
 
 Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const mesh::DirectoryHit& hit) {

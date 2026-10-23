@@ -34,9 +34,13 @@ Roe<PeerKemKeyRecord> RelayDirectoryKemKeyResolver::Resolve(const std::string& p
 
   PeerKemKeyRecord record;
   record.kem_public_key_b64 = *hit->kem_public_key_b64;
+  record.signing_public_key_b64 = hit->signing_public_key_b64.value_or("");
+  record.binding_signature_b64 = hit->kem_binding_signature_b64.value_or("");
   record.source = "directory";
   record.source_ref = peer_identity_value;
-  store_.Put(peer_identity_kind, peer_identity_value, record);
+  if (!store_.Put(peer_identity_kind, peer_identity_value, record)) {
+    return Error("Directory entry's KEM public key is not bound to the account");
+  }
   return record;
 }
 
