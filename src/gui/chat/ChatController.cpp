@@ -43,6 +43,7 @@
 #include "lib/ai/conversation/Conversation.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "lib/ui/ContextMenuHost.h"
+#include "lib/ui/DataEvent.h"
 #include "lib/ui/InputCoordinator.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "lib/ui/RmlVariantHelpers.h"
@@ -234,23 +235,6 @@ std::string MockAssistantRespond(const std::string& query) {
 }
 
 } // namespace
-
-ChatController* ChatController::installed_instance_ = nullptr;
-
-void ChatController::InstallInstance(ChatController& controller) {
-  installed_instance_ = &controller;
-}
-
-void ChatController::ClearInstance() {
-  installed_instance_ = nullptr;
-}
-
-ChatController& ChatController::Instance() {
-  if (!installed_instance_) {
-    throw std::runtime_error("ChatController not installed");
-  }
-  return *installed_instance_;
-}
 
 ChatController::ChatController()
     : scroller_(context_,
@@ -591,248 +575,13 @@ const SessionStore& ChatController::Store() const {
 }
 
 
-void ChatController::OpenWorkingSetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  const std::optional<int> block_index = EventArgAsInt(args, 1);
-  if (!block_index || *block_index < 0) {
-    return;
-  }
-  Instance().working_set_.Open(std::string(args[0].Get<ui::String>().c_str()), *block_index);
-}
-
-void ChatController::SendMessageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  Instance().OnSendMessage();
-}
-
-void ChatController::SendSuggestionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  // A Home chip continues its own thread instead of opening a new one on every tap.
-  Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()), std::nullopt, /*from_home_chip=*/true);
-}
-
-void ChatController::SendSuggestionActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                  const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  const std::string id(args[0].Get<ui::String>().c_str());
+void ChatController::SendSuggestionAction(const std::string& id) {
   auto payload = SuggestionPayload(id, LocalizationService::Instance().ResolvedLanguage());
   if (!payload) {
     return;
   }
   // The bubble shows the localized sentence; the payload makes the app run the function itself.
-  Instance().SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload), /*from_home_chip=*/true);
-}
-
-void ChatController::SubmitFormCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                  const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING || args[1].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().agent_.SubmitForm(std::string(args[0].Get<ui::String>().c_str()),
-                        std::string(args[1].Get<ui::String>().c_str()));
-}
-
-void ChatController::SendChatActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-
-  const std::optional<int> action_index = EventArgAsInt(args, 1);
-  if (!action_index || *action_index < 0) {
-    return;
-  }
-
-  Instance().agent_.SendChatAction(std::string(args[0].Get<ui::String>().c_str()), *action_index);
-}
-
-void ChatController::OpenChatLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  const std::optional<int> link_index = EventArgAsInt(args, 1);
-  if (!link_index) {
-    return;
-  }
-  Instance().OpenChatLink(std::string(args[0].Get<ui::String>().c_str()), *link_index);
-}
-
-void ChatController::StopTurnCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().agent_.OnStopTurn();
-}
-
-void ChatController::ToggleReactionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING || args[1].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().ToggleReaction(std::string(args[0].Get<ui::String>().c_str()),
-                            std::string(args[1].Get<ui::String>().c_str()));
-}
-
-void ChatController::OpenEmojiInsertCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                             const ui::VariantList& /*args*/) {
-  Instance().menus_.OpenEmojiInsert(&ev);
-}
-
-void ChatController::AttachFileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().OnAttachFile();
-}
-
-void ChatController::RemoveImageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
-  Instance().OnRemoveImage();
-}
-
-void ChatController::OpenAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().OpenAttachment(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::RetryAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().RetryAttachmentDownload(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::DownloadAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().DownloadAttachment(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::CalendarPrevCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().agent_.CalendarPrev(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::CalendarNextCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().agent_.CalendarNext(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::SelectCalendarDayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING || args[1].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().agent_.SelectCalendarDay(std::string(args[0].Get<ui::String>().c_str()),
-                               std::string(args[1].Get<ui::String>().c_str()));
-}
-
-void ChatController::NewChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& /*args*/) {
-  Instance().OnNewChat();
-}
-
-void ChatController::NewMessageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                        const ui::VariantList& /*args*/) {
-  Instance().OnNewMessage();
-}
-
-void ChatController::OpenNewSessionMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                const ui::VariantList& /*args*/) {
-  Instance().menus_.OpenNewSession(ev);
-}
-
-void ChatController::OpenThreadActionsMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                   const ui::VariantList& /*args*/) {
-  Instance().menus_.OpenThreadActions(ev);
-}
-
-void ChatController::StartCallCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                       const ui::VariantList& /*args*/) {
-  Instance().menus_.StartCall(ev);
-}
-
-void ChatController::OpenPeerSheetCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                           const ui::VariantList& /*args*/) {
-  Instance().peer_sheet_.Open(ev);
-}
-
-void ChatController::SelectThreadCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().OnSelectThread(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::ClearHistoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  Instance().OnClearHistory();
-}
-
-void ChatController::ForgetMemoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  Instance().OnForgetMemory();
-}
-
-void ChatController::SyncWithPeerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  Instance().OnSyncWithPeer();
-}
-
-void ChatController::RetryGapSyncCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                           const ui::VariantList& /*args*/) {
-  Instance().OnRetryGapSync();
-}
-
-void ChatController::StartNewSecureChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                const ui::VariantList& /*args*/) {
-  Instance().OnStartNewSecureChat();
-}
-
-void ChatController::PauseIntegrityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  Instance().OnPauseIntegrityOnly();
-}
-
-void ChatController::CopyPskKeyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().OnCopyPskKey();
-}
-
-void ChatController::TogglePskImportCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                           const ui::VariantList& /*args*/) {
-  Instance().OnTogglePskImport();
-}
-
-void ChatController::ImportPskCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  Instance().OnImportPsk();
-}
-
-void ChatController::VerifyPskCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                       const ui::VariantList& /*args*/) {
-  Instance().OnVerifyPsk();
-}
-
-void ChatController::RotatePskExportCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& /*args*/) {
-  Instance().OnRotatePskExport();
+  SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload), /*from_home_chip=*/true);
 }
 
 void ChatController::FinalizeThreadDisplay() {
@@ -989,11 +738,6 @@ void ChatController::OnToggleArchived() {
   NotifySurfaceChanged();
 }
 
-void ChatController::ToggleArchivedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  Instance().OnToggleArchived();
-}
-
 void ChatController::OnClearHistory() { ClearHistoryOf(ActiveThreadId()); }
 
 void ChatController::ClearHistoryOf(const std::string& thread_id) {
@@ -1058,17 +802,6 @@ void ChatController::OnForgetMemory() {
         NotifySurfaceChanged();
       });
 }
-
-void ChatController::LoadOlderHistoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                              const ui::VariantList& /*args*/) {
-  Instance().OnLoadOlderHistory();
-}
-
-void ChatController::RetryPeerDialCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                           const ui::VariantList& /*args*/) {
-  Instance().OnRetryPeerDial();
-}
-
 
 void ChatController::RefreshFromMessaging() {
   const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
@@ -1150,16 +883,6 @@ void ChatController::OnMessagesScroll() {
 
 void ChatController::OnJumpToLatest() {
   scroller_.OnJumpToLatest();
-}
-
-void ChatController::MessagesScrollCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  Instance().OnMessagesScroll();
-}
-
-void ChatController::JumpToLatestCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  Instance().OnJumpToLatest();
 }
 
 void ChatController::OnRetryPeerDial() {
@@ -1334,12 +1057,6 @@ namespace {
 
 
 } // namespace
-
-
-void ChatController::OnRemoveImage() {
-  agent_.DiscardPendingAiImage();
-}
-
 
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
@@ -1890,31 +1607,6 @@ void ChatController::OpenMessageLink(const std::string& message_id, const int li
   }
 }
 
-void ChatController::OpenMessageLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  const std::optional<int> link_index = EventArgAsInt(args, 1);
-  if (!link_index) {
-    return;
-  }
-  Instance().OpenMessageLink(std::string(args[0].Get<ui::String>().c_str()), *link_index);
-}
-
-void ChatController::JumpToQuoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().JumpToQuotedMessage(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void ChatController::CancelQuoteReplyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                              const ui::VariantList& /*args*/) {
-  Instance().CancelQuoteReply();
-}
-
-
 void ChatController::RefreshCallJoinable(const std::chrono::steady_clock::time_point now) {
   if (now - last_call_joinable_poll_ < std::chrono::seconds(1)) {
     return;
@@ -2301,6 +1993,34 @@ void ChatController::WireMessagingBindings() {
   agent_.RefreshLlmSetupBanner();
 }
 
+void ChatController::BindSharedEvents(ui::DataModelConstructor& ctor) {
+  ctor.BindEventCallback("new_message", DataEvent([this] { OnNewMessage(); }));
+  ctor.BindEventCallback("send_chat_action", DataEvent<std::string, int>(
+      [this](const std::string& entry_id, int index) {
+                           if (index >= 0) {
+                             agent_.SendChatAction(entry_id, index);
+                           }
+                         }));
+  ctor.BindEventCallback("submit_form", DataEvent<std::string, std::string>(
+                                            [this](const std::string& form_id, const std::string& values_json) {
+                                              agent_.SubmitForm(form_id, values_json);
+                                            }));
+  ctor.BindEventCallback("calendar_prev",
+                         DataEvent<std::string>([this](const std::string& entry_id) { agent_.CalendarPrev(entry_id); }));
+  ctor.BindEventCallback("calendar_next",
+                         DataEvent<std::string>([this](const std::string& entry_id) { agent_.CalendarNext(entry_id); }));
+  ctor.BindEventCallback("select_calendar_day", DataEvent<std::string, std::string>(
+                                                    [this](const std::string& entry_id, const std::string& day) {
+                                                      agent_.SelectCalendarDay(entry_id, day);
+                                                    }));
+  ctor.BindEventCallback("open_working_set", DataEvent<std::string, int>(
+      [this](const std::string& entry_id, int block) {
+                           if (block >= 0) {
+                             working_set_.Open(entry_id, block);
+                           }
+                         }));
+}
+
 bool ChatController::Setup(ui::Context* context) {
   StartupPhase setup_phase("ChatController::Setup");
   if (!context) {
@@ -2416,46 +2136,53 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("show_older_history_hint", &controller.chat_.show_older_history_hint);
         ctor.Bind("show_jump_to_latest", &controller.chat_.show_jump_to_latest);
         ctor.Bind("jump_to_latest_label", &controller.chat_.jump_to_latest_label);
-        ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
-        ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
-        ctor.BindEventCallback("send_suggestion_action", &ChatController::SendSuggestionActionCallback);
-        ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
-        ctor.BindEventCallback("open_chat_link", &ChatController::OpenChatLinkCallback);
-        ctor.BindEventCallback("stop_turn", &ChatController::StopTurnCallback);
-        ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
-        ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
-        ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
-        ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
-        ctor.BindEventCallback("cancel_quote_reply", &ChatController::CancelQuoteReplyCallback);
-        ctor.BindEventCallback("jump_to_quote", &ChatController::JumpToQuoteCallback);
-        ctor.BindEventCallback("open_message_link", &ChatController::OpenMessageLinkCallback);
-        ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
-        ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
-        ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
-        ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
-        ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
-        ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
-        ctor.BindEventCallback("select_calendar_day", &ChatController::SelectCalendarDayCallback);
-        ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
-        ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
-        ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
-        ctor.BindEventCallback("open_thread_actions_menu", &ChatController::OpenThreadActionsMenuCallback);
-        ctor.BindEventCallback("start_call", &ChatController::StartCallCallback);
-        ctor.BindEventCallback("open_peer_sheet", &ChatController::OpenPeerSheetCallback);
-        ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
-        ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
-        ctor.BindEventCallback("start_new_secure_chat", &ChatController::StartNewSecureChatCallback);
-        ctor.BindEventCallback("pause_integrity_only", &ChatController::PauseIntegrityCallback);
-        ctor.BindEventCallback("copy_psk_key", &ChatController::CopyPskKeyCallback);
-        ctor.BindEventCallback("toggle_psk_import", &ChatController::TogglePskImportCallback);
-        ctor.BindEventCallback("import_psk", &ChatController::ImportPskCallback);
-        ctor.BindEventCallback("verify_psk", &ChatController::VerifyPskCallback);
-        ctor.BindEventCallback("rotate_psk_export", &ChatController::RotatePskExportCallback);
-        ctor.BindEventCallback("load_older_history", &ChatController::LoadOlderHistoryCallback);
-        ctor.BindEventCallback("retry_peer_dial", &ChatController::RetryPeerDialCallback);
-        ctor.BindEventCallback("messages_scroll", &ChatController::MessagesScrollCallback);
-        ctor.BindEventCallback("jump_to_latest", &ChatController::JumpToLatestCallback);
-        ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
+        ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
+        ctor.BindEventCallback("send_suggestion", DataEvent<std::string>([this](const std::string& text) {
+          // A Home chip continues its own thread instead of opening a new one on every tap.
+          SendUserText(text, std::nullopt, /*from_home_chip=*/true);
+        }));
+        ctor.BindEventCallback("send_suggestion_action", DataEvent<std::string>(
+            [this](const std::string& id) { SendSuggestionAction(id); }));
+        ctor.BindEventCallback("open_chat_link", DataEvent<std::string, int>(
+            [this](const std::string& entry_id, int link) { OpenChatLink(entry_id, link); }));
+        ctor.BindEventCallback("stop_turn", DataEvent([this] { agent_.OnStopTurn(); }));
+        ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
+            [this](const std::string& message_id, const std::string& emoji) { ToggleReaction(message_id, emoji); }));
+        ctor.BindEventCallback("open_emoji_insert", DataEventAt(
+            [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
+        ctor.BindEventCallback("attach_file", DataEvent([this] { OnAttachFile(); }));
+        ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
+        ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
+        ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>(
+            [this](const std::string& reply_id) { JumpToQuotedMessage(reply_id); }));
+        ctor.BindEventCallback("open_message_link", DataEvent<std::string, int>(
+            [this](const std::string& message_id, int link) { OpenMessageLink(message_id, link); }));
+        ctor.BindEventCallback("open_attachment", DataEvent<std::string>(
+            [this](const std::string& message_id) { OpenAttachment(message_id); }));
+        ctor.BindEventCallback("download_attachment", DataEvent<std::string>(
+            [this](const std::string& message_id) { DownloadAttachment(message_id); }));
+        ctor.BindEventCallback("retry_attachment", DataEvent<std::string>(
+            [this](const std::string& message_id) { RetryAttachmentDownload(message_id); }));
+        ctor.BindEventCallback("clear_history", DataEvent([this] { OnClearHistory(); }));
+        ctor.BindEventCallback("forget_memory", DataEvent([this] { OnForgetMemory(); }));
+        ctor.BindEventCallback("open_thread_actions_menu", DataEventAt(
+            [this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
+        ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
+        ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { peer_sheet_.Open(ev); }));
+        ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
+        ctor.BindEventCallback("retry_gap_sync", DataEvent([this] { OnRetryGapSync(); }));
+        ctor.BindEventCallback("start_new_secure_chat", DataEvent([this] { OnStartNewSecureChat(); }));
+        ctor.BindEventCallback("pause_integrity_only", DataEvent([this] { OnPauseIntegrityOnly(); }));
+        ctor.BindEventCallback("copy_psk_key", DataEvent([this] { OnCopyPskKey(); }));
+        ctor.BindEventCallback("toggle_psk_import", DataEvent([this] { OnTogglePskImport(); }));
+        ctor.BindEventCallback("import_psk", DataEvent([this] { OnImportPsk(); }));
+        ctor.BindEventCallback("verify_psk", DataEvent([this] { OnVerifyPsk(); }));
+        ctor.BindEventCallback("rotate_psk_export", DataEvent([this] { OnRotatePskExport(); }));
+        ctor.BindEventCallback("load_older_history", DataEvent([this] { OnLoadOlderHistory(); }));
+        ctor.BindEventCallback("retry_peer_dial", DataEvent([this] { OnRetryPeerDial(); }));
+        ctor.BindEventCallback("messages_scroll", DataEvent([this] { OnMessagesScroll(); }));
+        ctor.BindEventCallback("jump_to_latest", DataEvent([this] { OnJumpToLatest(); }));
+        BindSharedEvents(ctor);
       })) {
     return false;
   }
@@ -2487,22 +2214,18 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("archived_count", &controller.shell_.archived_count);
         ctor.Bind("showing_archived", &controller.shell_.showing_archived);
         ctor.Bind("archived_entry_label", &controller.shell_.archived_entry_label);
-        ctor.BindEventCallback("toggle_archived", &ChatController::ToggleArchivedCallback);
+        ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
         ctor.Bind("working_set_active", &controller.shell_.working_set_active);
         ctor.Bind("working_set_title", &controller.shell_.working_set_title);
         ctor.Bind("working_set_subtitle", &controller.shell_.working_set_subtitle);
         ctor.Bind("working_set_rml", &controller.shell_.working_set_rml);
         ctor.Bind("working_set", &controller.shell_.working_set);
-        ctor.BindEventCallback("new_chat", &ChatController::NewChatCallback);
-        ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
-        ctor.BindEventCallback("open_new_session_menu", &ChatController::OpenNewSessionMenuCallback);
-        ctor.BindEventCallback("select_thread", &ChatController::SelectThreadCallback);
-        ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
-        ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
-        ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
-        ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
-        ctor.BindEventCallback("select_calendar_day", &ChatController::SelectCalendarDayCallback);
-        ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
+        ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
+        ctor.BindEventCallback("open_new_session_menu", DataEventAt(
+            [this](ui::Event& ev) { menus_.OpenNewSession(ev); }));
+        ctor.BindEventCallback("select_thread", DataEvent<std::string>(
+            [this](const std::string& thread_id) { OnSelectThread(thread_id); }));
+        BindSharedEvents(ctor);
       })) {
     return false;
   }

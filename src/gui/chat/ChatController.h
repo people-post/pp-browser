@@ -69,11 +69,6 @@ public:
   ChatController();
   ~ChatController() override = default;
 
-  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
-  static void InstallInstance(ChatController& controller);
-  static void ClearInstance();
-  static ChatController& Instance();
-
   using SessionRow = SessionDisplayRow;
 
   bool Setup(ui::Context* context);
@@ -135,48 +130,12 @@ private:
     bool from_llm = false;
   };
 
-  static void SendMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SendSuggestionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SendSuggestionActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SendChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenChatLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void StopTurnCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleReactionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenEmojiInsertCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void AttachFileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RemoveImageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DownloadAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetryAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SubmitFormCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CalendarPrevCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CalendarNextCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SelectCalendarDayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void NewChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void NewMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenNewSessionMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenThreadActionsMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void StartCallCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenPeerSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SelectThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ClearHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ForgetMemoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SyncWithPeerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetryGapSyncCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void StartNewSecureChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PauseIntegrityCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CopyPskKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TogglePskImportCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ImportPskCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void VerifyPskCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RotatePskExportCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenWorkingSetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void LoadOlderHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetryPeerDialCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void MessagesScrollCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void JumpToLatestCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
+  /** Events both data models ("chat" and "shell") bind: the agent's widgets, chat actions, "new message". */
+  void BindSharedEvents(ui::DataModelConstructor& ctor);
   void OnSendMessage();
+  /** A Home suggestion that runs a function (`id`): its localized sentence is sent with the function's payload. */
+  void SendSuggestionAction(const std::string& id);
   void OnNewChat() override;
   void OnNewMessage() override;
   void OnCloseThread(const std::string& thread_id) override;
@@ -193,7 +152,6 @@ private:
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
   void OnToggleArchived();
-  static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;
   void OnRetryGapSync();
@@ -217,7 +175,6 @@ private:
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
   void ShowAttachChoice(std::function<void()> photo, std::function<void()> file) override;
-  void OnRemoveImage();
   /** A thread's transcript window drawn as bound rows, AI question images decorated. */
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive) const;
@@ -238,11 +195,8 @@ private:
   void CancelQuoteReply();
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
-  static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */
   void OpenMessageLink(const std::string& message_id, int link_index);
-  static void OpenMessageLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   void SyncDisplayFromThread() override;
   /** Last time a display sync ran the whole-thread attachment backfill. */
   std::chrono::steady_clock::time_point last_attachment_backfill_{};
@@ -339,8 +293,6 @@ private:
   }
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
   bool focus_draft_after_sync_ = false;
-
-  static ChatController* installed_instance_;
 };
 
 } // namespace pbr

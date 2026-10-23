@@ -7,7 +7,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 
 **Layer ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI lives in top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with lib peer `lib/ui` (non-Rml presentation policy).
 
-**Migration complete (2026-08):** UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). RmlUi static callbacks use `InstallInstance` / `Instance()` shims on the installed pointer — not process-wide singletons. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
+UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). A presenter binds its data-model events to lambdas that capture it (see [Data-model events](#data-model-events)) — no singleton. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
 
 ---
 
@@ -131,7 +131,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
 - **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `PostWorkerAndReplyOnUI` ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
-- RmlUi static callbacks are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
+- Data-model event handlers are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
 
 **Existing examples:**
 
@@ -213,7 +213,7 @@ struct MessagingActions {
 - Wires event callbacks (messaging ready → refresh presenters)
 - Runs the main loop: UI tick, `TickMesh`, drain `AppRuntime` UI mailbox
 
-Presenters are **app-owned instances** (`Application` holds `unique_ptr` and calls `InstallInstance` for RmlUi static callbacks). New code must not add presenter `::Instance()` call sites outside static RmlUi handlers and SDL function-pointer constraints.
+Presenters are **app-owned instances** (`Application` holds `unique_ptr` and passes references). New code must not add presenter `::Instance()` call sites.
 
 ---
 
@@ -247,7 +247,7 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Badge notify | `BadgeNotifyPorts` | Actions + State |
 | PIN gate actions | `PinGateActionPorts` | Actions |
 | People picker notify | `PeoplePickerNotifyPorts` | Actions |
-| App-owned presenters | `Application` + `InstallInstance` / `ClearInstance` | Composition root |
+| App-owned presenters | `Application` (`unique_ptr`, references passed on) | Composition root |
 | Shell navigation (settings / chat / contacts) | `ShellNavigationPorts`, `MakeShellNavigationPorts` | Actions + State snapshot |
 | Shell feedback | `ShellFeedbackPorts`, `BindSharedShellFeedback`, `UserFeedback::BindPorts` | Actions + Events |
 | Messaging read snapshot | `MessagingUiPorts`, `MessagingView` | State |
@@ -261,17 +261,23 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 
 ---
 
-## RmlUi static callbacks
+## Data-model events
 
-RmlUi event handlers must be static function pointers. Presenters therefore expose:
+`ui::DataModelConstructor::BindEventCallback` takes a `std::function`, so a presenter binds its events to
+lambdas that capture it. `lib/ui/DataEvent.h` types the arguments the template passes:
 
 ```cpp
-static void InstallInstance(Presenter& instance);  // Application calls at startup
-static void ClearInstance();                       // Application calls at shutdown
-static Presenter& Instance();                      // static callbacks only
+ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
+ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
+    [this](const std::string& message_id, const std::string& emoji) { ToggleReaction(message_id, emoji); }));
+ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
 ```
 
-`Application` owns `std::unique_ptr<Presenter>` and installs the pointer before model registration. **Do not** call `Presenter::Instance()` from feature code or from `Application` — use injected references (`chat_`, `settings_`, …) or notify ports.
+The handler runs only when the event carries its arguments with their types. The captured presenter must
+outlive the context: `Application` removes the context (and with it every model and handler) at shutdown,
+before it frees the presenters. `ChatController` binds this way; the other
+presenters still carry static adapters behind an `InstallInstance` / `Instance()` shim, which goes as they
+move over.
 
 ---
 

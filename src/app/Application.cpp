@@ -255,7 +255,6 @@ Application::Application() {
   emoji_picker_ = std::make_unique<EmojiPickerController>();
   EmojiPickerController::InstallInstance(*emoji_picker_);
   chat_ = std::make_unique<ChatController>();
-  ChatController::InstallInstance(*chat_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
   onboarding_ = std::make_unique<OnboardingController>();
@@ -1552,13 +1551,13 @@ void Application::Run() {
   int slow_frames_skipped = 0;
 #if UI_SDL_VERSION_MAJOR >= 3
   // Live layout+Present while the OS modal resize loop blocks Poll/WaitEvent.
-  Backend::SetLiveResizeHandler(context, [](ui::Context* ctx) {
+  Backend::SetLiveResizeHandler(context, [this](ui::Context* ctx) {
     if (!ctx)
       return;
     Backend::SyncContext(ctx);
     ShellHost::Instance().Update(ctx);
     ctx->Update();
-    ChatController::Instance().AfterLayout();
+    chat_->AfterLayout();
     ShellHost::Instance().NotifyFrameEnd(ctx);
     if (!Backend::CanRender())
       return;
@@ -1762,7 +1761,6 @@ void Application::Shutdown() {
   }
   call_ui_.reset();
   shell_->BindShellMessaging({});
-  ChatController::ClearInstance();
   ShellHost::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();

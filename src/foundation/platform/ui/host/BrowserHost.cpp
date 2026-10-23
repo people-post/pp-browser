@@ -16,6 +16,7 @@
 #include <ui/base/Profiling.h>
 
 #include <atomic>
+#include <utility>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -394,7 +395,7 @@ void Backend::SetPreProcessEventHandler(PreProcessEventCallback callback)
 void Backend::SetLiveResizeHandler(ui::Context* context, LiveResizeRedrawCallback callback)
 {
 	g_live_resize_context = context;
-	g_live_resize_redraw = callback;
+	g_live_resize_redraw = std::move(callback);
 	g_live_resize_last_pixel_w = 0;
 	g_live_resize_last_pixel_h = 0;
 }

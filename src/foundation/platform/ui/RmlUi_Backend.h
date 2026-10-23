@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <ui/base/Input.h>
 #include <ui/paint/RenderInterface.h>
 #include <ui/base/SystemInterface.h>
@@ -18,7 +20,7 @@ using KeyDownCallback = bool (*)(ui::Context* context, ui::Input::KeyIdentifier 
 using PreProcessEventCallback = bool (*)(ui::Context* context, SDL_Event& event, bool& propagate_event);
 // Called from SDL_AddEventWatch while Poll/WaitEvent is blocked in a modal resize/drag.
 // Must SyncContext, Update layout, and Present so the OS does not stretch the last frame.
-using LiveResizeRedrawCallback = void (*)(ui::Context* context);
+using LiveResizeRedrawCallback = std::function<void(ui::Context* context)>;
 #endif
 
 namespace Backend {
