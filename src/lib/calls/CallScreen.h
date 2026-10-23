@@ -99,7 +99,6 @@ struct InCallSignals {
   bool sfu_mode = false;
   bool group_context = false;
   bool media_chrome_live = false;
-  CallMediaSeat::MediaState seat_media = CallMediaSeat::MediaState::Idle;
   CallMediaStatus media_status = CallMediaStatus::None;
   bool media_active = false;
   /** The engine's connection state ("new", "connecting", "connected", "disconnected", …). */

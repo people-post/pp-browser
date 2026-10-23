@@ -1115,8 +1115,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (backend && backend->Available() &&
-             (backend->MediaChromeLive() || backend->SeatMediaLive(presenter_.ActiveCallId()))) {
-    // Prefer V037 MediaChromeLive; seat Live remains fallback during Status lag.
+             backend->MediaChromeLive()) {
     // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
     if (!in_call.elapsed.empty()) {
@@ -1235,7 +1234,7 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
   }
   const bool show_path =
       path_key && backend && backend->Available() && backend->MediaStatus() != CallMediaStatus::Reconnecting &&
-      (backend->MediaChromeLive() || backend->SeatMediaLive(presenter_.ActiveCallId()) ||
+      (backend->MediaChromeLive() ||
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   if (show_path) {
     const std::string path_label = Tr(path_key);

@@ -28,10 +28,6 @@ TEST(CallScreenTest, LiveMediaIsConnectedWithTheTimerAndNoRetry) {
   EXPECT_TRUE(out.media_connected);
   EXPECT_TRUE(out.show_elapsed);
   EXPECT_FALSE(out.show_retry);
-
-  InCallSignals seat;  // the seat's Live is a fallback while the status catches up (V037)
-  seat.seat_media = MediaState::Live;
-  EXPECT_EQ(Decide(seat).status, Status::Connected);
 }
 
 TEST(CallScreenTest, AFailedMeshPathCouldNotConnectWithItsHintAndRetry) {
@@ -74,21 +70,12 @@ TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
   EXPECT_EQ(Decide(s).status, Status::CouldntConnect) << "never connected: the user may retry";
   s.was_connected = true;
   EXPECT_EQ(Decide(s).status, Status::Disconnected);
-  InCallSignals seat;
-  seat.seat_media = MediaState::Failed;
-  seat.was_connected = true;
-  EXPECT_EQ(Decide(seat).status, Status::Disconnected);
   InCallSignals mesh;  // the mesh path reports the failure after the reconnect window: still "disconnected"
   mesh.p2p_connect_failed = true;
   mesh.was_connected = true;
   const InCallStatus out = Decide(mesh);
   EXPECT_EQ(out.status, Status::Disconnected);
   EXPECT_FALSE(out.show_retry);
-  InCallSignals hop;  // a stale seat failure while the hop path carries media: still connected
-  hop.seat_media = MediaState::Failed;
-  hop.media_chrome_live = true;
-  hop.was_connected = true;
-  EXPECT_EQ(Decide(hop).status, Status::Connected);
 }
 
 TEST(CallScreenTest, ReconnectingKeepsTheTimerAndOutranksConnected) {
@@ -124,14 +111,11 @@ TEST(CallScreenTest, TheHopPathSteps) {
 
 TEST(CallScreenTest, AFailedPathCouldNotConnectWithoutAHint) {
   InCallSignals s;
-  s.seat_media = MediaState::Failed;
+  s.media_status = CallMediaStatus::Failed;
   InCallStatus out = Decide(s);
   EXPECT_EQ(out.status, Status::CouldntConnect);
   EXPECT_EQ(out.hint, CallScreen::Hint::None);
   EXPECT_TRUE(out.show_invite);
-  s = {};
-  s.media_status = CallMediaStatus::Failed;
-  EXPECT_EQ(Decide(s).status, Status::CouldntConnect);
 }
 
 TEST(CallScreenTest, TheEngineStateWhenNothingElseSays) {
@@ -155,10 +139,17 @@ TEST(CallScreenTest, TheEngineStateWhenNothingElseSays) {
   EXPECT_FALSE(RecoveryInFlight(CallRecovery::HopLost)) << "path decisions see no recovery in flight";
   EXPECT_TRUE(RecoveryInFlight(CallRecovery::Reattaching));
 
-  InCallSignals idle_active;  // media running, nothing else known
-  idle_active.media_active = false;
-  idle_active.seat_media = MediaState::Connecting;
-  EXPECT_EQ(Decide(idle_active).status, Status::Connecting);
+  InCallSignals connecting;  // the call is connecting before the engine runs
+  connecting.media_active = false;
+  connecting.media_status = CallMediaStatus::DirectConnecting;
+  EXPECT_EQ(Decide(connecting).status, Status::Connecting);
+
+  InCallSignals reattaching;  // a guest's hop reattach: the call is not live, whatever the seat says
+  reattaching.media_active = true;
+  reattaching.media_status = CallMediaStatus::HopAttaching;
+  reattaching.recovery = CallRecovery::Reattaching;
+  reattaching.was_connected = true;
+  EXPECT_FALSE(Decide(reattaching).media_connected);
 }
 
 } // namespace

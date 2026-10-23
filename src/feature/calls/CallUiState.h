@@ -40,10 +40,6 @@ struct CallUiState {
   CallHopHealth hop_health;
   std::string media_path_kind;
   CallLinkCounters media_link;
-  // Seat
-  std::string seat_bound_call_id;
-  CallMediaSeat::MediaState seat_state = CallMediaSeat::MediaState::Idle;
-  bool seat_live = false;
 
   // Stack-level (hub / app reads from UI).
   bool available = false;              // sessions + lifecycle exist
@@ -61,12 +57,6 @@ struct CallUiState {
     }
     return (!accepting_call_id.empty() && accepting_call_id == call_id) ||
            (phase == CallPhase::Accepting && active_call_id == call_id);
-  }
-  CallMediaSeat::MediaState SeatStateFor(const std::string& call_id) const {
-    return !call_id.empty() && call_id == seat_bound_call_id ? seat_state : CallMediaSeat::MediaState::Idle;
-  }
-  bool SeatLiveFor(const std::string& call_id) const {
-    return !call_id.empty() && call_id == seat_bound_call_id && seat_live;
   }
 };
 

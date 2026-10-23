@@ -128,8 +128,6 @@ public:
     const auto state = State();
     return state->hop_health.attached ? state->hop_health.link : state->media_link;
   }
-  CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const { return State()->SeatStateFor(call_id); }
-  bool SeatMediaLive(const std::string& call_id) const { return State()->SeatLiveFor(call_id); }
   bool MediaChromeLive() const { return State()->MediaChromeLive(); }
   /** When `call_id` (the shown call) first went live; 0: never, or not the shown call. */
   int64_t LiveSinceMs(const std::string& call_id) const {

@@ -46,24 +46,22 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
 
 InCallStatus DecideInCallStatus(const InCallSignals& s) {
   using Status = CallScreen::Status;
-  using MediaState = CallMediaSeat::MediaState;
   InCallStatus out;
   const bool recovering = s.recovery != CallRecovery::None;
   out.show_retry = s.p2p_connect_failed && !recovering && !s.sfu_mode;
-  // V037: Connected when MediaChromeLive (InCall + DirectLive|HopLive); the seat's Live is a
-  // fallback while the status catches up.
-  out.media_connected = s.media_chrome_live || s.seat_media == MediaState::Live;
+  // Connected when the call's media is live (InCall + DirectLive|HopLive): the call's own state, not
+  // the seat's (a reattach keeps the seat bound while nothing flows).
+  out.media_connected = s.media_chrome_live;
   const bool media_connecting = s.media_status == CallMediaStatus::DirectConnecting ||
                                 s.media_status == CallMediaStatus::HopAttaching ||
                                 s.media_status == CallMediaStatus::HopWaiting ||
-                                s.media_status == CallMediaStatus::Migrating ||
-                                s.seat_media == MediaState::Connecting;
+                                s.media_status == CallMediaStatus::Migrating;
   bool activity = !s.activity.empty();
   if (activity && out.media_connected && !recovering) {
     out.activity_spent = true;
     activity = false;
   }
-  const bool failed = s.seat_media == MediaState::Failed || s.media_status == CallMediaStatus::Failed;
+  const bool failed = s.media_status == CallMediaStatus::Failed;
   if (s.was_connected && !out.media_connected && (s.p2p_connect_failed || failed)) {
     // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
     out.status = Status::Disconnected;
@@ -87,7 +85,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.show_retry = false;
   } else if (failed) {
     out.status = Status::CouldntConnect;
-  } else if (s.seat_media == MediaState::Idle && !s.media_active && s.media_status == CallMediaStatus::None) {
+  } else if (!s.media_active && s.media_status == CallMediaStatus::None) {
     out.status = Status::Calling;
   } else if (s.recovery == CallRecovery::Migrating || s.recovery == CallRecovery::WaitingForHop || media_connecting) {
     // V037: Migrating / HopWaiting own the line; a migrate in flight is a latch only.

@@ -269,7 +269,6 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   signals.group_context =
       group_call || joined > 2 || signals.recovery != CallRecovery::None || signals.sfu_mode;
   signals.media_chrome_live = backend.MediaChromeLive();
-  signals.seat_media = backend.SeatMediaState(call_id);
   signals.media_status = backend.MediaStatus();
   signals.media_active = backend.Media().IsActive();
   signals.connection_state = backend.Media().ConnectionState();

@@ -237,12 +237,6 @@ void CallStack::PublishUiState() {
     state.media_path_kind = call_sessions_->MediaPathKind();
     state.media_link = call_sessions_->MediaLinkCounters();
   }
-  if (call_sessions_) {
-    const CallMediaSeat& seat = call_sessions_->Seat();
-    state.seat_bound_call_id = seat.BoundCallId();
-    state.seat_state = seat.State();
-    state.seat_live = seat.IsLive(state.seat_bound_call_id);
-  }
   state.want_ephemeral_listen = want_ephemeral_listen_;
   state.connect_in_flight = call_sessions_ && call_sessions_->IsDirectConnectInFlight();
   state.sessions_identity = call_sessions_.get();
