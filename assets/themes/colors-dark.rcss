@@ -196,8 +196,16 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+.message-row-user .chat-call-row svg {
+  image-color: #ffffff;
+}
+
 .message-row-peer .chat-call-row {
   background-color: #374151;
+}
+
+.message-row-peer .chat-call-row svg {
+  image-color: #e5e7eb;
 }
 
 .bubble-user {
