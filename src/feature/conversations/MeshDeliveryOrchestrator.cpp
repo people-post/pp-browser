@@ -98,7 +98,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
-      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster),
+      psk_store_(psk_store), group_roster_(group_roster),
       transports_(store, identity, signing_key_resolver, psk_store), outbox_([this]() { return transports_.DirectChat(); }),
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
       session_keys_(psk_store, kem_key_resolver),

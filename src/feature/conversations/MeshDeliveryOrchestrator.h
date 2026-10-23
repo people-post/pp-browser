@@ -280,7 +280,6 @@ private:
   PeerSigningKeyStore& signing_key_store_;
   IPeerSigningKeyResolver& signing_key_resolver_;
   PeerKemKeyStore& kem_key_store_;
-  IPeerKemKeyResolver& kem_key_resolver_;
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
