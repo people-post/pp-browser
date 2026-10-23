@@ -313,7 +313,7 @@ void CallSessionManager::NotifyCallStateChanged() {
 }
 
 std::string CallSessionManager::AcceptingCallId() const {
-  return !accept_in_flight_.empty() ? accept_in_flight_ : live_calls_.AcceptingCallId();
+  return live_calls_.AcceptingCallId();
 }
 
 void CallSessionManager::Apply(const CallLifecycleEvent ev, const std::string& call_id) {
@@ -379,17 +379,13 @@ void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
     NotifyCallStateChanged();
     return;
   }
-  accept_in_flight_ = call_id;
-  NotifyCallStateChanged();
-  AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
+  // The ring holds the app's work running in the background (AppLifecycle::SetCallInProgress), so the
+  // relay-fallback sends of the accept run there too. The workflow marks the call Accepting.
   log().info << "AcceptInvite queued call_id=" << call_id;
   AcceptInviteAsync(call_id, [this, call_id](Roe<void> accepted) { OnAcceptResult(call_id, accepted); });
 }
 
 void CallSessionManager::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
-  if (accept_in_flight_ == call_id) {
-    accept_in_flight_.clear();
-  }
   if (!accepted) {
     // The workflow put the call back to ringing (or it ended meanwhile).
     log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;

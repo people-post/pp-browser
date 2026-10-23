@@ -432,8 +432,6 @@ private:
   PeerAccountBook peer_accounts_;
   std::optional<std::string> last_media_error_;
   // --- UI intents (V037) ---
-  /** Accept clicked and not answered yet (covers the click before the call is marked accepting). */
-  std::string accept_in_flight_;
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
   OwnerOutbox<SessionEvent> outbox_;
