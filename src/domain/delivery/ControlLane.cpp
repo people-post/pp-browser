@@ -14,9 +14,9 @@
 
 namespace pbr {
 
-ControlLane::ControlLane(IdentityStore& identity, ContactsStore& contacts, PeerRouteBook& routes,
+ControlLane::ControlLane(IdentityStore& identity, OwnKeyCard& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
                          E2ePublicSessionKeys& keys, PeerTransports& transports, DeliveryOutbox& outbox)
-    : identity_(identity), contacts_(contacts), routes_(routes), keys_(keys), transports_(transports),
+    : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), transports_(transports),
       outbox_(outbox) {
   redirectLogger("ControlLane");
 }
@@ -70,6 +70,11 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   params.route_party = peer_relay_id ? *peer_relay_id : peer_identity;
   params.session_epoch = session->epoch;
   params.master_psk = std::move(session->master_psk);
+  if (key_init) {
+    if (auto own = own_keys_.Get()) {
+      params.sender_keys = std::move(own.value());
+    }
+  }
   params.key_init_b64 = std::move(key_init);
   params.order_key = NextOrderKey();
   auto built = BuildControlLaneEnvelope(params, control,

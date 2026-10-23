@@ -1,5 +1,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 
+#include "lib/messaging/AccountCard.h"
+
 #include "lib/messaging/DeliveryNotice.h"
 
 #include <cstdlib>
@@ -412,6 +414,17 @@ ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id
 
 Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
                                               const DirectChatTarget& target) const {
+  // The opening message of a session carries the sender's key card: one that proves itself for this sender
+  // verifies the envelope with no lookup, and is kept once the envelope it came with has verified.
+  if (const auto& carried = envelope.body.e2e.sender_keys;
+      carried && target.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) &&
+      carried->account_id == target.peer_identity_value && VerifyKeyCard(*carried)) {
+    auto verified = EnvelopeSigner::Verify(envelope, carried->signing_public_key_b64);
+    if (verified && *verified && on_sender_keys_) {
+      on_sender_keys_(*carried);
+    }
+    return verified;
+  }
   auto key = signing_keys_.Resolve(target.peer_identity_kind, target.peer_identity_value);
   if (!key) {
     return key.error();

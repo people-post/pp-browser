@@ -1,4 +1,5 @@
 #include "common/chat/MessagingJson.h"
+#include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/RelayWirePayload.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -60,6 +61,40 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   auto decoded = RelayWirePayload::DecodePlaintextText(parsed.value().body.e2e.payload_b64);
   ASSERT_TRUE(static_cast<bool>(decoded));
   EXPECT_EQ(*decoded, "hello relay");
+}
+
+TEST(P2pRelayWireTest, SenderKeysRideWithAKeyInitAndAreNotSigned) {
+  using namespace pbr;
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440001";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2ePublic;
+  envelope.body.e2e.payload_b64 = "cGF5bG9hZA==";
+  envelope.body.e2e.key_init_b64 = "a2V5X2luaXQ=";
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  envelope.body.e2e.sender_keys = KeyCard{.account_id = "account:alice",
+                                          .signing_public_key_b64 = "c2lnbg==",
+                                          .kem_public_key_b64 = "a2Vt",
+                                          .kem_binding_signature_b64 = "YmluZA=="};
+  ASSERT_TRUE(unsigned_bytes);
+  EXPECT_EQ(EnvelopeSigner::BuildSignBytes(envelope).value(), *unsigned_bytes)
+      << "the card proves itself; the envelope signature does not cover it";
+
+  const auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
+  ASSERT_TRUE(parsed) << parsed.error().message;
+  EXPECT_EQ(parsed.value().body.e2e.sender_keys, envelope.body.e2e.sender_keys);
+
+  RelayEnvelope someone_elses = envelope;
+  someone_elses.body.e2e.sender_keys->account_id = "account:mallory";
+  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(someone_elses))) << "a card for another account";
+  RelayEnvelope no_key_init = envelope;
+  no_key_init.body.e2e.key_init_b64.reset();
+  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_key_init))) << "sender_keys only with a key_init";
 }
 
 TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {

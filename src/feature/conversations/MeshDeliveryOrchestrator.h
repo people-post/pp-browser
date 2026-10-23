@@ -15,6 +15,7 @@
 #include "lib/messaging/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
+#include "domain/peers/OwnKeyCard.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
@@ -304,10 +305,14 @@ private:
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
+  /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
+  std::optional<KeyCard> OwnKeys();
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
   PeerRouteBook routes_;
   /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
   E2ePublicSessionKeys session_keys_;
+  /** Our key card, carried with every key_init. */
+  OwnKeyCard own_key_card_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
   ControlLane control_lane_;
   uint64_t last_relay_poll_ms_ = 0;

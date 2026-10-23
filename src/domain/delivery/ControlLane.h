@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/peers/OwnKeyCard.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/ThreadTypes.h"
@@ -27,8 +28,8 @@ class PeerTransports;
  */
 class ControlLane : public Module {
 public:
-  ControlLane(IdentityStore& identity, ContactsStore& contacts, PeerRouteBook& routes, E2ePublicSessionKeys& keys,
-              PeerTransports& transports, DeliveryOutbox& outbox);
+  ControlLane(IdentityStore& identity, OwnKeyCard& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
+              E2ePublicSessionKeys& keys, PeerTransports& transports, DeliveryOutbox& outbox);
 
   /**
    * Send `control` to `peer_identity`. `key_init_b64`: a session init the caller holds (its media-key
@@ -41,6 +42,7 @@ private:
   uint64_t NextOrderKey();
 
   IdentityStore& identity_;
+  OwnKeyCard& own_keys_;
   ContactsStore& contacts_;
   PeerRouteBook& routes_;
   E2ePublicSessionKeys& keys_;

@@ -42,10 +42,14 @@ class ProbeError(Exception):
     pass
 
 
+# A directory nobody answers (the discard port): lookups fail at once.
+NO_DIRECTORY = "http://127.0.0.1:9/api/relay"
+
+
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name, container=None):
+    def __init__(self, lab, name, container=None, directory=True):
         self.lab = lab
         self.name = name
         self.container = container  # --nat: the user's own NAT'd container (None: a host process)
@@ -53,7 +57,7 @@ class User:
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
         with open(self.config, "w") as f:
-            json.dump(lab.config_for(self.dir), f, indent=2)
+            json.dump(lab.config_for(self.dir, directory), f, indent=2)
         self.proc = None
         self.next_id = 1
         self.replies = {}
@@ -261,12 +265,13 @@ class Lab:
         self.hop_status = args.hop_status
         self.users = []
 
-    def config_for(self, data_dir):
+    def config_for(self, data_dir, directory=True):
         return {
             "config_version": 1,
             "data_dir": data_dir,
             "relay": {"base_url": self.user_relay},
-            "directory": {"base_url": self.user_relay},
+            # directory=False: a directory nobody answers (an empty one means the built-in default).
+            "directory": {"base_url": self.user_relay if directory else NO_DIRECTORY},
             "registration": {"base_url": self.user_relay},
             "mesh": {
                 "node_enabled": False,
@@ -308,10 +313,11 @@ class Lab:
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name):
+    def user(self, name, directory=True):
+        """A registered user; directory=False: one whose directory never answers."""
         self.fresh_registration()
         container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container)
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -1146,6 +1152,37 @@ def scenario_chat_message_actions(lab):
         raise ProbeError("bob: alice's delete-for-me took his copy")
 
 
+def thread_with(u, account):
+    """`u`'s direct thread with `account`, or None."""
+    for t in u.cmd("threads")["threads"]:
+        if t["kind"] == "direct" and t["peer"] == account:
+            return t["id"]
+    return None
+
+
+def scenario_first_message_brings_keys(lab):
+    """Bob's directory never answers. Alice finds him through hers and writes: her first message carries
+    her key card, so Bob checks it and answers with no lookup; then she calls him and he answers."""
+    a = lab.user("alice")
+    b = lab.user("bob", directory=False)
+    a.wait_mesh()
+    b.wait_mesh()
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob, it's alice")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 30, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's first message")
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 20, "alice: bob's answer")
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 40, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    for u in (a, b):
+        u.cmd("leave", check=False)
+    assert_idle(a, b)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1499,6 +1536,7 @@ SCENARIOS = [
     ("chat_list_settings", scenario_chat_list_settings),
     ("chat_message_actions", scenario_chat_message_actions),
     ("chat_quote_reply", scenario_chat_quote_reply),
+    ("first_message_brings_keys", scenario_first_message_brings_keys),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

@@ -487,8 +487,8 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 
 | Phase | Scope |
 |-------|-------|
-| C1 | Card codec and checks; persisted card store feeding the key stores at unlock; resolvers as a chain; hub runs with no directory configured |
-| C2 | `sender_keys` with `key_init`; receive checks and keeps it |
+| C1 | Card codec and checks; persisted card store feeding the key stores at unlock; resolvers as a chain; hub runs with no directory configured — **landed 2026-10-23** |
+| C2 | `sender_keys` with `key_init`; receive checks and keeps it — **landed 2026-10-23** (`first_message_brings_keys`) |
 | C3 | Contact card v2: *Share contact*, *Add* from a card |
 | C4 | Card exchange over Amp; card devices registered as the account's dial keys |
 | C5 | Locator: QR, invite link, onboarding share; scan / paste → card via C4 or the directory |

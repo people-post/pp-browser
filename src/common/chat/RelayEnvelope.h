@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/directory/KeyCard.h"
 #include "common/thread/ThreadChannel.h"
 
 #include <cstdint>
@@ -30,6 +31,11 @@ struct RelayRoute {
 struct RelayE2eBody {
   std::string payload_b64;
   std::optional<std::string> key_init_b64;
+  /**
+   * The sender's key card, with a key_init only (docs/contracts/ACCOUNT_CARD.md): lets the receiver verify
+   * the envelope and answer with no lookup. Signed by the account it names, not by the envelope signature.
+   */
+  std::optional<KeyCard> sender_keys;
   /** D095 — one AEAD blob per group member (recipient identity → base64). */
   std::optional<std::map<std::string, std::string>> member_payloads;
 };

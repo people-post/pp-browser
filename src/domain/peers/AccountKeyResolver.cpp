@@ -44,6 +44,15 @@ void AccountKeyResolver::LoadKeptCards() {
   }
 }
 
+Roe<PeerCardRecord> AccountKeyResolver::AddKeyCard(const KeyCard& card, const std::string& source) {
+  auto kept = cards_.AddKeyCard(card, source);
+  if (!kept) {
+    return kept.error();
+  }
+  Remember(*kept);
+  return kept;
+}
+
 Roe<PeerCardRecord> AccountKeyResolver::AddDirectoryHit(const mesh::DirectoryHit& hit) {
   const auto account_id = PrimaryAccountIdFromHit(hit);
   if (!account_id) {
@@ -52,16 +61,11 @@ Roe<PeerCardRecord> AccountKeyResolver::AddDirectoryHit(const mesh::DirectoryHit
   if (!hit.signing_public_key_b64 || !hit.kem_public_key_b64 || !hit.kem_binding_signature_b64) {
     return Error("Directory entry carries no bound keys");
   }
-  auto kept = cards_.AddKeyCard(KeyCard{.account_id = *account_id,
-                                        .signing_public_key_b64 = *hit.signing_public_key_b64,
-                                        .kem_public_key_b64 = *hit.kem_public_key_b64,
-                                        .kem_binding_signature_b64 = *hit.kem_binding_signature_b64},
-                                "directory");
-  if (!kept) {
-    return kept.error();
-  }
-  Remember(*kept);
-  return kept;
+  return AddKeyCard(KeyCard{.account_id = *account_id,
+                            .signing_public_key_b64 = *hit.signing_public_key_b64,
+                            .kem_public_key_b64 = *hit.kem_public_key_b64,
+                            .kem_binding_signature_b64 = *hit.kem_binding_signature_b64},
+                    "directory");
 }
 
 Roe<PeerCardRecord> AccountKeyResolver::Resolve(const std::string& account_id) {

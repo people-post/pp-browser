@@ -25,6 +25,8 @@ struct ControlLaneSendParams {
   ByteVector master_psk;
   /** Set on the send that opens the session (AutoKey), for the peer to derive it. */
   std::optional<std::string> key_init_b64;
+  /** Our key card, carried with the key_init (docs/contracts/ACCOUNT_CARD.md). */
+  std::optional<KeyCard> sender_keys;
   /** The relay index within the lane's stream (unique, rising per sender). */
   uint64_t order_key = 0;
 };

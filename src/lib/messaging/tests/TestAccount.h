@@ -6,6 +6,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
+#include "common/directory/KeyCard.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
 
@@ -50,6 +51,14 @@ struct TestAccount {
   /** The account's binding of its KEM key to itself, base64 (as the directory carries it). */
   std::string KemBindingB64() const {
     return Sign(KemBindingSignBytes(SigningPublicB64(), KemPublicB64())).value();
+  }
+
+  /** The account's key card (as the directory or a first message carries it). */
+  KeyCard Card() const {
+    return KeyCard{.account_id = account_id,
+                   .signing_public_key_b64 = SigningPublicB64(),
+                   .kem_public_key_b64 = KemPublicB64(),
+                   .kem_binding_signature_b64 = KemBindingB64()};
   }
 
   /** The account key's signature over `bytes`, base64 (as an envelope carries it). */

@@ -7,6 +7,7 @@
 #include "lib/messaging/ControlLaneEnvelope.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
 #include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/PeerSigningKeyStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
@@ -121,6 +122,9 @@ struct Side {
     params.session_epoch = epoch;
     params.master_psk = session->master_psk;
     params.key_init_b64 = session->key_init_b64;
+    if (carry_keys) {
+      params.sender_keys = keys.Card();
+    }
     params.order_key = 1;
     auto envelope = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) {
       return keys.Sign(bytes);
@@ -151,6 +155,8 @@ struct Side {
   std::unique_ptr<ControlLaneSeenStore> seen;
   std::unique_ptr<RelayReceivePipeline> pipeline;
   int landed = 0;
+  /** Carry our key card with a key_init (as the app does). */
+  bool carry_keys = false;
 };
 
 class E2ePublicSessionTest : public ::testing::Test {
@@ -166,6 +172,53 @@ protected:
   std::unique_ptr<Side> alice_;
   std::unique_ptr<Side> bob_;
 };
+
+TEST(E2ePublicSessionCardTest, AFirstMessageCarriesTheKeysToAnswerIt) {
+  EnsureSodiumInit();
+  Side alice("alice-card", 0x10);
+  Side bob("bob-card", 0x40);
+  alice.Know(bob);  // Alice found Bob (directory, a card); Bob has never looked Alice up.
+  alice.carry_keys = true;
+  bob.carry_keys = true;
+  std::vector<KeyCard> kept;
+  bob.pipeline->SetOnSenderKeys([&](const KeyCard& card) {
+    kept.push_back(card);
+    PeerSigningKeyRecord record;
+    record.signing_public_key_b64 = card.signing_public_key_b64;
+    bob.signing.Put(ContactIdKindToString(mesh::ContactIdKind::Account), card.account_id, record);
+    bob.peer_kem[card.account_id] = card.kem_public_key_b64;
+  });
+
+  EXPECT_TRUE(bob.Receive(alice.Signal(bob))) << "verified with the card it carries, no lookup";
+  ASSERT_EQ(kept.size(), 1u);
+  EXPECT_TRUE(SameKeys(kept[0], alice.keys.Card()));
+  EXPECT_TRUE(alice.Receive(bob.Signal(alice))) << "Bob answers with the keys the first message brought";
+}
+
+TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
+  EnsureSodiumInit();
+  Side alice("alice-forged", 0x10);
+  Side bob("bob-forged", 0x40);
+  const test::TestAccount mallory = test::TestAccount::Make();
+  alice.Know(bob);
+  int kept = 0;
+  bob.pipeline->SetOnSenderKeys([&](const KeyCard&) { ++kept; });
+
+  // Alice's own card, but the envelope signed by Mallory: it does not verify.
+  alice.carry_keys = true;
+  RelayEnvelope resigned = alice.Signal(bob);
+  resigned.signature = mallory.Sign(EnvelopeSigner::BuildSignBytes(resigned).value()).value();
+  EXPECT_FALSE(bob.Receive(resigned));
+
+  // Mallory's keys presented as Alice's: the signing key does not hash to her Account ID.
+  RelayEnvelope claimed = alice.Signal(bob);
+  KeyCard as_alice = mallory.Card();
+  as_alice.account_id = alice.account;
+  claimed.body.e2e.sender_keys = as_alice;
+  claimed.signature = mallory.Sign(EnvelopeSigner::BuildSignBytes(claimed).value()).value();
+  EXPECT_FALSE(bob.Receive(claimed));
+  EXPECT_EQ(kept, 0);
+}
 
 TEST_F(E2ePublicSessionTest, OneSideOpensAndBothDirectionsWork) {
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "the opening send carries its key_init";

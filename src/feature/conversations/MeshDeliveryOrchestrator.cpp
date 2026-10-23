@@ -98,13 +98,19 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       account_keys_(account_keys), psk_store_(psk_store), group_roster_(group_roster),
       transports_(store, identity, account_keys.Signing(), psk_store), outbox_([this]() { return transports_.DirectChat(); }),
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
-      session_keys_(psk_store, account_keys.Kem()),
-      control_lane_(identity, contacts, routes_, session_keys_, transports_, outbox_) {
+      session_keys_(psk_store, account_keys.Kem()), own_key_card_(identity),
+      control_lane_(identity, own_key_card_, contacts, routes_, session_keys_, transports_, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, account_keys_.Signing(), psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
+  // A first message's key card that verified it: the sender is answerable with no lookup from now on.
+  receive_pipeline_->SetOnSenderKeys([this](const KeyCard& card) {
+    if (auto kept = account_keys_.AddKeyCard(card, "envelope"); !kept) {
+      log().warning << "sender's key card not kept: " << kept.error().message;
+    }
+  });
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
   receive_pipeline_->SetOnMessageRetracted(
       [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
@@ -133,6 +139,15 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
   });
+}
+
+std::optional<KeyCard> MeshDeliveryOrchestrator::OwnKeys() {
+  auto card = own_key_card_.Get();
+  if (!card) {
+    log().warning << "own key card unavailable: " << card.error().message;
+    return std::nullopt;
+  }
+  return *card;
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit) {
@@ -923,7 +938,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   }
   // Brief recipient is relay:; Amp-only (no route yet) uses Account as party placeholder.
   RelayEnvelope envelope =
-      BuildDirectEnvelope(*appended, EnvelopeSender{identity->relay_user_id, identity->account_id},
+      BuildDirectEnvelope(*appended, EnvelopeSender{identity->relay_user_id, identity->account_id, OwnKeys()},
                           (*thread)->channel, peer_relay_id ? *peer_relay_id : amp_peer_key, std::move(*sealed));
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   if (!sign_bytes) {
@@ -1088,7 +1103,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     }
   }
 
-  const EnvelopeSender sender{identity->relay_user_id, identity->account_id};
+  const EnvelopeSender sender{identity->relay_user_id, identity->account_id, OwnKeys()};
   for (const auto& [recipient, payload_b64] : encrypted->member_payloads) {
     std::optional<std::string> key_init;
     if (auto found = encrypted->member_key_inits.find(recipient); found != encrypted->member_key_inits.end()) {

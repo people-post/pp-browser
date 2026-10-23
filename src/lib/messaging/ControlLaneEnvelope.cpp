@@ -47,6 +47,7 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   envelope.body.e2e.payload_b64 = std::move(encrypted->payload_b64);
   if (encrypted->key_init_b64 && !encrypted->key_init_b64->empty()) {
     envelope.body.e2e.key_init_b64 = std::move(*encrypted->key_init_b64);
+    envelope.body.e2e.sender_keys = params.sender_keys;
   }
   envelope.sender_seq = 0;
   envelope.order_key = params.order_key;

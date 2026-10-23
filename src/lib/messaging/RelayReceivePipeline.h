@@ -102,6 +102,8 @@ public:
    * on receipt. Not owned; null = no blocking.
    */
   void SetContactTrust(IContactTrustAccess* trust) { contact_trust_ = trust; }
+  /** A sender's key card that verified the envelope it came with (docs/contracts/ACCOUNT_CARD.md): keep it. */
+  void SetOnSenderKeys(std::function<void(const KeyCard&)> callback) { on_sender_keys_ = std::move(callback); }
   /** Called after a sender's retract wiped one of their messages here (`original` = the row before). */
   void SetOnMessageRetracted(std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
     on_message_retracted_ = std::move(callback);
@@ -117,6 +119,7 @@ private:
   /** A message whose retract arrived first is stored as a tombstone straight away. */
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
+  std::function<void(const KeyCard&)> on_sender_keys_;
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                             bool authorized_older_backfill, MessageTransport transport);

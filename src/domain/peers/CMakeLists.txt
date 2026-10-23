@@ -10,6 +10,7 @@ pp_browser_add_domain_library(pp_domain_peers
     ProfileIconClient.cpp
     ProfileIconFetch.cpp
     AccountKeyResolver.cpp
+    OwnKeyCard.cpp
   PUBLIC_LIBS
     pp_lib_people
     pp_lib_net

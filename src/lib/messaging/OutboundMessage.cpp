@@ -222,6 +222,7 @@ RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSe
   envelope.body.e2e.payload_b64 = std::move(sealed.payload_b64);
   if (sealed.key_init_b64 && !sealed.key_init_b64->empty()) {
     envelope.body.e2e.key_init_b64 = std::move(*sealed.key_init_b64);
+    envelope.body.e2e.sender_keys = sender.keys;
   }
   envelope.stream_key =
       BuildCanonicalRelayStreamKey(sender.relay_user_id, route_party, channel, envelope.session_epoch);
@@ -243,6 +244,7 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
   // A member with no pairwise session yet derives it from the key_init.
   if (key_init_b64) {
     envelope.body.e2e.key_init_b64 = std::move(*key_init_b64);
+    envelope.body.e2e.sender_keys = sender.keys;
   }
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, envelope.session_epoch);
   envelope.recipient_contact_id = recipient;

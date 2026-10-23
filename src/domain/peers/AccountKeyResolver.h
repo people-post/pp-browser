@@ -29,6 +29,8 @@ public:
   void LoadKeptCards();
   /** The keys of `account_id`: a kept card, else the directory's entry, kept as a card. */
   Roe<PeerCardRecord> Resolve(const std::string& account_id);
+  /** Keeps a key card that came another way (a first message's sender_keys, a contact card). */
+  Roe<PeerCardRecord> AddKeyCard(const KeyCard& card, const std::string& source);
   /** Keeps the keys a directory entry carries for its account (search hit, contact sync). */
   Roe<PeerCardRecord> AddDirectoryHit(const mesh::DirectoryHit& hit);
 

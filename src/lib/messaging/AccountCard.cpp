@@ -38,30 +38,6 @@ Roe<std::string> RequiredString(const Object& json, const char* key) {
 
 } // namespace
 
-Object KeyCardToJson(const KeyCard& card) {
-  Object json;
-  json.set("account_id", card.account_id);
-  json.set("signing_public_key_b64", card.signing_public_key_b64);
-  json.set("kem_public_key_b64", card.kem_public_key_b64);
-  json.set("kem_binding_signature_b64", card.kem_binding_signature_b64);
-  return json;
-}
-
-Roe<KeyCard> KeyCardFromJson(const Object& json) {
-  KeyCard card;
-  for (auto [key, field] : {std::pair{"account_id", &card.account_id},
-                            std::pair{"signing_public_key_b64", &card.signing_public_key_b64},
-                            std::pair{"kem_public_key_b64", &card.kem_public_key_b64},
-                            std::pair{"kem_binding_signature_b64", &card.kem_binding_signature_b64}}) {
-    auto value = RequiredString(json, key);
-    if (!value) {
-      return value.error();
-    }
-    *field = std::move(value.value());
-  }
-  return card;
-}
-
 Object AccountCardToJson(const AccountCard& card) {
   Object json = KeyCardToJson(card.keys);
   json.set("card_version", kAccountCardVersion);

@@ -75,6 +75,8 @@ Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread&
 struct EnvelopeSender {
   std::string relay_user_id;
   std::string account_id;
+  /** Our key card, carried with every key_init so the peer can verify and answer with no lookup. */
+  std::optional<KeyCard> keys;
 };
 
 /** A direct send's envelope to `route_party` (relay id, or the account for an Amp-only peer). */
