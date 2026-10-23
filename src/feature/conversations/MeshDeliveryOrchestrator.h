@@ -24,7 +24,9 @@
 #include "common/chat/SystemControl.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
 #include "domain/delivery/PeerRouteBook.h"
+#include "domain/delivery/ControlLane.h"
 #include "domain/delivery/DeliveryOutbox.h"
+#include "domain/delivery/E2ePublicSessionKeys.h"
 #include "domain/delivery/PeerTransports.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
@@ -239,18 +241,8 @@ private:
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The direct-chat transport is attached and reaches `peer_key` now. */
   bool AmpReaches(const std::string& peer_key) const;
-  /** The pair's e2e_public session as the lane and media-key wraps use it. */
-  struct E2ePublicSession {
-    ChatTargetKey target_key;
-    uint32_t epoch = 1;
-    ByteVector master_psk;
-    /** Set when this call just opened the session (attach on the first send). */
-    std::optional<std::string> key_init_b64;
-  };
-  Roe<E2ePublicSession> ResolveE2ePublicSession(const std::string& peer_identity);
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
-  uint64_t NextControlOrderKey();
   void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
@@ -313,11 +305,14 @@ private:
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
-  std::atomic<uint64_t> control_order_key_{0};
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
   PeerRouteBook routes_;
+  /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
+  E2ePublicSessionKeys session_keys_;
+  /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
+  ControlLane control_lane_;
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};

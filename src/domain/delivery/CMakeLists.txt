@@ -10,6 +10,8 @@ pp_browser_add_domain_library(pp_domain_delivery
     PeerRouteBook.cpp
     PeerTransports.cpp
     DeliveryOutbox.cpp
+    E2ePublicSessionKeys.cpp
+    ControlLane.cpp
   PUBLIC_LIBS
     pp_domain_peers
     pp_domain_attachments

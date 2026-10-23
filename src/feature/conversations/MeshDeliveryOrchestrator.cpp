@@ -100,7 +100,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster),
       transports_(store, identity, signing_key_resolver, psk_store), outbox_([this]() { return transports_.DirectChat(); }),
-      epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts) {
+      epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
+      session_keys_(psk_store, kem_key_resolver),
+      control_lane_(identity, contacts, routes_, session_keys_, transports_, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
@@ -394,130 +396,18 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   transports_.WarmByKey(peer_key);
 }
 
-Roe<MeshDeliveryOrchestrator::E2ePublicSession> MeshDeliveryOrchestrator::ResolveE2ePublicSession(
-    const std::string& peer_identity) {
-  if (peer_identity.empty()) {
-    return Error("Peer identity required");
-  }
-  E2ePublicSession session;
-  session.target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-  session.target_key.peer_identity_value = peer_identity;
-  session.target_key.channel = CryptoChannel::E2ePublic;
-  // The pair's session is the account pair's, not a thread's: its active epoch is the stored one.
-  auto record = psk_store_.Load(session.target_key);
-  if (!record) {
-    return record.error();
-  }
-  session.epoch = record->has_value() && (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
-  auto peer_public = PeerKemPublicKey(session.target_key);
-  if (!peer_public) {
-    return peer_public.error();
-  }
-  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, session.target_key, session.epoch, *peer_public);
-  if (!ensured) {
-    return ensured.error();
-  }
-  session.master_psk = std::move(ensured->master_psk);
-  session.key_init_b64 = std::move(ensured->key_init_b64);
-  return session;
-}
-
 Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
     const std::string& peer_identity) {
-  auto session = ResolveE2ePublicSession(peer_identity);
-  if (!session) {
-    return session.error();
-  }
-  auto session_key = DeriveE2ePublicSessionKey(session->master_psk, session->epoch);
-  if (!session_key) {
-    return session_key.error();
-  }
-  EnsuredE2ePublicSessionKey out;
-  out.session_key = std::move(*session_key);
-  if (session->key_init_b64 && !session->key_init_b64->empty()) {
-    out.first_message_key_init_b64 = std::move(*session->key_init_b64);
-  }
-  return out;
+  return session_keys_.Ensure(peer_identity);
 }
 
 Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const ChatTargetKey& key) const {
-  auto kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
-  if (!kem) {
-    return kem.error();
-  }
-  return Base64Decode(kem->kem_public_key_b64);
-}
-
-uint64_t MeshDeliveryOrchestrator::NextControlOrderKey() {
-  // Relay index within the lane's stream: unique and rising per sender (ms * 1000 + a counter).
-  const uint64_t floor = static_cast<uint64_t>(util::NowUnixMs()) * 1000;
-  uint64_t current = control_order_key_.load(std::memory_order_relaxed);
-  uint64_t next = 0;
-  do {
-    next = std::max(current + 1, floor);
-  } while (!control_order_key_.compare_exchange_weak(current, next, std::memory_order_relaxed));
-  return next;
+  return session_keys_.PeerKemPublicKey(key);
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
                                                 const std::optional<std::string>& key_init_b64, const bool urgent) {
-  auto identity = identity_.Get();
-  if (!identity || identity->account_id.empty()) {
-    return Error("Local account identity unavailable");
-  }
-  auto session = ResolveE2ePublicSession(peer_identity);
-  if (!session) {
-    return session.error();
-  }
-  // A key_init the caller holds (its media-key wrap opened the session) rides this first send.
-  std::optional<std::string> key_init = session->key_init_b64;
-  if (!key_init && key_init_b64 && !key_init_b64->empty()) {
-    key_init = key_init_b64;
-  }
-
-  // Route as for a DM with the peer (contacts, learned routes, directory) — no thread needed.
-  Thread route_view;
-  route_view.kind = ThreadKind::Direct;
-  route_view.channel = ThreadChannel::E2ePublic;
-  route_view.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-  route_view.peer_identity_value = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account); contact && *contact) {
-    route_view.participant_contact_ids = {(*contact)->id};
-  }
-  const auto peer_relay_id = routes_.ResolveWithDirectory(route_view);
-  const bool amp_reachable = AmpReaches(peer_identity);
-  if (!peer_relay_id && !amp_reachable) {
-    return Error("No route to the peer");
-  }
-
-  ControlLaneSendParams params;
-  params.sender_account_id = identity->account_id;
-  params.sender_relay_id = identity->relay_user_id;
-  params.peer_account_id = peer_identity;
-  params.route_party = peer_relay_id ? *peer_relay_id : peer_identity;
-  params.session_epoch = session->epoch;
-  params.master_psk = std::move(session->master_psk);
-  params.key_init_b64 = std::move(key_init);
-  params.order_key = NextControlOrderKey();
-  auto built = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) {
-    return identity_.SignBytes(bytes);
-  });
-  if (!built) {
-    return built.error();
-  }
-  RelayEnvelope envelope = std::move(*built);
-  envelope.relay_wake_urgent = urgent;
-  const std::string built_message_id = envelope.message_id;
-
-  // Off the caller's thread, on the critical lane (signaling must not queue behind inbox polls); the
-  // relay first when a route is known (Amp's open + ack per message races media setup). No row to
-  // mark: a relay failure is retried while fresh.
-  outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
-                               .message_id = built_message_id,
-                               .amp_peer_key = peer_identity,
-                               .relay_route = peer_relay_id,
-                               .critical_lane = true});
-  return {};
+  return control_lane_.Send(peer_identity, control, key_init_b64, urgent);
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {
