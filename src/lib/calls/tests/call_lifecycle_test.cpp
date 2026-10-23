@@ -84,6 +84,39 @@ TEST_F(CallLifecycleTest, FailedCallStaysOpenAndARestartConnectsAgain) {
   EXPECT_EQ(live_.Phase(), CallPhase::InCall);
 }
 
+TEST_F(CallLifecycleTest, ADirectStreamHandedToTheHopWaitsForItNotConnected) {
+  Answered("call:h");
+  live_.NoteMediaKeyReady("call:h");
+  live_.NoteMediaConnected("call:h");
+  ASSERT_EQ(live_.Status(), CallMediaStatus::DirectLive);
+  // The 1:1 stream ends because the call moves onto the hop, not attached yet.
+  live_.NoteDirectHandedToHop("call:h");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopWaiting) << "nothing is live until the hop attaches";
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall) << "it was live: the call goes on, waiting";
+
+  // A hop already attaching keeps its own status.
+  live_.ReportHopProgress("call:h", CallHopPlannerPhase::Attaching);
+  live_.NoteDirectHandedToHop("call:h");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopAttaching);
+  live_.ReportHopProgress("call:h", CallHopPlannerPhase::Live);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopLive);
+}
+
+TEST_F(CallLifecycleTest, TheCallTimerCountsTheCallThroughAFailureAndAReconnect) {
+  Answered("call:t");
+  EXPECT_EQ(live_.Active()->MediaProgress().live_since_ms, 0) << "never live yet";
+  live_.NoteMediaKeyReady("call:t");
+  live_.NoteMediaConnected("call:t");
+  const int64_t since = live_.Active()->MediaProgress().live_since_ms;
+  EXPECT_GT(since, 0);
+  live_.ReportDirectProgress("call:t", CallDirectPlannerPhase::Reconnecting);
+  live_.NoteMediaFailed("call:t");
+  EXPECT_EQ(live_.Active()->MediaProgress().live_since_ms, since) << "\"was connected\" outlives the failure";
+  live_.SetMediaStatus("call:t", CallMediaStatus::DirectConnecting, "RetryClicked");
+  live_.NoteMediaConnected("call:t");
+  EXPECT_EQ(live_.Active()->MediaProgress().live_since_ms, since) << "the timer does not restart";
+}
+
 TEST_F(CallLifecycleTest, HopStatusesArmTheGroupPathOnly) {
   Answered("call:g");
   live_.ReportHopProgress("call:g", CallHopPlannerPhase::WaitingAttach);

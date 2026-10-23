@@ -1163,8 +1163,8 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
   host_.SetMediaActivity(Tr("call.status.reconnecting"));
   if (attempt == 1) {
     // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
-    // The seat stays Live by design (a reattach is not a demotion); IsGuestHopRecovering keeps
-    // the Reconnecting line up until a reattach succeeds.
+    // The seat stays Live by design (a reattach is not a demotion); Recovery() (Reattaching, then
+    // HopLost) keeps the Reconnecting line up until a reattach succeeds.
     const auto arming_ports = arming_.Get();
     if (arming_ports->report_progress) {
       arming_ports->report_progress(CallHopPlannerPhase::Attaching, call_id);

@@ -94,15 +94,14 @@ struct InCallSignals {
   bool p2p_connect_failed = false;
   bool p2p_missing_mic = false;
   bool p2p_seed_unreachable = false;
-  bool awaiting_sfu_recovery = false;
+  /** Why the hop path is being recovered (None: it is not). */
+  CallRecovery recovery = CallRecovery::None;
   bool sfu_mode = false;
   bool group_context = false;
   bool media_chrome_live = false;
   CallMediaSeat::MediaState seat_media = CallMediaSeat::MediaState::Idle;
   CallMediaStatus media_status = CallMediaStatus::None;
   bool media_active = false;
-  bool soft_migrate_in_flight = false;
-  bool sfu_attach_wait_active = false;
   /** The engine's connection state ("new", "connecting", "connected", "disconnected", …). */
   std::string connection_state;
   /** The call stack's activity line (empty: none). */

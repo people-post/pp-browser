@@ -48,7 +48,8 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   using Status = CallScreen::Status;
   using MediaState = CallMediaSeat::MediaState;
   InCallStatus out;
-  out.show_retry = s.p2p_connect_failed && !s.awaiting_sfu_recovery && !s.sfu_mode;
+  const bool recovering = s.recovery != CallRecovery::None;
+  out.show_retry = s.p2p_connect_failed && !recovering && !s.sfu_mode;
   // V037: Connected when MediaChromeLive (InCall + DirectLive|HopLive); the seat's Live is a
   // fallback while the status catches up.
   out.media_connected = s.media_chrome_live || s.seat_media == MediaState::Live;
@@ -58,7 +59,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
                                 s.media_status == CallMediaStatus::Migrating ||
                                 s.seat_media == MediaState::Connecting;
   bool activity = !s.activity.empty();
-  if (activity && out.media_connected && !s.awaiting_sfu_recovery) {
+  if (activity && out.media_connected && !recovering) {
     out.activity_spent = true;
     activity = false;
   }
@@ -88,20 +89,20 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.status = Status::CouldntConnect;
   } else if (s.seat_media == MediaState::Idle && !s.media_active && s.media_status == CallMediaStatus::None) {
     out.status = Status::Calling;
-  } else if (s.soft_migrate_in_flight || s.sfu_attach_wait_active || media_connecting) {
-    // V037: Migrating / HopWaiting own the line; soft_migrate_in_flight is a latch only.
+  } else if (s.recovery == CallRecovery::Migrating || s.recovery == CallRecovery::WaitingForHop || media_connecting) {
+    // V037: Migrating / HopWaiting own the line; a migrate in flight is a latch only.
     if (s.media_status == CallMediaStatus::Migrating ||
         (s.media_status != CallMediaStatus::HopWaiting && s.media_status != CallMediaStatus::HopAttaching &&
-         s.soft_migrate_in_flight)) {
+         s.recovery == CallRecovery::Migrating)) {
       out.status = Status::SettingUpGroup;
-    } else if (s.media_status == CallMediaStatus::HopWaiting || s.sfu_attach_wait_active) {
+    } else if (s.media_status == CallMediaStatus::HopWaiting || s.recovery == CallRecovery::WaitingForHop) {
       out.status = Status::WaitingForMediaPath;
     } else {
       out.status = Status::Connecting;
     }
   } else if (!s.media_active) {
     out.status = Status::Calling;
-  } else if (s.awaiting_sfu_recovery) {
+  } else if (recovering) {
     out.status = Status::Reconnecting;
   } else {
     const std::string& state = s.connection_state;

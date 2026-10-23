@@ -205,12 +205,6 @@ bool CallTopologyController::IsAwaitingSfuRecovery() const {
          guest_.reattach_in_flight;
 }
 
-bool CallTopologyController::IsGuestHopRecovering() const {
-  // From the first reattach attempt until one succeeds (attempts reset): between attempts and after
-  // they ran out too, nothing flows.
-  return guest_.reattach_in_flight || guest_.reattach_attempts > 0;
-}
-
 bool CallTopologyController::IsSfuAttached() const {
   return sfu_.attached;
 }
@@ -221,6 +215,24 @@ bool CallTopologyController::IsOnSfuForCall(const std::string& call_id) const {
 
 bool CallTopologyController::IsSoftMigrateInFlight() const {
   return flight_.in_flight;
+}
+
+CallRecovery CallTopologyController::Recovery() const {
+  if (flight_.in_flight) {
+    return CallRecovery::Migrating;
+  }
+  if (!attach_wait_.call_id.empty()) {
+    return CallRecovery::WaitingForHop;
+  }
+  if (guest_.reattach_in_flight) {
+    return CallRecovery::Reattaching;
+  }
+  // From the first reattach attempt until one succeeds (attempts reset): between attempts and after
+  // they ran out too, nothing flows.
+  if (guest_.reattach_attempts > 0) {
+    return CallRecovery::HopLost;
+  }
+  return CallRecovery::None;
 }
 
 bool CallTopologyController::IsSfuAttachWaitActive() const {

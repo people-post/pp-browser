@@ -564,6 +564,7 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
     live_calls_.ReportDirectProgress(call_id, phase);
   };
   ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
+  ports.on_handed_to_hop = [this](const std::string& call_id) { live_calls_.NoteDirectHandedToHop(call_id); };
   ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
   ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
   ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
@@ -1168,16 +1169,8 @@ bool CallSessionManager::IsAwaitingSfuRecovery() const {
   return topology_.IsAwaitingSfuRecovery();
 }
 
-bool CallSessionManager::IsGuestHopRecovering() const {
-  return topology_.IsGuestHopRecovering();
-}
-
-bool CallSessionManager::IsSoftMigrateInFlight() const {
-  return topology_.IsSoftMigrateInFlight();
-}
-
-bool CallSessionManager::IsSfuAttachWaitActive() const {
-  return topology_.IsSfuAttachWaitActive();
+CallRecovery CallSessionManager::Recovery() const {
+  return topology_.Recovery();
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {

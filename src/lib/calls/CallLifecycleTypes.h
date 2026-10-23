@@ -20,6 +20,27 @@ enum class CallPhase {
   ConnectFailed,
 };
 
+/**
+ * Why the call's hop path is being recovered — one reason at a time, highest first. The screen's
+ * status line reads it; path decisions keep reading the topology's own state.
+ */
+enum class CallRecovery {
+  None,
+  /** A SoftMigrate from the 1:1 path onto a hop is in flight ("Setting up group call…"). */
+  Migrating,
+  /** The call waits for its hop to attach ("Waiting for media path…"). */
+  WaitingForHop,
+  /** A guest's lost hop transport: a reattach is in flight. */
+  Reattaching,
+  /** A guest's lost hop transport: attempts made, none in flight, nothing flows. */
+  HopLost,
+};
+/** A recovery is in progress (Migrating / WaitingForHop / Reattaching): not HopLost or None. */
+inline bool RecoveryInFlight(const CallRecovery r) {
+  return r == CallRecovery::Migrating || r == CallRecovery::WaitingForHop || r == CallRecovery::Reattaching;
+}
+const char* CallRecoveryName(CallRecovery recovery);
+
 /** Media Status under Calling-like / InCall. Arms at most one planner. */
 enum class CallMediaStatus {
   None = 0,

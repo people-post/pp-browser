@@ -220,7 +220,6 @@ void CallPresenter::Refresh() {
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();
-    live_call_id_.clear();
     ringing_call_id_.clear();
     ring_shown_ = false;
   }
@@ -265,22 +264,19 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   signals.p2p_seed_unreachable = backend.P2pConnectSeedUnreachable();
   // The hop path being recovered, also a guest's lost transport between reattach attempts (the
   // Reconnecting line stays up; the seat stays Live by design).
-  signals.awaiting_sfu_recovery = backend.IsAwaitingSfuRecovery() || backend.IsGuestHopRecovering();
+  signals.recovery = backend.Recovery();
   signals.sfu_mode = backend.Media().IsSfuMode();
-  signals.group_context = group_call || joined > 2 || signals.awaiting_sfu_recovery || signals.sfu_mode;
+  signals.group_context =
+      group_call || joined > 2 || signals.recovery != CallRecovery::None || signals.sfu_mode;
   signals.media_chrome_live = backend.MediaChromeLive();
   signals.seat_media = backend.SeatMediaState(call_id);
   signals.media_status = backend.MediaStatus();
   signals.media_active = backend.Media().IsActive();
-  signals.soft_migrate_in_flight = backend.IsSoftMigrateInFlight();
-  signals.sfu_attach_wait_active = backend.IsSfuAttachWaitActive();
   signals.connection_state = backend.Media().ConnectionState();
   signals.activity = backend.PeekMediaActivity();
-  signals.was_connected = live_call_id_ == call_id;
+  const int64_t live_since_ms = backend.LiveSinceMs(call_id);
+  signals.was_connected = live_since_ms > 0;
   const InCallStatus decided = DecideInCallStatus(signals);
-  if (decided.media_connected) {
-    live_call_id_ = call_id;
-  }
   if (decided.activity_spent) {
     backend.ClearMediaActivity();
   }
@@ -297,7 +293,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
     s.raw_state = signals.connection_state;
   }
   if (decided.show_elapsed) {
-    s.connected_at_ms = backend.Media().ConnectedAtMs();
+    s.connected_at_ms = live_since_ms;  // the call's, not the current path's
   }
 }
 

@@ -40,6 +40,8 @@ struct CallDirectArmingPorts {
   std::function<void(const std::string& call_id)> request_direct_arming;
   std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<void(const std::string& call_id)> on_connected;
+  /** The 1:1 stream ended because the call moves onto a hop not attached yet (nothing is live). */
+  std::function<void(const std::string& call_id)> on_handed_to_hop;
   std::function<void(const std::string& call_id)> on_connect_failed;
   /** A connection for this call came up after it failed (the peer's retry); lifecycle decides. */
   std::function<void(const std::string& call_id)> on_peer_reconnected;

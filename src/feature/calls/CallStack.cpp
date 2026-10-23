@@ -216,6 +216,7 @@ void CallStack::PublishUiState() {
     state.media_status = live.Status();
     if (const LiveCall* shown = live.Shown()) {
       state.active_call_id = shown->Id();
+      state.live_since_ms = shown->MediaProgress().live_since_ms;
     }
     state.accepting_call_id = call_sessions_->AcceptingCallId();
     if (const LiveCall* ring = live.TheRing()) {
@@ -226,10 +227,7 @@ void CallStack::PublishUiState() {
       state.remote_ended_call_id = ended->Id();
       state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
     }
-    state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();
-    state.guest_hop_recovering = call_sessions_->IsGuestHopRecovering();
-    state.soft_migrate_in_flight = call_sessions_->IsSoftMigrateInFlight();
-    state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();
+    state.recovery = call_sessions_->Recovery();
     state.p2p_connect_failed = call_sessions_->IsP2pConnectFailed();
     state.p2p_connect_missing_mic = call_sessions_->P2pConnectMissingMic();
     state.p2p_connect_seed_unreachable = call_sessions_->P2pConnectSeedUnreachable();

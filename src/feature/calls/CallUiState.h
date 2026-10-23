@@ -19,15 +19,14 @@ struct CallUiState {
   CallPhase phase = CallPhase::Idle;
   CallMediaStatus media_status = CallMediaStatus::None;
   std::string active_call_id;
+  /** When the shown call's media first went live (0: never) — the call timer, "was connected". */
+  int64_t live_since_ms = 0;
   std::string accepting_call_id;
   std::string last_ring_call_id;
   std::string last_error;
   // Session manager / topology / bridge
-  bool awaiting_sfu_recovery = false;
-  /** A guest's lost hop transport is not back yet (screen only: path decisions read the above). */
-  bool guest_hop_recovering = false;
-  bool soft_migrate_in_flight = false;
-  bool sfu_attach_wait_active = false;
+  /** Why the hop path is being recovered (one reason; CallTopologyController::Recovery). */
+  CallRecovery recovery = CallRecovery::None;
   bool p2p_connect_failed = false;
   bool p2p_connect_missing_mic = false;
   bool p2p_connect_seed_unreachable = false;

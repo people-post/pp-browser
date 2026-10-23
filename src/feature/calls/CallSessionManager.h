@@ -250,9 +250,8 @@ public:
   void KickAnswererDirectMediaIfArmed(const std::string& call_id);
 
   bool IsAwaitingSfuRecovery() const;
-  bool IsGuestHopRecovering() const;
-  bool IsSoftMigrateInFlight() const;
-  bool IsSfuAttachWaitActive() const;
+  /** Why the hop path is being recovered (the screen's status line). */
+  CallRecovery Recovery() const;
   bool IsP2pConnectFailed() const;
   bool P2pConnectMissingMic() const;
   bool P2pConnectSeedUnreachable() const;

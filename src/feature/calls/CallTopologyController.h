@@ -2,6 +2,7 @@
 
 #include "lib/media/CallMediaEngine.h"
 #include "feature/calls/SharedPorts.h"
+#include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallSessionStore.h"
@@ -117,13 +118,14 @@ public:
 
   bool IsAwaitingSfuRecovery() const override;
   /** This guest's hop transport was lost and is not back yet (the call screen reads Reconnecting). */
-  bool IsGuestHopRecovering() const;
   bool IsSfuAttached() const override;
   /** Hop driver: SoftMigrate / hint / N≥3 / recovery — the call's 1:1 stream closing is expected. */
   bool ExpectsGroupMedia(const std::string& call_id) const override;
   bool IsOnSfuForCall(const std::string& call_id) const;
   /** Soft-migrate / attach-wait in flight (suppress ICE→SFU re-entry + stale LeaveCall). */
   bool IsSoftMigrateInFlight() const;
+  /** Why the hop path is being recovered, for the screen (one reason; path decisions use the above). */
+  CallRecovery Recovery() const;
   bool IsSfuAttachWaitActive() const;
 
   /** The media hops this device could use, ranked (shared with SoftMigrate). */

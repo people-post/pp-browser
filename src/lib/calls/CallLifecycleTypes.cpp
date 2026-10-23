@@ -26,6 +26,22 @@ const char* CallPhaseName(const CallPhase phase) {
   return "Unknown";
 }
 
+const char* CallRecoveryName(const CallRecovery recovery) {
+  switch (recovery) {
+  case CallRecovery::None:
+    return "None";
+  case CallRecovery::Migrating:
+    return "Migrating";
+  case CallRecovery::WaitingForHop:
+    return "WaitingForHop";
+  case CallRecovery::Reattaching:
+    return "Reattaching";
+  case CallRecovery::HopLost:
+    return "HopLost";
+  }
+  return "?";
+}
+
 const char* CallMediaStatusName(const CallMediaStatus status) {
   switch (status) {
   case CallMediaStatus::None:

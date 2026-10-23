@@ -69,6 +69,11 @@ struct LiveCallMediaProgress {
   bool reached_live = false;
   /** The answerer waits for the call's media key (MediaPending). */
   bool key_pending = false;
+  /**
+   * When the call's media first went live (Unix ms; 0: never). Kept through a failure, a reconnect
+   * and a path change: the call timer counts the call, and "was connected" reads it.
+   */
+  int64_t live_since_ms = 0;
 };
 
 const char* LiveCallStateName(LiveCallState state);
@@ -183,6 +188,12 @@ public:
   void NoteMediaKeyReady(const std::string& call_id);
   /** The media connected (1:1 connect, or a live hop). */
   void NoteMediaConnected(const std::string& call_id);
+  /**
+   * The 1:1 stream ended because the call is moving onto the hop, which is not attached yet: a
+   * direct status waits for the hop (HopWaiting); a hop already in progress keeps its status.
+   * Nothing is live meanwhile.
+   */
+  void NoteDirectHandedToHop(const std::string& call_id);
   /** No media path: the call stays open, failed (Retry / the peer's reconnect resumes it). */
   void NoteMediaFailed(const std::string& call_id);
 

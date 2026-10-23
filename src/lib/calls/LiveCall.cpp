@@ -318,6 +318,9 @@ void LiveCalls::SetStatus(LiveCall& call, const CallMediaStatus next, const char
   if (IsLiveStatus(next)) {
     progress.reached_live = true;
     progress.key_pending = false;
+    if (progress.live_since_ms == 0) {
+      progress.live_since_ms = util::NowUnixMs();
+    }
   } else if (next == CallMediaStatus::Failed) {
     progress.reached_live = false;
     progress.key_pending = false;
@@ -413,6 +416,22 @@ void LiveCalls::NoteMediaConnected(const std::string& call_id) {
   } else {
     call->progress_.reached_live = true;
     Changed();
+  }
+}
+
+void LiveCalls::NoteDirectHandedToHop(const std::string& call_id) {
+  LiveCall* call = Resolve(call_id);
+  if (!call) {
+    return;
+  }
+  switch (call->progress_.status) {
+  case CallMediaStatus::HopWaiting:
+  case CallMediaStatus::HopAttaching:
+  case CallMediaStatus::HopLive:
+  case CallMediaStatus::Migrating:
+    return;  // the hop's own progress owns the status
+  default:
+    SetStatus(*call, CallMediaStatus::HopWaiting, "DirectHandedToHop");
   }
 }
 

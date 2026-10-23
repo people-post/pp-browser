@@ -519,6 +519,43 @@ Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-bac
 
 ---
 
+## Call state: one owner (consolidation)
+
+A live call's state was kept in about ten places by seven owners (2026-10 map): `LiveCall` (call
+state, media Status), `CallSessionManager` (accept in flight, activity line), the topology / hop
+structs (flight, attach wait, guest reattach), `CallMediaBridge` (direct planner, connect failed),
+`CallMediaSeat` (path, media state), `CallMediaCoordinator` (path), the engine (`connection_state`,
+`connected_at_ms`), the `CallUiState` snapshot, `CallPresenter` latches and the stored row. The
+status line read seven of them at two moments (the snapshot, and the engine live); "Reconnecting"
+had five sources, "live" three, the path four. The bugs that came of it: a call read Connected
+while its direct stream had ended and the hop was not attached; the call timer reset to 0:00 on
+every reconnect.
+
+**Target:** `LiveCall` owns, per call: call state and end reason; one media sub-state (Deciding /
+Direct: Connecting, Live, TxOnly, Reconnecting / Hop: Waiting, Attaching, Live, Migrating,
+Reattaching / Failed, with its details); `live_since_ms`; the accepting sub-state; the recovery
+reason. The planners send it events instead of reporting progress beside their own phases; the
+seat keeps only the exclusive lock (holder, epoch, attach ticket); the engine's connection state
+becomes an input event. `CallUiState` publishes one copy; the presenter keeps only UI latches (ring
+shown, a click the owner has not taken yet). Pure deciders stay pure (`Decide*PlannerPhase`,
+`DecideInCallStatus` on one snapshot, `CallMediaStatusLogic`, `PlannerFor` / `Allows*`).
+
+**Landed:**
+
+1. `LiveCalls::NoteDirectHandedToHop` — a 1:1 stream ended for a hop not attached yet waits for it
+   (HopWaiting), instead of a synthetic "connected" that promoted it to HopLive.
+2. `LiveCallMediaProgress::live_since_ms` — when the call first went live, kept through failures
+   and reconnects: the call timer and "was connected" read it (the engine's per-path
+   `connected_at_ms` and the presenter's latch are gone from the screen).
+3. `CallRecovery` — one reason (Migrating / WaitingForHop / Reattaching / HopLost) from
+   `CallTopologyController::Recovery()` replaces the four recovery flags the screen read;
+   `RecoveryInFlight` is the old "awaiting SFU recovery".
+
+**Next, in order:** fold `accept_in_flight_` into `LiveCallState::Accepting`; make the seat's
+Live / Failed derive from `LiveCall` (drop the hand-paired `note_live` + `on_connected` writes);
+planners emit events into `LiveCall` (drop `report_progress` beside `Apply`); feed the engine's
+connection state in as an event (the screen stops reading the engine); one path value.
+
 ## Extraction sequence
 
 Landed (behavior-preserving + who-picks fix):

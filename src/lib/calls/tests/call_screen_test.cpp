@@ -62,7 +62,7 @@ TEST(CallScreenTest, ActivityShowsUntilMediaIsLive) {
   EXPECT_TRUE(out.activity_spent);
   EXPECT_EQ(out.status, Status::Connected);
 
-  s.awaiting_sfu_recovery = true;  // still recovering the group path: the activity stays
+  s.recovery = CallRecovery::Reattaching;  // still recovering the group path: the activity stays
   out = Decide(s);
   EXPECT_FALSE(out.activity_spent);
   EXPECT_EQ(out.status, Status::Activity);
@@ -114,12 +114,11 @@ TEST(CallScreenTest, TheHopPathSteps) {
   EXPECT_EQ(Decide(s).status, Status::WaitingForMediaPath);
   s.media_status = CallMediaStatus::HopAttaching;
   EXPECT_EQ(Decide(s).status, Status::Connecting);
-  s.soft_migrate_in_flight = true;  // a latch only: HopAttaching still owns the line
+  s.recovery = CallRecovery::Migrating;  // a latch only: HopAttaching still owns the line
   EXPECT_EQ(Decide(s).status, Status::Connecting);
   s.media_status = CallMediaStatus::DirectConnecting;  // the latch shows once nothing else does
   EXPECT_EQ(Decide(s).status, Status::SettingUpGroup);
-  s.soft_migrate_in_flight = false;
-  s.sfu_attach_wait_active = true;
+  s.recovery = CallRecovery::WaitingForHop;
   EXPECT_EQ(Decide(s).status, Status::WaitingForMediaPath);
 }
 
@@ -149,8 +148,12 @@ TEST(CallScreenTest, TheEngineStateWhenNothingElseSays) {
   EXPECT_EQ(Decide(s).status, Status::Connecting);
   s.connection_state = "checking";
   EXPECT_EQ(Decide(s).status, Status::Raw);
-  s.awaiting_sfu_recovery = true;  // the group path is being recovered: before the engine state
+  s.recovery = CallRecovery::Reattaching;  // the group path is being recovered: before the engine state
   EXPECT_EQ(Decide(s).status, Status::Reconnecting);
+  s.recovery = CallRecovery::HopLost;  // attempts made, none in flight: still nothing flows
+  EXPECT_EQ(Decide(s).status, Status::Reconnecting);
+  EXPECT_FALSE(RecoveryInFlight(CallRecovery::HopLost)) << "path decisions see no recovery in flight";
+  EXPECT_TRUE(RecoveryInFlight(CallRecovery::Reattaching));
 
   InCallSignals idle_active;  // media running, nothing else known
   idle_active.media_active = false;

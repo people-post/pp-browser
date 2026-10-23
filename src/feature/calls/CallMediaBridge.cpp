@@ -177,8 +177,9 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     direct_.Detach();
     ClearMeshConnectFailed();
     host_.P2pRequestInboxSync();
-    if (arming_.on_connected) {
-      arming_.on_connected(call_id);
+    // Nothing is live until the hop attaches: the call waits for it (not "connected").
+    if (arming_.on_handed_to_hop) {
+      arming_.on_handed_to_hop(call_id);
     }
     host_.P2pNotifyRingChanged();
     return;

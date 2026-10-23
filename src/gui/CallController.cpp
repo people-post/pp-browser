@@ -1096,6 +1096,8 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     in_call.remote_placeholder = "";
   }
 
+  // The call timer counts the call (first live), not the current path: it runs on through a reconnect.
+  const int64_t call_live_since_ms = backend ? backend->LiveSinceMs(presenter_.ActiveCallId()) : 0;
   in_call.mic_level = muted ? 0 : QuantizeAudioLevel(media.LocalInputLevel());
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
   if (!media.HasLocalCapture() && !muted) {
@@ -1108,7 +1110,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
   } else if (path_lost || (media_reconnect && !media.IsConnected())) {
     // The media layer lost its path (the engine may still say connected) or the engine itself did.
-    in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
+    in_call.elapsed = FormatElapsed(call_live_since_ms);
     in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
@@ -1116,7 +1118,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
              (backend->MediaChromeLive() || backend->SeatMediaLive(presenter_.ActiveCallId()))) {
     // Prefer V037 MediaChromeLive; seat Live remains fallback during Status lag.
     // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
-    in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
+    in_call.elapsed = FormatElapsed(call_live_since_ms);
     if (!in_call.elapsed.empty()) {
       in_call.subtitle = in_call.elapsed;
     } else {
