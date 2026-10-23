@@ -79,7 +79,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("query", StringProp("Search query"));
     tools.push_back(MakeTool(
-      ToolDefinition{"search_people", "Search the public directory for people by name, nickname, or ID fragment.", ObjectSchema(std::move(properties), {"query"})},
+      ToolDefinition{"search_people", "Search the public directory for people by name or nickname; a full account id (account:…) or relay id (relay:…) is looked up exactly.", ObjectSchema(std::move(properties), {"query"})},
       Meta("people", "read", false),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string query = arguments.getString("query").value_or("");
