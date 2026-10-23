@@ -1,11 +1,11 @@
 #include "feature/conversations/MessagingTools.h"
 
-#include "domain/people/ModelFacingJson.h"
+#include "lib/people/ModelFacingJson.h"
 
 
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "domain/people/ContactJson.h"
+#include "lib/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"

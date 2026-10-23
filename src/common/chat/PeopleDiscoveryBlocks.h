@@ -21,7 +21,7 @@ struct PeopleDiscoveryContactView {
 
 /**
  * User-visible strings of people-discovery blocks. Defaults are English; layers that may use i18n
- * (see domain/ai/LocalizedLabels.h) fill localized text. `{count}`, `{shown}`, `{name}` are placeholders.
+ * (see lib/ai/LocalizedLabels.h) fill localized text. `{count}`, `{shown}`, `{name}` are placeholders.
  */
 struct PeopleDiscoveryLabels {
   std::string message = "Message";

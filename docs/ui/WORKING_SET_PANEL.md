@@ -196,7 +196,7 @@ Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`, and **p
 | Open missing artifact | Panel shows unavailable copy; user can search again |
 | User dismisses panel (Escape / toggle) | Close visually; `auxiliary_available` stays true so user can reopen via chip |
 
-Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/domain/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.
+Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/lib/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.
 
 ### 6. Panel UI
 

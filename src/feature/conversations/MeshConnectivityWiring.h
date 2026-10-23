@@ -3,7 +3,7 @@
 #include "common/Lifetime.h"
 #include "mesh/types/MeshHopTypes.h"
 #include "mesh/connectivity/MeshConnectivity.h"
-#include "domain/people/ContactsStore.h"
+#include "lib/people/ContactsStore.h"
 #include "foundation/data/Config.h"
 
 #include <atomic>

@@ -1,7 +1,7 @@
 #include "app/ConfigApplyBridge.h"
 
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/ui/Theme.h"
+#include "lib/ui/Theme.h"
 
 #include <ui/dom/Context.h>
 #include <ui/Core.h>

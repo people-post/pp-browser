@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/net/ClientCompat.h"
+#include "lib/net/ClientCompat.h"
 
 #include <functional>
 #include <optional>

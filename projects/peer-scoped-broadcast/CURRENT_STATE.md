@@ -16,7 +16,7 @@
 
 | Piece | Path |
 |-------|------|
-| Types / caps / heartbeat constants | `src/domain/broadcast/PeerAnnounceTypes.h` |
+| Types / caps / heartbeat constants | `src/lib/broadcast/PeerAnnounceTypes.h` |
 | Topic id, canonical sign bytes, JSON, **ML-DSA-65** sign/verify, heartbeat timing | `PeerAnnounceCodec.*` |
 | In-memory verify + seq/epoch dedup feed | `PeerAnnounceFeed.*` |
 | Local publisher (seq/epoch, go-live/end, live heartbeat) | `PeerAnnouncePublisher.*` |

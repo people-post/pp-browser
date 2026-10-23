@@ -1,15 +1,15 @@
 # `src/feature`
 
-Product **orchestration** for pp-browser: hubs, sessions, and workflows that **wire** domain peers (and foundation). Presenters / shell live in **`src/gui/`** ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
+Product **orchestration** for pp-browser: hubs, sessions, and workflows that **wire** lib peers (and foundation). Presenters / shell live in **`src/gui/`** ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
 
 ```
-app → gui → feature → domain → foundation → common → pp_common
+app → gui → feature → lib → foundation → common → pp_common
 feature    ← you are here
 ```
 
-Includes use `foundation/…` and `domain/…` (see [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md)). Ongoing cleanup: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/).
+Includes use `foundation/…` and `lib/…` (see [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md)). Ongoing cleanup: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/).
 
-**Rule:** dependencies flow downward only. Feature may use `foundation/`, `domain/`, `common/`, and `lib/`; it must not `#include` from `app/` or `gui/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
+**Rule:** dependencies flow downward only. Feature may use `foundation/`, `lib/`, and `common/`; it must not `#include` from `app/` or `gui/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
 Each top-level folder (and `ai/tools`, `ai/bindings`, plus band `conversations/calls/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app/`gui` code. Top-level `feature/chat`, `feature/ui`, and `feature/messaging` are **retired**.
 
@@ -25,7 +25,7 @@ Feature code should **coordinate** multiple domain modules into a hub, session, 
 | It **binds** `common` contracts to concrete types | **domain:** owns a store, client, or codec |
 | It implements hub/session lifecycle without Rml | **foundation:** shared kernel every peer may link |
 
-If you are unsure, ask: *"Could this exist without Rml?"* Yes → feature/domain. No → gui.
+If you are unsure, ask: *"Could this exist without Rml?"* Yes → feature/lib. No → gui.
 
 ---
 
@@ -50,7 +50,7 @@ src/feature/
 
 Product UI: see [`src/gui/README.md`](../gui/README.md).
 
-`IToolProvider` / `ToolRegistry` live in `domain/ai/` so settings and conversations can register tools without linking `pp_feature_ai`.
+`IToolProvider` / `ToolRegistry` live in `lib/ai/` so settings and conversations can register tools without linking `pp_feature_ai`.
 
 **Domain grouping (mental model):**
 
@@ -82,10 +82,10 @@ Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"
 ### Cross-layer direction
 
 ```
-app → gui → feature → domain → foundation → common
+app → gui → feature → lib → foundation → common
 ```
 
-Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). **Headless** modules shared with pp-node (`registration`, `node`) use `pp_browser_add_headless_feature_library` instead: they link only the domain peers they name, never `pp_base`, and are built in `PP_BROWSER_HEADLESS` configures too. Production code has no upward `#include` edges: `foundation/`/`domain/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
+Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). **Headless** modules shared with pp-node (`registration`, `node`) use `pp_browser_add_headless_feature_library` instead: they link only the lib peers they name, never `pp_base`, and are built in `PP_BROWSER_HEADLESS` configures too. Production code has no upward `#include` edges: `foundation/`/`lib/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Lib peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 
 ### Intra-feature direction
 
@@ -110,4 +110,4 @@ Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke d
 
 ## Testing
 
-Primary home for **integration** of typical valuable paths (real collaborators; fakes only at true ports). If a path is too expensive to cover here, prefer pushing a seam into domain/foundation rather than growing a mega-suite. Product multi-process purposes (`B-*`) live in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md). Doctrine: [TESTING.md](../../docs/architecture/TESTING.md).
+Primary home for **integration** of typical valuable paths (real collaborators; fakes only at true ports). If a path is too expensive to cover here, prefer pushing a seam into lib/foundation rather than growing a mega-suite. Product multi-process purposes (`B-*`) live in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md). Doctrine: [TESTING.md](../../docs/architecture/TESTING.md).

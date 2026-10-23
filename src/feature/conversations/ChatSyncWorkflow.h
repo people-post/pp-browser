@@ -2,9 +2,9 @@
 
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/messaging/RelayReceivePipeline.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/messaging/RelayReceivePipeline.h"
 
 #include <cstdint>
 #include <functional>

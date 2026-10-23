@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/calls/CallMediaSessionTypes.h"
+#include "lib/calls/CallMediaSessionTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/CodedFailure.h"
 #include "common/Error.h"

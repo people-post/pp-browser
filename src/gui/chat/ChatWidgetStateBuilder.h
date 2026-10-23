@@ -1,8 +1,8 @@
 #pragma once
 
-#include "domain/ai/StructuredTextParser.h"
-#include "domain/ui/ChatWidgetConfigBuilders.h"
-#include "domain/ui/ChatWidgetTypes.h"
+#include "lib/ai/StructuredTextParser.h"
+#include "lib/ui/ChatWidgetConfigBuilders.h"
+#include "lib/ui/ChatWidgetTypes.h"
 #include "common/PbrCompat.h"
 
 #include <ui/data/DataModelHandle.h>

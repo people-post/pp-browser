@@ -5,9 +5,9 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 

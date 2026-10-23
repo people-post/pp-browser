@@ -1,12 +1,12 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 
-#include "domain/people/DirectChatTargetFromContact.h"
-#include "domain/messaging/GroupMembershipApply.h"
-#include "domain/messaging/GroupMembershipCodec.h"
-#include "domain/messaging/GroupTypes.h"
-#include "domain/messaging/PairwiseFanoutLogic.h"
-#include "domain/messaging/SendRelayOptions.h"
-#include "domain/people/ContactJson.h"
+#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/GroupMembershipApply.h"
+#include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupTypes.h"
+#include "lib/messaging/PairwiseFanoutLogic.h"
+#include "lib/messaging/SendRelayOptions.h"
+#include "lib/people/ContactJson.h"
 
 #include "common/Utilities.h"
 

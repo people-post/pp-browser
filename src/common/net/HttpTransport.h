@@ -15,7 +15,7 @@ struct HttpResponse {
 };
 
 /**
- * Injectable HTTP POST used by domain peers that must not include net/HttpClient.
+ * Injectable HTTP POST used by lib peers that must not include net/HttpClient.
  * `timeout_s`: the whole request's bound in seconds; 0 = the transport's default.
  */
 using HttpPostFn = std::function<Roe<HttpResponse>(const std::string& url, const std::string& body,

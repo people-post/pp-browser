@@ -2,7 +2,7 @@
 
 #include "gui/AccountInvite.h"
 
-#include "domain/ui/ViewCatalog.h"
+#include "lib/ui/ViewCatalog.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"

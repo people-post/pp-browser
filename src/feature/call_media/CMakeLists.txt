@@ -9,7 +9,7 @@ pp_browser_add_headless_feature_library(pp_feature_call_media
     CallMediaFrameCrypto.cpp
     CallMediaLegCoordinator.cpp
   PUBLIC_LIBS
-    pp_domain_calls
+    pp_lib_calls
     pp_mesh_shared
     pp_foundation_crypto
     pp_amp_link)

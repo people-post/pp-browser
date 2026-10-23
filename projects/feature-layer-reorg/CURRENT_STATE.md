@@ -19,7 +19,7 @@
 | `feature/conversations/` | Conversations hub + delivery |
 | `feature/calls/` | Call session (`pp_feature_calls`) |
 | `gui/` | Product presenters |
-| `domain/messaging/` | Record/codec engines (unchanged) |
+| `lib/messaging/` | Record/codec engines (unchanged) |
 
 Link order: `conversations → calls`; app fills AI inbound ports; hub fills call delivery/inbound ports.
 

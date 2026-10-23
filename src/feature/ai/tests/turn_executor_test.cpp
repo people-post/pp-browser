@@ -1,5 +1,5 @@
 #include "feature/ai/TurnExecutor.h"
-#include "domain/ai/TurnPlan.h"
+#include "lib/ai/TurnPlan.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>

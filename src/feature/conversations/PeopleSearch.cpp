@@ -2,7 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
-#include "domain/people/DirectoryHitRank.h"
+#include "lib/people/DirectoryHitRank.h"
 #include "feature/conversations/ConversationsHub.h"
 
 #include <unordered_set>

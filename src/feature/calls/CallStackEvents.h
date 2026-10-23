@@ -2,7 +2,7 @@
 
 #include "common/Error.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "domain/calls/CallMobility.h"
+#include "lib/calls/CallMobility.h"
 #include "feature/calls/CallSessionEvents.h"
 
 #include <cstdint>

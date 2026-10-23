@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/net/BlobClient.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/net/BlobClient.h"
+#include "lib/people/IdentityStore.h"
 
 #include <string>
 #include <vector>

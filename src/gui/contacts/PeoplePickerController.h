@@ -6,7 +6,7 @@
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
-#include "domain/ui/PeoplePickerLogic.h"
+#include "lib/ui/PeoplePickerLogic.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"

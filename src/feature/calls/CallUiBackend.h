@@ -2,12 +2,12 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/calls/CallTypes.h"
+#include "lib/calls/CallTypes.h"
 #include "common/Error.h"
-#include "domain/calls/CallLifecycleTypes.h"
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
-#include "domain/calls/LiveCall.h"
+#include "lib/calls/LiveCall.h"
 
 #include <functional>
 #include <memory>

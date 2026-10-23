@@ -1,6 +1,6 @@
 #include "feature/conversations/MeshConnectivityWiring.h"
 
-#include "domain/people/MeshHopPolicy.h"
+#include "lib/people/MeshHopPolicy.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
 

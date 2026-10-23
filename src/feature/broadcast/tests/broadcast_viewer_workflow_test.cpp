@@ -1,10 +1,10 @@
 #include "feature/broadcast/BroadcastHub.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 
-#include "domain/media/VideoCodecUnavailable.h"
+#include "lib/media/VideoCodecUnavailable.h"
 #include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
-#include "domain/broadcast/BroadcastJoinTicket.h"
-#include "domain/broadcast/BroadcastMedia.h"
+#include "lib/broadcast/BroadcastJoinTicket.h"
+#include "lib/broadcast/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
 

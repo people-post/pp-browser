@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/ShellTypes.h"
 
 #include <functional>
 #include <string>

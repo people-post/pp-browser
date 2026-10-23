@@ -8,16 +8,16 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Files (now) | Home | Notes |
 |-------------|------|-------|
-| `domain/messaging/SqlitePskSessionStore.*` | `domain/messaging/` | Done |
-| `domain/calls/CallMediaKeyStore.*` | `domain/messaging/` | Done — not `domain/media` |
-| `domain/messaging/PskSessionCoordinator.*` | `domain/messaging/` | Done |
-| `domain/messaging/PublicPskLockCoordinator.*` | `domain/messaging/` | Done; feature test still covers LinkDevice export case |
-| `domain/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Done |
-| `domain/people/ContactReachability.*` | `domain/people/` | Done |
-| `domain/people/PeerBriefRoute.*` | `domain/people/` | Done |
-| `domain/mesh/reachability/MobileEphemeralListenGate.*` | `domain/mesh/reachability/` | Done |
-| `domain/ui/PeoplePickerLogic.h` | `domain/ui/` | Done |
-| `domain/ui/CallConflictCopy.*` | `domain/ui/` | Done |
+| `lib/messaging/SqlitePskSessionStore.*` | `lib/messaging/` | Done |
+| `lib/calls/CallMediaKeyStore.*` | `lib/messaging/` | Done — not `lib/media` |
+| `lib/messaging/PskSessionCoordinator.*` | `lib/messaging/` | Done |
+| `lib/messaging/PublicPskLockCoordinator.*` | `lib/messaging/` | Done; feature test still covers LinkDevice export case |
+| `lib/messaging/EpochBumpCoordinator.*` | `lib/messaging/` | Done |
+| `lib/people/ContactReachability.*` | `lib/people/` | Done |
+| `lib/people/PeerBriefRoute.*` | `lib/people/` | Done |
+| `lib/mesh/reachability/MobileEphemeralListenGate.*` | `lib/mesh/reachability/` | Done |
+| `lib/ui/PeoplePickerLogic.h` | `lib/ui/` | Done |
+| `lib/ui/CallConflictCopy.*` | `lib/ui/` | Done |
 
 ### Demoted during f2
 
@@ -25,20 +25,20 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 |-------|-----|
 | `feature/conversations/ProfileIconFetch.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
 
-**Not doing for f1–f3:** `domain/calls`, `domain/psk`, new `pp_domain_*` targets, or a messaging internal subfolder migration.
+**Not doing for f1–f3:** `lib/calls`, `domain/psk`, new `pp_lib_*` targets, or a messaging internal subfolder migration.
 
 ## likely — after a short peel
 
 | Files | Target | Blocker |
 |-------|--------|---------|
-| Amp mesh-only façades (`AmpCircuitHopReach`, `AmpMediaRelayClient`) | `domain/mesh` | Audit: no messaging-store includes; better with f4v1 calls band |
+| Amp mesh-only façades (`AmpCircuitHopReach`, `AmpMediaRelayClient`) | `lib/mesh` | Audit: no messaging-store includes; better with f4v1 calls band |
 
 ### Done in f3
 
 | Files | Home | Notes |
 |-------|------|-------|
-| `common/chat/IDirectMessageClient.h` | `common/chat/` | Dropped unused `domain/net` include |
-| `domain/messaging/ChatHistoryResponder.*` | `domain/messaging/` | `IdentityStore` replaced by account id + `SignBytesFn` |
+| `common/chat/IDirectMessageClient.h` | `common/chat/` | Dropped unused `lib/net` include |
+| `lib/messaging/ChatHistoryResponder.*` | `lib/messaging/` | `IdentityStore` replaced by account id + `SignBytesFn` |
 
 ## blocked — stay feature (or need common first)
 

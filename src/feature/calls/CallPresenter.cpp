@@ -1,9 +1,9 @@
 #include "feature/calls/CallPresenter.h"
 
-#include "domain/calls/CallLifecycleTypes.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/media/CallAudioSession.h"
-#include "domain/media/CallMediaEngine.h"
+#include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/media/CallAudioSession.h"
+#include "lib/media/CallMediaEngine.h"
 #include "feature/calls/CallUiBackend.h"
 #include "foundation/data/PricingTypes.h"
 #include "foundation/runtime/AppRuntime.h"

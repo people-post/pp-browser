@@ -3,5 +3,5 @@ pp_browser_add_feature_library(pp_feature_ai_bindings
     ActionRouter.cpp
     BindingsManifest.cpp
   PUBLIC_LIBS
-    pp_domain_ui
+    pp_lib_ui
     ui::core)

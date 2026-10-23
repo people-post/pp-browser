@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gui/contacts/PeoplePickerSurfaceSnapshot.h"
-#include "domain/ui/ShellChromeOp.h"
+#include "lib/ui/ShellChromeOp.h"
 
 namespace pbr {
 

@@ -2,7 +2,7 @@
 
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/people/AvatarGlyph.h"
+#include "lib/people/AvatarGlyph.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

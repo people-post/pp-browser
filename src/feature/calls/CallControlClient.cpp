@@ -1,12 +1,12 @@
 #include "feature/calls/CallControlClient.h"
-#include "domain/calls/CallSessionLogic.h"
+#include "lib/calls/CallSessionLogic.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "domain/calls/CallMediaKeyStore.h"
-#include "domain/messaging/PairwiseFanoutLogic.h"
-#include "domain/messaging/SendRelayOptions.h"
+#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/messaging/PairwiseFanoutLogic.h"
+#include "lib/messaging/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
 

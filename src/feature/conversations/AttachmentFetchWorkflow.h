@@ -3,12 +3,12 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
-#include "domain/messaging/AttachmentSuppressionStore.h"
+#include "lib/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
 

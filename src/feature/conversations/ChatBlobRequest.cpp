@@ -1,10 +1,10 @@
 #include "feature/conversations/ChatBlobRequest.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/ContactJson.h"
-#include "domain/people/PeerBriefRoute.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/people/ContactTypes.h"
+#include "lib/people/ContactJson.h"
+#include "lib/people/PeerBriefRoute.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 

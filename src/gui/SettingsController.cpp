@@ -7,10 +7,10 @@
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/net/ClientCompat.h"
+#include "lib/net/ClientCompat.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/ui/ContextMenuHost.h"
-#include "domain/ui/ViewCatalog.h"
+#include "lib/ui/ContextMenuHost.h"
+#include "lib/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
@@ -20,7 +20,7 @@
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/SecuritySettingsSection.h"
-#include "domain/ui/UiEditSession.h"
+#include "lib/ui/UiEditSession.h"
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
@@ -41,7 +41,7 @@
 #include <filesystem>
 #include <functional>
 #include "common/PbrCompat.h"
-#include "domain/content/CasLibrary.h"
+#include "lib/content/CasLibrary.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {

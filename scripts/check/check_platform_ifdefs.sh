@@ -40,17 +40,17 @@ check_tree() {
 check_tree "feature/ must not use OS #ifdefs" src/feature
 check_tree "app/ must not use OS #ifdefs" src/app
 check_tree "base/data/ must not use OS #ifdefs" src/foundation/data
-check_tree "domain/net/ must not use OS #ifdefs" src/domain/net
-check_tree "domain/ai/ must not use OS #ifdefs" src/domain/ai
+check_tree "lib/net/ must not use OS #ifdefs" src/lib/net
+check_tree "lib/ai/ must not use OS #ifdefs" src/lib/ai
 check_tree "base/crypto/ must not use OS #ifdefs" src/foundation/crypto
-check_tree "domain/messaging/ must not use OS #ifdefs" src/domain/messaging
-check_tree "domain/people/ must not use OS #ifdefs" src/domain/people
-check_tree "domain/ui/ must not use OS #ifdefs" src/domain/ui
+check_tree "lib/messaging/ must not use OS #ifdefs" src/lib/messaging
+check_tree "lib/people/ must not use OS #ifdefs" src/lib/people
+check_tree "lib/ui/ must not use OS #ifdefs" src/lib/ui
 check_tree "foundation/error/ must not use OS #ifdefs" src/foundation/error
 check_tree "foundation/i18n/ must not use OS #ifdefs" src/foundation/i18n
 check_tree "foundation/runtime/ must not use OS #ifdefs" src/foundation/runtime
 
-check_tree "domain/media/ portable TUs must not use OS #ifdefs" src/domain/media \
+check_tree "lib/media/ portable TUs must not use OS #ifdefs" src/lib/media \
   "${BACKEND_GLOBS[@]}"
 
 check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cpp, Logger.h)" src/common \

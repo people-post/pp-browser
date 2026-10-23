@@ -1,8 +1,8 @@
 #pragma once
 
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/people/RegistrationStatus.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/people/RegistrationStatus.h"
 #include "common/directory/IdentityTypes.h"
 
 #include <cstdint>

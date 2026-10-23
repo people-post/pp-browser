@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/data/SessionStore.h"
-#include "domain/ui/EmojiCatalog.h"
+#include "lib/ui/EmojiCatalog.h"
 #include "common/Module.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"

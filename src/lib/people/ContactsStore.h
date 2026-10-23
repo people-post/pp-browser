@@ -1,0 +1,69 @@
+#pragma once
+
+#include "common/directory/IContactTrustAccess.h"
+#include "common/Error.h"
+#include "common/Module.h"
+#include "lib/people/ContactTypes.h"
+
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
+#include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
+
+namespace pbr {
+
+class ContactsStore : public Module, public IContactTrustAccess {
+public:
+  /** Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load. */
+  static constexpr int kSchemaVersion = 1;
+
+  explicit ContactsStore(std::string data_dir);
+
+  Roe<std::vector<Contact>> List() const;
+  Roe<std::optional<Contact>> Get(const std::string& contact_id) const;
+  /** Exact match on contact.ids[].value; when kind is set, also requires matching kind. */
+  Roe<std::optional<Contact>> FindByIdentity(const std::string& identity_value,
+                                             std::optional<mesh::ContactIdKind> kind = std::nullopt) const;
+  Roe<Contact> Upsert(const Contact& contact);
+  Roe<bool> Remove(const std::string& contact_id);
+  Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
+  Roe<Contact> AddFromDirectoryHit(const mesh::DirectoryHit& hit);
+  /** Refresh remote snapshot from a directory hit; preserves local annotations. */
+  Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms);
+  Roe<Contact> AddEmpty();
+  void Flush();
+  /**
+   * Called after any change that succeeded (add, update, remove, block, remote refresh), on the
+   * caller's thread and outside the store's lock.
+   */
+  void SetOnChanged(std::function<void()> on_changed);
+
+  Roe<bool> IsAccountBlocked(const std::string& account_id) const override;
+  Roe<void> BlockAccountIfPresent(const std::string& account_id) override;
+
+private:
+  Roe<Contact> UpsertUnnotified(const Contact& contact);
+  Roe<bool> RemoveUnnotified(const std::string& contact_id);
+  Roe<Contact> AddFromDirectoryHitUnnotified(const mesh::DirectoryHit& hit);
+  Roe<Contact> ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
+                                             int64_t fetched_at_ms);
+  Roe<Contact> AddEmptyUnnotified();
+  Roe<void> BlockAccountIfPresentUnnotified(const std::string& account_id);
+  void NotifyChanged() const;
+  Roe<void> EnsureLoaded() const;
+  Roe<void> Save() const;
+  std::string StorePath() const;
+
+  std::string data_dir_;
+  mutable std::mutex mutex_;
+  mutable bool loaded_ = false;
+  mutable std::vector<Contact> contacts_;
+  mutable bool dirty_ = false;
+  mutable std::mutex observer_mu_;
+  std::function<void()> on_changed_;
+};
+
+} // namespace pbr

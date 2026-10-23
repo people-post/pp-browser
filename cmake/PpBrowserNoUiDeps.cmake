@@ -23,8 +23,8 @@ function(_pp_browser_is_forbidden_ui_dep dep out_var)
     pp_foundation_platform
     pp_foundation_runtime
     pp_gui
-    pp_domain_ui
-    pp_domain_media
+    pp_lib_ui
+    pp_lib_media
     pp_ui
     pp_ui_core
     pp_ui_backend
@@ -55,7 +55,7 @@ function(_pp_browser_is_forbidden_ui_dep dep out_var)
     return()
   endif()
   # Catch FetchContent / alias spellings (e.g. SDL3::SDL3-static).
-  if(dep MATCHES "(^|::)(ui|SDL3|SDL3_image|rmlui)(::|$)" OR dep MATCHES "pp_foundation_platform$" OR dep MATCHES "pp_gui$" OR dep MATCHES "pp_domain_ui$" OR dep MATCHES "pp_domain_media$")
+  if(dep MATCHES "(^|::)(ui|SDL3|SDL3_image|rmlui)(::|$)" OR dep MATCHES "pp_foundation_platform$" OR dep MATCHES "pp_gui$" OR dep MATCHES "pp_lib_ui$" OR dep MATCHES "pp_lib_media$")
     set(${out_var} TRUE PARENT_SCOPE)
     return()
   endif()
@@ -131,14 +131,14 @@ function(pp_browser_assert_no_ui_dependencies root_target)
   endif()
 endfunction()
 
-# pp-node's first-party closure: foundation (headless *_core), common, the node's domain peers
+# pp-node's first-party closure: foundation (headless *_core), common, the node's lib peers
 # (people / net), pp-cpp-mesh (not its test harness), headless feature modules, the Amp / common /
 # crypto siblings and pp-ledger (the ledger role). Any other pp_* target reachable from root_target
 # fails configure — widening the node is a deliberate edit here.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
-  "^pp_domain_(people|net)$"
+  "^pp_lib_(people|net)$"
   "^pp_feature_(registration|node|node_ledger)$"
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"
@@ -176,7 +176,7 @@ function(pp_browser_assert_node_link_allowlist root_target)
     message(FATAL_ERROR
       "${root_target} links first-party targets outside the node allowlist.\n"
       "Link edges:\n  ${_hit_text}\n"
-      "The node may link foundation *_core, common, pp_domain_{people,net}, headless "
+      "The node may link foundation *_core, common, pp_lib_{people,net}, headless "
       "pp_feature_{registration,node,node_ledger}, Amp, pp-cpp-mesh and pp-ledger. See PP_BROWSER_NODE_LINK_ALLOWLIST in "
       "cmake/PpBrowserNoUiDeps.cmake and docs/ops/BUILD.md (Headless mesh node).")
   endif()

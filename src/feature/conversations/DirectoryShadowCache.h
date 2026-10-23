@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/ContactTypes.h"
 #include "common/MeshAlias.h"
 
 #include <functional>

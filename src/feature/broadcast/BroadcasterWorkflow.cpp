@@ -1,8 +1,8 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 
 #include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
-#include "domain/media/VideoLevelProfile.h"
-#include "domain/broadcast/BroadcastMedia.h"
+#include "lib/media/VideoLevelProfile.h"
+#include "lib/broadcast/BroadcastMedia.h"
 
 #include "common/Logger.h"
 #include "common/MeshAlias.h"

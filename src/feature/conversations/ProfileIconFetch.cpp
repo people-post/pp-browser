@@ -1,6 +1,6 @@
 #include "feature/conversations/ProfileIconFetch.h"
 
-#include "domain/net/HttpClient.h"
+#include "lib/net/HttpClient.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"

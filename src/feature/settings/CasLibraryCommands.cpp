@@ -2,8 +2,8 @@
 
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ChatBlobTypes.h"
-#include "domain/content/CasLibrary.h"
-#include "domain/net/OrgBackendClients.h"
+#include "lib/content/CasLibrary.h"
+#include "lib/net/OrgBackendClients.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/MeshAlias.h"

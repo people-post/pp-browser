@@ -105,7 +105,7 @@ Private objects may be shown while the vault is unlocked without treating `blobs
 
 | Now (P1–P2) | Later (P3/P4+) |
 |-------------|----------------|
-| `CasStore` / `ObjectIndex` / attachment CAS I/O live in **`domain/messaging`** | Peel to **`domain/content`** when public library / provide-fetch needs CAS without messaging |
+| `CasStore` / `ObjectIndex` / attachment CAS I/O live in **`lib/messaging`** | Peel to **`lib/content`** when public library / provide-fetch needs CAS without messaging |
 | Chat download/suppression/responders stay messaging/feature | Content peer stays realm/store-focused; feature wires contracts |
 
 Do **not** place CAS in `foundation`. Do **not** create an empty content peer while messaging is the only owner.

@@ -4,7 +4,7 @@
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/calls/CallMobility.h"
+#include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"

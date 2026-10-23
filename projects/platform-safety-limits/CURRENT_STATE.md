@@ -2,7 +2,7 @@
 
 Gaps in **non-chat** platform layers. Chat-specific issues are in [chat-storage-and-memory/CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md).
 
-## LLM (`src/domain/ai/LlmClient.cpp`)
+## LLM (`src/lib/ai/LlmClient.cpp`)
 
 P2 complete: request and response bodies now fail closed at their shared platform limits.
 
@@ -13,7 +13,7 @@ P2 complete: request and response bodies now fail closed at their shared platfor
 | Timeout | 120 s only |
 | Parse | Parses only the bounded response body. |
 
-## HTTP client (`src/domain/net/HttpClient.cpp`)
+## HTTP client (`src/lib/net/HttpClient.cpp`)
 
 | Item | Status |
 |-------|--------|
@@ -31,7 +31,7 @@ P3 complete: both profile-store files are size-checked before parsing and are re
 | `IdentityStore` | `identity.enc` | Encrypted profile payload capped at 4 MiB before decrypt/parse. |
 | `ContactsStore` | `contacts.json` | JSON file capped at 4 MiB before parse. |
 
-## MCP (`src/domain/ai/mcp/McpClient.*`, `src/feature/ai/tools/McpToolAdapter.cpp`)
+## MCP (`src/lib/ai/mcp/McpClient.*`, `src/feature/ai/tools/McpToolAdapter.cpp`)
 
 P4 complete: serialized MCP tool results fail closed at 1 MiB before they enter the agent tool-result path.
 
@@ -39,7 +39,7 @@ P4 complete: serialized MCP tool results fail closed at 1 MiB before they enter 
 |------|--------|
 | Tool result JSON | Capped at 1 MiB after MCP result serialization; oversized results return a stable tool error. |
 
-## AI parser output (`src/domain/ai/StructuredTextParser.cpp`)
+## AI parser output (`src/lib/ai/StructuredTextParser.cpp`)
 
 | Item | Status |
 |------|--------|

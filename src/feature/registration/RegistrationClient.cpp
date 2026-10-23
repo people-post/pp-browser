@@ -1,6 +1,6 @@
 #include "feature/registration/RegistrationClient.h"
 
-#include "domain/net/RegistrationSignPayload.h"
+#include "lib/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 
 #include "common/PbrCompat.h"

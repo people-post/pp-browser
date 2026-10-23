@@ -410,7 +410,7 @@ Chat-shaped response (libp2p / documentation):
 
 ## `PeerAnnounceTip` (`/pp/rpc/peer-announce/1.0.0`, `schema_version: 1`)
 
-A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/domain/broadcast/PeerAnnounceCodec.cpp`.
+A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/lib/broadcast/PeerAnnounceCodec.cpp`.
 
 | Field | Type | Notes |
 |-------|------|-------|

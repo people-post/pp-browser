@@ -2,8 +2,8 @@
 
 #include "mesh/l4/shared/InboundReply.h"
 
-#include "domain/messaging/ChatHistoryResponder.h"
-#include "domain/messaging/PeerRequestAuth.h"
+#include "lib/messaging/ChatHistoryResponder.h"
+#include "lib/messaging/PeerRequestAuth.h"
 #include "common/Utilities.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"

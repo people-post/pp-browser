@@ -209,16 +209,16 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
-| `src/domain/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
+| `src/lib/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
 | `src/gui/chat/TranscriptRml.*` | The transcript drawn as bound rows (bubbles, cards, system lines, chips); every click argument escaped for its attribute |
 | `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
-| `src/domain/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
-| `src/domain/messaging/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
-| `src/domain/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
+| `src/lib/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
+| `src/lib/messaging/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
+| `src/lib/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
 | `src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
 | `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/domain/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
+| `src/lib/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |
 | `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/conversations/MessagingTools.*` | Agent tool definitions |
@@ -251,7 +251,7 @@ Bound today:
 
 | Family | Bound by | Notes |
 |--------|----------|-------|
-| `call` | the call stack (`domain/calls/CallControlFamily`) | All signaling on the lane; one `call_summary` per call in the chat stream, worded from the reader's side (quiet unless it is a call we missed) |
+| `call` | the call stack (`lib/calls/CallControlFamily`) | All signaling on the lane; one `call_summary` per call in the chat stream, worded from the reader's side (quiet unless it is a call we missed) |
 | `billing` | the hub (`PricingControlFamilies`) | Chat stream. Keyed on the authenticated sender; a message naming another peer is refused |
 | `payment promise` | the hub (`PricingControlFamilies`) | Chat stream. Staged only from our counterparty on the promise, signed by it, and a legal change of our copy (`MergeInboundPaymentPromise`: new offer; accept of our offer; outcome by it as actor; terms never change). The user's accept re-checks and commits |
 

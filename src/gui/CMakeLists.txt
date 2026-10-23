@@ -55,7 +55,7 @@ pp_browser_add_feature_library(pp_gui
     pp_feature_conversations
     pp_feature_product
     pp_foundation_platform
-    pp_domain_ui
+    pp_lib_ui
     ui::core)
 
 if(PP_BROWSER_BUILD_TESTS)

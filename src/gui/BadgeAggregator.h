@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/ui/NavBadgeFormat.h"
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/NavBadgeFormat.h"
+#include "lib/ui/ShellTypes.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
 #include <functional>

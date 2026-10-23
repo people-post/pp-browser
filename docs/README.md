@@ -22,7 +22,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable 
 | Doc | Topic |
 |-----|--------|
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
-| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → domain → foundation → common` — feature/app cleanup: [projects/feature-layer-reorg/](../projects/feature-layer-reorg/) |
+| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → lib → foundation → common` — feature/app cleanup: [projects/feature-layer-reorg/](../projects/feature-layer-reorg/) |
 | [architecture/TESTING.md](architecture/TESTING.md) | Testing doctrine: tiers, push-down seams, promote failures downward, skip taxonomy, doc homes |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
 | [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |

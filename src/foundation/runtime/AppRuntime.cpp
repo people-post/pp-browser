@@ -34,7 +34,7 @@ std::mutex g_log_mu;
 logging::Logger* g_log = nullptr;
 
 // Sequenced "UI"/main mailbox — process runtime (not RmlUi). Used by GUI frame drain
-// and by headless/domain reply paths (e.g. MeshDirectoryCache → PostUI).
+// and by headless/lib reply paths (e.g. MeshDirectoryCache → PostUI).
 std::unique_ptr<SequencedTaskRunner> g_ui_runner;
 
 /** Owner threads, created by Initialize and stopped (joined) by Shutdown. */

@@ -180,7 +180,7 @@ The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 - [x] Chat send notices by code: the direct send reports `DirectSendErr` (`IDirectMessageClient`;
       `AmpDirectChatTransport::WrapLinkFailure`), the relay send `AppError` codes
       (`HttpRelayClient::Send`: rate limited, not configured, HTTP status; network failures were
-      coded already), and `domain/messaging/DeliveryNotice` maps them (`SendFailureFromDirect`,
+      coded already), and `lib/messaging/DeliveryNotice` maps them (`SendFailureFromDirect`,
       `SendFailureFromRelay`). With no relay route, the notice says why the direct send failed.
 - [ ] `AmpChatHistoryTransport`, `AmpChatBlobTransport`: still text. Their callers
       (`ChatSyncWorkflow`, `AttachmentFetch`, `AttachmentClient`) fall back to the relay / CDN on

@@ -2,7 +2,7 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/calls/CallScreen.h"
+#include "lib/calls/CallScreen.h"
 #include "feature/calls/CallFunctionalPorts.h"
 
 #include <functional>

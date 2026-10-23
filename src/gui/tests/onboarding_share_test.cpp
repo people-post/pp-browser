@@ -1,6 +1,6 @@
 #include "gui/onboarding/OnboardingController.h"
 #include "gui/onboarding/OnboardingPorts.h"
-#include "domain/people/ProfileIdentityView.h"
+#include "lib/people/ProfileIdentityView.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>

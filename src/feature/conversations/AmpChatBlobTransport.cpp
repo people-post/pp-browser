@@ -1,12 +1,12 @@
 #include "feature/conversations/AmpChatBlobTransport.h"
 
-#include "domain/messaging/PeerRequestAuth.h"
+#include "lib/messaging/PeerRequestAuth.h"
 
 #include "mesh/l4/shared/InboundReply.h"
 
 #include "foundation/crypto/CryptoConstants.h"
-#include "domain/content/CasLibrary.h"
-#include "domain/messaging/ChatBlobResponder.h"
+#include "lib/content/CasLibrary.h"
+#include "lib/messaging/ChatBlobResponder.h"
 #include "feature/conversations/AttachmentContent.h"
 #include "common/chat/MessagingJson.h"
 #include "mesh/l4/shared/ProductChannelPolicies.h"

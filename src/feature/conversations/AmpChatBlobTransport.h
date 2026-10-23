@@ -4,9 +4,9 @@
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/messaging/PeerSigningKeyStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
 

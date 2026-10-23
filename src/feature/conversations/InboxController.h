@@ -3,8 +3,8 @@
 #include "common/chat/SystemControl.h"
 
 #include "common/Module.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/messaging/TranscriptAssembly.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/messaging/TranscriptAssembly.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/DirectoryShadowCache.h"

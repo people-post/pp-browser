@@ -3,11 +3,11 @@
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/AttachmentPlaintextMemoryCache.h"
-#include "domain/content/CasStore.h"
-#include "domain/messaging/AiImageRef.h"
-#include "domain/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/AttachmentPlaintextMemoryCache.h"
+#include "lib/content/CasStore.h"
+#include "lib/messaging/AiImageRef.h"
+#include "lib/messaging/ChatPayloadCodec.h"
 #include "feature/conversations/AttachmentFetch.h"
 #include "foundation/runtime/AppRuntime.h"
 

@@ -1,7 +1,7 @@
 // The live-broadcast services a node runs on the mesh: publish a tip, push it, the follower holds it.
 #include "feature/broadcast/BroadcastServices.h"
 
-#include "domain/broadcast/PeerAnnounceCodec.h"
+#include "lib/broadcast/PeerAnnounceCodec.h"
 #include "foundation/crypto/MlDsa.h"
 #include "mesh/testing/mesh_test_harness.h"
 

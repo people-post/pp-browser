@@ -1,13 +1,13 @@
-#include "domain/messaging/PeerSigningKeyStore.h"
+#include "lib/messaging/PeerSigningKeyStore.h"
 #include "feature/conversations/AmpChatHistoryTransport.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "domain/messaging/E2eRelayPayloadCodec.h"
-#include "domain/messaging/SqliteThreadStore.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
+#include "lib/messaging/E2eRelayPayloadCodec.h"
+#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
 #include "mesh/testing/mesh_test_harness.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/people/IdentityStore.h"
 
 #include "common/Utilities.h"
 #include "common/MeshAlias.h"

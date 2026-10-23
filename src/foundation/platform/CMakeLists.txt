@@ -187,7 +187,7 @@ endif()
 # CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).
 
 # Low-level UI host (window / RmlUi Backend / overlays) — same foundation band.
-# domain/ui is product shell only (theme/catalogs). See PLATFORM_CODE.md.
+# lib/ui is product shell only (theme/catalogs). See PLATFORM_CODE.md.
 set(_pp_platform_ui_sources
   ui/DesktopWindowChrome.cpp
   ui/PlatformNavigation.cpp

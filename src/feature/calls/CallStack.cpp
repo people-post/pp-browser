@@ -1,21 +1,21 @@
 #include "feature/calls/CallStack.h"
-#include "domain/calls/CallControlFamily.h"
+#include "lib/calls/CallControlFamily.h"
 
 
 #include "foundation/data/MeshRole.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/calls/PeerCapsLogic.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/calls/PeerCapsLogic.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "domain/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallLifecycleTypes.h"
 
 #include <functional>
 #include <optional>

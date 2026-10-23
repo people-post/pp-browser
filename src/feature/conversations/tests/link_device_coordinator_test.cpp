@@ -1,10 +1,10 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/DataKeyVault.h"
-#include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/people/LinkDeviceCoordinator.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
+#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/people/LinkDeviceCoordinator.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
 

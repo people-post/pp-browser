@@ -1,12 +1,12 @@
 #pragma once
 
 #include "mesh/types/MediaChannel.h"
-#include "domain/media/CallMediaEngine.h"
+#include "lib/media/CallMediaEngine.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "domain/broadcast/BroadcastRpcCodec.h"
-#include "domain/broadcast/BroadcastViewerLadder.h"
-#include "domain/broadcast/PeerAnnounceTypes.h"
+#include "lib/broadcast/BroadcastRpcCodec.h"
+#include "lib/broadcast/BroadcastViewerLadder.h"
+#include "lib/broadcast/PeerAnnounceTypes.h"
 #include "foundation/runtime/OwnerOutbox.h"
 
 #include "common/Error.h"

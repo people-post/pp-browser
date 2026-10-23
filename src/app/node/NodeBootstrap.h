@@ -2,7 +2,7 @@
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/Config.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "mesh/host/MeshHost.h"

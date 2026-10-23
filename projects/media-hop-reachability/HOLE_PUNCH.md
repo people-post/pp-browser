@@ -161,7 +161,7 @@ Preference remains: Amp seed/contact/R1 introducer first; signaling fallback onl
 
 | Piece | Likely home |
 |-------|-------------|
-| Punch coordinator | `src/domain/mesh/reachability/` (+ thin Amp helpers in pp-cpp-amp if associate burst needs stack support) |
+| Punch coordinator | `src/lib/mesh/reachability/` (+ thin Amp helpers in pp-cpp-amp if associate burst needs stack support) |
 | Observed addrs | Dial-back, UPnP (`NatTraversal`), ch0 ads via `MeshHost` |
 | Circuit upgrade | `CircuitTunnelCoordinator` + PeerLink election |
 | Consume | Existing `IsPeerDialable` / hop reach helpers (`AmpCircuitHopReach`) |

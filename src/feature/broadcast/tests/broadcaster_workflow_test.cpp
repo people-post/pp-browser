@@ -3,10 +3,10 @@
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/tests/queue_owner_executor.h"
 
-#include "domain/media/MediaDeviceArbiter.h"
-#include "domain/media/VideoCodecUnavailable.h"
+#include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/VideoCodecUnavailable.h"
 #include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
-#include "domain/broadcast/BroadcastMedia.h"
+#include "lib/broadcast/BroadcastMedia.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>

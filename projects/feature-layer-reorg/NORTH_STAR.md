@@ -11,7 +11,7 @@ Layer north star:
 app → gui → feature → domain → foundation → common
 ```
 
-(`domain/ui` stays a **domain peer** for non-Rml presentation policy — not the GUI layer.)
+(`lib/ui` stays a **lib peer** for non-Rml presentation policy — not the GUI layer.)
 
 ---
 
@@ -30,7 +30,7 @@ app → gui → feature → domain → foundation → common
 
 ---
 
-## Domain peer set ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers))
+## Lib peer set ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers))
 
 | Peer | Role |
 |------|------|
@@ -41,7 +41,7 @@ app → gui → feature → domain → foundation → common
 | `ui` | Pure presentation **policy** (no Rml controllers) — **not** `src/gui` |
 | `net` / `ai` | Unchanged |
 
-Do **not** add `domain/calls`. Do **not** rename this peer to collide with the GUI layer.
+Do **not** add `lib/calls`. Do **not** rename this peer to collide with the GUI layer.
 
 ---
 
@@ -53,7 +53,7 @@ Do **not** add `domain/calls`. Do **not** rename this peer to collide with the G
 | **feature** | Coordinates workflows / hubs / sessions (headless-capable) | Owns documents, data models, or chrome gestures |
 | **gui** | Owns a screen, shell chrome, Rml bind, or UI-only helper | Hub/session engines, mesh, stores |
 | **app** | Lifetimes + cross-surface wiring | Product policy or I/O engines |
-| **common** | Second domain peer must compile against the name | Only one peer needs it |
+| **common** | Second lib peer must compile against the name | Only one peer needs it |
 
 **Cross-peer rule:** two of `{people, messaging, net, mesh, media, ui}` → feature or `common` contracts — never domain→domain.  
 **Layer rule:** `feature` must not `#include "gui/…"` once the lift ships ([F008](DECISIONS.md#f008--gui-layer-above-feature)).
@@ -94,7 +94,7 @@ One aggregate `pp_gui` first; split libs later only if cycles allow.
 | `feature/conversations` Call\* | `feature/calls` | **Done** — top-level `pp_feature_calls` + delivery ports |
 | `feature/ui/**` (legacy) | `src/gui/**` | **Done f7v1** ([F008](DECISIONS.md#f008--gui-layer-above-feature)) |
 | `feature/chat` | removed | Absorbed into gui/chat (via f5 staging) |
-| `domain/ui` | keep | Policy peer; not the GUI layer |
+| `lib/ui` | keep | Policy peer; not the GUI layer |
 
 Intended link order (end state):
 
@@ -129,6 +129,6 @@ Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversat
 ## Success criteria
 
 - Vocabulary used consistently (delivery / conversations / call session / call media / **gui**).
-- No new top-level `feature/chat`; no product UI layer named `src/ui/` (collides with `domain/ui`).
-- Domain peers stay independent; `feature` stays Rml-free after f7; CI include checks green.
+- No new top-level `feature/chat`; no product UI layer named `src/ui/` (collides with `lib/ui`).
+- Lib peers stay independent; `feature` stays Rml-free after f7; CI include checks green.
 - SRC_LAYOUT + READMEs updated when folders actually rename/move.

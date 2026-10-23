@@ -78,30 +78,30 @@ Do not promote **blocked** → domain to “clean the folder.”
 
 ---
 
-## F006 — Sure peels use existing domain peers (no new peers)
+## F006 — Sure peels use existing lib peers (no new peers)
 
 **Date:** 2026-09-03  
 **Status:** accepted
 
-**Context:** f1–f3 will move stores/helpers out of `feature/`. Question: add `domain/calls`, `domain/psk`, etc., or reshape peer trees first?
+**Context:** f1–f3 will move stores/helpers out of `feature/`. Question: add `lib/calls`, `domain/psk`, etc., or reshape peer trees first?
 
 **Decision:**
 
-1. **Do not add top-level domain peers** for sure peels. Keep the peer set: `people`, `messaging`, `media`, `mesh`, `net`, `ui`, `ai`.
+1. **Do not add top-level lib peers** for sure peels. Keep the peer set: `people`, `messaging`, `media`, `mesh`, `net`, `ui`, `ai`.
 2. **Land files in the peer that already owns the sibling types** (flat unless that peer already nests).
-3. **Do not invent `domain/calls`.** Call session types/stores already live in `domain/messaging`; capture/playback stays in `domain/media`. A new calls peer would either link messaging (banned) or orphan `CallSessionStore`.
-4. **Optional internal subfolders** under `domain/messaging/` (e.g. `call/`, `psk/`, `thread/`) are a **later** readability pass — not a prerequisite for f1. Prefer flat drops next to existing `Call*`, `Psk*`, `Sqlite*` files first.
-5. **`CallMediaKeyStore` → `domain/messaging`**, not `domain/media` — it is vault/SQLite next to `CallSessionStore`; `domain/media` is engine/codec/OS capture.
+3. **Do not invent `lib/calls`.** Call session types/stores already live in `lib/messaging`; capture/playback stays in `lib/media`. A new calls peer would either link messaging (banned) or orphan `CallSessionStore`.
+4. **Optional internal subfolders** under `lib/messaging/` (e.g. `call/`, `psk/`, `thread/`) are a **later** readability pass — not a prerequisite for f1. Prefer flat drops next to existing `Call*`, `Psk*`, `Sqlite*` files first.
+5. **`CallMediaKeyStore` → `lib/messaging`**, not `lib/media` — it is vault/SQLite next to `CallSessionStore`; `lib/media` is engine/codec/OS capture.
 
 **Homes for sure candidates:**
 
 | Candidate | Home |
 |-----------|------|
-| `SqlitePskSessionStore`, PSK/epoch coordinators | `domain/messaging/` (flat) |
-| `CallMediaKeyStore` | `domain/messaging/` (flat) |
-| `ContactReachability`, `PeerBriefRoute`, `ProfileIconFetch` | `domain/people/` (flat) |
-| `MobileEphemeralListenGate` | `domain/mesh/reachability/` (nested — peer already nests) |
-| `PeoplePickerLogic`, `CallConflictCopy` | `domain/ui/` (flat) |
+| `SqlitePskSessionStore`, PSK/epoch coordinators | `lib/messaging/` (flat) |
+| `CallMediaKeyStore` | `lib/messaging/` (flat) |
+| `ContactReachability`, `PeerBriefRoute`, `ProfileIconFetch` | `lib/people/` (flat) |
+| `MobileEphemeralListenGate` | `lib/mesh/reachability/` (nested — peer already nests) |
+| `PeoplePickerLogic`, `CallConflictCopy` | `lib/ui/` (flat) |
 
 **Consequences:** f1–f3 are path/CMake moves into known peers. Messaging stays a large flat folder for now; revisit internal banding only if navigation pain remains after peels.
 
@@ -121,7 +121,7 @@ Do not promote **blocked** → domain to “clean the folder.”
 | **Delivery** | Envelope/stream send–receive (relay, Amp chat channel, inbox) |
 | **Conversations** | Threads, sync, attachments, groups, PSK-for-chat — product hub |
 | **Call session** | Ring → accept → keys → topology → leave |
-| **Call media** | Audio/video frames, codecs, legs (`domain/media` + mesh L4) |
+| **Call media** | Audio/video frames, codecs, legs (`lib/media` + mesh L4) |
 | **Chat** (UI copy) | User-facing label for the conversation screen — **not** a layer folder name |
 
 Slogan: **conversations ∥ call session**, both use **delivery**; call session drives **call media**.
@@ -141,16 +141,16 @@ feature/
 | `feature/messaging` | `feature/conversations` | Conversations hub + delivery adapters |
 | `feature/messaging` Call\* (banded) | `feature/calls` | Call **session** orchestration |
 | `feature/chat` / `feature/ui/*` | **`src/gui/`** ([F008](#f008--gui-layer-above-feature)) | Presenters / shell — not feature modules |
-| `domain/messaging` | **keep** | Conversation/call **record & codec** engines (not the product hub) |
-| `domain/media` | **keep** | Call **media** engines only |
-| `domain/ui` | **keep** | Non-Rml presentation **policy** (name stays; not the GUI layer) |
+| `lib/messaging` | **keep** | Conversation/call **record & codec** engines (not the product hub) |
+| `lib/media` | **keep** | Call **media** engines only |
+| `lib/ui` | **keep** | Non-Rml presentation **policy** (name stays; not the GUI layer) |
 
 **Explicit non-goals for naming:**
 
-- Do **not** add `domain/calls` ([F006](#f006--sure-peels-use-existing-domain-peers-no-new-peers)).
+- Do **not** add `lib/calls` ([F006](#f006--sure-peels-use-existing-domain-peers-no-new-peers)).
 - Do **not** keep top-level `feature/chat` once `conversations` exists.
-- Do **not** rename `domain/messaging` to `domain/chat` (call control types stay in the messaging peer).
-- Do **not** name the product UI layer `src/ui/` — that collides with `domain/ui` ([F008](#f008--gui-layer-above-feature)).
+- Do **not** rename `lib/messaging` to `domain/chat` (call control types stay in the messaging peer).
+- Do **not** name the product UI layer `src/ui/` — that collides with `lib/ui` ([F008](#f008--gui-layer-above-feature)).
 
 **Migration note:** Until renames ship, docs may say “`feature/messaging` = conversations (legacy path).” Class renames (`ConversationsHub` → `ConversationsHub`) track the folder rename, not f4v1. `feature/ui/**` lifted to `src/gui/**` (f7v1).
 
@@ -163,7 +163,7 @@ feature/
 **Date:** 2026-09-03  
 **Status:** accepted; **path shipped (f7v1)**
 
-**Context:** [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) treats Rml presenters and functional hubs as two systems. Nesting shell/contacts/chat under `feature/ui/` (f5) improved discoverability but left presenters as a **peer** of messaging/ai in the same layer while depending on them — wrong mental model and a name clash with `domain/ui` (non-Rml policy).
+**Context:** [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) treats Rml presenters and functional hubs as two systems. Nesting shell/contacts/chat under `feature/ui/` (f5) improved discoverability but left presenters as a **peer** of messaging/ai in the same layer while depending on them — wrong mental model and a name clash with `lib/ui` (non-Rml policy).
 
 **Decision:**
 
@@ -173,7 +173,7 @@ feature/
    app → gui → feature → domain → foundation → common
    ```
 
-2. **Name is `gui`, not `ui`.** Reserve `domain/ui` for pure presentation policy (copy, picker logic, no Rml controllers). Do not rename `domain/ui` in this ADR.
+2. **Name is `gui`, not `ui`.** Reserve `lib/ui` for pure presentation policy (copy, picker logic, no Rml controllers). Do not rename `lib/ui` in this ADR.
 
 3. **`gui` owns** all product Rml/SDL UI buildings: shell, chat screen, contacts/people-picker, settings presenters, call chrome, shared chrome helpers (badges, flow, data-model host, …).
 

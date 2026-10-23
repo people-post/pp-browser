@@ -1,6 +1,6 @@
-#include "domain/calls/CallListenAddrsLogic.h"
+#include "lib/calls/CallListenAddrsLogic.h"
 
-#include "domain/calls/CallControlCodec.h"
+#include "lib/calls/CallControlCodec.h"
 
 #include <gtest/gtest.h>
 

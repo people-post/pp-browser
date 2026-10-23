@@ -2,9 +2,9 @@
 
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
-#include "domain/messaging/AttachmentCache.h"
+#include "lib/messaging/AttachmentCache.h"
 #include "feature/conversations/ChatBlobRequest.h"
-#include "domain/net/HttpClient.h"
+#include "lib/net/HttpClient.h"
 #include "common/PbrCompat.h"
 
 #include <chrono>

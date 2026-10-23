@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/messaging/TranscriptAssembly.h"
-#include "domain/ui/ChatWidgetTypes.h"
+#include "lib/messaging/TranscriptAssembly.h"
+#include "lib/ui/ChatWidgetTypes.h"
 #include "feature/conversations/InboxController.h"
 
 #include <vector>

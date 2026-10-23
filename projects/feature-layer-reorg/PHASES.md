@@ -24,28 +24,28 @@
 
 Single-peer or foundation+common-only. Hub keeps owning `unique_ptr`; only the **definition** moves.
 
-- [x] `SqlitePskSessionStore` → `domain/messaging`
-- [x] `CallMediaKeyStore` → `domain/messaging` (flat; [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers) — not `domain/media`)
-- [x] `PskSessionCoordinator` → `domain/messaging`
-- [x] `PublicPskLockCoordinator` → `domain/messaging`
-- [x] `EpochBumpCoordinator` → `domain/messaging`
+- [x] `SqlitePskSessionStore` → `lib/messaging`
+- [x] `CallMediaKeyStore` → `lib/messaging` (flat; [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers) — not `lib/media`)
+- [x] `PskSessionCoordinator` → `lib/messaging`
+- [x] `PublicPskLockCoordinator` → `lib/messaging`
+- [x] `EpochBumpCoordinator` → `lib/messaging`
 - [x] Update domain CMake + tests colocation; Hub includes new paths
 
 ## f2 — People / mesh pure helpers
 
 Clears sharp `feature/ui` → messaging engine includes.
 
-- [x] `ContactReachability` → `domain/people`
-- [x] `PeerBriefRoute` → `domain/people`
+- [x] `ContactReachability` → `lib/people`
+- [x] `PeerBriefRoute` → `lib/people`
 - [ ] `ProfileIconFetch` — **stays feature** (HTTP → would be people→net; demoted)
-- [x] `MobileEphemeralListenGate` → `domain/mesh/reachability/`
-- [x] `PeoplePickerLogic` → `domain/ui` (optional same batch)
-- [x] `CallConflictCopy` → `domain/ui` (optional same batch)
+- [x] `MobileEphemeralListenGate` → `lib/mesh/reachability/`
+- [x] `PeoplePickerLogic` → `lib/ui` (optional same batch)
+- [x] `CallConflictCopy` → `lib/ui` (optional same batch)
 - [x] UI includes ports/people/domain only — no `ContactReachability` from messaging
 
 ## f3 — Responder / contract tidy
 
-- [x] Peel `ChatHistoryResponder` identity coupling; move → `domain/messaging` (mirror `ChatBlobResponder`)
+- [x] Peel `ChatHistoryResponder` identity coupling; move → `lib/messaging` (mirror `ChatBlobResponder`)
 - [x] `IDirectMessageClient` → `common/chat/` (iface only; Amp impl stays)
 - [x] Revisit [CANDIDATES.md](CANDIDATES.md) “needs common peel” list; promote any newly unblocked items
   - No promotions this batch; Amp façades / ProfileIconFetch remain blocked/demoted

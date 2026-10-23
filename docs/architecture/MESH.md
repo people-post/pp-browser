@@ -5,7 +5,7 @@
 **CMake:** `pp_mesh` (feature / app), `pp_mesh_types` (the vocabulary, through `pp_pbr_common`), `pp_mesh_testing` (tests)
 
 The mesh layer is the peer-network runtime: Amp composition, reachability, and L4 protocol hosting. It
-is not chat UX, HTTP Brief, or hop-ranking policy — those stay in pp-browser (`feature/`, `domain/`)
+is not chat UX, HTTP Brief, or hop-ranking policy — those stay in pp-browser (`feature/`, `lib/`)
 and reach the mesh as pushed snapshots and app protocols. This page is pp-browser's view of it: how
 the app composes and uses it. The library's own layout, rules and threading contract are in its
 [README](https://github.com/people-post/pp-cpp-mesh#readme) and
@@ -54,7 +54,7 @@ PeerIds come from pp-cpp-crypto ([MESH_IDENTITY.md](MESH_IDENTITY.md)).
   ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
 - **Spelling:** app code is in `pbr` and writes `mesh::MeshHost`, `mesh::DirectoryHit` through the alias
   in [`common/MeshAlias.h`](../../src/common/MeshAlias.h).
-- **Layers:** `common/`, `foundation/` and `domain/` may include only the vocabulary (`mesh/types/…`:
+- **Layers:** `common/`, `foundation/` and `lib/` may include only the vocabulary (`mesh/types/…`:
   directory rows, hops, relay scope, address disclosure, public address, media channel, config — no
   Amp); the mesh itself is `feature/` and `app/`'s to compose. `check_base_includes.sh` enforces it.
 - **Tests:** the mesh's own run in pp-cpp-mesh CI; pp-browser's tests that need live Amp stacks link

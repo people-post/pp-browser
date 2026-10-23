@@ -118,7 +118,7 @@ Checklist:
 
 ## k6 — Mobility class + pair policy (M6)
 
-- [x] **k6-1** `domain/messaging` `MobilityClassifier` (cellular / metered → mobile; 3 changes in 10 min → mobile; 5 min calm → stationary; churn signals within 30 s count once; offline keeps the class) + `DecideCallPathPolicy` — pure logic + gtests
+- [x] **k6-1** `lib/messaging` `MobilityClassifier` (cellular / metered → mobile; 3 changes in 10 min → mobile; 5 min calm → stationary; churn signals within 30 s count once; offline keeps the class) + `DecideCallPathPolicy` — pure logic + gtests
 - [x] **k6-2** `caps.mobility` in invite / accept (no `v` bump) + `call_caps_update`; codec gtests; per-call remote class
 - [x] **k6-3** Local class in `CallStack` (NetworkMonitor baseline + changes, observed-address churn from the hub's reachability probes); flip mid-call → `call_caps_update` + re-plan. Override: `mesh.mobility` + `--mobility=` (app and `pp-call-probe`); docs/ops/CONFIGURATION.md
 - [x] **k6-4** Policy consumed ([K013](DECISIONS.md)): mobile pair → no call-start punch (`PeerReachRequest::allow_punch`), no upgrade, relay anchor; stationary / unknown → relay **standby added** to direct calls (`path_add`, `ICallMediaTransport::AddStandby`). Found and fixed: `exclude_direct` reach settled on the direct link; Amp nested establish skipped the nested link beside an ADP one (pp-cpp-amp **v2.7.1**)

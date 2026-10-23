@@ -18,14 +18,14 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/UnlockEnsurePorts.h"
-#include "domain/messaging/AtAiParser.h"
-#include "domain/ai/StructuredTextParser.h"
-#include "domain/ai/TurnPlan.h"
+#include "lib/messaging/AtAiParser.h"
+#include "lib/ai/StructuredTextParser.h"
+#include "lib/ai/TurnPlan.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "common/Module.h"
-#include "domain/ui/ChatWidgetTypes.h"
-#include "domain/ui/ContextMenuHost.h"
+#include "lib/ui/ChatWidgetTypes.h"
+#include "lib/ui/ContextMenuHost.h"
 
 #include <source_location>
 #include <ui/data/DataModelHandle.h>

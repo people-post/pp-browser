@@ -1,8 +1,8 @@
 #pragma once
 
-#include "domain/messaging/GroupInviteGate.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/messaging/GroupInviteGate.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/ContactTypes.h"
 
 #include <string>
 #include "common/PbrCompat.h"

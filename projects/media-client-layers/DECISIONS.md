@@ -18,7 +18,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 
 **Date:** 2026-09-26
 **Status:** Accepted
-**Decision:** Reach (`PeerReachCoordinator`), relay session attach (`MediaRelayAttachCoordinator`), capture / playback pipelines and device leases live below both features (`domain/mesh`, `domain/media`). Test: outside both features, and the API uses none of *call*, *roster*, *program*, *ticket*; credentials and session ids are opaque.
+**Decision:** Reach (`PeerReachCoordinator`), relay session attach (`MediaRelayAttachCoordinator`), capture / playback pipelines and device leases live below both features (`lib/mesh`, `lib/media`). Test: outside both features, and the API uses none of *call*, *roster*, *program*, *ticket*; credentials and session ids are opaque.
 **Rationale:** Same split that made 1:1 clean; lets calls and broadcast evolve independently; respects the layer rule (no feature → feature edges for shared seams).
 
 ---
@@ -73,7 +73,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 
 **Date:** 2026-09-26
 **Status:** Accepted
-**Decision:** Keep two reach operations in `domain/mesh/reachability`, not one:
+**Decision:** Keep two reach operations in `lib/mesh/reachability`, not one:
 - **Link reach** — `PeerReachCoordinator`: success = a Connected PeerLink to the peer (dial → seed park → circuit as a *nested session* → punch; Reach / Await). Used by 1:1 call media.
 - **Service reach** — `ICircuitHopReach::TryEnsureHopReachable` (`AmpCircuitHopReach`): success = the node's `media_relay` service is dialable — an endpoint, or a *protocol-keyed* circuit hop registered for `kMediaRelayProtocolId` (`register_endpoint`, not nested); punch first, then circuit. Used by relay attach (group joiner today, broadcast viewer / broadcaster later).
 **Rationale:** Found while doing l1: routing hops through `PeerReachCoordinator` would move `media_relay` from protocol-keyed circuit hops onto nested links — a transport change, not a refactor. Both are feature-neutral and now live side by side; l2's `MediaRelayAttachCoordinator` uses service reach.
@@ -85,7 +85,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 
 **Date:** 2026-09-26
 **Status:** Accepted
-**Decision:** The shared relay-attach layer is `AttachToMediaRelayAsync` (`domain/mesh/l4/media_relay/MediaRelayAttach.*`): ports (relay client, dial registry, service reach) + request (hop, dial hint, opaque session id / auth, caller-built quote request) + hooks (`accept_quote`, `still_wanted`, `on_frame`) → `MediaRelayAttached{quote_id, a_up_bps}`. It holds no state. Frame decryption, quote sizing, pricing, what happens after attach, and loss recovery (group: reattach with backoff; viewer: re-admit / redirect) stay in the feature.
+**Decision:** The shared relay-attach layer is `AttachToMediaRelayAsync` (`lib/mesh/l4/media_relay/MediaRelayAttach.*`): ports (relay client, dial registry, service reach) + request (hop, dial hint, opaque session id / auth, caller-built quote request) + hooks (`accept_quote`, `still_wanted`, `on_frame`) → `MediaRelayAttached{quote_id, a_up_bps}`. It holds no state. Frame decryption, quote sizing, pricing, what happens after attach, and loss recovery (group: reattach with backoff; viewer: re-admit / redirect) stay in the feature.
 **Rationale:** Reading the group path showed the mechanism was copy-pasted twice (attach and guest reattach) and carried no state of its own; recovery differs per feature, so a stateful "coordinator" owning it would re-couple the features. The planned name `MediaRelayAttachCoordinator` is dropped (free-function capability naming, AGENTS role table).
 
 
@@ -97,7 +97,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Status:** Accepted
 **Decision:** l3 lands as l3a (session spec on the existing `CallMediaEngine`), l3b (`DeviceArbiter` with one **device thread** owning SDL open / close / reopen-on-loss; pipelines receive streams through leases) and l3c (pipeline instances / rename, only if l4 / l5 need it). The local video encoder is created with the camera, not the session.
 **Rationale:** The engine's capture thread both owns the devices (opens both, reopens on loss, under the engine mutex) and paces sends; playout mixes into the stream that thread opened. A spec is a small change on that model; leases are not — revoking or handing over a device from another thread would race the capture thread's reopen. Giving devices one owner thread is the fix that makes leases sound, and it is cheaper before a second consumer (viewer / broadcaster) exists than after. The user prefers the better fix over the safer one and accepts threading risk earlier (2026-09-26).
-**Consequence:** l3b is a threading change inside `domain/media`; calls keep behavior and are verified with the engine gtests, TSan media + call suites and hard lab.
+**Consequence:** l3b is a threading change inside `lib/media`; calls keep behavior and are verified with the engine gtests, TSan media + call suites and hard lab.
 
 ---
 
@@ -129,7 +129,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 - **Ticket** is fetched 1:1 from the publisher (`ticket_request` over the broadcast RPC; link reach to the publisher). It cannot ride the announce: tickets are bound to one viewer PeerId, tips go to every follower.
 - **Admission** is the viewer side of B007 (`BroadcastViewerLadder`, pure): ask the tip hop, then L1 hints; Admit → attach; Redirect → hints first, bounded by the redirect budget, path stamp as loop guard; Refuse / attach failure → next candidate. A hop whose admission RPC cannot run (no broadcast RPC server — every relay before B1, pp-node included) is attached directly as a single-hop relay: admission manages capacity, and frames are end-to-end encrypted (B003), so skipping it exposes nothing.
 - **Stream id** = `PublisherStreamIdForIdentity(publisher PeerId)` (`BroadcastPublisherStreamId`) — the tip carries the PeerId, not the Account id calls hash. l5's broadcaster publishes on it.
-- **Frames** use `SealMediaRelayFrame` / `OpenMediaRelayFrame` (neutral, `domain/mesh/l4/media_relay`) with context `broadcast-media|<program_id>|<join_handle>`; calls use the same framing under `call-media-sfu|<call_id>` (bytes unchanged).
+- **Frames** use `SealMediaRelayFrame` / `OpenMediaRelayFrame` (neutral, `lib/mesh/l4/media_relay`) with context `broadcast-media|<program_id>|<join_handle>`; calls use the same framing under `call-media-sfu|<call_id>` (bytes unchanged).
 - **Relay client**: `AmpMediaRelayCoordinator` holds one client session per mesh host, shared with calls. The viewer refuses with a clear reason while a call holds it; per-holder client sessions are a Later item (running both is not needed now — not blocked by design).
 **Consequence:** l4 is testable end-to-end only against the test harness until l5 mints tickets (`PutLiveProgramKey`); the hard-lab phase moves to l5, where a real publisher exists.
 
@@ -140,19 +140,19 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Date:** 2026-09-26
 **Status:** Superseded by [L015](#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast) (l8)
 **Decision:** The media_relay client, dial registry and circuit/service reach are owned by `CallMediaPlane` (feature/calls) and re-created on mesh (re)start and relay rewires. `ConversationsHub` — which owns both stacks — lends them to broadcast through `CallStack::SharedRelayAttachPorts()` and owns the `BroadcastHub` lifetime around them: built after mesh services start, **dropped before** `ResetRelayClients` / `WireMediaRelayDeps` / `StopMesh`, rebuilt after. Broadcast never includes calls (CI include ban).
-**Rationale:** Extracting those objects (plus punch and seed parking, 1.3k lines of `CallMediaPlane`) into `domain/mesh` is the right shape but a refactor of its own; borrowing through a neutral struct with explicit teardown ordering gets a working viewer now without dangling pointers. A rewire stops an active watch (rare: mesh restart / capability change).
+**Rationale:** Extracting those objects (plus punch and seed parking, 1.3k lines of `CallMediaPlane`) into `lib/mesh` is the right shape but a refactor of its own; borrowing through a neutral struct with explicit teardown ordering gets a working viewer now without dangling pointers. A rewire stops an active watch (rare: mesh restart / capability change).
 **Consequence:** Only one media_relay client session exists per mesh host (L013), so a call attaching replaces the viewer's session — observers carry `Replaced`, and the viewer fails with a clear reason.
 
 ---
 
-## L015 — A neutral `MeshMediaPlane` in `domain/mesh`, owned by the product hub, lent to calls and broadcast
+## L015 — A neutral `MeshMediaPlane` in `lib/mesh`, owned by the product hub, lent to calls and broadcast
 
 **Date:** 2026-09-27
-**Status:** Accepted (l8). **Amended 2026-09-30:** the plane is split by concern — `MeshConnectivity` (`domain/mesh/connectivity`: dial registry + listen book, circuit reach, punch walk, rendezvous, hop policy, local view) and `MeshMediaRelay` (`domain/mesh/media_plane`: the media_relay client, built on connectivity); ownership and lending are unchanged. Current shape: [MESH.md § Feature boundary](../../docs/architecture/MESH.md#feature-boundary).
+**Status:** Accepted (l8). **Amended 2026-09-30:** the plane is split by concern — `MeshConnectivity` (`lib/mesh/connectivity`: dial registry + listen book, circuit reach, punch walk, rendezvous, hop policy, local view) and `MeshMediaRelay` (`lib/mesh/media_plane`: the media_relay client, built on connectivity); ownership and lending are unchanged. Current shape: [MESH.md § Feature boundary](../../docs/architecture/MESH.md#feature-boundary).
 **Decision:**
-- **What moves.** The media_relay client, dial registry + peer listen book, circuit/service reach (with cold / upgrade punch) and rendezvous parking (warm, reserve, late reserve, park-await, re-park listener) leave `CallMediaPlane` for `domain/mesh/media_plane/MeshMediaPlane`. `CallMediaPlane` keeps call policy only: the call_media Amp transport, `CallMediaBridge`, and the topology's relay deps (`BuildMediaRelayDeps`) built from the neutral objects.
-- **Plane = composition, reach = reachability.** The plane owns objects and their lifecycle; reach mechanics stay in `domain/mesh/reachability`: the punch step reach calls (`PunchIntroducerWalk`) and the rendezvous relay surface used both to dial through and to park on (`CircuitRendezvousCoordinator`). The plane builds circuit reach from them.
-- **Candidates are injected.** `domain/mesh` has no edge to `domain/people`, so hop candidates (rendezvous surface, bootstrap seeds, punch introducers) come through ports filled by the feature that wires the plane, from pure `MeshHopPolicy` helpers.
+- **What moves.** The media_relay client, dial registry + peer listen book, circuit/service reach (with cold / upgrade punch) and rendezvous parking (warm, reserve, late reserve, park-await, re-park listener) leave `CallMediaPlane` for `lib/mesh/media_plane/MeshMediaPlane`. `CallMediaPlane` keeps call policy only: the call_media Amp transport, `CallMediaBridge`, and the topology's relay deps (`BuildMediaRelayDeps`) built from the neutral objects.
+- **Plane = composition, reach = reachability.** The plane owns objects and their lifecycle; reach mechanics stay in `lib/mesh/reachability`: the punch step reach calls (`PunchIntroducerWalk`) and the rendezvous relay surface used both to dial through and to park on (`CircuitRendezvousCoordinator`). The plane builds circuit reach from them.
+- **Candidates are injected.** `lib/mesh` has no edge to `lib/people`, so hop candidates (rendezvous surface, bootstrap seeds, punch introducers) come through ports filled by the feature that wires the plane, from pure `MeshHopPolicy` helpers.
 - **Call concepts become neutral ports.** "Announce the chosen R1" is an on-relay-chosen hook; "signaling punch over call-control" is a last-resort punch port; the account → PeerId note is the caller's (calls wraps `RegisterPeerListenMultiaddrs`).
 - **Ownership.** l8a: `CallMediaPlane` owns it (extraction only). l8b: `ConversationsHub` (and `ProductStackHarness`) owns it, lends it to `CallStack` and hands broadcast its `MediaRelayAttachPorts` directly; `CallStack::SharedRelayAttachPorts` goes. The owner sequences every rewire: detach dependents (call topology relay deps, broadcast hub) → rewire / reset the plane → rebind.
 **Rationale:** Broadcast borrowing call objects (L014) made the call stack the lifetime authority for a feature that is not a call, and any call-side rewire silently invalidated broadcast. One neutral owner with one rewire sequence removes both the borrow and the class of bug the hard lab found in l7 (a dependent holding a replaced client).

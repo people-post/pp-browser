@@ -1,11 +1,11 @@
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 
-#include "domain/messaging/AiImageRef.h"
+#include "lib/messaging/AiImageRef.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "domain/messaging/AttachmentPlaintextMemoryCache.h"
-#include "domain/content/CasStore.h"
-#include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/messaging/SqliteThreadStore.h"
+#include "lib/messaging/AttachmentPlaintextMemoryCache.h"
+#include "lib/content/CasStore.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/Utilities.h"
 

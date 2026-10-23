@@ -8,7 +8,7 @@ pp_browser_add_headless_feature_library(pp_feature_node
     NodeMeshServices.cpp
   PUBLIC_LIBS
     pp_mesh
-    pp_domain_people
+    pp_lib_people
     pp_foundation_data
     pp_foundation_runtime_core)
 

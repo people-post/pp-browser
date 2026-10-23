@@ -1,6 +1,6 @@
 # `src/foundation`
 
-Shared **kernel** implementations every domain peer may use. Ordered bands (not fully peer-independent).
+Shared **kernel** implementations every lib peer may use. Ordered bands (not fully peer-independent).
 
 ```
 runtime, platform(_core)   # platform/ui/ = window + RmlUi Backend + overlays

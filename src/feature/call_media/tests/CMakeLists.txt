@@ -8,9 +8,9 @@ target_link_libraries(pp_browser_feature_call_media_test PRIVATE
   pp_feature_call_media
   pp_mesh
   pp_mesh_testing
-  pp_domain_people
+  pp_lib_people
   pp_foundation_identity
-  pp_domain_net
+  pp_lib_net
   GTest::gtest
   GTest::gtest_main)
 pp_browser_apply_warnings(pp_browser_feature_call_media_test)

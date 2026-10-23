@@ -2,11 +2,11 @@
 
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "domain/messaging/ChatAttachmentPrepare.h"
-#include "domain/net/BlobClient.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/messaging/ChatAttachmentPrepare.h"
+#include "lib/net/BlobClient.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
 

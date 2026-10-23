@@ -1,17 +1,17 @@
 #pragma once
 
-#include "domain/messaging/AtAiParser.h"
-#include "domain/ai/BriefAiClient.h"
-#include "domain/ai/ToolRegistry.h"
-#include "domain/ai/TurnPlan.h"
-#include "domain/ai/TurnTrace.h"
-#include "domain/ai/conversation/ConversationTypes.h"
-#include "domain/ai/mcp/McpClient.h"
+#include "lib/messaging/AtAiParser.h"
+#include "lib/ai/BriefAiClient.h"
+#include "lib/ai/ToolRegistry.h"
+#include "lib/ai/TurnPlan.h"
+#include "lib/ai/TurnTrace.h"
+#include "lib/ai/conversation/ConversationTypes.h"
+#include "lib/ai/mcp/McpClient.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"
-#include "domain/ai/BriefTurnRunner.h"
-#include "domain/ai/ParkedApproval.h"
+#include "lib/ai/BriefTurnRunner.h"
+#include "lib/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
 #include <chrono>

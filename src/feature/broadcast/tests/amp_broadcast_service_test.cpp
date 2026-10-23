@@ -1,7 +1,7 @@
 #include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
-#include "domain/broadcast/BroadcastJoinTicket.h"
+#include "lib/broadcast/BroadcastJoinTicket.h"
 #include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"

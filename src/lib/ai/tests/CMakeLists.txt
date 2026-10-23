@@ -1,0 +1,9 @@
+pp_browser_add_lib_folder_tests(
+  pp_lib_ai
+  pp_browser_ai_test
+  PRIVATE_DEFINITIONS
+    PP_BROWSER_TURN_PLAN_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/turn_plans"
+    PP_BROWSER_SOURCE_ROOT="${PROJECT_SOURCE_DIR}"
+  LINK_LIBS
+    CURL::libcurl
+    Asio::asio)

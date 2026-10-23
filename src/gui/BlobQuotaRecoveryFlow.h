@@ -1,12 +1,12 @@
 #pragma once
 
-#include "domain/net/BlobQuota.h"
+#include "lib/net/BlobQuota.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "gui/UserFeedback.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/messaging/AttachmentCache.h"
+#include "lib/messaging/AttachmentCache.h"
 
 #include <functional>
 #include <utility>

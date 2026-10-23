@@ -3,7 +3,7 @@
 #include "feature/broadcast/BroadcastHub.h"
 #include "feature/broadcast/BroadcastServices.h"
 #include "feature/conversations/HubParticipant.h"
-#include "domain/broadcast/PeerAnnounceTypes.h"
+#include "lib/broadcast/PeerAnnounceTypes.h"
 #include "common/Lifetime.h"
 
 #include <functional>

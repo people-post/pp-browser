@@ -1,8 +1,8 @@
 #include "gui/chat/ChatWidgetHost.h"
 
-#include "domain/ai/StructuredTextParser.h"
-#include "domain/ui/ChatFormHelper.h"
-#include "domain/ui/CalendarHelper.h"
+#include "lib/ai/StructuredTextParser.h"
+#include "lib/ui/ChatFormHelper.h"
+#include "lib/ui/CalendarHelper.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"
 
 #include <sstream>

@@ -16,9 +16,9 @@ OS-specific code has **three homes**, not one folder:
 | **`foundation/platform/ui/`** | Low-level window / toolkit host (same foundation band) | `RmlUi_Backend.h`, `BrowserHost`, GL lifecycle, desktop chrome, SDL preprocess, loupe/call-tile overlays |
 | **Domain `*_Win32.cpp` / `*_Android.cpp` next to the feature** | Fat OS backends used by one module | H264, camera orientation, VoIP audio session, mDNS sockets, net-if enumeration |
 | **Runtime dispatch (`Platform::Detect()` / `IsMobile()`)** | Product behavior, not syscalls | Portrait lock, poll intervals, skip stdio MCP |
-| **`domain/ui/`** | Product shell only (not OS/host) | Theme, view catalog, input coordinator, context menu, chat widget types |
+| **`lib/ui/`** | Product shell only (not OS/host) | Theme, view catalog, input coordinator, context menu, chat widget types |
 
-Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_domain_media` already depends on `pp_foundation_platform`) and mix shared OS services with domain types.
+Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_lib_media` already depends on `pp_foundation_platform`) and mix shared OS services with domain types.
 
 Hard rules:
 
@@ -46,10 +46,10 @@ Hard rules:
 | `foundation/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
 | `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
 | `foundation/platform/NetworkMonitor.*` + `NetworkMonitor_{Linux,Darwin,Win32,Android}` | OS network-change events (portable core de-duplicates; `NetworkMonitorBackend.h` private); Android side `PpNetworkMonitor.java` |
-| `domain/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
-| `domain/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
-| `domain/media/SdlAudioBootstrap_*.cpp` | SDL audio-driver preference (Linux ALSA hint) |
-| `domain/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
+| `lib/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
+| `lib/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
+| `lib/media/SdlAudioBootstrap_*.cpp` | SDL audio-driver preference (Linux ALSA hint) |
+| `lib/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
 | pp-cpp-mesh `reachability/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
 | pp-cpp-mesh `reachability/ReachabilityNetIf_*.cpp` | Interface address enumeration |
 | `pp-cpp-ui backend/GlBackend.h` | GLES vs desktop GL selection |
@@ -86,7 +86,7 @@ Regressions are caught by [`scripts/check/check_platform_ifdefs.sh`](../../scrip
 Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
-- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` (and in pp-cpp-mesh `src/reachability/`)
+- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/lib/media/` (and in pp-cpp-mesh `src/reachability/`)
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)

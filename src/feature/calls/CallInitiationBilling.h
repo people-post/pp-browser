@@ -2,9 +2,9 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/pricing/InitiationBillingStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/pricing/InitiationBillingStore.h"
+#include "lib/people/IdentityStore.h"
 #include "foundation/data/PricingTypes.h"
 
 #include <cstdint>

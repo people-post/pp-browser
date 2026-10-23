@@ -11,8 +11,8 @@ SDL events
   → integration/platform/RmlSDL::InputEventHandler  (translate only)
   → Rml::Context::Process*                    (focus, hover, click, keyboard, touch gestures)
   → SelectionController (selectable="text")   (static text selection)
-  → domain/ui/ContextMenuHost                   (right-click / long-press edit menu)
-  → domain/ui/InputCoordinator                  (global keyboard shortcuts)
+  → lib/ui/ContextMenuHost                   (right-click / long-press edit menu)
+  → lib/ui/InputCoordinator                  (global keyboard shortcuts)
 ```
 
 | Layer | Location | Responsibility |
@@ -21,8 +21,8 @@ SDL events
 | RmlUi core | `pp-cpp-ui rmlui/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide selection; desktop drag-select; touch word select via long-press / double-tap |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
-| Context menu | `src/domain/ui/ContextMenuHost.*` | Extensible Copy / Select All / Paste panel; desktop right-click; mobile long-press |
-| Base UI | `src/domain/ui/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
+| Context menu | `src/lib/ui/ContextMenuHost.*` | Extensible Copy / Select All / Paste panel; desktop right-click; mobile long-press |
+| Base UI | `src/lib/ui/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 

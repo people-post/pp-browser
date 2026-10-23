@@ -2,7 +2,7 @@
 
 #include "common/Metrics.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/media/DeviceVitals.h"
+#include "lib/media/DeviceVitals.h"
 
 #include <algorithm>
 #include <cstdint>

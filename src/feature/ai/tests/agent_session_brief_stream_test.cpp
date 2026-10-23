@@ -1,12 +1,12 @@
 #include "feature/ai/AgentSession.h"
 
-#include "domain/ai/conversation/Conversation.h"
+#include "lib/ai/conversation/Conversation.h"
 #include "foundation/data/Config.h"
 #include "foundation/error/AppError.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/ai/ToolRegistry.h"
-#include "domain/ai/mcp/McpClient.h"
+#include "lib/ai/ToolRegistry.h"
+#include "lib/ai/mcp/McpClient.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>

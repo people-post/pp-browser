@@ -4,13 +4,13 @@
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
 #include "feature/product/tests/call_stack_compose_support.h"
-#include "domain/calls/CallControlCodec.h"
+#include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
-#include "domain/calls/CallSessionStore.h"
+#include "lib/calls/CallSessionStore.h"
 #include "common/directory/DirectoryJson.h"
-#include "domain/calls/SoftMigrateLogic.h"
+#include "lib/calls/SoftMigrateLogic.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/MeshAlias.h"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/ui/ChatWidgetTypes.h"
+#include "lib/ui/ChatWidgetTypes.h"
 #include "common/chat/ChatActionTypes.h"
 #include "common/ui/WorkingSetTypes.h"
 #include "gui/shell/ShellNavigationPorts.h"

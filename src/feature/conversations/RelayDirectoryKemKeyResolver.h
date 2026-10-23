@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/messaging/PeerKemKeyStore.h"
-#include "domain/net/OrgBackendClients.h"
+#include "lib/messaging/PeerKemKeyStore.h"
+#include "lib/net/OrgBackendClients.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 

@@ -7,7 +7,7 @@
 #include "amp/link/AmpStack.h"
 #include "mesh/host/MeshHost.h"
 #include "mesh/testing/mesh_harness_support.h"
-#include "domain/messaging/RelayWirePayload.h"
+#include "lib/messaging/RelayWirePayload.h"
 #include "foundation/crypto/MlDsa.h"
 #include "crypto/PeerId.h"
 

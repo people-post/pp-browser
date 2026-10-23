@@ -24,7 +24,7 @@ fi
 check_absent "gui must not include app/" \
   '#include "app/' src/gui
 
-# gui may include feature/, domain/, foundation/, common/.
+# gui may include feature/, lib/, foundation/, common/.
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "domain/ai/LlmClient.h"
-#include "domain/ai/TurnPlan.h"
-#include "domain/ai/ToolPermissionPolicy.h"
-#include "domain/ai/ToolRegistry.h"
+#include "lib/ai/LlmClient.h"
+#include "lib/ai/TurnPlan.h"
+#include "lib/ai/ToolPermissionPolicy.h"
+#include "lib/ai/ToolRegistry.h"
 #include "common/Error.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/people/ContactTypes.h"
 #include "common/thread/ThreadTypes.h"
 
 #include <functional>

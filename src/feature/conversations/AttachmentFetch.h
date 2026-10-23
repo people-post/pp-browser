@@ -2,9 +2,9 @@
 
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadCatalog.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
 

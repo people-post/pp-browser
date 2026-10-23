@@ -1,8 +1,8 @@
 #pragma once
 
 #include "foundation/data/Config.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
 

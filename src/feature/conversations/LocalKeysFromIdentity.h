@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/messaging/RelayReceivePipeline.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/people/IdentityStore.h"
 
 #include <string>
 #include "common/PbrCompat.h"

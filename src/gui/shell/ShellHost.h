@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
 #include "gui/shell/StatusbarText.h"
@@ -11,7 +11,7 @@
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
-#include "domain/ui/ShellGestureAxis.h"
+#include "lib/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 

@@ -138,19 +138,19 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 
 **Decision:**
 
-1. **Keep for now** under `src/domain/messaging/`: `CasStore`, `ObjectIndex`, `CasTypes`, `AttachmentCache`, `AttachmentPlaintextMemoryCache` (and related private-attachment I/O). Callers today are almost entirely conversations/attachments; domain peers must stay independent ([SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md)).
+1. **Keep for now** under `src/lib/messaging/`: `CasStore`, `ObjectIndex`, `CasTypes`, `AttachmentCache`, `AttachmentPlaintextMemoryCache` (and related private-attachment I/O). Callers today are almost entirely conversations/attachments; lib peers must stay independent ([SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md)).
 2. **Do not** move this into `foundation/` — it is a product durable store + realm policy, not kernel path/config/crypto primitives.
-3. **Planned peel:** introduce a new domain peer (preferred name **`domain/content`**) when **P3/P4** (public library / Share publicly… / provide-fetch) gives CAS a **second real owner** outside messaging. That peer should own:
+3. **Planned peel:** introduce a new lib peer (preferred name **`lib/content`**) when **P3/P4** (public library / Share publicly… / provide-fetch) gives CAS a **second real owner** outside messaging. That peer should own:
    - `CasStore`, `ObjectIndex`, realm types
    - optional thin presentation helpers (RAM LRU / view wipe) if still realm-generic
 4. **Leave behind in messaging / feature:** chat-specific policy — attachment download/suppression, chat blob responders, thread UX gates that call into content via `common` contracts + feature wiring.
 5. **No premature empty peer** that messaging still monopolizes; extract when the second consumer compiles against content without linking messaging codecs/stores.
 
-**Update (2026-10-20):** peeled as part of the calls / media / messaging boundary cleanup. `domain/content` (`pp_domain_content`) holds `CasStore`, `ObjectIndex`, `CasTypes`, `CasLibrary` and `PrivateContent` (private content by hash); its consumers already compile against it without messaging (settings' library, feature attachments). Messaging keeps the chat policy — views, posters, suppression, the RAM plaintext cache — and never includes content: `feature/conversations/AttachmentContent` wires attachments to the store and `ChatBlobResponder` takes a `ChatBlobContentSource`.
+**Update (2026-10-20):** peeled as part of the calls / media / messaging boundary cleanup. `lib/content` (`pp_lib_content`) holds `CasStore`, `ObjectIndex`, `CasTypes`, `CasLibrary` and `PrivateContent` (private content by hash); its consumers already compile against it without messaging (settings' library, feature attachments). Messaging keeps the chat policy — views, posters, suppression, the RAM plaintext cache — and never includes content: `feature/conversations/AttachmentContent` wires attachments to the store and `ChatBlobResponder` takes a `ChatBlobContentSource`.
 
 **Rationale:** Avoids cross-peer edges and churn during private cutover (P1–P2 / C011). Aligns peel with the moment public CAS stops being “messaging storage with a fancy path.”
 
-**Rejected (for now):** Immediate `domain/content` (or `domain/cas`) split; placing CAS in foundation.
+**Rejected (for now):** Immediate `lib/content` (or `domain/cas`) split; placing CAS in foundation.
 
 ---
 
@@ -178,5 +178,5 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 - Does not change L4 kinds; compositions for share/broadcast recorded in [L4_PROTOCOL_KINDS](../../docs/contracts/L4_PROTOCOL_KINDS.md).  
 - Supersedes durable-byte role of per-thread `blobs/` once P2 cutover lands (R016 paths become views/refs).
 - C011 amends attachment presentation expectations in [AT_REST_ENCRYPTION](../../docs/contracts/AT_REST_ENCRYPTION.md) and [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md).
-- C012 records deferred `domain/content` peel; amends domain peer table intent in [SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md).
+- C012 records deferred `lib/content` peel; amends lib peer table intent in [SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md).
 - C013 records pin defaults + share-mode / directory-catalog split; product detail in [USE_CASES.md](USE_CASES.md); relates to [N027](../p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory) / [N029](../p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md) (phone book scope) and [R002](../relay-blob-upload/DECISIONS.md#r002--relay-is-delivery-only-local-is-source-of-truth).

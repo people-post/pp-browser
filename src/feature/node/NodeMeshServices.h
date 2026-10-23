@@ -2,7 +2,7 @@
 
 #include "mesh/types/DirectoryTypes.h"
 #include "mesh/host/MeshHost.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/people/IdentityStore.h"
 #include "foundation/data/Config.h"
 
 #include <functional>

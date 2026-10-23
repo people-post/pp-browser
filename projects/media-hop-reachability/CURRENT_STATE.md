@@ -42,11 +42,11 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 |-------|----------|
 | SoftMigrate hop pick | `MeshHopPolicy`, `CallTopologyController` |
 | Custom circuit | `CircuitTunnelCoordinator`, circuit L4 |
-| DialBack / Reachability / UPnP | `src/domain/mesh/reachability/` |
+| DialBack / Reachability / UPnP | `src/lib/mesh/reachability/` |
 | Amp underlay | pp-cpp-amp (`PeerLink`, keepalive, `MaybeLearnPath`) |
 | Hop reach helper | `AmpCircuitHopReach` |
 | R1 rendezvous policy | `CircuitRendezvousPolicy.h`, `CallMediaPlane::BuildCircuitRendezvousCandidates` |
-| Partition compose tests | `src/domain/mesh/tests/` (`amp_circuit_*_compose_test`, loopback fixture) |
+| Partition compose tests | `src/lib/mesh/tests/` (`amp_circuit_*_compose_test`, loopback fixture) |
 | Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — Wave 1–2 scaffold |
 
 ## Next

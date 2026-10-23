@@ -12,7 +12,7 @@
 namespace pbr {
 
 /**
- * Chat attachments in the profile's private content store (domain/content), with the attachment
+ * Chat attachments in the profile's private content store (lib/content), with the attachment
  * RAM cache in front (recent plaintext for views and peer fetches).
  */
 bool AttachmentBlobExists(const std::string& profile_dir, const std::vector<uint8_t>& content_hash);

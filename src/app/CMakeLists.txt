@@ -78,7 +78,7 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_feature
   pp_base
   pp_pbr_common
-  pp_domain_ui
+  pp_lib_ui
   pp_mesh
   ui::core
   CURL::libcurl

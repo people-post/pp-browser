@@ -1,7 +1,7 @@
 #include "feature/product/CallsParticipant.h"
 
-#include "domain/calls/CallSessionLogic.h"
-#include "domain/messaging/PeerThreadLogic.h"
+#include "lib/calls/CallSessionLogic.h"
+#include "lib/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/ConversationsHub.h"

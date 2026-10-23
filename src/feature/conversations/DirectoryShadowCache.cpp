@@ -1,6 +1,6 @@
 #include "feature/conversations/DirectoryShadowCache.h"
 
-#include "domain/people/ContactIdentity.h"
+#include "lib/people/ContactIdentity.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"

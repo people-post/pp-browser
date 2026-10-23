@@ -5,7 +5,7 @@
 
 How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with **functional systems** (messaging, agent, vault, session prefs). Features should be able to run without UI; UI binds only through explicit interfaces.
 
-**Layer ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI lives in top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with domain peer `domain/ui` (non-Rml presentation policy).
+**Layer ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI lives in top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with lib peer `lib/ui` (non-Rml presentation policy).
 
 **Migration complete (2026-08):** UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). RmlUi static callbacks use `InstallInstance` / `Instance()` shims on the installed pointer — not process-wide singletons. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
 
@@ -30,7 +30,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 | **Agent** | `feature/ai/` | turn status, tool results, generation | LLM client, MCP executor, turn pipeline |
 | **Profile / vault** | `foundation/crypto/` | unlock status, PIN policy | Argon2, secrets store |
 | **Session / prefs** | `foundation/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
-| **Localization / theme** | `foundation/i18n/`, `domain/ui/` | labels, appearance | catalogs, asset resolution |
+| **Localization / theme** | `foundation/i18n/`, `lib/ui/` | labels, appearance | catalogs, asset resolution |
 | **Shell / navigation** | `gui/shell/` | tabs, panes, overlays, dialog stack | flow coordinator, input routing |
 
 **UI surfaces** (presenters + RmlUi binding — *not* functional systems):

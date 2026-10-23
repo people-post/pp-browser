@@ -1,8 +1,8 @@
 #pragma once
 
-#include "domain/ai/BriefAiClient.h"
-#include "domain/ai/MarkdownToRml.h"
-#include "domain/ai/StructuredTextParser.h"
+#include "lib/ai/BriefAiClient.h"
+#include "lib/ai/MarkdownToRml.h"
+#include "lib/ai/StructuredTextParser.h"
 
 #include <algorithm>
 #include <chrono>

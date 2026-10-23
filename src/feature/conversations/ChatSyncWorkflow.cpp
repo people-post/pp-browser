@@ -2,15 +2,15 @@
 
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
-#include "domain/messaging/ChatSyncLogic.h"
-#include "domain/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/ChatSyncLogic.h"
+#include "lib/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "domain/messaging/RelayWirePayload.h"
+#include "lib/messaging/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/PeerBriefRoute.h"
+#include "lib/people/ContactTypes.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>

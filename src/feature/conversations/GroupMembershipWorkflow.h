@@ -1,11 +1,11 @@
 #pragma once
 
-#include "domain/messaging/GroupMembershipCodec.h"
-#include "domain/messaging/GroupRosterStore.h"
+#include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterStore.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/messaging/GroupInviteGate.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
 #include "common/Module.h"

@@ -901,7 +901,7 @@ libp2p stream protocol **`/pp/rpc/1.0.0`**. Semantics mirror D027; only transpor
 
 **Requester rules:** Verify envelope signatures; ingest via receive pipeline; set `transport=direct` on persisted rows.
 
-Implementation lives in `src/domain/mesh/` + `MeshDeliveryOrchestrator` — not in `IThreadStore`.
+Implementation lives in `src/lib/mesh/` + `MeshDeliveryOrchestrator` — not in `IThreadStore`.
 
 ### Within-epoch sender contract (E2E only)
 

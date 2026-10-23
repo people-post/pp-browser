@@ -4,8 +4,8 @@
 
 #include "amp/link/LinkIdentity.h"
 
-#include "domain/broadcast/PeerAnnounceCodec.h"
-#include "domain/broadcast/PeerAnnounceRpcCodec.h"
+#include "lib/broadcast/PeerAnnounceCodec.h"
+#include "lib/broadcast/PeerAnnounceRpcCodec.h"
 
 #include "common/chat/IDirectMessageClient.h"
 #include "amp/L3/ChannelPolicy.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/calls/CallScreen.h"
+#include "lib/calls/CallScreen.h"
 #include "foundation/platform/CallSystemUi.h"
 
 #include <cstdint>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/AtAiParser.h"
+#include "lib/messaging/AtAiParser.h"
 
 #include <functional>
 #include <optional>

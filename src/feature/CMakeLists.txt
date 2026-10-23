@@ -26,7 +26,7 @@ set(PP_FEATURE_MODULE_LIBS
 add_library(pp_feature INTERFACE)
 target_link_libraries(pp_feature INTERFACE
   ${PP_FEATURE_MODULE_LIBS}
-  pp_domain_ui
+  pp_lib_ui
   ui::core
   CURL::libcurl
   Threads::Threads)

@@ -7,7 +7,7 @@ pp_browser_add_feature_library(pp_feature_ai
     TurnExecutor.cpp
   PUBLIC_LIBS
     pp_feature_ai_bindings
-    pp_domain_ai_tools
+    pp_lib_ai_tools
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)
