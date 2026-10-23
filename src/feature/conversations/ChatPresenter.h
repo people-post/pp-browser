@@ -119,6 +119,21 @@ public:
   /** Sends the delete (network: on a worker); `done` on the UI thread unless the presenter is gone. */
   void DeleteForEveryone(const std::string& message_id, std::function<void(Roe<void>)> done);
 
+  // --- the composer (the open chat) -----------------------------------------------------------
+
+  /** Reply quoting `quoted` (a message's text): the next send carries it under the reply. */
+  void StartQuoteReply(const std::string& quoted);
+  void CancelQuoteReply() { quote_source_.clear(); }
+  bool QuotingReply() const { return !quote_source_.empty(); }
+  /** The quote bar's one line: the quoted text, newlines flattened, cut at 120 characters with "…". */
+  std::string QuotePreview() const;
+  /** A draft that can be sent (not too long); the error's message is an i18n key. */
+  static Roe<void> ValidateDraft(const std::string& text);
+  /** The text to send for `reply`: with the quoted message under it while a quote reply is open. */
+  std::string ComposeWithQuote(const std::string& reply) const;
+  /** Send `text` into the open chat the way the composer does (the message router: a person, or the agent). */
+  Roe<void> SendToChat(const std::string& text);
+
 private:
   /**
    * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store
@@ -138,6 +153,7 @@ private:
   bool showing_archived_ = false;
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> prefs_;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+  std::string quote_source_;
 };
 
 } // namespace pbr

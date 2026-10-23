@@ -3,6 +3,8 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/messaging/QuoteReply.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/ReactionTypes.h"
 #include "common/EmojiKey.h"
@@ -305,6 +307,43 @@ void ChatPresenter::DeleteForEveryone(const std::string& message_id, std::functi
           done(std::move(result));
         }
       });
+}
+
+void ChatPresenter::StartQuoteReply(const std::string& quoted) {
+  quote_source_ = quoted;
+}
+
+std::string ChatPresenter::QuotePreview() const {
+  constexpr size_t kMaxPreviewChars = 120;
+  std::string preview;
+  size_t chars = 0;
+  for (const char ch : quote_source_) {
+    if ((static_cast<unsigned char>(ch) & 0xC0) != 0x80 && ++chars > kMaxPreviewChars) {
+      preview += "\xE2\x80\xA6";  // …
+      break;
+    }
+    preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
+  }
+  return preview;
+}
+
+Roe<void> ChatPresenter::ValidateDraft(const std::string& text) {
+  if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
+    return Error("chat.error.message_too_long");
+  }
+  return {};
+}
+
+std::string ChatPresenter::ComposeWithQuote(const std::string& reply) const {
+  return quote_source_.empty() ? reply : ComposeQuoteReply(reply, quote_source_);
+}
+
+Roe<void> ChatPresenter::SendToChat(const std::string& text) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  if (thread_id.empty()) {
+    return Error("No chat is open");
+  }
+  return facade_->RouteMessage(thread_id, text, std::nullopt);
 }
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {

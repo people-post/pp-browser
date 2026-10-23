@@ -1111,6 +1111,34 @@ def scenario_chat_message_actions(lab):
         raise ProbeError("bob: alice's delete-for-me took his copy")
 
 
+def scenario_chat_quote_reply(lab):
+    """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
+    Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("show_chat", thread=a_thread)
+    b.cmd("show_chat", thread=b_thread)
+    original = a.cmd("send", thread=a_thread, text="are we still on for friday?")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, original), 20, "bob: alice's message")
+    preview = b.cmd("quote", message=original)["preview"]
+    if preview != "are we still on for friday?":
+        raise ProbeError("bob: quote preview %r" % preview)
+    b.cmd("compose_send", text="yes, 7pm")
+
+    def quoted_reply():
+        for row in a.cmd("transcript", thread=a_thread)["rows"]:
+            text = row.get("text", "")
+            if "yes, 7pm" in text and "are we still on for friday?" in text:
+                return row
+        return None
+    wait_for(quoted_reply, 20, "alice: bob's quoted reply")
+    try:
+        b.cmd("compose_send", text="x" * 70000)
+        raise ProbeError("bob: an over-long draft was sent")
+    except ProbeError as e:
+        if "over-long" in str(e):
+            raise
+
+
 def live_streams(u):
     return {row["stream_id"]: row["rx_frames"] for row in u.state().get("streams", [])}
 
@@ -1435,6 +1463,7 @@ SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("chat_list_settings", scenario_chat_list_settings),
     ("chat_message_actions", scenario_chat_message_actions),
+    ("chat_quote_reply", scenario_chat_quote_reply),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

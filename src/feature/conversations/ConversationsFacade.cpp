@@ -462,12 +462,15 @@ void ConversationsFacade::SetOnActionMessage(std::function<void(const std::strin
 
 Roe<void> ConversationsFacade::RouteMessage(const std::string& thread_id, const std::string& text,
                                         std::optional<std::string> user_payload) {
+  if (!hub_.HasRouter()) {
+    return Error("Messaging not ready");
+  }
   return hub_.Router().Route(thread_id, text, std::move(user_payload));
 }
 
 bool ConversationsFacade::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
                                        const std::optional<std::string>& user_payload) {
-  return hub_.Router().ExpectsAgentWork(thread_id, text, user_payload);
+  return hub_.HasRouter() && hub_.Router().ExpectsAgentWork(thread_id, text, user_payload);
 }
 
 void ConversationsFacade::SetOnLocalAction(

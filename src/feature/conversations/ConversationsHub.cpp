@@ -1291,7 +1291,8 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
     BuildMessagingObjects();
   }
   RegisterContactEndpoints();
-  if (agent_inbound_.IsBound() && !router_) {
+  // The router exists with messaging, agent or not: a send to a person needs no agent.
+  if (!router_) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
   if (shutdown_requested_.load(std::memory_order_acquire)) {
@@ -1477,7 +1478,11 @@ Roe<void> ConversationsHub::Reinitialize(const AppConfig& config, const std::str
 
 void ConversationsHub::BindAgentInbound(AgentInboundPorts ports) {
   agent_inbound_ = std::move(ports);
-  if (mesh_messaging_ && agent_inbound_.IsBound()) {
+  // In place: the router keeps its callbacks, and an unbound agent (teardown, profile reset) leaves
+  // it no ports into the old agent session.
+  if (router_) {
+    router_->SetAgent(agent_inbound_);
+  } else if (mesh_messaging_) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
 }

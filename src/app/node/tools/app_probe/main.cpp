@@ -395,6 +395,29 @@ public:
       chats_.DeleteForEveryone(message, [id](Roe<void> done) {
         done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
       });
+    } else if (cmd == "quote") {
+      // "Reply" on a message of the open chat: the composer quotes it (ChatPresenter).
+      const std::string thread = facade_->ActiveThreadId();
+      auto found = facade_->GetMessage(thread, request->getString("message").value_or(""));
+      if (!found || !found->has_value()) {
+        ReplyError(id, "no such message in the open chat");
+        return;
+      }
+      chats_.StartQuoteReply((*found)->text);
+      Object out = Reply(id, true);
+      out.set("preview", chats_.QuotePreview());
+      Emit(out);
+    } else if (cmd == "compose_send") {
+      // The composer's Send in the open chat: validate, add the quote, route (as ChatController).
+      const std::string text = util::Trim(request->getString("text").value_or(""));
+      if (auto valid = ChatPresenter::ValidateDraft(text); !valid) {
+        ReplyError(id, valid.error().message);
+        return;
+      }
+      const std::string out_text = chats_.ComposeWithQuote(text);
+      chats_.CancelQuoteReply();
+      auto sent = chats_.SendToChat(out_text);
+      sent ? Emit(Reply(id, true)) : ReplyError(id, sent.error().message);
     } else if (cmd == "home") {
       // The Home tab: back to the chats list.
       chats_.ShowHome();

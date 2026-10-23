@@ -2306,8 +2306,8 @@ void ChatController::OnSendMessage() {
   };
 
   if (!text.empty()) {
-    if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
-      ShowToast(Tr("chat.error.message_too_long"));
+    if (auto valid = ChatPresenter::ValidateDraft(text); !valid) {
+      ShowToast(Tr(valid.error().message));
       return;
     }
   }
@@ -2326,13 +2326,9 @@ void ChatController::OnSendMessage() {
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
   close_keyboard();
-  if (!quote_reply_source_.empty()) {
-    const std::string quoted = ComposeQuoteReply(text, quote_reply_source_);
-    CancelQuoteReply();
-    SendUserText(quoted);
-    return;
-  }
-  SendUserText(text);
+  const std::string out = presenter_.ComposeWithQuote(text);
+  CancelQuoteReply();
+  SendUserText(out);
 }
 
 void ChatController::OnNewChat() {
@@ -2519,20 +2515,10 @@ void ChatController::StartQuoteReply(const std::string& text, const std::string&
   if (chat_.compose_disabled || text.empty()) {
     return;
   }
-  quote_reply_source_ = text;
+  presenter_.StartQuoteReply(text);
   // One line in the bar, however long or multi-line the message is.
-  constexpr size_t kMaxPreviewChars = 120;
-  std::string preview;
-  size_t chars = 0;
-  for (const char ch : text) {
-    if ((static_cast<unsigned char>(ch) & 0xC0) != 0x80 && ++chars > kMaxPreviewChars) {
-      preview += "\xE2\x80\xA6";
-      break;
-    }
-    preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
-  }
   chat_.quote_reply = true;
-  chat_.quote_reply_text = StructuredTextParser::EscapeText(preview).c_str(); // bound with data-rml
+  chat_.quote_reply_text = StructuredTextParser::EscapeText(presenter_.QuotePreview()).c_str(); // bound with data-rml
   DataModelHost::Instance().Dirty("chat", "quote_reply");
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
   if (!context_ || context_->GetNumDocuments() == 0) {
@@ -2556,10 +2542,10 @@ void ChatController::StartQuoteReply(const std::string& text, const std::string&
 }
 
 void ChatController::CancelQuoteReply() {
-  if (!chat_.quote_reply && quote_reply_source_.empty()) {
+  if (!chat_.quote_reply && !presenter_.QuotingReply()) {
     return;
   }
-  quote_reply_source_.clear();
+  presenter_.CancelQuoteReply();
   chat_.quote_reply = false;
   chat_.quote_reply_text = "";
   DataModelHost::Instance().Dirty("chat", "quote_reply");
