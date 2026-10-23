@@ -267,7 +267,7 @@ struct AmpBroadcastTransport::Impl {
     return Error("expected broadcast request op");
   }
 
-  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::LinkHandle link, const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
     }
@@ -276,8 +276,7 @@ struct AmpBroadcastTransport::Impl {
     // session → handler → holder → session leaks every served request (LeakSanitizer).
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
-    *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, policy,
+    *session_holder = links->BindChannelOnLink(link, channel_id, policy,
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
       auto session = std::exchange(*session_holder, nullptr);
       if (!session || !frame || stopped.load(std::memory_order_acquire)) {
@@ -336,10 +335,10 @@ void AmpBroadcastTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kRpcBroadcastProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
                                                 const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
-        impl->HandleInboundChannel(remote_peer_id, channel_id);
+        impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
 }
 

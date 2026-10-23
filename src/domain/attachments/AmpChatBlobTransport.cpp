@@ -148,7 +148,7 @@ struct AmpChatBlobTransport::Impl {
   }
 
 
-  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::LinkHandle link, const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
     }
@@ -158,8 +158,7 @@ struct AmpChatBlobTransport::Impl {
     // outbound-only after Close, with nothing inbound to restart the read clock.
     auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/false);
     policy.read_timeout = kChatBlobOperationTimeout;
-    *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, policy,
+    *session_holder = links->BindChannelOnLink(link, channel_id, policy,
         [this, session_holder, pending_push, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
@@ -307,10 +306,10 @@ void AmpChatBlobTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kChatBlobProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
                                                 const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
-        impl->HandleInboundChannel(remote_peer_id, channel_id);
+        impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
 }
 
