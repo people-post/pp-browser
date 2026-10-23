@@ -20,6 +20,8 @@
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/RmlMount.h"
+#include "gui/shell/ShellStatusbar.h"
+#include "gui/shell/ShellCallChromeRml.h"
 #include "gui/shell/ShellFeedback.h"
 #include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
@@ -86,7 +88,6 @@ constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 
 } // namespace
 
-
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
 }
@@ -106,7 +107,6 @@ void ShellHost::BindFlowCoordinator(FlowCoordinatorPorts ports) {
 void ShellHost::BindCallActions(CallActionsPorts ports) {
   call_actions_ = std::move(ports);
 }
-
 
 bool ShellHost::RegisterWindowModel(ui::Context* context) {
   return DataModelHost::Instance().Register(context, "window", [this](ui::DataModelConstructor& ctor) {
@@ -215,57 +215,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
-    ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
-    ctor.Bind("statusbar_brief_visible", &host.state_.statusbar_brief_visible);
-    ctor.Bind("statusbar_brief_ok", &host.state_.statusbar_brief_ok);
-    ctor.Bind("statusbar_brief_failed", &host.state_.statusbar_brief_failed);
-    ctor.Bind("statusbar_brief_unknown", &host.state_.statusbar_brief_unknown);
-    ctor.Bind("statusbar_direct_visible", &host.state_.statusbar_direct_visible);
-    ctor.Bind("statusbar_direct_ok", &host.state_.statusbar_direct_ok);
-    ctor.Bind("statusbar_direct_off", &host.state_.statusbar_direct_off);
-    ctor.Bind("statusbar_direct_error", &host.state_.statusbar_direct_error);
-    ctor.Bind("statusbar_direct_checking", &host.state_.statusbar_direct_checking);
-    ctor.Bind("statusbar_help_visible", &host.state_.statusbar_help_visible);
-    ctor.Bind("statusbar_inbound_visible", &host.state_.statusbar_inbound_visible);
-    ctor.Bind("statusbar_inbound_ok", &host.state_.statusbar_inbound_ok);
-    ctor.Bind("statusbar_inbound_off", &host.state_.statusbar_inbound_off);
-    ctor.Bind("statusbar_load_circuit_visible", &host.state_.statusbar_load_circuit_visible);
-    ctor.Bind("statusbar_load_media_visible", &host.state_.statusbar_load_media_visible);
-    ctor.Bind("statusbar_load_circuit_label", &host.state_.statusbar_load_circuit_label);
-    ctor.Bind("statusbar_load_media_label", &host.state_.statusbar_load_media_label);
-    ctor.Bind("statusbar_load_circuit_title", &host.state_.statusbar_load_circuit_title);
-    ctor.Bind("statusbar_load_media_title", &host.state_.statusbar_load_media_title);
-    ctor.Bind("statusbar_label", &host.state_.statusbar_label);
-    ctor.Bind("statusbar_label_warn", &host.state_.statusbar_label_warn);
-    ctor.Bind("statusbar_label_error", &host.state_.statusbar_label_error);
+    statusbar_.Bind(ctor);
     ctor.Bind("statusbar_activity", &host.state_.statusbar_activity);
-    ctor.Bind("statusbar_brief_title", &host.state_.statusbar_brief_title);
-    ctor.Bind("statusbar_direct_title", &host.state_.statusbar_direct_title);
-    ctor.Bind("statusbar_help_title", &host.state_.statusbar_help_title);
-    ctor.Bind("statusbar_inbound_title", &host.state_.statusbar_inbound_title);
-    ctor.Bind("statusbar_cluster_title", &host.state_.statusbar_cluster_title);
-    ctor.Bind("statusbar_popover_open", &host.state_.statusbar_popover_open);
-    ctor.Bind("statusbar_popover_brief_label", &host.state_.statusbar_popover_brief_label);
-    ctor.Bind("statusbar_popover_direct_label", &host.state_.statusbar_popover_direct_label);
-    ctor.Bind("statusbar_popover_reach_label", &host.state_.statusbar_popover_reach_label);
-    ctor.Bind("statusbar_popover_reach_summary", &host.state_.statusbar_popover_reach_summary);
-    ctor.Bind("statusbar_popover_help_visible", &host.state_.statusbar_popover_help_visible);
-    ctor.Bind("statusbar_popover_help_label", &host.state_.statusbar_popover_help_label);
-    ctor.Bind("statusbar_popover_upnp_visible", &host.state_.statusbar_popover_upnp_visible);
-    ctor.Bind("statusbar_popover_upnp_label", &host.state_.statusbar_popover_upnp_label);
-    ctor.Bind("statusbar_popover_error_visible", &host.state_.statusbar_popover_error_visible);
-    ctor.Bind("statusbar_popover_error", &host.state_.statusbar_popover_error);
-    ctor.Bind("statusbar_popover_load_visible", &host.state_.statusbar_popover_load_visible);
-    ctor.Bind("statusbar_popover_circuit_load", &host.state_.statusbar_popover_circuit_load);
-    ctor.Bind("statusbar_popover_media_sessions", &host.state_.statusbar_popover_media_sessions);
-    ctor.Bind("statusbar_popover_media_participants", &host.state_.statusbar_popover_media_participants);
-    ctor.Bind("statusbar_popover_network_visible", &host.state_.statusbar_popover_network_visible);
-    ctor.Bind("statusbar_popover_network_links", &host.state_.statusbar_popover_network_links);
-    ctor.Bind("statusbar_popover_network_parked", &host.state_.statusbar_popover_network_parked);
-    ctor.Bind("statusbar_popover_network_rate", &host.state_.statusbar_popover_network_rate);
-    ctor.Bind("statusbar_popover_network_rtt", &host.state_.statusbar_popover_network_rtt);
-    ctor.Bind("statusbar_popover_network_resend", &host.state_.statusbar_popover_network_resend);
-    ctor.Bind("statusbar_popover_relay_rate", &host.state_.statusbar_popover_relay_rate);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
@@ -328,10 +279,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("titlebar_minimize", DataEvent<>([this]() { TitlebarMinimize(); }));
     ctor.BindEventCallback("titlebar_toggle_maximize", DataEvent<>([this]() { TitlebarToggleMaximize(); }));
     ctor.BindEventCallback("titlebar_close", DataEvent<>([this]() { TitlebarClose(); }));
-    ctor.BindEventCallback("toggle_statusbar_popover", DataEvent<>([this]() { ToggleStatusbarPopover(); }));
-    ctor.BindEventCallback("dismiss_statusbar_popover", DataEvent<>([this]() { CloseStatusbarPopover(); }));
-    ctor.BindEventCallback("retest_statusbar_reachability", DataEvent<>([this]() { RetestStatusbarReachability(); }));
-    ctor.BindEventCallback("open_network_settings", DataEvent<>([this]() { OpenNetworkSettings(); }));
   });
 }
 
@@ -344,7 +291,7 @@ void ShellHost::Initialize(ui::Context* context) {
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
   ShellLayout::SyncNavTabString(state_);
-  RefreshStatusbarVisibility();
+  statusbar_.RefreshVisibility();
   last_synced_mode_ = LayoutMode::Expanded;
   next_pane_id_ = 1;
   next_overlay_id_ = 1;
@@ -742,7 +689,7 @@ bool ShellHost::HandleDismiss() {
     return true;
   }
   if (state_.statusbar_popover_open) {
-    CloseStatusbarPopover();
+    statusbar_.ClosePopover();
     return true;
   }
   if (state_.dialog.active) {
@@ -865,75 +812,12 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "startup_cover_visible");
 }
 
-void ShellHost::DirtyStatusChrome() {
-  DataModelHost::Instance().Dirty("window", "activity_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_failed");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_unknown");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_off");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_checking");
-  DataModelHost::Instance().Dirty("window", "statusbar_help_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_off");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_media_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_media_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_media_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_label_warn");
-  DataModelHost::Instance().Dirty("window", "statusbar_label_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_activity");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_help_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_cluster_title");
-  DirtyStatusbarPopover();
-  DataModelHost::Instance().Dirty("window", "titlebar_visible");
-  DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
-  DataModelHost::Instance().Dirty("window", "window_maximized");
-  DataModelHost::Instance().Dirty("window", "fonts_ready");
-}
-
-void ShellHost::DirtyStatusbarPopover() {
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_open");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_brief_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_direct_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_summary");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_help_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_help_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_upnp_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_upnp_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_error_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_load_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_circuit_load");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_media_sessions");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_media_participants");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_links");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_parked");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_rate");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_rtt");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_resend");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_relay_rate");
-}
-
 void ShellHost::DirtyWindow() {
   DirtyNavChrome();
   DirtyFeedback();
   DirtyPinGate();
   DirtyCallChrome();
-  DirtyStatusChrome();
+  statusbar_.Dirty();
 }
 
 void ShellHost::DirtyCallChrome() {
@@ -1055,7 +939,7 @@ void ShellHost::SetActivity(bool visible, const ui::String& message) {
   } else {
     state_.statusbar_activity = Tr("chat.thinking").c_str();
   }
-  DirtyStatusChrome();
+  statusbar_.Dirty();
 }
 
 void ShellHost::SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback) {
@@ -1343,341 +1227,6 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
 
-void ShellHost::RefreshStatusbarVisibility() {
-  const bool visible = Platform::IsDesktop() && state_.layout_mode == LayoutMode::Expanded;
-  if (visible == state_.statusbar_visible) {
-    return;
-  }
-  state_.statusbar_visible = visible;
-  if (!visible && state_.statusbar_popover_open) {
-    CloseStatusbarPopover();
-  }
-  DirtyStatusChrome();
-  ApplySafeAreaLayout();
-}
-
-void ShellHost::ClearStatusbarCluster() {
-  state_.statusbar_brief_visible = false;
-  state_.statusbar_brief_ok = false;
-  state_.statusbar_brief_failed = false;
-  state_.statusbar_brief_unknown = false;
-  state_.statusbar_direct_visible = false;
-  state_.statusbar_direct_ok = false;
-  state_.statusbar_direct_off = false;
-  state_.statusbar_direct_error = false;
-  state_.statusbar_direct_checking = false;
-  state_.statusbar_help_visible = false;
-  state_.statusbar_inbound_visible = false;
-  state_.statusbar_inbound_ok = false;
-  state_.statusbar_inbound_off = false;
-  state_.statusbar_load_circuit_visible = false;
-  state_.statusbar_load_media_visible = false;
-  state_.statusbar_load_circuit_label.clear();
-  state_.statusbar_load_media_label.clear();
-  state_.statusbar_load_circuit_title.clear();
-  state_.statusbar_load_media_title.clear();
-  state_.statusbar_label.clear();
-  state_.statusbar_label_warn = false;
-  state_.statusbar_label_error = false;
-  state_.statusbar_brief_title.clear();
-  state_.statusbar_direct_title.clear();
-  state_.statusbar_help_title.clear();
-  state_.statusbar_inbound_title.clear();
-  state_.statusbar_cluster_title.clear();
-}
-
-bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
-  const bool brief_visible = snap.brief != StatusbarClusterSnapshot::BriefState::Hidden;
-  const bool brief_ok = snap.brief == StatusbarClusterSnapshot::BriefState::Ok;
-  const bool brief_failed = snap.brief == StatusbarClusterSnapshot::BriefState::Failed;
-  const bool brief_unknown = snap.brief == StatusbarClusterSnapshot::BriefState::Unknown;
-
-  const bool direct_visible = snap.direct != StatusbarClusterSnapshot::DirectState::Hidden;
-  const bool direct_ok = snap.direct == StatusbarClusterSnapshot::DirectState::On;
-  const bool direct_off = snap.direct == StatusbarClusterSnapshot::DirectState::Off;
-  const bool direct_error = snap.direct == StatusbarClusterSnapshot::DirectState::Error;
-  const bool direct_checking = snap.direct == StatusbarClusterSnapshot::DirectState::Checking;
-
-  const bool inbound_visible = snap.inbound != StatusbarClusterSnapshot::InboundState::Hidden;
-  const bool inbound_ok = snap.inbound == StatusbarClusterSnapshot::InboundState::On;
-  const bool inbound_off = snap.inbound == StatusbarClusterSnapshot::InboundState::Off;
-
-  const ui::String label = snap.label.c_str();
-  const bool label_warn = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Warn;
-  const bool label_error = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Error;
-  const ui::String brief_title = snap.brief_title.c_str();
-  const ui::String direct_title = snap.direct_title.c_str();
-  const ui::String help_title = snap.help_title.c_str();
-  const ui::String inbound_title = snap.inbound_title.c_str();
-  const ui::String cluster_title = Tr("shell.statusbar.a11y.cluster").c_str();
-  const ui::String load_circuit = snap.load_circuit_label.c_str();
-  const ui::String load_media = snap.load_media_label.c_str();
-  const ui::String load_circuit_title = snap.load_circuit_title.c_str();
-  const ui::String load_media_title = snap.load_media_title.c_str();
-
-  if (state_.statusbar_brief_visible == brief_visible && state_.statusbar_brief_ok == brief_ok &&
-      state_.statusbar_brief_failed == brief_failed &&
-      state_.statusbar_brief_unknown == brief_unknown &&
-      state_.statusbar_direct_visible == direct_visible && state_.statusbar_direct_ok == direct_ok &&
-      state_.statusbar_direct_off == direct_off && state_.statusbar_direct_error == direct_error &&
-      state_.statusbar_direct_checking == direct_checking &&
-      state_.statusbar_help_visible == snap.help_visible &&
-      state_.statusbar_inbound_visible == inbound_visible &&
-      state_.statusbar_inbound_ok == inbound_ok && state_.statusbar_inbound_off == inbound_off &&
-      state_.statusbar_load_circuit_visible == snap.load_circuit_visible &&
-      state_.statusbar_load_media_visible == snap.load_media_visible &&
-      state_.statusbar_load_circuit_label == load_circuit &&
-      state_.statusbar_load_media_label == load_media &&
-      state_.statusbar_load_circuit_title == load_circuit_title &&
-      state_.statusbar_load_media_title == load_media_title &&
-      state_.statusbar_label == label && state_.statusbar_label_warn == label_warn &&
-      state_.statusbar_label_error == label_error && state_.statusbar_brief_title == brief_title &&
-      state_.statusbar_direct_title == direct_title && state_.statusbar_help_title == help_title &&
-      state_.statusbar_inbound_title == inbound_title &&
-      state_.statusbar_cluster_title == cluster_title) {
-    return false;
-  }
-
-  state_.statusbar_brief_visible = brief_visible;
-  state_.statusbar_brief_ok = brief_ok;
-  state_.statusbar_brief_failed = brief_failed;
-  state_.statusbar_brief_unknown = brief_unknown;
-  state_.statusbar_direct_visible = direct_visible;
-  state_.statusbar_direct_ok = direct_ok;
-  state_.statusbar_direct_off = direct_off;
-  state_.statusbar_direct_error = direct_error;
-  state_.statusbar_direct_checking = direct_checking;
-  state_.statusbar_help_visible = snap.help_visible;
-  state_.statusbar_inbound_visible = inbound_visible;
-  state_.statusbar_inbound_ok = inbound_ok;
-  state_.statusbar_inbound_off = inbound_off;
-  state_.statusbar_load_circuit_visible = snap.load_circuit_visible;
-  state_.statusbar_load_media_visible = snap.load_media_visible;
-  state_.statusbar_load_circuit_label = load_circuit;
-  state_.statusbar_load_media_label = load_media;
-  state_.statusbar_load_circuit_title = load_circuit_title;
-  state_.statusbar_load_media_title = load_media_title;
-  state_.statusbar_label = label;
-  state_.statusbar_label_warn = label_warn;
-  state_.statusbar_label_error = label_error;
-  state_.statusbar_brief_title = brief_title;
-  state_.statusbar_direct_title = direct_title;
-  state_.statusbar_help_title = help_title;
-  state_.statusbar_inbound_title = inbound_title;
-  state_.statusbar_cluster_title = cluster_title;
-  return true;
-}
-
-void ShellHost::ClearStatusbarPopover() {
-  state_.statusbar_popover_brief_label.clear();
-  state_.statusbar_popover_direct_label.clear();
-  state_.statusbar_popover_reach_label.clear();
-  state_.statusbar_popover_reach_summary.clear();
-  state_.statusbar_popover_help_visible = false;
-  state_.statusbar_popover_help_label.clear();
-  state_.statusbar_popover_upnp_visible = false;
-  state_.statusbar_popover_upnp_label.clear();
-  state_.statusbar_popover_error_visible = false;
-  state_.statusbar_popover_error.clear();
-  state_.statusbar_popover_load_visible = false;
-  state_.statusbar_popover_circuit_load.clear();
-  state_.statusbar_popover_media_sessions.clear();
-  state_.statusbar_popover_media_participants.clear();
-  state_.statusbar_popover_network_visible = false;
-  state_.statusbar_popover_network_links.clear();
-  state_.statusbar_popover_network_parked.clear();
-  state_.statusbar_popover_network_rate.clear();
-  state_.statusbar_popover_network_rtt.clear();
-  state_.statusbar_popover_network_resend.clear();
-  state_.statusbar_popover_relay_rate.clear();
-}
-
-bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
-  const ui::String brief = snap.brief_label.c_str();
-  const ui::String direct = snap.direct_label.c_str();
-  const ui::String reach = snap.reachability_status_label.c_str();
-  const ui::String summary = snap.reachability_summary.c_str();
-  const ui::String help = snap.help_label.c_str();
-  const ui::String upnp = snap.upnp_label.c_str();
-  const ui::String error = snap.last_error.c_str();
-  const bool error_visible = !snap.last_error.empty();
-  const ui::String circuit_load = snap.circuit_load_label.c_str();
-  const ui::String media_sessions = snap.media_sessions_label.c_str();
-  const ui::String media_participants = snap.media_participants_label.c_str();
-  const ui::String network_links = snap.network_links_label.c_str();
-  const ui::String network_parked = snap.network_parked_label.c_str();
-  const ui::String network_rate = snap.network_rate_label.c_str();
-  const ui::String network_rtt = snap.network_rtt_label.c_str();
-  const ui::String network_resend = snap.network_resend_label.c_str();
-  const ui::String relay_rate = snap.relay_rate_label.c_str();
-
-  if (state_.statusbar_popover_brief_label == brief && state_.statusbar_popover_direct_label == direct &&
-      state_.statusbar_popover_reach_label == reach && state_.statusbar_popover_reach_summary == summary &&
-      state_.statusbar_popover_help_visible == snap.help_visible &&
-      state_.statusbar_popover_help_label == help &&
-      state_.statusbar_popover_upnp_visible == snap.show_upnp &&
-      state_.statusbar_popover_upnp_label == upnp &&
-      state_.statusbar_popover_error_visible == error_visible &&
-      state_.statusbar_popover_error == error &&
-      state_.statusbar_popover_load_visible == snap.show_load &&
-      state_.statusbar_popover_circuit_load == circuit_load &&
-      state_.statusbar_popover_media_sessions == media_sessions &&
-      state_.statusbar_popover_media_participants == media_participants &&
-      state_.statusbar_popover_network_visible == snap.show_network &&
-      state_.statusbar_popover_network_links == network_links &&
-      state_.statusbar_popover_network_parked == network_parked &&
-      state_.statusbar_popover_network_rate == network_rate &&
-      state_.statusbar_popover_network_rtt == network_rtt &&
-      state_.statusbar_popover_network_resend == network_resend &&
-      state_.statusbar_popover_relay_rate == relay_rate) {
-    return false;
-  }
-
-  state_.statusbar_popover_brief_label = brief;
-  state_.statusbar_popover_direct_label = direct;
-  state_.statusbar_popover_reach_label = reach;
-  state_.statusbar_popover_reach_summary = summary;
-  state_.statusbar_popover_help_visible = snap.help_visible;
-  state_.statusbar_popover_help_label = help;
-  state_.statusbar_popover_upnp_visible = snap.show_upnp;
-  state_.statusbar_popover_upnp_label = upnp;
-  state_.statusbar_popover_error_visible = error_visible;
-  state_.statusbar_popover_error = error;
-  state_.statusbar_popover_load_visible = snap.show_load;
-  state_.statusbar_popover_circuit_load = circuit_load;
-  state_.statusbar_popover_media_sessions = media_sessions;
-  state_.statusbar_popover_media_participants = media_participants;
-  state_.statusbar_popover_network_visible = snap.show_network;
-  state_.statusbar_popover_network_links = network_links;
-  state_.statusbar_popover_network_parked = network_parked;
-  state_.statusbar_popover_network_rate = network_rate;
-  state_.statusbar_popover_network_rtt = network_rtt;
-  state_.statusbar_popover_network_resend = network_resend;
-  state_.statusbar_popover_relay_rate = relay_rate;
-  return true;
-}
-
-void ShellHost::RefreshStatusbarPopover() {
-  if (!state_.statusbar_popover_open) {
-    return;
-  }
-  StatusbarPopoverSnapshot snap;
-  if (shell_messaging_ports_.statusbar_popover) {
-    snap = BuildStatusbarPopoverSnapshot(shell_messaging_ports_.statusbar_popover());
-  }
-  if (ApplyStatusbarPopover(snap)) {
-    DirtyStatusbarPopover();
-  }
-}
-
-void ShellHost::OpenStatusbarPopover() {
-  if (!state_.statusbar_visible) {
-    return;
-  }
-  if (state_.statusbar_popover_open) {
-    return;
-  }
-  ContextMenuHost::Instance().Dismiss();
-  state_.statusbar_popover_open = true;
-  statusbar_popover_needs_position_ = true;
-  RefreshStatusbarPopover();
-  DirtyStatusbarPopover();
-}
-
-void ShellHost::CloseStatusbarPopover() {
-  if (!state_.statusbar_popover_open) {
-    return;
-  }
-  state_.statusbar_popover_open = false;
-  statusbar_popover_needs_position_ = false;
-  ClearStatusbarPopover();
-  DirtyStatusbarPopover();
-}
-
-void ShellHost::ToggleStatusbarPopover() {
-  if (state_.statusbar_popover_open) {
-    CloseStatusbarPopover();
-  } else {
-    OpenStatusbarPopover();
-  }
-}
-
-void ShellHost::PositionStatusbarPopover() {
-  if (!state_.statusbar_popover_open || !context_ || context_->GetNumDocuments() == 0) {
-    return;
-  }
-  ui::ElementDocument* doc = context_->GetDocument(0);
-  if (!doc) {
-    return;
-  }
-  ui::Element* cluster = doc->GetElementById("shell-statusbar-cluster");
-  ui::Element* panel = doc->GetElementById("shell-statusbar-popover");
-  if (!cluster || !panel) {
-    return;
-  }
-
-  doc->UpdateDocument();
-  const ui::Vector2i dims = context_->GetDimensions();
-  const ui::Vector2f cluster_offset = cluster->GetAbsoluteOffset(ui::BoxArea::Border);
-  const ui::Vector2f cluster_size = cluster->GetBox().GetSize(ui::BoxArea::Border);
-  const ui::Vector2f panel_size = panel->GetBox().GetSize(ui::BoxArea::Border);
-  if (panel_size.x <= 0.f || panel_size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
-    return;
-  }
-
-  constexpr float kMarginPx = 8.f;
-  constexpr float kGapPx = 8.f;
-  float left = cluster_offset.x;
-  float top = cluster_offset.y - panel_size.y - kGapPx;
-  const float max_left = static_cast<float>(dims.x) - panel_size.x - kMarginPx;
-  if (left > max_left) {
-    left = max_left;
-  }
-  if (left < kMarginPx) {
-    left = kMarginPx;
-  }
-  if (top < kMarginPx) {
-    top = cluster_offset.y + cluster_size.y + kGapPx;
-  }
-  const float max_top = static_cast<float>(dims.y) - panel_size.y - kMarginPx;
-  if (top > max_top) {
-    top = std::max(kMarginPx, max_top);
-  }
-
-  panel->SetProperty("left", (std::to_string(static_cast<int>(left)) + "px").c_str());
-  panel->SetProperty("top", (std::to_string(static_cast<int>(top)) + "px").c_str());
-  panel->SetProperty("bottom", "auto");
-  statusbar_popover_needs_position_ = false;
-}
-
-void ShellHost::RefreshStatusbarCluster() {
-  if (!state_.statusbar_visible) {
-    const bool had_cluster = state_.statusbar_brief_visible || state_.statusbar_direct_visible ||
-                             state_.statusbar_help_visible || state_.statusbar_inbound_visible ||
-                             state_.statusbar_load_circuit_visible ||
-                             state_.statusbar_load_media_visible || !state_.statusbar_label.empty();
-    if (had_cluster) {
-      ClearStatusbarCluster();
-      DirtyStatusChrome();
-    }
-    if (state_.statusbar_popover_open) {
-      CloseStatusbarPopover();
-    }
-    return;
-  }
-  StatusbarClusterSnapshot snap;
-  if (shell_messaging_ports_.statusbar_cluster) {
-    snap = BuildStatusbarClusterSnapshot(shell_messaging_ports_.statusbar_cluster());
-  }
-  if (ApplyStatusbarCluster(snap)) {
-    DirtyStatusChrome();
-  }
-  RefreshStatusbarPopover();
-  if (statusbar_popover_needs_position_) {
-    PositionStatusbarPopover();
-  }
-}
-
 bool ShellHost::ChromeFrostEnabled() const {
   return !state_.reduce_transparency && state_.compact_chrome_frost;
 }
@@ -1704,7 +1253,7 @@ void ShellHost::Apply(const ChromePrefs& prefs) {
 }
 
 void ShellHost::OnLayoutModeChanged() {
-  RefreshStatusbarVisibility();
+  statusbar_.RefreshVisibility();
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
     if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::CompactChatOverlay) {
@@ -2025,280 +1574,6 @@ std::string ShellHost::SerializePinGate() const {
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
       << "</button>";
   out << "</div></div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeCallRing() const {
-  // Mounted into #shell-call-ring-mount when active (RemountCallChrome). Presence = visibility;
-  // data-if alone was not flipping Display on idle Present (accept dialog stayed gone).
-  if (!state_.call_ring.active) {
-    return {};
-  }
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
-  out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-call-ring\" data-class-shell-call-ring--pulse=\"call_ring_pulse\">";
-  out << "<p class=\"text-sm shell-call-ring-eyebrow\">{{call_ring_eyebrow}}</p>";
-  out << "<h2 class=\"heading-2 shell-dialog-title\">{{call_ring_media}}</h2>";
-  out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\">{{call_ring_caller}}</p>";
-  out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
-  out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
-         ">{{call_ring_pricing_label}}</p>";
-  // WeChat-style round icon buttons with a short label underneath; long labels above
-  // (call_ring_decline_label / accept_label / voice_answer_label) stay bound for a11y.
-  out << "<div class=\"shell-call-ring-actions row\">";
-  out << "<div class=\"shell-call-ring-action\">";
-  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-decline\" type=\"button\" "
-         "data-event-click=\"call_decline()\">";
-  out << "<svg src=\"../icons/phone-hangup.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\">" << Tr("call.ring.short.decline") << "</p>";
-  out << "</div>";
-  out << "<div class=\"shell-call-ring-action\" data-if=\"call_ring_video_allowed\">";
-  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-voice\" type=\"button\" "
-         "data-event-click=\"call_accept_voice()\">";
-  out << "<svg src=\"../icons/phone.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\">{{call_ring_voice_short}}</p>";
-  out << "</div>";
-  out << "<div class=\"shell-call-ring-action\">";
-  out << "<button class=\"shell-call-ring-action-circle shell-call-accept\" "
-         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" type=\"button\" "
-         "data-event-click=\"call_accept()\">";
-  out << "<svg width=\"26\" height=\"26\" crop-to-content=\"true\" "
-         "data-attr-src=\"call_ring_video_allowed ? '../icons/video.svg' : '../icons/phone.svg'\"></svg>";
-  out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\">{{call_ring_accept_short}}</p>";
-  out << "</div>";
-  out << "</div>";
-  out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
-  out << "<button class=\"btn btn-secondary\" type=\"button\" "
-         "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
-         "data-event-click=\"call_accept_charge()\">{{call_ring_accept_charge_label}}</button>";
-  out << "<p class=\"text-xs shell-dialog-message\" data-if=\"!call_ring_accept_charge_enabled\" "
-         ">{{call_ring_accept_charge_hint}}</p>";
-  out << "</div></div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeCallInProgress() const {
-  // V031 modes: Expanded (top bar), Immersive (people grid), Minimized (corner chip).
-  // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyCallChrome-only.
-  if (!state_.call_in_progress.active) {
-    return {};
-  }
-  auto append_quality_chip = [](std::ostringstream& out, const char* extra_class) {
-    out << "<button class=\"shell-call-quality " << extra_class
-        << "\" type=\"button\" data-event-click=\"call_details()\" "
-           "data-class-shell-call-quality--ok=\"call_in_progress_quality_ok\" "
-           "data-class-shell-call-quality--warn=\"call_in_progress_quality_warn\" "
-           "data-class-shell-call-quality--error=\"call_in_progress_quality_error\">";
-    out << "<div class=\"shell-call-quality-bars row\">";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--1\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 1\"></div>";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--2\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 2\"></div>";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--3\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 3\"></div>";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--4\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 4\"></div>";
-    out << "</div>";
-    out << "<span class=\"text-xs shell-call-quality-label\" data-if=\"call_in_progress_quality_label != ''\" "
-           ">{{call_in_progress_quality_label}}</span>";
-    out << "</button>";
-  };
-
-  auto append_core_actions = [](std::ostringstream& out) {
-    out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
-           "data-event-click=\"call_retry()\">";
-    out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
-           "data-event-click=\"call_invite()\">";
-    out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
-           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-    out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-    out << "</button>";
-    out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
-           "data-if=\"call_in_progress_show_speaker\" "
-           "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-    out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-camera\" type=\"button\" data-if=\"call_in_progress_show_camera\" "
-           "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
-    out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
-    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-  };
-
-  const auto& call = state_.call_in_progress;
-  std::ostringstream out;
-
-  if (call.mode == CallChromeMode::Minimized) {
-    const char* corner_class = "shell-call-minimized-chip--tr";
-    switch (call.minimized_corner) {
-    case 1:
-      corner_class = "shell-call-minimized-chip--tl";
-      break;
-    case 2:
-      corner_class = "shell-call-minimized-chip--br";
-      break;
-    case 3:
-      corner_class = "shell-call-minimized-chip--bl";
-      break;
-    default:
-      break;
-    }
-    out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
-           "data-model=\"window\">";
-    out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row " << corner_class
-        << "\">";
-    out << "<div class=\"shell-call-minimized-main\">";
-    out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
-    out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";
-    out << "</div>";
-    append_quality_chip(out, "shell-call-quality--compact");
-    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
-           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-    out << "<svg id=\"shell-call-mute-icon\" width=\"16\" height=\"16\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-leave shell-call-leave--compact\" type=\"button\" "
-           "data-event-click=\"call_leave()\">";
-    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "</div></div>";
-    return out.str();
-  }
-
-  if (call.mode == CallChromeMode::Immersive) {
-    out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-immersive\" "
-           "data-model=\"window\">";
-    out << "<div class=\"shell-call-immersive\">";
-    out << "<div class=\"shell-call-immersive-header\">";
-    out << "<div class=\"shell-call-immersive-grabber\"></div>";
-    out << "<div class=\"shell-call-bar-row row\">";
-    out << "<div class=\"shell-call-bar-main\">";
-    out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
-    out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
-    out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
-           ">{{call_in_progress_debug_subtitle}}</p>";
-    out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
-           ">{{call_in_progress_quality_hint}}</p>";
-    out << "</div>";
-    append_quality_chip(out, "");
-    out << "<button class=\"shell-call-expand\" type=\"button\" data-event-click=\"call_expand()\">";
-    out << "<svg src=\"../icons/chevron-down.svg\" width=\"18\" height=\"18\"></svg>";
-    out << "</button>";
-    out << "</div></div>";
-    out << "<div class=\"shell-call-immersive-roster\">";
-    out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-peer-card\">";
-    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" "
-           "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
-    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"peer\" data-attr-stream=\"p.stream_id\" "
-           "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
-    out << "<div class=\"shell-call-peer-avatar\" "
-           "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
-           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\" "
-           "data-class-avatar-tone-0=\"p.avatar_tone == 0\" "
-           "data-class-avatar-tone-1=\"p.avatar_tone == 1\" "
-           "data-class-avatar-tone-2=\"p.avatar_tone == 2\" "
-           "data-class-avatar-tone-3=\"p.avatar_tone == 3\" "
-           "data-class-avatar-tone-4=\"p.avatar_tone == 4\" "
-           "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
-           "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
-           "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
-           "<p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
-    out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
-           "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
-           "data-attr-src=\"p.avatar_src\"/>";
-    out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
-    out << "<p class=\"text-xs shell-call-peer-stall\" "
-           "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
-           ">{{call_in_progress_remote_placeholder}}</p>";
-    out << "<div class=\"shell-call-peer-badges row\">";
-    out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"14\" height=\"14\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</div></div>";
-    // 1:1 / empty roster: still show a single presence card from title/peer.
-    out << "<div class=\"shell-call-peer-card\" data-if=\"call_in_progress_participant_count == 0\">";
-    out << "<div class=\"shell-call-peer-avatar\"></div>";
-    out << "<p class=\"text-sm shell-call-peer-name\">{{call_in_progress_peer_label}}</p>";
-    out << "</div>";
-    out << "</div>";
-    out << "<div class=\"shell-call-immersive-controls\">";
-    out << "<div class=\"shell-call-bar-actions row\">";
-    append_core_actions(out);
-    out << "</div></div></div></div>";
-    return out.str();
-  }
-
-  // Expanded (default): top stage + stacked bar.
-  out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-bar\" data-model=\"window\">";
-  out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
-  out << "<call-video-tile class=\"shell-call-remote\" id=\"call-remote-tile\" tile=\"remote\">";
-  out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
-         ">{{call_in_progress_remote_placeholder}}</p>";
-  out << "</call-video-tile>";
-  out << "<call-video-tile class=\"shell-call-pip\" id=\"call-local-tile\" tile=\"local\" "
-         "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
-  out << "</div>";
-  out << "<div class=\"shell-call-bar\">";
-  out << "<div class=\"shell-call-bar-row row\">";
-  out << "<div class=\"shell-call-bar-main\">";
-  out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
-  out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
-  out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
-         ">{{call_in_progress_debug_subtitle}}</p>";
-  out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
-         ">{{call_in_progress_quality_hint}}</p>";
-  out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
-         ">{{call_in_progress_status_hint}}</p>";
-  out << "</div>";
-  append_quality_chip(out, "");
-  out << "<div class=\"shell-call-bar-actions row\">";
-  append_core_actions(out);
-  out << "</div></div>";
-  out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
-  out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
-  out << "<span class=\"text-xs shell-call-roster-name\">{{p.name}}</span>";
-  out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"12\" height=\"12\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"12\" height=\"12\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "</div></div>";
-  out << "<div class=\"shell-call-bar-meters row\" data-if=\"!call_in_progress_show_roster\">";
-  out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
-  out << "<span class=\"text-xs shell-call-meter-label\">You</span>";
-  out << "<div class=\"shell-call-meter-track row\">";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 1\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 2\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 3\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 4\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 5\"></div>";
-  out << "</div>";
-  out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_mic_hint}}</span>";
-  out << "</div>";
-  out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
-  out << "<span class=\"text-xs shell-call-meter-label\">{{call_in_progress_peer_label}}</span>";
-  out << "<div class=\"shell-call-meter-track row\">";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 1\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 2\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 3\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 4\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 5\"></div>";
-  out << "</div>";
-  out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_peer_hint}}</span>";
-  out << "</div></div></div></div>";
   return out.str();
 }
 
@@ -2804,10 +2079,10 @@ void ShellHost::RemountCallChromeNow() {
   }
   DetachCallChromeGesture();
   if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
-    RmlMount::MountInner(ring_mount, SerializeCallRing());
+    RmlMount::MountInner(ring_mount, CallRingRml(state_));
   }
   if (ui::Element* bar_mount = doc->GetElementById("shell-call-in-progress-mount")) {
-    RmlMount::MountInner(bar_mount, SerializeCallInProgress());
+    RmlMount::MountInner(bar_mount, CallInProgressRml(state_));
   }
   DirtyCallChrome();
   AttachCallChromeGesture();
@@ -2957,13 +2232,13 @@ void ShellHost::Update(ui::Context* context) {
     RestoreFocus();
     return;
   }
-  RefreshStatusbarCluster();
+  statusbar_.RefreshCluster();
   if (state_.titlebar_visible) {
     const bool maximized = DesktopWindowChrome::IsMaximized();
     if (maximized != state_.window_maximized) {
       state_.window_maximized = maximized;
       DesktopWindowChrome::RefreshAppearance();
-      DirtyStatusChrome();
+      statusbar_.Dirty();
     }
   }
 }
@@ -3171,26 +2446,11 @@ void ShellHost::TitlebarMinimize() {
 void ShellHost::TitlebarToggleMaximize() {
   DesktopWindowChrome::ToggleMaximize();
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
-  DirtyStatusChrome();
+  statusbar_.Dirty();
 }
 
 void ShellHost::TitlebarClose() {
   DesktopWindowChrome::Close();
-}
-
-void ShellHost::RetestStatusbarReachability() {
-  if (shell_messaging_ports_.retest_reachability) {
-    shell_messaging_ports_.retest_reachability();
-  }
-  RefreshStatusbarPopover();
-  RefreshStatusbarCluster();
-}
-
-void ShellHost::OpenNetworkSettings() {
-  CloseStatusbarPopover();
-  if (shell_messaging_ports_.open_network_settings) {
-    shell_messaging_ports_.open_network_settings();
-  }
 }
 
 } // namespace pbr

@@ -3,6 +3,7 @@
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
+#include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/CallChromeSync.h"
@@ -77,9 +78,6 @@ public:
 
 
   void BindShellMessaging(MessagingShellPorts ports);
-  void OpenStatusbarPopover();
-  void CloseStatusbarPopover();
-  void ToggleStatusbarPopover();
   void BindPinGateActions(PinGateActionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
@@ -150,7 +148,6 @@ public:
   /** PIN gate + unlock_in_progress binding keys. */
   void DirtyPinGate();
   /** Activity / statusbar / titlebar / fonts_ready binding keys. */
-  void DirtyStatusChrome();
   /** Call ring / in-progress window model keys (not nav/dialog/pin). */
   void DirtyCallChrome();
   /**
@@ -246,8 +243,6 @@ private:
   void TitlebarMinimize();
   void TitlebarToggleMaximize();
   void TitlebarClose();
-  void RetestStatusbarReachability();
-  void OpenNetworkSettings();
 
 
   ui::Element* ShellRoot() const;
@@ -261,8 +256,6 @@ private:
   std::string SerializeBottomChrome() const;
   std::string SerializeDialog() const;
   std::string SerializePinGate() const;
-  std::string SerializeCallRing() const;
-  std::string SerializeCallInProgress() const;
   std::string SerializeTransientLayer() const;
   const char* NavContentKey() const;
   void MountPaneBodies();
@@ -300,15 +293,6 @@ private:
   void BeginAnimatedDismiss(DismissTarget target);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
-  void RefreshStatusbarVisibility();
-  void RefreshStatusbarCluster();
-  void ClearStatusbarCluster();
-  bool ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap);
-  void ClearStatusbarPopover();
-  bool ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap);
-  void RefreshStatusbarPopover();
-  void PositionStatusbarPopover();
-  void DirtyStatusbarPopover();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;
@@ -375,7 +359,7 @@ private:
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
-  bool statusbar_popover_needs_position_ = false;
+  ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};
   PinGateActionPorts pin_gate_actions_;
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
