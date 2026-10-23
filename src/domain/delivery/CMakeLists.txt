@@ -9,6 +9,7 @@ pp_browser_add_domain_library(pp_domain_delivery
     AmpChatHistoryTransport.cpp
     PeerRouteBook.cpp
     PeerTransports.cpp
+    DeliveryOutbox.cpp
   PUBLIC_LIBS
     pp_domain_peers
     pp_domain_attachments

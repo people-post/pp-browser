@@ -24,6 +24,7 @@
 #include "common/chat/SystemControl.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
 #include "domain/delivery/PeerRouteBook.h"
+#include "domain/delivery/DeliveryOutbox.h"
 #include "domain/delivery/PeerTransports.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
@@ -234,12 +235,6 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
-  struct PendingRelaySend {
-    RelayEnvelope envelope;
-    std::string message_id;
-    std::string thread_id;
-    int attempt_count = 0;
-  };
 
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The direct-chat transport is attached and reaches `peer_key` now. */
@@ -256,7 +251,6 @@ private:
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
   uint64_t NextControlOrderKey();
-  void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
@@ -307,6 +301,8 @@ private:
   /** The mesh transports (direct chat, history, blobs) and the peers' dial endpoints; after the
    *  pipeline their inbound handler feeds, so they go first. */
   PeerTransports transports_;
+  /** Amp-or-relay sends and their retries; outcomes come back to ApplySend* on a worker. */
+  DeliveryOutbox outbox_;
   std::unique_ptr<ChatSyncWorkflow> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
@@ -317,8 +313,6 @@ private:
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
-  mutable std::mutex retry_mutex_;
-  std::vector<PendingRelaySend> retry_queue_;
   std::atomic<uint64_t> control_order_key_{0};
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
