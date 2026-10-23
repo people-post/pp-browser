@@ -24,6 +24,7 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.PixelCopy;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
@@ -299,6 +300,24 @@ public class MainActivity extends SDLActivity {
             keyboardBottom = immHeight;
         }
         return keyboardBottom;
+    }
+
+    /**
+     * SDL's text input is up and the input method takes it — SDL 3.2's isScreenKeyboardShown(),
+     * which SDL 3.4 dropped (its own keyboard tracking runs on Android 11+ only). SDL hides its edit
+     * by sizing it 0x0, not by visibility.
+     */
+    private boolean isScreenKeyboardShown() {
+        if (mTextEdit == null || mTextEdit.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        final ViewGroup.LayoutParams params = mTextEdit.getLayoutParams();
+        if (params == null || (params.width == 0 && params.height == 0)) {
+            return false;
+        }
+        final android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        return imm != null && imm.isAcceptingText();
     }
 
     private int probeImmKeyboardHeightPx() {
@@ -759,7 +778,7 @@ public class MainActivity extends SDLActivity {
 
     private void captureRecentsThumbnail() {
         final SDLSurface surface = mSurface;
-        if (surface == null || !surface.mIsSurfaceReady) {
+        if (surface == null || !surface.getHolder().getSurface().isValid()) {
             Log.v(TAG, "Recents thumbnail: surface not ready");
             return;
         }

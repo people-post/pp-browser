@@ -94,3 +94,34 @@ endfunction()
 
 unset(_pp_ui_sibling)
 unset(_pp_ui_src)
+
+# Android: SDL's Java glue (android/app/src/main/java/org/libsdl/app/, a copy of SDL's
+# android-project sources with pp-browser's few edits) must be the native SDL's version. SDL
+# registers its JNI methods when the library loads, before its own runtime version check, so a
+# mismatch aborts every launch (SDL 3.4's nativeSetupJNI()V against 3.2's ()I) — fail here instead.
+if(ANDROID)
+  set(_pp_sdl_version_h "${PP_LIB_UI_ROOT}/third_party/sdl3/include/SDL3/SDL_version.h")
+  set(_pp_sdl_activity "${CMAKE_SOURCE_DIR}/android/app/src/main/java/org/libsdl/app/SDLActivity.java")
+  if(NOT EXISTS "${_pp_sdl_version_h}" OR NOT EXISTS "${_pp_sdl_activity}")
+    message(FATAL_ERROR "pp-browser: cannot compare SDL's Java glue with the native SDL "
+                        "(${_pp_sdl_version_h}, ${_pp_sdl_activity})")
+  endif()
+  file(STRINGS "${_pp_sdl_version_h}" _pp_sdl_native REGEX "^#define SDL_(MAJOR|MINOR|MICRO)_VERSION +[0-9]+")
+  string(REGEX REPLACE ".*SDL_MAJOR_VERSION +([0-9]+).*SDL_MINOR_VERSION +([0-9]+).*SDL_MICRO_VERSION +([0-9]+).*"
+         "\\1.\\2.\\3" _pp_sdl_native "${_pp_sdl_native}")
+  file(STRINGS "${_pp_sdl_activity}" _pp_sdl_java REGEX "SDL_(MAJOR|MINOR|MICRO)_VERSION = [0-9]+;")
+  string(REGEX REPLACE ".*SDL_MAJOR_VERSION = ([0-9]+).*SDL_MINOR_VERSION = ([0-9]+).*SDL_MICRO_VERSION = ([0-9]+).*"
+         "\\1.\\2.\\3" _pp_sdl_java "${_pp_sdl_java}")
+  if(NOT _pp_sdl_java STREQUAL _pp_sdl_native)
+    message(FATAL_ERROR
+      "pp-browser: SDL's Java glue is ${_pp_sdl_java} but pp-cpp-ui's SDL is ${_pp_sdl_native}: the app "
+      "would abort at launch. Copy pp-cpp-ui's third_party/sdl3/android-project/app/src/main/java/"
+      "org/libsdl/app/ into android/app/src/main/java/org/libsdl/app/ and re-apply the edits marked "
+      "\"pp-browser:\" (SDLSurface: the keyboard in the safe-area insets).")
+  endif()
+  message(STATUS "pp-browser: SDL Java glue matches the native SDL (${_pp_sdl_native})")
+  unset(_pp_sdl_version_h)
+  unset(_pp_sdl_activity)
+  unset(_pp_sdl_native)
+  unset(_pp_sdl_java)
+endif()
