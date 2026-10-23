@@ -38,7 +38,7 @@ public:
   void BindCallPorts(CallFunctionalPorts ports);
   /** Open people-picker flows without PeoplePickerController::Instance(). Clear via BindPeoplePickerNotify({}). */
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
-  /** Call ring / in-call chrome without ShellHost::Instance(). Clear via BindShellCallChrome({}). */
+  /** Call ring / in-call chrome. Clear via BindShellCallChrome({}). */
   void BindShellCallChrome(ShellCallChromePorts ports);
   /**
    * Refresh chat peer-link / "In call" header when call chrome changes.

@@ -241,7 +241,6 @@ Application::Application() {
   input_ = std::make_unique<InputCoordinator>();
   flow_ = std::make_unique<FlowCoordinator>();
   shell_ = std::make_unique<ShellHost>();
-  ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
@@ -1560,10 +1559,10 @@ void Application::Run() {
     if (!ctx)
       return;
     Backend::SyncContext(ctx);
-    ShellHost::Instance().Update(ctx);
+    shell_->Update(ctx);
     ctx->Update();
     chat_->AfterLayout();
-    ShellHost::Instance().NotifyFrameEnd(ctx);
+    shell_->NotifyFrameEnd(ctx);
     if (!Backend::CanRender())
       return;
     Backend::BeginFrame();
@@ -1767,7 +1766,6 @@ void Application::Shutdown() {
   IncomingLink::SetHandler({});
   call_ui_.reset();
   shell_->BindShellMessaging({});
-  ShellHost::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
   g_input_coordinator = nullptr;

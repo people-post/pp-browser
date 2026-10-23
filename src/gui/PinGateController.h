@@ -18,7 +18,7 @@ public:
   PinGateController() = default;
 
   void BindGateComplete(UnlockGateCompletePorts ports);
-  /** Shell PIN chrome without ShellHost::Instance(). Clear via BindShellPinGate({}). */
+  /** Shell PIN chrome. Clear via BindShellPinGate({}). */
   void BindShellPinGate(ShellPinGatePorts ports);
 
   /** Ports filled onto ProfileUnlockPorts::ui by Application. */

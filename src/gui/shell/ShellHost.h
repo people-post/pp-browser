@@ -75,10 +75,6 @@ public:
 
   ShellHost();
 
-  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
-  static void InstallInstance(ShellHost& host);
-  static void ClearInstance();
-  static ShellHost& Instance();
 
   void BindShellMessaging(MessagingShellPorts ports);
   void OpenStatusbarPopover();
@@ -215,56 +211,44 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
-  static void ToggleSidebarCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SelectNavTabCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CompactChatBackCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenAccountSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseAccountSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PopTransientCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseLayerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DismissBannerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DialogOkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DialogCancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DialogToggleCheckboxCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateSubmitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateCancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateSetPinCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateUseDefaultCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateIdentityNewCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateIdentityLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateIdentityRestoreCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallAcceptCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallAcceptVoiceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallAcceptChargeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallDeclineCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallLeaveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallRetryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallMuteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallCameraCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallSpeakerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallInviteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallMinimizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallExpandCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallImmersiveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallRestoreCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallDetailsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TitlebarMinimizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TitlebarToggleMaximizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TitlebarCloseCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleStatusbarPopoverCallback(ui::DataModelHandle model, ui::Event& ev,
-                                             const ui::VariantList& args);
-  static void DismissStatusbarPopoverCallback(ui::DataModelHandle model, ui::Event& ev,
-                                              const ui::VariantList& args);
-  static void RetestStatusbarReachabilityCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                  const ui::VariantList& args);
-  static void OpenNetworkSettingsCallback(ui::DataModelHandle model, ui::Event& ev,
-                                          const ui::VariantList& args);
 
   bool RegisterWindowModel(ui::Context* context);
 
 private:
+  // Data-model events with more to them than one call.
+  void OnNavTabClicked(const std::string& tab_name);
+  void DismissBanner();
+  void DialogOk();
+  void DialogCancel();
+  void DialogToggleCheckbox();
+  void PinGateSubmit();
+  void PinGateCancel();
+  void PinGateSetPin();
+  void PinGateUseDefault();
+  void PinGateIdentityNew();
+  void PinGateIdentityLink();
+  void PinGateIdentityRestore();
+  void CallAccept();
+  void CallAcceptVoice();
+  void CallAcceptCharge();
+  void CallDecline();
+  void CallLeave();
+  void CallRetry();
+  void CallMute();
+  void CallCamera();
+  void CallSpeaker();
+  void CallInvite();
+  void CallMinimize();
+  void CallExpand();
+  void CallImmersive();
+  void CallRestore();
+  void CallDetails();
+  void TitlebarMinimize();
+  void TitlebarToggleMaximize();
+  void TitlebarClose();
+  void RetestStatusbarReachability();
+  void OpenNetworkSettings();
+
 
   ui::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
@@ -396,7 +380,6 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
 
-  static ShellHost* installed_instance_;
 };
 
 } // namespace pbr

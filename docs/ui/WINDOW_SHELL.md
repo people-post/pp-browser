@@ -218,23 +218,24 @@ On compact, the composer appears on the Home landing (centered) or inside the Se
 ## C++ usage
 
 ```cpp
-ShellHost::Instance().RegisterPane({
+// Application owns the one ShellHost (`shell_`); presenters reach it only through shell ports.
+shell.RegisterPane({
     .key = "home",
     .rml_path = "views/home.rml",
     .role = PaneRole::Primary,
 });
-ShellHost::Instance().RegisterPane({
+shell.RegisterPane({
     .key = "chat",
     .rml_path = "views/chat.rml",
     .role = PaneRole::Primary,
     .provides_composer = true,
 });
-ShellHost::Instance().SelectNavTab(NavTab::Home);
-ShellHost::Instance().SetPrimaryPane("home");
-ShellHost::Instance().SyncLayout();
+shell.SelectNavTab(NavTab::Home);
+shell.SetPrimaryPane("home");
+shell.SyncLayout();
 
-ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Offline");
-ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Title", "Message", [](bool ok) { ... });
+ShellFeedback::ShowBanner(shell.State(), "Offline");
+ShellFeedback::ShowConfirm(shell.State(), "Title", "Message", [](bool ok) { ... });
 ```
 
 Call `ShellHost::Update(context)` each frame (resize, toast expiry).

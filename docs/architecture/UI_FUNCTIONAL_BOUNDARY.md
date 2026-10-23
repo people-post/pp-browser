@@ -192,7 +192,7 @@ struct MessagingActions {
 | **UI chrome state** | UI system | nav tab, pane visibility, overlay stack, pin overlay layout | Presenters / shell only |
 | **View projection** | Presenter | RmlUi-bound fields derived from functional + chrome | Presenter writes binding; sources are read-only snapshots |
 
-**Anti-pattern:** Presenters or functional code reaching into global shell mutable state via `ShellHost::Instance()`, or chrome ports that return mutable references into `ShellHost::State()`.
+**Anti-pattern:** Presenters or functional code reaching into the shell's mutable state (there is no global `ShellHost`; presenters get ports), or chrome ports that return mutable references into `ShellHost::State()`.
 
 **Call / PIN chrome (apply-only):** `CallController` and `PinGateController` own local chrome snapshots (`ring_` / `in_call_`, `pin_state_`) and push them through `apply_snapshot` / `apply_pin_gate`. ShellHost copies into `State()` then remounts/dirties — ports do not hand out `CallRingState&` / `PinGateState&`.
 
@@ -275,7 +275,7 @@ ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.
 
 The handler runs only when the event carries its arguments with their types. The captured presenter must
 outlive the context: `Application` removes the context (and with it every model and handler) at shutdown,
-before it frees the presenters. `ChatController` and `SettingsController` bind this way; the other
+before it frees the presenters. `ChatController`, `SettingsController` and `ShellHost` bind this way; the other
 presenters still carry static adapters behind an `InstallInstance` / `Instance()` shim, which goes as they
 move over.
 
@@ -311,7 +311,7 @@ RmlUi model registration stays in the presenter (or a dedicated binding helper).
 
 ## Testing implications
 
-- **Functional tests:** Drive facades and ports without RmlUi or `ShellHost::Instance()`.
+- **Functional tests:** Drive facades and ports without RmlUi or a `ShellHost`.
 - **UI tests:** Mock facades; verify presenter projects snapshots and dispatches actions.
 - **Headless / deferred startup:** Already supported for vault gate and client compat — boundary makes this the norm.
 

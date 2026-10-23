@@ -17,7 +17,7 @@ public:
   ClientCompatController();
 
   void BindCompatPorts(MessagingCompatPorts ports);
-  /** Dialog / banner feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  /** Dialog / banner feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Publish app Support discovery after each resolved document. Clear via BindSupportDiscovery({}). */
   void BindSupportDiscovery(SupportDiscoveryPorts ports);

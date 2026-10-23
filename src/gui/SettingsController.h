@@ -59,9 +59,9 @@ public:
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
-  /** Shell layout / navigation without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
-  /** Toast / dialog feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();

@@ -1,6 +1,8 @@
 #include <stdexcept>
 #include <utility>
 #include "gui/shell/ShellHost.h"
+
+#include "lib/ui/DataEvent.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include "common/Metrics.h"
@@ -84,25 +86,9 @@ constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 
 } // namespace
 
-ShellHost* ShellHost::installed_instance_ = nullptr;
 
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
-}
-
-void ShellHost::InstallInstance(ShellHost& host) {
-  installed_instance_ = &host;
-}
-
-void ShellHost::ClearInstance() {
-  installed_instance_ = nullptr;
-}
-
-ShellHost& ShellHost::Instance() {
-  if (!installed_instance_) {
-    throw std::runtime_error("ShellHost not installed");
-  }
-  return *installed_instance_;
 }
 
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
@@ -303,48 +289,49 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("nav_sessions_unread_display", &host.state_.nav_badges.sessions_unread_display);
     ctor.Bind("nav_contacts_unread_display", &host.state_.nav_badges.contacts_unread_display);
 
-    ctor.BindEventCallback("toggle_sidebar", &ShellHost::ToggleSidebarCallback);
-    ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
-    ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
-    ctor.BindEventCallback("select_nav_tab", &ShellHost::SelectNavTabCallback);
-    ctor.BindEventCallback("compact_chat_back", &ShellHost::CompactChatBackCallback);
-    ctor.BindEventCallback("open_account_sheet", &ShellHost::OpenAccountSheetCallback);
-    ctor.BindEventCallback("close_account_sheet", &ShellHost::CloseAccountSheetCallback);
-    ctor.BindEventCallback("transient_back", &ShellHost::PopTransientCallback);
-    ctor.BindEventCallback("close_layer", &ShellHost::CloseLayerCallback);
-    ctor.BindEventCallback("dismiss_banner", &ShellHost::DismissBannerCallback);
-    ctor.BindEventCallback("dialog_ok", &ShellHost::DialogOkCallback);
-    ctor.BindEventCallback("dialog_cancel", &ShellHost::DialogCancelCallback);
-    ctor.BindEventCallback("dialog_toggle_checkbox", &ShellHost::DialogToggleCheckboxCallback);
-    ctor.BindEventCallback("pin_gate_submit", &ShellHost::PinGateSubmitCallback);
-    ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
-    ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
-    ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
-    ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
-    ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
-    ctor.BindEventCallback("pin_gate_identity_restore", &ShellHost::PinGateIdentityRestoreCallback);
-    ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
-    ctor.BindEventCallback("call_accept_voice", &ShellHost::CallAcceptVoiceCallback);
-    ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
-    ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
-    ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
-    ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
-    ctor.BindEventCallback("call_mute", &ShellHost::CallMuteCallback);
-    ctor.BindEventCallback("call_camera", &ShellHost::CallCameraCallback);
-    ctor.BindEventCallback("call_speaker", &ShellHost::CallSpeakerCallback);
-    ctor.BindEventCallback("call_invite", &ShellHost::CallInviteCallback);
-    ctor.BindEventCallback("call_minimize", &ShellHost::CallMinimizeCallback);
-    ctor.BindEventCallback("call_expand", &ShellHost::CallExpandCallback);
-    ctor.BindEventCallback("call_immersive", &ShellHost::CallImmersiveCallback);
-    ctor.BindEventCallback("call_restore", &ShellHost::CallRestoreCallback);
-    ctor.BindEventCallback("call_details", &ShellHost::CallDetailsCallback);
-    ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
-    ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
-    ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
-    ctor.BindEventCallback("toggle_statusbar_popover", &ShellHost::ToggleStatusbarPopoverCallback);
-    ctor.BindEventCallback("dismiss_statusbar_popover", &ShellHost::DismissStatusbarPopoverCallback);
-    ctor.BindEventCallback("retest_statusbar_reachability", &ShellHost::RetestStatusbarReachabilityCallback);
-    ctor.BindEventCallback("open_network_settings", &ShellHost::OpenNetworkSettingsCallback);
+    ctor.BindEventCallback("toggle_sidebar", DataEvent<>([this]() { ToggleSidebarCollapsed(); }));
+    ctor.BindEventCallback("toggle_auxiliary", DataEvent<>([this]() { ToggleAuxiliary(); }));
+    ctor.BindEventCallback("open_auxiliary", DataEvent<>([this]() { OpenAuxiliary(); }));
+    ctor.BindEventCallback("select_nav_tab", DataEvent<std::string>([this](const std::string& tab) { OnNavTabClicked(tab); }));
+    ctor.BindEventCallback("compact_chat_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay); }));
+    ctor.BindEventCallback("open_account_sheet", DataEvent<>([this]() { OpenAccountSheet(); }));
+    // × always closes the sheet, even when a nested settings detail is open.
+    ctor.BindEventCallback("close_account_sheet", DataEvent<>([this]() { CloseAccountSheet(); }));
+    ctor.BindEventCallback("transient_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::Transient); }));
+    ctor.BindEventCallback("close_layer", DataEvent<int>([this](int layer_id) { CloseLayer(layer_id); }));
+    ctor.BindEventCallback("dismiss_banner", DataEvent<>([this]() { DismissBanner(); }));
+    ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
+    ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));
+    ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
+    ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
+    ctor.BindEventCallback("pin_gate_cancel", DataEvent<>([this]() { PinGateCancel(); }));
+    ctor.BindEventCallback("pin_gate_set_pin", DataEvent<>([this]() { PinGateSetPin(); }));
+    ctor.BindEventCallback("pin_gate_use_default", DataEvent<>([this]() { PinGateUseDefault(); }));
+    ctor.BindEventCallback("pin_gate_identity_new", DataEvent<>([this]() { PinGateIdentityNew(); }));
+    ctor.BindEventCallback("pin_gate_identity_link", DataEvent<>([this]() { PinGateIdentityLink(); }));
+    ctor.BindEventCallback("pin_gate_identity_restore", DataEvent<>([this]() { PinGateIdentityRestore(); }));
+    ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
+    ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
+    ctor.BindEventCallback("call_accept_charge", DataEvent<>([this]() { CallAcceptCharge(); }));
+    ctor.BindEventCallback("call_decline", DataEvent<>([this]() { CallDecline(); }));
+    ctor.BindEventCallback("call_leave", DataEvent<>([this]() { CallLeave(); }));
+    ctor.BindEventCallback("call_retry", DataEvent<>([this]() { CallRetry(); }));
+    ctor.BindEventCallback("call_mute", DataEvent<>([this]() { CallMute(); }));
+    ctor.BindEventCallback("call_camera", DataEvent<>([this]() { CallCamera(); }));
+    ctor.BindEventCallback("call_speaker", DataEvent<>([this]() { CallSpeaker(); }));
+    ctor.BindEventCallback("call_invite", DataEvent<>([this]() { CallInvite(); }));
+    ctor.BindEventCallback("call_minimize", DataEvent<>([this]() { CallMinimize(); }));
+    ctor.BindEventCallback("call_expand", DataEvent<>([this]() { CallExpand(); }));
+    ctor.BindEventCallback("call_immersive", DataEvent<>([this]() { CallImmersive(); }));
+    ctor.BindEventCallback("call_restore", DataEvent<>([this]() { CallRestore(); }));
+    ctor.BindEventCallback("call_details", DataEvent<>([this]() { CallDetails(); }));
+    ctor.BindEventCallback("titlebar_minimize", DataEvent<>([this]() { TitlebarMinimize(); }));
+    ctor.BindEventCallback("titlebar_toggle_maximize", DataEvent<>([this]() { TitlebarToggleMaximize(); }));
+    ctor.BindEventCallback("titlebar_close", DataEvent<>([this]() { TitlebarClose(); }));
+    ctor.BindEventCallback("toggle_statusbar_popover", DataEvent<>([this]() { ToggleStatusbarPopover(); }));
+    ctor.BindEventCallback("dismiss_statusbar_popover", DataEvent<>([this]() { CloseStatusbarPopover(); }));
+    ctor.BindEventCallback("retest_statusbar_reachability", DataEvent<>([this]() { RetestStatusbarReachability(); }));
+    ctor.BindEventCallback("open_network_settings", DataEvent<>([this]() { OpenNetworkSettings(); }));
   });
 }
 
@@ -368,7 +355,7 @@ void ShellHost::Initialize(ui::Context* context) {
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
-  PlatformNavigation::SetDismissHandler([] { return Instance().HandleDismiss(); });
+  PlatformNavigation::SetDismissHandler([this] { return HandleDismiss(); });
   if (state_.titlebar_traffic_lights) {
     // Leading traffic lights: ~8+12×3+8×2+8 ≈ 68dp (native-like spacing).
     config_.titlebar_controls_width_dp = 68.f;
@@ -1044,8 +1031,8 @@ void ShellHost::SettleStartupCoverArm() {
 }
 
 void ShellHost::RequestRemountNavRail() {
-  AppRuntime::PostUI([]() {
-    ShellHost& host = ShellHost::Instance();
+  AppRuntime::PostUI([this]() {
+    ShellHost& host = *this;
     // Compact chat overlay omits the rail from the DOM.
     if (host.state_.layout_mode == LayoutMode::Compact && host.state_.compact_chat_open) {
       return;
@@ -1133,7 +1120,7 @@ void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason, 
   sync_pending_ = true;
   // Always defer: SyncLayout remounts the shell DOM. Flushing synchronously from a click
   // handler (e.g. compact_chat_back) destroys the target element mid-dispatch and crashes.
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushPendingSyncLayout(); });
+  AppRuntime::PostUI([this]() { FlushPendingSyncLayout(); });
   Backend::RequestForceFrame();
 }
 
@@ -2581,7 +2568,7 @@ void ShellHost::RemountBottomChrome() {
     return;
   }
   remount_bottom_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountBottomChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountBottomChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2733,7 +2720,7 @@ void ShellHost::RemountCallChrome() {
     return;
   }
   remount_call_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountCallChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountCallChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2745,8 +2732,8 @@ void ShellHost::FlushRemountCallChrome() {
   RemountCallChromeNow();
   // MountInner binds data views after any Dirty applied while remount was pending — dirty again
   // next UI turn so Connected/elapsed replace baked Connecting… text through the text bindings.
-  AppRuntime::PostUI([]() {
-    ShellHost::Instance().DirtyCallChrome();
+  AppRuntime::PostUI([this]() {
+    DirtyCallChrome();
     Backend::RequestForceFrame();
   });
 }
@@ -2832,7 +2819,7 @@ void ShellHost::RemountDialogChrome() {
     return;
   }
   remount_dialog_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountDialogChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountDialogChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2842,8 +2829,8 @@ void ShellHost::FlushRemountDialogChrome() {
   }
   remount_dialog_chrome_pending_ = false;
   RemountDialogChromeNow();
-  AppRuntime::PostUI([]() {
-    ShellHost::Instance().DirtyFeedback();
+  AppRuntime::PostUI([this]() {
+    DirtyFeedback();
     Backend::RequestForceFrame();
   });
 }
@@ -2872,8 +2859,8 @@ void ShellHost::MountOverlayBody(const std::string& mount_id, const std::string&
     overlay_bodies_[mount_id] = body;
   }
   // Deferred like the PIN gate: a click handler may still be mid-dispatch inside the old overlay.
-  AppRuntime::PostUI([mount_id, body]() {
-    ShellHost& shell = ShellHost::Instance();
+  AppRuntime::PostUI([this, mount_id, body]() {
+    ShellHost& shell = *this;
     if (!shell.context_ || shell.context_->GetNumDocuments() == 0) {
       return;
     }
@@ -2895,7 +2882,7 @@ void ShellHost::RemountPinGateChrome() {
     return;
   }
   remount_pin_gate_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountPinGateChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountPinGateChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2905,8 +2892,8 @@ void ShellHost::FlushRemountPinGateChrome() {
   }
   remount_pin_gate_chrome_pending_ = false;
   RemountPinGateChromeNow();
-  AppRuntime::PostUI([]() {
-    ShellHost::Instance().DirtyPinGate();
+  AppRuntime::PostUI([this]() {
+    DirtyPinGate();
     Backend::RequestForceFrame();
   });
 }
@@ -3011,291 +2998,198 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   }
 }
 
-void ShellHost::ToggleAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().ToggleAuxiliary();
-}
-
-void ShellHost::OpenAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().OpenAuxiliary();
-}
-
-void ShellHost::ToggleSidebarCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().ToggleSidebarCollapsed();
-}
-
-void ShellHost::SelectNavTabCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  ShellHost& host = Instance();
-  const NavTab tab = NavTabFromString(args[0].Get<ui::String>());
+void ShellHost::OnNavTabClicked(const std::string& tab_name) {
+  const NavTab tab = NavTabFromString(tab_name.c_str());
   // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
-  if (host.state_.layout_mode == LayoutMode::Expanded &&
-      ShellLayout::SidebarCollapsedAfterNavSelect(host.state_.sidebar_collapsed, tab) != host.state_.sidebar_collapsed) {
-    host.state_.sidebar_collapsed = false;
-    host.NotifySidebarChanged();
-    host.DirtyNavChrome();
-    host.RequestSyncLayout();
+  if (state_.layout_mode == LayoutMode::Expanded &&
+      ShellLayout::SidebarCollapsedAfterNavSelect(state_.sidebar_collapsed, tab) != state_.sidebar_collapsed) {
+    state_.sidebar_collapsed = false;
+    NotifySidebarChanged();
+    DirtyNavChrome();
+    RequestSyncLayout();
   }
-  host.SelectNavTab(tab);
+  SelectNavTab(tab);
 }
 
-void ShellHost::CompactChatBackCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                        const ui::VariantList& /*args*/) {
-  Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay);
+void ShellHost::DismissBanner() {
+  ShellFeedback::DismissBanner(state_);
+  DirtyFeedback();
 }
 
-void ShellHost::OpenAccountSheetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
-  Instance().OpenAccountSheet();
+void ShellHost::DialogOk() {
+  ShellFeedback::DialogOk(state_);
 }
 
-void ShellHost::CloseAccountSheetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  // × always closes the sheet, even when a nested settings detail is open.
-  Instance().CloseAccountSheet();
+void ShellHost::DialogCancel() {
+  ShellFeedback::DialogCancel(state_);
 }
 
-void ShellHost::PopTransientCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::Transient);
+void ShellHost::DialogToggleCheckbox() {
+  state_.dialog.checkbox_checked = !state_.dialog.checkbox_checked;
+  DirtyFeedback();
 }
 
-void ShellHost::CloseLayerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& args) {
-  const int layer_id = EventArgAsInt(args).value_or(-1);
-  Instance().CloseLayer(layer_id);
-}
-
-void ShellHost::DismissBannerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  ShellHost& host = Instance();
-  ShellFeedback::DismissBanner(host.state_);
-  host.DirtyFeedback();
-}
-
-void ShellHost::DialogOkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                 const ui::VariantList& /*args*/) {
-  ShellFeedback::DialogOk(Instance().state_);
-}
-
-void ShellHost::DialogCancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  ShellFeedback::DialogCancel(Instance().state_);
-}
-
-void ShellHost::DialogToggleCheckboxCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& /*args*/) {
-  ShellHost& host = Instance();
-  host.state_.dialog.checkbox_checked = !host.state_.dialog.checkbox_checked;
-  host.DirtyFeedback();
-}
-
-void ShellHost::PinGateSubmitCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_submit) {
-    Instance().pin_gate_actions_.on_submit();
+void ShellHost::PinGateSubmit() {
+  if (pin_gate_actions_.on_submit) {
+    pin_gate_actions_.on_submit();
   }
 }
 
-void ShellHost::PinGateCancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_cancel) {
-    Instance().pin_gate_actions_.on_cancel();
+void ShellHost::PinGateCancel() {
+  if (pin_gate_actions_.on_cancel) {
+    pin_gate_actions_.on_cancel();
   }
 }
 
-void ShellHost::PinGateSetPinCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_set_pin) {
-    Instance().pin_gate_actions_.on_set_pin();
+void ShellHost::PinGateSetPin() {
+  if (pin_gate_actions_.on_set_pin) {
+    pin_gate_actions_.on_set_pin();
   }
 }
 
-void ShellHost::PinGateUseDefaultCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_use_default) {
-    Instance().pin_gate_actions_.on_use_default();
+void ShellHost::PinGateUseDefault() {
+  if (pin_gate_actions_.on_use_default) {
+    pin_gate_actions_.on_use_default();
   }
 }
 
-void ShellHost::PinGateIdentityNewCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                           const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_identity_new) {
-    Instance().pin_gate_actions_.on_identity_new();
+void ShellHost::PinGateIdentityNew() {
+  if (pin_gate_actions_.on_identity_new) {
+    pin_gate_actions_.on_identity_new();
   }
 }
 
-void ShellHost::PinGateIdentityLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_identity_link) {
-    Instance().pin_gate_actions_.on_identity_link();
+void ShellHost::PinGateIdentityLink() {
+  if (pin_gate_actions_.on_identity_link) {
+    pin_gate_actions_.on_identity_link();
   }
 }
 
-void ShellHost::PinGateIdentityRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                               const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_identity_restore) {
-    Instance().pin_gate_actions_.on_identity_restore();
+void ShellHost::PinGateIdentityRestore() {
+  if (pin_gate_actions_.on_identity_restore) {
+    pin_gate_actions_.on_identity_restore();
   }
 }
 
-void ShellHost::CallAcceptCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  Instance().log().warning << "call_accept click";
-  if (Instance().call_actions_.accept_incoming) {
-    Instance().call_actions_.accept_incoming();
+void ShellHost::CallAccept() {
+  log().warning << "call_accept click";
+  if (call_actions_.accept_incoming) {
+    call_actions_.accept_incoming();
   }
 }
 
-void ShellHost::CallAcceptVoiceCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                        const ui::VariantList& /*args*/) {
-  Instance().log().warning << "call_accept_voice click";
-  if (Instance().call_actions_.accept_incoming_voice_only) {
-    Instance().call_actions_.accept_incoming_voice_only();
+void ShellHost::CallAcceptVoice() {
+  log().warning << "call_accept_voice click";
+  if (call_actions_.accept_incoming_voice_only) {
+    call_actions_.accept_incoming_voice_only();
   }
 }
 
-void ShellHost::CallAcceptChargeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
-  Instance().log().warning << "call_accept_charge click";
-  if (Instance().call_actions_.accept_incoming_with_charge) {
-    Instance().call_actions_.accept_incoming_with_charge();
+void ShellHost::CallAcceptCharge() {
+  log().warning << "call_accept_charge click";
+  if (call_actions_.accept_incoming_with_charge) {
+    call_actions_.accept_incoming_with_charge();
   }
 }
 
-void ShellHost::CallDeclineCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.decline_incoming) {
-    Instance().call_actions_.decline_incoming();
+void ShellHost::CallDecline() {
+  if (call_actions_.decline_incoming) {
+    call_actions_.decline_incoming();
   }
 }
 
-void ShellHost::CallLeaveCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                  const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.leave_active) {
-    Instance().call_actions_.leave_active();
+void ShellHost::CallLeave() {
+  if (call_actions_.leave_active) {
+    call_actions_.leave_active();
   }
 }
 
-void ShellHost::CallRetryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                  const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.retry_connect) {
-    Instance().call_actions_.retry_connect();
+void ShellHost::CallRetry() {
+  if (call_actions_.retry_connect) {
+    call_actions_.retry_connect();
   }
 }
 
-void ShellHost::CallMuteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                 const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.toggle_mute) {
-    Instance().call_actions_.toggle_mute();
+void ShellHost::CallMute() {
+  if (call_actions_.toggle_mute) {
+    call_actions_.toggle_mute();
   }
 }
 
-void ShellHost::CallCameraCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.toggle_camera) {
-    Instance().call_actions_.toggle_camera();
+void ShellHost::CallCamera() {
+  if (call_actions_.toggle_camera) {
+    call_actions_.toggle_camera();
   }
 }
 
-void ShellHost::CallSpeakerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.toggle_speaker) {
-    Instance().call_actions_.toggle_speaker();
+void ShellHost::CallSpeaker() {
+  if (call_actions_.toggle_speaker) {
+    call_actions_.toggle_speaker();
   }
 }
 
-void ShellHost::CallInviteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.open_mid_call_invite_picker) {
-    Instance().call_actions_.open_mid_call_invite_picker();
+void ShellHost::CallInvite() {
+  if (call_actions_.open_mid_call_invite_picker) {
+    call_actions_.open_mid_call_invite_picker();
   }
 }
 
-void ShellHost::CallMinimizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.minimize_chrome) {
-    Instance().call_actions_.minimize_chrome();
+void ShellHost::CallMinimize() {
+  if (call_actions_.minimize_chrome) {
+    call_actions_.minimize_chrome();
   }
 }
 
-void ShellHost::CallExpandCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.expand_chrome) {
-    Instance().call_actions_.expand_chrome();
+void ShellHost::CallExpand() {
+  if (call_actions_.expand_chrome) {
+    call_actions_.expand_chrome();
   }
 }
 
-void ShellHost::CallImmersiveCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.immersive_chrome) {
-    Instance().call_actions_.immersive_chrome();
+void ShellHost::CallImmersive() {
+  if (call_actions_.immersive_chrome) {
+    call_actions_.immersive_chrome();
   }
 }
 
-void ShellHost::CallRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.restore_chrome_from_minimized) {
-    Instance().call_actions_.restore_chrome_from_minimized();
+void ShellHost::CallRestore() {
+  if (call_actions_.restore_chrome_from_minimized) {
+    call_actions_.restore_chrome_from_minimized();
   }
 }
 
-void ShellHost::CallDetailsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.show_call_details) {
-    Instance().call_actions_.show_call_details();
+void ShellHost::CallDetails() {
+  if (call_actions_.show_call_details) {
+    call_actions_.show_call_details();
   }
 }
 
-void ShellHost::TitlebarMinimizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
+void ShellHost::TitlebarMinimize() {
   DesktopWindowChrome::Minimize();
 }
 
-void ShellHost::TitlebarToggleMaximizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                               const ui::VariantList& /*args*/) {
+void ShellHost::TitlebarToggleMaximize() {
   DesktopWindowChrome::ToggleMaximize();
-  ShellHost& host = Instance();
-  host.state_.window_maximized = DesktopWindowChrome::IsMaximized();
-  host.DirtyStatusChrome();
+  state_.window_maximized = DesktopWindowChrome::IsMaximized();
+  DirtyStatusChrome();
 }
 
-void ShellHost::TitlebarCloseCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
+void ShellHost::TitlebarClose() {
   DesktopWindowChrome::Close();
 }
 
-void ShellHost::ToggleStatusbarPopoverCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                               const ui::VariantList& /*args*/) {
-  Instance().ToggleStatusbarPopover();
-}
-
-void ShellHost::DismissStatusbarPopoverCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                const ui::VariantList& /*args*/) {
-  Instance().CloseStatusbarPopover();
-}
-
-void ShellHost::RetestStatusbarReachabilityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  auto& host = Instance();
-  if (host.shell_messaging_ports_.retest_reachability) {
-    host.shell_messaging_ports_.retest_reachability();
+void ShellHost::RetestStatusbarReachability() {
+  if (shell_messaging_ports_.retest_reachability) {
+    shell_messaging_ports_.retest_reachability();
   }
-  host.RefreshStatusbarPopover();
-  host.RefreshStatusbarCluster();
+  RefreshStatusbarPopover();
+  RefreshStatusbarCluster();
 }
 
-void ShellHost::OpenNetworkSettingsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  auto& host = Instance();
-  host.CloseStatusbarPopover();
-  if (host.shell_messaging_ports_.open_network_settings) {
-    host.shell_messaging_ports_.open_network_settings();
+void ShellHost::OpenNetworkSettings() {
+  CloseStatusbarPopover();
+  if (shell_messaging_ports_.open_network_settings) {
+    shell_messaging_ports_.open_network_settings();
   }
 }
 

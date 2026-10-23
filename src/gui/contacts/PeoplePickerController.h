@@ -44,9 +44,9 @@ public:
   void BindChatPorts(ChatSessionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
-  /** Shell navigation / layers without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  /** Shell navigation / layers. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
-  /** Toast feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  /** Toast feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app PeoplePickerShellBridge. */
   void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);
