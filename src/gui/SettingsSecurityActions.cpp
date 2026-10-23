@@ -92,7 +92,7 @@ void SettingsSecurityActions::ChangePin() {
       return;
     }
     ClearPinFields();
-    host_.Resync();
+    host_.Resync(true);
     host_.ShowStatus(Tr("settings.security.pin_updated"));
     UserFeedback::Ok(Tr("settings.security.pin_updated"));
   });
@@ -212,7 +212,7 @@ void SettingsSecurityActions::PerformResetProfile() {
   }
   ClearPinFields();
   host_.ShowStatus("");
-  host_.Resync();
+  host_.Resync(true);
   UserFeedback::Ok(Tr("settings.storage.profile_reset"));
   host_.RequestSyncLayout("settings_profile_reset");
 }
@@ -240,7 +240,7 @@ void SettingsSecurityActions::PerformResetChats() {
     host_.ReportFailure(reset.error());
     return;
   }
-  host_.Resync();
+  host_.Resync(true);
   UserFeedback::Ok(Tr("settings.storage.chats_reset"));
   host_.RequestSyncLayout("settings_chats_reset");
 }

@@ -7,6 +7,7 @@
 #include "feature/settings/SettingsUiState.h"
 #include "gui/SettingsCasLibrary.h"
 #include "gui/SettingsHost.h"
+#include "gui/SettingsProfileActions.h"
 #include "gui/SettingsSecurityActions.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
@@ -131,9 +132,6 @@ private:
     ui::String profile_registration_expires;
     ui::String profile_register_label = "Register on network";
     bool profile_show_register = true;
-    /** The invite's QR code (QrSvgContent), and whether it is shown. */
-    ui::String profile_qr_svg_rml;
-    bool profile_show_qr = false;
     bool profile_show_rotate = false;
     ui::String profile_icon_src;
     bool profile_has_icon = false;
@@ -219,7 +217,11 @@ private:
   // SettingsHost
   SessionStore& Store() override;
   void ShowStatus(const std::string& status) override;
-  void Resync() override;
+  void Resync(bool include_profile_nickname) override;
+  SettingsUiState& UiState() override;
+  void PullFromView() override;
+  void PushToView(bool include_profile_nickname) override;
+  void SaveProfileNickname() override;
   void RequestSyncLayout(const char* reason) override;
   Roe<void> ForgetToolPermissions() override;
   void FinishPaneResync();
@@ -242,12 +244,6 @@ private:
   void ReportFailure(const Error& err) override;
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
-  void OnRegisterProfile();
-  void OnRotateBriefLlmKey();
-  void OnCopyProfileId();
-  void OnPickProfileIcon();
-  void OnClearProfileIcon();
-  void OnShareProfile(ShareAnchor anchor = {});
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
@@ -279,8 +275,6 @@ private:
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;
-  /** The locator the QR code in bindings_ was made from (made again only when it changes). */
-  std::string profile_qr_locator_;
   ui::String status_;
   ui::Context* context_ = nullptr;
   /** Pane hydrate gate; also mirrored into UiEditSession remount depth. */
@@ -298,6 +292,7 @@ private:
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
+  SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
 
 };
 

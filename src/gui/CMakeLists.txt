@@ -33,6 +33,7 @@ pp_browser_add_feature_library(pp_gui
     SecuritySettingsSection.cpp
     SettingsCasLibrary.cpp
     SettingsController.cpp
+    SettingsProfileActions.cpp
     SettingsSecurityActions.cpp
     shell/DataModelHost.cpp
     shell/DeferredStartup.cpp

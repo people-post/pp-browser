@@ -2,7 +2,6 @@
 #include "gui/SettingsController.h"
 
 #include "lib/ui/DataEvent.h"
-#include "lib/ui/QrSvg.h"
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
@@ -339,11 +338,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
-  if (ui_state_.profile_contact_locator != profile_qr_locator_) {
-    profile_qr_locator_ = ui_state_.profile_contact_locator;
-    auto qr = profile_qr_locator_.empty() ? Roe<std::string>(std::string()) : QrSvgContent(profile_qr_locator_);
-    bindings_.profile_qr_svg_rml = qr ? qr->c_str() : "";
-  }
+  profile_actions_.ShowInvite(ui_state_.profile_contact_locator);
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
   bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
   bindings_.profile_has_icon = ui_state_.profile_has_icon;
@@ -524,12 +519,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
-    ctor.Bind("profile_qr_svg_rml", &controller.bindings_.profile_qr_svg_rml);
-    ctor.Bind("profile_show_qr", &controller.bindings_.profile_show_qr);
-    ctor.BindEventCallback("toggle_profile_qr", DataEvent<>([this]() {
-      bindings_.profile_show_qr = !bindings_.profile_show_qr;
-      DataModelHost::Instance().Dirty("settings", "profile_show_qr");
-    }));
+    profile_actions_.Bind(ctor);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
     ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
     ctor.Bind("profile_has_icon", &controller.bindings_.profile_has_icon);
@@ -613,12 +603,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_reachable_without_relay", DataEvent<>([this]() { ToggleReachableWithoutRelay(); }));
     // Persist on blur only when the field differs from last loaded/saved nickname.
     ctor.BindEventCallback("on_profile_nickname_commit", DataEvent<>([this]() { CommitProfileNickname(/*show_toast=*/false); }));
-    ctor.BindEventCallback("register_profile", DataEvent<>([this]() { OnRegisterProfile(); }));
-    ctor.BindEventCallback("rotate_brief_llm_key", DataEvent<>([this]() { OnRotateBriefLlmKey(); }));
-    ctor.BindEventCallback("copy_profile_id", DataEvent<>([this]() { OnCopyProfileId(); }));
-    ctor.BindEventCallback("pick_profile_icon", DataEvent<>([this]() { OnPickProfileIcon(); }));
-    ctor.BindEventCallback("clear_profile_icon", DataEvent<>([this]() { OnClearProfileIcon(); }));
-    ctor.BindEventCallback("share_profile", DataEventAt([this](ui::Event& ev) { OnShareProfile(ShareAnchorFromEvent(ev)); }));
     ctor.BindEventCallback("add_mcp_server", DataEvent<>([this]() { OnAddMcpServer(); }));
     ctor.BindEventCallback("remove_mcp_server", DataEvent<int>([this](int index) { OnRemoveMcpServer(index); }));
   });
@@ -671,7 +655,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   }
   host.Dirty("settings", "profile_peer_id");
   host.Dirty("settings", "profile_relay_id");
-  host.Dirty("settings", "profile_qr_svg_rml");
   host.Dirty("settings", "profile_public_key");
   host.Dirty("settings", "profile_registered");
   host.Dirty("settings", "profile_registration_status");
@@ -1873,200 +1856,6 @@ void SettingsController::ToggleAutoRenewRegistration() {
   DirtyAll();
 }
 
-void SettingsController::OnRegisterProfile() {
-  CommitProfileNickname(/*show_toast=*/false);
-  PullBindingsToUiState();
-  const bool renewing = ui_state_.profile_registered == "yes";
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this, renewing](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
-      return;
-    }
-    if (!commands_.register_identity) {
-      ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Registration is not available"));
-      return;
-    }
-    if (auto registered = commands_.register_identity({.nickname = ui_state_.profile_nickname}); !registered) {
-      ReportFailure(registered.error());
-      return;
-    }
-    if (commands_.load_profile_identity) {
-      const ProfileIdentityView view = commands_.load_profile_identity();
-      if (view.ready) {
-        UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
-      }
-    }
-    const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
-    status_ = message.c_str();
-    SyncBindingsFromSession();
-    DirtyAll();
-    UserFeedback::Ok(message);
-  });
-}
-
-void SettingsController::OnRotateBriefLlmKey() {
-  PullBindingsToUiState();
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
-      return;
-    }
-    if (!commands_.rotate_brief_llm_key) {
-      ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Key rotation is not available"));
-      return;
-    }
-    if (auto rotated = commands_.rotate_brief_llm_key(); !rotated) {
-      // Identity may have been marked expired on 401/403.
-      SyncBindingsFromSession();
-      DirtyAll();
-      ReportFailure(rotated.error());
-      return;
-    }
-    status_ = Tr("settings.llm.brief_key_rotated").c_str();
-    SyncBindingsFromSession();
-    DirtyAll();
-    UserFeedback::Ok(Tr("settings.llm.brief_key_rotated"));
-  });
-}
-
-void SettingsController::OnCopyProfileId() {
-  const std::string peer_id = bindings_.profile_peer_id.c_str();
-  if (peer_id.empty()) {
-    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
-    return;
-  }
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(bindings_.profile_peer_id);
-  }
-  UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
-}
-
-void SettingsController::OnPickProfileIcon() {
-  if (bindings_.profile_icon_uploading) {
-    return;
-  }
-  if (!commands_.pick_profile_icon_image || !commands_.upload_profile_icon_file) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-    return;
-  }
-  // Open the native picker immediately (same pattern as chat attach_file). PIN/unlock runs only
-  // after the user chooses a file, so the vault gate cannot block the dialog from appearing.
-  commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-      if (paths.empty()) {
-        if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
-          ReportFailure(Error(err).WithUser(Tr("settings.profile.picker_failed")));
-          SDL_ClearError();
-        }
-        return;
-      }
-      const std::string path = std::move(paths.front());
-      if (!unlock_ensure_.ensure_unlocked) {
-        ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-        return;
-      }
-      unlock_ensure_.ensure_unlocked([this, path = std::move(path)](const bool unlocked) mutable {
-        if (!unlocked) {
-          ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-          return;
-        }
-        if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
-          ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-          return;
-        }
-        ui_state_.profile_icon_uploading = true;
-        PushUiStateToBindings();
-        DirtyAll(/*include_profile_nickname=*/false);
-        status_ = Tr("settings.profile.photo_uploading").c_str();
-        BlobQuotaRecoveryFlow::RunVoidUpload(
-            [this, path]() { return commands_.upload_profile_icon_file(path); },
-            [this, path](Roe<void> result) {
-              ReleasePickedFile(path);
-              ui_state_.profile_icon_uploading = false;
-              if (!result) {
-                status_.clear();
-                SyncBindingsFromSession();
-                DirtyAll(/*include_profile_nickname=*/false);
-                ReportFailure(result.error());
-                return;
-              }
-              status_ = Tr("settings.profile.photo_updated").c_str();
-              SyncBindingsFromSession();
-              DirtyAll(/*include_profile_nickname=*/false);
-              UserFeedback::Ok(Tr("settings.profile.photo_updated"));
-            },
-            [this]() { return commands_.plan_relay_quota_recovery(); },
-            [this]() { return commands_.free_oldest_relay_blob_slot(); });
-      });
-    });
-  });
-}
-
-void SettingsController::OnClearProfileIcon() {
-  if (bindings_.profile_icon_uploading) {
-    return;
-  }
-  if (!commands_.clear_profile_icon) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-    return;
-  }
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-      return;
-    }
-    ui_state_.profile_icon_uploading = true;
-    PushUiStateToBindings();
-    DirtyAll(/*include_profile_nickname=*/false);
-    AppRuntime::PostWorkerNormal([this]() {
-      Roe<void> result = commands_.clear_profile_icon();
-      AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-        ui_state_.profile_icon_uploading = false;
-        if (!result) {
-          status_.clear();
-          SyncBindingsFromSession();
-          DirtyAll(/*include_profile_nickname=*/false);
-          ReportFailure(result.error());
-          return;
-        }
-        status_ = Tr("settings.profile.photo_removed").c_str();
-        SyncBindingsFromSession();
-        DirtyAll(/*include_profile_nickname=*/false);
-        UserFeedback::Ok(Tr("settings.profile.photo_removed"));
-      });
-    });
-  });
-}
-
-void SettingsController::OnShareProfile(const ShareAnchor anchor) {
-  // The account id is what friends type to find you; without one there is nothing to share yet.
-  const std::string account_id = bindings_.profile_relay_id.c_str();
-  if (account_id.empty()) {
-    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
-    return;
-  }
-  ShareInviteOrCopy(
-      AccountInviteText(bindings_.profile_nickname.c_str(), account_id, ui_state_.profile_contact_locator),
-      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
-      anchor, [](const std::string& text) {
-        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-          system->SetClipboardText(text.c_str());
-        }
-      });
-}
-
 void SettingsController::OnAddMcpServer() {
   bindings_.mcp_servers.push_back({});
   ui_state_.mcp_servers.push_back({});
@@ -2093,9 +1882,26 @@ void SettingsController::ShowStatus(const std::string& status) {
   DataModelHost::Instance().Dirty("settings", "status");
 }
 
-void SettingsController::Resync() {
+void SettingsController::Resync(const bool include_profile_nickname) {
   SyncBindingsFromSession();
-  DirtyAll();
+  DirtyAll(include_profile_nickname);
+}
+
+SettingsUiState& SettingsController::UiState() {
+  return ui_state_;
+}
+
+void SettingsController::PullFromView() {
+  PullBindingsToUiState();
+}
+
+void SettingsController::PushToView(const bool include_profile_nickname) {
+  PushUiStateToBindings();
+  DirtyAll(include_profile_nickname);
+}
+
+void SettingsController::SaveProfileNickname() {
+  CommitProfileNickname(/*show_toast=*/false);
 }
 
 void SettingsController::RequestSyncLayout(const char* reason) {
