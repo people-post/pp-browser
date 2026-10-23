@@ -1065,8 +1065,12 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     }
   }
 
+  // A reconnect keeps the stage only when video was part of the call; a voice call's reconnect
+  // must not open an empty "camera off" stage (Kenneth 2026-10-23).
+  const bool video_in_play = in_call.camera_on || media.EverHadRemoteVideo() || (have_peer_video_flag && peer_camera_on);
   in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview ||
-                          (have_peer_video_flag && peer_camera_on) || media_reconnect || starting_video;
+                          (have_peer_video_flag && peer_camera_on) || (media_reconnect && video_in_play) ||
+                          starting_video;
   if (in_call.remote_video) {
     in_call.remote_placeholder = "";
   } else if (starting_video) {

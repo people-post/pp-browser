@@ -196,6 +196,16 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+/* Call rows: ours like our bubbles, theirs like theirs. */
+.message-row-user .chat-call-row {
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.message-row-peer .chat-call-row {
+  background-color: #f3f4f6;
+}
+
 .bubble-text {
   color: #ffffff;
 }

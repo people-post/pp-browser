@@ -78,6 +78,12 @@ TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
   seat.seat_media = MediaState::Failed;
   seat.was_connected = true;
   EXPECT_EQ(Decide(seat).status, Status::Disconnected);
+  InCallSignals mesh;  // the mesh path reports the failure after the reconnect window: still "disconnected"
+  mesh.p2p_connect_failed = true;
+  mesh.was_connected = true;
+  const InCallStatus out = Decide(mesh);
+  EXPECT_EQ(out.status, Status::Disconnected);
+  EXPECT_FALSE(out.show_retry);
 }
 
 TEST(CallScreenTest, ReconnectingKeepsTheTimerAndOutranksConnected) {

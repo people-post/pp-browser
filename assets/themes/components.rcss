@@ -2826,9 +2826,8 @@ input.checkbox {
 /* A call in the transcript: icon + duration (or outcome), a pill on the starter's side. */
 .chat-call-row {
   display: inline-block;
-  padding: 6dp 12dp;
-  border-radius: 14dp;
-  background-color: rgba(128, 128, 128, 0.12);
+  padding: 7dp 12dp;
+  border-radius: 12dp;
   font-size: 13dp;
 }
 
