@@ -367,7 +367,9 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   document->UpdateDocument();
 
   ui::Vector2i dims = context_->GetDimensions();
-  dims.y -= static_cast<int>(BottomInsetPx());
+  // Positioned by `top` from the layer's top edge: the keyboard's top is at dims.y - inset whatever the
+  // document's lift (only the bottom-anchored sheet measures against the layer's bottom edge).
+  dims.y -= static_cast<int>(static_cast<float>(bottom_inset_dp_) * context_->GetDensityIndependentPixelRatio());
   const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
   if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
     return;
@@ -450,7 +452,7 @@ void ContextMenuHost::LayoutAnchored(ui::Vector2i touch) {
 
   const float dp = context_->GetDensityIndependentPixelRatio();
   const ui::Vector2i dims = context_->GetDimensions();
-  const float view_bottom = static_cast<float>(dims.y) - BottomInsetPx() - kViewportMarginPx;
+  const float view_bottom = static_cast<float>(dims.y) - static_cast<float>(bottom_inset_dp_) * dp - kViewportMarginPx;
   const float gap = kAnchorGapDp * dp;
   const float anchor_top = menu_anchor_->GetAbsoluteOffset(ui::BoxArea::Border).y;
   float anchor_bottom = anchor_top + menu_anchor_->GetBox().GetSize(ui::BoxArea::Border).y;

@@ -476,22 +476,30 @@ void CallController::RefreshPendingRing() {
   presenter_.Refresh();
 }
 
+// A notice's words for the user: its locale key when the feature gave one, else transport text
+// ("amp call-media: no path within the reconnect window") mapped to a plain sentence and logged
+// raw (B89); payment errors keep their own mapping.
+std::string CallController::NoticeUserText(const CallNotice& notice) const {
+  if (!notice.key.empty()) {
+    return Tr(notice.key);
+  }
+  if (const char* key = CallMediaErrorUserKey(notice.text)) {
+    log().info << "call media error shown as " << key << " raw=" << notice.text;
+    return Tr(key);
+  }
+  return PaymentErrorUserMessage(notice.text);
+}
+
 void CallController::ShowNotice(const CallNotice& notice) {
   switch (notice.kind) {
   case CallNotice::Kind::Error:
-    UserFeedback::Fail(notice.key.empty() ? PaymentErrorUserMessage(notice.text) : Tr(notice.key));
+    UserFeedback::Fail(NoticeUserText(notice));
     return;
-  case CallNotice::Kind::StickyError: {
+  case CallNotice::Kind::StickyError:
     // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
-    // users can read multi-hop diagnostics. Transport text ("amp call-media: no path within the
-    // reconnect window") stays in the log; the banner gets a plain sentence (B89).
-    const char* key = notice.key.empty() ? CallMediaErrorUserKey(notice.text) : notice.key.c_str();
-    if (key && notice.key.empty()) {
-      log().info << "call media error shown as " << key << " raw=" << notice.text;
-    }
-    UserFeedback::NeedsSetup(key ? Tr(key) : PaymentErrorUserMessage(notice.text), /*sticky=*/true);
+    // users can read multi-hop diagnostics.
+    UserFeedback::NeedsSetup(NoticeUserText(notice), /*sticky=*/true);
     return;
-  }
   case CallNotice::Kind::PeerEnded:
   case CallNotice::Kind::PeerDeclined: {
     const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
@@ -972,9 +980,12 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool expect_remote_video = !have_peer_video_flag || peer_camera_on;
   const bool missing_after_video =
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
+  // A call that was live and then failed reads "disconnected" (CallScreen decides); the mesh
+  // "couldn't connect" copy below is for calls that never connected.
   const bool mesh_messaging_failed =
       backend && backend->Available() && backend->IsP2pConnectFailed() &&
-      !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode();
+      !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode() &&
+      presenter_.Screen().status != CallScreen::Status::Disconnected;
   const bool path_lost =
       backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
   const bool media_reconnect =

@@ -134,10 +134,11 @@ std::string CallRowRml(const CallSummaryRow& row) {
   return html;
 }
 
-std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts) {
+std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
+                      const std::optional<CallSummaryRow>& call_row) {
   const ThreadMessage& message = entry.message;
   if (entry.control) {
-    if (const auto call_row = CallSummaryRowOf(message)) {
+    if (call_row) {
       return CallRowRml(*call_row);
     }
     // A feature's message: its own line, names included, else the message's text.
@@ -314,7 +315,8 @@ std::string OneLine(std::string text) {
   return text;
 }
 
-std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts) {
+std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
+                       const std::optional<CallSummaryRow>& call_row) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -333,7 +335,7 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts)
     return rml;
   }
   if (message.content_type == ChatContentType::System) {
-    return SystemRml(entry, facts);
+    return SystemRml(entry, facts, call_row);
   }
   if (message.content_type == ChatContentType::Deleted) {
     // On the sender's side, small and grey, so it is clear whose message it was.
@@ -434,7 +436,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       continue;
     }
     const ThreadMessage& message = entry.message;
-    std::string content = MessageRml(entry, facts);
+    // A call summary: decoded once, its side is the starter's (a group's is written locally).
+    const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
+    std::string content = MessageRml(entry, facts, call_row);
     if (content.empty()) {
       continue;
     }
@@ -457,7 +461,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.sender_label =
         entry.control || !facts.sender_label ? "" : facts.sender_label(message.sender_contact_id).c_str();
     row.content_rml = content.c_str();
-    row.row_class = RowClass(message.sender_contact_id).c_str();
+    row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
+                             : RowClass(message.sender_contact_id).c_str();
     // Local is expected for AI/system-local rows — skip it to keep meta quiet.
     if (!entry.control && message.transport && *message.transport != MessageTransport::Local) {
       row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();

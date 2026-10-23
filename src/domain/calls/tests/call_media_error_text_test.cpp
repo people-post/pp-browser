@@ -31,7 +31,12 @@ TEST(CallMediaErrorTextTest, DialFailures) {
 
 TEST(CallMediaErrorTextTest, UnknownTransportTextGetsTheGenericSentence) {
   EXPECT_STREQ(CallMediaErrorUserKey("amp circuit-relay: channel open failed"), "call.error.media_failed");
-  EXPECT_STREQ(CallMediaErrorUserKey("something odd [detail]"), "call.error.media_failed");
+  EXPECT_STREQ(CallMediaErrorUserKey("something odd [relay: refused]"), "call.error.media_failed");
+}
+
+TEST(CallMediaErrorTextTest, EnglishUserCopyIsNotMistakenForTransportText) {
+  EXPECT_EQ(CallMediaErrorUserKey("Couldn't bring Lee [work] into this call — no shared media path."), nullptr);
+  EXPECT_EQ(CallMediaErrorUserKey("The other device is unreachable right now."), nullptr);
 }
 
 TEST(CallMediaErrorTextTest, UserCopyAndPaymentPassThrough) {

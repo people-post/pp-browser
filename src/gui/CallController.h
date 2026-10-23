@@ -73,6 +73,7 @@ public:
   void DeclineIncoming();
   void LeaveActive();
   void EndDisconnectedCall(int64_t now_ms);
+  std::string NoticeUserText(const CallNotice& notice) const;
   void RetryConnect();
   void ToggleMute();
   void ToggleCamera();

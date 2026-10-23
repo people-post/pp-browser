@@ -63,12 +63,14 @@ protected:
 
   // Appends a call summary written by `sender` and returns that row as rendered.
   MessageDisplayRow Row(const std::string& sender, CallMediaMode mode, CallOutcome outcome,
-                        std::optional<int64_t> duration_ms) {
+                        std::optional<int64_t> duration_ms, bool group = false, bool started = false) {
     CallSummaryDetail detail;
     detail.call_id = "call:" + util::GenerateUuid();
     detail.media_mode = mode;
     detail.outcome = outcome;
     detail.duration_ms = duration_ms;
+    detail.group = group;
+    detail.started = started;
     auto encoded = CallControlCodec::EncodeSummary(detail);
     EXPECT_TRUE(encoded);
     auto built = CallControlCodec::BuildSystemMessage("thread-calls", CallControlType::CallSummary, "call",
@@ -113,6 +115,16 @@ TEST_F(TranscriptCallRowsTest, TheirVideoCallSitsOnTheirSideWithTheCameraIcon) {
   EXPECT_EQ(std::string(row.row_class.c_str()), "message-row-peer");
   EXPECT_NE(rml.find("../icons/video.svg"), std::string::npos) << rml;
   EXPECT_NE(rml.find("0:56"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, AGroupCallSomeoneElseStartedSitsOnTheirSide) {
+  // A group summary is written by this device (sender = self); the side is who started the call.
+  const MessageDisplayRow row =
+      Row(kLocalSelfContactId, CallMediaMode::Voice, CallOutcome::Missed, std::nullopt, /*group=*/true, /*started=*/false);
+  EXPECT_EQ(std::string(row.row_class.c_str()), "message-row-peer");
+  const MessageDisplayRow ours =
+      Row(kLocalSelfContactId, CallMediaMode::Voice, CallOutcome::Completed, 30'000, /*group=*/true, /*started=*/true);
+  EXPECT_EQ(std::string(ours.row_class.c_str()), "message-row-user");
 }
 
 TEST_F(TranscriptCallRowsTest, AMissedCallIsMutedAndHasNoDuration) {

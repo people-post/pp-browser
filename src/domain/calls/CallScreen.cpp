@@ -63,7 +63,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     activity = false;
   }
   const bool failed = s.seat_media == MediaState::Failed || s.media_status == CallMediaStatus::Failed;
-  if (s.was_connected && (s.p2p_connect_failed || failed)) {
+  if (s.was_connected && !out.media_connected && (s.p2p_connect_failed || failed)) {
     // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
     out.status = Status::Disconnected;
     out.show_retry = false;

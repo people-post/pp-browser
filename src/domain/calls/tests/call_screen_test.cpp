@@ -84,6 +84,11 @@ TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
   const InCallStatus out = Decide(mesh);
   EXPECT_EQ(out.status, Status::Disconnected);
   EXPECT_FALSE(out.show_retry);
+  InCallSignals hop;  // a stale seat failure while the hop path carries media: still connected
+  hop.seat_media = MediaState::Failed;
+  hop.media_chrome_live = true;
+  hop.was_connected = true;
+  EXPECT_EQ(Decide(hop).status, Status::Connected);
 }
 
 TEST(CallScreenTest, ReconnectingKeepsTheTimerAndOutranksConnected) {

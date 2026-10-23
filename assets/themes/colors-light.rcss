@@ -206,6 +206,10 @@ select selectbox option:hover {
   image-color: #ffffff;
 }
 
+.message-row-user .chat-call-row.muted {
+  background-color: #a3b3f9;
+}
+
 .message-row-peer .chat-call-row {
   background-color: #f3f4f6;
 }
