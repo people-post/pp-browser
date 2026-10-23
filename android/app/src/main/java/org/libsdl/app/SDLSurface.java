@@ -200,10 +200,19 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         SDLActivity.handleNativeState();
     }
 
+    /**
+     * pp-browser: set by the activity while it publishes safe-area insets itself
+     * (MainActivity.installKeyboardSafeAreaPublisher). This view's listener runs after the
+     * activity's root listener, and under adjustNothing some OEM IMEs (vivo OriginOS) report
+     * WindowInsets.Type.ime() == 0 while the keyboard is visible, so publishing from here would
+     * overwrite the activity's keyboard-aware value with 0 in the same frame.
+     */
+    public static volatile boolean sActivityPublishesInsets = false;
+
     // Window inset
     @Override
     public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
-        if (Build.VERSION.SDK_INT >= 30 /* Android 11 (R) */) {
+        if (Build.VERSION.SDK_INT >= 30 /* Android 11 (R) */ && !sActivityPublishesInsets) {
             Insets combined = insets.getInsets(WindowInsets.Type.systemBars() |
                                                WindowInsets.Type.systemGestures() |
                                                WindowInsets.Type.mandatorySystemGestures() |
@@ -214,7 +223,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                                                WindowInsets.Type.ime());
 
             SDLActivity.onNativeInsetsChanged(combined.left, combined.right, combined.top, combined.bottom);
-
+        }
+        if (Build.VERSION.SDK_INT >= 30 /* Android 11 (R) */) {
             if (insets.isVisible(WindowInsets.Type.ime())) {
                 if (!mKeyboardVisible) {
                     mKeyboardVisible = true;

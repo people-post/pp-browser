@@ -13,6 +13,7 @@
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformStartupHints.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/PlatformHooks.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/ProductBranding.h"
 
@@ -111,6 +112,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   pbr::StartupMark("after_early_init");
+
+  // Path providers before anything resolves AppPaths::DataDir(): without this the
+  // desktop default answers, which on Android is a relative path in a read-only cwd,
+  // so the crash dump and the log file below were silently disabled there (B94).
+  // Bootstrap::Run registers again; that is idempotent.
+  pbr::PlatformHooks::Register();
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
   pbr::CrashDump::Install(pbr::AppPaths::DataDir());

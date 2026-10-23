@@ -21,7 +21,8 @@ run_gradlew() {
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     version_args+=("-PppBrowserReleaseVersion=${PP_BROWSER_RELEASE_VERSION}")
   fi
-  ./gradlew "$task" "${version_args[@]}"
+  # ${arr[@]+"${arr[@]}"}: an empty array trips `set -u` on bash 3.2 (macOS /bin/bash).
+  ./gradlew "$task" ${version_args[@]+"${version_args[@]}"}
 }
 
 usage() {
