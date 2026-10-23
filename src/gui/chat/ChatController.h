@@ -341,8 +341,7 @@ private:
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
   void OnDeleteMessage(const std::string& message_id, ui::Vector2i position);
-  void DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
-  bool CanDeleteForEveryone(const std::string& message_id) const;
+  void DeleteMessageForEveryone(const std::string& message_id);
   bool IsDeletedMessage(const std::string& message_id) const;
   std::string MessagePlainText(const std::string& message_id) const;
   /**
@@ -447,7 +446,7 @@ private:
   ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
   /** The chats list's decisions and buttons (pp-app-probe drives the same presenter). */
-  ChatPresenter sessions_;
+  ChatPresenter presenter_;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;

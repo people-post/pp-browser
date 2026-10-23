@@ -1,11 +1,13 @@
 #pragma once
 
+#include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/SessionMenu.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -49,6 +51,14 @@ struct ChatListScreen {
 
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);
+
+struct ThreadMessage;
+/**
+ * Whether this device's own reaction `emoji_key` is on `message_id` now: its latest reaction /
+ * clear annotation for that emoji in `messages` (D098) is a reaction.
+ */
+bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,
+                      const std::string& emoji_key);
 
 /**
  * The chats list's decisions and its buttons, without a GUI: which chats show and how (order,
@@ -99,6 +109,16 @@ public:
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
   std::optional<ThreadLocalPrefs> PrefsOf(const std::string& thread_id);
 
+  // --- a message's buttons (the open chat) ------------------------------------------------------
+
+  /** React with `emoji` on a message of the open chat, or take this device's reaction back. */
+  Roe<void> ToggleReaction(const std::string& message_id, const std::string& emoji);
+  Roe<void> DeleteForMe(const std::string& message_id);
+  /** "Delete for everyone" is offered: our own message, in a chat with people (not the agent). */
+  bool CanDeleteForEveryone(const std::string& message_id);
+  /** Sends the delete (network: on a worker); `done` on the UI thread unless the presenter is gone. */
+  void DeleteForEveryone(const std::string& message_id, std::function<void(Roe<void>)> done);
+
 private:
   /**
    * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store
@@ -117,6 +137,7 @@ private:
   ChatListScreen list_;
   bool showing_archived_ = false;
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> prefs_;
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
 };
 
 } // namespace pbr

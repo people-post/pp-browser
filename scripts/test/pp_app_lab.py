@@ -1074,6 +1074,43 @@ def scenario_chat_list_settings(lab):
     b.cmd("unmute", thread=b_thread)
 
 
+def transcript_row(u, thread, message):
+    for row in u.cmd("transcript", thread=thread)["rows"]:
+        if row["id"] == message:
+            return row
+    return None
+
+
+def reactions_of(u, thread, message):
+    row = transcript_row(u, thread, message)
+    return {r["emoji"]: r["count"] for r in (row or {}).get("reactions", [])}
+
+
+def scenario_chat_message_actions(lab):
+    """A message's buttons, seen from the other side: Bob reacts to Alice's message and takes it back;
+    Alice deletes one message for everyone (Bob's copy goes) and another for herself (Bob keeps it)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("show_chat", thread=a_thread)
+    b.cmd("show_chat", thread=b_thread)
+    first = a.cmd("send", thread=a_thread, text="react to me")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's message")
+    b.cmd("react", message=first, emoji="👍")
+    wait_for(lambda: reactions_of(a, a_thread, first).get("👍") == 1, 20, "alice: bob's reaction")
+    b.cmd("react", message=first, emoji="👍")  # again: takes it back
+    wait_for(lambda: "👍" not in reactions_of(a, a_thread, first), 20, "alice: bob's reaction gone")
+    a.cmd("delete_for_everyone", message=first)
+    wait_for(lambda: (transcript_row(b, b_thread, first) or {"type": "deleted"})["type"] == "deleted", 20,
+             "bob: the message deleted for everyone")
+    second = a.cmd("send", thread=a_thread, text="only mine goes")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, second), 20, "bob: alice's second message")
+    a.cmd("delete_for_me", message=second)
+    if transcript_row(a, a_thread, second) and transcript_row(a, a_thread, second)["type"] != "deleted":
+        raise ProbeError("alice: a message deleted for her still shows")
+    time.sleep(2)
+    if not transcript_row(b, b_thread, second) or transcript_row(b, b_thread, second)["type"] == "deleted":
+        raise ProbeError("bob: alice's delete-for-me took his copy")
+
+
 def live_streams(u):
     return {row["stream_id"]: row["rx_frames"] for row in u.state().get("streams", [])}
 
@@ -1397,6 +1434,7 @@ def scenario_group_calling_at_once(lab):
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("chat_list_settings", scenario_chat_list_settings),
+    ("chat_message_actions", scenario_chat_message_actions),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

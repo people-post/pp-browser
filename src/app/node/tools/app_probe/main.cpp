@@ -376,6 +376,25 @@ public:
         chats_.MarkRead(thread);
       }
       ListThreads(id);
+    } else if (cmd == "transcript") {
+      Transcript(id, request->getString("thread").value_or(""));
+    } else if (cmd == "react") {
+      // A message's reaction button in the open chat (ChatPresenter): adds, or takes ours back.
+      auto done = chats_.ToggleReaction(request->getString("message").value_or(""),
+                                        request->getString("emoji").value_or(""));
+      done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
+    } else if (cmd == "delete_for_me") {
+      auto done = chats_.DeleteForMe(request->getString("message").value_or(""));
+      done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
+    } else if (cmd == "delete_for_everyone") {
+      const std::string message = request->getString("message").value_or("");
+      if (!chats_.CanDeleteForEveryone(message)) {
+        ReplyError(id, "delete for everyone is not offered for this message");
+        return;
+      }
+      chats_.DeleteForEveryone(message, [id](Roe<void> done) {
+        done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
+      });
     } else if (cmd == "home") {
       // The Home tab: back to the chats list.
       chats_.ShowHome();
@@ -549,6 +568,31 @@ private:
     out.set("threads", ArrayValue(std::move(rows)));
     out.set("archived_count", static_cast<int64_t>(list.archived_count));
     out.set("showing_archived", list.showing_archived);
+    Emit(out);
+  }
+
+  /** The chat's transcript as the user sees it (reactions folded onto their messages, AssembleTranscript). */
+  void Transcript(int64_t id, const std::string& thread) {
+    std::vector<Value> rows;
+    for (const TranscriptRow& row : facade_->BuildTranscript(thread, std::nullopt)) {
+      Object out;
+      out.set("id", row.message.id);
+      out.set("type", ChatContentTypeToDb(row.message.content_type));
+      out.set("text", row.message.text);
+      out.set("from", row.message.sender_contact_id);
+      std::vector<Value> reactions;
+      for (const TranscriptReaction& reaction : row.reactions) {
+        Object r;
+        r.set("emoji", reaction.emoji);
+        r.set("count", static_cast<int64_t>(reaction.count));
+        r.set("mine", reaction.mine);
+        reactions.push_back(ObjectValue(std::move(r)));
+      }
+      out.set("reactions", ArrayValue(std::move(reactions)));
+      rows.push_back(ObjectValue(std::move(out)));
+    }
+    Object out = Reply(id, true);
+    out.set("rows", ArrayValue(std::move(rows)));
     Emit(out);
   }
 

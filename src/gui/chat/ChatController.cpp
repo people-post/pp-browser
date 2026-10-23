@@ -360,7 +360,7 @@ ChatController::ChatController()
              messaging_ready_,
              mesh_ready_) {
   redirectLogger("ChatController");
-  sessions_.BindCallbacks({
+  presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
   });
@@ -387,7 +387,7 @@ ChatController::ChatController()
 
 void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
-  sessions_.BindFacade(facade);
+  presenter_.BindFacade(facade);
   scroller_.BindConversationsFacade(facade);
   chrome_.BindConversationsFacade(facade);
   scroller_.SetRowBuilder([this](const std::string& thread_id, std::optional<int64_t> oldest,
@@ -949,7 +949,7 @@ void ChatController::OnHomeTabActivated() {
   if (!messaging_ready_) {
     return;
   }
-  sessions_.ShowHome();
+  presenter_.ShowHome();
   working_set_.ClearAll();
   ShellSetPrimaryPane("home");
   RefreshFromMessaging();
@@ -965,7 +965,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
-  if (sessions_.SelectThread(thread_id)) {
+  if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
   }
@@ -985,7 +985,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       NotifySurfaceChanged();
       return;
     }
-    sessions_.ForgetThread(thread_id);
+    presenter_.ForgetThread(thread_id);
     if (was_open) {
       chat_.draft = "";
       chat_.status = "";
@@ -1171,7 +1171,7 @@ void ChatController::OpenMuteMenu(const std::string& thread_id, const ui::Vector
         Tr(label_key),
         nullptr,
         [this, thread_id, choice = choice]() {
-          sessions_.Mute(thread_id, choice);
+          presenter_.Mute(thread_id, choice);
           AfterThreadPrefsChanged();
         },
     });
@@ -1180,7 +1180,7 @@ void ChatController::OpenMuteMenu(const std::string& thread_id, const ui::Vector
 }
 
 void ChatController::OnToggleArchived() {
-  sessions_.ToggleArchived();
+  presenter_.ToggleArchived();
   RefreshFromMessaging();
   NotifySurfaceChanged();
 }
@@ -1221,7 +1221,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       state.blocked = (*contact)->local.trust == TrustLevel::Blocked;
     }
   }
-  const ThreadLocalPrefs prefs = sessions_.PrefsOf(thread_id).value_or(ThreadLocalPrefs{});
+  const ThreadLocalPrefs prefs = presenter_.PrefsOf(thread_id).value_or(ThreadLocalPrefs{});
   state.unread = SessionIsUnread(thread.unread_count, prefs.marked_unread);
   state.pinned = prefs.pinned_at != 0;
   state.muted = ThreadIsMuted(prefs.muted_until, util::NowUnixMs());
@@ -1236,7 +1236,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr("sidebar.menu.mark_unread");
       // A mark, not a message count: the row shows a dot and keeps its place in the list.
       action.run = [this, thread_id]() {
-        sessions_.MarkUnread(thread_id);
+        presenter_.MarkUnread(thread_id);
         AfterThreadPrefsChanged();
       };
       break;
@@ -1244,7 +1244,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.id = "session_mark_read";
       action.label = Tr("sidebar.menu.mark_read");
       action.run = [this, thread_id]() {
-        sessions_.MarkRead(thread_id);
+        presenter_.MarkRead(thread_id);
         AfterThreadPrefsChanged();
       };
       break;
@@ -1254,7 +1254,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
       action.icon = "../icons/pin.svg";
       action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
-        sessions_.SetPinned(thread_id, pin);
+        presenter_.SetPinned(thread_id, pin);
         AfterThreadPrefsChanged();
       };
       break;
@@ -1269,7 +1269,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr("sidebar.menu.unmute");
       action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id]() {
-        sessions_.Unmute(thread_id);
+        presenter_.Unmute(thread_id);
         AfterThreadPrefsChanged();
       };
       break;
@@ -1279,7 +1279,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
       action.icon = "../icons/archive.svg";
       action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
-        sessions_.SetArchived(thread_id, archive);
+        presenter_.SetArchived(thread_id, archive);
         AfterThreadPrefsChanged();
       };
       break;
@@ -1469,7 +1469,7 @@ void ChatController::OnProfileDataReset() {
   messaging_ready_ = false;
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
-  sessions_.ResetForNewProfile();
+  presenter_.ResetForNewProfile();
   shell_.showing_archived = false;
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1487,11 +1487,11 @@ void ChatController::SyncShellSessions() {
   if (!messaging_ready_) {
     return;
   }
-  sessions_.Refresh();  // ApplySessionList copies it in
+  presenter_.Refresh();  // ApplySessionList copies it in
 }
 
 void ChatController::ApplySessionList() {
-  const ChatListScreen& list = sessions_.List();
+  const ChatListScreen& list = presenter_.List();
   shell_.sessions.clear();
   shell_.archived_count = list.archived_count;
   shell_.showing_archived = list.showing_archived;
@@ -2391,61 +2391,10 @@ std::string FindMessageIdFromElement(ui::Element* element) {
 } // namespace
 
 void ChatController::ToggleReaction(const std::string& message_id, const std::string& emoji) {
-  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+  if (!messaging_ready_) {
     return;
   }
-  const std::string thread_id = ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-  const std::string key = NormalizeEmojiKey(emoji);
-  if (key.empty()) {
-    return;
-  }
-
-  // If local already has this emoji active on the target, clear; else add.
-  bool mine_active = false;
-  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, 500);
-  if (page) {
-    struct Slot {
-      int64_t order = -1;
-      bool active = false;
-    };
-    Slot latest;
-    for (const ThreadMessage& message : *page) {
-      if (message.content_type != ChatContentType::Annotation) {
-        continue;
-      }
-      if (message.sender_contact_id != kLocalSelfContactId) {
-        continue;
-      }
-      if (!message.target_message_id || *message.target_message_id != message_id) {
-        continue;
-      }
-      auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
-      std::string annotation_type = kAnnotationTypeReaction;
-      std::string value = message.text;
-      if (fields) {
-        annotation_type = fields->annotation_type;
-        value = fields->value.empty() ? message.text : fields->value;
-      }
-      if (!IsReactionAnnotationType(annotation_type)) {
-        continue;
-      }
-      if (NormalizeEmojiKey(value) != key) {
-        continue;
-      }
-      if (message.display_order >= latest.order) {
-        latest.order = message.display_order;
-        latest.active = annotation_type == kAnnotationTypeReaction;
-      }
-    }
-    mine_active = latest.active;
-  }
-
-  auto sent = mine_active ? facade_->ClearReaction(thread_id, message_id, key)
-                          : facade_->SendReaction(thread_id, message_id, key);
-  if (!sent) {
+  if (auto sent = presenter_.ToggleReaction(message_id, emoji); !sent) {
     if (shell_feedback_.show_toast) {
       shell_feedback_.show_toast(sent.error().message, ToastDuration::Short);
     }
@@ -2494,12 +2443,8 @@ void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Ve
   if (!facade_) {
     return;
   }
-  const std::string thread_id = ActiveThreadId();
-  auto delete_for_me = [this, thread_id, message_id]() {
-    if (!facade_) {
-      return;
-    }
-    if (auto deleted = facade_->DeleteMessageForMe(thread_id, message_id); !deleted) {
+  auto delete_for_me = [this, message_id]() {
+    if (auto deleted = presenter_.DeleteForMe(message_id); !deleted) {
       ShowToast(AppError::Display(deleted.error()));
       return;
     }
@@ -2507,9 +2452,7 @@ void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Ve
     DirtyChatTurns();
     NotifySurfaceChanged();
   };
-  auto thread = facade_->GetActiveThread();
-  const bool for_everyone = thread && thread->kind != ThreadKind::Ai && CanDeleteForEveryone(message_id);
-  if (!for_everyone) {
+  if (!presenter_.CanDeleteForEveryone(message_id)) {
     ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"), [delete_for_me](const bool ok) {
       if (ok) {
         delete_for_me();
@@ -2519,7 +2462,7 @@ void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Ve
   }
   std::vector<ContextMenuAction> actions;
   ContextMenuAction everyone{"delete_for_everyone", Tr("chat.menu.delete_for_everyone"), nullptr,
-                             [this, thread_id, message_id]() { DeleteMessageForEveryone(thread_id, message_id); }};
+                             [this, message_id]() { DeleteMessageForEveryone(message_id); }};
   everyone.danger = true;
   actions.push_back(std::move(everyone));
   ContextMenuAction mine{"delete_for_me", Tr("chat.menu.delete_for_me"), nullptr, delete_for_me};
@@ -2532,35 +2475,16 @@ void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Ve
   });
 }
 
-void ChatController::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
-  ConversationsFacade* facade = facade_;
-  if (!facade) {
-    return;
-  }
-  // Sends a message and may call the relay: off the UI thread, refresh from the reply.
-  AppRuntime::PostWorkerNormal([this, facade, thread_id, message_id]() {
-    auto done = facade->DeleteMessageForEveryone(thread_id, message_id);
-    AppRuntime::PostUI([this, done = std::move(done)]() {
-      if (!done) {
-        ShowToast(AppError::Display(done.error()));
-        return;
-      }
-      SyncDisplayFromThread();
-      DirtyChatTurns();
-      NotifySurfaceChanged();
-    });
+void ChatController::DeleteMessageForEveryone(const std::string& message_id) {
+  presenter_.DeleteForEveryone(message_id, [this](Roe<void> done) {
+    if (!done) {
+      ShowToast(AppError::Display(done.error()));
+      return;
+    }
+    SyncDisplayFromThread();
+    DirtyChatTurns();
+    NotifySurfaceChanged();
   });
-}
-
-bool ChatController::CanDeleteForEveryone(const std::string& message_id) const {
-  if (!facade_ || message_id.empty()) {
-    return false;
-  }
-  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
-  if (!found || !found->has_value()) {
-    return false;
-  }
-  return pbr::CanDeleteForEveryone(**found);
 }
 
 bool ChatController::IsDeletedMessage(const std::string& message_id) const {
@@ -3878,7 +3802,7 @@ void ChatController::WireMessagingBindings() {
           return;
         }
         // A muted thread still counts as unread in the list; it just does not notify.
-        const std::optional<ThreadLocalPrefs> prefs = sessions_.PrefsOf(thread_id);
+        const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
         if (prefs && ThreadIsMuted(prefs->muted_until, util::NowUnixMs())) {
           return;
         }
@@ -3994,7 +3918,7 @@ bool ChatController::Setup(ui::Context* context) {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
-  sessions_.ResetForNewProfile();
+  presenter_.ResetForNewProfile();
   shell_.sessions = {{ui::String("Chat"), ui::String(Tr("chat.ai_thread.placeholder").c_str())}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();

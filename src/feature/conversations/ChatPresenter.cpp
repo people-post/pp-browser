@@ -1,6 +1,11 @@
 #include "feature/conversations/ChatPresenter.h"
 
 #include "feature/conversations/ConversationsFacade.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/ReactionTypes.h"
+#include "common/EmojiKey.h"
 #include "feature/conversations/SessionListText.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "lib/ai/StructuredTextParser.h"
@@ -21,6 +26,32 @@ std::string ChatSessionKindName(const Thread& thread) {
     return thread.channel == ThreadChannel::E2e ? "private" : "public";
   }
   return "public";
+}
+
+bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,
+                      const std::string& emoji_key) {
+  int64_t latest_order = -1;
+  bool active = false;
+  for (const ThreadMessage& message : messages) {
+    if (message.content_type != ChatContentType::Annotation || message.sender_contact_id != kLocalSelfContactId ||
+        !message.target_message_id || *message.target_message_id != message_id) {
+      continue;
+    }
+    std::string annotation_type = kAnnotationTypeReaction;
+    std::string value = message.text;
+    if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json)) {
+      annotation_type = fields->annotation_type;
+      value = fields->value.empty() ? message.text : fields->value;
+    }
+    if (!IsReactionAnnotationType(annotation_type) || NormalizeEmojiKey(value) != emoji_key) {
+      continue;
+    }
+    if (message.display_order >= latest_order) {
+      latest_order = message.display_order;
+      active = annotation_type == kAnnotationTypeReaction;
+    }
+  }
+  return active;
 }
 
 ChatPresenter::ChatPresenter() {
@@ -216,6 +247,64 @@ void ChatPresenter::MarkRead(const std::string& thread_id) {
     facade_->MarkThreadRead(thread_id);
   }
   UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = false; });
+}
+
+Roe<void> ChatPresenter::ToggleReaction(const std::string& message_id, const std::string& emoji) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  const std::string key = NormalizeEmojiKey(emoji);
+  if (thread_id.empty() || message_id.empty() || key.empty()) {
+    return Error("No message to react to");
+  }
+  bool mine_active = false;
+  if (auto page = facade_->GetMessagesPage(thread_id, std::nullopt, 500)) {
+    mine_active = MyReactionActive(*page, message_id, key);
+  }
+  auto sent = mine_active ? facade_->ClearReaction(thread_id, message_id, key)
+                          : facade_->SendReaction(thread_id, message_id, key);
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
+}
+
+Roe<void> ChatPresenter::DeleteForMe(const std::string& message_id) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  if (thread_id.empty() || message_id.empty()) {
+    return Error("No message to delete");
+  }
+  return facade_->DeleteMessageForMe(thread_id, message_id);
+}
+
+bool ChatPresenter::CanDeleteForEveryone(const std::string& message_id) {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto thread = facade_->GetActiveThread();
+  if (!thread || thread->kind == ThreadKind::Ai) {
+    return false;
+  }
+  auto found = facade_->GetMessage(thread->id, message_id);
+  return found && found->has_value() && pbr::CanDeleteForEveryone(**found);
+}
+
+void ChatPresenter::DeleteForEveryone(const std::string& message_id, std::function<void(Roe<void>)> done) {
+  ConversationsFacade* facade = facade_;
+  const std::string thread_id = facade ? facade->ActiveThreadId() : std::string();
+  if (thread_id.empty() || message_id.empty()) {
+    if (done) {
+      done(Error("No message to delete"));
+    }
+    return;
+  }
+  // Sends a message and may call the relay: off the UI thread, answer from the reply.
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+      WorkerLane::Normal,
+      [facade, thread_id, message_id]() { return facade->DeleteMessageForEveryone(thread_id, message_id); },
+      [alive = std::weak_ptr<int>(alive_), done = std::move(done)](Roe<void> result) {
+        if (alive.lock() && done) {
+          done(std::move(result));
+        }
+      });
 }
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
