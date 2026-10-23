@@ -153,19 +153,46 @@ Per-message **Direct / Relay / Local** badges read the persisted `transport` col
 
 ## Identity model
 
-**Code today** (single-device): table below. **Multi-device target** (pre-release design freeze): Account ID = person; Peer ID = per-device endpoint; `relay:` = route binding — [multi-device-account](../../projects/multi-device-account/) ([D099](../../projects/chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device)).
+Account ID = person; Peer ID = one of its devices; `relay:` = an optional route
+([D099](../../projects/chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [multi-device-account](../../projects/multi-device-account/)).
 
 | Role | Example | Use |
 |------|---------|-----|
-| **Who** (network id) | libp2p Peer ID | Me primary, dial/bind, direct-only threads when no relay |
-| **Find** (lookup) | CAIP-10 `eip155:…:0x…`, nickname | Search / attest → resolve to Peer ID |
-| **Route** (optional offline) | `relay:…` | Relay inbox + preferred v1 `ChatTargetKey` / wire when present |
+| **Who** (person) | `account:…` (hash of the account ML-DSA key) | thread target, envelope sender, keys |
+| **Device** (endpoint) | Peer ID `Qm…` (hash of the device key) | dial, Amp links, mesh records |
+| **Find** (lookup) | nickname, `relay:…`, CAIP-10 `[later]` | search → Account ID |
+| **Route** (optional) | `relay:…` | relay inbox when the peer is offline |
 
-**Local contact book:** `Contact.id` is a stable UUID (local only). `Contact.ids[]` holds external handles (`relay_user`, `peer_id`, …). Threads link via `participant_contact_ids` → `Contact.id`.
+**Local contact book:** `Contact.id` is a stable UUID (local only). `Contact.ids[]` holds external handles (`account`, `relay_user`, `peer_id`, …); a contact keeps its account's card ([ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md)). Threads link via `participant_contact_ids` → `Contact.id`.
 
-**Thread target from contact** (`DirectChatTargetFromContact`): prefer primary/first `relay_user`; else `peer_id`. Relay is **not** required. Direct-only messaging needs peer ID **and** at least one dialable multiaddr (`Contact.multiaddrs`); endpoints register under the same chat-target identity value.
+**Thread target from contact** (`DirectChatTargetFromContact`): the Account ID. A contact without one cannot be messaged.
 
-See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route), [D091](../../projects/chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
+## Finding and reaching people
+
+Two different jobs, with different answers ([E028](../../projects/e2e-message-crypto/DECISIONS.md#e028--account-cards-keys-that-prove-themselves-relay-optional)):
+
+**Finding someone new** (name → Account ID) is the phone book's job: the relay directory now (search by
+nickname, `relay:` or Account ID), the chain name registry later
+([N029](../../projects/p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md)). The mesh does not do it: the DHT never
+holds names (N029), client devices do not walk it (lookups tell strangers whom you are looking for —
+[DHT D2](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/DHT.md)), and phones cannot hold
+records for others. Without a phone book, people are added from what they hand over: a QR code or
+invite link (a **locator**: Account ID, nickname, device Peer IDs), or a **contact card** a friend
+forwards in a chat.
+
+**Encrypting to and reaching someone you know** (Account ID → keys and devices) needs no relay:
+
+- *Keys* come from **account cards** — the account's keys and device list, signed by the account, so
+  any carrier will do: the card store, the first message of a session (`sender_keys`), a contact card,
+  the account's own devices over Amp (`/pp/account-card/1.0.0`), and the relay directory when one is
+  configured ([ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md#resolving-keys)).
+- *Devices* are the Peer IDs in the card; they are reached the mesh's ways — a link already up, LAN
+  mDNS among contacts, circuit rendezvous and hole punching through seeds
+  ([PEER_REACH](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/PEER_REACH.md)), addresses
+  from call invites, and the DHT where the device is a Node. Mesh seeds stay the bootstrap (N029 L0).
+
+Still on the relay: the offline inbox (a message to a peer with no device online) and group delivery.
+A profile with no relay configured messages contacts whose devices it can reach.
 
 ## Messaging UX
 

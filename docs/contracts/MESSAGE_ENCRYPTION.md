@@ -12,7 +12,8 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 
 - **256-bit pre-shared key (PSK)** per `ChatTargetKey` on direct tiers (`e2e`, `e2e_public`).
 - **Private direct (`e2e`):** PSK distributed out-of-band with mandatory fingerprint verification (E011).
-- **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024); encapsulate to the recipient **account** ML-KEM-768 (**M015**). Signing via `IPeerSigningKeyResolver` (relay v1, on-chain attestation `[later]`).
+- **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024); encapsulate to the recipient **account** ML-KEM-768 (**M015**).
+- **Peer keys** (signing and KEM) come from **account cards** that prove themselves against the Account ID ([ACCOUNT_CARD.md](ACCOUNT_CARD.md), E028): the card store, the peer's own devices, the relay directory when one is configured, the chain `[later]`. No source is trusted; none is required.
 - **HKDF-SHA256** derives per-epoch session keys from the PSK.
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
 - **ML-DSA-65** (FIPS 204) signs the outer relay envelope, with the sender's signing key (`IPeerSigningKeyResolver`).
@@ -26,6 +27,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 | Relay reads E2E body | AEAD ciphertext |
 | Relay forges E2E ciphertext without PSK | AEAD + seq in AAD |
 | Relay forges envelope (wrong sender) | ML-DSA-65 verify + pinned peer signing key |
+| Relay or any carrier substitutes a peer's keys | signing key hashes to the Account ID; KEM key needs the account's binding (account cards) |
 | Network replay of captured E2E blob | `sender_seq` in AAD + ingest rules |
 
 Not protected in v1: traffic metadata. Local disk: identity, PSK, and transcript bodies/previews/memory under the PIN/DEK vault ([AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), chat-storage **D102**); transcript metadata (timestamps, delivery, titles) stays plaintext.
@@ -46,7 +48,7 @@ Not protected in v1: traffic metadata. Local disk: identity, PSK, and transcript
 
 - 32 bytes from CSPRNG; fingerprint = BLAKE2b-256(PSK) as grouped hex.
 - Initial setup (E011): either peer generates; export raw base64 + fingerprint OOB; peer imports; both confirm fingerprint before first send (`psk_verified_at` on `chat_targets`). Rotation: export/import `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
-- **Public direct (`e2e_public`):** encapsulate to the recipient **account** ML-KEM-768 (E013 / E024 / **M015**) → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
+- **Public direct (`e2e_public`):** encapsulate to the recipient **account** ML-KEM-768 (E013 / E024 / **M015**) → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it, with the sender's key card in `body.e2e.sender_keys` ([ACCOUNT_CARD.md](ACCOUNT_CARD.md#key-card)) so the peer can verify it and answer without any lookup. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
 
 ### Session key (HKDF — E015)
 
@@ -130,6 +132,9 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 ```
 
 | `e2e` / `e2e_public` | `{ "e2e": { "payload_b64": "…" } }` |
+| `e2e_public` opening a session | `{ "e2e": { "payload_b64": "…", "key_init_b64": "…", "sender_keys": { …key card… } } }` |
+
+`sender_keys` appears only with `key_init_b64`, must be the key card of `sender_contact_id`, and is checked on its own (it is signed by the account it names), so it is not part of the envelope signing bytes.
 
 Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknown `envelope_version`.
 
@@ -159,13 +164,13 @@ Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
 `signature` on wire: base64 over the 3309-byte ML-DSA-65 signature. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes below are frozen.
 
-Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`) — whichever source offers it (directory, contact card, sync) — and a directory answer must be for the account asked. The account KEM key is kept only with the account's own binding (`PeerKemKeyStore`, `foundation/crypto/KemKeyBinding.h`): its ML-DSA signature over domain `pp-browser:kem-binding-v1\0`, version u8 `1`, the raw ML-DSA-65 account public key and the raw ML-KEM-768 public key, made with the account signing key whose hash is the Account ID. The relay stores the binding from `register/finish` and returns it with every directory entry (`kem_binding_signature_b64`); a key without a valid binding is refused, so the relay cannot substitute one.
+Peer verify keys: `PeerSigningKeyStore` / `PeerKemKeyStore`, filled from account cards ([ACCOUNT_CARD.md](ACCOUNT_CARD.md#resolving-keys), E028). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`), whichever source offers it (card store, `sender_keys`, the peer's devices, a contact card, the directory), and a directory answer must be for the account asked. The account KEM key is kept only with the account's own binding (`foundation/crypto/KemKeyBinding.h`): its ML-DSA signature over domain `pp-browser:kem-binding-v1\0`, version u8 `1`, the raw ML-DSA-65 account public key and the raw ML-KEM-768 public key. The relay stores the binding from `register/finish` and returns it with every directory entry (`kem_binding_signature_b64`); a key without a valid binding is refused, so no carrier, the relay included, can substitute one.
 
 ## Send / receive pipeline (e2e)
 
 1. Build binary `ChatPayload` → canonical AAD from envelope fields → `MessageCipher::Encrypt` → blob → base64 → `body.e2e.payload_b64`.
 2. `EnvelopeSigner::BuildSignBytes` → sign.
-3. Receive: verify signature → resolve PSK for `envelope.session_epoch` → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest.
+3. Receive: when `body.e2e.sender_keys` is present, check it as the key card of `sender_contact_id` and keep it → verify signature → resolve PSK for `envelope.session_epoch` → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest.
 
 Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_epoch` (E019).
 

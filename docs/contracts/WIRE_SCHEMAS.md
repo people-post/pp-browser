@@ -241,6 +241,14 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 
 AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b64`.
 
+**`content_type = contact_card`** (someone's contact, shared in a chat — [ACCOUNT_CARD.md](ACCOUNT_CARD.md)):
+
+| Field | Encoding | Notes |
+|-------|----------|-------|
+| `sub_version` | `u8` = **`2`** | `1` (local `contact_id`, `relay_user_id`, `avatar_url`, never sent) is retired |
+| `display_name` | **LenUtf8** | the sharer's name for the person — a label, not an identity |
+| `account_card` | **LenUtf8** | the person's account card (JSON); the receiver checks it before offering *Add* |
+
 **`content_type = annotation`:**
 
 | Field | Encoding |
