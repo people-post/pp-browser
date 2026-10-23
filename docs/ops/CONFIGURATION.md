@@ -49,7 +49,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
-**Dogfood initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.
+**Initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.
 
 ## Runtime session state
 

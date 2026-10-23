@@ -388,18 +388,9 @@ Wave 7  horizons                          (placeholders)
 
 ---
 
-## Replan gates
+## Capacity gates
 
-Later work is intentionally underspecified until evidence exists:
-
-| Gate | When | Decide |
-|------|------|--------|
-| **A** | After this inventory signed off | Phase 1 (Tier B glue) vs Phase 2 (`N-FANOUT`) order — **done:** Phase 1 then N-FANOUT |
-| **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` — **done:** soft N-CAP-MEDIA next |
-| **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
-| **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
-| **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallMediaBridge` glue and GUI remain deferred. |
-| **F** | Hard lab design signed off | Wave order + sparse set — **done (design):** [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); carry out [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md) h1+ |
+From the first capacity sweeps (`--suite cap`): a hop serves **N₀ = 8** participants with 100% required (12 / 16 are informational; the hop's session participant limit is 8); circuits **M₀ = 4** with 100% required (8 informational). How the gates were set: [projects/hard-lab/CURRENT_STATE.md](../../projects/hard-lab/CURRENT_STATE.md).
 
 ---
 

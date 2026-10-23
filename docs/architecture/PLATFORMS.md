@@ -20,13 +20,13 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMediaEngine`](../../src/lib/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp/realtime/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../src/lib/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
 
-| Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
+| Platform | SDL audio backend | Extra build packages? | Product needs |
 |----------|-------------------|----------------------|----------------------------------|
-| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264; LAN video **receive** from Android/Win/Mac OK 2026-07-31 (camera-less dogfood host) |
-| Windows | WASAPI | No | OS microphone privacy; LAN 1:1 dogfood vs Android/Linux/**macOS** (Win↔Mac bidirectional OK 2026-07-31) |
-| macOS | CoreAudio | No | Mic / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)); LAN 1:1 dogfood vs Android/Linux/**Windows** (Win↔Mac bidirectional OK 2026-07-31) |
-| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk`; LAN bidirectional vs Win/Mac OK 2026-07-31 |
-| iOS | CoreAudio | No | a3 wiring (V016): `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio`; device dogfood optional |
+| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264 |
+| Windows | WASAPI | No | OS microphone privacy |
+| macOS | CoreAudio | No | Mic / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)) |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk` |
+| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` (+ `voip` on CallKit builds) |
 
 **Agent traps**
 
@@ -36,7 +36,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Claim mobile voice without manifest/plist permissions | Add Android/iOS mic (and later camera) entitlements first |
 | Assume LAN ICE proves mobile NAT | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
 | Ship macOS PP.app without Local Network usage string | Add `NSLocalNetworkUsageDescription` (and Bonjour services key); otherwise Sequoia silently blocks ICE host UDP to Android/LAN peers |
-| Dogfood LAN ICE only from Cursor’s integrated terminal | Prefer a normal OS terminal or packaged `.app` — Cursor’s env can break host UDP while signaling still works |
+| Test LAN calls only from an IDE's integrated terminal | Prefer a normal OS terminal or the packaged `.app` — an IDE's environment can break host UDP while signaling still works |
 | Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
 `Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
@@ -114,7 +114,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 
 Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/foundation/platform/os/OsTlsPlatformCurl_*`).
 
-**A/V (a3 wiring — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
+**A/V ([V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/platform/ios_build.sh`](../../scripts/platform/ios_build.sh), [`scripts/platform/ios_sign.sh`](../../scripts/platform/ios_sign.sh).
 
