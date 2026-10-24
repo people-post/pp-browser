@@ -56,6 +56,7 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
+#include "lib/people/PeopleLookupFailure.h"
 #include "lib/people/ContactJson.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/messaging/AtAiParser.h"
@@ -118,6 +119,19 @@ static_assert(kSessionMutedForever == kThreadMutedForever,
 
 namespace {
 
+/** What the user sees when a row action (add / message) fails: the directory's state, never raw HTTP text. */
+std::string LocalActionFailureText(const Error& error) {
+  switch (ClassifyPeopleLookupError(error)) {
+  case PeopleLookupFailure::NotFound:
+    return Tr("contacts.err.user_not_found");
+  case PeopleLookupFailure::DirectoryUnreachable:
+    return Tr("contacts.err.directory_unreachable");
+  case PeopleLookupFailure::Other:
+    break;
+  }
+  return error.message.empty() ? Tr("contacts.err.add") : error.message;
+}
+
 
 std::string MockAssistantRespond(const std::string& query) {
   const std::string lower = util::ToLowerAscii(query);
@@ -129,8 +143,8 @@ std::string MockAssistantRespond(const std::string& query) {
         { "type": "long_list", "title": "Search results", "items": [
           { "title": "Alice Example", "subtitle": "@alice", "meta": "relay:alice123",
             "actions": [
-              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"account\",\"value\":\"account:alice123\",\"primary\":true},{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":false}]}}" },
-              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"account\",\"value\":\"account:alice123\",\"primary\":true},{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":false}]}}" }
+              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"account_id\":\"account:alice123\",\"hit_id\":\"hit_alice\",\"nickname\":\"alice\",\"display_name\":\"Alice Example\"}" },
+              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"account_id\":\"account:alice123\",\"hit_id\":\"hit_alice\",\"nickname\":\"alice\",\"display_name\":\"Alice Example\"}" }
             ]
           }
         ]}
@@ -1309,7 +1323,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
             auto result = facade_->DispatchAction(confirmed_payload);
             if (!result) {
               log().warning << "Local action failed: " << result.error().message;
-              ShowToast(result.error().message);
+              ShowToast(LocalActionFailureText(result.error()));
               NotifySurfaceChanged();
               return;
             }
@@ -1332,30 +1346,32 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
           });
       return;
     }
-    auto result = facade_->DispatchAction(*payload);
-    if (!result) {
-      // Never re-route the same action payload through MessageRouter — that loops
-      // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
-      log().warning << "Local action failed: " << result.error().message;
-      ShowToast(result.error().message);
-      NotifySurfaceChanged();
-      return;
-    }
-    if (*result) {
-      SendUserText(message, *result);
-      return;
-    }
-    RefreshFromMessaging();
-    if (contacts_notify_.refresh) {
-      contacts_notify_.refresh();
-    }
-    if (!ActiveThreadId().empty()) {
-      ShellSelectNavTab(NavTab::Sessions);
-      ShellSetPrimaryPane("chat");
-      if (ChromeSnapshot().layout_mode == LayoutMode::Compact) {
-        ShellOpenCompactChat();
+    // Add / Message on a directory row look the person up first (HTTP, on a worker): the result may come later.
+    facade_->DispatchActionAsync(*payload, [this, message](Roe<std::optional<std::string>> result) {
+      if (!result) {
+        // Never re-route the same action payload through MessageRouter — that loops
+        // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
+        log().warning << "Local action failed: " << result.error().message;
+        ShowToast(LocalActionFailureText(result.error()));
+        NotifySurfaceChanged();
+        return;
       }
-    }
+      if (*result) {
+        SendUserText(message, *result);
+        return;
+      }
+      RefreshFromMessaging();
+      if (contacts_notify_.refresh) {
+        contacts_notify_.refresh();
+      }
+      if (!ActiveThreadId().empty()) {
+        ShellSelectNavTab(NavTab::Sessions);
+        ShellSetPrimaryPane("chat");
+        if (ChromeSnapshot().layout_mode == LayoutMode::Compact) {
+          ShellOpenCompactChat();
+        }
+      }
+    });
     return;
   }
   SendUserText(message, payload);

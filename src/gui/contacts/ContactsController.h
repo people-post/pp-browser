@@ -156,6 +156,8 @@ private:
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
   void AddContactFromHit(const mesh::DirectoryHit& hit);
+  std::optional<Contact> FindContactByAccount(const std::string& account_id) const;
+  void ShowAlreadyContact(const Contact& contact);
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
   /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */

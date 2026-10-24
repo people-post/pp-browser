@@ -497,6 +497,11 @@ Roe<std::optional<std::string>> ConversationsFacade::DispatchAction(const std::s
   return hub_.Actions().Dispatch(payload_json);
 }
 
+void ConversationsFacade::DispatchActionAsync(const std::string& payload_json,
+                                              std::function<void(Roe<std::optional<std::string>>)> done) {
+  hub_.Actions().DispatchAsync(payload_json, std::move(done));
+}
+
 void ConversationsFacade::SetOnActionMessage(std::function<void(const std::string& message)> callback) {
   hub_.Actions().SetOnActionMessage(std::move(callback));
 }

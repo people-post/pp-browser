@@ -2,13 +2,13 @@
 
 #include "lib/messaging/GroupTypes.h"
 #include "common/chat/MessagingJson.h"
-#include "common/directory/DirectoryJson.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -19,9 +19,10 @@ namespace pbr {
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
                                                  IdentityStore& identity, IThreadStore& store,
                                                  GroupMembershipWorkflow* groups, IRegistrationClient* registration,
-                                                 MeshDeliveryOrchestrator* mesh_messaging)
+                                                 MeshDeliveryOrchestrator* mesh_messaging,
+                                                 mesh::IDirectoryClient* directory)
     : inbox_(inbox), contacts_(contacts), identity_(identity), store_(store), groups_(groups),
-      registration_(registration), mesh_messaging_(mesh_messaging) {
+      registration_(registration), mesh_messaging_(mesh_messaging), directory_(directory) {
   redirectLogger("ContactActionDispatcher");
 }
 
@@ -46,11 +47,78 @@ void RegisterKeysFromHit(MeshDeliveryOrchestrator* mesh_messaging, const mesh::D
   mesh_messaging->RegisterPeerKeysFromDirectory(hit);
 }
 
+/** Blocking: HTTP. */
+Roe<mesh::DirectoryHit> LookUpAccount(mesh::IDirectoryClient* directory, const std::string& account_id) {
+  if (!directory) {
+    return Error("Directory not configured");
+  }
+  return directory->LookupByAccount(account_id);
+}
+
+std::optional<std::string> AccountToLookUp(const Object& payload) {
+  const std::string type = payload.getString("type").value_or("");
+  if (type != "add_contact" && !(type == "start_conversation" && !payload.getString("contact_id"))) {
+    return std::nullopt;
+  }
+  auto account_id = payload.getString("account_id");
+  if (!account_id || account_id->empty()) {
+    return std::nullopt;
+  }
+  return account_id;
+}
+
 } // namespace
 
-Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::string& payload_json) {
-  auto payload = TryParseObject(payload_json);
-  auto type = payload ? payload->getString("type") : std::nullopt;
+std::optional<std::string> DirectoryAccountToLookUp(const std::string& payload_json) {
+  const auto payload = TryParseObject(payload_json);
+  return payload ? AccountToLookUp(*payload) : std::nullopt;
+}
+
+ContactActionDispatcher::DispatchResult ContactActionDispatcher::Dispatch(const std::string& payload_json) {
+  const auto payload = TryParseObject(payload_json);
+  if (!payload) {
+    return DispatchResult(std::optional<std::string>{});
+  }
+  std::optional<mesh::DirectoryHit> looked_up;
+  if (const auto account_id = AccountToLookUp(*payload)) {
+    auto hit = LookUpAccount(directory_, *account_id);
+    if (!hit) {
+      return hit.error();
+    }
+    looked_up = std::move(*hit);
+  }
+  return Run(*payload, looked_up);
+}
+
+void ContactActionDispatcher::DispatchAsync(const std::string& payload_json,
+                                            std::function<void(DispatchResult)> done) {
+  const auto payload = TryParseObject(payload_json);
+  const auto account_id = payload ? AccountToLookUp(*payload) : std::nullopt;
+  if (!account_id) {
+    done(Dispatch(payload_json));
+    return;
+  }
+  // The directory is an HTTP call: off the UI thread. The contact and the thread are made back on it.
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<mesh::DirectoryHit>>(
+      WorkerLane::Normal,
+      [directory = directory_, account_id = *account_id]() { return LookUpAccount(directory, account_id); },
+      [this, alive = std::weak_ptr<int>(alive_), action = *payload,
+       done = std::move(done)](Roe<mesh::DirectoryHit> hit) {
+        if (!alive.lock()) {
+          return;
+        }
+        if (!hit) {
+          done(hit.error());
+          return;
+        }
+        done(Run(action, std::optional<mesh::DirectoryHit>(std::move(*hit))));
+      });
+}
+
+ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
+    const Object& payload_object, const std::optional<mesh::DirectoryHit>& looked_up) {
+  const Object* const payload = &payload_object;
+  auto type = payload->getString("type");
   if (!type) {
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -60,10 +128,9 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     ThreadChannel channel = ThreadChannel::E2ePublic;
     if (auto cid = payload->getString("contact_id")) {
       contact_id = *cid;
-    } else if (const Object* hit_obj = payload->getObject("directory_hit")) {
-      const mesh::DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
-      RegisterKeysFromHit(mesh_messaging_, hit);
-      auto contact = contacts_.AddFromDirectoryHit(hit);
+    } else if (looked_up) {
+      RegisterKeysFromHit(mesh_messaging_, *looked_up);
+      auto contact = contacts_.AddFromDirectoryHit(*looked_up);
       if (!contact) {
         return contact.error();
       }
@@ -72,7 +139,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       }
       contact_id = contact->id;
     } else {
-      return Error("Missing contact_id or directory_hit");
+      return Error("Missing contact_id or account_id");
     }
     auto thread = inbox_.FindOrCreateDirectThread(contact_id, channel);
     if (!thread) {
@@ -115,13 +182,11 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
   }
 
   if (*type == "add_contact") {
-    const Object* hit_obj = payload->getObject("directory_hit");
-    if (!hit_obj) {
-      return Error("Missing directory_hit");
+    if (!looked_up) {
+      return Error("Missing account_id");
     }
-    const mesh::DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
-    RegisterKeysFromHit(mesh_messaging_, hit);
-    auto contact = contacts_.AddFromDirectoryHit(hit);
+    RegisterKeysFromHit(mesh_messaging_, *looked_up);
+    auto contact = contacts_.AddFromDirectoryHit(*looked_up);
     if (!contact) {
       return contact.error();
     }

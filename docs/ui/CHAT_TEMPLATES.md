@@ -26,7 +26,7 @@ Panel-eligible blocks (`long_list`, `form`, `calendar`, large `table`, etc.) ren
 
 - **Row fields:** `title` (required), optional `id`, `subtitle`, `meta`, `avatar_letter`, `avatar_tone`
 - **Row actions:** `items[].actions[]` with `label`, `message`, optional `payload`, optional `style` (`primary`|`secondary`)
-- **People discovery:** runtime `people_list` builds rows with short ids + primary Add/Message; chat keeps a short count paragraph and opens the working set panel
+- **People discovery:** runtime `people_list` builds rows with short ids + primary Add/Message; chat keeps a short count paragraph and opens the working set panel. The block carries every hit and `visible: 10`; its one footer action "Show more (N left)" (`{"type":"show_more_rows","block":i,"step":10}`) is local: it raises `visible` of the stored message and re-renders it in place (no new turn, no network)
 - **Pagination / refine:** `footer_actions[]` (e.g. "More" / "Refine search…")
 
 Reference example: `blog_articles` MCP tool → map `{ articles: [...] }` into rows.

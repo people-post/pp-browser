@@ -186,21 +186,53 @@ Object MakeAction(const std::string& label, const std::string& message, Object p
   return action;
 }
 
+/** The hit's account id, picked as ContactsStore::AddFromDirectoryHit picks it; empty when it has none. */
+std::string HitAccountId(const mesh::DirectoryHit& hit) {
+  if (hit.account_id && !hit.account_id->empty()) {
+    return *hit.account_id;
+  }
+  std::string account_id;
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
+      account_id = id.value;
+      if (id.primary) {
+        break;
+      }
+    }
+  }
+  return account_id;
+}
+
+/**
+ * Add / Message on a directory row name the person only: the list is stored with the message (capped at
+ * kMaxComposeTextBytes), and a hit's keys are ~8.6 KB. ContactActionDispatcher looks the account up when used.
+ */
+Object PersonActionPayload(const std::string& type, const mesh::DirectoryHit& hit) {
+  Object payload;
+  payload.set("type", type);
+  if (const std::string account_id = HitAccountId(hit); !account_id.empty()) {
+    payload.set("account_id", account_id);
+  }
+  payload.set("hit_id", hit.hit_id);
+  payload.set("nickname", hit.nickname);
+  payload.set("display_name", hit.display_name);
+  return payload;
+}
+
 Value DirectoryHitItemActions(const mesh::DirectoryHit& hit, const bool already_contact,
                               const std::optional<std::string>& contact_id,
                               const PeopleDiscoveryLabels& labels) {
-  const Object hit_json = DirectoryHitToJson(hit);
   std::vector<Value> actions;
   const std::string label_name =
       !hit.display_name.empty() ? hit.display_name : (!hit.nickname.empty() ? hit.nickname : "contact");
 
   if (already_contact) {
     Object message_payload;
-    message_payload.set("type", "start_conversation");
     if (contact_id && !contact_id->empty()) {
+      message_payload.set("type", "start_conversation");
       message_payload.set("contact_id", *contact_id);
     } else {
-      message_payload.set("directory_hit", ObjectValue(Object(hit_json)));
+      message_payload = PersonActionPayload("start_conversation", hit);
     }
     actions.push_back(ObjectValue(
         MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
@@ -215,19 +247,13 @@ Value DirectoryHitItemActions(const mesh::DirectoryHit& hit, const bool already_
                                                   std::move(view_payload), "secondary")));
     }
   } else {
-    Object add_payload;
-    add_payload.set("type", "add_contact");
-    add_payload.set("directory_hit", ObjectValue(Object(hit_json)));
     actions.push_back(
         ObjectValue(MakeAction(labels.add_contact, Fill(labels.add_name, "name", label_name),
-                                         std::move(add_payload), "primary")));
+                                         PersonActionPayload("add_contact", hit), "primary")));
 
-    Object message_payload;
-    message_payload.set("type", "start_conversation");
-    message_payload.set("directory_hit", ObjectValue(Object(hit_json)));
     actions.push_back(ObjectValue(
         MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
-                                           std::move(message_payload), "secondary")));
+                                           PersonActionPayload("start_conversation", hit), "secondary")));
   }
 
   return ArrayValue(std::move(actions));
@@ -356,19 +382,25 @@ Value RefineSearchFooter(const PeopleDiscoveryLabels& labels) {
   return ArrayValue({ObjectValue(std::move(refine))});
 }
 
-/** "Show more (N left)" re-runs the same search from `next_offset` (a payload turn), then "Refine search…". */
-Value PagedFooter(const PeopleDiscoveryLabels& labels, const std::string& query, const size_t next_offset,
-                  const size_t rest) {
+std::string ShowMoreLabel(const PeopleDiscoveryLabels& labels, const size_t rest) {
+  return Fill(labels.show_more_label, "rest", std::to_string(rest));
+}
+
+/** "Show more (N left)" reveals `step` more rows of `blocks[block_index]` in place (a local action, no turn). */
+Value ShowMoreFooter(const PeopleDiscoveryLabels& labels, const size_t block_index, const size_t step,
+                     const size_t rest) {
   Object payload;
-  payload.set("tool", "search_people");
-  payload.set("query", query);
-  payload.set("offset", static_cast<int64_t>(next_offset));
-  Object more = MakeAction(Fill(labels.show_more_label, "rest", std::to_string(rest)), labels.show_more_message,
-                           std::move(payload), "primary");
-  Object refine;
-  refine.set("label", labels.refine_label);
-  refine.set("message", labels.refine_message);
-  return ArrayValue({ObjectValue(std::move(more)), ObjectValue(std::move(refine))});
+  payload.set("type", kShowMoreRowsActionType);
+  payload.set("block", static_cast<int64_t>(block_index));
+  payload.set("step", static_cast<int64_t>(step));
+  return ArrayValue({ObjectValue(
+      MakeAction(ShowMoreLabel(labels, rest), labels.show_more_message, std::move(payload), "primary"))});
+}
+
+bool IsShowMoreRowsAction(const Value& action_value) {
+  const Object* action = asObject(action_value);
+  const Object* payload = action ? action->getObject("payload") : nullptr;
+  return payload && payload->getString("type").value_or("") == kShowMoreRowsActionType;
 }
 
 } // namespace
@@ -427,32 +459,18 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
   }
 
   if (!filtered_hits.empty()) {
+    // Every hit goes into the list; the first `visible` show, "show more" reveals the rest in place.
     const size_t total = filtered_hits.size();
-    // A page: rows [offset, offset + visible). The last page has no "show more". A re-run that found
-    // fewer people than the previous page started at shows the last page rather than nothing.
-    const size_t offset =
-        options.offset < total ? options.offset : (total > max_visible ? total - max_visible : 0);
-    const size_t visible = std::min(total - offset, max_visible);
-    const size_t rest = total - offset - visible;
-    const bool paged = offset > 0 || rest > 0;
+    const size_t visible = std::min(total, max_visible);
 
     Object paragraph;
     paragraph.set("type", "paragraph");
-    if (total == 1) {
-      paragraph.set("text", labels.found_one);
-    } else if (paged) {
-      paragraph.set("text", Fill(Fill(Fill(labels.found_many_paged, "count", std::to_string(total)), "from",
-                                       std::to_string(offset + 1)),
-                                  "to", std::to_string(offset + visible)));
-    } else {
-      paragraph.set("text", Fill(labels.found_many, "count", std::to_string(total)));
-    }
+    paragraph.set("text", total == 1 ? labels.found_one : Fill(labels.found_many, "count", std::to_string(total)));
     blocks.push_back(ObjectValue(std::move(paragraph)));
 
     std::vector<Value> items;
-    items.reserve(visible);
-    for (size_t i = offset; i < offset + visible; ++i) {
-      const mesh::DirectoryHit& hit = filtered_hits[i];
+    items.reserve(total);
+    for (const mesh::DirectoryHit& hit : filtered_hits) {
       const bool already =
           IdentityKnown(hit.ids, hit.account_id, known) ||
           MatchingContactId(hit.ids, hit.account_id, contacts).has_value();
@@ -465,12 +483,12 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
     }
 
     Value footer;
-    if (rest > 0) {
-      footer = PagedFooter(labels, options.query, offset + visible, rest);
+    if (visible < total) {
+      footer = ShowMoreFooter(labels, blocks.size(), max_visible, total - visible);
     }
-    blocks.push_back(ObjectValue(BuildLongListBlock(
-        rest > 0 ? labels.results_title_partial : labels.results_title, ArrayValue(std::move(items)),
-        std::move(footer))));
+    Object list = BuildLongListBlock(labels.results_title, ArrayValue(std::move(items)), std::move(footer));
+    list.set("visible", static_cast<int64_t>(visible));
+    blocks.push_back(ObjectValue(std::move(list)));
   } else if (!contacts.empty()) {
     const size_t total = contacts.size();
     const size_t visible = std::min(total, max_visible);
@@ -512,6 +530,58 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
   }
 
   return BuildBlocksJson(std::move(blocks));
+}
+
+bool RevealMoreRows(Object& block, const size_t step, const PeopleDiscoveryLabels& labels) {
+  const Array* items = block.getArray("items");
+  if (!items || step == 0) {
+    return false;
+  }
+  const size_t rows = items->elements.size();
+  const size_t visible = std::min<size_t>(block.getNonNegInt("visible").value_or(rows), rows);
+  if (visible >= rows) {
+    return false;
+  }
+  const size_t shown = std::min(rows, visible + step);
+  block.set("visible", static_cast<int64_t>(shown));
+  if (shown == rows) {
+    block.erase("footer_actions");
+    return true;
+  }
+  // The action stays (its payload names this block); only the remainder in its label changes.
+  if (const Array* footer = block.getArray("footer_actions")) {
+    std::vector<Value> actions = footer->elements;
+    for (Value& action_value : actions) {
+      if (IsShowMoreRowsAction(action_value)) {
+        Object action = *asObject(action_value);
+        action.set("label", ShowMoreLabel(labels, rows - shown));
+        action_value = ObjectValue(std::move(action));
+      }
+    }
+    block.set("footer_actions", ArrayValue(std::move(actions)));
+  }
+  return true;
+}
+
+std::optional<std::string> RevealMoreRowsInBlocksJson(const std::string& blocks_json, const size_t block_index,
+                                                      const size_t step, const PeopleDiscoveryLabels& labels) {
+  auto doc = TryParseObject(blocks_json);
+  const Array* blocks = doc ? doc->getArray("blocks") : nullptr;
+  if (!blocks || block_index >= blocks->elements.size()) {
+    return std::nullopt;
+  }
+  const Object* found = asObject(blocks->elements[block_index]);
+  if (!found || found->getString("type").value_or("") != "long_list") {
+    return std::nullopt;
+  }
+  Object block = *found;
+  if (!RevealMoreRows(block, step, labels)) {
+    return std::nullopt;
+  }
+  std::vector<Value> updated = blocks->elements;
+  updated[block_index] = ObjectValue(std::move(block));
+  doc->set("blocks", ArrayValue(std::move(updated)));
+  return DumpJson(*doc);
 }
 
 std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,

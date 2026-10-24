@@ -756,26 +756,29 @@ private:
             ReplyError(id, "not in the directory: " + account);
             return;
           }
+          // The row's payload names the account only; the dispatcher looks it up again for the keys.
           Object action;
           action.set("type", "start_conversation");
-          action.set("directory_hit", ObjectValue(DirectoryHitToJson(*found)));
-          if (auto opened = Hub().Actions().Dispatch(DumpJson(action)); !opened) {
-            ReplyError(id, "start_conversation: " + opened.error().message);
-            return;
-          }
-          auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account);
-          if (!contact || !*contact) {
-            ReplyError(id, "contact missing after start_conversation");
-            return;
-          }
-          auto thread = facade_->FindOrCreateDirectThread((*contact)->id, ThreadChannel::E2ePublic);
-          if (!thread) {
-            ReplyError(id, thread.error().message);
-            return;
-          }
-          Object out = Reply(id, true);
-          out.set("thread", thread->id);
-          Emit(out);
+          action.set("account_id", account);
+          Hub().Actions().DispatchAsync(DumpJson(action), [this, id, account](Roe<std::optional<std::string>> opened) {
+            if (!opened) {
+              ReplyError(id, "start_conversation: " + opened.error().message);
+              return;
+            }
+            auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account);
+            if (!contact || !*contact) {
+              ReplyError(id, "contact missing after start_conversation");
+              return;
+            }
+            auto thread = facade_->FindOrCreateDirectThread((*contact)->id, ThreadChannel::E2ePublic);
+            if (!thread) {
+              ReplyError(id, thread.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("thread", thread->id);
+            Emit(out);
+          });
         });
   }
 

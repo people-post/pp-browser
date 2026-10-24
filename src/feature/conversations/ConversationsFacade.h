@@ -195,6 +195,9 @@ public:
 
   // --- Actions --------------------------------------------------------------
   Roe<std::optional<std::string>> DispatchAction(const std::string& payload_json);
+  /** UI thread: Add / Message on a directory row look the person up first (HTTP), so `done` may run later. */
+  void DispatchActionAsync(const std::string& payload_json,
+                           std::function<void(Roe<std::optional<std::string>>)> done);
   void SetOnActionMessage(std::function<void(const std::string& message)> callback);
 
   // --- Router ---------------------------------------------------------------

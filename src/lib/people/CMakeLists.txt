@@ -15,6 +15,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   LocalAccountBackup.cpp
   MeshHopPolicy.cpp
   PeerAccountBook.cpp
+  PeopleLookupFailure.cpp
   PeerBriefRoute.cpp
   PeerDisplayLabel.cpp
   ModelFacingJson.cpp
