@@ -77,12 +77,14 @@ LenBytes body          kind-specific canonical encoding (below)
 
 | kind | name | body |
 |------|------|------|
-| 1 | `post` | text (LenUtf8, ≤ 4 KiB); media: count + `{content_id 32 B, mime LenUtf8, size u64}` (≤ 4); optional `reply_to` ref; optional `quote` ref |
+| 1 | `post` | text (LenUtf8); media: count + `{content_id 32 B, mime LenUtf8, size u64}`; optional `reply_to` ref; optional `quote` ref |
 | 2 | `edit` | target ref (own entry, kind `post`); replacement `post` body |
 | 3 | `delete` | target ref (any own entry) |
 | 4 | `react` | target ref; reaction LenUtf8 (v1 UI: `like`) |
 | 5 | `repost` | target ref |
-| 6 | `profile` | display name, bio, avatar `content_id` — the newest wins (§ 5) |
+| 6 | `profile` | display name, bio, avatar `content_id`, services offered — the newest wins (§ 5) |
+| 7 | `lane_close` | lane, last seq: this lane ends there (a retired or lost device) |
+| 8 | `disavow` | target refs (any author lane): "these are not mine" (§ 1, Lost devices) |
 
 A **ref** names one exact entry: `{author, lane, seq, entry_hash}`. The hash pins content: a ref to an
 entry that was later edited still points at the version it meant.
@@ -98,8 +100,8 @@ An entry is valid on its own when:
    [ACCOUNT_CARD § Resolving keys](../../docs/contracts/ACCOUNT_CARD.md#resolving-keys));
 2. `seq ≥ 1`, and `prev` is zeros exactly when `seq = 1`;
 3. `claimed_at` is no more than 5 minutes ahead of the reader's clock;
-4. the body decodes for its kind and is within limits; refs are well formed; `edit` / `delete`
-   targets name the same author.
+4. the body decodes for its kind and is within the protocol limits (§ 6); refs are well formed;
+   `edit` / `delete` / `disavow` targets name the same author.
 
 With its predecessor at hand it is also **chained**: `prev` = the predecessor's `entry_hash`, and
 `claimed_at ≥` the predecessor's `claimed_at`. A reader may hold a lane with gaps (it fetched e7 before
@@ -129,6 +131,19 @@ posts, folding in the latest heads it knows of its sibling lanes. Readers and re
 `issued_at` per author and take the per-lane maximum `seq` across statements. Heads are what discovery
 answers and what anchors commit to (§ 2).
 
+### Lost devices
+
+Whoever holds a lost device holds the account key, so nothing signed by that key can settle who is
+honest. What the author can do (S015):
+
+- **`lane_close`** — "lane L ends at seq N", from a device still held. Entries past N in that lane are
+  shown as *after the lane was closed*. Retiring a device normally closes its lane the same way.
+- **`disavow`** — "these entries are not mine", for posts already out.
+
+The other side can sign the same kinds; readers show conflicting claims side by side, and an anchored
+claim outranks a later one. The real fix is rotating the account key
+([M019](../multi-device-account/DECISIONS.md), later).
+
 ### Edit and delete
 
 - **Edit:** a new entry; the original stays in the log (public history). Readers show the newest edit
@@ -152,7 +167,8 @@ A post's time is only as good as who vouches for it.
 
 ### Witness receipts
 
-A witness (a publish target, or any service a user trusts) countersigns what it received:
+A witness is an ordinary account that offers the *witness* service in its profile (S013) — usually a
+publish target. It countersigns what it received:
 
 ```text
 domain   "pp-browser:post-witness-v1" NUL
@@ -164,11 +180,14 @@ i64 BE   seen_at
 ```
 
 signed by the witness account's key. Publish targets return one on publish (P4). Several independent
-receipts narrow the window; none of them is proof.
+receipts narrow the window; none of them is proof. Which witnesses count is the reader's choice, like
+whom to follow: by default, receipts from contacts and followed accounts are shown first.
 
 ### Anchors
 
-The author (or a service batching for many authors) commits **head hashes** to pp-ledger:
+An **anchoring service** (an account offering it, S013) batches heads from many authors and commits one
+Merkle root per period (e.g. hourly) in one pp-ledger transaction, so anchoring costs an author almost
+nothing; an author who cares about one post may anchor it directly. What is committed:
 
 - leaves are `head_hash`es; one Merkle root per anchor transaction, so one transaction covers many
   authors and, through the chains, every entry up to each anchored head;
@@ -193,7 +212,7 @@ fixes only what is committed (`head_hash` leaves) and what a proof contains.
 ## 3. Distribution (sketch — detailed before P2)
 
 Storage is local first: the author's lanes and the logs a user follows are kept in the profile
-(`post_entries`); media in the public CAS realm.
+(`post_entries`); media in the public CAS realm. Relays serve posts free; posts are small (§ 6).
 
 | Path | Carries | Notes |
 |------|---------|-------|
@@ -202,9 +221,17 @@ Storage is local first: the author's lanes and the logs a user follows are kept 
 | **Announce plane** | "new head" tips | [peer-scoped-broadcast](../peer-scoped-broadcast/DESIGN.md), scoped to the **account** rather than a PeerId |
 | **Peers who have it** | entries, media | any holder can serve: everything self-verifies |
 
-**Follow** = keep an author's newest head and fetch the lanes past what is held. Head discovery is the
-hard part: ask the author's publish targets, the author's devices, and (later) peers who follow them;
-keep the newest signed head.
+**Follow** = a local list: keep each followed author's newest head and fetch past what is held. Two ways
+to read, the reader's choice per author (S012):
+
+| Mode | How | Who learns you follow |
+|------|-----|-----------------------|
+| **Fetch** | poll heads and entries | no one by name: **reading public posts never requires identifying yourself** (S011) — reads are unsigned; a relay still sees the network address (fetch through a circuit to hide it, later) |
+| **Subscribe** | register (signed) with a publish target or the author's devices for pushes | whoever you subscribe through |
+
+There is no public follow list: what a relay sees of subscriptions is all anyone can know, and fetching
+leaves even less. Head discovery: ask the author's publish targets, the author's devices, and (later)
+peers who follow them; keep the newest signed head.
 
 Relays may index and aggregate (S007): search, counts, "who replied". Everything they say about counts
 is attributed to them (§ 4).
@@ -229,19 +256,50 @@ Who owns the data decides where it lives and what can be known.
 
 ---
 
-## 5. Profiles
+## 5. Profiles and services
 
 A `profile` entry (display name, bio, avatar) in the author's log: signed, chained and anchorable like
 any post, newest wins. The account card's nickname stays the card's; the profile entry is what posts show.
+
+Service providers are ordinary accounts (S013). A profile may list **services offered**, each a kind
+with its terms:
+
+| Service | Terms it states |
+|---------|-----------------|
+| `post_relay` | quotas (§ 6), retention, whether it indexes / counts |
+| `witness` | — |
+| `anchor` | batch period, ledger |
+
+The contact panel shows "Provides: …" for any account, and Settings offers known providers when the
+user picks publish targets.
+
+## 6. Limits
+
+Two layers (S014): **protocol limits** every client enforces — so a reader knows the most a post can
+cost — and **relay quotas**, which a relay states in its `post_relay` service and may set lower.
+
+| Protocol limit | Value |
+|----------------|-------|
+| Entry canonical bytes | ≤ 8 KiB |
+| Post text | ≤ 4 KiB UTF-8 |
+| Media per post | ≤ 4 |
+| Media object | ≤ 16 MiB |
+| Lanes in a head statement | ≤ 64 |
+| Entries per fetch page | ≤ 256 |
+
+| Relay quota (example default) | Value |
+|-------------------------------|-------|
+| Entries per account per day | 100 |
+| Media per account per day | 256 MiB |
+| Retention | stated by the relay (e.g. entries forever, media 1 year) |
+
+Entries over a protocol limit are invalid everywhere; over a relay quota, that relay refuses them and
+others may not.
 
 ---
 
 ## Open questions
 
-1. **Public follow lists** — local-only follows in v1, or a `follow` kind so a follow graph is public?
-2. **Witness identity** — do services witness under an account id like anyone, or a service key in the
-   directory?
-3. **Who anchors** — authors directly, or batching services (and who pays the fee)? pp-ledger side.
-4. **Lane revocation** — a lost device's lane can keep being written by whoever holds the account key;
-   that is the account-key revocation problem ([M019](../multi-device-account/DECISIONS.md), later).
-5. **Limits** — text size, media count, per-author rates at relays.
+1. **Anchor transaction** — its type, fee and batching rules on the pp-ledger side.
+2. **Video** — 16 MiB per object fits photos and short clips; longer video likely needs chunked CAS
+   objects (a later media kind), not a bigger limit.

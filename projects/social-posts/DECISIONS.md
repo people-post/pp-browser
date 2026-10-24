@@ -29,7 +29,7 @@ scope, not PeerId).
 
 ## S003 — One lane per device, random lane id
 
-**Status:** Proposed (2026-10-23)
+**Status:** Accepted (2026-10-23)
 
 **Decision:** Each device writes its own hash chain (lane) under the account. A lane id is 16 random
 bytes, device state never restored from backup.
@@ -117,3 +117,64 @@ global totals.
 time contradicts an anchor is flagged.
 
 **Rationale:** The author's clock is a claim; the reader deserves to know what vouches for a time.
+
+---
+
+## S011 — Reading public posts is anonymous
+
+**Status:** Accepted (2026-10-23)
+
+**Decision:** Fetching heads and entries is unsigned; no relay or author may require a reader to identify
+themselves to read public posts.
+
+**Rationale:** Public means public. A relay still sees the network address; fetching through a circuit
+can hide that later.
+
+---
+
+## S012 — Follows are local; subscribing is a choice
+
+**Status:** Accepted (2026-10-23, product)
+
+**Decision:** No public follow list and no `follow` kind. A reader per author either *fetches* (polls, no
+identity) or *subscribes* (registers for pushes, and whoever they subscribe through learns it).
+
+**Rationale:** A follow graph is only as public as the reader makes it: what a relay sees of subscriptions
+is all anyone can know.
+
+---
+
+## S013 — Service providers are ordinary accounts
+
+**Status:** Accepted (2026-10-23, product)
+
+**Decision:** Relays, witnesses and anchoring services identify as accounts like anyone, and state the
+services they offer (with terms) in their `profile` entry. Which witnesses count is the reader's choice.
+
+**Rationale:** No second identity system for services; trust in a service is decided the way trust in a
+person is. The contact panel can show what any account provides.
+
+---
+
+## S014 — Protocol limits and relay quotas
+
+**Status:** Accepted (2026-10-23, product)
+
+**Decision:** Hard protocol limits every client enforces (entry ≤ 8 KiB, text ≤ 4 KiB, ≤ 4 media of
+≤ 16 MiB each, ≤ 64 lanes per head, ≤ 256 entries per page), and per-relay quotas stated in its service
+terms, never above the limits. Relays serve posts free.
+
+**Rationale:** Relays need predictable load to offer a free service; readers need to know the most a post
+can cost before fetching it.
+
+---
+
+## S015 — Lost devices: close the lane, disavow, rotate later
+
+**Status:** Accepted (2026-10-23, product)
+
+**Decision:** `lane_close` ends a lane at a seq (also used to retire a device); `disavow` disowns
+entries already out. Conflicting claims are shown side by side; an anchored claim outranks a later one.
+
+**Rationale:** Anyone holding the account key can sign anything, so these are statements, not proofs;
+the full fix is account-key rotation (M019).
