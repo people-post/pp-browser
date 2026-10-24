@@ -156,6 +156,17 @@ class User:
         self.wait_ready()
         self.cmd("restore_sessions", bundle=bundle)
 
+    def log_text(self):
+        """Everything this user's app has logged, every run."""
+        out = []
+        for run in range(1, self.runs + 1):
+            try:
+                with open(os.path.join(self.dir, "probe-%d.log" % run), errors="replace") as f:
+                    out.append(f.read())
+            except OSError:
+                pass
+        return "".join(out)
+
     # --- commands -------------------------------------------------------------------------------
 
     def cmd(self, name, timeout=30, check=True, **args):
@@ -327,11 +338,15 @@ class Lab:
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name, directory=True, reachable=False):
+    def user(self, name, directory=True, reachable=False, beside=None):
         """A registered user; directory=False: one whose directory never answers; reachable=True: one that
-        stays reachable without the relay (parked on the lab's seed)."""
+        stays reachable without the relay (parked on the lab's seed); beside=<user>: --nat, on that user's
+        network (the same Wi-Fi), not behind a NAT of its own."""
         self.fresh_registration()
-        container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
+        if beside is not None:
+            container = beside.container
+        else:
+            container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
         u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable)
         self.users.append(u)
         u.start()
@@ -454,6 +469,41 @@ def scenario_first_contact(lab):
     if len(got) != 1:
         raise ProbeError("bob's history: %s" % got)
     return {"ring_s": round(rang, 2), "answer_to_audio_s": took}
+
+
+def scenario_bystander_is_no_relay(lab):
+    """#379: Carol's phone is on Bob's Wi-Fi with a live link to him, a contact of his, and no relay.
+    Alice, behind her own NAT, calls Bob: the call needs a circuit and goes through the lab's relay
+    within the usual bound. Carol's phone is never asked to carry it — it would refuse, and every try
+    spends the call's time."""
+    a = lab.user("alice")
+    b = lab.user("bob")
+    c = lab.user("carol", beside=b)
+    for u in (a, b, c):
+        u.wait_mesh()
+    carol_peer = c.cmd("whoami").get("peer_id", "")
+    if not carol_peer:
+        raise ProbeError("carol: no peer id")
+    # Carol and Bob talk: each keeps the other as a contact (device included), linked over their Wi-Fi.
+    c_thread = c.cmd("open_chat", account=b.account)["thread"]
+    b.cmd("open_chat", account=c.account)
+    connect(c, c_thread, b)
+    c.cmd("leave")
+    assert_idle(b, c)
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    _, timing = connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    logs = {u.name: u.log_text() for u in (a, b)}
+    if not any("EnsureViaCircuit ok relay=" in text or "EnsureViaCircuit nested ok relay=" in text
+               for text in logs.values()):
+        raise ProbeError("no call went through a circuit: the scenario checks nothing here")
+    for name, text in logs.items():
+        if "relay=" + carol_peer in text:
+            raise ProbeError("%s: tried carol's phone as a circuit relay" % name)
+        if "circuit-relay service not ready" in text:
+            raise ProbeError("%s: a peer that is no relay was asked for a circuit" % name)
+    return timing
 
 
 def scenario_calling_each_other_at_once(lab):
@@ -1701,6 +1751,7 @@ SCENARIOS = [
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
+    ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),
@@ -1744,7 +1795,8 @@ OPT_IN = set()
 # --nat they run only when named.
 NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 # Scenarios that change a user's network: they need a container per user (--nat).
-NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops"}
+NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
+             "bystander_is_no_relay"}
 
 
 def main():
