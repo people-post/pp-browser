@@ -49,4 +49,11 @@ Roe<ByteVector> Base64UrlDecode(const std::string& encoded) {
   return out;
 }
 
+ByteVector Blake2b256(const ByteVector& data) {
+  EnsureSodiumInit();
+  ByteVector hash(crypto_generichash_BYTES);
+  crypto_generichash(hash.data(), hash.size(), data.data(), data.size(), nullptr, 0);
+  return hash;
+}
+
 } // namespace pbr

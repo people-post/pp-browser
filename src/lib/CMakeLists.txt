@@ -16,6 +16,7 @@ if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(broadcast)
   add_subdirectory(pricing)
   add_subdirectory(content)
+  add_subdirectory(posts)
   add_subdirectory(ai)
   add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
@@ -26,6 +27,7 @@ if(NOT PP_BROWSER_HEADLESS)
     pp_lib_broadcast
     pp_lib_pricing
     pp_lib_content
+    pp_lib_posts
     pp_lib_ai
     pp_lib_ai_conversation
     pp_lib_ai_mcp

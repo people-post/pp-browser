@@ -47,7 +47,9 @@ hash chain under the same account. A reader's view of an author is the union of 
   ([card exchange](../../docs/contracts/ACCOUNT_CARD.md#card-exchange-over-amp)). Public posts must not
   publish the device list.
 - The lane id is device state, never in a backup: a restored device starts a **new lane**, so it cannot
-  reuse sequence numbers it no longer remembers.
+  reuse sequence numbers it no longer remembers. The writer (`PostAuthor`) also binds its lane to the
+  device's PeerId, and starts a new lane whenever the store holds entries in its lane past what it wrote —
+  so even a device whose own record went back never signs a second entry at a seq.
 - Lanes are cheap and permanent. An unused lane simply stops.
 
 ### Entry
@@ -211,8 +213,10 @@ fixes only what is committed (`head_hash` leaves) and what a proof contains.
 
 ## 3. Distribution (sketch — detailed before P2)
 
-Storage is local first: the author's lanes and the logs a user follows are kept in the profile
-(`post_entries`); media in the public CAS realm. Relays serve posts free; posts are small (§ 6).
+Storage is local first: the author's lanes and the logs a user follows are kept in profile.db — public
+material, plaintext like peer cards: `post_entries` (each entry's place, hash, kind, claimed time and
+signed bytes; forks side by side; stubs without bytes), `post_heads` (each author's newest head) and
+`post_own_lanes` (this device's lane); media in the public CAS realm. Relays serve posts free; posts are small (§ 6).
 
 | Path | Carries | Notes |
 |------|---------|-------|

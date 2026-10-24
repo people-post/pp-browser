@@ -15,6 +15,7 @@ Independent **product peer** libraries (North Star). Peers must not `#include` o
 | broadcast | `lib/broadcast/` | `pp_lib_broadcast` |
 | pricing | `lib/pricing/` | `pp_lib_pricing` |
 | content | `lib/content/` | `pp_lib_content` |
+| posts | `lib/posts/` | `pp_lib_posts` |
 | ai | `lib/ai/` | `pp_lib_ai` (+ conversation/mcp sublibs) |
 
 The mesh is not a peer here: it is [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)
@@ -23,7 +24,7 @@ vocabulary (`mesh/types/…`, `pp_mesh_types`, through `pp_pbr_common`) — `che
 
 Window host / RmlUi Backend / overlays live in `foundation/platform/ui/` (not a lib peer).
 
-Includes: `#include "lib/people/…"`, `#include "lib/media/…"`, `#include "lib/net/…"`, `#include "lib/ui/…"`, `#include "lib/messaging/…"`, `#include "lib/calls/…"`, `#include "lib/broadcast/…"`, `#include "lib/pricing/…"`, `#include "lib/content/…"`, `#include "lib/ai/…"`.
+Includes: `#include "lib/people/…"`, `#include "lib/media/…"`, `#include "lib/net/…"`, `#include "lib/ui/…"`, `#include "lib/messaging/…"`, `#include "lib/calls/…"`, `#include "lib/broadcast/…"`, `#include "lib/pricing/…"`, `#include "lib/content/…"`, `#include "lib/posts/…"`, `#include "lib/ai/…"`.
 Aggregate `pp_lib` is defined in this folder’s [`CMakeLists.txt`](CMakeLists.txt). Product-stack convenience `pp_base` (foundation + Amp + `pp_lib`) is in [`src/CMakeLists.txt`](../CMakeLists.txt).
 
 **Testing:** lib peers should be almost fully coverable by **unit** tests (and loopback compose where the peer owns the stack). Prefer extracting a seam over sprawling integration when a path is too hard. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md). Add `tests/README.md` under a peer only when coverage/skips are non-obvious.
