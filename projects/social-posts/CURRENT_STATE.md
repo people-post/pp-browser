@@ -9,5 +9,7 @@ stubs for deleted and unkept entries, newest head per author, the device's own l
 writer (`PostAuthor`: device-bound lane, never reuses a seq, claimed time monotonic per lane). 18 unit tests;
 no UI, no network.
 
-**Next:** design distribution in detail (publish targets in the account card, the relay post API, head
-discovery), then P2 — the first slice.
+**Distribution designed (2026-10-23):** [DISTRIBUTION.md](DISTRIBUTION.md), S017–S021 — targets in the head
+statement, the relay post API, `/pp/posts/1.0.0`, head discovery, publish outbox, refresh.
+
+**Next:** review; then P2 — the relay PR first (merged and deployed before the client), then the client.

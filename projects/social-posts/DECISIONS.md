@@ -191,3 +191,64 @@ raised, never lowered.
 
 **Rationale:** Limits inside signed, hashed bytes outlive any client. With stubs, raising one later costs
 older clients only the larger entries; lowering would invalidate history already published and anchored.
+
+---
+
+## S017 — Publish targets live in the head statement
+
+**Status:** Proposed (2026-10-23)
+
+**Decision:** The author's publish targets (≤ 8 https URLs) are part of the signed head statement; invites
+and contact cards carry them only as unsigned hints.
+
+**Rationale:** The head already travels with the log and is newest-wins; putting targets in the account
+card would need a card version older clients reject.
+
+---
+
+## S018 — Writes are authenticated by the author's own signatures
+
+**Status:** Proposed (2026-10-23)
+
+**Decision:** A relay accepts an entry or head because it verifies against the author's key (sent along as a
+key card when the relay does not know it); media uploads carry an account-signed presign request. Reads are
+unsigned (S011). A relay may additionally require registration on its own terms.
+
+**Rationale:** The signed objects are their own proof of authorship, so anyone may mirror them; quotas key
+on the author either way.
+
+---
+
+## S019 — Relays keep forks and stubs, and apply deletes
+
+**Status:** Proposed (2026-10-23)
+
+**Decision:** Relays store both entries of a fork and flag the author; a `delete` entry turns its target
+into a stub (place and hash kept) and unpins media no kept entry names.
+
+**Rationale:** A fork is proof readers should be able to fetch; a stub keeps the chain verifiable after a
+delete (S008, S016).
+
+---
+
+## S020 — Devices serve their own account's posts, nothing else (v1)
+
+**Status:** Proposed (2026-10-23)
+
+**Decision:** `/pp/posts/1.0.0` answers for the device's own account only. Readers try the author's relays
+before the author's devices.
+
+**Rationale:** Answering from the author's device reveals the reader to the author; relays are the private
+default, devices the fallback. Peer mirroring of followed authors comes later.
+
+---
+
+## S021 — P2 is fetch only
+
+**Status:** Proposed (2026-10-23)
+
+**Decision:** The first slice polls (on opening the feed and every 15 minutes while visible). Subscriptions
+with pushes come after.
+
+**Rationale:** Fetch needs no registration and reveals nothing by name (S011, S012); pushes add a relay-side
+subscription model worth designing on its own.

@@ -222,6 +222,10 @@ TEST_F(PostEntryTest, AHeadNamesEveryLaneOnceInOrder) {
   EXPECT_FALSE(SignPostHead(head, alice_.Signer())) << "more lanes than a head may name";
   EXPECT_FALSE(ParsePostHead(PostHeadCanonicalBytes(head)));
 
+  const PostHead plain_http{.author = alice_.account_id, .issued_at = kNow, .targets = {"http://relay.example"}};
+  EXPECT_FALSE(SignPostHead(plain_http, alice_.Signer())) << "targets are https";
+  EXPECT_FALSE(ParsePostHead(PostHeadCanonicalBytes(plain_http)));
+
   PostHead repeated{.author = alice_.account_id, .issued_at = kNow,
                     .lanes = {{.lane = PostLane{1}, .seq = 1}, {.lane = PostLane{1}, .seq = 2}}};
   EXPECT_FALSE(ParsePostHead(PostHeadCanonicalBytes(repeated))) << "a lane named twice";

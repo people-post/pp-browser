@@ -75,7 +75,7 @@ TEST_F(PostStoreTest, EachDeviceHasItsLaneAndTheHeadNamesBoth) {
   ASSERT_TRUE(laptop.Append(PostKind::Post, Text("from the laptop"), kNow));
   ASSERT_TRUE(phone.Append(PostKind::Post, Text("phone again"), kNow + 1));
 
-  auto head = phone.IssueHead(kNow + 2);
+  auto head = phone.IssueHead(kNow + 2, {"https://relay.example/api/relay"});
   ASSERT_TRUE(head);
   auto parsed = VerifyPostHead(head.value(), alice_.public_key, kNow + 2);
   ASSERT_TRUE(parsed);
@@ -83,6 +83,7 @@ TEST_F(PostStoreTest, EachDeviceHasItsLaneAndTheHeadNamesBoth) {
   EXPECT_EQ(parsed.value().lanes[0].lane, PostLane{1});
   EXPECT_EQ(parsed.value().lanes[0].seq, 1u);
   EXPECT_EQ(parsed.value().lanes[1].seq, 2u);
+  EXPECT_EQ(parsed.value().targets, std::vector<std::string>{"https://relay.example/api/relay"});
   EXPECT_EQ(store_->Head(alice_.account_id).value()->canonical, head.value().canonical);
 }
 

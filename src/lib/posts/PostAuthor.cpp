@@ -79,12 +79,13 @@ Roe<SignedPostEntry> PostAuthor::Append(const PostKind kind, const ByteVector& b
   return signed_entry;
 }
 
-Roe<SignedPostHead> PostAuthor::IssueHead(const int64_t now_ms) {
+Roe<SignedPostHead> PostAuthor::IssueHead(const int64_t now_ms, std::vector<std::string> targets) {
   auto lanes = store_.LanesOf(account_id_);
   if (!lanes) {
     return lanes.error();
   }
-  PostHead head{.author = account_id_, .issued_at = now_ms, .lanes = std::move(lanes.value())};
+  PostHead head{.author = account_id_, .issued_at = now_ms, .lanes = std::move(lanes.value()),
+                .targets = std::move(targets)};
   if (head.lanes.size() > kMaxPostHeadLanes) {
     // A head names every lane or it lets a carrier hide one; 64 devices' lanes is the protocol's bound.
     return Error("post: more lanes than a head can name");

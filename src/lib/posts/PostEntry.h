@@ -45,7 +45,7 @@ bool IsPostFork(const PostEntry& a, const PostHash& a_hash, const PostEntry& b, 
 /** The ref naming this entry. */
 PostRef PostRefOf(const PostEntry& entry, const PostHash& entry_hash);
 
-/** Canonical bytes of a head statement (domain "pp-browser:post-head-v1"); lanes sorted and distinct. */
+/** Canonical bytes of a head statement (domain "pp-browser:post-head-v1"); lanes sorted and distinct, then targets. */
 ByteVector PostHeadCanonicalBytes(const PostHead& head);
 Roe<PostHead> ParsePostHead(const ByteVector& canonical);
 PostHash PostHeadHash(const ByteVector& canonical);

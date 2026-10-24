@@ -28,6 +28,8 @@ inline constexpr size_t kMaxPostTextBytes = 4 * 1024;
 inline constexpr size_t kMaxPostMedia = 4;
 inline constexpr uint64_t kMaxPostMediaObjectBytes = 16ull * 1024 * 1024;
 inline constexpr size_t kMaxPostHeadLanes = 64;
+inline constexpr size_t kMaxPostHeadTargets = 8;
+inline constexpr size_t kMaxPostTargetUrlBytes = 256;
 inline constexpr size_t kMaxPostPageEntries = 256;
 inline constexpr int64_t kMaxPostClockSkewMs = 5 * 60 * 1000;
 // Bounds on the smaller fields (all within the entry limit anyway).
@@ -97,6 +99,7 @@ struct PostHead {
   std::string author;
   int64_t issued_at = 0;
   std::vector<PostHeadLane> lanes;  // sorted by lane, distinct
+  std::vector<std::string> targets; // publish targets: https base URLs (S017)
 
   bool operator==(const PostHead&) const = default;
 };

@@ -9,7 +9,8 @@ optionally witnessed by services, and — with pp-ledger — anchored so that hi
 
 | Doc | Role |
 |-----|------|
-| [DESIGN.md](DESIGN.md) | Post log format, trust ladder, distribution and social-action sketch |
+| [DESIGN.md](DESIGN.md) | Post log format, trust ladder, social-action sketch |
+| [DISTRIBUTION.md](DISTRIBUTION.md) | Publish targets, relay post API, device fetch, head discovery, publish / refresh flows |
 | [DECISIONS.md](DECISIONS.md) | S001– locked choices |
 | [PHASES.md](PHASES.md) | Delivery order |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Progress |

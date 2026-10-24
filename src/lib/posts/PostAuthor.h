@@ -25,8 +25,8 @@ public:
 
   /** A new entry of `kind` with `body` (checked against the protocol limits), at `now_ms` or later. */
   Roe<SignedPostEntry> Append(PostKind kind, const ByteVector& body, int64_t now_ms);
-  /** A head statement over the account's lanes held here. */
-  Roe<SignedPostHead> IssueHead(int64_t now_ms);
+  /** A head statement over the account's lanes held here, naming the author's publish targets. */
+  Roe<SignedPostHead> IssueHead(int64_t now_ms, std::vector<std::string> targets = {});
 
 private:
   Roe<OwnPostLane> CurrentLane();

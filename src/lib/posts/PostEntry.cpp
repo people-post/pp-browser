@@ -185,6 +185,10 @@ ByteVector PostHeadCanonicalBytes(const PostHead& head) {
     w.U64(lane.seq);
     w.Hash(lane.entry_hash);
   }
+  w.U64(head.targets.size());
+  for (const std::string& target : head.targets) {
+    w.Utf8(target);
+  }
   return w.Take();
 }
 
@@ -213,6 +217,17 @@ Roe<PostHead> ParsePostHead(const ByteVector& canonical) {
     }
     head.lanes.push_back(lane);
   }
+  const uint64_t targets = r.U64();
+  if (r.failed() || targets > kMaxPostHeadTargets) {
+    return Error("post: head has too many targets");
+  }
+  for (uint64_t i = 0; i < targets; ++i) {
+    std::string target = r.Utf8();
+    if (target.size() > kMaxPostTargetUrlBytes || target.rfind("https://", 0) != 0) {
+      return Error("post: a head target is not an https URL");
+    }
+    head.targets.push_back(std::move(target));
+  }
   if (!r.AtEnd() || head.author.empty() || head.author.size() > kMaxPostAuthorBytes) {
     return Error("post: malformed head");
   }
@@ -226,6 +241,12 @@ PostHash PostHeadHash(const ByteVector& canonical) {
 Roe<SignedPostHead> SignPostHead(const PostHead& head, const PostSigner& signer) {
   if (head.lanes.size() > kMaxPostHeadLanes) {
     return Error("post: head has too many lanes");
+  }
+  if (head.targets.size() > kMaxPostHeadTargets ||
+      std::any_of(head.targets.begin(), head.targets.end(), [](const std::string& target) {
+        return target.size() > kMaxPostTargetUrlBytes || target.rfind("https://", 0) != 0;
+      })) {
+    return Error("post: head targets must be at most 8 https URLs");
   }
   SignedPostHead signed_head;
   signed_head.canonical = PostHeadCanonicalBytes(head);

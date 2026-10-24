@@ -126,6 +126,7 @@ u8       version = 1
 LenUtf8  author
 i64 BE   issued_at
 u64 BE   lane count, then per lane (sorted by lane id): 16 B lane, u64 BE seq, 32 B entry_hash
+u64 BE   target count (≤ 8), then per target: LenUtf8 url — the author's publish targets (S017)
 ```
 
 `head_hash` = BLAKE2b-256(canonical bytes); signed like an entry. A device issues a new head after it
@@ -211,7 +212,7 @@ fixes only what is committed (`head_hash` leaves) and what a proof contains.
 
 ---
 
-## 3. Distribution (sketch — detailed before P2)
+## 3. Distribution (detail: [DISTRIBUTION.md](DISTRIBUTION.md))
 
 Storage is local first: the author's lanes and the logs a user follows are kept in profile.db — public
 material, plaintext like peer cards: `post_entries` (each entry's place, hash, kind, claimed time and
@@ -220,7 +221,7 @@ signed bytes; forks side by side; stubs without bytes), `post_heads` (each autho
 
 | Path | Carries | Notes |
 |------|---------|-------|
-| **Publish targets** | entries, heads, media | relays the author picks (S007); the default relay is one of them. The account card gains a *where I publish* list (card version 2). |
+| **Publish targets** | entries, heads, media | relays the author picks (S007); the default relay is one of them. Listed in the head statement (S017), hinted in invites. |
 | **Author's devices** | entries, heads | over Amp when reachable; same verification |
 | **Announce plane** | "new head" tips | [peer-scoped-broadcast](../peer-scoped-broadcast/DESIGN.md), scoped to the **account** rather than a PeerId |
 | **Peers who have it** | entries, media | any holder can serve: everything self-verifies |
