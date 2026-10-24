@@ -889,6 +889,31 @@ void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, con
   }
 }
 
+Roe<void> MeshDeliveryOrchestrator::StartNextEpochIfRestored(const Thread& thread) {
+  const ChatTargetKey key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+  auto loaded = psk_store_.Load(key);
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (!loaded->has_value() || !(*loaded)->restart_pending) {
+    return {};
+  }
+  // This device lost its numbering in the pair (restored from a backup, or through a chat reset): the
+  // pair moves to its next epoch at seq 1 instead of rewinding in this one (D014, #378). A fresh session
+  // opens there with this send's key_init, which is how the peer follows; the old one is kept retired.
+  const uint32_t old_epoch = (*loaded)->session_epoch;
+  auto new_epoch = store_.BumpLocalChatTargetEpoch(thread.id);
+  if (!new_epoch) {
+    return new_epoch.error();
+  }
+  if (auto restarted = RestartE2ePublicSession(psk_store_, key, old_epoch, *new_epoch, util::NowUnixMs()); !restarted) {
+    return restarted.error();
+  }
+  log().info << "restored pair restarts at epoch " << *new_epoch << " (was " << old_epoch
+             << ") peer=" << thread.peer_identity_value;
+  return {};
+}
+
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& thread_id, const std::string& text,
                                                          const SendRelayOptions& options) {
   auto thread = store_.GetThread(thread_id);
@@ -940,6 +965,11 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     }
   }
 
+  if ((*thread)->kind == ThreadKind::Direct && (*thread)->channel == ThreadChannel::E2ePublic) {
+    if (auto restarted = StartNextEpochIfRestored(**thread); !restarted) {
+      return restarted.error();
+    }
+  }
   ThreadMessage outbound = NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs());
   if (options.stored_payload_json) {
     outbound.payload_json = *options.stored_payload_json;

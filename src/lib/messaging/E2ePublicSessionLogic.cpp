@@ -89,8 +89,25 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
     record.key = target_key;
     record.session_epoch = session_epoch;
   }
-  if (have_row && record.master_psk_b64 && record.session_epoch != session_epoch) {
-    return {};  // another epoch (a retired one, or one rotation owns): not this rule's to change
+  if (have_row && record.master_psk_b64 && record.session_epoch > session_epoch) {
+    return {};  // an earlier epoch (retired): not this rule's to change
+  }
+  if (have_row && record.master_psk_b64 && record.session_epoch < session_epoch) {
+    // The peer started the pair's next epoch with a session it opened (it lost its numbering — a restore
+    // or a chat reset — and restarts at seq 1 rather than rewinding, D014): move there, keeping the
+    // previous session for messages still on their way under it.
+    if (!read.via_key_init || !envelope_key_init_b64 || envelope_key_init_b64->empty()) {
+      return {};
+    }
+    record.retired_psks.push_back(RetiredPskEntry{.epoch = record.session_epoch,
+                                                  .master_psk_b64 = *record.master_psk_b64,
+                                                  .retired_at = envelope_timestamp_ms});
+    record.session_epoch = session_epoch;
+    record.master_psk_b64 = Base64Encode(read.master_psk);
+    record.auto_key_session_id = AutoKeySessionId(*envelope_key_init_b64);
+    record.auto_key_init_pending.reset();
+    record.auto_key_peer_heard_ms = envelope_timestamp_ms;
+    return psk_store.Save(record);
   }
   // The peer was heard under the stored session at this (its own, signed) time.
   const auto note_heard = [&record, envelope_timestamp_ms]() {
@@ -132,6 +149,31 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
   record.auto_key_session_id = theirs;
   record.auto_key_init_pending.reset();  // the peer opened it: nothing of ours to announce
   record.auto_key_peer_heard_ms = envelope_timestamp_ms;
+  return psk_store.Save(record);
+}
+
+Roe<void> RestartE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
+                                  const uint32_t old_epoch, const uint32_t new_epoch, const int64_t now_ms) {
+  auto loaded = psk_store.Load(target_key);
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (!loaded->has_value()) {
+    return {};
+  }
+  PskSessionRecord record = **loaded;
+  if (record.master_psk_b64 && old_epoch < new_epoch) {
+    record.retired_psks.push_back(RetiredPskEntry{.epoch = old_epoch,
+                                                  .master_psk_b64 = *record.master_psk_b64,
+                                                  .retired_at = now_ms});
+  }
+  record.session_epoch = new_epoch;
+  record.master_psk_b64.reset();
+  record.psk_fingerprint.reset();
+  record.auto_key_session_id.reset();
+  record.auto_key_init_pending.reset();
+  record.auto_key_peer_heard_ms.reset();
+  record.restart_pending = false;
   return psk_store.Save(record);
 }
 

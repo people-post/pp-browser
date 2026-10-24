@@ -231,7 +231,7 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
       "SELECT session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, "
       "key_scope, thread_kem_pk_b64, thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, "
       "psk_rotate_msg_count, last_rotation_id, auto_key_session_id, auto_key_init_pending, "
-      "auto_key_peer_heard_ms FROM chat_targets "
+      "auto_key_peer_heard_ms, restart_pending FROM chat_targets "
       "WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? LIMIT 1;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK load");
@@ -284,6 +284,7 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
     record.auto_key_peer_heard_ms = sqlite3_column_int64(stmt, 14);
   }
+  record.restart_pending = sqlite3_column_int(stmt, 15) != 0;
   sqlite3_finalize(stmt);
   if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
     return std::optional<PskSessionRecord>(record);
@@ -305,7 +306,7 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
       "SELECT peer_identity_kind, peer_identity_value, channel, session_epoch, master_psk_b64, psk_fingerprint, "
       "psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, thread_kem_sk_b64, "
       "peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, auto_key_session_id, "
-      "auto_key_init_pending, auto_key_peer_heard_ms FROM chat_targets;";
+      "auto_key_init_pending, auto_key_peer_heard_ms, restart_pending FROM chat_targets;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK list");
   }
@@ -360,6 +361,7 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
     if (sqlite3_column_type(stmt, 17) != SQLITE_NULL) {
       record.auto_key_peer_heard_ms = sqlite3_column_int64(stmt, 17);
     }
+    record.restart_pending = sqlite3_column_int(stmt, 18) != 0;
     if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
       continue;
     }
@@ -405,8 +407,8 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
       "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
       "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, "
-      "auto_key_session_id, auto_key_init_pending, auto_key_peer_heard_ms) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "auto_key_session_id, auto_key_init_pending, auto_key_peer_heard_ms, restart_pending) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
       "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
       "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
@@ -415,7 +417,7 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
       "peer_thread_kem_pk_b64=excluded.peer_thread_kem_pk_b64, last_psk_rotate_at=excluded.last_psk_rotate_at, "
       "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id, "
       "auto_key_session_id=excluded.auto_key_session_id, auto_key_init_pending=excluded.auto_key_init_pending, "
-      "auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms;";
+      "auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms, restart_pending=excluded.restart_pending;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK save");
   }
@@ -486,6 +488,7 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
   } else {
     sqlite3_bind_null(stmt, 19);
   }
+  sqlite3_bind_int(stmt, 20, to_save.restart_pending ? 1 : 0);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to save PSK row");

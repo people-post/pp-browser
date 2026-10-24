@@ -144,6 +144,18 @@ class User:
         self.start()
         self.wait_ready()
 
+    def restore_account(self):
+        """A reinstall restored from the account backup: the same account, contacts and public sessions,
+        but no chats — threads and message numbering start over, so each pair starts its next epoch with
+        the first send (D014, issue #378)."""
+        bundle = self.cmd("backup_sessions")["bundle"]
+        self.quit()
+        shutil.rmtree(os.path.join(self.dir, "profiles", "default", "threads"), ignore_errors=True)
+        self.surface = {"kind": "none"}
+        self.start()
+        self.wait_ready()
+        self.cmd("restore_sessions", bundle=bundle)
+
     # --- commands -------------------------------------------------------------------------------
 
     def cmd(self, name, timeout=30, check=True, **args):
@@ -1311,6 +1323,25 @@ def scenario_group_members_key_each_other(lab):
     wait_for(lambda: said(b, "hi bob"), 30, "bob: carol's group message")
 
 
+def scenario_restored_device_is_heard(lab):
+    """Bob reinstalls and restores his account from the backup (#378): his chat with Alice starts empty
+    and his numbering is gone, while Alice still holds their old chat. His first send starts their next
+    epoch, so every message he sends after the restore reaches her — none taken for one she already
+    has — and her answer reaches him."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    for i in range(3):
+        sent = b.cmd("send", thread=b_thread, text="before %d" % i)["message_id"]
+        wait_for(lambda: transcript_row(a, a_thread, sent), 20, "alice: bob's message %d" % i)
+    b.restore_account()
+    b.wait_mesh()
+    b_thread = b.cmd("open_chat", account=a.account)["thread"]
+    after = [b.cmd("send", thread=b_thread, text="after %d" % i)["message_id"] for i in range(3)]
+    for i, sent in enumerate(after):
+        wait_for(lambda: transcript_row(a, a_thread, sent), 30, "alice: bob's message %d after the restore" % i)
+    reply = a.cmd("send", thread=a_thread, text="welcome back")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer after the restore")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1669,6 +1700,7 @@ SCENARIOS = [
     ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
+    ("restored_device_is_heard", scenario_restored_device_is_heard),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),

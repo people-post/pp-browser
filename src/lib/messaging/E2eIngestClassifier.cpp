@@ -78,16 +78,19 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
 
   if (input.sender_seq == 0) {
     result.decision = IngestDecision::HardReject;
+    result.reason = "seq 0";
     return result;
   }
 
   if (input.sender_seq <= input.sync_state.history_floor_seq) {
     result.decision = IngestDecision::SilentDiscard;
+    result.reason = "below the cleared-history floor";
     return result;
   }
 
   if (input.session_epoch < input.chat_target_epoch) {
     result.decision = IngestDecision::HardReject;
+    result.reason = "from a retired epoch";
     return result;
   }
 
@@ -96,6 +99,7 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
   if (input.sync_state.phase == PeerSyncPhase::Compromised) {
     if (input.strict_mode) {
       result.decision = IngestDecision::SoftCompromised;
+      result.reason = "the private chat is marked compromised";
       return result;
     }
     result.sync_state.phase = PeerSyncPhase::Ok;
@@ -105,10 +109,13 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
     if (input.strict_mode) {
       result.decision = IngestDecision::SoftCompromised;
       result.sync_state.phase = PeerSyncPhase::Compromised;
+      result.reason = "another message holds this seq";
       return result;
     }
-    // D046 LWW: keep first-seen (peer, epoch, sender_seq); discard conflicting inbound.
+    // D046 LWW: keep first-seen (peer, epoch, sender_seq); discard conflicting inbound. A sender that lost
+    // its numbering must start a new epoch, not rewind in this one (D014).
     result.decision = IngestDecision::SilentDiscard;
+    result.reason = "another message holds this seq (a sender rewound within the epoch)";
     return result;
   }
 
@@ -144,6 +151,7 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
     if (input.strict_mode) {
       result.decision = IngestDecision::SoftCompromised;
       result.sync_state.phase = PeerSyncPhase::Compromised;
+      result.reason = "seq went back in a private chat";
       return result;
     }
     // D046: accept rewind/non-contiguous; contiguous advances only on strict increase.
@@ -173,6 +181,7 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
     if (input.strict_mode) {
       result.decision = IngestDecision::SoftCompromised;
       result.sync_state.phase = PeerSyncPhase::Compromised;
+      result.reason = "out of order in a private chat";
       return result;
     }
     // D046: peer restart-looking seq=1 — accept without latching compromised.
@@ -204,6 +213,7 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
     if (input.strict_mode) {
       result.decision = IngestDecision::SoftCompromised;
       result.sync_state.phase = PeerSyncPhase::Compromised;
+      result.reason = "out of order in a private chat";
       return result;
     }
     // D046: gap beyond replay window — still persist; leave Gap for UI repair without
@@ -221,6 +231,7 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
   }
 
   result.decision = IngestDecision::HardReject;
+  result.reason = "unclassified";
   return result;
 }
 

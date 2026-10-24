@@ -41,6 +41,8 @@ struct IngestClassifierResult {
   IngestDecision decision = IngestDecision::HardReject;
   PeerSyncState sync_state;
   bool persist_message = false;
+  /** Why, when the message is not kept (for the receive log): a fixed string, never empty then. */
+  const char* reason = "";
 };
 
 /** D013 ingest classifier — authoritative over ReplayWindow (D020). */

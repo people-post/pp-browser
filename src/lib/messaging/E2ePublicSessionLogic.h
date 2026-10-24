@@ -55,7 +55,9 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_sto
  *   session, and we move to it — unless both opened at once and ours, unconfirmed, has the lower id
  *   (the peer moves to ours instead; both sides decide the same) — or unless the envelope is older
  *   (its signed timestamp, the peer's clock) than one the peer already sent under our session: a late
- *   or replayed opener does not roll the pair back.
+ *   or replayed opener does not roll the pair back;
+ * - read under a key_init for a later epoch than ours: the peer restarted the pair there (D014) — we move
+ *   to that epoch and session, the previous one kept (retired) for late messages.
  */
 Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
                                     uint32_t session_epoch, const AutoKeyRead& read,
@@ -63,6 +65,14 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
                                     int64_t envelope_timestamp_ms);
 
 /** Derive the pairwise session key used for CallMediaKey wrap (channel e2e_public). */
+/**
+ * The pair moved from `old_epoch` to `new_epoch` because this device lost its numbering (D014, #378): the
+ * session is retired at `old_epoch` (late messages still read), none is current — the next send opens one
+ * at `new_epoch` with a key_init the peer follows — and the restart mark is cleared.
+ */
+Roe<void> RestartE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key, uint32_t old_epoch,
+                                  uint32_t new_epoch, int64_t now_ms);
+
 Roe<ByteVector> DeriveE2ePublicSessionKey(const ByteVector& master_psk, uint32_t session_epoch);
 
 } // namespace pbr

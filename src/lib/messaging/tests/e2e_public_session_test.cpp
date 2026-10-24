@@ -7,6 +7,7 @@
 #include "lib/messaging/ControlLaneEnvelope.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
 #include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/messaging/E2eRelayPayloadCodec.h"
 #include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/PeerSigningKeyStore.h"
@@ -16,10 +17,12 @@
 #include "lib/messaging/tests/TestAccount.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PskSessionRestart.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
+#include <map>
 #include <gtest/gtest.h>
 #include <memory>
 #include "common/PbrCompat.h"
@@ -76,6 +79,7 @@ struct Side {
     pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, keys.Keys(), *roster);
     pipeline->SetSystemControls(&controls);
     pipeline->SetControlLaneSeen(seen.get());
+    chat_seq.clear();  // a reinstall numbers its messages from 1 again
     SystemControlFamily family;
     family.name = "call";
     family.owns = [](const ThreadMessage& m) { return m.payload_json.find("test_signal") != std::string::npos; };
@@ -133,6 +137,80 @@ struct Side {
     return *envelope;
   }
 
+  /** A chat message to `peer` on the public channel, as a send builds it (opening the session when there is none). */
+  RelayEnvelope Chat(const Side& peer, const std::string& text) {
+    ChatTargetKey target;
+    target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+    target.peer_identity_value = peer.account;
+    target.channel = CryptoChannel::E2ePublic;
+    auto record = psk->Load(target);
+    const uint32_t epoch = record && record->has_value() ? (*record)->session_epoch : 1;
+    auto kem = Base64Decode(peer_kem.at(peer.account));
+    auto session = EnsureE2ePublicMasterPsk(*psk, target, epoch, *kem);
+    EXPECT_TRUE(session) << session.error().message;
+
+    RelayEnvelope envelope;
+    envelope.envelope_version = kRelayEnvelopeVersion;
+    envelope.message_id = util::GenerateUuid();
+    envelope.sender_contact_id = account;
+    envelope.sender_relay_id = "relay:" + tag;
+    envelope.recipient_contact_id = "relay:" + peer.tag;
+    envelope.route.kind = "direct";
+    envelope.route.channel = ThreadChannel::E2ePublic;
+    envelope.sender_seq = ++chat_seq[epoch];
+    envelope.session_epoch = epoch;
+    envelope.timestamp = util::NowUnixMs();
+    E2eEncryptParams params;
+    params.text = text;
+    params.channel = CryptoChannel::E2ePublic;
+    params.peer_contact_id = peer.account;
+    params.sender_contact_id = account;
+    params.message_id = envelope.message_id;
+    params.sender_seq = envelope.sender_seq;
+    params.session_epoch = epoch;
+    params.timestamp = envelope.timestamp;
+    auto payload = E2eRelayPayloadCodec::EncryptText(params, session->master_psk);
+    EXPECT_TRUE(payload) << payload.error().message;
+    envelope.body.e2e.payload_b64 = *payload;
+    if (session->key_init_b64) {
+      envelope.body.e2e.key_init_b64 = *session->key_init_b64;
+    }
+    auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
+    EXPECT_TRUE(bytes);
+    envelope.signature = keys.Sign(*bytes).value();
+    return envelope;
+  }
+
+  /** Restored from an account backup: a fresh profile with the public sessions back, marked to restart. */
+  void RestoreFromBackup() {
+    auto sessions = psk->List();
+    ASSERT_TRUE(sessions);
+    OpenProfile("profile-restored-" + util::GenerateUuid());
+    for (const PskSessionRecord& record : *sessions) {
+      ASSERT_TRUE(psk->Save(record));
+    }
+    ASSERT_TRUE(MarkPublicSessionsForRestart(*psk));
+  }
+
+  /** What a send does first in a pair marked to restart (MeshDeliveryOrchestrator::StartNextEpochIfRestored). */
+  void RestartIfPending(const Side& peer) {
+    ChatTargetKey target;
+    target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+    target.peer_identity_value = peer.account;
+    target.channel = CryptoChannel::E2ePublic;
+    auto record = psk->Load(target);
+    ASSERT_TRUE(record && record->has_value());
+    if ((*record)->restart_pending) {
+      const uint32_t old_epoch = (*record)->session_epoch;
+      ASSERT_TRUE(RestartE2ePublicSession(*psk, target, old_epoch, old_epoch + 1, util::NowUnixMs()));
+    }
+  }
+
+  /** Receive a chat message; true when it was kept. */
+  bool Keep(const RelayEnvelope& envelope) {
+    return pipeline->ProcessEnvelope(envelope, account).persisted;
+  }
+
   /** Receive `envelope`; true when its signal landed. */
   bool Receive(const RelayEnvelope& envelope) {
     const int before = landed;
@@ -155,6 +233,7 @@ struct Side {
   std::unique_ptr<ControlLaneSeenStore> seen;
   std::unique_ptr<RelayReceivePipeline> pipeline;
   int landed = 0;
+  std::map<uint32_t, uint64_t> chat_seq;  // next seq per epoch
   /** Carry our key card with a key_init (as the app does). */
   bool carry_keys = false;
 };
@@ -247,6 +326,36 @@ TEST_F(E2ePublicSessionTest, ASideThatStartsOverIsHeardAgain) {
   alice_->OpenProfile("profile-reinstalled");  // same account, empty session store
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "Bob must not keep reading with the old session";
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
+}
+
+// #378: a device restored from the account backup has its sessions back but not its numbering. Rewinding in
+// the same epoch is dropped by design (D046 first-seen); it starts the pair's next epoch instead (D014).
+TEST_F(E2ePublicSessionTest, ARestoredDeviceStartsTheNextEpochAndEveryMessageArrives) {
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
+  }
+  alice_->RestoreFromBackup();
+  alice_->RestartIfPending(*bob_);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_TRUE(bob_->Keep(alice_->Chat(*bob_, "after " + std::to_string(i))))
+        << "message " << i << " from the restored device";
+  }
+  auto threads = bob_->store->ListThreads();
+  ASSERT_TRUE(threads);
+  ASSERT_EQ(threads->size(), 1u);
+  auto epoch = bob_->store->GetChatTargetSessionEpoch(threads->front().id);
+  ASSERT_TRUE(epoch);
+  EXPECT_EQ(*epoch, 2u) << "Bob followed Alice to the next epoch";
+  EXPECT_TRUE(alice_->Keep(bob_->Chat(*alice_, "welcome back"))) << "and answers in it";
+  EXPECT_TRUE(bob_->Keep(alice_->Chat(*bob_, "thanks"))) << "Alice, heard, writes on without restarting again";
+}
+
+TEST_F(E2ePublicSessionTest, RewindingInTheSameEpochIsStillDropped) {
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
+  }
+  alice_->RestoreFromBackup();  // no restart: a device that rewinds where Bob holds its messages
+  EXPECT_FALSE(bob_->Keep(alice_->Chat(*bob_, "rewound"))) << "first-seen keeps seq 1 (D046)";
 }
 
 TEST_F(E2ePublicSessionTest, SessionsWithSeveralPeersBeforeAnyThread) {

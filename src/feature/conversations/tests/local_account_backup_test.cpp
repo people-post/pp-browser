@@ -108,6 +108,17 @@ TEST(LocalAccountBackupTest, WriteThenRestoreOnAFreshDeviceBringsAccountAndConta
   auto old_identity = old.identity->Get();
   ASSERT_TRUE(old_identity);
 
+  // A public chat with Bob, in its third epoch: the backup carries its session, not this device's numbering.
+  ChatTargetKey with_bob;
+  with_bob.peer_identity_kind = "account";
+  with_bob.peer_identity_value = "account:bob";
+  with_bob.channel = CryptoChannel::E2ePublic;
+  PskSessionRecord session;
+  session.key = with_bob;
+  session.session_epoch = 3;
+  session.master_psk_b64 = Base64Encode(ByteVector(32, 0x7a));
+  ASSERT_TRUE(old.psks->Save(session));
+
   auto written = LocalAccountBackup::Write(store, *old.identity, *old.vault, *old.psks, *old.contacts, kNow);
   ASSERT_TRUE(written) << written.error().message;
   ASSERT_EQ(store.blobs.size(), 1u);
@@ -139,6 +150,12 @@ TEST(LocalAccountBackupTest, WriteThenRestoreOnAFreshDeviceBringsAccountAndConta
   EXPECT_EQ((*contacts)[0].id, "contact-bob");
   EXPECT_EQ((*contacts)[0].local.display_name, "Bob from work");
   EXPECT_EQ((*contacts)[0].local.trust, TrustLevel::Friendly);
+
+  // #378 / D014: the session is back, marked so the next send starts epoch 4 rather than rewinding in 3.
+  auto restored_session = fresh.psks->Load(with_bob);
+  ASSERT_TRUE(restored_session && restored_session->has_value());
+  EXPECT_EQ((*restored_session)->session_epoch, 3u);
+  EXPECT_TRUE((*restored_session)->restart_pending);
 }
 
 /** Every file under `dir` with its size: "nothing was written" means this does not change. */

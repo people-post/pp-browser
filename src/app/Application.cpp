@@ -369,6 +369,23 @@ Roe<void> Application::ResetChatData() {
   const std::string chats_dir = SqliteThreadsRoot(profile_dir);
   log().info << "Resetting chat data at " << chats_dir;
 
+  // Public sessions outlive a chat reset: their epoch is what lets each pair start its next one
+  // instead of this device rewinding its numbering where the peer still holds the old messages (D014, #378).
+  std::vector<PskSessionRecord> kept_sessions;
+  if (messaging_ && messaging_->IsInitialized()) {
+    if (IPskSessionStore* psk = messaging_->PskStore()) {
+      if (auto listed = psk->List()) {
+        for (PskSessionRecord& record : *listed) {
+          if (record.key.channel == CryptoChannel::E2ePublic && record.master_psk_b64) {
+            kept_sessions.push_back(std::move(record));
+          }
+        }
+      } else {
+        log().warning << "chat reset: public sessions not kept: " << listed.error().message;
+      }
+    }
+  }
+
   if (auto stopped = StopMessagingForReset(/*with_secrets=*/false); !stopped) {
     return stopped.error();
   }
@@ -389,8 +406,20 @@ Roe<void> Application::ResetChatData() {
 
   chat_->OnProfileDataReset();
   contacts_->Refresh();
-  // The vault is still open: bring messaging back now rather than at the next send.
-  unlock_gate_->EnsureUnlocked(nullptr);
+  // The vault is still open: bring messaging back now rather than at the next send — then put the kept
+  // sessions back (the stores encrypt them under the DEK they get at unlock), each pair marked to restart.
+  unlock_gate_->EnsureUnlocked([this, kept = std::move(kept_sessions)](const bool unlocked) mutable {
+    IPskSessionStore* psk = messaging_ ? messaging_->PskStore() : nullptr;
+    if (!unlocked || !psk) {
+      return;
+    }
+    for (PskSessionRecord& record : kept) {
+      record.restart_pending = true;
+      if (auto saved = psk->Save(record); !saved) {
+        log().warning << "chat reset: a public session not kept: " << saved.error().message;
+      }
+    }
+  });
   return {};
 }
 

@@ -746,6 +746,15 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   }
   outcome.sender_verified = true;
 
+  // The pair's epoch as it stood before this envelope: reading it may move the session to a later epoch
+  // the peer restarted at (ReconcileE2ePublicSession), and that is still an advance to classify.
+  std::optional<uint32_t> epoch_before;
+  if (!auto_create) {
+    if (auto loaded = store_.GetChatTargetSessionEpoch(resolved_thread_id); loaded) {
+      epoch_before = *loaded;
+    }
+  }
+
   ThreadMessage message;
   if (E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
     if (local_relay_user_id.empty()) {
@@ -874,19 +883,25 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   if (auto_create) {
     sync_state = DefaultPeerSyncState();
   } else {
-    auto loaded_sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch);
-    if (!loaded_sync_state) {
-      outcome.decision = IngestDecision::HardReject;
-      return outcome;
-    }
-    sync_state = *loaded_sync_state;
-
     auto loaded_epoch = store_.GetChatTargetSessionEpoch(resolved_thread_id);
     if (!loaded_epoch) {
       outcome.decision = IngestDecision::HardReject;
+      log().info << "refuse message_id=" << envelope.message_id << ": chat target epoch unreadable";
       return outcome;
     }
-    chat_target_epoch = *loaded_epoch;
+    chat_target_epoch = epoch_before.value_or(*loaded_epoch);
+
+    auto loaded_sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch);
+    if (loaded_sync_state) {
+      sync_state = *loaded_sync_state;
+    } else if (envelope.session_epoch > chat_target_epoch) {
+      sync_state = DefaultPeerSyncState();  // the peer moved the pair to an epoch nothing is held in yet
+    } else {
+      outcome.decision = IngestDecision::HardReject;
+      log().info << "refuse message_id=" << envelope.message_id << " epoch=" << envelope.session_epoch
+                 << ": no sync state (" << loaded_sync_state.error().message << ")";
+      return outcome;
+    }
   }
 
   IngestClassifierInput classifier_input;
@@ -923,6 +938,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   };
 
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
+    if (classified.decision == IngestDecision::SilentDiscard) {
+      log().info << "drop message_id=" << envelope.message_id << " sender=" << envelope.sender_contact_id
+                 << " epoch=" << envelope.session_epoch << " seq=" << envelope.sender_seq << ": "
+                 << classified.reason;
+    }
     // Out-of-order controls (call media keys, accepts, membership) are idempotent — do not skip when
     // the classifier drops a resent seq/id.
     apply_out_of_order(classified.decision);
@@ -930,6 +950,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   }
   const bool strict_channel = envelope.route.channel == ThreadChannel::E2e;
   if (classified.decision == IngestDecision::SoftCompromised || classified.decision == IngestDecision::HardReject) {
+    log().info << "refuse message_id=" << envelope.message_id << " sender=" << envelope.sender_contact_id
+               << " epoch=" << envelope.session_epoch << " seq=" << envelope.sender_seq << ": " << classified.reason;
     if (classified.decision == IngestDecision::SoftCompromised && strict_channel) {
       // D038: private e2e latches compromised until rotate/pause.
       PeerSyncState compromised_state = classified.sync_state;

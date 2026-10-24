@@ -27,6 +27,9 @@
 //   group_roster {group_id}             the members this user knows of
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
 //   remove_member {thread, account}     the owner removes a member from the group
+//   backup_sessions                     what the account backup keeps of the chats: the public sessions
+//   restore_sessions {bundle}           put them back as a backup restore does (each pair marked to
+//                                       start its next epoch)
 //   state                               the call surface + media counters (joined participants,
 //                                       per-stream rx frames)
 //   quit                                quit the app (orderly shutdown)
@@ -36,6 +39,7 @@
 
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
+#include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/messaging/PeerRequestAuth.h"
 #include "feature/conversations/ContactCardExchange.h"
@@ -53,7 +57,10 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
+#include "foundation/crypto/LinkDeviceCodec.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
+#include "foundation/crypto/PskSessionRestart.h"
+#include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -614,6 +621,41 @@ public:
     } else if (cmd == "push_wake") {
       // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
       BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      Emit(Reply(id, true));
+    } else if (cmd == "backup_sessions") {
+      // The link bundle the local account backup seals (LocalAccountBackup::Write).
+      if (!Hub().IsMessagingReady() || Secrets().Vault() == nullptr || Hub().PskStore() == nullptr) {
+        ReplyError(id, "messaging not ready");
+        return;
+      }
+      auto bundle = LinkDeviceCoordinator::ExportJson(Hub().Identity(), *Secrets().Vault(), *Hub().PskStore(),
+                                                      util::NowUnixMs(), 60 * 60 * 1000);
+      if (!bundle) {
+        ReplyError(id, bundle.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("bundle", *bundle);
+      Emit(out);
+    } else if (cmd == "restore_sessions") {
+      // The sessions half of LocalAccountBackup::Restore (the account itself is still here).
+      if (!Hub().IsMessagingReady() || Hub().PskStore() == nullptr) {
+        ReplyError(id, "messaging not ready");
+        return;
+      }
+      auto bundle = LinkDeviceCodec::Parse(request->getString("bundle").value_or(""));
+      if (!bundle) {
+        ReplyError(id, bundle.error().message);
+        return;
+      }
+      if (auto applied = LinkDeviceCoordinator::ApplyPublicPsks(*Hub().PskStore(), bundle->public_psks); !applied) {
+        ReplyError(id, applied.error().message);
+        return;
+      }
+      if (auto marked = MarkPublicSessionsForRestart(*Hub().PskStore()); !marked) {
+        ReplyError(id, marked.error().message);
+        return;
+      }
       Emit(Reply(id, true));
     } else if (cmd == "quit") {
       Emit(Reply(id, true));

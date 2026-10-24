@@ -135,8 +135,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D014 — Peer reset requires `session_epoch` bump
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — no `epoch_start` row; epoch bump transaction (D047).  
-**Decision:** Full peer reset **must bump `session_epoch`** via epoch bump transaction. Reset `next_outgoing_seq = 1`. **No `epoch_start` system message.** Restored backup with same `profile.db` + crypto sessions continues existing epoch. **Innocent peer** adopts the higher epoch on **first successful ingest** (passive adopt — D085), not only when locally initiating a bump.  
+**Updated:** 2026-06-29 — no `epoch_start` row; epoch bump transaction (D047). 2026-10-24 — a restore that brings the public sessions back without `profile.db` starts the next epoch (#378).  
+**Decision:** Full peer reset **must bump `session_epoch`** via epoch bump transaction. Reset `next_outgoing_seq = 1`. **No `epoch_start` system message.** Restored backup with same `profile.db` + crypto sessions continues existing epoch. A restore that brings back the **public sessions but not the numbering** — the local account backup, *Reset chats* — keeps each session at its epoch and marks it **`restart_pending`**; the pair's next send bumps the epoch (seq 1), retires the old master and opens a fresh session (`key_init`), so the peer never sees a seq it already holds. A new account (new master key) is a new person, not a reset. **Innocent peer** adopts the higher epoch on **first successful ingest** (passive adopt — D085), not only when locally initiating a bump; on the public channel that ingest is the higher epoch's `key_init`, which needs no sync state for the new epoch.  
 **Rationale:** Seq restart must be explicit and scoped; epoch is the namespace boundary; avoids ambiguous “fresh” traffic in an old epoch.  
 **Alternatives:** Ad-hoc first-message flag without epoch; allow seq rewind on reinstall; reset seq on clear history.
 

@@ -1,5 +1,7 @@
 #include "lib/people/LocalAccountBackup.h"
 
+#include "foundation/crypto/PskSessionRestart.h"
+
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/platform/os/OsSecureBlob.h"
 #include "lib/people/LinkDeviceCoordinator.h"
@@ -137,6 +139,11 @@ Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& id
       LinkDeviceCoordinator::Import(identity, vault, psk_store, secrets, contents->link_bundle_json, pin, now_ms);
   if (!imported) {
     return Error("Account restore failed: " + imported.error().message);
+  }
+  // The sessions are back but this device's message numbering is not: each pair starts its next epoch
+  // with the next send (D014), so the peer never sees a seq it already holds (#378).
+  if (auto marked = MarkPublicSessionsForRestart(psk_store); !marked) {
+    return Error("Account restore failed: " + marked.error().message);
   }
   for (const Contact& contact : contents->contacts) {
     if (auto upserted = contacts.Upsert(contact); !upserted) {
