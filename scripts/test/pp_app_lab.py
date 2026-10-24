@@ -10,6 +10,10 @@ by checking nothing is left stuck and the call history says what happened.
   scripts/test/pp_app_lab.py --probe build/src/app/node/pp-app-probe [--only first_contact]
 
 (`pp_local_test.sh run --suite app` brings the lab up and runs this.)
+
+With --nat each user runs in its own container behind its own NAT gateway
+(packaging/pp-node/docker-compose.app-lab-nat.yml): no two users share a network, so everything
+between them goes through the hop. `pp_local_test.sh run --suite app-nat` brings that up and runs it.
 """
 
 import argparse
@@ -38,17 +42,22 @@ class ProbeError(Exception):
     pass
 
 
+# A directory nobody answers (the discard port): lookups fail at once.
+NO_DIRECTORY = "http://127.0.0.1:9/api/relay"
+
+
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name):
+    def __init__(self, lab, name, container=None, directory=True, reachable=False):
         self.lab = lab
         self.name = name
+        self.container = container  # --nat: the user's own NAT'd container (None: a host process)
         self.dir = os.path.join(lab.root, name)
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
         with open(self.config, "w") as f:
-            json.dump(lab.config_for(self.dir), f, indent=2)
+            json.dump(lab.config_for(self.dir, directory, reachable), f, indent=2)
         self.proc = None
         self.next_id = 1
         self.replies = {}
@@ -64,10 +73,16 @@ class User:
     def start(self):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
-        self.proc = subprocess.Popen(
-            [self.lab.probe, "--config", self.config, "--pin", PIN, "--log-file", log],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, bufsize=1)
+        argv = ["--config", self.config, "--pin", PIN, "--log-file", log]
+        if self.container:
+            # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
+            script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
+            cmd = ["docker", "exec", "-i", "--user", "%d:%d" % (os.getuid(), os.getgid()), "-e", "HOME=/tmp",
+                   self.container, "sh", "-c", script, self.pidfile()] + argv
+        else:
+            cmd = [self.lab.probe] + argv
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
         self.wait_event(lambda e: e.get("event") in ("booted", "boot_failed"), 60, "boot")
         if self.last_event.get("event") == "boot_failed":
@@ -108,11 +123,17 @@ class User:
         try:
             self.proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            self.proc.kill()
+            self.crash()
             raise ProbeError("%s: quit hung (killed)" % self.name)
+
+    def pidfile(self):
+        return os.path.join(self.dir, "probe.pid")
 
     def crash(self):
         """The app dies with no goodbye (force-quit, OOM kill)."""
+        if self.container:
+            subprocess.run(["docker", "exec", self.container, "sh", "-c", 'kill -9 "$(cat "$0")" 2>/dev/null',
+                            self.pidfile()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if self.alive():
             self.proc.kill()
             self.proc.wait()
@@ -122,6 +143,29 @@ class User:
         self.surface = {"kind": "none"}
         self.start()
         self.wait_ready()
+
+    def restore_account(self):
+        """A reinstall restored from the account backup: the same account, contacts and public sessions,
+        but no chats — threads and message numbering start over, so each pair starts its next epoch with
+        the first send (D014, issue #378)."""
+        bundle = self.cmd("backup_sessions")["bundle"]
+        self.quit()
+        shutil.rmtree(os.path.join(self.dir, "profiles", "default", "threads"), ignore_errors=True)
+        self.surface = {"kind": "none"}
+        self.start()
+        self.wait_ready()
+        self.cmd("restore_sessions", bundle=bundle)
+
+    def log_text(self):
+        """Everything this user's app has logged, every run."""
+        out = []
+        for run in range(1, self.runs + 1):
+            try:
+                with open(os.path.join(self.dir, "probe-%d.log" % run), errors="replace") as f:
+                    out.append(f.read())
+            except OSError:
+                pass
+        return "".join(out)
 
     # --- commands -------------------------------------------------------------------------------
 
@@ -224,26 +268,42 @@ class Lab:
         self.probe = os.path.abspath(args.probe)
         self.relay = args.relay.rstrip("/")
         self.hop = args.hop
-        self.root = tempfile.mkdtemp(prefix="pp-app-lab-")
+        # --nat: users run in these containers, one each in turn; they reach the relay at user_relay.
+        self.containers = args.nat_containers.split(",") if args.nat else []
+        self.user_relay = args.nat_relay.rstrip("/") if args.nat else self.relay
+        if args.nat:
+            os.makedirs(args.nat_share, exist_ok=True)
+        self.root = tempfile.mkdtemp(prefix="pp-app-lab-", dir=args.nat_share if args.nat else None)
+        # --nat: each container's network as it starts, so a scenario that changes it is undone.
+        self.networks = {}
+        for i, container in enumerate(self.containers):
+            address, gw = container_network(container)
+            if not address or not gw:  # left broken by an earlier run: the compose file's own
+                address, gw = "10.119.%d.10/24" % (i + 1), "10.119.%d.254" % (i + 1)
+                restore_network(container, address, gw)
+            self.networks[container] = (address, gw)
         self.keep = args.keep
         self.relay_container = args.relay_container
         self.hop_container = args.hop_container
         self.hop_status = args.hop_status
         self.users = []
 
-    def config_for(self, data_dir):
+    def config_for(self, data_dir, directory=True, reachable=False):
         return {
             "config_version": 1,
             "data_dir": data_dir,
-            "relay": {"base_url": self.relay},
-            "directory": {"base_url": self.relay},
-            "registration": {"base_url": self.relay},
+            "relay": {"base_url": self.user_relay},
+            # directory=False: a directory nobody answers (an empty one means the built-in default).
+            "directory": {"base_url": self.user_relay if directory else NO_DIRECTORY},
+            "registration": {"base_url": self.user_relay},
             "mesh": {
                 "node_enabled": False,
                 "mesh_enabled": True,
                 "amp_udp_port": 0,
                 "bootstrap_peers": [self.hop],
                 "capabilities": {"dht": False},
+                # Me → Network → Reachable without the relay: keep a reservation on the seed (the lab hop).
+                "reachable_without_relay": reachable,
             },
         }
 
@@ -278,9 +338,16 @@ class Lab:
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name):
+    def user(self, name, directory=True, reachable=False, beside=None):
+        """A registered user; directory=False: one whose directory never answers; reachable=True: one that
+        stays reachable without the relay (parked on the lab's seed); beside=<user>: --nat, on that user's
+        network (the same Wi-Fi), not behind a NAT of its own."""
         self.fresh_registration()
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]))
+        if beside is not None:
+            container = beside.container
+        else:
+            container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -296,6 +363,8 @@ class Lab:
                 u.quit()
             except ProbeError:
                 u.crash()
+        for container, (address, gw) in self.networks.items():
+            restore_network(container, address, gw)
         if ok and not self.keep:
             shutil.rmtree(self.root, ignore_errors=True)
         self.users = []
@@ -304,12 +373,18 @@ class Lab:
 # --- outcome checks -------------------------------------------------------------------------------
 
 def assert_idle(*users, timeout=30):
-    """Nobody is left ringing or in a call."""
+    """Nobody is left ringing or in a call. The screen clears on the End click (as in the app);
+    the call stack follows a moment later."""
     for u in users:
         u.wait_surface("none", timeout)
-        s = u.state()
-        if s.get("phase") not in ("Idle", None, ""):
-            raise ProbeError("%s: phase %s after the call" % (u.name, s.get("phase")))
+        deadline = time.time() + 10
+        while True:
+            s = u.state()
+            if s.get("phase") in ("Idle", None, ""):
+                break
+            if time.time() > deadline:
+                raise ProbeError("%s: phase %s after the call" % (u.name, s.get("phase")))
+            time.sleep(0.2)
 
 
 def assert_media_flows(*users, timeout=30):
@@ -394,6 +469,41 @@ def scenario_first_contact(lab):
     if len(got) != 1:
         raise ProbeError("bob's history: %s" % got)
     return {"ring_s": round(rang, 2), "answer_to_audio_s": took}
+
+
+def scenario_bystander_is_no_relay(lab):
+    """#379: Carol's phone is on Bob's Wi-Fi with a live link to him, a contact of his, and no relay.
+    Alice, behind her own NAT, calls Bob: the call needs a circuit and goes through the lab's relay
+    within the usual bound. Carol's phone is never asked to carry it — it would refuse, and every try
+    spends the call's time."""
+    a = lab.user("alice")
+    b = lab.user("bob")
+    c = lab.user("carol", beside=b)
+    for u in (a, b, c):
+        u.wait_mesh()
+    carol_peer = c.cmd("whoami").get("peer_id", "")
+    if not carol_peer:
+        raise ProbeError("carol: no peer id")
+    # Carol and Bob talk: each keeps the other as a contact (device included), linked over their Wi-Fi.
+    c_thread = c.cmd("open_chat", account=b.account)["thread"]
+    b.cmd("open_chat", account=c.account)
+    connect(c, c_thread, b)
+    c.cmd("leave")
+    assert_idle(b, c)
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    _, timing = connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    logs = {u.name: u.log_text() for u in (a, b)}
+    if not any("EnsureViaCircuit ok relay=" in text or "EnsureViaCircuit nested ok relay=" in text
+               for text in logs.values()):
+        raise ProbeError("no call went through a circuit: the scenario checks nothing here")
+    for name, text in logs.items():
+        if "relay=" + carol_peer in text:
+            raise ProbeError("%s: tried carol's phone as a circuit relay" % name)
+        if "circuit-relay service not ready" in text:
+            raise ProbeError("%s: a peer that is no relay was asked for a circuit" % name)
+    return timing
 
 
 def scenario_calling_each_other_at_once(lab):
@@ -602,6 +712,303 @@ def scenario_decline_then_call_back(lab):
         raise ProbeError("alice's history: %s" % got)
 
 
+def assert_incoming_call_notice(u, caller):
+    """The ring announced itself (an "Incoming call" notification where the user is not looking)."""
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        with u.lock:
+            seen = any(m.get("event") == "notice" and m.get("kind") == "incoming_call" and
+                       m.get("identity") == caller.account for _, m in u.history)
+        if seen:
+            return
+        time.sleep(0.2)
+    raise ProbeError("%s: no incoming-call notification for %s's ring" % (u.name, caller.name))
+
+
+def scenario_minimized_still_rings(lab):
+    """Bob's desktop window is minimized: Alice's call still rings (a notification, as any
+    messenger's would); he restores the window and answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    if b.cmd("minimize").get("attentive"):
+        raise ProbeError("bob: a minimized window reads as attended")
+    started = time.time()
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 20, call_id=call_id)
+    rang = time.time() - started
+    assert_incoming_call_notice(b, a)
+    b.cmd("restore")
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"ring_s": round(rang, 2)}
+
+
+def scenario_push_wakes_background_callee(lab):
+    """Bob's phone has the app in the background (its work paused): Alice's call reaches him by push.
+    The push wakes the app, which rings; he opens it and answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("background")
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    time.sleep(2)  # the push takes a moment to arrive
+    woke = time.time()
+    b.cmd("push_wake")
+    b.wait_surface("ringing", 20, call_id=call_id)
+    rang = time.time() - woke
+    assert_incoming_call_notice(b, a)
+    b.cmd("foreground")  # he taps the call notification
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"ring_after_push_s": round(rang, 2)}
+
+
+# The app's background wake window (MessagingLimits.h kBackgroundWakeWindowMs).
+BACKGROUND_WAKE_WINDOW_S = 20
+# After a call ends in the background the app keeps working this long (AppLifecycle kCallEndGraceMs).
+CALL_END_GRACE_S = 5
+
+
+def scenario_background_is_push_only(lab):
+    """Bob's phone app is in the background; a push wakes it with nothing to deliver. Once the wake
+    window is over it sleeps again (push only, for power): Alice's call does not ring until its own
+    push, or until Bob opens the app — then it rings and he answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("background")
+    b.cmd("push_wake")
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    try:
+        b.wait_surface("ringing", 8, call_id=call_id)
+        raise ProbeError("bob: rang with the app asleep in the background (no push for it)")
+    except ProbeError as e:
+        if "rang with" in str(e):
+            raise
+    opened = time.time()
+    b.cmd("foreground")
+    b.wait_surface("ringing", 15, call_id=call_id)
+    rang = time.time() - opened
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"ring_after_open_s": round(rang, 2)}
+
+
+def scenario_stay_connected_rings_in_background(lab):
+    """Bob's phone has no push service, so he turned on "Stay connected in the background": with the
+    app in the background, Alice's call still rings (and notifies) — no push needed."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    if not b.cmd("stay_connected", on=True).get("stay_connected"):
+        raise ProbeError("bob: the setting did not take")
+    b.cmd("background")
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)  # past any wake window: only the setting keeps it awake
+    started = time.time()
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 20, call_id=call_id)
+    rang = time.time() - started
+    assert_incoming_call_notice(b, a)
+    b.cmd("foreground")
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    b.cmd("stay_connected", on=False)
+    return {"ring_s": round(rang, 2)}
+
+
+def scenario_peer_hangs_up_while_backgrounded(lab):
+    """Alice's phone app is in the background mid-call when Bob hangs up: her call ends then (a call
+    keeps the app working in the background), not when she next opens the app. Once it is over the
+    app sleeps again: Bob's next call reaches her by push only."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    connect(a, a_thread, b)
+    a.cmd("background")
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)  # past any wake window: only the call keeps it awake
+    for u in (a, b):
+        assert_hears(u, 1, timeout=10)
+    b.cmd("leave")
+    assert_idle(a, b)
+    time.sleep(CALL_END_GRACE_S + 3)
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    try:
+        a.wait_surface("ringing", 8, call_id=call_id)
+        raise ProbeError("alice: rang with the app asleep in the background (no push for it)")
+    except ProbeError as e:
+        if "rang with" in str(e):
+            raise
+    a.cmd("push_wake")
+    a.wait_surface("ringing", 20, call_id=call_id)
+    a.cmd("foreground")
+    a.cmd("decline")
+    assert_idle(a, b)
+
+
+def scenario_answered_in_background(lab):
+    """Bob's phone app is in the background; Alice's call wakes it by push and he answers without
+    opening the app (the phone's own call screen, CallKit on iPhone). The call outlasts the push's
+    wake window, and ends when Alice hangs up."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("background")
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    time.sleep(2)  # the push takes a moment to arrive
+    b.cmd("push_wake")
+    b.wait_surface("ringing", 20, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(a, b)
+    time.sleep(BACKGROUND_WAKE_WINDOW_S + 3)
+    for u in (a, b):
+        assert_hears(u, 1, timeout=10)
+    a.cmd("leave")
+    assert_idle(a, b)
+
+
+def scenario_background_mid_call(lab):
+    """Alice's phone app goes to the background mid-call (she looks something up) and comes back:
+    the call goes on both ways the whole time."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    call_id, _ = connect(a, a_thread, b)
+    a.cmd("background")
+    for _ in range(3):
+        for u in (a, b):
+            assert_hears(u, 1, timeout=10)
+        if a.surface.get("call_id") != call_id or b.surface.get("call_id") != call_id:
+            raise ProbeError("the call did not survive the background (%s / %s)" % (a.surface, b.surface))
+    a.cmd("foreground")
+    for u in (a, b):
+        assert_hears(u, 1, timeout=10)
+    a.cmd("leave")
+    assert_idle(a, b)
+
+
+# --- the user's network (--nat: each user is a container behind its own NAT) ---------------------
+
+def container_network(container):
+    """(address/prefix, default gateway) of a user container's eth0."""
+    r = subprocess.run(["docker", "exec", "--user", "0", container, "sh", "-c",
+                        "ip -4 -o addr show eth0 | awk '{print $4; exit}'; "
+                        "ip route show default | awk '{print $3; exit}'"],
+                       capture_output=True, text=True, check=True)
+    address, gw = (r.stdout.split() + ["", ""])[:2]
+    return address, gw
+
+
+def restore_network(container, address, gw):
+    """The container's link up with its own address and route again (after net_drop / change_address)."""
+    subprocess.run(["docker", "exec", "--user", "0", container, "sh", "-c",
+                    "ip link set eth0 up; ip addr flush dev eth0; ip addr add %s dev eth0; "
+                    "ip route replace default via %s" % (address, gw)],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def net(u, script):
+    """Run `script` as root in the user's container (its network namespace is the app's)."""
+    if not u.container:
+        raise ProbeError("%s: network changes need --nat (a container per user)" % u.name)
+    r = subprocess.run(["docker", "exec", "--user", "0", u.container, "sh", "-c", script],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise ProbeError("%s: %s: %s" % (u.name, script, r.stderr.strip()))
+    return r.stdout.strip()
+
+
+def net_drop(u, seconds, during=None):
+    """The user's link goes down (Wi-Fi drops) for `seconds`, then comes back. `during` runs halfway."""
+    gw = net(u, "ip route show default | awk '{print $3; exit}'")
+    net(u, "ip link set eth0 down")
+    time.sleep(seconds / 2)
+    if during:
+        during()
+    time.sleep(seconds / 2)
+    net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
+
+
+def not_connected_while_down(u):
+    """With its network down, the user's call must not read Connected (nothing flows)."""
+    def check():
+        s = u.state()
+        if s.get("kind") == "in_call" and s.get("status") == "connected":
+            raise ProbeError("%s: the call reads Connected with the network down (%s)" % (u.name, s))
+    return check
+
+
+def change_address(u):
+    """The user's address on its LAN changes (a DHCP renewal, another access point): its NAT maps it
+    anew, so the outside sees it from another port."""
+    old = net(u, "ip -4 -o addr show eth0 | awk '{print $4; exit}'")  # e.g. 10.119.1.10/24
+    gw = net(u, "ip route show default | awk '{print $3; exit}'")
+    ip, prefix = old.split("/")
+    parts = ip.split(".")
+    new = ".".join(parts[:3] + [str(20 + (int(parts[3]) + 1) % 200)])
+    # Delete first: deleting the primary address also deletes the secondaries on its subnet.
+    net(u, "ip addr del %s dev eth0 && ip addr add %s/%s dev eth0 && ip route replace default via %s src %s"
+        % (old, new, prefix, gw, new))
+    return new
+
+
+def still_in_call(users, call_id, timeout):
+    """The same call comes back for everyone: in the call, hearing the others."""
+    for u in users:
+        u.wait_surface("in_call", timeout, call_id=call_id)
+    for u in users:
+        assert_hears(u, len(users) - 1, timeout=timeout)
+
+
+def scenario_network_drops_mid_call(lab):
+    """Bob's network drops for 6 s mid-call (behind his NAT) and comes back: the same call recovers,
+    audio both ways."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    call_id, _ = connect(a, a_thread, b)
+    started = time.time()
+    net_drop(b, 6, during=not_connected_while_down(b))
+    still_in_call((a, b), call_id, 45)
+    recovered = time.time() - started - 6
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"recovered_after_up_s": round(recovered, 1)}
+
+
+def scenario_address_changes_mid_call(lab):
+    """Bob's address changes mid-call (his NAT maps him anew): the same call goes on, audio both ways."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    call_id, _ = connect(a, a_thread, b)
+    started = time.time()
+    change_address(b)
+    still_in_call((a, b), call_id, 45)
+    recovered = time.time() - started
+    a.cmd("leave")
+    assert_idle(a, b)
+    return {"recovered_s": round(recovered, 1)}
+
+
+def scenario_group_member_network_drops(lab):
+    """Carol's network drops for 6 s in a three-way call (on the hop) and comes back: everyone hears
+    everyone again in the same call."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    started = time.time()
+    net_drop(c, 6, during=not_connected_while_down(c))
+    still_in_call((a, b, c), call_id, 60)
+    recovered = time.time() - started - 6
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    return {"recovered_after_up_s": round(recovered, 1)}
+
+
 # Past a seed link's liveness: Amp keeps a hot link alive every 20 s and drops it after missed echoes.
 SEED_LINK_GONE_S = 45
 
@@ -681,6 +1088,41 @@ def open_group(lab, n=3, title="lab group"):
     return users, threads
 
 
+def scenario_group_owner_hands_over(lab):
+    """Alice owns a group with Bob and Carol and closes it: she must hand it over (to a reachable member)
+    or drop it; members just leave. She hands it to Bob: Bob owns it, Alice is off the roster and her
+    chat is gone; Carol (a member) would still just leave."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    plan = a.cmd("close_plan", thread=threads[a.name])
+    if plan["kind"] != "leave_as_owner" or sorted(plan["successors"]) != sorted([b.account, c.account]):
+        raise ProbeError("alice (owner): close plan %s" % plan)
+    if b.cmd("close_plan", thread=threads[b.name])["kind"] != "leave":
+        raise ProbeError("bob (member): close plan is not leave")
+    # The chat header's sheet offers the owner's items (rename for everyone) to Alice only.
+    if not a.cmd("group_sheet", group_id=plan_group(a, threads[a.name]))["is_owner"]:
+        raise ProbeError("alice: her group's sheet does not see her as the owner")
+    if b.cmd("group_sheet", group_id=plan_group(b, threads[b.name]))["is_owner"]:
+        raise ProbeError("bob: his group's sheet sees him as the owner before the hand-over")
+    a.cmd("close_chat", thread=threads[a.name], successor=b.account)
+    for u in (b, c):
+        wait_for(lambda: (lambda r: r.get("owner") == b.account and a.account not in r["members"])(
+            u.cmd("group_roster", group_id=plan_group(u, threads[u.name]))), 40, "%s: bob owns, alice left" % u.name)
+    if any(t["id"] == threads[a.name] for t in a.cmd("threads")["threads"]):
+        raise ProbeError("alice: the group chat is still there after handing it over")
+    if b.cmd("close_plan", thread=threads[b.name])["kind"] != "leave_as_owner":
+        raise ProbeError("bob: not the owner after the hand-over")
+    if not b.cmd("group_sheet", group_id=plan_group(b, threads[b.name]))["is_owner"]:
+        raise ProbeError("bob: his group's sheet does not see him as the owner after the hand-over")
+    if c.cmd("close_plan", thread=threads[c.name])["kind"] != "leave":
+        raise ProbeError("carol: no longer a plain member")
+
+
+def plan_group(u, thread):
+    """The group id of `u`'s group chat `thread`."""
+    return next(t for t in u.cmd("threads")["threads"] if t["id"] == thread)["group_id"]
+
+
 def wait_for(fn, timeout, what):
     deadline = time.time() + timeout
     while True:
@@ -690,6 +1132,292 @@ def wait_for(fn, timeout, what):
         if time.time() > deadline:
             raise ProbeError("timed out waiting for %s" % what)
         time.sleep(0.5)
+
+
+def chat_row(u, thread, reply=None):
+    """The chats-list row of `thread` as `u` sees it (ChatPresenter), and the list's own fields."""
+    got = reply or u.cmd("threads")
+    for row in got["threads"]:
+        if row["id"] == thread:
+            return row, got
+    raise ProbeError("%s: no thread %s" % (u.name, thread))
+
+
+def scenario_chat_list_settings(lab):
+    """Bob's chats list as he sees it: Alice's message shows unread; he reads it, marks it unread by
+    hand (a dot) and opening it clears that; he pins, mutes and archives the chat, opens the archived
+    list and brings it back."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    b.cmd("home")  # the chat is not open: its new messages count
+    a.cmd("send", thread=a_thread, text="hello from the list")
+    wait_for(lambda: chat_row(b, b_thread)[0].get("unread", 0) > 0, 20, "bob: alice's message unread")
+    row, _ = chat_row(b, b_thread, b.cmd("mark_read", thread=b_thread))
+    if row.get("unread") or row.get("unread_dot"):
+        raise ProbeError("bob: still unread after Mark as read: %s" % row)
+    row, _ = chat_row(b, b_thread, b.cmd("mark_unread", thread=b_thread))
+    if not row.get("unread_dot") or row.get("unread"):
+        raise ProbeError("bob: Mark as unread shows no dot (or a count): %s" % row)
+    b.cmd("show_chat", thread=b_thread)
+    row, _ = chat_row(b, b_thread)
+    if row.get("unread_dot") or not row.get("active"):
+        raise ProbeError("bob: opening the chat kept the dot / did not open it: %s" % row)
+    row, _ = chat_row(b, b_thread, b.cmd("pin", thread=b_thread))
+    if not row.get("pinned") or row.get("position") != 0:
+        raise ProbeError("bob: a pinned chat is not first: %s" % row)
+    row, _ = chat_row(b, b_thread, b.cmd("mute", thread=b_thread))
+    if not row.get("muted"):
+        raise ProbeError("bob: mute did not take: %s" % row)
+    row, got = chat_row(b, b_thread, b.cmd("archive", thread=b_thread))
+    if row.get("listed") or got.get("archived_count") != 1:
+        raise ProbeError("bob: an archived chat is still in the list: %s / %s" % (row, got.get("archived_count")))
+    row, got = chat_row(b, b_thread, b.cmd("show_archived"))
+    if not row.get("listed") or not got.get("showing_archived"):
+        raise ProbeError("bob: the archived list does not show the chat: %s" % row)
+    row, got = chat_row(b, b_thread, b.cmd("unarchive", thread=b_thread))
+    if not row.get("listed") or got.get("archived_count") != 0 or got.get("showing_archived"):
+        raise ProbeError("bob: unarchived, the list did not come back: %s / %s" % (row, got))
+    b.cmd("unpin", thread=b_thread)
+    b.cmd("unmute", thread=b_thread)
+
+
+def transcript_row(u, thread, message):
+    for row in u.cmd("transcript", thread=thread)["rows"]:
+        if row["id"] == message:
+            return row
+    return None
+
+
+def reactions_of(u, thread, message):
+    row = transcript_row(u, thread, message)
+    return {r["emoji"]: r["count"] for r in (row or {}).get("reactions", [])}
+
+
+def scenario_chat_message_actions(lab):
+    """A message's buttons, seen from the other side: Bob reacts to Alice's message and takes it back;
+    Alice deletes one message for everyone (Bob's copy goes) and another for herself (Bob keeps it)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("show_chat", thread=a_thread)
+    b.cmd("show_chat", thread=b_thread)
+    first = a.cmd("send", thread=a_thread, text="react to me")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's message")
+    b.cmd("react", message=first, emoji="👍")
+    wait_for(lambda: reactions_of(a, a_thread, first).get("👍") == 1, 20, "alice: bob's reaction")
+    b.cmd("react", message=first, emoji="👍")  # again: takes it back
+    wait_for(lambda: "👍" not in reactions_of(a, a_thread, first), 20, "alice: bob's reaction gone")
+    a.cmd("delete_for_everyone", message=first)
+    wait_for(lambda: (transcript_row(b, b_thread, first) or {"type": "deleted"})["type"] == "deleted", 20,
+             "bob: the message deleted for everyone")
+    second = a.cmd("send", thread=a_thread, text="only mine goes")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, second), 20, "bob: alice's second message")
+    a.cmd("delete_for_me", message=second)
+    if transcript_row(a, a_thread, second) and transcript_row(a, a_thread, second)["type"] != "deleted":
+        raise ProbeError("alice: a message deleted for her still shows")
+    time.sleep(2)
+    if not transcript_row(b, b_thread, second) or transcript_row(b, b_thread, second)["type"] == "deleted":
+        raise ProbeError("bob: alice's delete-for-me took his copy")
+
+
+def thread_with(u, account):
+    """`u`'s direct thread with `account`, or None."""
+    for t in u.cmd("threads")["threads"]:
+        if t["kind"] == "direct" and t["peer"] == account:
+            return t["id"]
+    return None
+
+
+def scenario_first_message_brings_keys(lab):
+    """Bob's directory never answers. Alice finds him through hers and writes: her first message carries
+    her key card, so Bob checks it and answers with no lookup; then she calls him and he answers."""
+    a = lab.user("alice")
+    b = lab.user("bob", directory=False)
+    a.wait_mesh()
+    b.wait_mesh()
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob, it's alice")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 30, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's first message")
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 20, "alice: bob's answer")
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 40, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    for u in (a, b):
+        u.cmd("leave", check=False)
+    assert_idle(a, b)
+
+
+def scenario_friend_shares_a_contact(lab):
+    """Alice has no directory. Carol, who knows Bob, shares his contact card in her chat with Alice;
+    Alice adds Bob from it (his keys checked against his account, his route from Carol's card) and they
+    talk, with no lookup on Alice's side."""
+    c = lab.user("carol")
+    b = lab.user("bob")
+    a = lab.user("alice", directory=False)
+    for u in (a, b, c):
+        u.wait_mesh()
+    c.cmd("open_chat", account=b.account)  # Carol knows Bob (her contacts)
+    c_thread = c.cmd("open_chat", account=a.account)["thread"]
+    hello = c.cmd("send", thread=c_thread, text="meet bob")["message_id"]
+    a_thread = wait_for(lambda: thread_with(a, c.account), 30, "alice: carol's chat")
+    wait_for(lambda: transcript_row(a, a_thread, hello), 20, "alice: carol's message")
+    c.cmd("share_contact", thread=c_thread, account=b.account)
+
+    def card_row():
+        for row in a.cmd("transcript", thread=a_thread)["rows"]:
+            if row["type"] == "contact_card":
+                return row
+        return None
+    card = wait_for(card_row, 20, "alice: bob's contact card")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("add_from_card", message=card["id"])
+    ab_thread = a.cmd("chat_with", account=b.account)["thread"]
+    first = a.cmd("send", thread=ab_thread, text="hi bob, carol sent me your card")["message_id"]
+    ba_thread = wait_for(lambda: thread_with(b, a.account), 30, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, ba_thread, first), 20, "bob: alice's message")
+    reply = b.cmd("send", thread=ba_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, ab_thread, reply), 20, "alice: bob's answer")
+
+
+def scenario_devices_hand_over_their_cards(lab):
+    """A call names each side's device; each asks that device for its account card over Amp, and the card
+    — not the call's word — ties the device to the account. With the cards kept, a message to the account
+    goes over the live link to its device."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a_peer = a.cmd("whoami")["peer_id"]
+    b_peer = b.cmd("whoami")["peer_id"]
+    call_id = a.cmd("call", thread=a_thread)["call_id"]
+    b.wait_surface("ringing", 40, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in (a, b):
+        u.wait_surface("in_call", 40, call_id=call_id)
+    wait_for(lambda: a_peer in b.cmd("kept_card", account=a.account)["devices"], 40,
+             "bob: alice's device, from her card")
+    wait_for(lambda: b_peer in a.cmd("kept_card", account=b.account)["devices"], 40,
+             "alice: bob's device, from his card")
+    sent = a.cmd("send", thread=a_thread, text="over the call's link")["message_id"]
+    row = wait_for(lambda: transcript_row(b, b_thread, sent), 20, "bob: alice's message")
+    if row.get("transport") != "direct":
+        raise ProbeError("bob: alice's message came by %s, not over the link" % row.get("transport"))
+    for u in (a, b):
+        u.cmd("leave", check=False)
+    assert_idle(a, b)
+
+
+def scenario_strangers_meet_by_invite(lab):
+    """Neither has a directory. Bob's computer stays reachable without the relay; he sends Alice his invite
+    line. She pastes it: her device asks his for his card over the mesh, checks it against his account, and
+    writes to him; he answers. No lookup anywhere."""
+    a = lab.user("alice", directory=False)
+    b = lab.user("bob", directory=False, reachable=True)
+    for u in (a, b):
+        u.wait_mesh()
+    invite = "Add me on PP: " + b.cmd("locator")["locator"]
+    added = a.cmd("add_from_locator", text=invite, timeout=60)
+    if not added["keys_known"]:
+        raise ProbeError("alice: bob's card not fetched from his device (%s)" % added)
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob, from your invite")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 30, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's message")
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
+
+
+def scenario_group_members_key_each_other(lab):
+    """Bob and Carol have no directory and have never met. Alice (who has one) writes to each, and each
+    adds her from her invite line (group invites come from contacts only); she makes a group of the three:
+    her roster notice carries each member's card, so Bob and Carol write to the group — encrypted to and
+    checked against each other — with no lookup."""
+    a = lab.user("alice", reachable=True)
+    b = lab.user("bob", directory=False)
+    c = lab.user("carol", directory=False)
+    for u in (a, b, c):
+        u.wait_mesh()
+    for m in (b, c):
+        a_thread = a.cmd("open_chat", account=m.account)["thread"]
+        hello = a.cmd("send", thread=a_thread, text="hi %s" % m.name)["message_id"]
+        m_thread = wait_for(lambda: thread_with(m, a.account), 30, "%s: alice's chat" % m.name)
+        wait_for(lambda: transcript_row(m, m_thread, hello), 20, "%s: alice's message" % m.name)
+        m.cmd("add_from_locator", text=a.cmd("locator")["locator"], timeout=60)
+    created = a.cmd("create_group", title="no lookups", accounts=[b.account, c.account])
+    group_id = created["group_id"]
+    threads = {a.account: created["thread"]}
+    for m in (b, c):
+        invite = wait_for(lambda: next((i for i in m.cmd("group_invites")["invites"] if i["group_id"] == group_id),
+                                       None), 40, "%s: the group invite" % m.name)
+        threads[m.account] = m.cmd("accept_group_invite", nonce=invite["nonce"], group_id=group_id)["thread"]
+    everyone = sorted(u.account for u in (a, b, c))
+    for u in (a, b, c):
+        wait_for(lambda: sorted(u.cmd("group_roster", group_id=group_id)["members"]) == everyone or None, 40,
+                 "%s: the whole roster" % u.name)
+    wait_for(lambda: b.cmd("kept_card", account=c.account).get("account_id") or None, 30,
+             "bob: carol's card, from the roster")
+    # Alice keeps her copies of the roster notices without the cards (they are kept as cards).
+    for m in (b, c):
+        for row in a.cmd("transcript", thread=thread_with(a, m.account))["rows"]:
+            if row["type"] == "system" and row["payload_bytes"] > 8000:
+                raise ProbeError("alice: %d bytes kept in her chat with %s (%s)" % (row["payload_bytes"], m.name,
+                                                                                    row["text"]))
+    wait_for(lambda: c.cmd("kept_card", account=b.account).get("account_id") or None, 30,
+             "carol: bob's card, from the roster")
+    def said(u, text):
+        return next((r for r in u.cmd("transcript", thread=threads[u.account])["rows"] if r.get("text") == text), None)
+    b.cmd("show_chat", thread=threads[b.account])
+    b.cmd("compose_send", text="hi carol, from the group")
+    wait_for(lambda: said(c, "hi carol, from the group"), 30, "carol: bob's group message")
+    wait_for(lambda: said(a, "hi carol, from the group"), 30, "alice: bob's group message")
+    c.cmd("show_chat", thread=threads[c.account])
+    c.cmd("compose_send", text="hi bob")
+    wait_for(lambda: said(b, "hi bob"), 30, "bob: carol's group message")
+
+
+def scenario_restored_device_is_heard(lab):
+    """Bob reinstalls and restores his account from the backup (#378): his chat with Alice starts empty
+    and his numbering is gone, while Alice still holds their old chat. His first send starts their next
+    epoch, so every message he sends after the restore reaches her — none taken for one she already
+    has — and her answer reaches him."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    for i in range(3):
+        sent = b.cmd("send", thread=b_thread, text="before %d" % i)["message_id"]
+        wait_for(lambda: transcript_row(a, a_thread, sent), 20, "alice: bob's message %d" % i)
+    b.restore_account()
+    b.wait_mesh()
+    b_thread = b.cmd("open_chat", account=a.account)["thread"]
+    after = [b.cmd("send", thread=b_thread, text="after %d" % i)["message_id"] for i in range(3)]
+    for i, sent in enumerate(after):
+        wait_for(lambda: transcript_row(a, a_thread, sent), 30, "alice: bob's message %d after the restore" % i)
+    reply = a.cmd("send", thread=a_thread, text="welcome back")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer after the restore")
+
+
+def scenario_chat_quote_reply(lab):
+    """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
+    Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("show_chat", thread=a_thread)
+    b.cmd("show_chat", thread=b_thread)
+    original = a.cmd("send", thread=a_thread, text="are we still on for friday?")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, original), 20, "bob: alice's message")
+    preview = b.cmd("quote", message=original)["preview"]
+    if preview != "are we still on for friday?":
+        raise ProbeError("bob: quote preview %r" % preview)
+    b.cmd("compose_send", text="yes, 7pm")
+
+    def quoted_reply():
+        for row in a.cmd("transcript", thread=a_thread)["rows"]:
+            text = row.get("text", "")
+            if "yes, 7pm" in text and "are we still on for friday?" in text:
+                return row
+        return None
+    wait_for(quoted_reply, 20, "alice: bob's quoted reply")
+    try:
+        b.cmd("compose_send", text="x" * 70000)
+        raise ProbeError("bob: an over-long draft was sent")
+    except ProbeError as e:
+        if "over-long" in str(e):
+            raise
 
 
 def live_streams(u):
@@ -1014,6 +1742,16 @@ def scenario_group_calling_at_once(lab):
 
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
+    ("chat_list_settings", scenario_chat_list_settings),
+    ("chat_message_actions", scenario_chat_message_actions),
+    ("chat_quote_reply", scenario_chat_quote_reply),
+    ("first_message_brings_keys", scenario_first_message_brings_keys),
+    ("friend_shares_a_contact", scenario_friend_shares_a_contact),
+    ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
+    ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
+    ("group_members_key_each_other", scenario_group_members_key_each_other),
+    ("restored_device_is_heard", scenario_restored_device_is_heard),
+    ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),
@@ -1022,6 +1760,16 @@ SCENARIOS = [
     ("caller_restarts_mid_call", scenario_caller_restarts_mid_call),
     ("peer_vanishes_mid_call", scenario_peer_vanishes_mid_call),
     ("decline_then_call_back", scenario_decline_then_call_back),
+    ("minimized_still_rings", scenario_minimized_still_rings),
+    ("push_wakes_background_callee", scenario_push_wakes_background_callee),
+    ("background_mid_call", scenario_background_mid_call),
+    ("peer_hangs_up_while_backgrounded", scenario_peer_hangs_up_while_backgrounded),
+    ("answered_in_background", scenario_answered_in_background),
+    ("background_is_push_only", scenario_background_is_push_only),
+    ("stay_connected_rings_in_background", scenario_stay_connected_rings_in_background),
+    ("network_drops_mid_call", scenario_network_drops_mid_call),
+    ("address_changes_mid_call", scenario_address_changes_mid_call),
+    ("group_member_network_drops", scenario_group_member_network_drops),
     ("seed_down", scenario_seed_down),
     ("seed_dies_in_use", scenario_seed_dies_in_use),
     ("group_call_three", scenario_group_call_three),
@@ -1036,11 +1784,19 @@ SCENARIOS = [
     ("group_last_one_waits", scenario_group_last_one_waits),
     ("group_late_starter", scenario_group_late_starter),
     ("group_member_removed", scenario_group_member_removed),
+    ("group_owner_hands_over", scenario_group_owner_hands_over),
     ("group_calling_at_once", scenario_group_calling_at_once),
 ]
 
 # Scenarios run only when named (--only).
 OPT_IN = set()
+
+# Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
+# --nat they run only when named.
+NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
+# Scenarios that change a user's network: they need a container per user (--nat).
+NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
+             "bystander_is_no_relay"}
 
 
 def main():
@@ -1053,6 +1809,13 @@ def main():
     ap.add_argument("--relay-container", default="pp-app-lab-www-1",
                     help="lab relay gateway container, restarted when registrations run out")
     ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
+    ap.add_argument("--nat", action="store_true",
+                    help="each user in its own container behind its own NAT (docker-compose.app-lab-nat.yml)")
+    ap.add_argument("--nat-containers", default="pp-app-lab-user-a-1,pp-app-lab-user-b-1,pp-app-lab-user-c-1")
+    ap.add_argument("--nat-relay", default="http://198.51.100.20:9097/api/relay",
+                    help="the relay as users behind the NATs reach it")
+    ap.add_argument("--nat-share", default=os.environ.get("PP_APP_LAB_NAT_SHARE", "/tmp/pp-app-lab-nat"),
+                    help="profile dirs, mounted at the same path in the user containers")
     ap.add_argument("--only", action="append", default=[])
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
@@ -1063,7 +1826,8 @@ def main():
             peer = json.load(r)["peer_id"]
         args.hop = "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (args.hop_ip, peer)
 
-    selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in OPT_IN)]
+    skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else NEEDS_NAT)
+    selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
     failures = 0

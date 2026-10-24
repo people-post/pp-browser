@@ -1,0 +1,22 @@
+# Social posts — current state
+
+**2026-10-23:** design draft (DESIGN.md, S001–S016).
+
+**P1 landed (2026-10-23):** `lib/posts` (`pp_lib_posts`) — entries and head statements (canonical bytes,
+BLAKE2b-256 hash without the signature, ML-DSA-65 sign / verify against the account id), every v1 kind's
+body with the protocol limits, chain and fork checks, the profile's post store (forks kept side by side,
+stubs for deleted and unkept entries, newest head per author, the device's own lane), and the device's
+writer (`PostAuthor`: device-bound lane, never reuses a seq, claimed time monotonic per lane). 18 unit tests;
+no UI, no network.
+
+**Distribution designed (2026-10-23):** [DISTRIBUTION.md](DISTRIBUTION.md), S017–S021 — targets in the head
+statement, the relay post API, `/pp/posts/1.0.0`, head discovery, publish outbox, refresh.
+
+**P2 relay side (2026-10-23, in review):** the post relay service
+[nfsc-brief-web3/app-posts#1](https://github.com/nfsc-brief-web3/app-posts/pull/1) (verify / keep / serve,
+tested against `lib/posts` vectors) and the gateway route
+[app-static-api#201](https://github.com/nfsc-brief-reader/app-static-api/pull/201)
+(`/api/relay/v1/posts/*` → app-posts). Deploy needs an `app-posts` ECR repository, the service, and
+`BRF_WWW_POSTS_URI`.
+
+**Next:** once deployed, the client side of P2.

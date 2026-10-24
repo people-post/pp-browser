@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>

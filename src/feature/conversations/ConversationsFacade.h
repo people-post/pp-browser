@@ -1,30 +1,31 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "domain/messaging/AtAiParser.h"
-#include "domain/messaging/GroupTypes.h"
+#include "lib/messaging/AtAiParser.h"
+#include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/messaging/SendRelayOptions.h"
-#include "domain/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/SendRelayOptions.h"
+#include "lib/messaging/ThreadLocalPrefsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/net/BlobQuota.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/net/BlobQuota.h"
+#include "lib/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
-#include "domain/people/ProfileIdentityView.h"
-#include "domain/ui/ChatWidgetTypes.h"
-#include "domain/pricing/PaymentPromiseLifecycle.h"
-#include "domain/pricing/PaymentPromiseWireCodec.h"
+#include "lib/people/ProfileIdentityView.h"
+#include "lib/ui/ChatWidgetTypes.h"
+#include "lib/pricing/PaymentPromiseLifecycle.h"
+#include "lib/pricing/PaymentPromiseWireCodec.h"
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
+#include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "feature/conversations/PeerDisplaySources.h"
-#include "domain/messaging/PskSessionCoordinator.h"
+#include "domain/peers/PeerDisplaySources.h"
+#include "lib/messaging/PskSessionCoordinator.h"
 #include "mesh/reachability/Reachability.h"
 
 #include <cstdint>
@@ -59,12 +60,14 @@ public:
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
-  Roe<void> SyncPushDevices(bool show_notifications);
+  Roe<void> SyncPushDevices();
   Roe<std::string> ExportLinkDevice();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
   /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
   Roe<std::optional<std::string>> LocalBackupNickname();
   Roe<void> RestoreLocalBackup(const std::string& pin);
+  /** Rewrite the local account backup on a worker (e.g. after a PIN change). Best effort. */
+  void WriteLocalBackupAsync();
   Roe<void> DeleteLocalBackup();
   void SuspendMeshColdPeers();
 
@@ -120,6 +123,18 @@ public:
   // --- P2P ------------------------------------------------------------------
   void MaybeTailSync(const std::string& thread_id);
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
+  Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
+  /** This account's locator, for a QR code or an invite line. */
+  Roe<std::string> OwnContactLocator();
+  /**
+   * Adds the person a locator in `text` names (an invite line, a scanned code): the contact, then the
+   * account's card from a listed device or the directory. `done` once, on a worker or I/O thread.
+   */
+  void AddContactFromLocator(const std::string& text,
+                             std::function<void(Roe<ContactCardExchange::LocatorAdded>)> done);
+  /** *Add* on a contact card in a chat: checks the card, keeps the account's keys, adds (or finds) the contact. */
+  Roe<Contact> AddContactFromCard(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
                                   const std::string& emoji);
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
@@ -149,10 +164,8 @@ public:
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
   void SetSupportAccountId(std::string account_id);
   void RegisterContactDirectEndpoints(const Contact& contact);
-  void RegisterPeerSigningKey(const std::string& kind, const std::string& value, const std::string& key_b64,
-                              const std::string& source);
-  void RegisterPeerKemKey(const std::string& kind, const std::string& value, const std::string& key_b64,
-                          const std::string& source);
+  /** The keys a directory entry carries for its account, each kept only when it proves to be the account's. */
+  void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);
   Roe<Contact> AddContactFromDirectoryHit(const mesh::DirectoryHit& hit);
   /** Block / unblock / trust from wherever the person is shown (chat row menu, contact detail). */
   Roe<void> SetContactTrust(const std::string& contact_id, TrustLevel level);

@@ -33,6 +33,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.prefer_contacts_for_routing = bootstrap.config.mesh.prefer_contacts_for_routing ? "on" : "off";
   state.direct_connections = mesh::DirectAudienceName(bootstrap.config.mesh.direct_connections);
   state.trusted_relays_only = bootstrap.config.mesh.trusted_relays_only ? "on" : "off";
+  state.reachable_without_relay = bootstrap.config.mesh.reachable_without_relay ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
   // amp_listen_multiaddr is filled by SettingsController from ConversationsHub runtime.
 }
@@ -50,7 +51,8 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
          media_on == config.mesh.capabilities.media_relay && dht_on == config.mesh.capabilities.dht &&
          prefer_contacts == config.mesh.prefer_contacts_for_routing &&
          state.direct_connections == mesh::DirectAudienceName(config.mesh.direct_connections) &&
-         (state.trusted_relays_only == "on") == config.mesh.trusted_relays_only;
+         (state.trusted_relays_only == "on") == config.mesh.trusted_relays_only &&
+         (state.reachable_without_relay == "on") == config.mesh.reachable_without_relay;
 }
 
 Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
@@ -74,6 +76,7 @@ void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   state.prefer_contacts_for_routing = defaults.mesh.prefer_contacts_for_routing ? "on" : "off";
   state.direct_connections = mesh::DirectAudienceName(defaults.mesh.direct_connections);
   state.trusted_relays_only = defaults.mesh.trusted_relays_only ? "on" : "off";
+  state.reachable_without_relay = defaults.mesh.reachable_without_relay ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
   state.mesh_status_message.clear();
 }

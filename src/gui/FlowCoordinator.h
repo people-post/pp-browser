@@ -14,7 +14,7 @@ public:
   using StepBackHandler = std::function<bool()>;
   using CancelHandler = std::function<void()>;
 
-  /** Layer close without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  /** Layer close. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
 
   /** Begin a modal flow tied to an overlay layer. */

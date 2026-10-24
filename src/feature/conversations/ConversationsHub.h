@@ -6,42 +6,43 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
-#include "domain/messaging/GroupTypes.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/people/ProfileIdentityView.h"
+#include "lib/messaging/GroupTypes.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/conversations/ContactActionDispatcher.h"
-#include "feature/conversations/DirectoryShadowCache.h"
+#include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/PeerDisplaySources.h"
-#include "domain/messaging/PeerKemKeyStore.h"
-#include "domain/messaging/GroupRosterStore.h"
-#include "domain/messaging/PeerSigningKeyStore.h"
-#include "domain/messaging/GroupInviteGate.h"
+#include "domain/peers/PeerDisplaySources.h"
+#include "lib/messaging/PeerKemKeyStore.h"
+#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
-#include "domain/messaging/SqliteThreadStore.h"
-#include "domain/messaging/ThreadLocalPrefsStore.h"
-#include "domain/pricing/PaymentPromiseInbound.h"
-#include "domain/pricing/InitiationBillingStore.h"
+#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/pricing/PaymentPromiseInbound.h"
+#include "lib/pricing/InitiationBillingStore.h"
 #include "common/Lifetime.h"
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "mesh/media_plane/MeshMediaRelay.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
-#include "domain/messaging/AttachmentSuppressionStore.h"
+#include "lib/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/net/BlobClient.h"
-#include "domain/net/BlobQuota.h"
-#include "domain/net/HttpBlobClient.h"
-#include "domain/net/OrgBackendClientsImpl.h"
-#include "domain/net/IPushDeviceClient.h"
+#include "lib/net/BlobClient.h"
+#include "lib/net/BlobQuota.h"
+#include "lib/net/HttpBlobClient.h"
+#include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/SwitchableDirectoryClient.h"
+#include "lib/net/IPushDeviceClient.h"
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/reachability/Reachability.h"
@@ -50,10 +51,10 @@
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
-#include "domain/people/MeshHopPolicy.h"
-#include "domain/pricing/PaymentPromiseStore.h"
-#include "domain/pricing/PaymentPromiseLifecycle.h"
-#include "domain/pricing/PaymentPromiseWireCodec.h"
+#include "lib/people/MeshHopPolicy.h"
+#include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/pricing/PaymentPromiseLifecycle.h"
+#include "lib/pricing/PaymentPromiseWireCodec.h"
 
 #include <atomic>
 #include <cstdint>
@@ -70,8 +71,9 @@ namespace pbr {
 
 class IPskSessionStore;
 class ProfileSecretsEngine;
-class RelayDirectoryKemKeyResolver;
-class RelayDirectorySigningKeyResolver;
+class AccountKeyResolver;
+class ContactCardExchange;
+class PeerCardStore;
 class SqlitePskSessionStore;
 
 /**
@@ -103,13 +105,15 @@ public:
     bool prefer_contacts_for_routing = true;
     mesh::DirectAudience direct_connections = mesh::DirectAudience::Contacts;
     bool trusted_relays_only = false;
+    bool reachable_without_relay = false;
 
     bool operator==(const NetworkConfig& other) const {
       return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
              prefer_contacts_for_routing == other.prefer_contacts_for_routing &&
-             direct_connections == other.direct_connections && trusted_relays_only == other.trusted_relays_only;
+             direct_connections == other.direct_connections && trusted_relays_only == other.trusted_relays_only &&
+             reachable_without_relay == other.reachable_without_relay;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
@@ -120,9 +124,11 @@ public:
   /** Push / OS notification preference projected from ProfilePreferences. */
   struct NotificationPrefs {
     bool show_notifications = true;
+    /** P011 — stay connected in the background (opt-in). */
+    bool stay_connected = false;
 
     bool operator==(const NotificationPrefs& other) const {
-      return show_notifications == other.show_notifications;
+      return show_notifications == other.show_notifications && stay_connected == other.stay_connected;
     }
     bool operator!=(const NotificationPrefs& other) const { return !(*this == other); }
   };
@@ -229,6 +235,13 @@ public:
   IPskSessionStore* PskStore();
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
+  ContactCardExchange& ContactCards();
+  /** This account's locator (ACCOUNT_CARD.md#locator-qr-code-invite-link): Account ID, nickname, devices. */
+  Roe<std::string> OwnContactLocator();
+  /** Share contact `contact_id` into chat `thread_id` as a contact card (ACCOUNT_CARD.md). */
+  Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
+  /** False when no HTTP directory provider is configured (Directory() must not be called then). */
+  bool HasDirectory() const { return directory_.Configured(); }
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
@@ -331,6 +344,9 @@ public:
   void TickMesh();
   /** Drop cold peer connections (Android background). */
   void SuspendMeshColdPeers();
+  /** The app went to the background / came back (AppLifecycle): the mesh follows. */
+  void OnAppBackground();
+  void OnAppForeground();
 
   void SetOnMessagingReady(std::function<void()> callback);
   /** Fired on UI thread when async mesh bring-up finishes (success or soft-fail). */
@@ -364,6 +380,8 @@ private:
   void PublishNodeAdvertisedAddrs();
   /** Point mesh connectivity and the hop-policy feed at the current messaging / mesh. */
   void WireMeshConnectivity();
+  /** Start or stop renewing the seed reservation (mesh.reachable_without_relay, desktop, mesh up). UI thread. */
+  void SyncStayReachable();
   void NoteLanMdnsPeerId(const std::string& peer_id);
   std::vector<HubParticipant*> Participants() const;
   /** Participants in reverse registration order (the way down). */
@@ -372,6 +390,8 @@ private:
   void NotifyMessagingBuilt();
   void NotifyPolicyPrefs(const PolicyPrefs& prefs);
   void RegisterContactEndpoints();
+  /** The directory cache's nodes with only the addresses worth dialling (DirectoryNodesForDial). */
+  std::vector<mesh::MeshDirectoryNode> DirectoryNodes() const;
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
   void ConfigureAmpDhtProtocol();
@@ -435,8 +455,12 @@ private:
   std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
-  std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
-  std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
+  /** Account cards this device has checked and kept (profile.db). */
+  std::unique_ptr<PeerCardStore> peer_cards_;
+  /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
+  std::unique_ptr<AccountKeyResolver> account_keys_;
+  /** Contacts passed hand to hand (contact cards). */
+  std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
@@ -445,14 +469,13 @@ private:
   std::string http_registration_url_;
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
-  std::unique_ptr<mesh::IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
-  mesh::IDirectoryClient* directory_ = nullptr;
+  /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
+  SwitchableDirectoryClient directory_;
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
@@ -489,7 +512,12 @@ private:
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  /** AppLifecycle listeners (OnAppBackground / OnAppForeground), removed at Shutdown. */
+  uint64_t lifecycle_background_id_ = 0;
+  uint64_t lifecycle_foreground_id_ = 0;
   bool mesh_ready_ = false;
+  /** Renews our reservation on the mesh seeds while mesh.reachable_without_relay is on (desktop). */
+  uint64_t stay_reachable_timer_ = 0;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
   uint64_t hub_policy_timer_id_ = 0;

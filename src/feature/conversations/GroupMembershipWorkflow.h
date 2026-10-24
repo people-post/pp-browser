@@ -1,12 +1,13 @@
 #pragma once
 
-#include "domain/messaging/GroupMembershipCodec.h"
-#include "domain/messaging/GroupRosterStore.h"
+#include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterStore.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/messaging/GroupInviteGate.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "domain/peers/AccountKeyResolver.h"
 
 #include "common/Module.h"
 
@@ -24,7 +25,8 @@ namespace pbr {
 class GroupMembershipWorkflow : public Module {
 public:
   GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                         GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging);
+                         GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
+                         AccountKeyResolver& account_keys);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
 
@@ -85,8 +87,10 @@ private:
   Roe<void> SendInviteDirectMessage(const GroupInvitePayload& invite, const std::string& invitee_contact_id);
   Roe<void> SendInviteResponseDirectMessage(const std::string& inviter_identity, const std::string& invite_nonce,
                                             const std::string& group_id, GroupMembershipControlType response_type);
+  /** `stored_detail_json`: what our copy of the DM keeps, when it should not hold all of `detail_json`. */
   Roe<void> SendMembershipDirectMessage(const std::string& peer_identity, GroupMembershipControlType control_type,
-                                        const std::string& detail_json, const std::string& display);
+                                        const std::string& detail_json, const std::string& display,
+                                        const std::optional<std::string>& stored_detail_json = std::nullopt);
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
@@ -101,6 +105,7 @@ private:
   GroupRosterStore& roster_;
   GroupInviteGate& invite_gate_;
   MeshDeliveryOrchestrator& mesh_messaging_;
+  AccountKeyResolver& account_keys_;
 
   mutable std::mutex unreachable_mutex_;
   std::set<std::pair<std::string, std::string>> unreachable_;

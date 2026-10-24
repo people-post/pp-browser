@@ -1,47 +1,40 @@
 pp_browser_add_feature_library(pp_feature_conversations
   SOURCES
-    AttachmentClient.cpp
-    AttachmentFetchWorkflow.cpp
-    AttachmentFetch.cpp
-    ChatBlobRequest.cpp
+    ChatPresenter.cpp
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
-    DirectoryShadowCache.cpp
+    ContactCardExchange.cpp
     GroupMembershipWorkflow.cpp
     InboxController.cpp
-    AmpDirectChatTransport.cpp
-    AmpChatHistoryTransport.cpp
-    AmpChatBlobTransport.cpp
     MessageRouter.cpp
     MessagingTools.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp
+    PeopleSearch.cpp
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
     MeshConnectivityWiring.cpp
-    ProfileIconClient.cpp
-    ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
-    RelayDirectoryKemKeyResolver.cpp
-    RelayDirectorySigningKeyResolver.cpp
-    AttachmentContent.cpp
     MeshNetworkReaction.cpp
   PUBLIC_LIBS
-    pp_feature_registration
-    pp_feature_node
+    pp_domain_registration
+    pp_domain_peers
+    pp_domain_attachments
+    pp_domain_delivery
+    pp_domain_node
     pp_foundation_crypto
-    pp_domain_media
-    pp_domain_messaging
-    pp_domain_content
-    pp_domain_pricing
-    pp_domain_calls
+    pp_lib_media
+    pp_lib_messaging
+    pp_lib_content
+    pp_lib_pricing
+    pp_lib_calls
     pp_amp_link
     pp_mesh
-    pp_domain_net
-    pp_domain_people
+    pp_lib_net
+    pp_lib_people
     pp_foundation_platform_core
     pp_foundation_runtime_core
     pp_foundation_runtime

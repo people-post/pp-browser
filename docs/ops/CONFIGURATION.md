@@ -49,7 +49,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
-**Dogfood initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.
+**Initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.
 
 ## Runtime session state
 
@@ -66,7 +66,7 @@ After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`Se
 | `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
 | `ProfilePreferences` | `ConfigApplyBridge` (`Prefs{.language=…}`) | `LocalizationService::Prefs` | `LocalizationService::Apply` (UI chrome via language listeners) |
 
-Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/domain/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`ConversationsHub`](../../src/feature/conversations/ConversationsHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/lib/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`ConversationsHub`](../../src/feature/conversations/ConversationsHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
 
 | SessionStore listener | Used by |
 |-----------------------|---------|

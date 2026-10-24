@@ -485,6 +485,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
+  object.set("reachable_without_relay", config.reachable_without_relay);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
   object.set("mobility", config.mobility);
@@ -521,6 +522,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;
+  }
+  if (auto reachable = object.getIf<bool>("reachable_without_relay")) {
+    config.reachable_without_relay = *reachable;
   }
   if (auto trusted = object.getIf<bool>("trusted_relays_only")) {
     config.trusted_relays_only = *trusted;
@@ -735,6 +739,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("pin_is_default", prefs.pin_is_default);
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
+  object.set("stay_connected", prefs.stay_connected);
   object.set("call_diagnostics", prefs.call_diagnostics);
   object.set("crash_reports_enabled", prefs.crash_reports_enabled);
   object.set("group_invite_policy", prefs.group_invite_policy);
@@ -776,6 +781,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   } else {
     prefs.auto_renew_registration = true;
   }
+  prefs.stay_connected = object.getIf<bool>("stay_connected").value_or(false);
   if (auto show_notifications = object.getIf<bool>("show_notifications")) {
     prefs.show_notifications = *show_notifications;
   } else {

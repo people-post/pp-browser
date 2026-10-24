@@ -85,9 +85,42 @@ TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
   const std::string blocks = BuildPeopleDiscoveryBlocksJson(hits, {}, options);
   EXPECT_NE(blocks.find("Found 15 people"), std::string::npos);
   EXPECT_NE(blocks.find("Refine search"), std::string::npos);
+  EXPECT_NE(blocks.find("Show more (5 left)"), std::string::npos);
   EXPECT_NE(blocks.find("Person 0"), std::string::npos);
   EXPECT_NE(blocks.find("Person 9"), std::string::npos);
   EXPECT_EQ(blocks.find("Person 10"), std::string::npos);
+}
+
+TEST(PeopleDiscoveryBlocksTest, APageShowsItsRowsAndOffersTheNextPage) {
+  std::vector<mesh::DirectoryHit> hits;
+  for (int i = 0; i < 17; ++i) {
+    mesh::DirectoryHit hit;
+    hit.hit_id = "hit_" + std::to_string(i);
+    hit.display_name = "Person " + std::to_string(i);
+    hit.nickname = "p" + std::to_string(i);
+    hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:p" + std::to_string(i), true}};
+    hits.push_back(std::move(hit));
+  }
+  PeopleDiscoveryBuildOptions first;
+  first.max_visible_items = 10;
+  first.query = "person";
+  const std::string page1 = BuildPeopleDiscoveryBlocksJson(hits, {}, first);
+  EXPECT_NE(page1.find("Found 17 people — showing 1–10:"), std::string::npos) << page1;
+  EXPECT_NE(page1.find("Show more (7 left)"), std::string::npos) << page1;
+  EXPECT_NE(page1.find("\"tool\":\"search_people\""), std::string::npos) << page1;
+  EXPECT_NE(page1.find("\"offset\":10"), std::string::npos) << page1;
+  EXPECT_NE(page1.find("\"query\":\"person\""), std::string::npos) << page1;
+  EXPECT_EQ(page1.find("Person 10"), std::string::npos);
+
+  PeopleDiscoveryBuildOptions second = first;
+  second.offset = 10;
+  const std::string page2 = BuildPeopleDiscoveryBlocksJson(hits, {}, second);
+  EXPECT_NE(page2.find("Found 17 people — showing 11–17:"), std::string::npos) << page2;
+  EXPECT_NE(page2.find("Person 10"), std::string::npos);
+  EXPECT_NE(page2.find("Person 16"), std::string::npos);
+  EXPECT_EQ(page2.find("Person 9\""), std::string::npos);
+  EXPECT_EQ(page2.find("Show more"), std::string::npos) << "last page";
+  EXPECT_EQ(page2.find("Refine search"), std::string::npos) << "last page";
 }
 
 TEST(PeopleDiscoveryBlocksTest, DropsSelfIdentityHits) {

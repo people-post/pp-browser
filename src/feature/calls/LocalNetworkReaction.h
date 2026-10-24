@@ -2,7 +2,7 @@
 
 #include "foundation/platform/NetworkMonitor.h"
 #include "mesh/host/LocalNetworkChange.h"
-#include "domain/calls/CallMobility.h"
+#include "lib/calls/CallMobility.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {

@@ -146,9 +146,9 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_leg_coordinator_test` — [`src/feature/call_media/tests/call_media_leg_coordinator_test.cpp`](../../src/feature/call_media/tests/call_media_leg_coordinator_test.cpp) |
+| Direct call-media | `call_media_leg_coordinator_test` — [`src/domain/call_media/tests/call_media_leg_coordinator_test.cpp`](../../src/domain/call_media/tests/call_media_leg_coordinator_test.cpp) |
 | Media relay fan-out | `media_relay_server_client_test` — pp-cpp-mesh [`tests/media_relay_server_client_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/media_relay_server_client_test.cpp) |
-| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/feature/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
+| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
 | Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/amp_circuit_media_relay_compose_test.cpp) |
 | AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key; **dialable+DialInBackoff still Connected via circuit** — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
@@ -191,6 +191,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/test/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
 ./scripts/test/pp_local_test.sh run --suite ledger  # N-LEDGER, local processes (needs PP_LEDGER_ROOT built; not in all)
 ./scripts/test/pp_local_test.sh run --suite app     # app lab: scripted users on pp-app-probe over the real relay (not in all)
+./scripts/test/pp_local_test.sh run --suite app-nat # the app lab with each user behind its own NAT (not in all)
 ./scripts/test/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/test/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/test/pp_local_test.sh clear               # down -v + ready-file
@@ -200,9 +201,17 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 
 ### App lab (`--suite app`)
 
-The other probes drive the call stack around the product's messaging; the app lab drives the app. [`pp-app-probe`](../../src/app/node/tools/app_probe/main.cpp) is the app with no GUI — the same `Bootstrap`, `ProductStack`, facade and `CallUiBackend` (incl. `Settle`) — one scripted user per process, its own profile dir, line-JSON commands on stdin (`register`, `open_chat`, `call`, `accept`, `leave`, `crash`, …). [`pp_app_lab.py`](../../scripts/test/pp_app_lab.py) runs the scenarios people hit when a call will not get through — first contact, both calling at once (and both answering), calling back while it rings, a redial storm, a restart while ringing, the caller's app dying mid-call and coming back, a peer vanishing mid-call, decline then call back — and checks the outcome: nobody stuck, one history entry per call, audio both ways, and times (ring, answer → audio, Reconnecting, failed).
+The other probes drive the call stack around the product's messaging; the app lab drives the app. [`pp-app-probe`](../../src/app/node/tools/app_probe/main.cpp) is the app with no GUI — the same `Bootstrap`, `ProductStack`, facade, `CallUiBackend` and `CallPresenter` (what the call surface shows and what its buttons do: the probe's `call` / `accept` / `leave` … are the GUI's buttons, and its `surface` / `state` report the GUI's `CallScreen`, incl. the status line) — one scripted user per process, its own profile dir, line-JSON commands on stdin (`register`, `open_chat`, `call`, `accept`, `leave`, `crash`, …). [`pp_app_lab.py`](../../scripts/test/pp_app_lab.py) runs the scenarios people hit when a call will not get through — first contact, both calling at once (and both answering), calling back while it rings, a redial storm, a restart while ringing, the caller's app dying mid-call and coming back, a peer vanishing mid-call, decline then call back — and checks the outcome: nobody stuck, one history entry per call, audio both ways, and times (ring, answer → audio, Reconnecting, failed).
+
+**Chats list.** The probe also drives `ChatPresenter` (feature/conversations: the chats list's decisions — order, unread count and hand-set dot, pin, mute, archive — and its buttons; `ChatController` renders it): `threads` reports the list as the user sees it (`listed`, `position`, `unread`, `unread_dot`, `pinned`, `muted`, `active`, `archived_count`), and `show_chat` / `home` / `pin` / `mute` / `archive` / `mark_unread` / `mark_read` / `show_archived` are its buttons; a message's buttons are `react` / `delete_for_me` / `delete_for_everyone` / `quote`, the composer's Send is `compose_send` (validated, the quote added, routed by the message router like the GUI's), and `transcript` reports the open chat as drawn (reactions folded onto their messages). `close_plan` / `close_chat` are closing a chat (delete; a group's leave, local dismiss, or an owner's hand-over to a reachable member), and `group_sheet` is a group's side of the chat header's sheet (whether this device owns the group; the unreachable members its owner may remove). Scenarios: `chat_list_settings`, `chat_message_actions`, `chat_quote_reply`, `group_owner_hands_over`.
+
+**Without a directory.** `lab.user(name, directory=False)` gives a user whose directory never answers (a closed local port; an empty one would mean the built-in default), for the paths that must not need it ([ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md)). Scenarios: `first_message_brings_keys` — Alice finds Bob through her directory and writes; Bob checks her with the key card her first message carries, answers, and takes her call with no lookup. `friend_shares_a_contact` — Carol shares Bob's contact card in her chat with Alice (no directory); Alice adds him from it (`share_contact`, `add_from_card`, `chat_with`: the contacts screen's chat, no lookup) and they talk. `devices_hand_over_their_cards` — a call names each side's device; each asks that device for its account card over Amp (`fetch_card`, `kept_card`; `whoami` reports the device's `peer_id`), and a message to the account then goes over the live link (`transcript` rows carry their `transport`). `restored_device_is_heard` — Bob reinstalls and restores his account (`restore_account()`: his chats deleted, the public sessions the account backup keeps put back — `backup_sessions` / `restore_sessions`) while Alice keeps their chat; his first send starts their next epoch, all his new messages reach her and her answer reaches him (#378). `strangers_meet_by_invite` — neither user has a directory; Bob is *Reachable without the relay* (`lab.user(name, reachable=True)` sets `mesh.reachable_without_relay`), Alice pastes his invite (`locator`, `add_from_locator`), fetches his card from his device through a seed circuit, and they chat both ways. `group_members_key_each_other` — Bob and Carol have no directory and have never met; each adds Alice from her invite, she makes a group of the three, and her roster notice gives each the other's card (`kept_card` reports its `source`) and relay route, so both write to the group (`compose_send` in the group chat) and every member reads it.
 
 [`docker-compose.app-lab.yml`](../../packaging/pp-node/docker-compose.app-lab.yml) (project `pp-app-lab`) is the real relay — web2 `www` (gateway: registration, directory, signed requests, rate limits) + `messenger` + Mongo, built from `PP_WEB2_ROOT` — and the lab's own mesh seed. The seed sits on a TEST-NET-2 network (198.51.100.0/24): the product dials seeds only on public addresses. No fixed container names or Mongo host port, so it never meets a developer's own Brief stack. The relay allows 10 registrations per IP per hour; the driver restarts the gateway when a run has used them. The lab seed never dials the production seeds (`PP_NODE_BOOTSTRAP_PEERS` is an unroutable TEST-NET-3 address): when it did, their dial-backs held its pending-handshake slots and real hellos were dropped, which looked like 12–14 s answers. A call slower than 8 s from answer to audio fails the scenario. `seed_down` stops the lab seed after both users are online: the call must still connect within the 8 s bound (Accept does not wait for the seed park; the caller dials a same-LAN peer before parking). `seed_dies_in_use` stops it after a call went through it: a call at once (its link still reads up) and one after the link timed out (the reach record holds the seed down) must both connect within the bound.
+
+**Across NATs (`--suite app-nat`).** In `--suite app` every user is a process on the host, so any two of them can always reach each other directly. [`docker-compose.app-lab-nat.yml`](../../packaging/pp-node/docker-compose.app-lab-nat.yml) (an overlay on the app lab) puts each user in its own container on an internal network behind its own SNAT gateway (the hard lab's `hard-gw`): users reach the relay (198.51.100.20) and the hop (198.51.100.10) only through their gateway, and never each other, so everything between two users — chat, the call's E2E session, group media — goes through the hop (circuit, media relay) or a punched path. `pp_app_lab.py --nat` starts each user's `pp-app-probe` with `docker exec -i` in the next container (three; a scenario's first three users are each behind a different NAT), its profile in a directory mounted at the same path (`PP_APP_LAB_NAT_SHARE`, default `/tmp/pp-app-lab-nat`). The gateways are symmetric NATs by default (no punch: every path is relayed); `PP_APP_LAB_NAT=cone` makes them port-preserving, so punches can succeed. `seed_down`, `seed_dies_in_use` and `group_hop_down_mid_call` take the hop away — behind NATs there is then no path at all — and run only when named. `lab.user(name, beside=other)` puts a user in the other's container: the same Wi-Fi. `bystander_is_no_relay` (app-nat only) — Carol's phone is on Bob's network, a contact of his with a live link; Alice, behind her own NAT, calls Bob through a circuit within the usual bound, and neither side asks Carol's phone to relay it (no `relay=<carol>` or "service not ready" in their logs; a circuit must have carried the call, or the scenario checks nothing) (#379).
+
+**App lifecycle and the network.** The probe runs the app's own frame pacing (`FramePacing.h`: a frame at once on posted UI work, else every `kCallChromeFrameIntervalSec` while a ring / call panel shows, `kIdleFrameMaxWaitSec` idle; each frame ticks `CallPresenter`). `background` / `foreground` are a phone's OS events (`AppLifecycle::OnWillEnterBackground` / `OnDidEnterForeground`: background work paused; the hub's `OnAppBackground` / `OnAppForeground` react), `minimize` / `restore` a desktop window (`AppLifecycle::OnDesktopMinimized`: not attentive, still working), `push_wake` a call push (`BackgroundSyncScheduler::RequestCallWakeSync`, as `PushWakeJni`). Scenarios: `minimized_still_rings`, `push_wakes_background_callee`, `background_mid_call`, `peer_hangs_up_while_backgrounded`, `answered_in_background`; with `--nat` also `network_drops_mid_call` / `group_member_network_drops` (the user's link down 6 s: the same call recovers, and does not read Connected while down) and `address_changes_mid_call` (a new LAN address, so a new NAT mapping).
 
 Probes dial the hop at a **private / loopback** address from `/status` `listen_addrs` (its Docker network address) when the status URL is local: the hop ranks a public address learned from an internet seed first, which probes on the same host usually cannot reach (no NAT hairpin). Set `PP_NODE_HOP_MULTIADDR` to dial a specific hop address.
 
@@ -366,11 +375,11 @@ Wave 7  horizons                          (placeholders)
 
 ---
 
-## Soft designs — Phase 4 browser E2E (Gate C = thin client)
+## Multi-process call probes
 
-**Decision:** Option A — thin client (`pp-call-probe`), not full GUI.
+Multi-process call tests drive a thin client (`pp-call-probe`), not the full GUI; the app lab drives `pp-app-probe` (the app with no GUI).
 
-| Step | Status |
+| Purpose | Coverage |
 |------|--------|
 | B-CALL-DIRECT multi-process | **Scaffold** — `pp-call-probe` + `pp_call_direct_smoke.sh` |
 | B-CALL-HOP | **Scaffold** — `pp-call-probe --via-hop` + `pp_call_hop_smoke.sh`; `--cycles` teardown on hop path |
@@ -381,37 +390,15 @@ Wave 7  horizons                          (placeholders)
 
 ---
 
-## Replan gates
+## Capacity gates
 
-Later work is intentionally underspecified until evidence exists:
-
-| Gate | When | Decide |
-|------|------|--------|
-| **A** | After this inventory signed off | Phase 1 (Tier B glue) vs Phase 2 (`N-FANOUT`) order — **done:** Phase 1 then N-FANOUT |
-| **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` — **done:** soft N-CAP-MEDIA next |
-| **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
-| **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
-| **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallMediaBridge` glue and GUI remain deferred. |
-| **F** | Hard lab design signed off | Wave order + sparse set — **done (design):** [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); carry out [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md) h1+ |
+From the first capacity sweeps (`--suite cap`): a hop serves **N₀ = 8** participants with 100% required (12 / 16 are informational; the hop's session participant limit is 8); circuits **M₀ = 4** with 100% required (8 informational). How the gates were set: [projects/hard-lab/CURRENT_STATE.md](../../projects/hard-lab/CURRENT_STATE.md).
 
 ---
 
-## Explicit non-goals (until later)
+## Non-goals
 
 - Replacing in-process gtests with Docker
 - PR-blocking large-N capacity
 - Full GUI as primary stress vehicle
 - One merged suite with shared pass criteria for node and browser
-- Hard-lab netem / multi-hop / CGNAT before Wave 1 forced-hop is green
-- Claiming hole punch or multi-SFU media paths in hard lab before those features ship
-
----
-
-## Delivery sequence (reference)
-
-1. **Phase 0** — this doc + IMAGE_SMOKE cross-link.
-2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
-3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
-4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
-5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
-6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 `--suite hard`; Wave 2 `--suite hard-w2`; Wave 3 STALE/SEED `--suite hard-w3`; Wave 5 CGNAT `--suite hard-w5`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

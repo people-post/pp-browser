@@ -1,14 +1,14 @@
 #pragma once
 
-#include "domain/calls/CallControlCodec.h"
-#include "domain/calls/CallTypes.h"
+#include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "domain/calls/CallSessionStore.h"
+#include "lib/calls/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
-#include "domain/calls/CallMediaKeyExchange.h"
+#include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"

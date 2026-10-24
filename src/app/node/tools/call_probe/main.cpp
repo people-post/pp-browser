@@ -1,4 +1,4 @@
-#include "domain/calls/CallMobility.h"
+#include "lib/calls/CallMobility.h"
 #include "app/node/tools/call_probe/ProductStackHarness.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "amp/L1/Clock.h"
@@ -11,14 +11,14 @@
 #include "common/chat/RelayEnvelope.h"
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
-#include "feature/call_media/CallMediaLegCoordinator.h"
+#include "domain/call_media/CallMediaLegCoordinator.h"
 #include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/calls/CallTypes.h"
+#include "lib/calls/CallTypes.h"
 #include "amp/link/PeerId.h"
 #include "crypto/PeerId.h"
-#include "feature/conversations/AmpDirectChatTransport.h"
+#include "domain/delivery/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/Utilities.h"
 
@@ -979,7 +979,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
-    chat->SetInboundHandler([&](pbr::RelayEnvelope /*env*/) {
+    chat->SetInboundHandler([&](pbr::RelayEnvelope /*env*/, std::string /*from_peer_id*/) {
       chat_received.fetch_add(1, std::memory_order_acq_rel);
     });
   }

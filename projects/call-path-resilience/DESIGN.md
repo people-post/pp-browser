@@ -155,7 +155,7 @@ Relay **standby is requested for every call but best-effort** — a loaded relay
 
 ### M7 — Network change handling → k5
 
-`foundation/platform/NetworkMonitor` (event API, replaces the one-shot `NetworkConnectivity` poll): Android `ConnectivityManager.registerDefaultNetworkCallback`, iOS/macOS `NWPathMonitor`, Windows `NotifyIpInterfaceChange` + network cost, Linux netlink `RTMGRP_IPV4/6_IFADDR` (fallback: `getifaddrs` diff every 2 s). Event → `domain/mesh` reaction:
+`foundation/platform/NetworkMonitor` (event API, replaces the one-shot `NetworkConnectivity` poll): Android `ConnectivityManager.registerDefaultNetworkCallback`, iOS/macOS `NWPathMonitor`, Windows `NotifyIpInterfaceChange` + network cost, Linux netlink `RTMGRP_IPV4/6_IFADDR` (fallback: `getifaddrs` diff every 2 s). Event → `lib/mesh` reaction:
 
 1. Mark all ADP links **suspect** and send an immediate keepalive burst (hot and warm); evict on no reply within 2 s (M2).
 2. Re-run the reachability probe (observed address, UPnP) and refresh advertised addrs / punch candidates.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallMediaSeat.h"
 
 #include "common/Error.h"
 

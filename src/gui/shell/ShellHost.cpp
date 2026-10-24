@@ -2,6 +2,9 @@
 #include <utility>
 #include "gui/shell/ShellHost.h"
 
+#include "lib/ui/DataEvent.h"
+#include "foundation/runtime/FramePacing.h"
+
 #include "common/Metrics.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -9,19 +12,22 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ScreenKeyboard.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
-#include "domain/ui/ContextMenuHost.h"
-#include "domain/ui/RmlVariantHelpers.h"
+#include "lib/ui/ContextMenuHost.h"
+#include "lib/ui/RmlVariantHelpers.h"
 #include "feature/conversations/MessagingShellPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/RmlMount.h"
+#include "gui/shell/ShellLayoutRml.h"
+#include "gui/shell/ShellStatusbar.h"
+#include "gui/shell/ShellCallChromeRml.h"
 #include "gui/shell/ShellFeedback.h"
-#include "domain/ui/ShellInterruption.h"
-#include "domain/ui/ShellLayout.h"
-#include "domain/ui/UiEditSession.h"
-#include "domain/ui/ViewCatalog.h"
+#include "lib/ui/ShellInterruption.h"
+#include "lib/ui/ShellLayout.h"
+#include "lib/ui/UiEditSession.h"
+#include "lib/ui/ViewCatalog.h"
 
 #include "foundation/platform/ui/RmlUi_Backend.h"
 
@@ -63,18 +69,6 @@ NavTab NavTabFromString(const ui::String& value) {
   return NavTab::Home;
 }
 
-std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active,
-                               bool frost_enabled, bool solid) {
-  std::string cls = "surface-chrome";
-  if (frost_enabled && surface != CompactChromeFrostSurface::None && surface == active) {
-    cls += " surface-chrome--frost";
-  }
-  if (solid) {
-    cls += " surface-chrome--solid";
-  }
-  return cls;
-}
-
 /** Bottom inset at or above this is treated as IME (not home-indicator only). */
 constexpr int kImeLatchMinDp = 120;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
@@ -83,25 +77,8 @@ constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 
 } // namespace
 
-ShellHost* ShellHost::installed_instance_ = nullptr;
-
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
-}
-
-void ShellHost::InstallInstance(ShellHost& host) {
-  installed_instance_ = &host;
-}
-
-void ShellHost::ClearInstance() {
-  installed_instance_ = nullptr;
-}
-
-ShellHost& ShellHost::Instance() {
-  if (!installed_instance_) {
-    throw std::runtime_error("ShellHost not installed");
-  }
-  return *installed_instance_;
 }
 
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
@@ -119,7 +96,6 @@ void ShellHost::BindFlowCoordinator(FlowCoordinatorPorts ports) {
 void ShellHost::BindCallActions(CallActionsPorts ports) {
   call_actions_ = std::move(ports);
 }
-
 
 bool ShellHost::RegisterWindowModel(ui::Context* context) {
   return DataModelHost::Instance().Register(context, "window", [this](ui::DataModelConstructor& ctor) {
@@ -155,6 +131,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
+    ctor.Bind("pin_gate_restore_pin_mode", &host.state_.pin_gate.restore_pin_mode);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -227,57 +204,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
-    ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
-    ctor.Bind("statusbar_brief_visible", &host.state_.statusbar_brief_visible);
-    ctor.Bind("statusbar_brief_ok", &host.state_.statusbar_brief_ok);
-    ctor.Bind("statusbar_brief_failed", &host.state_.statusbar_brief_failed);
-    ctor.Bind("statusbar_brief_unknown", &host.state_.statusbar_brief_unknown);
-    ctor.Bind("statusbar_direct_visible", &host.state_.statusbar_direct_visible);
-    ctor.Bind("statusbar_direct_ok", &host.state_.statusbar_direct_ok);
-    ctor.Bind("statusbar_direct_off", &host.state_.statusbar_direct_off);
-    ctor.Bind("statusbar_direct_error", &host.state_.statusbar_direct_error);
-    ctor.Bind("statusbar_direct_checking", &host.state_.statusbar_direct_checking);
-    ctor.Bind("statusbar_help_visible", &host.state_.statusbar_help_visible);
-    ctor.Bind("statusbar_inbound_visible", &host.state_.statusbar_inbound_visible);
-    ctor.Bind("statusbar_inbound_ok", &host.state_.statusbar_inbound_ok);
-    ctor.Bind("statusbar_inbound_off", &host.state_.statusbar_inbound_off);
-    ctor.Bind("statusbar_load_circuit_visible", &host.state_.statusbar_load_circuit_visible);
-    ctor.Bind("statusbar_load_media_visible", &host.state_.statusbar_load_media_visible);
-    ctor.Bind("statusbar_load_circuit_label", &host.state_.statusbar_load_circuit_label);
-    ctor.Bind("statusbar_load_media_label", &host.state_.statusbar_load_media_label);
-    ctor.Bind("statusbar_load_circuit_title", &host.state_.statusbar_load_circuit_title);
-    ctor.Bind("statusbar_load_media_title", &host.state_.statusbar_load_media_title);
-    ctor.Bind("statusbar_label", &host.state_.statusbar_label);
-    ctor.Bind("statusbar_label_warn", &host.state_.statusbar_label_warn);
-    ctor.Bind("statusbar_label_error", &host.state_.statusbar_label_error);
+    statusbar_.Bind(ctor);
     ctor.Bind("statusbar_activity", &host.state_.statusbar_activity);
-    ctor.Bind("statusbar_brief_title", &host.state_.statusbar_brief_title);
-    ctor.Bind("statusbar_direct_title", &host.state_.statusbar_direct_title);
-    ctor.Bind("statusbar_help_title", &host.state_.statusbar_help_title);
-    ctor.Bind("statusbar_inbound_title", &host.state_.statusbar_inbound_title);
-    ctor.Bind("statusbar_cluster_title", &host.state_.statusbar_cluster_title);
-    ctor.Bind("statusbar_popover_open", &host.state_.statusbar_popover_open);
-    ctor.Bind("statusbar_popover_brief_label", &host.state_.statusbar_popover_brief_label);
-    ctor.Bind("statusbar_popover_direct_label", &host.state_.statusbar_popover_direct_label);
-    ctor.Bind("statusbar_popover_reach_label", &host.state_.statusbar_popover_reach_label);
-    ctor.Bind("statusbar_popover_reach_summary", &host.state_.statusbar_popover_reach_summary);
-    ctor.Bind("statusbar_popover_help_visible", &host.state_.statusbar_popover_help_visible);
-    ctor.Bind("statusbar_popover_help_label", &host.state_.statusbar_popover_help_label);
-    ctor.Bind("statusbar_popover_upnp_visible", &host.state_.statusbar_popover_upnp_visible);
-    ctor.Bind("statusbar_popover_upnp_label", &host.state_.statusbar_popover_upnp_label);
-    ctor.Bind("statusbar_popover_error_visible", &host.state_.statusbar_popover_error_visible);
-    ctor.Bind("statusbar_popover_error", &host.state_.statusbar_popover_error);
-    ctor.Bind("statusbar_popover_load_visible", &host.state_.statusbar_popover_load_visible);
-    ctor.Bind("statusbar_popover_circuit_load", &host.state_.statusbar_popover_circuit_load);
-    ctor.Bind("statusbar_popover_media_sessions", &host.state_.statusbar_popover_media_sessions);
-    ctor.Bind("statusbar_popover_media_participants", &host.state_.statusbar_popover_media_participants);
-    ctor.Bind("statusbar_popover_network_visible", &host.state_.statusbar_popover_network_visible);
-    ctor.Bind("statusbar_popover_network_links", &host.state_.statusbar_popover_network_links);
-    ctor.Bind("statusbar_popover_network_parked", &host.state_.statusbar_popover_network_parked);
-    ctor.Bind("statusbar_popover_network_rate", &host.state_.statusbar_popover_network_rate);
-    ctor.Bind("statusbar_popover_network_rtt", &host.state_.statusbar_popover_network_rtt);
-    ctor.Bind("statusbar_popover_network_resend", &host.state_.statusbar_popover_network_resend);
-    ctor.Bind("statusbar_popover_relay_rate", &host.state_.statusbar_popover_relay_rate);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
@@ -301,48 +229,45 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("nav_sessions_unread_display", &host.state_.nav_badges.sessions_unread_display);
     ctor.Bind("nav_contacts_unread_display", &host.state_.nav_badges.contacts_unread_display);
 
-    ctor.BindEventCallback("toggle_sidebar", &ShellHost::ToggleSidebarCallback);
-    ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
-    ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
-    ctor.BindEventCallback("select_nav_tab", &ShellHost::SelectNavTabCallback);
-    ctor.BindEventCallback("compact_chat_back", &ShellHost::CompactChatBackCallback);
-    ctor.BindEventCallback("open_account_sheet", &ShellHost::OpenAccountSheetCallback);
-    ctor.BindEventCallback("close_account_sheet", &ShellHost::CloseAccountSheetCallback);
-    ctor.BindEventCallback("transient_back", &ShellHost::PopTransientCallback);
-    ctor.BindEventCallback("close_layer", &ShellHost::CloseLayerCallback);
-    ctor.BindEventCallback("dismiss_banner", &ShellHost::DismissBannerCallback);
-    ctor.BindEventCallback("dialog_ok", &ShellHost::DialogOkCallback);
-    ctor.BindEventCallback("dialog_cancel", &ShellHost::DialogCancelCallback);
-    ctor.BindEventCallback("dialog_toggle_checkbox", &ShellHost::DialogToggleCheckboxCallback);
-    ctor.BindEventCallback("pin_gate_submit", &ShellHost::PinGateSubmitCallback);
-    ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
-    ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
-    ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
-    ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
-    ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
-    ctor.BindEventCallback("pin_gate_identity_restore", &ShellHost::PinGateIdentityRestoreCallback);
-    ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
-    ctor.BindEventCallback("call_accept_voice", &ShellHost::CallAcceptVoiceCallback);
-    ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
-    ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
-    ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
-    ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
-    ctor.BindEventCallback("call_mute", &ShellHost::CallMuteCallback);
-    ctor.BindEventCallback("call_camera", &ShellHost::CallCameraCallback);
-    ctor.BindEventCallback("call_speaker", &ShellHost::CallSpeakerCallback);
-    ctor.BindEventCallback("call_invite", &ShellHost::CallInviteCallback);
-    ctor.BindEventCallback("call_minimize", &ShellHost::CallMinimizeCallback);
-    ctor.BindEventCallback("call_expand", &ShellHost::CallExpandCallback);
-    ctor.BindEventCallback("call_immersive", &ShellHost::CallImmersiveCallback);
-    ctor.BindEventCallback("call_restore", &ShellHost::CallRestoreCallback);
-    ctor.BindEventCallback("call_details", &ShellHost::CallDetailsCallback);
-    ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
-    ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
-    ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
-    ctor.BindEventCallback("toggle_statusbar_popover", &ShellHost::ToggleStatusbarPopoverCallback);
-    ctor.BindEventCallback("dismiss_statusbar_popover", &ShellHost::DismissStatusbarPopoverCallback);
-    ctor.BindEventCallback("retest_statusbar_reachability", &ShellHost::RetestStatusbarReachabilityCallback);
-    ctor.BindEventCallback("open_network_settings", &ShellHost::OpenNetworkSettingsCallback);
+    ctor.BindEventCallback("toggle_sidebar", DataEvent<>([this]() { ToggleSidebarCollapsed(); }));
+    ctor.BindEventCallback("toggle_auxiliary", DataEvent<>([this]() { ToggleAuxiliary(); }));
+    ctor.BindEventCallback("open_auxiliary", DataEvent<>([this]() { OpenAuxiliary(); }));
+    ctor.BindEventCallback("select_nav_tab", DataEvent<std::string>([this](const std::string& tab) { OnNavTabClicked(tab); }));
+    ctor.BindEventCallback("compact_chat_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay); }));
+    ctor.BindEventCallback("open_account_sheet", DataEvent<>([this]() { OpenAccountSheet(); }));
+    // × always closes the sheet, even when a nested settings detail is open.
+    ctor.BindEventCallback("close_account_sheet", DataEvent<>([this]() { CloseAccountSheet(); }));
+    ctor.BindEventCallback("transient_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::Transient); }));
+    ctor.BindEventCallback("close_layer", DataEvent<int>([this](int layer_id) { CloseLayer(layer_id); }));
+    ctor.BindEventCallback("dismiss_banner", DataEvent<>([this]() { DismissBanner(); }));
+    ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
+    ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));
+    ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
+    ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
+    ctor.BindEventCallback("pin_gate_cancel", DataEvent<>([this]() { PinGateCancel(); }));
+    ctor.BindEventCallback("pin_gate_set_pin", DataEvent<>([this]() { PinGateSetPin(); }));
+    ctor.BindEventCallback("pin_gate_use_default", DataEvent<>([this]() { PinGateUseDefault(); }));
+    ctor.BindEventCallback("pin_gate_identity_new", DataEvent<>([this]() { PinGateIdentityNew(); }));
+    ctor.BindEventCallback("pin_gate_identity_link", DataEvent<>([this]() { PinGateIdentityLink(); }));
+    ctor.BindEventCallback("pin_gate_identity_restore", DataEvent<>([this]() { PinGateIdentityRestore(); }));
+    ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
+    ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
+    ctor.BindEventCallback("call_accept_charge", DataEvent<>([this]() { CallAcceptCharge(); }));
+    ctor.BindEventCallback("call_decline", DataEvent<>([this]() { CallDecline(); }));
+    ctor.BindEventCallback("call_leave", DataEvent<>([this]() { CallLeave(); }));
+    ctor.BindEventCallback("call_retry", DataEvent<>([this]() { CallRetry(); }));
+    ctor.BindEventCallback("call_mute", DataEvent<>([this]() { CallMute(); }));
+    ctor.BindEventCallback("call_camera", DataEvent<>([this]() { CallCamera(); }));
+    ctor.BindEventCallback("call_speaker", DataEvent<>([this]() { CallSpeaker(); }));
+    ctor.BindEventCallback("call_invite", DataEvent<>([this]() { CallInvite(); }));
+    ctor.BindEventCallback("call_minimize", DataEvent<>([this]() { CallMinimize(); }));
+    ctor.BindEventCallback("call_expand", DataEvent<>([this]() { CallExpand(); }));
+    ctor.BindEventCallback("call_immersive", DataEvent<>([this]() { CallImmersive(); }));
+    ctor.BindEventCallback("call_restore", DataEvent<>([this]() { CallRestore(); }));
+    ctor.BindEventCallback("call_details", DataEvent<>([this]() { CallDetails(); }));
+    ctor.BindEventCallback("titlebar_minimize", DataEvent<>([this]() { TitlebarMinimize(); }));
+    ctor.BindEventCallback("titlebar_toggle_maximize", DataEvent<>([this]() { TitlebarToggleMaximize(); }));
+    ctor.BindEventCallback("titlebar_close", DataEvent<>([this]() { TitlebarClose(); }));
   });
 }
 
@@ -355,7 +280,7 @@ void ShellHost::Initialize(ui::Context* context) {
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
   ShellLayout::SyncNavTabString(state_);
-  RefreshStatusbarVisibility();
+  statusbar_.RefreshVisibility();
   last_synced_mode_ = LayoutMode::Expanded;
   next_pane_id_ = 1;
   next_overlay_id_ = 1;
@@ -366,7 +291,7 @@ void ShellHost::Initialize(ui::Context* context) {
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
-  PlatformNavigation::SetDismissHandler([] { return Instance().HandleDismiss(); });
+  PlatformNavigation::SetDismissHandler([this] { return HandleDismiss(); });
   if (state_.titlebar_traffic_lights) {
     // Leading traffic lights: ~8+12×3+8×2+8 ≈ 68dp (native-like spacing).
     config_.titlebar_controls_width_dp = 68.f;
@@ -753,7 +678,7 @@ bool ShellHost::HandleDismiss() {
     return true;
   }
   if (state_.statusbar_popover_open) {
-    CloseStatusbarPopover();
+    statusbar_.ClosePopover();
     return true;
   }
   if (state_.dialog.active) {
@@ -766,7 +691,7 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
-        state_.pin_gate.link_paste_mode) {
+        state_.pin_gate.link_paste_mode || state_.pin_gate.restore_pin_mode) {
       if (pin_gate_actions_.on_cancel) {
         pin_gate_actions_.on_cancel();
       }
@@ -865,6 +790,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_restore_pin_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
@@ -875,75 +801,12 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "startup_cover_visible");
 }
 
-void ShellHost::DirtyStatusChrome() {
-  DataModelHost::Instance().Dirty("window", "activity_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_failed");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_unknown");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_off");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_checking");
-  DataModelHost::Instance().Dirty("window", "statusbar_help_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_off");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_media_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_media_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_load_media_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_label_warn");
-  DataModelHost::Instance().Dirty("window", "statusbar_label_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_activity");
-  DataModelHost::Instance().Dirty("window", "statusbar_brief_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_direct_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_help_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_inbound_title");
-  DataModelHost::Instance().Dirty("window", "statusbar_cluster_title");
-  DirtyStatusbarPopover();
-  DataModelHost::Instance().Dirty("window", "titlebar_visible");
-  DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
-  DataModelHost::Instance().Dirty("window", "window_maximized");
-  DataModelHost::Instance().Dirty("window", "fonts_ready");
-}
-
-void ShellHost::DirtyStatusbarPopover() {
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_open");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_brief_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_direct_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_summary");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_help_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_help_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_upnp_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_upnp_label");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_error_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_load_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_circuit_load");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_media_sessions");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_media_participants");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_links");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_parked");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_rate");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_rtt");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_resend");
-  DataModelHost::Instance().Dirty("window", "statusbar_popover_relay_rate");
-}
-
 void ShellHost::DirtyWindow() {
   DirtyNavChrome();
   DirtyFeedback();
   DirtyPinGate();
   DirtyCallChrome();
-  DirtyStatusChrome();
+  statusbar_.Dirty();
 }
 
 void ShellHost::DirtyCallChrome() {
@@ -1041,8 +904,8 @@ void ShellHost::SettleStartupCoverArm() {
 }
 
 void ShellHost::RequestRemountNavRail() {
-  AppRuntime::PostUI([]() {
-    ShellHost& host = ShellHost::Instance();
+  AppRuntime::PostUI([this]() {
+    ShellHost& host = *this;
     // Compact chat overlay omits the rail from the DOM.
     if (host.state_.layout_mode == LayoutMode::Compact && host.state_.compact_chat_open) {
       return;
@@ -1065,7 +928,7 @@ void ShellHost::SetActivity(bool visible, const ui::String& message) {
   } else {
     state_.statusbar_activity = Tr("chat.thinking").c_str();
   }
-  DirtyStatusChrome();
+  statusbar_.Dirty();
 }
 
 void ShellHost::SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback) {
@@ -1130,7 +993,7 @@ void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason, 
   sync_pending_ = true;
   // Always defer: SyncLayout remounts the shell DOM. Flushing synchronously from a click
   // handler (e.g. compact_chat_back) destroys the target element mid-dispatch and crashes.
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushPendingSyncLayout(); });
+  AppRuntime::PostUI([this]() { FlushPendingSyncLayout(); });
   Backend::RequestForceFrame();
 }
 
@@ -1353,341 +1216,6 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
 
-void ShellHost::RefreshStatusbarVisibility() {
-  const bool visible = Platform::IsDesktop() && state_.layout_mode == LayoutMode::Expanded;
-  if (visible == state_.statusbar_visible) {
-    return;
-  }
-  state_.statusbar_visible = visible;
-  if (!visible && state_.statusbar_popover_open) {
-    CloseStatusbarPopover();
-  }
-  DirtyStatusChrome();
-  ApplySafeAreaLayout();
-}
-
-void ShellHost::ClearStatusbarCluster() {
-  state_.statusbar_brief_visible = false;
-  state_.statusbar_brief_ok = false;
-  state_.statusbar_brief_failed = false;
-  state_.statusbar_brief_unknown = false;
-  state_.statusbar_direct_visible = false;
-  state_.statusbar_direct_ok = false;
-  state_.statusbar_direct_off = false;
-  state_.statusbar_direct_error = false;
-  state_.statusbar_direct_checking = false;
-  state_.statusbar_help_visible = false;
-  state_.statusbar_inbound_visible = false;
-  state_.statusbar_inbound_ok = false;
-  state_.statusbar_inbound_off = false;
-  state_.statusbar_load_circuit_visible = false;
-  state_.statusbar_load_media_visible = false;
-  state_.statusbar_load_circuit_label.clear();
-  state_.statusbar_load_media_label.clear();
-  state_.statusbar_load_circuit_title.clear();
-  state_.statusbar_load_media_title.clear();
-  state_.statusbar_label.clear();
-  state_.statusbar_label_warn = false;
-  state_.statusbar_label_error = false;
-  state_.statusbar_brief_title.clear();
-  state_.statusbar_direct_title.clear();
-  state_.statusbar_help_title.clear();
-  state_.statusbar_inbound_title.clear();
-  state_.statusbar_cluster_title.clear();
-}
-
-bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
-  const bool brief_visible = snap.brief != StatusbarClusterSnapshot::BriefState::Hidden;
-  const bool brief_ok = snap.brief == StatusbarClusterSnapshot::BriefState::Ok;
-  const bool brief_failed = snap.brief == StatusbarClusterSnapshot::BriefState::Failed;
-  const bool brief_unknown = snap.brief == StatusbarClusterSnapshot::BriefState::Unknown;
-
-  const bool direct_visible = snap.direct != StatusbarClusterSnapshot::DirectState::Hidden;
-  const bool direct_ok = snap.direct == StatusbarClusterSnapshot::DirectState::On;
-  const bool direct_off = snap.direct == StatusbarClusterSnapshot::DirectState::Off;
-  const bool direct_error = snap.direct == StatusbarClusterSnapshot::DirectState::Error;
-  const bool direct_checking = snap.direct == StatusbarClusterSnapshot::DirectState::Checking;
-
-  const bool inbound_visible = snap.inbound != StatusbarClusterSnapshot::InboundState::Hidden;
-  const bool inbound_ok = snap.inbound == StatusbarClusterSnapshot::InboundState::On;
-  const bool inbound_off = snap.inbound == StatusbarClusterSnapshot::InboundState::Off;
-
-  const ui::String label = snap.label.c_str();
-  const bool label_warn = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Warn;
-  const bool label_error = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Error;
-  const ui::String brief_title = snap.brief_title.c_str();
-  const ui::String direct_title = snap.direct_title.c_str();
-  const ui::String help_title = snap.help_title.c_str();
-  const ui::String inbound_title = snap.inbound_title.c_str();
-  const ui::String cluster_title = Tr("shell.statusbar.a11y.cluster").c_str();
-  const ui::String load_circuit = snap.load_circuit_label.c_str();
-  const ui::String load_media = snap.load_media_label.c_str();
-  const ui::String load_circuit_title = snap.load_circuit_title.c_str();
-  const ui::String load_media_title = snap.load_media_title.c_str();
-
-  if (state_.statusbar_brief_visible == brief_visible && state_.statusbar_brief_ok == brief_ok &&
-      state_.statusbar_brief_failed == brief_failed &&
-      state_.statusbar_brief_unknown == brief_unknown &&
-      state_.statusbar_direct_visible == direct_visible && state_.statusbar_direct_ok == direct_ok &&
-      state_.statusbar_direct_off == direct_off && state_.statusbar_direct_error == direct_error &&
-      state_.statusbar_direct_checking == direct_checking &&
-      state_.statusbar_help_visible == snap.help_visible &&
-      state_.statusbar_inbound_visible == inbound_visible &&
-      state_.statusbar_inbound_ok == inbound_ok && state_.statusbar_inbound_off == inbound_off &&
-      state_.statusbar_load_circuit_visible == snap.load_circuit_visible &&
-      state_.statusbar_load_media_visible == snap.load_media_visible &&
-      state_.statusbar_load_circuit_label == load_circuit &&
-      state_.statusbar_load_media_label == load_media &&
-      state_.statusbar_load_circuit_title == load_circuit_title &&
-      state_.statusbar_load_media_title == load_media_title &&
-      state_.statusbar_label == label && state_.statusbar_label_warn == label_warn &&
-      state_.statusbar_label_error == label_error && state_.statusbar_brief_title == brief_title &&
-      state_.statusbar_direct_title == direct_title && state_.statusbar_help_title == help_title &&
-      state_.statusbar_inbound_title == inbound_title &&
-      state_.statusbar_cluster_title == cluster_title) {
-    return false;
-  }
-
-  state_.statusbar_brief_visible = brief_visible;
-  state_.statusbar_brief_ok = brief_ok;
-  state_.statusbar_brief_failed = brief_failed;
-  state_.statusbar_brief_unknown = brief_unknown;
-  state_.statusbar_direct_visible = direct_visible;
-  state_.statusbar_direct_ok = direct_ok;
-  state_.statusbar_direct_off = direct_off;
-  state_.statusbar_direct_error = direct_error;
-  state_.statusbar_direct_checking = direct_checking;
-  state_.statusbar_help_visible = snap.help_visible;
-  state_.statusbar_inbound_visible = inbound_visible;
-  state_.statusbar_inbound_ok = inbound_ok;
-  state_.statusbar_inbound_off = inbound_off;
-  state_.statusbar_load_circuit_visible = snap.load_circuit_visible;
-  state_.statusbar_load_media_visible = snap.load_media_visible;
-  state_.statusbar_load_circuit_label = load_circuit;
-  state_.statusbar_load_media_label = load_media;
-  state_.statusbar_load_circuit_title = load_circuit_title;
-  state_.statusbar_load_media_title = load_media_title;
-  state_.statusbar_label = label;
-  state_.statusbar_label_warn = label_warn;
-  state_.statusbar_label_error = label_error;
-  state_.statusbar_brief_title = brief_title;
-  state_.statusbar_direct_title = direct_title;
-  state_.statusbar_help_title = help_title;
-  state_.statusbar_inbound_title = inbound_title;
-  state_.statusbar_cluster_title = cluster_title;
-  return true;
-}
-
-void ShellHost::ClearStatusbarPopover() {
-  state_.statusbar_popover_brief_label.clear();
-  state_.statusbar_popover_direct_label.clear();
-  state_.statusbar_popover_reach_label.clear();
-  state_.statusbar_popover_reach_summary.clear();
-  state_.statusbar_popover_help_visible = false;
-  state_.statusbar_popover_help_label.clear();
-  state_.statusbar_popover_upnp_visible = false;
-  state_.statusbar_popover_upnp_label.clear();
-  state_.statusbar_popover_error_visible = false;
-  state_.statusbar_popover_error.clear();
-  state_.statusbar_popover_load_visible = false;
-  state_.statusbar_popover_circuit_load.clear();
-  state_.statusbar_popover_media_sessions.clear();
-  state_.statusbar_popover_media_participants.clear();
-  state_.statusbar_popover_network_visible = false;
-  state_.statusbar_popover_network_links.clear();
-  state_.statusbar_popover_network_parked.clear();
-  state_.statusbar_popover_network_rate.clear();
-  state_.statusbar_popover_network_rtt.clear();
-  state_.statusbar_popover_network_resend.clear();
-  state_.statusbar_popover_relay_rate.clear();
-}
-
-bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
-  const ui::String brief = snap.brief_label.c_str();
-  const ui::String direct = snap.direct_label.c_str();
-  const ui::String reach = snap.reachability_status_label.c_str();
-  const ui::String summary = snap.reachability_summary.c_str();
-  const ui::String help = snap.help_label.c_str();
-  const ui::String upnp = snap.upnp_label.c_str();
-  const ui::String error = snap.last_error.c_str();
-  const bool error_visible = !snap.last_error.empty();
-  const ui::String circuit_load = snap.circuit_load_label.c_str();
-  const ui::String media_sessions = snap.media_sessions_label.c_str();
-  const ui::String media_participants = snap.media_participants_label.c_str();
-  const ui::String network_links = snap.network_links_label.c_str();
-  const ui::String network_parked = snap.network_parked_label.c_str();
-  const ui::String network_rate = snap.network_rate_label.c_str();
-  const ui::String network_rtt = snap.network_rtt_label.c_str();
-  const ui::String network_resend = snap.network_resend_label.c_str();
-  const ui::String relay_rate = snap.relay_rate_label.c_str();
-
-  if (state_.statusbar_popover_brief_label == brief && state_.statusbar_popover_direct_label == direct &&
-      state_.statusbar_popover_reach_label == reach && state_.statusbar_popover_reach_summary == summary &&
-      state_.statusbar_popover_help_visible == snap.help_visible &&
-      state_.statusbar_popover_help_label == help &&
-      state_.statusbar_popover_upnp_visible == snap.show_upnp &&
-      state_.statusbar_popover_upnp_label == upnp &&
-      state_.statusbar_popover_error_visible == error_visible &&
-      state_.statusbar_popover_error == error &&
-      state_.statusbar_popover_load_visible == snap.show_load &&
-      state_.statusbar_popover_circuit_load == circuit_load &&
-      state_.statusbar_popover_media_sessions == media_sessions &&
-      state_.statusbar_popover_media_participants == media_participants &&
-      state_.statusbar_popover_network_visible == snap.show_network &&
-      state_.statusbar_popover_network_links == network_links &&
-      state_.statusbar_popover_network_parked == network_parked &&
-      state_.statusbar_popover_network_rate == network_rate &&
-      state_.statusbar_popover_network_rtt == network_rtt &&
-      state_.statusbar_popover_network_resend == network_resend &&
-      state_.statusbar_popover_relay_rate == relay_rate) {
-    return false;
-  }
-
-  state_.statusbar_popover_brief_label = brief;
-  state_.statusbar_popover_direct_label = direct;
-  state_.statusbar_popover_reach_label = reach;
-  state_.statusbar_popover_reach_summary = summary;
-  state_.statusbar_popover_help_visible = snap.help_visible;
-  state_.statusbar_popover_help_label = help;
-  state_.statusbar_popover_upnp_visible = snap.show_upnp;
-  state_.statusbar_popover_upnp_label = upnp;
-  state_.statusbar_popover_error_visible = error_visible;
-  state_.statusbar_popover_error = error;
-  state_.statusbar_popover_load_visible = snap.show_load;
-  state_.statusbar_popover_circuit_load = circuit_load;
-  state_.statusbar_popover_media_sessions = media_sessions;
-  state_.statusbar_popover_media_participants = media_participants;
-  state_.statusbar_popover_network_visible = snap.show_network;
-  state_.statusbar_popover_network_links = network_links;
-  state_.statusbar_popover_network_parked = network_parked;
-  state_.statusbar_popover_network_rate = network_rate;
-  state_.statusbar_popover_network_rtt = network_rtt;
-  state_.statusbar_popover_network_resend = network_resend;
-  state_.statusbar_popover_relay_rate = relay_rate;
-  return true;
-}
-
-void ShellHost::RefreshStatusbarPopover() {
-  if (!state_.statusbar_popover_open) {
-    return;
-  }
-  StatusbarPopoverSnapshot snap;
-  if (shell_messaging_ports_.statusbar_popover) {
-    snap = BuildStatusbarPopoverSnapshot(shell_messaging_ports_.statusbar_popover());
-  }
-  if (ApplyStatusbarPopover(snap)) {
-    DirtyStatusbarPopover();
-  }
-}
-
-void ShellHost::OpenStatusbarPopover() {
-  if (!state_.statusbar_visible) {
-    return;
-  }
-  if (state_.statusbar_popover_open) {
-    return;
-  }
-  ContextMenuHost::Instance().Dismiss();
-  state_.statusbar_popover_open = true;
-  statusbar_popover_needs_position_ = true;
-  RefreshStatusbarPopover();
-  DirtyStatusbarPopover();
-}
-
-void ShellHost::CloseStatusbarPopover() {
-  if (!state_.statusbar_popover_open) {
-    return;
-  }
-  state_.statusbar_popover_open = false;
-  statusbar_popover_needs_position_ = false;
-  ClearStatusbarPopover();
-  DirtyStatusbarPopover();
-}
-
-void ShellHost::ToggleStatusbarPopover() {
-  if (state_.statusbar_popover_open) {
-    CloseStatusbarPopover();
-  } else {
-    OpenStatusbarPopover();
-  }
-}
-
-void ShellHost::PositionStatusbarPopover() {
-  if (!state_.statusbar_popover_open || !context_ || context_->GetNumDocuments() == 0) {
-    return;
-  }
-  ui::ElementDocument* doc = context_->GetDocument(0);
-  if (!doc) {
-    return;
-  }
-  ui::Element* cluster = doc->GetElementById("shell-statusbar-cluster");
-  ui::Element* panel = doc->GetElementById("shell-statusbar-popover");
-  if (!cluster || !panel) {
-    return;
-  }
-
-  doc->UpdateDocument();
-  const ui::Vector2i dims = context_->GetDimensions();
-  const ui::Vector2f cluster_offset = cluster->GetAbsoluteOffset(ui::BoxArea::Border);
-  const ui::Vector2f cluster_size = cluster->GetBox().GetSize(ui::BoxArea::Border);
-  const ui::Vector2f panel_size = panel->GetBox().GetSize(ui::BoxArea::Border);
-  if (panel_size.x <= 0.f || panel_size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
-    return;
-  }
-
-  constexpr float kMarginPx = 8.f;
-  constexpr float kGapPx = 8.f;
-  float left = cluster_offset.x;
-  float top = cluster_offset.y - panel_size.y - kGapPx;
-  const float max_left = static_cast<float>(dims.x) - panel_size.x - kMarginPx;
-  if (left > max_left) {
-    left = max_left;
-  }
-  if (left < kMarginPx) {
-    left = kMarginPx;
-  }
-  if (top < kMarginPx) {
-    top = cluster_offset.y + cluster_size.y + kGapPx;
-  }
-  const float max_top = static_cast<float>(dims.y) - panel_size.y - kMarginPx;
-  if (top > max_top) {
-    top = std::max(kMarginPx, max_top);
-  }
-
-  panel->SetProperty("left", (std::to_string(static_cast<int>(left)) + "px").c_str());
-  panel->SetProperty("top", (std::to_string(static_cast<int>(top)) + "px").c_str());
-  panel->SetProperty("bottom", "auto");
-  statusbar_popover_needs_position_ = false;
-}
-
-void ShellHost::RefreshStatusbarCluster() {
-  if (!state_.statusbar_visible) {
-    const bool had_cluster = state_.statusbar_brief_visible || state_.statusbar_direct_visible ||
-                             state_.statusbar_help_visible || state_.statusbar_inbound_visible ||
-                             state_.statusbar_load_circuit_visible ||
-                             state_.statusbar_load_media_visible || !state_.statusbar_label.empty();
-    if (had_cluster) {
-      ClearStatusbarCluster();
-      DirtyStatusChrome();
-    }
-    if (state_.statusbar_popover_open) {
-      CloseStatusbarPopover();
-    }
-    return;
-  }
-  StatusbarClusterSnapshot snap;
-  if (shell_messaging_ports_.statusbar_cluster) {
-    snap = BuildStatusbarClusterSnapshot(shell_messaging_ports_.statusbar_cluster());
-  }
-  if (ApplyStatusbarCluster(snap)) {
-    DirtyStatusChrome();
-  }
-  RefreshStatusbarPopover();
-  if (statusbar_popover_needs_position_) {
-    PositionStatusbarPopover();
-  }
-}
-
 bool ShellHost::ChromeFrostEnabled() const {
   return !state_.reduce_transparency && state_.compact_chrome_frost;
 }
@@ -1714,7 +1242,7 @@ void ShellHost::Apply(const ChromePrefs& prefs) {
 }
 
 void ShellHost::OnLayoutModeChanged() {
-  RefreshStatusbarVisibility();
+  statusbar_.RefreshVisibility();
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
     if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::CompactChatOverlay) {
@@ -1727,608 +1255,12 @@ void ShellHost::OnLayoutModeChanged() {
   }
 }
 
+ShellLayoutRml ShellHost::Rml() const {
+  return ShellLayoutRml(state_, bottom_chrome_open_, bottom_chrome_key_);
+}
+
 const char* ShellHost::NavContentKey() const {
   return ShellLayout::NavContentKey(state_.nav_tab);
-}
-
-std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot,
-                                         int flex_width_dp) const {
-  std::ostringstream out;
-  out << "<div class=\"shell-pane shell-pane-" << key;
-  if (extra_class && extra_class[0] != '\0') {
-    out << ' ' << extra_class;
-  }
-  out << "\" id=\"pane-" << key << "\"";
-  if (flex_width_dp > 0) {
-    out << " style=\"flex: 0 1 " << flex_width_dp << "dp;\"";
-  }
-  out << ">";
-  out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
-  if (with_composer_slot) {
-    out << "<div class=\"shell-pane-composer\" id=\"pane-composer-" << key << "\"></div>";
-  }
-  out << "</div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeExpandedBase() const {
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-base\" data-model=\"window\">";
-  out << "<div class=\"shell-pane-row\">";
-  out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
-  if (ShellLayout::TabHasSecondary(state_.nav_tab)) {
-    const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab);
-    const bool collapsed = state_.sidebar_collapsed;
-    out << "<div class=\"shell-pane shell-pane-secondary";
-    if (collapsed) {
-      out << " shell-pane-secondary--collapsed";
-    }
-    out << "\" id=\"shell-nav-content-mount\" style=\"flex: 0 1 " << state_.sidebar_width_dp << "dp;\">";
-    out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
-    out << "</div>";
-    // Drag handle on the pane's right edge. Collapse / expand lives at the bottom of the nav rail.
-    if (!collapsed) {
-      out << "<div class=\"shell-splitter\" id=\"shell-pane-splitter\"></div>";
-    }
-  }
-  ui::String primary_key = state_.primary_pane_key;
-  if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
-    primary_key = "home";
-  }
-  if (!primary_key.empty()) {
-    if (const PaneState* pane = FindPane(primary_key.c_str())) {
-      out << SerializePaneSlot(pane->spec.key, "shell-pane-primary", pane->spec.provides_composer);
-    }
-  }
-  if (state_.auxiliary_open) {
-    for (const PaneState& pane : state_.panes) {
-      if (pane.spec.role == PaneRole::Auxiliary) {
-        // Drag handle on the pane's left edge.
-        out << "<div class=\"shell-splitter\" id=\"shell-aux-splitter\"></div>";
-        out << SerializePaneSlot(pane.spec.key, "shell-pane-auxiliary", false, state_.auxiliary_width_dp);
-      }
-    }
-  }
-  out << "</div></div>";
-  out << SerializeAccountSheet();
-  return out.str();
-}
-
-std::string ShellHost::SerializeAccountSheet() const {
-  if (!state_.account_sheet_open) {
-    return {};
-  }
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
-  const bool frost_enabled = ChromeFrostEnabled();
-  const bool solid = state_.reduce_transparency;
-  std::ostringstream out;
-  out << "<div class=\"shell-account-sheet-scrim\" data-event-click=\"close_account_sheet()\"></div>";
-  out << "<div class=\"shell-account-sheet surface-chrome";
-  if (solid) {
-    out << " surface-chrome--solid";
-  }
-  out << "\" id=\"shell-account-sheet\">";
-  out << "<div class=\"shell-account-sheet-grabber\"></div>";
-  out << "<div class=\"shell-account-sheet-header row "
-      << SurfaceChromeClass(CompactChromeFrostSurface::AccountSheetHeader, frost, frost_enabled, solid) << "\">";
-  out << "<h2 class=\"heading-2\">Me</h2>";
-  out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">";
-  out << "<svg src=\"../icons/close.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "</div>";
-  out << "<div class=\"shell-pane-body shell-account-sheet-body\" id=\"pane-body-settings\"></div>";
-  out << "</div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeCompactBase() const {
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
-  const bool frost_enabled = ChromeFrostEnabled();
-  const bool solid = state_.reduce_transparency;
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" data-model=\"window\">";
-
-  if (!state_.compact_chat_open) {
-    const bool home_inline = state_.nav_tab == NavTab::Home;
-    out << "<div class=\"shell-nav-page";
-    if (home_inline) {
-      out << " shell-nav-page--home";
-    }
-    out << "\" id=\"shell-nav-page\">";
-    if (const char* nav_content = NavContentKey()) {
-      out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
-    } else if (home_inline) {
-      out << "<div class=\"shell-pane-body\" id=\"pane-body-home\"></div>";
-    }
-    out << "</div>";
-  } else if (state_.nav_tab == NavTab::Sessions) {
-    out << "<div class=\"shell-nav-page shell-nav-page--under-overlay\" id=\"shell-nav-page\">";
-    out << "<div class=\"shell-pane-body\" id=\"pane-body-sidebar\"></div>";
-    out << "</div>";
-  }
-
-  if (state_.compact_chat_open) {
-    out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
-    out << "<div class=\"shell-chat-overlay-chrome row "
-        << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
-    out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
-    out << "<svg src=\"../icons/back.svg\"></svg>";
-    out << "</button>";
-    out << "</div>";
-    out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-    out << "<div class=\"shell-composer-mount surface-chrome";
-    if (solid) {
-      out << " surface-chrome--solid";
-    }
-    out << "\" id=\"shell-composer-mount\"></div>";
-    out << "</div>";
-  }
-
-  if (state_.auxiliary_open) {
-    out << "<div class=\"shell-sheet-scrim\" data-event-click=\"toggle_auxiliary()\"></div>";
-    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact surface-chrome";
-    if (solid) {
-      out << " surface-chrome--solid";
-    }
-    out << "\" id=\"shell-auxiliary-sheet\">";
-    out << "<div class=\"shell-sheet-compact-chrome "
-        << SurfaceChromeClass(CompactChromeFrostSurface::AuxiliarySheetChrome, frost, frost_enabled, solid)
-        << "\"></div>";
-    for (const PaneState& pane : state_.panes) {
-      if (pane.spec.role == PaneRole::Auxiliary) {
-        out << SerializePaneSlot(pane.spec.key, nullptr);
-      }
-    }
-    out << "</div>";
-  }
-
-  if (!state_.compact_chat_open) {
-    out << "<div class=\"shell-bottom-chrome";
-    if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
-      out << " shell-bottom-chrome--frost";
-    }
-    if (solid) {
-      out << " shell-bottom-chrome--solid";
-    }
-    out << "\" id=\"shell-bottom-chrome\">";
-    out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
-    out << "</div>";
-  }
-
-  out << SerializeAccountSheet();
-  out << "</div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeTransientLayer() const {
-  if (state_.transient_stack.empty()) {
-    return {};
-  }
-  const PaneState& top = state_.transient_stack.back();
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
-  const bool frost_enabled = ChromeFrostEnabled();
-  const bool solid = state_.reduce_transparency;
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-transient\" id=\"shell-transient-layer\" data-model=\"window\">";
-  out << "<div class=\"shell-transient-chrome "
-      << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
-  out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
-         "<svg src=\"../icons/back.svg\"></svg>"
-         "</button>";
-  out << "</div>";
-  out << SerializePaneSlot(top.spec.key, "shell-pane-transient");
-  out << "</div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeOverlays() const {
-  std::ostringstream out;
-  for (const OverlayEntry& overlay : state_.overlay_stack) {
-    out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
-    out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
-    out << "<div class=\"shell-frame\">";
-    out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer("
-        << overlay.id << ")\">";
-    out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
-    out << "</div></div>";
-  }
-  return out.str();
-}
-
-std::string ShellHost::SerializeBottomChrome() const {
-  if (!bottom_chrome_open_ || bottom_chrome_key_.empty()) {
-    return {};
-  }
-  std::ostringstream out;
-  // No scrim: IME-replacement chrome; chat stays interactive (back / toggle dismiss).
-  out << "<div class=\"shell-layer shell-layer-emoji-keyboard\" data-model=\"window\">";
-  out << "<div class=\"shell-emoji-keyboard-panel surface-chrome";
-  if (state_.reduce_transparency) {
-    out << " surface-chrome--solid";
-  }
-  out << "\" id=\"shell-emoji-keyboard-panel\">";
-  out << "<div class=\"shell-emoji-keyboard-body\" id=\"shell-bottom-chrome-body\"></div>";
-  out << "</div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeDialog() const {
-  if (!state_.dialog.active) {
-    return {};
-  }
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
-  if (state_.dialog.show_cancel) {
-    out << "<div class=\"shell-scrim\" data-event-click=\"dialog_cancel()\"></div>";
-  } else {
-    out << "<div class=\"shell-scrim\" data-event-click=\"dialog_ok()\"></div>";
-  }
-  out << "<div class=\"shell-dialog\">";
-  out << "<h2 class=\"heading-2 shell-dialog-title\">{{dialog_title}}</h2>";
-  out << "<p class=\"text shell-dialog-message\">{{dialog_message}}</p>";
-  out << "<label class=\"shell-dialog-checkbox row\" data-if=\"dialog_show_checkbox\">";
-  out << "<input type=\"checkbox\" data-value=\"dialog_checkbox_checked\" "
-         "data-event-change=\"dialog_toggle_checkbox()\"/>";
-  out << "<span>{{dialog_checkbox_label}}</span>";
-  out << "</label>";
-  out << "<input class=\"shell-dialog-prompt\" type=\"text\" data-if=\"dialog_show_prompt\" "
-         "data-value=\"dialog_prompt_value\"/>";
-  out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"dialog_show_cancel\" "
-         "data-event-click=\"dialog_cancel()\">"
-      << Tr("common.cancel") << "</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"dialog_ok()\">"
-      << (state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str()))
-      << "</button>";
-  out << "</div></div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializePinGate() const {
-  if (!state_.pin_gate.active) {
-    return {};
-  }
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
-  out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-pin-gate\">";
-  out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
-  out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
-  out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
-  out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
-  out << "<button class=\"btn btn-primary\" data-if=\"pin_gate_restore_label != ''\" "
-         "data-event-click=\"pin_gate_identity_restore()\">{{pin_gate_restore_label}}</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
-      << Tr("pin.identity_new") << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
-      << Tr("pin.identity_link") << "</button>";
-  out << "</div>";
-  out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
-      << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">"
-      << Tr("pin.just_continue") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back")
-      << "</button>";
-  out << "</div>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode\" "
-         "data-value=\"pin_gate_link_payload\" placeholder=\""
-      << Tr("pin.link_paste_placeholder") << "\"></textarea>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
-         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode\" "
-         "data-value=\"pin_gate_pin\" placeholder=\""
-      << Tr("pin.placeholder") << "\"/>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
-         "data-if=\"pin_gate_create_mode && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
-         "placeholder=\""
-      << Tr("pin.confirm_placeholder") << "\"/>";
-  out << "<div class=\"shell-dialog-actions row\" "
-         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
-         "data-event-click=\"pin_gate_cancel()\">"
-      << Tr("pin.not_now") << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
-         "data-event-click=\"pin_gate_cancel()\">"
-      << Tr("common.back") << "</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
-      << "</button>";
-  out << "</div></div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeCallRing() const {
-  // Mounted into #shell-call-ring-mount when active (RemountCallChrome). Presence = visibility;
-  // data-if alone was not flipping Display on idle Present (accept dialog stayed gone).
-  if (!state_.call_ring.active) {
-    return {};
-  }
-  std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
-  out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-call-ring\" data-class-shell-call-ring--pulse=\"call_ring_pulse\">";
-  out << "<p class=\"text-sm shell-call-ring-eyebrow\">{{call_ring_eyebrow}}</p>";
-  out << "<h2 class=\"heading-2 shell-dialog-title\">{{call_ring_media}}</h2>";
-  out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\">{{call_ring_caller}}</p>";
-  out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
-  out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
-         ">{{call_ring_pricing_label}}</p>";
-  // WeChat-style round icon buttons with a short label underneath; long labels above
-  // (call_ring_decline_label / accept_label / voice_answer_label) stay bound for a11y.
-  out << "<div class=\"shell-call-ring-actions row\">";
-  out << "<div class=\"shell-call-ring-action\">";
-  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-decline\" type=\"button\" "
-         "data-event-click=\"call_decline()\">";
-  out << "<svg src=\"../icons/phone-hangup.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\">" << Tr("call.ring.short.decline") << "</p>";
-  out << "</div>";
-  out << "<div class=\"shell-call-ring-action\" data-if=\"call_ring_video_allowed\">";
-  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-voice\" type=\"button\" "
-         "data-event-click=\"call_accept_voice()\">";
-  out << "<svg src=\"../icons/phone.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\">{{call_ring_voice_short}}</p>";
-  out << "</div>";
-  out << "<div class=\"shell-call-ring-action\">";
-  out << "<button class=\"shell-call-ring-action-circle shell-call-accept\" "
-         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" type=\"button\" "
-         "data-event-click=\"call_accept()\">";
-  out << "<svg width=\"26\" height=\"26\" crop-to-content=\"true\" "
-         "data-attr-src=\"call_ring_video_allowed ? '../icons/video.svg' : '../icons/phone.svg'\"></svg>";
-  out << "</button>";
-  out << "<p class=\"text-xs shell-call-ring-action-label\">{{call_ring_accept_short}}</p>";
-  out << "</div>";
-  out << "</div>";
-  out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
-  out << "<button class=\"btn btn-secondary\" type=\"button\" "
-         "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
-         "data-event-click=\"call_accept_charge()\">{{call_ring_accept_charge_label}}</button>";
-  out << "<p class=\"text-xs shell-dialog-message\" data-if=\"!call_ring_accept_charge_enabled\" "
-         ">{{call_ring_accept_charge_hint}}</p>";
-  out << "</div></div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeCallInProgress() const {
-  // V031 modes: Expanded (top bar), Immersive (people grid), Minimized (corner chip).
-  // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyCallChrome-only.
-  if (!state_.call_in_progress.active) {
-    return {};
-  }
-  auto append_quality_chip = [](std::ostringstream& out, const char* extra_class) {
-    out << "<button class=\"shell-call-quality " << extra_class
-        << "\" type=\"button\" data-event-click=\"call_details()\" "
-           "data-class-shell-call-quality--ok=\"call_in_progress_quality_ok\" "
-           "data-class-shell-call-quality--warn=\"call_in_progress_quality_warn\" "
-           "data-class-shell-call-quality--error=\"call_in_progress_quality_error\">";
-    out << "<div class=\"shell-call-quality-bars row\">";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--1\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 1\"></div>";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--2\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 2\"></div>";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--3\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 3\"></div>";
-    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--4\" "
-           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 4\"></div>";
-    out << "</div>";
-    out << "<span class=\"text-xs shell-call-quality-label\" data-if=\"call_in_progress_quality_label != ''\" "
-           ">{{call_in_progress_quality_label}}</span>";
-    out << "</button>";
-  };
-
-  auto append_core_actions = [](std::ostringstream& out) {
-    out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
-           "data-event-click=\"call_retry()\">";
-    out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
-           "data-event-click=\"call_invite()\">";
-    out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
-           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-    out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-    out << "</button>";
-    out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
-           "data-if=\"call_in_progress_show_speaker\" "
-           "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-    out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-camera\" type=\"button\" data-if=\"call_in_progress_show_camera\" "
-           "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
-    out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
-    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-  };
-
-  const auto& call = state_.call_in_progress;
-  std::ostringstream out;
-
-  if (call.mode == CallChromeMode::Minimized) {
-    const char* corner_class = "shell-call-minimized-chip--tr";
-    switch (call.minimized_corner) {
-    case 1:
-      corner_class = "shell-call-minimized-chip--tl";
-      break;
-    case 2:
-      corner_class = "shell-call-minimized-chip--br";
-      break;
-    case 3:
-      corner_class = "shell-call-minimized-chip--bl";
-      break;
-    default:
-      break;
-    }
-    out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
-           "data-model=\"window\">";
-    out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row " << corner_class
-        << "\">";
-    out << "<div class=\"shell-call-minimized-main\">";
-    out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
-    out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";
-    out << "</div>";
-    append_quality_chip(out, "shell-call-quality--compact");
-    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
-           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-    out << "<svg id=\"shell-call-mute-icon\" width=\"16\" height=\"16\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-leave shell-call-leave--compact\" type=\"button\" "
-           "data-event-click=\"call_leave()\">";
-    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "</div></div>";
-    return out.str();
-  }
-
-  if (call.mode == CallChromeMode::Immersive) {
-    out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-immersive\" "
-           "data-model=\"window\">";
-    out << "<div class=\"shell-call-immersive\">";
-    out << "<div class=\"shell-call-immersive-header\">";
-    out << "<div class=\"shell-call-immersive-grabber\"></div>";
-    out << "<div class=\"shell-call-bar-row row\">";
-    out << "<div class=\"shell-call-bar-main\">";
-    out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
-    out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
-    out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
-           ">{{call_in_progress_debug_subtitle}}</p>";
-    out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
-           ">{{call_in_progress_quality_hint}}</p>";
-    out << "</div>";
-    append_quality_chip(out, "");
-    out << "<button class=\"shell-call-expand\" type=\"button\" data-event-click=\"call_expand()\">";
-    out << "<svg src=\"../icons/chevron-down.svg\" width=\"18\" height=\"18\"></svg>";
-    out << "</button>";
-    out << "</div></div>";
-    out << "<div class=\"shell-call-immersive-roster\">";
-    out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-peer-card\">";
-    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" "
-           "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
-    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"peer\" data-attr-stream=\"p.stream_id\" "
-           "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
-    out << "<div class=\"shell-call-peer-avatar\" "
-           "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
-           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\" "
-           "data-class-avatar-tone-0=\"p.avatar_tone == 0\" "
-           "data-class-avatar-tone-1=\"p.avatar_tone == 1\" "
-           "data-class-avatar-tone-2=\"p.avatar_tone == 2\" "
-           "data-class-avatar-tone-3=\"p.avatar_tone == 3\" "
-           "data-class-avatar-tone-4=\"p.avatar_tone == 4\" "
-           "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
-           "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
-           "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
-           "<p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
-    out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
-           "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
-           "data-attr-src=\"p.avatar_src\"/>";
-    out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
-    out << "<p class=\"text-xs shell-call-peer-stall\" "
-           "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
-           ">{{call_in_progress_remote_placeholder}}</p>";
-    out << "<div class=\"shell-call-peer-badges row\">";
-    out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"14\" height=\"14\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</div></div>";
-    // 1:1 / empty roster: still show a single presence card from title/peer.
-    out << "<div class=\"shell-call-peer-card\" data-if=\"call_in_progress_participant_count == 0\">";
-    out << "<div class=\"shell-call-peer-avatar\"></div>";
-    out << "<p class=\"text-sm shell-call-peer-name\">{{call_in_progress_peer_label}}</p>";
-    out << "</div>";
-    out << "</div>";
-    out << "<div class=\"shell-call-immersive-controls\">";
-    out << "<div class=\"shell-call-bar-actions row\">";
-    append_core_actions(out);
-    out << "</div></div></div></div>";
-    return out.str();
-  }
-
-  // Expanded (default): top stage + stacked bar.
-  out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-bar\" data-model=\"window\">";
-  out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
-  out << "<call-video-tile class=\"shell-call-remote\" id=\"call-remote-tile\" tile=\"remote\">";
-  out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
-         ">{{call_in_progress_remote_placeholder}}</p>";
-  out << "</call-video-tile>";
-  out << "<call-video-tile class=\"shell-call-pip\" id=\"call-local-tile\" tile=\"local\" "
-         "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
-  out << "</div>";
-  out << "<div class=\"shell-call-bar\">";
-  out << "<div class=\"shell-call-bar-row row\">";
-  out << "<div class=\"shell-call-bar-main\">";
-  out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
-  out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
-  out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
-         ">{{call_in_progress_debug_subtitle}}</p>";
-  out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
-         ">{{call_in_progress_quality_hint}}</p>";
-  out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
-         ">{{call_in_progress_status_hint}}</p>";
-  out << "</div>";
-  append_quality_chip(out, "");
-  out << "<div class=\"shell-call-bar-actions row\">";
-  append_core_actions(out);
-  out << "</div></div>";
-  out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
-  out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
-  out << "<span class=\"text-xs shell-call-roster-name\">{{p.name}}</span>";
-  out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"12\" height=\"12\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"12\" height=\"12\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "</div></div>";
-  out << "<div class=\"shell-call-bar-meters row\" data-if=\"!call_in_progress_show_roster\">";
-  out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
-  out << "<span class=\"text-xs shell-call-meter-label\">You</span>";
-  out << "<div class=\"shell-call-meter-track row\">";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 1\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 2\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 3\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 4\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 5\"></div>";
-  out << "</div>";
-  out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_mic_hint}}</span>";
-  out << "</div>";
-  out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
-  out << "<span class=\"text-xs shell-call-meter-label\">{{call_in_progress_peer_label}}</span>";
-  out << "<div class=\"shell-call-meter-track row\">";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 1\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 2\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 3\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 4\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 5\"></div>";
-  out << "</div>";
-  out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_peer_hint}}</span>";
-  out << "</div></div></div></div>";
-  return out.str();
-}
-
-std::string ShellHost::SerializeShellRoot() const {
-  std::ostringstream out;
-  if (state_.layout_mode == LayoutMode::Expanded) {
-    out << SerializeExpandedBase();
-  } else {
-    out << SerializeCompactBase();
-  }
-  out << SerializeTransientLayer();
-  out << SerializeOverlays();
-  out << SerializeDialog();
-  // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
-  out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
-  out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
-  out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
-  out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
-  out << "<div id=\"shell-onboarding-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
-  return out.str();
 }
 
 void ShellHost::MountNavRail() {
@@ -2578,7 +1510,7 @@ void ShellHost::RemountBottomChrome() {
     return;
   }
   remount_bottom_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountBottomChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountBottomChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2599,7 +1531,7 @@ void ShellHost::RemountBottomChromeNow() {
   if (!mount) {
     return;
   }
-  const std::string html = SerializeBottomChrome();
+  const std::string html = Rml().BottomChrome();
   RmlMount::MountInner(mount, html);
   if (!html.empty()) {
     ui::Element* target = doc->GetElementById("shell-bottom-chrome-body");
@@ -2649,7 +1581,7 @@ void ShellHost::SyncLayout() {
   const LayoutMode mode = state_.layout_mode;
   splitter_drag_.Detach();
   aux_splitter_drag_.Detach();
-  RmlMount::MountInner(root, SerializeShellRoot());
+  RmlMount::MountInner(root, Rml().ShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
   AttachSplitterDrag();
@@ -2730,7 +1662,7 @@ void ShellHost::RemountCallChrome() {
     return;
   }
   remount_call_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountCallChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountCallChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2742,8 +1674,8 @@ void ShellHost::FlushRemountCallChrome() {
   RemountCallChromeNow();
   // MountInner binds data views after any Dirty applied while remount was pending — dirty again
   // next UI turn so Connected/elapsed replace baked Connecting… text through the text bindings.
-  AppRuntime::PostUI([]() {
-    ShellHost::Instance().DirtyCallChrome();
+  AppRuntime::PostUI([this]() {
+    DirtyCallChrome();
     Backend::RequestForceFrame();
   });
 }
@@ -2814,10 +1746,10 @@ void ShellHost::RemountCallChromeNow() {
   }
   DetachCallChromeGesture();
   if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
-    RmlMount::MountInner(ring_mount, SerializeCallRing());
+    RmlMount::MountInner(ring_mount, CallRingRml(state_));
   }
   if (ui::Element* bar_mount = doc->GetElementById("shell-call-in-progress-mount")) {
-    RmlMount::MountInner(bar_mount, SerializeCallInProgress());
+    RmlMount::MountInner(bar_mount, CallInProgressRml(state_));
   }
   DirtyCallChrome();
   AttachCallChromeGesture();
@@ -2829,7 +1761,7 @@ void ShellHost::RemountDialogChrome() {
     return;
   }
   remount_dialog_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountDialogChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountDialogChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2839,8 +1771,8 @@ void ShellHost::FlushRemountDialogChrome() {
   }
   remount_dialog_chrome_pending_ = false;
   RemountDialogChromeNow();
-  AppRuntime::PostUI([]() {
-    ShellHost::Instance().DirtyFeedback();
+  AppRuntime::PostUI([this]() {
+    DirtyFeedback();
     Backend::RequestForceFrame();
   });
 }
@@ -2854,7 +1786,7 @@ void ShellHost::RemountDialogChromeNow() {
     return;
   }
   if (ui::Element* mount = doc->GetElementById("shell-dialog-mount")) {
-    RmlMount::MountInner(mount, SerializeDialog());
+    RmlMount::MountInner(mount, Rml().Dialog());
   }
   DirtyFeedback();
 }
@@ -2869,8 +1801,8 @@ void ShellHost::MountOverlayBody(const std::string& mount_id, const std::string&
     overlay_bodies_[mount_id] = body;
   }
   // Deferred like the PIN gate: a click handler may still be mid-dispatch inside the old overlay.
-  AppRuntime::PostUI([mount_id, body]() {
-    ShellHost& shell = ShellHost::Instance();
+  AppRuntime::PostUI([this, mount_id, body]() {
+    ShellHost& shell = *this;
     if (!shell.context_ || shell.context_->GetNumDocuments() == 0) {
       return;
     }
@@ -2892,7 +1824,7 @@ void ShellHost::RemountPinGateChrome() {
     return;
   }
   remount_pin_gate_chrome_pending_ = true;
-  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountPinGateChrome(); });
+  AppRuntime::PostUI([this]() { FlushRemountPinGateChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -2902,8 +1834,8 @@ void ShellHost::FlushRemountPinGateChrome() {
   }
   remount_pin_gate_chrome_pending_ = false;
   RemountPinGateChromeNow();
-  AppRuntime::PostUI([]() {
-    ShellHost::Instance().DirtyPinGate();
+  AppRuntime::PostUI([this]() {
+    DirtyPinGate();
     Backend::RequestForceFrame();
   });
 }
@@ -2932,7 +1864,7 @@ void ShellHost::RemountPinGateChromeNow() {
     return;
   }
   if (ui::Element* mount = doc->GetElementById("shell-pin-gate-mount")) {
-    RmlMount::MountInner(mount, SerializePinGate());
+    RmlMount::MountInner(mount, Rml().PinGate());
   }
   DirtyPinGate();
 }
@@ -2967,13 +1899,13 @@ void ShellHost::Update(ui::Context* context) {
     RestoreFocus();
     return;
   }
-  RefreshStatusbarCluster();
+  statusbar_.RefreshCluster();
   if (state_.titlebar_visible) {
     const bool maximized = DesktopWindowChrome::IsMaximized();
     if (maximized != state_.window_maximized) {
       state_.window_maximized = maximized;
       DesktopWindowChrome::RefreshAppearance();
-      DirtyStatusChrome();
+      statusbar_.Dirty();
     }
   }
 }
@@ -2999,7 +1931,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
   if (state_.call_ring.active || state_.call_in_progress.active) {
-    delay_sec = std::min(delay_sec, 0.55);
+    delay_sec = std::min(delay_sec, kCallChromeFrameIntervalSec);
   }
 
   if (std::isfinite(delay_sec)) {
@@ -3008,292 +1940,184 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   }
 }
 
-void ShellHost::ToggleAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().ToggleAuxiliary();
-}
-
-void ShellHost::OpenAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().OpenAuxiliary();
-}
-
-void ShellHost::ToggleSidebarCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  Instance().ToggleSidebarCollapsed();
-}
-
-void ShellHost::SelectNavTabCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  ShellHost& host = Instance();
-  const NavTab tab = NavTabFromString(args[0].Get<ui::String>());
+void ShellHost::OnNavTabClicked(const std::string& tab_name) {
+  const NavTab tab = NavTabFromString(tab_name.c_str());
   // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
-  if (host.state_.layout_mode == LayoutMode::Expanded &&
-      ShellLayout::SidebarCollapsedAfterNavSelect(host.state_.sidebar_collapsed, tab) != host.state_.sidebar_collapsed) {
-    host.state_.sidebar_collapsed = false;
-    host.NotifySidebarChanged();
-    host.DirtyNavChrome();
-    host.RequestSyncLayout();
+  if (state_.layout_mode == LayoutMode::Expanded &&
+      ShellLayout::SidebarCollapsedAfterNavSelect(state_.sidebar_collapsed, tab) != state_.sidebar_collapsed) {
+    state_.sidebar_collapsed = false;
+    NotifySidebarChanged();
+    DirtyNavChrome();
+    RequestSyncLayout();
   }
-  host.SelectNavTab(tab);
+  SelectNavTab(tab);
 }
 
-void ShellHost::CompactChatBackCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                        const ui::VariantList& /*args*/) {
-  Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay);
+void ShellHost::DismissBanner() {
+  ShellFeedback::DismissBanner(state_);
+  DirtyFeedback();
 }
 
-void ShellHost::OpenAccountSheetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
-  Instance().OpenAccountSheet();
+void ShellHost::DialogOk() {
+  ShellFeedback::DialogOk(state_);
 }
 
-void ShellHost::CloseAccountSheetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  // × always closes the sheet, even when a nested settings detail is open.
-  Instance().CloseAccountSheet();
+void ShellHost::DialogCancel() {
+  ShellFeedback::DialogCancel(state_);
 }
 
-void ShellHost::PopTransientCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::Transient);
+void ShellHost::DialogToggleCheckbox() {
+  state_.dialog.checkbox_checked = !state_.dialog.checkbox_checked;
+  DirtyFeedback();
 }
 
-void ShellHost::CloseLayerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& args) {
-  const int layer_id = EventArgAsInt(args).value_or(-1);
-  Instance().CloseLayer(layer_id);
-}
-
-void ShellHost::DismissBannerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  ShellHost& host = Instance();
-  ShellFeedback::DismissBanner(host.state_);
-  host.DirtyFeedback();
-}
-
-void ShellHost::DialogOkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                 const ui::VariantList& /*args*/) {
-  ShellFeedback::DialogOk(Instance().state_);
-}
-
-void ShellHost::DialogCancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  ShellFeedback::DialogCancel(Instance().state_);
-}
-
-void ShellHost::DialogToggleCheckboxCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& /*args*/) {
-  ShellHost& host = Instance();
-  host.state_.dialog.checkbox_checked = !host.state_.dialog.checkbox_checked;
-  host.DirtyFeedback();
-}
-
-void ShellHost::PinGateSubmitCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_submit) {
-    Instance().pin_gate_actions_.on_submit();
+void ShellHost::PinGateSubmit() {
+  if (pin_gate_actions_.on_submit) {
+    pin_gate_actions_.on_submit();
   }
 }
 
-void ShellHost::PinGateCancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_cancel) {
-    Instance().pin_gate_actions_.on_cancel();
+void ShellHost::PinGateCancel() {
+  if (pin_gate_actions_.on_cancel) {
+    pin_gate_actions_.on_cancel();
   }
 }
 
-void ShellHost::PinGateSetPinCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_set_pin) {
-    Instance().pin_gate_actions_.on_set_pin();
+void ShellHost::PinGateSetPin() {
+  if (pin_gate_actions_.on_set_pin) {
+    pin_gate_actions_.on_set_pin();
   }
 }
 
-void ShellHost::PinGateUseDefaultCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_use_default) {
-    Instance().pin_gate_actions_.on_use_default();
+void ShellHost::PinGateUseDefault() {
+  if (pin_gate_actions_.on_use_default) {
+    pin_gate_actions_.on_use_default();
   }
 }
 
-void ShellHost::PinGateIdentityNewCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                           const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_identity_new) {
-    Instance().pin_gate_actions_.on_identity_new();
+void ShellHost::PinGateIdentityNew() {
+  if (pin_gate_actions_.on_identity_new) {
+    pin_gate_actions_.on_identity_new();
   }
 }
 
-void ShellHost::PinGateIdentityLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_identity_link) {
-    Instance().pin_gate_actions_.on_identity_link();
+void ShellHost::PinGateIdentityLink() {
+  if (pin_gate_actions_.on_identity_link) {
+    pin_gate_actions_.on_identity_link();
   }
 }
 
-void ShellHost::PinGateIdentityRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                               const ui::VariantList& /*args*/) {
-  if (Instance().pin_gate_actions_.on_identity_restore) {
-    Instance().pin_gate_actions_.on_identity_restore();
+void ShellHost::PinGateIdentityRestore() {
+  if (pin_gate_actions_.on_identity_restore) {
+    pin_gate_actions_.on_identity_restore();
   }
 }
 
-void ShellHost::CallAcceptCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  Instance().log().warning << "call_accept click";
-  if (Instance().call_actions_.accept_incoming) {
-    Instance().call_actions_.accept_incoming();
+void ShellHost::CallAccept() {
+  log().warning << "call_accept click";
+  if (call_actions_.accept_incoming) {
+    call_actions_.accept_incoming();
   }
 }
 
-void ShellHost::CallAcceptVoiceCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                        const ui::VariantList& /*args*/) {
-  Instance().log().warning << "call_accept_voice click";
-  if (Instance().call_actions_.accept_incoming_voice_only) {
-    Instance().call_actions_.accept_incoming_voice_only();
+void ShellHost::CallAcceptVoice() {
+  log().warning << "call_accept_voice click";
+  if (call_actions_.accept_incoming_voice_only) {
+    call_actions_.accept_incoming_voice_only();
   }
 }
 
-void ShellHost::CallAcceptChargeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
-  Instance().log().warning << "call_accept_charge click";
-  if (Instance().call_actions_.accept_incoming_with_charge) {
-    Instance().call_actions_.accept_incoming_with_charge();
+void ShellHost::CallAcceptCharge() {
+  log().warning << "call_accept_charge click";
+  if (call_actions_.accept_incoming_with_charge) {
+    call_actions_.accept_incoming_with_charge();
   }
 }
 
-void ShellHost::CallDeclineCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.decline_incoming) {
-    Instance().call_actions_.decline_incoming();
+void ShellHost::CallDecline() {
+  if (call_actions_.decline_incoming) {
+    call_actions_.decline_incoming();
   }
 }
 
-void ShellHost::CallLeaveCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                  const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.leave_active) {
-    Instance().call_actions_.leave_active();
+void ShellHost::CallLeave() {
+  if (call_actions_.leave_active) {
+    call_actions_.leave_active();
   }
 }
 
-void ShellHost::CallRetryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                  const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.retry_connect) {
-    Instance().call_actions_.retry_connect();
+void ShellHost::CallRetry() {
+  if (call_actions_.retry_connect) {
+    call_actions_.retry_connect();
   }
 }
 
-void ShellHost::CallMuteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                 const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.toggle_mute) {
-    Instance().call_actions_.toggle_mute();
+void ShellHost::CallMute() {
+  if (call_actions_.toggle_mute) {
+    call_actions_.toggle_mute();
   }
 }
 
-void ShellHost::CallCameraCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.toggle_camera) {
-    Instance().call_actions_.toggle_camera();
+void ShellHost::CallCamera() {
+  if (call_actions_.toggle_camera) {
+    call_actions_.toggle_camera();
   }
 }
 
-void ShellHost::CallSpeakerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.toggle_speaker) {
-    Instance().call_actions_.toggle_speaker();
+void ShellHost::CallSpeaker() {
+  if (call_actions_.toggle_speaker) {
+    call_actions_.toggle_speaker();
   }
 }
 
-void ShellHost::CallInviteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.open_mid_call_invite_picker) {
-    Instance().call_actions_.open_mid_call_invite_picker();
+void ShellHost::CallInvite() {
+  if (call_actions_.open_mid_call_invite_picker) {
+    call_actions_.open_mid_call_invite_picker();
   }
 }
 
-void ShellHost::CallMinimizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                     const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.minimize_chrome) {
-    Instance().call_actions_.minimize_chrome();
+void ShellHost::CallMinimize() {
+  if (call_actions_.minimize_chrome) {
+    call_actions_.minimize_chrome();
   }
 }
 
-void ShellHost::CallExpandCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                   const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.expand_chrome) {
-    Instance().call_actions_.expand_chrome();
+void ShellHost::CallExpand() {
+  if (call_actions_.expand_chrome) {
+    call_actions_.expand_chrome();
   }
 }
 
-void ShellHost::CallImmersiveCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.immersive_chrome) {
-    Instance().call_actions_.immersive_chrome();
+void ShellHost::CallImmersive() {
+  if (call_actions_.immersive_chrome) {
+    call_actions_.immersive_chrome();
   }
 }
 
-void ShellHost::CallRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.restore_chrome_from_minimized) {
-    Instance().call_actions_.restore_chrome_from_minimized();
+void ShellHost::CallRestore() {
+  if (call_actions_.restore_chrome_from_minimized) {
+    call_actions_.restore_chrome_from_minimized();
   }
 }
 
-void ShellHost::CallDetailsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                    const ui::VariantList& /*args*/) {
-  if (Instance().call_actions_.show_call_details) {
-    Instance().call_actions_.show_call_details();
+void ShellHost::CallDetails() {
+  if (call_actions_.show_call_details) {
+    call_actions_.show_call_details();
   }
 }
 
-void ShellHost::TitlebarMinimizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
+void ShellHost::TitlebarMinimize() {
   DesktopWindowChrome::Minimize();
 }
 
-void ShellHost::TitlebarToggleMaximizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                               const ui::VariantList& /*args*/) {
+void ShellHost::TitlebarToggleMaximize() {
   DesktopWindowChrome::ToggleMaximize();
-  ShellHost& host = Instance();
-  host.state_.window_maximized = DesktopWindowChrome::IsMaximized();
-  host.DirtyStatusChrome();
+  state_.window_maximized = DesktopWindowChrome::IsMaximized();
+  statusbar_.Dirty();
 }
 
-void ShellHost::TitlebarCloseCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                      const ui::VariantList& /*args*/) {
+void ShellHost::TitlebarClose() {
   DesktopWindowChrome::Close();
-}
-
-void ShellHost::ToggleStatusbarPopoverCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                               const ui::VariantList& /*args*/) {
-  Instance().ToggleStatusbarPopover();
-}
-
-void ShellHost::DismissStatusbarPopoverCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                const ui::VariantList& /*args*/) {
-  Instance().CloseStatusbarPopover();
-}
-
-void ShellHost::RetestStatusbarReachabilityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  auto& host = Instance();
-  if (host.shell_messaging_ports_.retest_reachability) {
-    host.shell_messaging_ports_.retest_reachability();
-  }
-  host.RefreshStatusbarPopover();
-  host.RefreshStatusbarCluster();
-}
-
-void ShellHost::OpenNetworkSettingsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  auto& host = Instance();
-  host.CloseStatusbarPopover();
-  if (host.shell_messaging_ports_.open_network_settings) {
-    host.shell_messaging_ports_.open_network_settings();
-  }
 }
 
 } // namespace pbr

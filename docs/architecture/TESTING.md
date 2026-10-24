@@ -45,7 +45,7 @@ When a case you are already touching (or that blocks the change under review) as
 2. **Cheapest layer that answers the question** — pick the purpose, then the cheapest tier that can prove it.
 3. **Push complexity down** — prefer seams in `common` / `foundation` / `domain` that unit tests can almost fully cover. If an integration path is too expensive or flaky to own, first ask whether a real lower-layer seam would make the behavior unit-testable.
 4. **Higher tiers verify wiring and environment** — they do not re-prove codec, SM, or store rules already covered below.
-5. **Extract only for real product boundaries** — do not invent test-only “libs.” Push into foundation/domain (or owned `src/lib/` / FetchContent stacks) when the logic is a coherent engine two features could share; leave genuine composition, lifetimes, and packaging at feature/app/smoke.
+5. **Extract only for real product boundaries** — do not invent test-only “libs.” Push into foundation/lib (or FetchContent stacks) when the logic is a coherent engine two features could share; leave genuine composition, lifetimes, and packaging at feature/app/smoke.
 6. **Promote failures downward** — when a higher tier (integration / smoke / hard lab) finds a bug, ask whether a cheaper gtest can lock the invariant before relying on Docker. See [When a higher tier finds a bug](#when-a-higher-tier-finds-a-bug).
 7. **One hard-lab scenario per major purpose** — a hard-lab scenario exists for what only a real network topology can prove. When two share a purpose, keep the harder one and pin the difference in gtests ([HARD_LAB § Retired scenarios](../../packaging/pp-node/HARD_LAB.md#retired-scenarios)).
 
@@ -90,7 +90,7 @@ Hard filter (networking): if a failure mode reproduces with in-process loopback,
 
 | Tier | Best home | Proves | Must not try to prove |
 |------|-----------|--------|------------------------|
-| **Unit** | `common`, `foundation`, `domain/*`, pure parts of `feature` | Module behavior in isolation | Real multi-process topology, packaging, NAT |
+| **Unit** | `common`, `foundation`, `lib/*`, pure parts of `feature` | Module behavior in isolation | Real multi-process topology, packaging, NAT |
 | **Integration** | `feature` composition; in-process multi-host / loopback under `domain`/`feature` tests | Valuable product paths with real collaborators | Every GUI chrome path; capacity curves |
 | **Smoke** | Packaged binaries, Docker/real peers, thin probes (`pp-call-probe`, `pp-node-probe`) | Boot, env/caps, process isolation | Detailed branch coverage of domain logic |
 
@@ -99,7 +99,7 @@ Default stress vehicle is **not** full GUI. Prefer thin clients / in-process com
 **Per-layer expectation:**
 
 - **`common` / `foundation` / `domain`** — aim for near-full unit coverage of owned rules and engines.
-- **`feature`** — integration for typical + known-bad paths; if a path is too hard, prefer extracting a domain/foundation seam over growing a mega-suite.
+- **`feature`** — integration for typical + known-bad paths; if a path is too hard, prefer extracting a lib/foundation seam over growing a mega-suite.
 - **`gui` / `app`** — sparse unit/chrome where useful; smoke for packaging and multi-process product journeys.
 
 ---
@@ -187,7 +187,7 @@ Cross-cutting product journeys (calls, hop, messaging across processes) keep **p
 - GUI as the default correctness vehicle
 - Smoke that asserts unit-level codec/SM detail
 - Leaving a policy bug guarded **only** by Docker/hard-lab when an in-process gtest can reproduce it
-- Integration sprawl because domain peers are not independent ([SRC_LAYOUT.md](SRC_LAYOUT.md))
+- Integration sprawl because lib peers are not independent ([SRC_LAYOUT.md](SRC_LAYOUT.md))
 - Line-coverage % as a gate instead of behavior accounting
 - Test-only abstractions that violate layer include rules
 - Duplicating pass/fail criteria in both a module ledger and the ops purpose catalog

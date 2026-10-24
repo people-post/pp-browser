@@ -85,7 +85,10 @@ services:
       BRF_WWW_MESSENGER_URI: "http://messenger:9098"
       # Required by the config; the relay routes never look at it.
       BRF_WWW_DOMAINS: '[{"id":"lab","origin":"http://lab.invalid"}]'
-    networks: [lab]
+    networks:
+      lab:
+        # Fixed: users behind the NAT overlay (docker-compose.app-lab-nat.yml) reach it by address.
+        ipv4_address: 198.51.100.20
     ports:
       - "127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}:9097"
     depends_on:

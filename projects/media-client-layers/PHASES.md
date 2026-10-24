@@ -3,7 +3,7 @@
 Ordering and checkboxes only. **Status:** [CURRENT_STATE.md](CURRENT_STATE.md). **Spec:** [DESIGN.md](DESIGN.md).
 
 ```
-l0 (done) ── l1 (reach → domain/mesh, done) ── l2 (relay attach, done) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
+l0 (done) ── l1 (reach → lib/mesh, done) ── l2 (relay attach, done) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
                                 l3a (spec, done) ── l3b (audio + camera leases, done) ── l3c? ─┘
 later: viewer video · relay upstream via viewer client · relay keyframe cache
 ```
@@ -15,17 +15,17 @@ l1 and l2 are refactors checked against existing tests + hard lab. l3 is the ris
 - [x] `PeerReachCoordinator` (link), `CallMediaConnectCoordinator` (bundle, both directions), `CallMediaBridge` (call policy) — branch `refactor/peer-reach-coordinator`
 - [x] Hard-lab COLD / COLD-DIRTY / COLD-AWAIT drive the product reach
 
-## l1 — Reach moves to domain/mesh
+## l1 — Reach moves to lib/mesh
 
-- [x] `PeerReachCoordinator` + its dial / circuit ports (`IDialRegistry`, `ICircuitHopReach`, `PeerSessionDialRegistry`, `CircuitHopReachClient` → `domain/mesh/reach/MeshReachPorts.h`) and `AmpCircuitHopReach` move to `domain/mesh/reachability`; neutral names (`TryEnsurePeerReachable*`, `Has/ClearPeerCircuitHop`, `ShouldSkipPrivatePreferredDialAfterSeedPark`); no `domain → feature` include
-- [x] Hop reach compared, not merged: it is *service reach* (media_relay dialable via protocol-keyed circuit hop), not link reach — [L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach); both now in `domain/mesh/reachability`
-- [x] gtests move with the class (`peer_reach_coordinator_test` → `domain/mesh/tests`); full suite green
+- [x] `PeerReachCoordinator` + its dial / circuit ports (`IDialRegistry`, `ICircuitHopReach`, `PeerSessionDialRegistry`, `CircuitHopReachClient` → `lib/mesh/reach/MeshReachPorts.h`) and `AmpCircuitHopReach` move to `lib/mesh/reachability`; neutral names (`TryEnsurePeerReachable*`, `Has/ClearPeerCircuitHop`, `ShouldSkipPrivatePreferredDialAfterSeedPark`); no `domain → feature` include
+- [x] Hop reach compared, not merged: it is *service reach* (media_relay dialable via protocol-keyed circuit hop), not link reach — [L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach); both now in `lib/mesh/reachability`
+- [x] gtests move with the class (`peer_reach_coordinator_test` → `lib/mesh/tests`); full suite green
 
-**Exit:** `domain/mesh` owns reaching any node (link reach + service reach); `feature/calls` only asks. **Met.**
+**Exit:** `lib/mesh` owns reaching any node (link reach + service reach); `feature/calls` only asks. **Met.**
 
 ## l2 — MediaRelayAttach (stateless capability — [L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature))
 
-- [x] `IMediaRelayClient` → `domain/mesh/l4/media_relay/client/IMediaRelayClient.h`; `AmpMediaRelayClient` → `domain/mesh/l4/media_relay` (git mv); neutral `session_id` parameters
+- [x] `IMediaRelayClient` → `lib/mesh/l4/media_relay/client/IMediaRelayClient.h`; `AmpMediaRelayClient` → `lib/mesh/l4/media_relay` (git mv); neutral `session_id` parameters
 - [x] `AttachToMediaRelayAsync`: register dial hint → service reach when undialable → quote → `accept_quote` gate → `still_wanted` → AcceptAndAttach (ports + request + hooks; no call / roster knowledge); gtests `media_relay_attach_test`
 - [x] `MediaRelayQuoteRequest::call_id` → `session_id` in C++; wire field stays `"call_id"` ([L006](DECISIONS.md#l006--same-media_relay-data-plane-own-aead-label-per-feature) resolved)
 - [x] Group joiner attach **and** guest reattach use it (was copy-pasted twice); pricing gate + quote sizing + frame decrypt stay call policy
@@ -49,7 +49,7 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 
 ### l3b — `MediaDeviceArbiter` on a device owner thread
 
-- [x] `MediaDeviceArbiter` (`domain/media/MediaDeviceArbiter.*`): per-kind `AudioDeviceLease`s; policy per kind — mic exclusive (refusal names the holder), speaker shared ([L011](DECISIONS.md#l011--speaker-is-shared-mic-exclusive-one-device-thread-either-way)); injectable (`CallMediaEngine(MediaDeviceArbiter&)`, `CallRingtone(MediaDeviceArbiter&)`), process `Default()`
+- [x] `MediaDeviceArbiter` (`lib/media/MediaDeviceArbiter.*`): per-kind `AudioDeviceLease`s; policy per kind — mic exclusive (refusal names the holder), speaker shared ([L011](DECISIONS.md#l011--speaker-is-shared-mic-exclusive-one-device-thread-either-way)); injectable (`CallMediaEngine(MediaDeviceArbiter&)`, `CallRingtone(MediaDeviceArbiter&)`), process `Default()`
 - [x] One device thread performs every audio open / close / reopen (`IAudioDeviceBackend`: SDL, null); holders do I/O through the lease, so an endpoint is never closed under a reader / writer; releases never block the holder
 - [x] Engine takes the leases its spec asks for (duplex: mic + speaker; playback-only: speaker) and reopens them in place; ringtone holds a speaker lease — `CallRingtone::WaitUntilPlaybackDeviceReleased` and its global holder count are gone
 - [x] Quit: `MediaDeviceArbiter::ShutdownDefault` after the runtime joins, before `SDL_Quit`
@@ -69,9 +69,9 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 
 ### l4a — Neutral frame crypto + viewer ladder (done)
 
-- [x] `MediaRelayFrameCrypto` (`domain/mesh/l4/media_relay`): seal / open with a feature-owned AAD context; call SFU framing delegates (bytes unchanged — cross-open test)
-- [x] `BroadcastMediaFrameContext`, `BroadcastPublisherStreamId` (`domain/broadcast/BroadcastMedia.h`)
-- [x] `BroadcastViewerLadder` (`domain/messaging`): client side of B007 — admit / redirect (budget, path stamp) / refuse / no-admission-service / attach-failed; gtests
+- [x] `MediaRelayFrameCrypto` (`lib/mesh/l4/media_relay`): seal / open with a feature-owned AAD context; call SFU framing delegates (bytes unchanged — cross-open test)
+- [x] `BroadcastMediaFrameContext`, `BroadcastPublisherStreamId` (`lib/broadcast/BroadcastMedia.h`)
+- [x] `BroadcastViewerLadder` (`lib/messaging`): client side of B007 — admit / redirect (budget, path stamp) / refuse / no-admission-service / attach-failed; gtests
 
 ### l4b — `feature/broadcast` viewer workflow + hub (done)
 
@@ -137,11 +137,11 @@ Leftovers in `CallMediaBridge` / `CallTopologyController` / `CallHopMigrateWorkf
 
 ## l8 — Neutral mesh media plane ([L015](DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast))
 
-- [x] `domain/mesh/media_plane/MeshMediaPlane`: media_relay client, dial registry + listen book, circuit reach + punch, rendezvous parking; hop candidates by port (`feature/conversations/MeshMediaPlaneWiring` over `MeshHopPolicy`); calls' R1 announce / signaling punch are hooks. `CallMediaPlane` keeps the call_media transport, bridge and topology relay deps
+- [x] `lib/mesh/media_plane/MeshMediaPlane`: media_relay client, dial registry + listen book, circuit reach + punch, rendezvous parking; hop candidates by port (`feature/conversations/MeshMediaPlaneWiring` over `MeshHopPolicy`); calls' R1 announce / signaling punch are hooks. `CallMediaPlane` keeps the call_media transport, bridge and topology relay deps
 - [x] `ConversationsHub` / `ProductStackHarness` own it; `CallStack` borrows it (`CallStackDeps::mesh_media`, `DetachMeshMedia` / `RebindMeshMedia`); broadcast takes `RelayAttachPorts` from it; the owner runs the mesh-start, capability-refresh and stop sequences; `SharedRelayAttachPorts` / `CallStack::StopMesh` / the stack's reach wrappers removed; L014 superseded. l8a and l8b landed together (calls cannot include the conversations wiring)
 - [x] Parking flows split while moving; the cold-reserve walk no longer holds itself (`shared_ptr<function>` self-capture leaked every reserve pass), a pending park still answers `false` at its deadline after mesh stop
 - [x] `MeshMediaPlaneTest` (listen book, no-mesh wiring); `ProductStackHarnessTest` drives the owner's rewire sequence
-- [x] Reach mechanics out of the plane into `domain/mesh/reachability`: `PunchIntroducerWalk` (the punch step reach calls — introducer walk, B29 next-introducer, H012 signaling fallback, upgrade punch) and `CircuitRendezvousCoordinator` (one relay surface: `DialableRelayIds` for circuit reach, warm / reserve / late reserve / park-await / re-park for inbound). `MeshMediaPlane` is composition + lifecycle only (`Rendezvous()` accessor)
+- [x] Reach mechanics out of the plane into `lib/mesh/reachability`: `PunchIntroducerWalk` (the punch step reach calls — introducer walk, B29 next-introducer, H012 signaling fallback, upgrade punch) and `CircuitRendezvousCoordinator` (one relay surface: `DialableRelayIds` for circuit reach, warm / reserve / late reserve / park-await / re-park for inbound). `MeshMediaPlane` is composition + lifecycle only (`Rendezvous()` accessor)
 - [ ] LeakSanitizer in untouched Amp code, seen once the punch / circuit suites ran under ASan: `AmpPunchCoordinator` (`RunIntroducerConnect` / `TryUpgradePunch` closures — `AmpPunchCoordinatorTest` ×6, `AmpPunchCircuitUpgradeTest`), circuit bridge (`AmpCircuitHopReachTest` ×7), `CallMediaLegCoordinator` (known). Likely the same self-owning-closure pattern fixed in l7 / l8
 
 ## Later

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/thread/ThreadTypes.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/people/ContactTypes.h"
 #include "common/Error.h"
 
 #include <functional>

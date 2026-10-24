@@ -1,4 +1,4 @@
-#include "domain/calls/CallPathMobility.h"
+#include "lib/calls/CallPathMobility.h"
 
 #include <gtest/gtest.h>
 

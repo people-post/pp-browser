@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -86,7 +86,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Feature include edges
         run: ./scripts/check/check_feature_includes.sh
-      - name: Base/domain include edges
+      - name: Domain include edges
+        run: ./scripts/check/check_domain_includes.sh
+      - name: Foundation/lib include edges
         run: |
           ./scripts/check/check_base_includes.sh
           ./scripts/check/check_base_public_libs.sh

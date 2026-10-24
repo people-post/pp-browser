@@ -7,6 +7,9 @@ pp_browser_add_feature_library(pp_gui
     BadgeAggregator.cpp
     CallChromeSync.cpp
     CallController.cpp
+    chat/AgentTurnController.cpp
+    chat/ChatMenus.cpp
+    chat/ChatPeerSheet.cpp
     chat/ChatController.cpp
     chat/ChatDataModel.cpp
     chat/ChatThreadChrome.cpp
@@ -28,13 +31,19 @@ pp_browser_add_feature_library(pp_gui
     onboarding/OnboardingController.cpp
     ProfileSettingsSection.cpp
     SecuritySettingsSection.cpp
+    SettingsCasLibrary.cpp
     SettingsController.cpp
+    SettingsProfileActions.cpp
+    SettingsSecurityActions.cpp
     shell/DataModelHost.cpp
     shell/DeferredStartup.cpp
     shell/DocumentLoader.cpp
     shell/RmlMount.cpp
     shell/ShellBottomSheetGesture.cpp
     shell/ShellCallChromeGesture.cpp
+    shell/ShellCallChromeRml.cpp
+    shell/ShellLayoutRml.cpp
+    shell/ShellStatusbar.cpp
     shell/ShellCallChromePorts.cpp
     shell/ShellChromeApplyPorts.cpp
     shell/ShellFeedback.cpp
@@ -55,7 +64,7 @@ pp_browser_add_feature_library(pp_gui
     pp_feature_conversations
     pp_feature_product
     pp_foundation_platform
-    pp_domain_ui
+    pp_lib_ui
     ui::core)
 
 if(PP_BROWSER_BUILD_TESTS)

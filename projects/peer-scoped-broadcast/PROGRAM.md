@@ -84,7 +84,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 | **Exit** | End announce can point at CAS object; provide/fetch or CDN path works |
 | **Why last** | Hardest durable/public surface; must not block live dogfood |
 
-**C012:** peel to `domain/content` only when Spine E (or library) is a **second** CAS owner outside messaging.
+**C012:** peel to `lib/content` only when Spine E (or library) is a **second** CAS owner outside messaging.
 
 ### Spine F — Live media tree (scale)
 
@@ -109,7 +109,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 - Creator helper marketplace / paid announce  
 - Open GossipSub / free-form topics  
 - Piece swarm (content-cas P5)  
-- `domain/content` peel before Spine E has a second owner  
+- `lib/content` peel before Spine E has a second owner  
 - Directory/DHT **content** provider routing (mesh DHT stays FIND_PEER-oriented for now)
 - Multi-SFU trees for **group calls** (broadcast-only — [MEDIA_TREE.md](MEDIA_TREE.md))
 

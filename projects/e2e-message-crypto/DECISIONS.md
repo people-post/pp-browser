@@ -176,6 +176,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 
 **Date:** 2026-07-02  
 **Updated:** 2026-07-02 — lookup via **`IPeerSigningKeyResolver`** (E024); relay directory is v1 backend, not hardcoded in ingest.  
+**Updated:** 2026-10-23 — keys come from self-proving account cards; the directory is one carrier among several ([E028](#e028--account-cards-keys-that-prove-themselves-relay-optional)).  
 **Decision:** Inbound **`EnvelopeSigner::Verify`** (receive pipeline step 2) resolves the sender's **Ed25519 public key** via **`IPeerSigningKeyResolver`** → local **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — the same communicating-identity boundary as `ChatTargetKey` (D079). **PSK** (E001) and **signing keys** are independent trust anchors — see [E024](DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).
 
 | Layer | v1 policy |
@@ -334,6 +335,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 **Date:** 2026-07-02  
 **Updated:** 2026-08-13 — encapsulate-to is the **account** ML-KEM-768 (**M015**); private `e2e` stays device-local.  
 **Updated:** 2026-08-15 — public `rotate_psk` policy: account-scope chats do not auto-rotate; device-lock is [E027](#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound).  
+**Updated:** 2026-10-23 — both anchors resolve from account cards, relay optional ([E028](#e028--account-cards-keys-that-prove-themselves-relay-optional)).  
 **Cross-project:** [chat-storage D080](../chat-storage-and-memory/DECISIONS.md#d080--inbound-routing-private-find-only-public-auto-create), [D081](../chat-storage-and-memory/DECISIONS.md#d081--peer-signing-key-lookup-before-envelope-verify-e016), [D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024), [multi-device M015](../multi-device-account/DECISIONS.md#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local).  
 **Decision:** Resolve **O007**. **`e2e_public`** auto-key uses **two independent trust anchors**. Neither anchor may be the relay **learning or choosing `master_psk`**.
 
@@ -458,3 +460,40 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 **Rationale:** Account KEM keeps public chat fluent across linked devices. An explicit lock is the honest no-confirm story (each side drops only their own siblings). Wrapping a new PSK under the old PSK would give every sibling the new key. Auto-rekey before both sides publish conversation KEMs can undo a lock or brick the peer’s other devices without consent.
 
 **Alternatives:** Chooser on start/accept (rejected — fights public fluency); one tap locks both parties’ devices (rejected — consent change for the peer); wrap new PSK under old PSK (rejected — does not exclude siblings); per-device directory KEM + N `key_init`s (rejected — M015); unlock in this slice (deferred).
+
+---
+
+## E028 — Account cards: keys that prove themselves, relay optional
+
+**Date:** 2026-10-23  
+**Status:** Accepted (design). Contract: [ACCOUNT_CARD.md](../../docs/contracts/ACCOUNT_CARD.md).  
+**Amends:** [E016](#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add), [E024](#e024--auto-key-trust-anchor-for-e2e_public-o007) (key sources).  
+**Cross-project:** [N029](../p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md) (names), [M015](../multi-device-account/DECISIONS.md) (account KEM), [M019](../multi-device-account/DECISIONS.md) (rotation), [privacy](../privacy/DECISIONS.md).
+
+**Context:** E2E must not depend on the relay, yet every peer key came from the relay directory: the KEM key was trusted as served (fixed 2026-10-23 by the KEM binding), signing and KEM keys were re-fetched after every restart, and a profile without a directory could not run. Discovery was looked at too and kept where it is: the chain is the phone book (N029), clients do not walk the DHT because lookups tell strangers whom they look for (pp-cpp-mesh DHT D2), and only nodes hold DHT records, never for others (D3).
+
+**Decision:**
+
+1. **Two jobs.** *Finding someone new* (name → Account ID) stays with the phone book: the relay directory now, the chain later. Without one, people are added from what they hand over: a QR / invite **locator** or a friend's **contact card**. *Encrypting to and reaching someone known* (Account ID → keys, devices) needs no relay.
+2. **Account card.** The account's signing key, its KEM key with the KEM binding, its own nickname, the device PeerIds the issuing device knows, `issued_at` — signed by the account key. Each linked device issues its own; receivers take keys and nickname from the newest and the union of devices. Valid for an Account ID iff the signing key hashes to it and both signatures verify; any carrier is acceptable. The card is the account's only standing statement that a device speaks for it. No addresses.
+3. **Carriers:** the relay directory (key fields, as today); `body.e2e.sender_keys` with every `key_init`, so a first message is verifiable and answerable with no lookup; contact cards (`content_type=contact_card` sub_version 2); the locator (`pp-browser-contact-v1:`, fits a QR code; the card itself, ~14 KB, does not); `/pp/account-card/1.0.0` over Amp from the account's own devices, to authenticated requesters only (answering reveals the device's account); group invites carry members' key cards.
+4. **Resolution order** for signing and KEM keys: persisted card store → the account's devices over Amp → relay directory if configured → chain `[later]`. The key stores keep refusing anything that does not prove itself. Fail closed when nothing answers.
+5. **Freshness:** newest `issued_at` for keys and nickname, union for devices (no shared counter across linked devices). Revocation and KEM rotation stay with M019.
+6. **Still relay-only:** the offline inbox and group delivery. A profile with no relay messages contacts whose devices it can reach; mesh seeds remain the bootstrap.
+
+**Not TOFU.** E016 rejected pinning an unbound key on first sight. A card binds every key to the Account ID cryptographically; the only trust left is that the Account ID is the person — the same trust the directory's search result asks for — and the fingerprint stays visible for comparing out of band.
+
+**Phases:**
+
+| Phase | Scope |
+|-------|-------|
+| C1 | Card codec and checks; persisted card store feeding the key stores at unlock; resolvers as a chain; hub runs with no directory configured — **landed 2026-10-23** |
+| C2 | `sender_keys` with `key_init`; receive checks and keeps it — **landed 2026-10-23** (`first_message_brings_keys`) |
+| C3 | Contact card v2: *Share contact*, *Add* from a card — **landed 2026-10-23** (`friend_shares_a_contact`) |
+| C4 | Card exchange over Amp; card devices registered as the account's dial keys — **landed 2026-10-23** (`devices_hand_over_their_cards`); idle reach: phones by push, desktops opt in to *Reachable without the relay* (seed reservation renewed every 20 s) |
+| C5 | Locator: invite text (Me → Profile, onboarding share) carries it; pasting an invite in *Add contact* adds the person and fetches the card via C4 or the directory — **landed 2026-10-23** (`strangers_meet_by_invite`); then (same day) a QR code of it under *Me → Profile*, and its scheme registered so a phone's camera or a tapped link opens the app and offers to add the person |
+| C6 | Roster adds (`member_joined`) carry members' cards and relay routes — **landed 2026-10-23** (`group_members_key_each_other`); invites carry none. With it, group copies go member by member through the delivery outbox (Amp first) on a per-member relay stream — before, every copy shared one stream and the relay kept only the first |
+
+Each phase lands with an app-lab scenario run **without a relay directory** where it applies (C2 onward).
+
+**Alternatives:** account records in the DHT (rejected — names and people out of the DHT by N029; client lookups leak contacts, D2; phones cannot host records, D3); the full card in the QR code (rejected — ~14 KB); devices in `sender_keys` on the relay envelope (rejected — the relay would learn a person's devices; devices travel only inside E2E or device to device); keep the directory as the only key source (rejected — E2E would stay relay-bound); trust-on-first-use of envelope keys (rejected — E016; cards are bound, not trusted).

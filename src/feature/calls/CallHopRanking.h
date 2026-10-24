@@ -1,8 +1,8 @@
 #pragma once
 
-#include "domain/calls/CallHopPlan.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/MeshHopPolicy.h"
+#include "lib/calls/CallHopPlan.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/MeshHopPolicy.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include <string>

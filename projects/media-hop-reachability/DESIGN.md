@@ -9,13 +9,13 @@
 
 ## Overview
 
-Peers (and SoftMigrate) must **dial a media hop by PeerId** under real NATs. That dialability story lives in **Amp + `src/domain/mesh/`** (`MeshHost`, reachability, circuit) — not in call signaling or a second NAT toolkit.
+Peers (and SoftMigrate) must **dial a media hop by PeerId** under real NATs. That dialability story lives in **Amp + `src/lib/mesh/`** (`MeshHost`, reachability, circuit) — not in call signaling or a second NAT toolkit.
 
 SoftMigrate **selects** hops and opens `media_relay`; reachability is a **stack precondition**. Hop relays stay **blind**; app E2E call keys remain in the call layer.
 
 ```mermaid
 flowchart TB
-  subgraph stack [Amp mesh + domain/mesh]
+  subgraph stack [Amp mesh + lib/mesh]
     Ch0[ch0 / addr ads]
     Book[Peer address book]
     Reach[Reachability / DialBack / UPnP]

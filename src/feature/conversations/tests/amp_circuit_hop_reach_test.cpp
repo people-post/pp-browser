@@ -93,6 +93,13 @@ public:
     return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
   }
 
+  std::shared_ptr<pp::amp::ChannelSession> BindChannelOnLink(pp::amp::LinkHandle link, uint32_t channel_id,
+                                                             pp::amp::ChannelPolicy policy,
+                                                             pp::amp::ChannelSession::FrameHandler on_frame,
+                                                             pp::amp::ChannelSession::ClosedCallback on_closed) override {
+    return inner_.BindChannelOnLink(link, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
+  }
+
   pp::amp::LinkSnapshotEx SnapshotByPeerId(const std::string& peer_id) const override {
     return inner_.SnapshotByPeerId(peer_id);
   }
@@ -324,6 +331,12 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
         pp::amp::ChannelSession::ClosedCallback on_closed) override {
       return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame),
                                 std::move(on_closed));
+    }
+    std::shared_ptr<pp::amp::ChannelSession> BindChannelOnLink(
+        pp::amp::LinkHandle link, uint32_t channel_id, pp::amp::ChannelPolicy policy,
+        pp::amp::ChannelSession::FrameHandler on_frame,
+        pp::amp::ChannelSession::ClosedCallback on_closed) override {
+      return inner_.BindChannelOnLink(link, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
     }
 
     RecordingChatPeerLinks& inner_;

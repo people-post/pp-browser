@@ -1,8 +1,10 @@
 #pragma once
 
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
+#include "gui/shell/ShellLayoutRml.h"
+#include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/CallChromeSync.h"
@@ -11,7 +13,7 @@
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
-#include "domain/ui/ShellGestureAxis.h"
+#include "lib/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
@@ -75,15 +77,8 @@ public:
 
   ShellHost();
 
-  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
-  static void InstallInstance(ShellHost& host);
-  static void ClearInstance();
-  static ShellHost& Instance();
 
   void BindShellMessaging(MessagingShellPorts ports);
-  void OpenStatusbarPopover();
-  void CloseStatusbarPopover();
-  void ToggleStatusbarPopover();
   void BindPinGateActions(PinGateActionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
@@ -154,7 +149,6 @@ public:
   /** PIN gate + unlock_in_progress binding keys. */
   void DirtyPinGate();
   /** Activity / statusbar / titlebar / fonts_ready binding keys. */
-  void DirtyStatusChrome();
   /** Call ring / in-progress window model keys (not nav/dialog/pin). */
   void DirtyCallChrome();
   /**
@@ -215,71 +209,46 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
-  static void ToggleSidebarCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SelectNavTabCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CompactChatBackCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenAccountSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseAccountSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PopTransientCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseLayerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DismissBannerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DialogOkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DialogCancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DialogToggleCheckboxCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateSubmitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateCancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateSetPinCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateUseDefaultCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateIdentityNewCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateIdentityLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PinGateIdentityRestoreCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallAcceptCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallAcceptVoiceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallAcceptChargeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallDeclineCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallLeaveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallRetryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallMuteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallCameraCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallSpeakerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallInviteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallMinimizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallExpandCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallImmersiveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallRestoreCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CallDetailsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TitlebarMinimizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TitlebarToggleMaximizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TitlebarCloseCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleStatusbarPopoverCallback(ui::DataModelHandle model, ui::Event& ev,
-                                             const ui::VariantList& args);
-  static void DismissStatusbarPopoverCallback(ui::DataModelHandle model, ui::Event& ev,
-                                              const ui::VariantList& args);
-  static void RetestStatusbarReachabilityCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                  const ui::VariantList& args);
-  static void OpenNetworkSettingsCallback(ui::DataModelHandle model, ui::Event& ev,
-                                          const ui::VariantList& args);
 
   bool RegisterWindowModel(ui::Context* context);
 
 private:
+  // Data-model events with more to them than one call.
+  void OnNavTabClicked(const std::string& tab_name);
+  void DismissBanner();
+  void DialogOk();
+  void DialogCancel();
+  void DialogToggleCheckbox();
+  void PinGateSubmit();
+  void PinGateCancel();
+  void PinGateSetPin();
+  void PinGateUseDefault();
+  void PinGateIdentityNew();
+  void PinGateIdentityLink();
+  void PinGateIdentityRestore();
+  void CallAccept();
+  void CallAcceptVoice();
+  void CallAcceptCharge();
+  void CallDecline();
+  void CallLeave();
+  void CallRetry();
+  void CallMute();
+  void CallCamera();
+  void CallSpeaker();
+  void CallInvite();
+  void CallMinimize();
+  void CallExpand();
+  void CallImmersive();
+  void CallRestore();
+  void CallDetails();
+  void TitlebarMinimize();
+  void TitlebarToggleMaximize();
+  void TitlebarClose();
+
 
   ui::Element* ShellRoot() const;
-  std::string SerializeShellRoot() const;
-  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false,
-                                int flex_width_dp = 0) const;
-  std::string SerializeExpandedBase() const;
-  std::string SerializeCompactBase() const;
-  std::string SerializeAccountSheet() const;
-  std::string SerializeOverlays() const;
-  std::string SerializeBottomChrome() const;
-  std::string SerializeDialog() const;
-  std::string SerializePinGate() const;
-  std::string SerializeCallRing() const;
-  std::string SerializeCallInProgress() const;
-  std::string SerializeTransientLayer() const;
+  /** The shell's markup from its state now. */
+  ShellLayoutRml Rml() const;
   const char* NavContentKey() const;
   void MountPaneBodies();
   void RemountBottomChrome();
@@ -316,15 +285,6 @@ private:
   void BeginAnimatedDismiss(DismissTarget target);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
-  void RefreshStatusbarVisibility();
-  void RefreshStatusbarCluster();
-  void ClearStatusbarCluster();
-  bool ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap);
-  void ClearStatusbarPopover();
-  bool ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap);
-  void RefreshStatusbarPopover();
-  void PositionStatusbarPopover();
-  void DirtyStatusbarPopover();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;
@@ -391,12 +351,11 @@ private:
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
-  bool statusbar_popover_needs_position_ = false;
+  ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};
   PinGateActionPorts pin_gate_actions_;
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
 
-  static ShellHost* installed_instance_;
 };
 
 } // namespace pbr

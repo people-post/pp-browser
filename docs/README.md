@@ -22,7 +22,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable 
 | Doc | Topic |
 |-----|--------|
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
-| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → domain → foundation → common` — feature/app cleanup: [projects/feature-layer-reorg/](../projects/feature-layer-reorg/) |
+| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → domain → lib → foundation → common` — feature/app cleanup: [projects/feature-layer-reorg/](../projects/feature-layer-reorg/) |
 | [architecture/TESTING.md](architecture/TESTING.md) | Testing doctrine: tiers, push-down seams, promote failures downward, skip taxonomy, doc homes |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
 | [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
@@ -52,6 +52,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 |-----|--------|--------------|
 | [contracts/WIRE_SCHEMAS.md](contracts/WIRE_SCHEMAS.md) | Relay envelope, ChatPayload, history wire | `envelope_version`, `payload_version`, protocol ids |
 | [contracts/MESSAGE_ENCRYPTION.md](contracts/MESSAGE_ENCRYPTION.md) | E2E AEAD, AAD, signing | `aad_version`, crypto blob version |
+| [contracts/ACCOUNT_CARD.md](contracts/ACCOUNT_CARD.md) | Account cards: keys and devices that prove themselves; locator; card exchange over Amp | `card_version`, `pp-browser-contact-v1:`, `/pp/account-card/1.0.0` |
 | [contracts/AT_REST_ENCRYPTION.md](contracts/AT_REST_ENCRYPTION.md) | PIN vault, DEK, `identity.enc` | vault file version |
 | [contracts/DATA_LAYOUT.md](contracts/DATA_LAYOUT.md) | Paths, profile tree, JSON schema versions | on-disk layout |
 | [contracts/COMPATIBILITY.md](contracts/COMPATIBILITY.md) | Dirty folders; newer peer/API; wipe vs migrate | policy |

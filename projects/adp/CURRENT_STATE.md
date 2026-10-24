@@ -46,7 +46,7 @@
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
 - `pp_browser_amp_link_test` (9 link unit tests, green)
 - `pp_browser_amp_integration_test` (15 Tier B tests, green)
-- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/domain/mesh/tests/support/`
+- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/lib/mesh/tests/support/`
 
 ## Landed (L4 chat — D5)
 
@@ -130,7 +130,7 @@
 ## Landed (D9 step 5b — media-relay SoftMigrate single entry)
 
 - **`AmpMediaRelayCoordinator` DATA plane** — Subscribe, SendFrame, AttachAsLocalHop, StartClientFrameReader, Detach, host fan-out on `ChannelSession`
-- **`AmpMediaRelayClient`** (`domain/mesh/l4/media_relay`) — `IMediaRelayClient` over coordinator ([A020])
+- **`AmpMediaRelayClient`** (`lib/mesh/l4/media_relay`) — `IMediaRelayClient` over coordinator ([A020])
 - **`CallStack::WireMediaRelayDeps`** picks Amp when `MeshHost::AmpMediaRelayCoord()` is started; libp2p fallback unchanged
 - **`PeerSessionDialRegistry`** mirrors ADP endpoints to Amp `PeerLinkManager` when on Amp path
 

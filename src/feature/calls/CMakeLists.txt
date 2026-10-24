@@ -13,6 +13,8 @@ pp_browser_add_feature_library(pp_feature_calls
     CallsLoop.cpp
     CallTopologyController.cpp
     CallUiBackend.cpp
+    CallPresenter.cpp
+    CallSystemUiBridge.cpp
     LiveCallMedia.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp
@@ -22,15 +24,15 @@ pp_browser_add_feature_library(pp_feature_calls
     CallHopPlanning.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
-    pp_domain_media
-    pp_domain_messaging
-    pp_domain_broadcast
-    pp_domain_pricing
-    pp_domain_calls
+    pp_lib_media
+    pp_lib_messaging
+    pp_lib_broadcast
+    pp_lib_pricing
+    pp_lib_calls
     pp_amp_link
     pp_mesh
-    pp_feature_call_media
-    pp_domain_people
+    pp_domain_call_media
+    pp_lib_people
     pp_foundation_runtime_core
     pp_foundation_runtime)
 

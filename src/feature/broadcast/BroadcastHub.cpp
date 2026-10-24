@@ -3,7 +3,7 @@
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "domain/broadcast/BroadcastMedia.h"
+#include "lib/broadcast/BroadcastMedia.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/MeshAlias.h"

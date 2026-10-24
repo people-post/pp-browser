@@ -1,9 +1,9 @@
 #pragma once
 
-#include "domain/messaging/PeerSigningKeyStore.h"
+#include "lib/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/net/OrgBackendClients.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/ContactTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/MessagingUiPorts.h"
 
@@ -11,6 +11,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -28,7 +29,9 @@ struct MessagingContactsPorts {
   std::function<Roe<std::vector<Contact>>(const std::string& query)> search_contacts;
   std::function<Roe<std::optional<Contact>>(const std::string& contact_id)> get_contact;
   std::function<Roe<Contact>(const Contact& contact)> upsert_contact;
-  std::function<Roe<Contact>()> add_empty_contact;
+  /** Directory search (exact id or ranked name search, self dropped) for "add contact". */
+  std::function<Roe<std::vector<mesh::DirectoryHit>>(const std::string& query)> search_people;
+  std::function<Roe<Contact>(const mesh::DirectoryHit& hit)> add_contact_from_directory_hit;
   std::function<Roe<bool>(const std::string& contact_id)> remove_contact;
   std::function<Roe<Contact>(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms)>
       apply_remote_snapshot;
@@ -51,12 +54,16 @@ struct MessagingContactsPorts {
   std::function<void(const Contact& contact)> register_contact_direct_endpoints;
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;
   std::function<Roe<void>(const std::string& thread_id)> ensure_psk_generated;
-  std::function<void(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                     const std::string& signing_public_key_b64, const std::string& source)>
-      register_peer_signing_key;
-  std::function<void(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                     const std::string& kem_public_key_b64, const std::string& source)>
-      register_peer_kem_key;
+  /**
+   * Add the person a pasted invite names (a locator, ACCOUNT_CARD.md): the contact's id, and whether its keys
+   * are known yet. `done` once, on a worker or I/O thread.
+   */
+  std::function<void(const std::string& text, std::function<void(Roe<std::pair<std::string, bool>>)> done)>
+      add_from_locator;
+  /** Share a contact into a chat as a contact card. */
+  std::function<Roe<void>(const std::string& thread_id, const std::string& contact_id)> share_contact;
+  /** The keys a directory entry carries for its account (each kept only when it proves to be the account's). */
+  std::function<void(const mesh::DirectoryHit& hit)> register_peer_keys_from_directory;
 
   std::function<bool(const Contact& contact)> is_contact_reachable;
 };

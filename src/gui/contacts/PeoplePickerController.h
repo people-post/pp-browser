@@ -6,7 +6,7 @@
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
-#include "domain/ui/PeoplePickerLogic.h"
+#include "lib/ui/PeoplePickerLogic.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -44,9 +44,9 @@ public:
   void BindChatPorts(ChatSessionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
-  /** Shell navigation / layers without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  /** Shell navigation / layers. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
-  /** Toast feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  /** Toast feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app PeoplePickerShellBridge. */
   void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);

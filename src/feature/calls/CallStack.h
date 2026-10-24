@@ -2,21 +2,21 @@
 
 #include "mesh/types/AddressDisclosure.h"
 #include "foundation/data/Config.h"
-#include "domain/media/CallMediaEngine.h"
-#include "domain/calls/CallSessionStore.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
+#include "lib/media/CallMediaEngine.h"
+#include "lib/calls/CallSessionStore.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "domain/calls/CallPathPolicy.h"
+#include "lib/calls/CallPathPolicy.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPlane.h"
-#include "domain/calls/CallMediaSeat.h"
-#include "domain/calls/CallPathMobility.h"
-#include "domain/calls/CallMediaKeyStore.h"
+#include "lib/calls/CallMediaSeat.h"
+#include "lib/calls/CallPathMobility.h"
+#include "lib/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
 #include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
@@ -25,7 +25,7 @@
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "common/chat/SystemControl.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshHost.h"
 
 #include <unordered_map>
@@ -75,6 +75,8 @@ struct CallStackDeps {
   std::function<void(const std::string& identity)> prefetch_peer_reachability;
   std::function<void()> sync_mobile_ephemeral_listen;
   std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
+  /** A call's peer named its device: ask that device for the account's card (AccountCardService). */
+  std::function<void(const std::string& account, const std::string& peer_id)> note_peer_device;
 
   /**
    * Neutral mesh objects — owned by the product hub, outlive the stack (L015): connectivity (dial,

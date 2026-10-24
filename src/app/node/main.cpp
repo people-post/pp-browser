@@ -13,7 +13,7 @@
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "mesh/reachability/Reachability.h"
 #if defined(PP_BROWSER_HAS_LEDGER)
-#include "feature/node/NodeLedgerRole.h"
+#include "domain/node/NodeLedgerRole.h"
 #endif
 
 #include <atomic>

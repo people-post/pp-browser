@@ -121,6 +121,11 @@ TEST_F(AppRuntimeTeardownTest, ReopenKeepsStaleOneShotsDeadAndResumesRepeating) 
   EXPECT_FALSE(AppRuntime::IsTeardownQuiesced());
   std::this_thread::sleep_for(150ms);
   EXPECT_FALSE(one_shot.load()) << "one-shot armed before teardown must stay dead (epoch)";
+  // A loaded runner may be slow to tick again: wait for it rather than for a fixed time.
+  const auto tick_deadline = std::chrono::steady_clock::now() + 2s;
+  while (ticks.load() <= ticks_at_close && std::chrono::steady_clock::now() < tick_deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
   EXPECT_GT(ticks.load(), ticks_at_close) << "repeating timers (GUI) resume after reopen";
   AppRuntime::CancelCoordinatorTimer(repeating);
 

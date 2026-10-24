@@ -25,6 +25,15 @@ selection {
   background-color: #3b5998;
 }
 
+.shell-dialog-prompt {
+  background-color: #111827;
+  border-color: #4b5563;
+}
+
+.shell-dialog-prompt:focus {
+  border-color: #6366f1;
+}
+
 .prompt-composer-input scrollbarvertical sliderbar {
   background-color: #ffffff50;
 }
@@ -189,6 +198,27 @@ select selectbox option:hover {
 
 .muted {
   color: #9ca3af;
+}
+
+.message-row-user .chat-call-row {
+  background-color: #6366f1;
+  color: #ffffff;
+}
+
+.message-row-user .chat-call-row svg {
+  image-color: #ffffff;
+}
+
+.message-row-user .chat-call-row.muted {
+  background-color: #4b4fa6;
+}
+
+.message-row-peer .chat-call-row {
+  background-color: #374151;
+}
+
+.message-row-peer .chat-call-row svg {
+  image-color: #e5e7eb;
 }
 
 .bubble-user {

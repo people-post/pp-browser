@@ -47,6 +47,13 @@ MeshRole ResolveMeshRole(const MeshConfig& config);
 void NormalizeMeshConfig(MeshConfig& config);
 
 /**
+ * The addresses worth publishing or dialling from off the node's own network: private-range and
+ * local-scope IP addresses (a container's, a LAN's) are dropped when any other address is listed —
+ * a dial that falls back to one only times out (#379). A list of nothing else is kept as it is.
+ */
+std::vector<std::string> DialWorthyMultiaddrs(std::vector<std::string> multiaddrs);
+
+/**
  * Effective seed multiaddrs for dial/warm: directory ADP addrs first, then
  * config bootstrap_peers (or hardcoded via Normalize). Dedupes by PeerId.
  * Priority: HTTP directory (live/cache) > config file > hardcoded (N027).

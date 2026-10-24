@@ -134,8 +134,13 @@ Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp m
 ## Local account backup (iOS)
 
 The Keychain item described in [DATA_LAYOUT.md](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir)
-holds the link-device bundle **in the clear** (it contains the DEK and the account secret keys), protected only by the
-Keychain / device passcode / Secure Enclave — the same trust as the "I already have an account" transfer code, but
-persistent. Restore on a fresh install creates a new vault under the user's new PIN and imports the bundle exactly
-like a pasted transfer code (`LinkDeviceCoordinator::Import`), then upserts the contacts. An attacker needs an
-unlocked device; the item never leaves it.
+keeps only the nickname in the clear. The link-device bundle (DEK, account secret keys) and the contacts are sealed
+under the DEK, and the item carries a copy of `vault.bin`, so opening it needs the profile PIN — holding the unlocked
+phone is not enough. Restore on a fresh install first tries the default PIN in the background (accounts that never set
+one come back without a question — for them, holding the unlocked phone still suffices, by design); otherwise it asks for the PIN the account used (enter, not create). A wrong PIN
+fails before anything is written and keeps the page up; Back returns to the fresh-install choices. The right PIN
+unwraps the copied vault, opens the sealed contents, imports the bundle exactly like a pasted transfer code
+(`LinkDeviceCoordinator::Import`) under that **same** PIN, then upserts the contacts. A PIN change rewrites the item; `DataKeyVault::ChangePin` only re-wraps and never clears the live DEK, so a backup
+write running on a worker at the same time cannot observe a zeroed key.
+Known gap: like `vault.bin` itself, the copied vault can be attacked offline by guessing PINs, and the restore page
+does not limit attempts.

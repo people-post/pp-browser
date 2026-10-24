@@ -2,9 +2,7 @@
 
 **Tier:** product / UI
 
-**Status:** Implemented (phase 1).
-
-This document is the authoritative design plan for the auxiliary working set panel. Agents extending this feature should follow this doc.
+How the auxiliary working set panel works. Extend the feature within this design; planned follow-ups are in [projects/ai-centric-interface](../../projects/ai-centric-interface/CURRENT_STATE.md).
 
 ## Why
 
@@ -18,7 +16,6 @@ Assistant replies route working-set candidates through [`WorkingSetController`](
 |---------|------------|----------|
 | **Chat** | Primary | Understand, ask follow-ups, see decisions |
 | **Working set** | Auxiliary | Browse, select, fill forms, act on AI output |
-| **Drill-down** | Transient (phase 2) | Inspect one row (person, article) without losing the list |
 
 ```mermaid
 flowchart TB
@@ -44,20 +41,11 @@ Related docs: [WINDOW_SHELL.md](WINDOW_SHELL.md), [CHAT_TEMPLATES.md](CHAT_TEMPL
 
 ---
 
-## Phase 1 — Foundation
-
-### Implementation checklist
-
-- [x] Add `WorkingSetTypes` and extend `ParseResult` + `AgentEvent` with `response_goal`
-- [x] Implement `WorkingSetPolicy`: ResponseGoal-first routing + block heuristics + affinity
-- [x] Dual render in `StructuredTextParser`: artifact RML for panel, teasers for chat
-- [x] `WorkingSetController` (`src/gui/chat/`): apply, open, sticky update, clear; façade hooks from `ChatController`
-- [x] Update `preview.rml` + `base.rcss` for working set panel and chat chips
-- [x] Wire form/calendar panel bindings; update `PromptBuilder`, docs, tests
+## Design
 
 ### 1. Core types
 
-Add [`src/common/ui/WorkingSetTypes.h`](../../src/common/ui/WorkingSetTypes.h):
+[`src/common/ui/WorkingSetTypes.h`](../../src/common/ui/WorkingSetTypes.h):
 
 ```cpp
 enum class WorkingSetKind { LongList, Form, Calendar, Table, Code, KeyValue, Card, None };
@@ -93,7 +81,7 @@ struct WorkingSetState {
 };
 ```
 
-Extend [`ParseResult`](../../src/base/ai/StructuredTextParser.h):
+[`ParseResult`](../../src/lib/ai/StructuredTextParser.h):
 
 ```cpp
 std::vector<WorkingSetCandidate> working_set_candidates;
@@ -103,9 +91,9 @@ Replace `shell_.preview_rml` in [`ChatController::ShellState`](../../src/gui/cha
 
 ### 2. Two-layer routing: ResponseGoal first, block heuristics second
 
-Add [`src/base/ai/WorkingSetPolicy.cpp`](../../src/base/ai/WorkingSetPolicy.cpp):
+[`src/lib/ai/WorkingSetPolicy.cpp`](../../src/lib/ai/WorkingSetPolicy.cpp):
 
-**Goal-first defaults** (from [`ResponseGoal`](../../src/base/ai/TurnPlan.h)):
+**Goal-first defaults** (from [`ResponseGoal`](../../src/lib/ai/TurnPlan.h)):
 
 | ResponseGoal | Panel behavior | Chat behavior |
 |--------------|----------------|---------------|
@@ -142,7 +130,7 @@ Mock path: infer goal from mock JSON content (e.g. `long_list` → `PeopleDiscov
 
 ### 3. Dual render in StructuredTextParser
 
-Refactor [`RenderBlock`](../../src/base/ai/StructuredTextParser.cpp):
+[`RenderBlock`](../../src/lib/ai/StructuredTextParser.cpp):
 
 1. Render block normally to get artifact RML.
 2. If `WorkingSetPolicy` marks eligible: build `WorkingSetCandidate`, append **teaser** to chat output instead of full block (for goal-primary cases) or teaser + abbreviated inline (for `General` — start with teaser-only for feed/form/calendar).
@@ -196,11 +184,11 @@ Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`, and **p
 | Open missing artifact | Panel shows unavailable copy; user can search again |
 | User dismisses panel (Escape / toggle) | Close visually; `auxiliary_available` stays true so user can reopen via chip |
 
-Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/domain/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.
+Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/lib/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.
 
 ### 6. Panel UI
 
-Update [`assets/views/preview.rml`](../../assets/views/preview.rml) (keep file name; rename label in UI):
+[`assets/views/preview.rml`](../../assets/views/preview.rml) (the file keeps its name; the UI says "working set"):
 
 ```html
 <div class="working-set-panel stack" data-model="shell">
@@ -225,56 +213,23 @@ Chat header button ([`chat.rml`](../../assets/views/chat.rml)): show when `auxil
 
 Compact toolbar: keep existing Preview button wired to `toggle_auxiliary()`.
 
-### 7. Form/calendar interactivity (phase 1 scope)
+### 7. Form/calendar interactivity
 
 Panel shows expanded static RML for forms/calendars. Wire `working_set` data-model alias to `widgets_by_entry_[entry_id]` when panel opens so submit/calendar nav work in panel.
 
-Known gap: messages layout uses static `data-rml` ([`chat.rml`](../../assets/views/chat.rml)) while form templates bind `turn.*` — panel becomes the primary interactive surface for forms in phase 1.
+Known gap: messages layout uses static `data-rml` ([`chat.rml`](../../assets/views/chat.rml)) while form templates bind `turn.*` — the panel is the interactive surface for forms.
 
 ### 8. LLM prompt
 
-Update [`PromptBuilder::ChatBlocksProfile()`](../../src/base/ai/PromptBuilder.cpp):
+[`PromptBuilder::ChatBlocksProfile()`](../../src/lib/ai/PromptBuilder.cpp):
 
 - Feeds, people lists, forms, and large tables render as a **compact summary in chat**; full content opens in the **side panel**.
-- Keep emitting standard block JSON; no new required fields yet.
-- Reserve optional per-block `"surface": "chat" | "panel" | "both"` in [RML_PROFILE.md](RML_PROFILE.md) for phase 2.
+- Blocks are standard block JSON; the panel needs no extra fields.
 
 ### 9. Tests
 
-- [`tests/structured_text_parser_test.cpp`](../tests/structured_text_parser_test.cpp): `long_list` → candidate + teaser, no full list in chat RML for feed goals; paragraph-only → no candidates.
-- New [`tests/working_set_policy_test.cpp`](../tests/working_set_policy_test.cpp): goal routing table, affinity detection.
-
----
-
-## Phase 2 — Extensibility (follow-ups)
-
-| Feature | Approach |
-|---------|----------|
-| **Transient drill-down** | Row tap → [`ShellHost::PushTransient`](../../src/gui/shell/ShellHost.h) with detail RML; list stays in auxiliary |
-| **Pin working set** | User pins panel content; new replies update chat but not panel until unpinned |
-| **Multi-block navigator** | Tabs or list when one message has 2+ eligible blocks |
-| **Explicit `surface` field** | Block JSON or TurnPlan overrides heuristics |
-| **Multi-select in panel** | Selection state on working set model; batch actions back to chat/agent |
-| **Persist working set anchor** | Store `entry_id + block_index` in thread metadata for reload |
-| **Rename pane** | `preview` → `working_set` in ViewCatalog / RegisterPane |
-
----
-
-## Files to change (phase 1)
-
-| File | Change |
-|------|--------|
-| `src/common/ui/WorkingSetTypes.h` | Core types |
-| `src/base/ai/WorkingSetPolicy.h/.cpp` (new) | Goal + block routing |
-| `src/base/ai/StructuredTextParser.h/.cpp` | Candidates, dual render, teasers |
-| `src/feature/ai/AgentSession.h/.cpp` | Pass `response_goal` / `render_mode` in `AgentEvent` |
-| `src/gui/chat/WorkingSetController.h/.cpp` | Sticky lifecycle, apply/open/clear |
-| `src/gui/chat/ChatController.h/.cpp` | Owns WorkingSetController; RML callbacks + reply hooks |
-| `assets/views/preview.rml` | Dynamic working set chrome |
-| `assets/themes/base.rcss` | Panel + chip styles |
-| `src/base/ai/PromptBuilder.cpp` | Side panel guidance for LLM |
-| `docs/ui/WINDOW_SHELL.md`, `docs/ui/CHAT_TEMPLATES.md` | Cross-links and behavior notes |
-| `tests/structured_text_parser_test.cpp`, new policy test | Coverage |
+- [`structured_text_parser_test.cpp`](../../src/lib/ai/tests/structured_text_parser_test.cpp): `long_list` → candidate + teaser, no full list in chat RML for feed goals; paragraph-only → no candidates.
+- [`working_set_policy_test.cpp`](../../src/lib/ai/tests/working_set_policy_test.cpp): goal routing table, affinity detection.
 
 ---
 

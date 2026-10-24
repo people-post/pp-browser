@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/net/ClientCompat.h"
+#include "lib/net/ClientCompat.h"
 #include "common/Module.h"
 #include "feature/conversations/MessagingCompatPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
@@ -17,7 +17,7 @@ public:
   ClientCompatController();
 
   void BindCompatPorts(MessagingCompatPorts ports);
-  /** Dialog / banner feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  /** Dialog / banner feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Publish app Support discovery after each resolved document. Clear via BindSupportDiscovery({}). */
   void BindSupportDiscovery(SupportDiscoveryPorts ports);

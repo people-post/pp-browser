@@ -20,6 +20,13 @@ public:
   virtual Roe<std::string> GetPushToken() = 0;
   virtual std::string PlatformName() const = 0;
   virtual std::string DeviceId() const = 0;
+  /**
+   * A second token for calls only — PushKit (VoIP) on a CallKit iPhone build (P013), registered as
+   * `kCallPushPlatform` with device id DeviceId() + `kCallPushDeviceSuffix`. Empty: none.
+   */
+  virtual std::string CallPushToken() { return {}; }
+  static constexpr const char* kCallPushPlatform = "ios_voip";
+  static constexpr const char* kCallPushDeviceSuffix = ".voip";
 
   static IPushDeviceRegistrar& Instance();
   static void SetInstance(IPushDeviceRegistrar* registrar);

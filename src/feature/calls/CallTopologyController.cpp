@@ -1,27 +1,27 @@
 #include "feature/calls/CallTopologyController.h"
 
-#include "domain/calls/CallHopJoinLogic.h"
-#include "domain/calls/CallSessionLogic.h"
-#include "domain/calls/CallSessionQueries.h"
+#include "lib/calls/CallHopJoinLogic.h"
+#include "lib/calls/CallSessionLogic.h"
+#include "lib/calls/CallSessionQueries.h"
 #include "mesh/types/MediaChannel.h"
-#include "domain/calls/CallMediaPlannerSelectLogic.h"
-#include "domain/calls/CallHopPlannerLogic.h"
+#include "lib/calls/CallMediaPlannerSelectLogic.h"
+#include "lib/calls/CallHopPlannerLogic.h"
 
-#include "domain/media/CallMediaAdaptation.h"
-#include "domain/calls/CallHopPlan.h"
-#include "domain/calls/CallHopAttachLogic.h"
-#include "domain/pricing/InitiationPricing.h"
+#include "lib/media/CallMediaAdaptation.h"
+#include "lib/calls/CallHopPlan.h"
+#include "lib/calls/CallHopAttachLogic.h"
+#include "lib/pricing/InitiationPricing.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/MeshHopPolicy.h"
-#include "domain/people/PeerDisplayLabel.h"
+#include "lib/people/ContactTypes.h"
+#include "lib/people/MeshHopPolicy.h"
+#include "lib/people/PeerDisplayLabel.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "mesh/types/MeshHopDial.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
-#include "feature/call_media/CallMediaFrameCrypto.h"
+#include "domain/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>
@@ -217,6 +217,24 @@ bool CallTopologyController::IsSoftMigrateInFlight() const {
   return flight_.in_flight;
 }
 
+CallRecovery CallTopologyController::Recovery() const {
+  if (flight_.in_flight) {
+    return CallRecovery::Migrating;
+  }
+  if (!attach_wait_.call_id.empty()) {
+    return CallRecovery::WaitingForHop;
+  }
+  if (guest_.reattach_in_flight) {
+    return CallRecovery::Reattaching;
+  }
+  // From the first reattach attempt until one succeeds (attempts reset): between attempts and after
+  // they ran out too, nothing flows.
+  if (guest_.reattach_attempts > 0) {
+    return CallRecovery::HopLost;
+  }
+  return CallRecovery::None;
+}
+
 bool CallTopologyController::IsSfuAttachWaitActive() const {
   return !attach_wait_.call_id.empty();
 }
@@ -321,6 +339,12 @@ void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& ca
   } else {
     log().info << "planner=Hop keep phase=" << CallHopPlannerPhaseName(sfu_.hop_planner_phase)
                << " event=" << CallHopPlannerEventName(ev) << " call_id=" << call_id;
+  }
+  // The call's media status follows every transition the planner decides, here and only here
+  // (a status without a planner transition — a join decision, a guest's reattach — is reported
+  // where it is decided).
+  if (out.decision == CallHopPlannerDecision::Transition) {
+    ReportHopProgress(out.next, call_id);
   }
   if (ev == CallHopPlannerEvent::Stop) {
     CancelAttachWaitTimer();
@@ -774,6 +798,10 @@ void CallTopologyController::OnGuestSfuTransportLost() {
   hop_migrate_.OnGuestSfuTransportLost();
 }
 
+void CallTopologyController::OnLocalNetworkMoved() {
+  hop_migrate_.OnLocalNetworkMoved();
+}
+
 uint64_t CallTopologyController::ClaimMigrateFlight(const std::string& call_id) {
   const uint64_t gen = flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
   flight_.flight_gen = gen;
@@ -896,7 +924,6 @@ void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, si
     ClearSfuAttachWait();
     SyncSfuSubscriptions(call_id);
     Apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-    ReportHopProgress(CallHopPlannerPhase::Live, call_id);
     return;
   case JoinWithoutHintAction::KeepFlight:
     // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes; bumping
@@ -1013,7 +1040,6 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   }
   host_.note_media_attempted(call_id);
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-  ReportHopProgress(CallHopPlannerPhase::Migrating, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::RemoteAcceptObserved, {}, gen,
                              [this, call_id, joiner_identity, gen](Roe<void> mig) {
@@ -1142,7 +1168,6 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   host_.SetMediaActivity(Tr("call.status.setting_up_group"));
   host_.NotifyRingChanged();
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-  ReportHopProgress(CallHopPlannerPhase::Migrating, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, gen,
                              [this, call_id, gen](Roe<void> mig) {
@@ -1183,9 +1208,6 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     return {};
   }
   Apply(CallHopPlannerEvent::SfuAttachInbound, call_id);
-  if (sfu_.hop_planner_phase == CallHopPlannerPhase::Attaching) {
-    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
-  }
   if (!LeaveHopForOwnerMove(call_id, attach, sender) && SettleInboundSfuAttachWithoutDial(call_id, attach)) {
     return {};
   }

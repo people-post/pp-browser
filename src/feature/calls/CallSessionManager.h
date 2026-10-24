@@ -2,27 +2,27 @@
 
 #include "mesh/types/AddressDisclosure.h"
 #include "foundation/crypto/IPskSessionStore.h"
-#include "domain/media/CallMediaEngine.h"
-#include "domain/calls/CallControlCodec.h"
-#include "domain/broadcast/BroadcastJoinTicket.h"
-#include "domain/calls/CallLifecycleTypes.h"
-#include "domain/calls/CallSessionStore.h"
+#include "lib/media/CallMediaEngine.h"
+#include "lib/calls/CallControlCodec.h"
+#include "lib/broadcast/BroadcastJoinTicket.h"
+#include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
-#include "domain/pricing/InitiationBillingStore.h"
+#include "lib/pricing/InitiationBillingStore.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
-#include "domain/calls/CallMediaKeyStore.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "mesh/reach/PeerMediaRelayCaps.h"
-#include "domain/people/PeerAccountBook.h"
+#include "lib/people/PeerAccountBook.h"
 #include "feature/calls/CallInitiationBilling.h"
-#include "domain/calls/CallMediaKeyExchange.h"
+#include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaHost.h"
@@ -98,6 +98,13 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
+  /**
+   * A call learned that `account` speaks from device `peer_id` (its signed invite / accept named it): the
+   * account's card, asked of that device, confirms it (any thread).
+   */
+  void SetOnPeerDevice(std::function<void(const std::string& account, const std::string& peer_id)> callback) {
+    on_peer_device_ = std::move(callback);
+  }
   /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshConnectivity. */
   using EnsureCircuitReadyFn = std::function<void()>;
   void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
@@ -250,8 +257,8 @@ public:
   void KickAnswererDirectMediaIfArmed(const std::string& call_id);
 
   bool IsAwaitingSfuRecovery() const;
-  bool IsSoftMigrateInFlight() const;
-  bool IsSfuAttachWaitActive() const;
+  /** Why the hop path is being recovered (the screen's status line). */
+  CallRecovery Recovery() const;
   bool IsP2pConnectFailed() const;
   bool P2pConnectMissingMic() const;
   bool P2pConnectSeedUnreachable() const;
@@ -430,10 +437,9 @@ private:
   mesh::PeerMediaRelayCaps media_relay_caps_;
   /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
   PeerAccountBook peer_accounts_;
+  std::function<void(const std::string& account, const std::string& peer_id)> on_peer_device_;
   std::optional<std::string> last_media_error_;
   // --- UI intents (V037) ---
-  /** Accept clicked and not answered yet (covers the click before the call is marked accepting). */
-  std::string accept_in_flight_;
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
   OwnerOutbox<SessionEvent> outbox_;

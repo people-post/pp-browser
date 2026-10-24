@@ -1,13 +1,13 @@
 #include "feature/conversations/InboxController.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
-#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 

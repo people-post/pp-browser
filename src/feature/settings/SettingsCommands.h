@@ -1,10 +1,10 @@
 #pragma once
 
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/people/ProfileIdentityView.h"
+#include "lib/people/ProfileIdentityView.h"
 #include "foundation/data/SessionStore.h"
-#include "domain/net/BlobQuota.h"
-#include "domain/net/ClientCompat.h"
+#include "lib/net/BlobQuota.h"
+#include "lib/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
 
@@ -52,6 +52,8 @@ struct SettingsCommands {
   std::function<void()> try_upnp_port_mapping;
   /** Wipe profile data and reinit hub/secrets — app owns that lifecycle. */
   std::function<Roe<void>()> reset_active_profile;
+  /** Wipe the profile's chat data only (account, keys, contacts, settings stay) — app owns that lifecycle. */
+  std::function<Roe<void>()> reset_chat_data;
   /** Display label for a language pref (`system` or BCP-47 tag). App → LocalizationService. */
   std::function<std::string(const std::string& language_pref)> language_display_label;
   std::function<std::vector<LocaleInfo>()> available_locales;

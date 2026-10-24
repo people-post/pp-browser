@@ -1,0 +1,181 @@
+#include "lib/messaging/PeerSigningKeyStore.h"
+#include "domain/delivery/AmpChatHistoryTransport.h"
+
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "lib/messaging/E2eRelayPayloadCodec.h"
+#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
+#include "mesh/testing/mesh_test_harness.h"
+#include "lib/people/IdentityStore.h"
+
+#include "common/Utilities.h"
+#include "common/MeshAlias.h"
+
+#include <filesystem>
+#include <gtest/gtest.h>
+#include <memory>
+#include <sodium.h>
+
+#include <chrono>
+#include <string>
+
+namespace pbr {
+namespace {
+
+ByteVector TestDek() {
+  ByteVector dek(kDataEncryptionKeySize);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xb0 + i);
+  }
+  return dek;
+}
+
+/** Windows CI: close SQLite before remove_all (TEST_STRATEGY.md). */
+class HistoryHarness {
+public:
+  explicit HistoryHarness(const std::string& suffix)
+      : data_dir(std::filesystem::temp_directory_path() /
+                 ("pp_browser_amp_history_" + suffix + "_" + util::GenerateUuid())) {
+    std::filesystem::remove_all(data_dir);
+    store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    identity = std::make_unique<IdentityStore>(data_dir.string(), "test");
+    psk_store = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), "test");
+    if (!identity->SetDek(TestDek()) || !psk_store->SetDek(TestDek()) || !store->SetDek(TestDek())) {
+      throw std::runtime_error("dek setup failed");
+    }
+    if (!identity->LoadOrCreate()) {
+      throw std::runtime_error("identity load failed");
+    }
+    {
+      LocalIdentity updated = *identity->Get();
+      updated.relay_user_id = "relay:responder";
+      updated.registered = true;
+      if (!identity->Update(updated)) {
+        throw std::runtime_error("identity update failed");
+      }
+    }
+
+    DirectChatTarget target;
+    target.peer_identity_kind = "account";
+    target.peer_identity_value = identity->Get()->account_id;  // the requester signs as this account
+    target.channel = ThreadChannel::E2e;
+    auto created = store->FindOrCreateDirectThread(target, "contact-requester", "Requester");
+    if (!created) {
+      throw std::runtime_error("thread create failed");
+    }
+    thread = *created;
+
+    PskSessionRecord psk;
+    psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+    psk.session_epoch = 1;
+    const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    if (!master) {
+      throw std::runtime_error("psk bytes");
+    }
+    psk.master_psk_b64 = Base64Encode(*master);
+    psk.psk_verified_at = 1;
+    if (!psk_store->Save(psk)) {
+      throw std::runtime_error("psk save");
+    }
+  }
+
+  ~HistoryHarness() {
+    psk_store.reset();
+    identity.reset();
+    store.reset();
+    std::filesystem::remove_all(data_dir);
+  }
+
+  void SeedOutbound(uint64_t seq, const std::string& text) {
+    ThreadMessage message;
+    message.id = "out-" + std::to_string(seq);
+    message.thread_id = thread.id;
+    message.sender_contact_id = kLocalSelfContactId;
+    message.text = text;
+    message.timestamp = static_cast<int64_t>(seq);
+    message.delivery = MessageDelivery::Relayed;
+    message.relay_visible = true;
+    message.transport = MessageTransport::Local;
+    message.sender_seq = seq;
+    message.session_epoch = 1;
+    if (!store->AppendMessage(message)) {
+      throw std::runtime_error("append failed");
+    }
+  }
+
+  std::filesystem::path data_dir;
+  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<IdentityStore> identity;
+  std::unique_ptr<SqlitePskSessionStore> psk_store;
+  Thread thread;
+};
+
+class AmpChatHistoryTransportTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    ASSERT_GE(sodium_init(), 0);
+    data_ = std::make_unique<HistoryHarness>("svc");
+
+    auto created = mesh::test::AmpMeshHarness::Create();
+    ASSERT_TRUE(static_cast<bool>(created));
+    mesh_ = std::move(*created);
+
+    responder_history_ = std::make_unique<AmpChatHistoryTransport>(
+        mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, *data_->store, *data_->identity, *data_->psk_store,
+        keys_resolver_, AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoB(), mesh_->MakePostAfterB());
+    client_history_ = std::make_unique<AmpChatHistoryTransport>(
+        mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, *data_->store, *data_->identity, *data_->psk_store,
+        keys_resolver_, AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoA(), mesh_->MakePostAfterA());
+    client_history_->SetLocalPeerIdForTest(mesh_->peer_id_a);
+    PeerSigningKeyRecord key;
+    key.signing_public_key_b64 = data_->identity->Get()->account_signing_public_key_b64;
+    key.source = "test";
+    keys_.Put("account", data_->identity->Get()->account_id, key);
+
+    ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
+
+    responder_history_->Start();
+    client_history_->Start();
+  }
+
+  void TearDown() override {
+    client_history_->Stop();
+    responder_history_->Stop();
+    client_history_.reset();
+    responder_history_.reset();
+    mesh_.reset();
+    data_.reset();
+  }
+
+  PeerSigningKeyStore keys_;
+  PeerSigningKeyResolver keys_resolver_{keys_};
+  std::unique_ptr<HistoryHarness> data_;
+  std::unique_ptr<mesh::test::AmpMeshHarness> mesh_;
+  std::unique_ptr<AmpChatHistoryTransport> responder_history_;
+  std::unique_ptr<AmpChatHistoryTransport> client_history_;
+};
+
+TEST_F(AmpChatHistoryTransportTest, FetchHistoryRoundTrip) {
+  data_->SeedOutbound(1, "alpha");
+  data_->SeedOutbound(2, "beta");
+
+  ChatHistoryRequest request;
+  request.requester_identity_kind = "relay_user";
+  request.requester_identity_value = "relay:requester";
+  request.peer_identity_kind = "relay_user";
+  request.peer_identity_value = "relay:responder";
+  request.channel = ThreadChannel::E2e;
+  request.session_epoch = 1;
+  request.limit = 10;
+  request.order = "asc";
+
+  auto response = client_history_->FetchChatHistory(request);
+  ASSERT_TRUE(response) << response.error().message;
+  ASSERT_EQ(response->messages.size(), 2u);
+  EXPECT_EQ(response->messages[0].sender_seq, 1u);
+  EXPECT_EQ(response->messages[1].sender_seq, 2u);
+}
+
+} // namespace
+} // namespace pbr

@@ -1,21 +1,22 @@
 #include "feature/conversations/ConversationsFacade.h"
 
 #include "foundation/data/PricingTypes.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/pricing/InitiationPricing.h"
-#include "feature/registration/RegistrationClient.h"
-#include "domain/people/LinkDeviceCoordinator.h"
-#include "domain/people/LocalAccountBackup.h"
-#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/pricing/InitiationPricing.h"
+#include "domain/registration/RegistrationClient.h"
+#include "feature/conversations/PeopleSearch.h"
+#include "lib/people/LinkDeviceCoordinator.h"
+#include "lib/people/LocalAccountBackup.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/ContactCardExchange.h"
+#include "lib/messaging/ContactLocator.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
-#include <unordered_set>
 
 namespace pbr {
 
@@ -43,8 +44,8 @@ Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
 }
 
-Roe<void> ConversationsFacade::SyncPushDevices(const bool show_notifications) {
-  return PushDeviceCoordinator::SyncWithPreference(hub_, show_notifications);
+Roe<void> ConversationsFacade::SyncPushDevices() {
+  return PushDeviceCoordinator::Register(hub_);
 }
 
 Roe<std::string> ConversationsFacade::ExportLinkDevice() {
@@ -81,6 +82,8 @@ Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
   return LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
                                      *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin, util::NowUnixMs());
 }
+
+void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
 
 Roe<void> ConversationsFacade::DeleteLocalBackup() {
   return LocalAccountBackup::Delete(OsSecureBlobStore());
@@ -242,6 +245,43 @@ Roe<ThreadMessage> ConversationsFacade::SendUserMessage(const std::string& threa
   return hub_.MeshMessaging().SendUserMessage(thread_id, text, opts);
 }
 
+Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
+  return hub_.ShareContact(thread_id, contact_id);
+}
+
+Roe<std::string> ConversationsFacade::OwnContactLocator() {
+  return hub_.OwnContactLocator();
+}
+
+void ConversationsFacade::AddContactFromLocator(const std::string& text,
+                                                std::function<void(Roe<ContactCardExchange::LocatorAdded>)> done) {
+  if (!hub_.IsInitialized()) {
+    done(Error("Messaging not ready"));
+    return;
+  }
+  auto locator = FindContactLocator(text);
+  if (!locator) {
+    done(locator.error());
+    return;
+  }
+  hub_.ContactCards().AddFromLocator(*locator, std::move(done));
+}
+
+Roe<Contact> ConversationsFacade::AddContactFromCard(const std::string& thread_id, const std::string& message_id) {
+  if (!hub_.IsInitialized()) {
+    return Error("Messaging not ready");
+  }
+  auto message = GetMessage(thread_id, message_id);
+  if (!message || !*message || (*message)->content_type != ChatContentType::ContactCard) {
+    return Error("Not a contact card");
+  }
+  auto fields = ChatPayloadCodec::DecodeContactCardJson((*message)->payload_json);
+  if (!fields) {
+    return fields.error();
+  }
+  return hub_.ContactCards().Add(*fields, util::NowUnixMs());
+}
+
 Roe<ThreadMessage> ConversationsFacade::SendReaction(const std::string& thread_id, const std::string& target_message_id,
                                                  const std::string& emoji) {
   return hub_.MeshMessaging().SendReaction(thread_id, target_message_id, emoji);
@@ -344,14 +384,8 @@ void ConversationsFacade::RegisterContactDirectEndpoints(const Contact& contact)
   hub_.MeshMessaging().RegisterContactDirectEndpoints(contact);
 }
 
-void ConversationsFacade::RegisterPeerSigningKey(const std::string& kind, const std::string& value,
-                                             const std::string& key_b64, const std::string& source) {
-  hub_.MeshMessaging().RegisterPeerSigningKey(kind, value, key_b64, source);
-}
-
-void ConversationsFacade::RegisterPeerKemKey(const std::string& kind, const std::string& value,
-                                         const std::string& key_b64, const std::string& source) {
-  hub_.MeshMessaging().RegisterPeerKemKey(kind, value, key_b64, source);
+void ConversationsFacade::RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit) {
+  hub_.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
 }
 
 Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const mesh::DirectoryHit& hit) {
@@ -461,12 +495,15 @@ void ConversationsFacade::SetOnActionMessage(std::function<void(const std::strin
 
 Roe<void> ConversationsFacade::RouteMessage(const std::string& thread_id, const std::string& text,
                                         std::optional<std::string> user_payload) {
+  if (!hub_.HasRouter()) {
+    return Error("Messaging not ready");
+  }
   return hub_.Router().Route(thread_id, text, std::move(user_payload));
 }
 
 bool ConversationsFacade::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
                                        const std::optional<std::string>& user_payload) {
-  return hub_.Router().ExpectsAgentWork(thread_id, text, user_payload);
+  return hub_.HasRouter() && hub_.Router().ExpectsAgentWork(thread_id, text, user_payload);
 }
 
 void ConversationsFacade::SetOnLocalAction(
@@ -693,26 +730,7 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 // --- Messaging tools helpers ------------------------------------------------
 
 Roe<std::vector<mesh::DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
-  auto hits = hub_.Directory().SearchPeople(query);
-  if (!hits) {
-    return hits.error();
-  }
-  std::unordered_set<std::string> self_ids;
-  if (auto identity = hub_.Identity().Get()) {
-    self_ids = SelfIdentityValuesFromLocal(*identity);
-  }
-  if (self_ids.empty()) {
-    return hits;
-  }
-  std::vector<mesh::DirectoryHit> filtered;
-  filtered.reserve(hits->size());
-  for (mesh::DirectoryHit& hit : *hits) {
-    if (DirectoryHitMatchesIdentities(hit, self_ids)) {
-      continue;
-    }
-    filtered.push_back(std::move(hit));
-  }
-  return filtered;
+  return SearchDirectoryPeople(hub_, query);
 }
 
 Roe<std::vector<Contact>> ConversationsFacade::SearchLocalContacts(const std::string& query) {

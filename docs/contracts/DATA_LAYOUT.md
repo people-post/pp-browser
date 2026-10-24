@@ -44,8 +44,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   contacts.json             # address book (schema_version 1: local + remote + overrides{}); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4);
+    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4;
+                            # restart_pending: a restored public session starts its next epoch on the next send — additive);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
+                            # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
@@ -84,11 +86,16 @@ Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
 One generic-password item, service `dev.pp-browser.secure-blob`, account `account-backup`,
 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (never synced, never in device backups, gone with the device).
-Value: `pp-browser-account-backup` JSON v1 = `{ schema, version, updated_at_ms, link_bundle, contacts[] }` where
+Value: `pp-browser-account-backup` JSON v2 =
+`{ schema, version: 2, updated_at_ms, nickname, profile_id, vault_b64, sealed_b64 }`. Only `nickname` is readable
+without the PIN. `vault_b64` is a copy of `vault.bin` taken at write time (DEK wrapped under the profile PIN, AAD
+bound to `profile_id`); `sealed_b64` is `FileCipher` AEAD under that DEK, AAD
+`FileCipher::BuildAad("account-backup", profile_id, 2)`, over the JSON `{ link_bundle, contacts[] }` where
 `link_bundle` is a `pp-browser-link-device-v1` bundle with a 100-year expiry (account keys, DEK, relay id, nickname,
-public PSKs — same plaintext as a pasted transfer code) and `contacts[]` are `ContactToJson` rows. Written after
-registration, nickname changes and contact changes; deleted by profile reset; survives an uninstall so a fresh install
-can offer "Restore my account: <nickname>". Other platforms have no such store (desktop uninstalls keep the data dir;
+public PSKs) and `contacts[]` are `ContactToJson` rows. Version 1 (plaintext bundle) is not read. Written after
+registration, nickname changes, contact changes and PIN changes (needs the vault unlocked); deleted by profile reset;
+survives an uninstall so a fresh install can offer "Restore my account: <nickname>". Restore needs the PIN the account
+used (see [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md#local-account-backup-ios)). Other platforms have no such store (desktop uninstalls keep the data dir;
 Android pending). See DESIGN-account-recovery §9–10 (local notes).
 
 ### PIN-related files (disk only)

@@ -96,6 +96,10 @@ endif()
 add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
                  "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
 
+# QR Code generator (invite QR codes)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/qrcodegen"
+                 "${CMAKE_BINARY_DIR}/third_party/qrcodegen" EXCLUDE_FROM_ALL)
+
 # Opus (p2p-av-calls a2 voice)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)

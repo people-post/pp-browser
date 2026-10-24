@@ -4,7 +4,7 @@
 #include "common/Module.h"
 #include "mesh/reach/CircuitR1Hint.h"
 #include "mesh/reach/SignalingPunchExchange.h"
-#include "domain/calls/CallTypes.h"
+#include "lib/calls/CallTypes.h"
 #include "feature/calls/CallControlClient.h"
 
 #include <functional>

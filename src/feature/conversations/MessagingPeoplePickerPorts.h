@@ -1,9 +1,9 @@
 #pragma once
 
-#include "domain/calls/CallTypes.h"
-#include "domain/messaging/GroupTypes.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/people/ContactTypes.h"
 #include "common/Error.h"
 
 #include <functional>

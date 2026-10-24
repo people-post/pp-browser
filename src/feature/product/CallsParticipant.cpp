@@ -1,7 +1,7 @@
 #include "feature/product/CallsParticipant.h"
 
-#include "domain/calls/CallSessionLogic.h"
-#include "domain/messaging/PeerThreadLogic.h"
+#include "lib/calls/CallSessionLogic.h"
+#include "lib/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -24,12 +24,12 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
   deps.psk = hub.PskSessions();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
-                                        const std::optional<std::string>& key_init_b64) -> Roe<void> {
+                                        const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
         return Error("Messaging not ready");
       }
-      return messaging->SendControl(peer_identity, control, key_init_b64);
+      return messaging->SendControl(peer_identity, control, key_init_b64, urgent);
     };
     deps.delivery.send_to_thread = [&hub](const std::string& thread_id, const std::string& text,
                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {
@@ -116,6 +116,11 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
   deps.list_dht_nodes = reach.list_dht_nodes;
   deps.seed_dial_ok = reach.seed_dial_ok;
   deps.note_lan_mdns_peer_id = reach.note_lan_peer_id;
+  deps.note_peer_device = [&hub](const std::string& account, const std::string& peer_id) {
+    if (auto* messaging = hub.MeshMessagingOrNull()) {
+      messaging->AccountCards().NoteDevice(account, peer_id);
+    }
+  };
   deps.prefetch_peer_reachability = [&hub](const std::string& identity) { hub.PrefetchPeerReachability(identity); };
   deps.sync_mobile_ephemeral_listen = [&hub]() { hub.SyncMobileEphemeralListen(); };
   deps.connectivity = &hub.Connectivity();

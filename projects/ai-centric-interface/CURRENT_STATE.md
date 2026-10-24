@@ -25,15 +25,15 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 
 | Piece | Location | Notes |
 |-------|----------|-------|
-| `TurnPlan` | `src/domain/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
+| `TurnPlan` | `src/lib/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
 | `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
-| `IToolProvider` / `ToolRegistry` | `src/domain/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
-| `PayloadTurnPlanBuilder` | `src/domain/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
+| `IToolProvider` / `ToolRegistry` | `src/lib/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
+| `PayloadTurnPlanBuilder` | `src/lib/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
 | `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; permission gate; `people_list` shortcut |
 | `ToolPermissionPolicy` | `src/feature/ai/ToolPermissionPolicy.*` | allow / ask / deny from prefs + session grants |
 | `ParkedApproval` | `src/feature/ai/ParkedApproval.h` | Single in-flight in-chat confirm |
 | `AgentSession` | `src/feature/ai/AgentSession.*` | Plan → execute → (park\|synthesize); resume permission |
-| `PromptBuilder` | `src/domain/ai/PromptBuilder.cpp` | Planner + synthesis + chat-agent prompts |
+| `PromptBuilder` | `src/lib/ai/PromptBuilder.cpp` | Planner + synthesis + chat-agent prompts |
 
 ## ResponseGoal (render — exists)
 
@@ -111,9 +111,9 @@ Root cause: **Discover-shaped planning + Operate API that only accepts directory
 
 | Asset | Location |
 |-------|----------|
-| Turn plan parse fixtures | `src/domain/ai/tests/fixtures/turn_plans/` (`people_discovery`, `headlines`, `chitchat_no_tools`) |
-| Payload plan tests | `src/domain/ai/tests/payload_turn_plan_test.cpp` |
-| Prompt builder tests | `src/domain/ai/tests/prompt_builder_test.cpp` |
+| Turn plan parse fixtures | `src/lib/ai/tests/fixtures/turn_plans/` (`people_discovery`, `headlines`, `chitchat_no_tools`) |
+| Payload plan tests | `src/lib/ai/tests/payload_turn_plan_test.cpp` |
+| Prompt builder tests | `src/lib/ai/tests/prompt_builder_test.cpp` |
 
 No per-act corpus yet.
 
@@ -121,3 +121,33 @@ No per-act corpus yet.
 
 1. Finish d0: record I001+ in [DECISIONS.md](DECISIONS.md); confirm v1 matrix in DESIGN.
 2. Implement v1 per [PHASES.md](PHASES.md) — start with planner catalog + act field + PeerId Operate path.
+
+## Working set panel — follow-ups (from docs/ui/WORKING_SET_PANEL.md)
+
+| Feature | Approach |
+|---------|----------|
+| **Transient drill-down** | Row tap → [`ShellHost::PushTransient`](../../src/gui/shell/ShellHost.h) with detail RML; list stays in auxiliary |
+| **Pin working set** | User pins panel content; new replies update chat but not panel until unpinned |
+| **Multi-block navigator** | Tabs or list when one message has 2+ eligible blocks |
+| **Explicit `surface` field** | Block JSON or TurnPlan overrides heuristics |
+| **Multi-select in panel** | Selection state on working set model; batch actions back to chat/agent |
+| **Persist working set anchor** | Store `entry_id + block_index` in thread metadata for reload |
+| **Rename pane** | `preview` → `working_set` in ViewCatalog / RegisterPane |
+
+---
+
+### Phase 1 changed (history)
+
+| File | Change |
+|------|--------|
+| `src/common/ui/WorkingSetTypes.h` | Core types |
+| `src/base/ai/WorkingSetPolicy.h/.cpp` (new) | Goal + block routing |
+| `src/base/ai/StructuredTextParser.h/.cpp` | Candidates, dual render, teasers |
+| `src/feature/ai/AgentSession.h/.cpp` | Pass `response_goal` / `render_mode` in `AgentEvent` |
+| `src/gui/chat/WorkingSetController.h/.cpp` | Sticky lifecycle, apply/open/clear |
+| `src/gui/chat/ChatController.h/.cpp` | Owns WorkingSetController; RML callbacks + reply hooks |
+| `assets/views/preview.rml` | Dynamic working set chrome |
+| `assets/themes/base.rcss` | Panel + chip styles |
+| `src/base/ai/PromptBuilder.cpp` | Side panel guidance for LLM |
+| `docs/ui/WINDOW_SHELL.md`, `docs/ui/CHAT_TEMPLATES.md` | Cross-links and behavior notes |
+| `tests/structured_text_parser_test.cpp`, new policy test | Coverage |

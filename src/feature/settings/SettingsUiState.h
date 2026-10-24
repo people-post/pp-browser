@@ -5,17 +5,6 @@
 
 namespace pbr {
 
-struct CasLibraryRowUiState {
-  std::string content_id_hex;
-  std::string title;
-  std::string detail;
-  std::string realm_label;
-  std::string pin_label;
-  bool can_share_publicly = false;
-  bool can_unpublish = false;
-  bool can_copy_tip = false;
-};
-
 struct McpServerUiState {
   std::string id;
   std::string url;
@@ -62,10 +51,14 @@ struct SettingsUiState {
   std::string direct_connections = "contacts";
   /** projects/privacy T4: "on" = only org seeds and Friendly contacts' nodes relay for us. */
   std::string trusted_relays_only = "off";
+  /** Desktop: stay reachable by contacts with no relay (mesh.reachable_without_relay). */
+  std::string reachable_without_relay = "off";
   bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;
+  /** This account's locator, shared with the invite (not shown). */
+  std::string profile_contact_locator;
   /** Account id for avatar tone seed; not shown in RML. */
   std::string profile_account_id;
   std::string profile_public_key;
@@ -85,6 +78,8 @@ struct SettingsUiState {
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */
   std::string show_notifications = "on";
+  /** P011 — stay connected in the background: "on" / "off" (Android only). */
+  std::string stay_connected = "off";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
   /** Display label for the theme row / picker value. */
@@ -106,9 +101,6 @@ struct SettingsUiState {
   std::string profile_size_label;
   std::string attachment_cache_size_label;
   /** all | private | public | cache */
-  std::string cas_library_filter = "all";
-  std::string cas_library_empty_label;
-  std::vector<CasLibraryRowUiState> cas_library_rows;
   /** R021 — smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
   std::string attachment_download_policy_label;

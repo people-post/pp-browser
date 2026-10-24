@@ -5,9 +5,9 @@
 
 How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with **functional systems** (messaging, agent, vault, session prefs). Features should be able to run without UI; UI binds only through explicit interfaces.
 
-**Layer ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI lives in top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with domain peer `domain/ui` (non-Rml presentation policy).
+**Layer ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI lives in top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with lib peer `lib/ui` (non-Rml presentation policy).
 
-**Migration complete (2026-08):** UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). RmlUi static callbacks use `InstallInstance` / `Instance()` shims on the installed pointer — not process-wide singletons. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
+UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). A presenter binds its data-model events to lambdas that capture it (see [Data-model events](#data-model-events)) — no singleton. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
 
 ---
 
@@ -30,7 +30,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 | **Agent** | `feature/ai/` | turn status, tool results, generation | LLM client, MCP executor, turn pipeline |
 | **Profile / vault** | `foundation/crypto/` | unlock status, PIN policy | Argon2, secrets store |
 | **Session / prefs** | `foundation/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
-| **Localization / theme** | `foundation/i18n/`, `domain/ui/` | labels, appearance | catalogs, asset resolution |
+| **Localization / theme** | `foundation/i18n/`, `lib/ui/` | labels, appearance | catalogs, asset resolution |
 | **Shell / navigation** | `gui/shell/` | tabs, panes, overlays, dialog stack | flow coordinator, input routing |
 
 **UI surfaces** (presenters + RmlUi binding — *not* functional systems):
@@ -38,7 +38,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 | Surface | Module | Role |
 |---------|--------|------|
 | `ShellHost` | `gui/` | Window chrome, pane layout, global feedback |
-| `ChatController` | `gui/chat/` | Chat screen presenter |
+| `ChatController` | `gui/chat/` | Chat screen presenter: owns the data model and routes its events; its parts (`AgentTurnController`: the agent's turns; `ChatMenus` / `ChatPeerSheet`: the menus) reach back through narrow host interfaces (`AgentTurnHost`, `ChatMenusHost`) |
 | `SettingsController` | `gui/` | Me tab / settings presenter |
 | `ContactsController` | `gui/` | Contacts tab presenter |
 | `PeoplePickerController` | `gui/` | People picker presenter |
@@ -116,7 +116,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 **Existing examples:**
 
 - `ConversationsHub::NetworkConfig`, `PolicyPrefs`, `NotificationPrefs`
-- `ShellHost::ChromePrefs`, `ChatController::AgentConfig`, `LocalizationService::Prefs`
+- `ShellHost::ChromePrefs`, `AgentTurnController::AgentConfig`, `LocalizationService::Prefs`
 - [RUNTIME_COMPOSITION.md — Settings / prefs hot-reload](RUNTIME_COMPOSITION.md#settings--prefs-hot-reload)
 
 **Quick blocking set:** Section flush in settings is synchronous on the UI thread but only touches `SessionStore`; heavy apply work stays inside service `Apply` implementations (must not block the UI thread for long — post to IO if needed).
@@ -131,7 +131,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
 - **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `PostWorkerAndReplyOnUI` ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
-- RmlUi static callbacks are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
+- Data-model event handlers are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
 
 **Existing examples:**
 
@@ -192,7 +192,7 @@ struct MessagingActions {
 | **UI chrome state** | UI system | nav tab, pane visibility, overlay stack, pin overlay layout | Presenters / shell only |
 | **View projection** | Presenter | RmlUi-bound fields derived from functional + chrome | Presenter writes binding; sources are read-only snapshots |
 
-**Anti-pattern:** Presenters or functional code reaching into global shell mutable state via `ShellHost::Instance()`, or chrome ports that return mutable references into `ShellHost::State()`.
+**Anti-pattern:** Presenters or functional code reaching into the shell's mutable state (there is no global `ShellHost`; presenters get ports), or chrome ports that return mutable references into `ShellHost::State()`.
 
 **Call / PIN chrome (apply-only):** `CallController` and `PinGateController` own local chrome snapshots (`ring_` / `in_call_`, `pin_state_`) and push them through `apply_snapshot` / `apply_pin_gate`. ShellHost copies into `State()` then remounts/dirties — ports do not hand out `CallRingState&` / `PinGateState&`.
 
@@ -213,7 +213,7 @@ struct MessagingActions {
 - Wires event callbacks (messaging ready → refresh presenters)
 - Runs the main loop: UI tick, `TickMesh`, drain `AppRuntime` UI mailbox
 
-Presenters are **app-owned instances** (`Application` holds `unique_ptr` and calls `InstallInstance` for RmlUi static callbacks). New code must not add presenter `::Instance()` call sites outside static RmlUi handlers and SDL function-pointer constraints.
+Presenters are **app-owned instances** (`Application` holds `unique_ptr` and passes references). New code must not add presenter `::Instance()` call sites.
 
 ---
 
@@ -247,7 +247,7 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Badge notify | `BadgeNotifyPorts` | Actions + State |
 | PIN gate actions | `PinGateActionPorts` | Actions |
 | People picker notify | `PeoplePickerNotifyPorts` | Actions |
-| App-owned presenters | `Application` + `InstallInstance` / `ClearInstance` | Composition root |
+| App-owned presenters | `Application` (`unique_ptr`, references passed on) | Composition root |
 | Shell navigation (settings / chat / contacts) | `ShellNavigationPorts`, `MakeShellNavigationPorts` | Actions + State snapshot |
 | Shell feedback | `ShellFeedbackPorts`, `BindSharedShellFeedback`, `UserFeedback::BindPorts` | Actions + Events |
 | Messaging read snapshot | `MessagingUiPorts`, `MessagingView` | State |
@@ -261,17 +261,23 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 
 ---
 
-## RmlUi static callbacks
+## Data-model events
 
-RmlUi event handlers must be static function pointers. Presenters therefore expose:
+`ui::DataModelConstructor::BindEventCallback` takes a `std::function`, so a presenter binds its events to
+lambdas that capture it. `lib/ui/DataEvent.h` types the arguments the template passes:
 
 ```cpp
-static void InstallInstance(Presenter& instance);  // Application calls at startup
-static void ClearInstance();                       // Application calls at shutdown
-static Presenter& Instance();                      // static callbacks only
+ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
+ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
+    [this](const std::string& message_id, const std::string& emoji) { ToggleReaction(message_id, emoji); }));
+ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
 ```
 
-`Application` owns `std::unique_ptr<Presenter>` and installs the pointer before model registration. **Do not** call `Presenter::Instance()` from feature code or from `Application` — use injected references (`chat_`, `settings_`, …) or notify ports.
+The handler runs only when the event carries its arguments with their types. The captured presenter must
+outlive the context: `Application` removes the context (and with it every model and handler) at shutdown,
+before it frees the presenters. `ChatController`, `SettingsController` and `ShellHost` bind this way; the other
+presenters still carry static adapters behind an `InstallInstance` / `Instance()` shim, which goes as they
+move over.
 
 ---
 
@@ -305,7 +311,7 @@ RmlUi model registration stays in the presenter (or a dedicated binding helper).
 
 ## Testing implications
 
-- **Functional tests:** Drive facades and ports without RmlUi or `ShellHost::Instance()`.
+- **Functional tests:** Drive facades and ports without RmlUi or a `ShellHost`.
 - **UI tests:** Mock facades; verify presenter projects snapshots and dispatches actions.
 - **Headless / deferred startup:** Already supported for vault gate and client compat — boundary makes this the norm.
 

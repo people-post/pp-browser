@@ -1,4 +1,4 @@
-#include "domain/ai/ToolPermissionPolicy.h"
+#include "lib/ai/ToolPermissionPolicy.h"
 #include "feature/ai/TurnExecutor.h"
 #include "common/ValueJson.h"
 

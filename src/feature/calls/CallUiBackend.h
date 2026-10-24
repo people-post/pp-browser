@@ -2,12 +2,12 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/calls/CallTypes.h"
+#include "lib/calls/CallTypes.h"
 #include "common/Error.h"
-#include "domain/calls/CallLifecycleTypes.h"
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
-#include "domain/calls/LiveCall.h"
+#include "lib/calls/LiveCall.h"
 
 #include <functional>
 #include <memory>
@@ -114,9 +114,9 @@ public:
   // --- Owner state (published snapshot) ----------------------------------------------------------
   /** The whole snapshot, for readers that want one consistent view. */
   std::shared_ptr<const CallUiState> State() const;
-  bool IsAwaitingSfuRecovery() const { return State()->awaiting_sfu_recovery; }
-  bool IsSoftMigrateInFlight() const { return State()->soft_migrate_in_flight; }
-  bool IsSfuAttachWaitActive() const { return State()->sfu_attach_wait_active; }
+  CallRecovery Recovery() const { return State()->recovery; }
+  /** A hop-path recovery is in progress (not None / HopLost). */
+  bool IsAwaitingSfuRecovery() const { return RecoveryInFlight(Recovery()); }
   bool IsP2pConnectFailed() const { return State()->p2p_connect_failed; }
   bool P2pConnectMissingMic() const { return State()->p2p_connect_missing_mic; }
   bool P2pConnectSeedUnreachable() const { return State()->p2p_connect_seed_unreachable; }
@@ -128,9 +128,12 @@ public:
     const auto state = State();
     return state->hop_health.attached ? state->hop_health.link : state->media_link;
   }
-  CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const { return State()->SeatStateFor(call_id); }
-  bool SeatMediaLive(const std::string& call_id) const { return State()->SeatLiveFor(call_id); }
   bool MediaChromeLive() const { return State()->MediaChromeLive(); }
+  /** When `call_id` (the shown call) first went live; 0: never, or not the shown call. */
+  int64_t LiveSinceMs(const std::string& call_id) const {
+    const auto state = State();
+    return !call_id.empty() && state->active_call_id == call_id ? state->live_since_ms : 0;
+  }
   CallMediaStatus MediaStatus() const { return State()->media_status; }
   std::string LastError() const { return State()->last_error; }
   bool ShouldSuppressRing(const std::string& call_id) const { return State()->ShouldSuppressRing(call_id); }

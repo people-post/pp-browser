@@ -1,23 +1,23 @@
 #include "feature/calls/CallSessionManager.h"
 
-#include "domain/calls/CallSessionQueries.h"
+#include "lib/calls/CallSessionQueries.h"
 #include "feature/calls/CallControlClient.h"
-#include "domain/calls/CallListenAddrsLogic.h"
-#include "domain/calls/CallAnswererKickLogic.h"
-#include "domain/calls/CallMediaPlannerSelectLogic.h"
+#include "lib/calls/CallListenAddrsLogic.h"
+#include "lib/calls/CallAnswererKickLogic.h"
+#include "lib/calls/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "domain/media/CallMediaAdaptation.h"
-#include "domain/calls/CallSessionLogic.h"
-#include "domain/broadcast/BroadcastJoinTicket.h"
-#include "domain/people/DirectChatTargetFromContact.h"
-#include "domain/messaging/PairwiseFanoutLogic.h"
-#include "domain/calls/PeerCapsLogic.h"
-#include "domain/messaging/SendRelayOptions.h"
-#include "domain/people/ContactIdentity.h"
-#include "domain/people/ContactJson.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/MeshHopPolicy.h"
+#include "lib/media/CallMediaAdaptation.h"
+#include "lib/calls/CallSessionLogic.h"
+#include "lib/broadcast/BroadcastJoinTicket.h"
+#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/PairwiseFanoutLogic.h"
+#include "lib/calls/PeerCapsLogic.h"
+#include "lib/messaging/SendRelayOptions.h"
+#include "lib/people/ContactIdentity.h"
+#include "lib/people/ContactJson.h"
+#include "lib/people/ContactTypes.h"
+#include "lib/people/MeshHopPolicy.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
@@ -313,7 +313,7 @@ void CallSessionManager::NotifyCallStateChanged() {
 }
 
 std::string CallSessionManager::AcceptingCallId() const {
-  return !accept_in_flight_.empty() ? accept_in_flight_ : live_calls_.AcceptingCallId();
+  return live_calls_.AcceptingCallId();
 }
 
 void CallSessionManager::Apply(const CallLifecycleEvent ev, const std::string& call_id) {
@@ -379,17 +379,13 @@ void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
     NotifyCallStateChanged();
     return;
   }
-  accept_in_flight_ = call_id;
-  NotifyCallStateChanged();
-  AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
+  // The ring holds the app's work running in the background (AppLifecycle::SetCallInProgress), so the
+  // relay-fallback sends of the accept run there too. The workflow marks the call Accepting.
   log().info << "AcceptInvite queued call_id=" << call_id;
   AcceptInviteAsync(call_id, [this, call_id](Roe<void> accepted) { OnAcceptResult(call_id, accepted); });
 }
 
 void CallSessionManager::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
-  if (accept_in_flight_ == call_id) {
-    accept_in_flight_.clear();
-  }
   if (!accepted) {
     // The workflow put the call back to ringing (or it ended meanwhile).
     log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
@@ -564,6 +560,7 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
     live_calls_.ReportDirectProgress(call_id, phase);
   };
   ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
+  ports.on_handed_to_hop = [this](const std::string& call_id) { live_calls_.NoteDirectHandedToHop(call_id); };
   ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
   ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
   ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
@@ -655,6 +652,7 @@ void CallSessionManager::OnLocalNetworkMoved() {
   if (direct_path_) {
     direct_path_->OnLocalNetworkChanged();
   }
+  topology_.OnLocalNetworkMoved();
 }
 
 void CallSessionManager::OnPathPolicyChanged(const std::string& call_id) {
@@ -958,6 +956,9 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
 }
 
 void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id) {
+  if (on_peer_device_ && relay_identity.rfind("account:", 0) == 0) {
+    on_peer_device_(relay_identity, peer_id);
+  }
   if (!peer_accounts_.Learn(relay_identity, peer_id)) {
     return;
   }
@@ -1167,12 +1168,8 @@ bool CallSessionManager::IsAwaitingSfuRecovery() const {
   return topology_.IsAwaitingSfuRecovery();
 }
 
-bool CallSessionManager::IsSoftMigrateInFlight() const {
-  return topology_.IsSoftMigrateInFlight();
-}
-
-bool CallSessionManager::IsSfuAttachWaitActive() const {
-  return topology_.IsSfuAttachWaitActive();
+CallRecovery CallSessionManager::Recovery() const {
+  return topology_.Recovery();
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {

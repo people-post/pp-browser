@@ -1,19 +1,19 @@
 #pragma once
 
-#include "domain/calls/CallPathPolicy.h"
-#include "domain/media/CallMediaEngine.h"
-#include "domain/calls/CallSessionStore.h"
-#include "domain/calls/CallMediaKeyStore.h"
+#include "lib/calls/CallPathPolicy.h"
+#include "lib/media/CallMediaEngine.h"
+#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
-#include "domain/calls/CallDirectPlannerLogic.h"
+#include "lib/calls/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
 
@@ -40,6 +40,8 @@ struct CallDirectArmingPorts {
   std::function<void(const std::string& call_id)> request_direct_arming;
   std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<void(const std::string& call_id)> on_connected;
+  /** The 1:1 stream ended because the call moves onto a hop not attached yet (nothing is live). */
+  std::function<void(const std::string& call_id)> on_handed_to_hop;
   std::function<void(const std::string& call_id)> on_connect_failed;
   /** A connection for this call came up after it failed (the peer's retry); lifecycle decides. */
   std::function<void(const std::string& call_id)> on_peer_reconnected;

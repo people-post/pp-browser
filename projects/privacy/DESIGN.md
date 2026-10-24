@@ -30,7 +30,7 @@ A user can tell, and bound, what others learn about them from using pp-browser. 
 One setting, **Direct connections**: `everyone` | `contacts` (default) | `friendly` | `nobody` ([P002](DECISIONS.md#p002--default-audience-contacts)).
 
 - **Allowed peer**: in the audience and not Blocked. `contacts` = any saved contact; `friendly` = contacts marked Friendly; `nobody` = no one. Blocked is never allowed, whatever the setting.
-- **Gate** (`common/privacy/AddressDisclosure.h`): the feature layer (hub) classifies contacts into PeerId sets and publishes a snapshot; mesh and calls consult `AllowsDirect(peer_id)` from any thread. `domain/mesh` never reads contacts.
+- **Gate** (`common/privacy/AddressDisclosure.h`): the feature layer (hub) classifies contacts into PeerId sets and publishes a snapshot; mesh and calls consult `AllowsDirect(peer_id)` from any thread. `lib/mesh` never reads contacts.
 - **For a peer that is not allowed** we do not: dial it directly or punch toward it (calls, chat, LAN), answer its punch as target, send it our listen addresses in call signalling, or (P2) in ch0. We reach it through a circuit relay; chat falls back to the Brief relay.
 - **Links that already exist are used** ([P003](DECISIONS.md#p003--existing-links-are-used)): the disclosure happened when the link came up.
 - **pp-node is exempt** ([P004](DECISIONS.md#p004--nodes-are-public-by-role)): a Node's job is to be reachable.

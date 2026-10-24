@@ -112,6 +112,9 @@ Object BuildE2eBody(const RelayEnvelope& envelope) {
   if (envelope.body.e2e.key_init_b64) {
     e2e_body.set("key_init_b64", *envelope.body.e2e.key_init_b64);
   }
+  if (envelope.body.e2e.sender_keys) {
+    e2e_body.set("sender_keys", KeyCardToJson(*envelope.body.e2e.sender_keys));
+  }
   return e2e_body;
 }
 
@@ -465,6 +468,16 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (auto key_init = e2e->getString("key_init_b64")) {
     envelope.body.e2e.key_init_b64 = *key_init;
   }
+  if (const Object* sender_keys = e2e->getObject("sender_keys")) {
+    if (!envelope.body.e2e.key_init_b64) {
+      return Error("body.e2e.sender_keys without key_init_b64");
+    }
+    auto keys = KeyCardFromJson(*sender_keys);
+    if (!keys || keys->account_id != envelope.sender_contact_id) {
+      return Error("Invalid body.e2e.sender_keys");
+    }
+    envelope.body.e2e.sender_keys = std::move(keys.value());
+  }
 
   if (auto kind = route->getString("kind")) {
     envelope.route.kind = *kind;
@@ -557,6 +570,9 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   json.set("blob_b64", record.blob_b64);
   json.set("timestamp", record.timestamp);
   json.set("signature", record.signature);
+  if (record.urgent) {
+    json.set("urgent", true);
+  }
   return json;
 }
 
@@ -581,6 +597,7 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.stream_id = envelope.stream_key;
   record.index_key = index_key;
   record.blob_b64 = ::pp::Base64Encode(bytes);
+  record.urgent = envelope.relay_wake_urgent;
   return record;
 }
 

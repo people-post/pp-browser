@@ -3,10 +3,10 @@
 pp-browser **shared language**: tiny helpers and **contracts** (ports / vocabulary DTOs). Namespace / CMake: `pp_pbr_common`.
 
 ```
-app → feature → domain → foundation → common → pp_common
+app → feature → domain → lib → foundation → common → pp_common
 ```
 
-**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON), and other `common/` headers. It must **never** `#include` `base/`, `foundation/`, `domain/`, `feature/`, or `app/`.
+**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON), and other `common/` headers. It must **never** `#include` `foundation/`, `lib/`, `feature/`, or `app/`.
 
 Repo-wide North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
@@ -50,7 +50,7 @@ Thin type headers (prefer over the umbrella): `ThreadRecordTypes`, `ChatHistoryT
 | It is a header-light helper with no product ownership | It talks to SQLite, curl, SDL, RmlUi, Amp, filesystem vaults |
 | It is a pure seam (`I*` + POD) for feature to wire | It implements that seam |
 
-Litmus: *“Could two domain peers compile against this without linking each other?”* Yes → common.
+Litmus: *“Could two lib peers compile against this without linking each other?”* Yes → common.
 
 **Testing:** prefer **unit** coverage for helpers and pure contract adapters. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md).
 

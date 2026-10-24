@@ -1,6 +1,9 @@
 #include "feature/conversations/MessagingContactsPorts.h"
 
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/ContactCardExchange.h"
+#include "lib/messaging/ContactLocator.h"
+#include "feature/conversations/PeopleSearch.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -13,7 +16,10 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.search_contacts = [&hub](const std::string& query) { return hub.Contacts().SearchLocal(query); };
   ports.get_contact = [&hub](const std::string& contact_id) { return hub.Contacts().Get(contact_id); };
   ports.upsert_contact = [&hub](const Contact& contact) { return hub.Contacts().Upsert(contact); };
-  ports.add_empty_contact = [&hub]() { return hub.Contacts().AddEmpty(); };
+  ports.search_people = [&hub](const std::string& query) { return SearchDirectoryPeople(hub, query); };
+  ports.add_contact_from_directory_hit = [&hub](const mesh::DirectoryHit& hit) {
+    return hub.Contacts().AddFromDirectoryHit(hit);
+  };
   ports.remove_contact = [&hub](const std::string& contact_id) { return hub.Contacts().Remove(contact_id); };
   ports.list_threads = [&hub]() { return hub.Inbox().ListThreads(); };
   ports.sum_unread_for_contact = [&hub](const std::string& contact_id) {
@@ -51,14 +57,29 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
     }
     return Roe<void>();
   };
-  ports.register_peer_signing_key = [&hub](const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                                           const std::string& signing_public_key_b64,
-                                           const std::string& source) {
-    hub.MeshMessaging().RegisterPeerSigningKey(peer_identity_kind, peer_identity_value, signing_public_key_b64, source);
+  ports.add_from_locator = [&hub](const std::string& text,
+                                  std::function<void(Roe<std::pair<std::string, bool>>)> done) {
+    auto locator = FindContactLocator(text);
+    if (!locator) {
+      done(locator.error());
+      return;
+    }
+    hub.ContactCards().AddFromLocator(*locator, [done](Roe<ContactCardExchange::LocatorAdded> added) {
+      if (!added) {
+        done(added.error());
+        return;
+      }
+      done(std::make_pair(added.value().contact.id, added.value().keys_known));
+    });
   };
-  ports.register_peer_kem_key = [&hub](const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                                        const std::string& kem_public_key_b64, const std::string& source) {
-    hub.MeshMessaging().RegisterPeerKemKey(peer_identity_kind, peer_identity_value, kem_public_key_b64, source);
+  ports.share_contact = [&hub](const std::string& thread_id, const std::string& contact_id) -> Roe<void> {
+    if (auto sent = hub.ShareContact(thread_id, contact_id); !sent) {
+      return sent.error();
+    }
+    return {};
+  };
+  ports.register_peer_keys_from_directory = [&hub](const mesh::DirectoryHit& hit) {
+    hub.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
   };
   ports.is_contact_reachable = [&hub](const Contact& contact) { return hub.IsContactReachable(contact); };
   return ports;

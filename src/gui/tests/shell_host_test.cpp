@@ -1,8 +1,8 @@
 #include "gui/shell/ShellFeedback.h"
-#include "domain/ui/ShellInterruption.h"
-#include "domain/ui/ShellLayout.h"
+#include "lib/ui/ShellInterruption.h"
+#include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/ShellTypes.h"
 
 #include <gtest/gtest.h>
 #include <string>

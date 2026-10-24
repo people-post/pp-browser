@@ -1,0 +1,45 @@
+#pragma once
+
+#include "lib/net/OrgBackendClients.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/people/RegistrationStatus.h"
+#include "common/directory/IdentityTypes.h"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+/** Apply finish/rotate-style result onto identity fields (does not Update store). */
+void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& result);
+
+Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
+                                                       const std::string& nickname,
+                                                       const std::vector<std::string>& multiaddrs = {},
+                                                       const RegistrationPublishOpts& publish = {});
+
+/** Finish registration + Identity.Update with ApplyRegistrationResult. Returns applied identity. */
+Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
+                                                const std::string& nickname,
+                                                const std::vector<std::string>& multiaddrs = {},
+                                                const RegistrationPublishOpts& publish = {});
+
+/**
+ * If ShouldRenew and auto_renew_enabled, finish+persist registration.
+ * Returns true if renewed, false if no renew needed or preference off.
+ */
+Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
+                                     bool auto_renew_enabled);
+
+Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
+                                                 const std::string& nickname);
+/**
+ * Remove this account's directory registration (#328). Nothing to do (success) when the identity never
+ * registered; otherwise signs `BuildAccountRevokeSignBytes` with the account key and calls the relay.
+ * Does not touch the local identity: the caller is about to wipe it.
+ */
+Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity);
+
+} // namespace pbr

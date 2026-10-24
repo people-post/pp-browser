@@ -1,7 +1,7 @@
 #include "app/CrashReportUpload.h"
 
-#include "domain/net/ClientCompat.h"
-#include "domain/net/HttpClient.h"
+#include "lib/net/ClientCompat.h"
+#include "lib/net/HttpClient.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/CrashReportEnvelope.h"
 #include "common/Logger.h"

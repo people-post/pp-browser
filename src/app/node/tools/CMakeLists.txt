@@ -22,7 +22,7 @@ set_target_properties(pp-node-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_n
 install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
 
 # call_probe needs AmpDirectChatTransport (--with-chat); skip in headless (no messaging).
-if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
+if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
   add_executable(pp-call-probe
     call_probe/main.cpp
     call_probe/ProductStackHarness.cpp
@@ -31,7 +31,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
   target_link_libraries(pp-call-probe PRIVATE
     ${_pp_probe_libs}
     pp_foundation_platform_core
-    pp_feature_call_media
+    pp_domain_call_media
   )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
   if(TARGET pp_feature_calls)
@@ -41,8 +41,8 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_conversations)
   else()
     target_sources(pp-call-probe PRIVATE
-      ${CMAKE_SOURCE_DIR}/src/feature/conversations/AmpDirectChatTransport.cpp)
-    target_link_libraries(pp-call-probe PRIVATE pp_domain_messaging pp_domain_calls pp_domain_broadcast pp_domain_pricing)
+      ${CMAKE_SOURCE_DIR}/src/domain/delivery/AmpDirectChatTransport.cpp)
+    target_link_libraries(pp-call-probe PRIVATE pp_lib_messaging pp_lib_calls pp_lib_broadcast pp_lib_pricing)
   endif()
   pp_browser_apply_warnings(pp-call-probe)
   set_target_properties(pp-call-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")

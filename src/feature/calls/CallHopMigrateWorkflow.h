@@ -1,17 +1,17 @@
 #pragma once
 
-#include "domain/media/CallMediaEngine.h"
+#include "lib/media/CallMediaEngine.h"
 #include "feature/calls/CallMediaCoordinator.h"
 #include "feature/calls/SharedPorts.h"
-#include "domain/calls/CallControlCodec.h"
-#include "domain/calls/CallHopPlan.h"
-#include "domain/calls/CallHopPlannerLogic.h"
-#include "domain/calls/CallSessionStore.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/calls/SoftMigrateLogic.h"
-#include "domain/calls/CallMediaKeyStore.h"
-#include "domain/people/MeshHopPolicy.h"
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallHopPlan.h"
+#include "lib/calls/CallHopPlannerLogic.h"
+#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/calls/SoftMigrateLogic.h"
+#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/people/MeshHopPolicy.h"
+#include "lib/calls/CallMediaSeat.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -245,6 +245,8 @@ public:
                              std::function<void(Roe<void>)> on_done);
 
   void OnGuestSfuTransportLost();
+  /** The device's network came back or moved: a guest whose hop transport was lost tries again. */
+  void OnLocalNetworkMoved();
   void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                                       std::function<void(Roe<void>)> on_done);
 

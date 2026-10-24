@@ -2,8 +2,8 @@
 # protection enables "require review from code owners"; until then it is documentation for reviewers.
 #
 # Network layer, Amp, call connection, chat protocol, server contracts, CI / release, Android shell.
-src/domain/net/                      @yhw1630
-src/domain/messaging/                @yhw1630
+src/lib/net/                      @yhw1630
+src/lib/messaging/                @yhw1630
 src/feature/calls/                   @yhw1630
 cmake/PpCppAmp.cmake                 @yhw1630
 cmake/PpCppMesh.cmake                @yhw1630
@@ -14,13 +14,13 @@ docs/contracts/                      @yhw1630 @gzdemon77
 # Identity, crypto, registration, local backup: both.
 src/foundation/crypto/               @yhw1630 @gzdemon77
 src/foundation/identity/             @yhw1630 @gzdemon77
-src/domain/people/IdentityStore.*    @yhw1630 @gzdemon77
-src/domain/people/AccountBackup*     @yhw1630 @gzdemon77
-src/feature/registration/            @yhw1630 @gzdemon77
+src/lib/people/IdentityStore.*    @yhw1630 @gzdemon77
+src/lib/people/AccountBackup*     @yhw1630 @gzdemon77
+src/domain/registration/            @yhw1630 @gzdemon77
 
 # Apple platform, media, call UI, AI client, GUI, assets.
-src/domain/media/                    @gzdemon77
-src/domain/ai/                       @gzdemon77
+src/lib/media/                    @gzdemon77
+src/lib/ai/                       @gzdemon77
 src/feature/ai/                      @gzdemon77
 src/gui/                             @gzdemon77
 src/foundation/platform/             @gzdemon77

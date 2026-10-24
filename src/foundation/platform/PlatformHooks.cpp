@@ -10,6 +10,7 @@
 #include "foundation/platform/IPathProvider.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/IosAssetLocator.h"
+#include "foundation/platform/IosLocalNotifier.h"
 #include "foundation/platform/IosPathProvider.h"
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 #include "foundation/platform/Platform.h"
@@ -51,6 +52,10 @@ IosPushDeviceRegistrar& IosPushRegistrar() {
   static IosPushDeviceRegistrar registrar;
   return registrar;
 }
+IosLocalNotifier& IosNotifier() {
+  static IosLocalNotifier notifier;
+  return notifier;
+}
 #endif
 
 } // namespace
@@ -77,8 +82,8 @@ void PlatformHooks::Register() {
     static SdlAssetFileInterface file_interface;
     g_packaged_file_interface = &file_interface;
     IPushDeviceRegistrar::SetInstance(&IosPushRegistrar());
+    ILocalNotifier::SetInstance(&IosNotifier());
 #endif
-    ILocalNotifier::SetInstance(&DesktopNotifier());
   } else {
     ILocalNotifier::SetInstance(&DesktopNotifier());
   }

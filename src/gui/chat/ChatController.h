@@ -4,7 +4,12 @@
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
+#include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
+#include "gui/chat/AgentTurnController.h"
+#include "gui/chat/ChatMenus.h"
+#include "gui/chat/ChatPeerSheet.h"
+#include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
@@ -18,14 +23,14 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/UnlockEnsurePorts.h"
-#include "domain/messaging/AtAiParser.h"
-#include "domain/ai/StructuredTextParser.h"
-#include "domain/ai/TurnPlan.h"
+#include "lib/messaging/AtAiParser.h"
+#include "lib/ai/StructuredTextParser.h"
+#include "lib/ai/TurnPlan.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "common/Module.h"
-#include "domain/ui/ChatWidgetTypes.h"
-#include "domain/ui/ContextMenuHost.h"
+#include "lib/ui/ChatWidgetTypes.h"
+#include "lib/ui/ContextMenuHost.h"
 
 #include <source_location>
 #include <ui/data/DataModelHandle.h>
@@ -52,48 +57,17 @@ namespace pbr {
 
 class InputCoordinator;
 
-class ChatController : public Module {
+class ChatController : public Module, private AgentTurnHost, private ChatMenusHost {
 public:
-  /** Hot-reloadable assistant slice projected from AppConfig (LLM / MCP / search). */
-  struct AgentConfig {
-    LlmConfig llm;
-    std::string llm_api_key_env;
-    McpConfig promoted_mcp;
-    std::vector<McpConfig> mcp_servers;
-    SearchConfig search;
-    ContextBudget context = DefaultContextBudget();
+  using AgentConfig = AgentTurnController::AgentConfig;
 
-    bool operator==(const AgentConfig& other) const {
-      if (llm.base_url != other.llm.base_url || llm.model != other.llm.model ||
-          llm.api_key != other.llm.api_key || llm.preset != other.llm.preset ||
-          llm.require_api_key != other.llm.require_api_key ||
-          llm_api_key_env != other.llm_api_key_env || promoted_mcp.url != other.promoted_mcp.url ||
-          search.provider != other.search.provider || mcp_servers.size() != other.mcp_servers.size()) {
-        return false;
-      }
-      for (size_t i = 0; i < mcp_servers.size(); ++i) {
-        const McpConfig& a = mcp_servers[i];
-        const McpConfig& b = other.mcp_servers[i];
-        if (a.id != b.id || a.url != b.url || a.command != b.command || a.enabled != b.enabled ||
-            a.args != b.args) {
-          return false;
-        }
-      }
-      return true;
-    }
-    bool operator!=(const AgentConfig& other) const { return !(*this == other); }
-  };
-
-  static AgentConfig ProjectAgent(const AppConfig& config);
-  void Apply(const AgentConfig& config);
+  static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
+  void Apply(const AgentConfig& config) { agent_.ApplyConfig(config); }
+  void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
+  void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
 
   ChatController();
   ~ChatController() override = default;
-
-  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
-  static void InstallInstance(ChatController& controller);
-  static void ClearInstance();
-  static ChatController& Instance();
 
   using SessionRow = SessionDisplayRow;
 
@@ -102,14 +76,13 @@ public:
   void BindConversationsFacade(ConversationsFacade* facade);
   /** App-wired hook so messaging tool registration stays in Application (no ui→hub registration edge). */
   void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
-  void BindAgentPorts(AgentUiPorts ports);
   void BindContactsNotify(ContactsNotifyPorts ports);
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   void BindEmojiPickerNotify(EmojiPickerNotifyPorts ports);
   /** Append a normalized emoji glyph to the composer draft (used by emoji picker).
    *  @param restore_composer_focus When true (popover), focus the composer after insert.
    *         When false (keyboard panel), advance caret only so the OSK stays dismissed. */
-  void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true);
+  void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) override;
   /** Toggle a reaction from the emoji picker (public for Application wiring). */
   void ReactWithEmoji(const std::string& message_id, const std::string& emoji);
   void BindShellSetup(ShellSetupPorts ports);
@@ -125,7 +98,7 @@ public:
   /** Push surface snapshot to app ChatShellBridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ChatSurfaceNotifyPorts ports);
   void BindMessagingUi(MessagingUiPorts ports);
-  SessionStore& Store();
+  SessionStore& Store() override;
   const SessionStore& Store() const;
   void Update();
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
@@ -135,97 +108,20 @@ public:
   void FinalizeThreadDisplay();
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
-  void OnFindSomeone();
+  void OnFindSomeone() override;
   void OnSelectThread(const std::string& thread_id);
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
   void OnMessagingReady();
   void OnMeshReady();
-  /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
-  void ReloadAgentConfig();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
 
 private:
-  struct ChatState {
-    ui::String draft;
-    ui::String draft_placeholder;
-    ui::String status;
-    ui::String thread_title;
-    ui::String thread_subtitle;
-    ui::String peer_link_status;
-    ui::String peer_link_banner;
-    bool show_peer_link = false;
-    bool show_peer_link_banner = false;
-    bool peer_link_direct = false;
-    bool peer_link_via_hop = false;
-    bool peer_link_via_relay = false;
-    bool peer_link_connecting = false;
-    bool peer_link_degraded = false;
-    bool peer_link_failed = false;
-    bool peer_link_ready = false;
-    bool show_retry_peer_dial = false;
-    bool thread_encrypted = false;
-    bool thread_is_ai = false;
-    bool thread_is_private = false;
-    bool thread_is_public = false;
-    bool thread_is_group = false;
-    bool compose_disabled = false;
-    bool composer_input_disabled = false;
-    bool show_attach_button = false;
-    bool attachment_uploading = false;
-    ui::String attachment_draft_name;
-    /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
-    bool image_chip = false;
-    bool image_preparing = false;
-    bool image_thumb_ready = false;
-    ui::String image_thumb_src;
-    ui::String image_draft_name;
-    /** A reply is being written to a quoted message: the bar above the composer input. */
-    bool quote_reply = false;
-    ui::String quote_reply_text;
-    bool show_thread_actions = false;
-    bool show_peer_sheet = false;
-    bool show_call_actions = false;
-    /** A group call goes on here that this device may join: the call button reads "Join" (V053). */
-    bool call_joinable = false;
-    bool show_forget_memory = false;
-    bool show_sync_with_peer = false;
-    bool show_thread_menu = false;
-    bool show_gap_banner = false;
-    bool show_compromised_banner = false;
-    bool show_locked_out_banner = false;
-    bool show_psk_setup_banner = false;
-    bool show_psk_import = false;
-    bool psk_has_key = false;
-    bool psk_verified = false;
-    ui::String psk_fingerprint;
-    ui::String psk_export_b64;
-    ui::String psk_import_text;
-    bool sync_in_progress = false;
-    bool show_older_history_hint = false;
-    bool show_jump_to_latest = false;
-    ui::String jump_to_latest_label;
-    std::vector<TranscriptDisplayRow> turns;
-    std::vector<MessageDisplayRow> messages;
-    bool use_messages_layout = true;
-    bool loading = false;
-    bool has_turns = false;
-  };
+  using ChatState = ChatScreenState;
 
-  struct ShellState {
-    std::vector<SessionRow> sessions;
-    /** Archived threads are kept out of the list; the entry row above it opens them. */
-    int archived_count = 0;
-    bool showing_archived = false;
-    ui::String archived_entry_label;
-    bool working_set_active = false;
-    ui::String working_set_title;
-    ui::String working_set_subtitle;
-    ui::String working_set_rml;
-    TurnWidgetState working_set;
-  };
+  using ShellState = ChatShellState;
 
   struct PendingReply {
     std::string entry_id;
@@ -234,81 +130,30 @@ private:
     bool from_llm = false;
   };
 
-  static void SendMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SendSuggestionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SendSuggestionActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SendChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenChatLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void StopTurnCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleReactionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenEmojiInsertCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void AttachFileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RemoveImageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DownloadAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetryAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SubmitFormCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CalendarPrevCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CalendarNextCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SelectCalendarDayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void NewChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void NewMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenNewSessionMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenThreadActionsMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void StartCallCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenPeerSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SelectThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ClearHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ForgetMemoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SyncWithPeerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetryGapSyncCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void StartNewSecureChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void PauseIntegrityCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CopyPskKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TogglePskImportCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ImportPskCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void VerifyPskCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RotatePskExportCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenWorkingSetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void LoadOlderHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetryPeerDialCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void MessagesScrollCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void JumpToLatestCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
+  /** Events both data models ("chat" and "shell") bind: the agent's widgets, chat actions, "new message". */
+  void BindSharedEvents(ui::DataModelConstructor& ctor);
   void OnSendMessage();
-  void OnNewChat();
-  void OnNewMessage();
-  void OnOpenNewSessionMenu(ui::Event& ev);
-  void OnOpenThreadActionsMenu(ui::Event& ev);
-  void OnStartCall(ui::Event& ev);
-  void OnOpenPeerSheet(ui::Event& ev);
-  void OnCloseThread(const std::string& thread_id);
+  /** A Home suggestion that runs a function (`id`): its localized sentence is sent with the function's payload. */
+  void SendSuggestionAction(const std::string& id);
+  void OnNewChat() override;
+  void OnNewMessage() override;
+  void OnCloseThread(const std::string& thread_id) override;
   void OnClearHistory();
   /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
-  void ClearHistoryOf(const std::string& thread_id);
+  void ClearHistoryOf(const std::string& thread_id) override;
   void AfterHistoryCleared(const std::string& thread_id);
-  /** Context menu for a row in the sessions list (right-click / long-press); `position` anchors a second step. */
-  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
-  /** Second step of "Mute": 8 hours / 1 week / Always. */
-  void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
-  /**
-   * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store can
-   * be listed, then kept in step with every write. Empty, and read again next time, while it cannot.
-   */
-  const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
-  /** One thread's settings: from the cache, or from the store while the cache is unavailable; nullopt when
-   *  neither can be read. */
-  std::optional<ThreadLocalPrefs> ThreadPrefsOf(const std::string& thread_id);
-  /** Reads, changes and writes one thread's settings, then refreshes the list; tells the user when the
-   *  store refused. */
-  void UpdateThreadPrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
-  /** Writes the settings and the cache only; false when the store refused. */
-  bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
+  /** After a chat's settings changed (the presenter refreshed its list): badges and the surface follow. */
+  void AfterThreadPrefsChanged() override;
+  /** Run a close (`action`) and, when it went through, clear what the open chat held; tells the user
+   *  when it failed (`show_error_text`: the action's own message, else "could not delete"). */
+  void CloseChatWith(const std::string& thread_id, const std::function<Roe<void>()>& action,
+                     bool show_error_text = false);
+  /** Copy the presenter's chats list into the shell's data model. */
+  void ApplySessionList();
   void OnToggleArchived();
-  static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> thread_prefs_;
-  void OnForgetMemory();
-  void OnSyncWithPeer();
+  void OnForgetMemory() override;
+  void OnSyncWithPeer() override;
   void OnRetryGapSync();
   void OnStartNewSecureChat();
   void OnPauseIntegrityOnly();
@@ -317,146 +162,95 @@ private:
   void OnImportPsk();
   void OnVerifyPsk();
   void OnRotatePskExport();
-  void OnLockPublicToThisDevice();
-  /** From Home landing: mint AI thread, switch to Sessions, open chat. */
+  void OnLockPublicToThisDevice() override;
   /** Opens the AI thread a send from Home goes to: `chip_message`'s own earlier thread when there is one, else a new thread. */
-  bool EnsureHomeOutboundSession(const std::string& chip_message = {});
+  bool EnsureHomeOutboundSession(const std::string& chip_message = {}) override;
   /** `from_home_chip`: a Home chip (not typed text) is being sent, so it continues that chip's own thread. */
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
-                    bool from_home_chip = false);
-  void SendChatAction(const std::string& entry_id, int action_index);
-  void ToggleReaction(const std::string& message_id, const std::string& emoji);
-  void OpenEmojiInsertMenu(ui::Event* ev);
+                    bool from_home_chip = false) override;
+  void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
-  bool InAiComposerContext() const;
-  void OnAttachAiImage();
+  bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
-  void ShowAttachChoice(std::function<void()> photo, std::function<void()> file);
-  void StartAiImagePrepare(std::string path);
-  void OnRemoveImage();
-  /** Drops the pending (or still preparing) image and its session thumbnail file. */
-  void DiscardPendingAiImage();
-  /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
-  bool SendImageQuestion(const std::string& text);
+  void ShowAttachChoice(std::function<void()> photo, std::function<void()> file) override;
   /** A thread's transcript window drawn as bound rows, AI question images decorated. */
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive) const;
-  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
-  void SyncComposerInputState();
+  void SyncComposerInputState() override;
+  void DeleteMessageForMe(const std::string& message_id) override;
+  void DeleteMessageForEveryone(const std::string& message_id) override;
+  bool IsDeletedMessage(const std::string& message_id) const override;
   /** What the user reads in a message of the active thread ("" when not found). */
-  void OnDeleteMessage(const std::string& message_id, ui::Vector2i position);
-  void DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
-  bool CanDeleteForEveryone(const std::string& message_id) const;
-  bool IsDeletedMessage(const std::string& message_id) const;
-  std::string MessagePlainText(const std::string& message_id) const;
+  std::string MessagePlainText(const std::string& message_id) const override;
+  bool IsContactCard(const std::string& message_id) const override;
+  void AddContactFromCard(const std::string& message_id) override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
    * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
    */
-  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
+  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) override;
   void CancelQuoteReply();
-  /** Share: lists the direct chats (most recent first); picking one sends `text` there. */
-  void OpenShareTargets(const std::string& text, ui::Vector2i position);
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
-  static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */
   void OpenMessageLink(const std::string& message_id, int link_index);
-  static void OpenMessageLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  /** The message being replied to (full text); empty when no reply is pending. */
-  std::string quote_reply_source_;
-  void ShowReactionMorePrompt(const std::string& message_id);
-  void SubmitForm(const std::string& entry_id, const std::string& form_id);
-  void CalendarPrev(const std::string& entry_id);
-  void CalendarNext(const std::string& entry_id);
-  void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
-  void SyncDisplayFromThread();
+  void SyncDisplayFromThread() override;
   /** Last time a display sync ran the whole-thread attachment backfill. */
   std::chrono::steady_clock::time_point last_attachment_backfill_{};
   std::chrono::steady_clock::time_point last_call_joinable_poll_{};
   /** Each second: whether the open group chat has a call this device may join (calls change it). */
   void RefreshCallJoinable(std::chrono::steady_clock::time_point now);
-  void OnStopTurn();
   void OpenChatLink(const std::string& entry_id, int link_index);
   /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
-  void OnAssistantDelta(const AgentEvent& event);
-  void FlushStreamingRow();
-  void ClearStreamingRow();
   void RestoreWorkingSetsFromActiveThread();
-  void SyncShellSessions();
+  void SyncShellSessions() override;
   void UpdateThreadChrome();
   void ResetChatPanelState();
-  void UpdateSidebarPreview(const std::string& preview_text);
-  void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                            const std::string& finish_reason = {}, const std::string& thread_id = {},
-                            ResponseGoal response_goal = ResponseGoal::General,
-                            RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None,
-                            const std::vector<BriefAiSource>& sources = {});
-  void HandleAgentEvent(const AgentEvent& event);
-  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
+  void UpdateSidebarPreview(const std::string& preview_text) override;
+  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) override;
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
   void OnMessagesScroll();
   void OnJumpToLatest();
-  void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
-  /** Mint/cache free-tier Brief guest Bearer when registered key is missing. */
-  void EnsureBriefGuestLlmKey();
-  /** Show/clear LLM setup banners once identity is readable (after unlock). */
-  void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
 
-  bool MessagingInitialized() const;
-  bool MessagingReady() const;
-  const std::string& ActiveThreadId() const;
+  bool MessagingInitialized() const override;
+  bool MessagingReady() const override;
+  const std::string& ActiveThreadId() const override;
 
-  ShellChromeSnapshot ChromeSnapshot() const;
+  ShellChromeSnapshot ChromeSnapshot() const override;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
-  void NotifySurfaceChanged();
+  void NotifySurfaceChanged() override;
   /** The call site is passed on as the request's reason (ShellHost::RequestSyncLayout). */
   void ShellSyncLayout(bool restore_focus_after = false, std::source_location where = std::source_location::current());
   void ShellSelectNavTab(NavTab tab);
   void ShellSetPrimaryPane(const std::string& key);
   void ShellOpenCompactChat();
   void ShellCloseCompactChat();
-  void ShellSetActivity(bool visible, const ui::String& message = {});
+  void ShellSetActivity(bool visible, const ui::String& message = {}) override;
   void ShellRemountNavRail();
-  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
-  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short) override;
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result) override;
   void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
                                bool checkbox_default, std::function<void(bool, bool)> on_result);
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
-                  std::function<void(bool, std::string)> on_result);
+                  std::function<void(bool, std::string)> on_result) override;
 
-  std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
-  bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
-  void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
-  void MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const;
-  TurnWidgetState* FindWidgetState(const std::string& entry_id);
-  const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
-  void ClearFormState();
 
-  bool AgentReady() const;
-  bool AgentConfigured() const;
-  /** Agent session + cloud/mock LLM usable (Brief/API key resolved). Peer relay ignores this. */
-  bool AgentCloudReady() const;
-  /** The Brief / API key the agent needs is there (AgentCloudReady minus the configured check). */
-  bool AgentHasCredentials() const;
-  /** Sends the held send once the agent is configured, or gives it up after kHeldAgentSendTimeout. Per frame. */
-  void FlushHeldAgentSend();
 
   ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
+  /** The chats list's decisions and buttons (pp-app-probe drives the same presenter). */
+  ChatPresenter presenter_;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
-  AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;
   EmojiPickerNotifyPorts emoji_picker_notify_;
@@ -472,48 +266,35 @@ private:
   MessagingUiPorts messaging_ui_;
   ChatState chat_;
   ShellState shell_;
-  AgentConfig last_agent_runtime_;
-  bool use_llm_ = false;
   bool messaging_ready_ = false;
+  /** Its AppLifecycle background listener (removed at Shutdown). */
+  uint64_t lifecycle_background_id_ = 0;
   bool mesh_ready_ = false;
-  /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
-  bool brief_guest_mint_attempted_ = false;
-  std::string brief_guest_mint_user_hint_;
-  std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;
   ChatThreadChrome chrome_;
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
-  HeldAgentSend held_agent_send_; // a send made while the agent was still (re)configuring
 
-  /** The prepared image waiting in the composer for its question. */
-  struct PendingAiImage {
-    BriefAiImage image;
-    std::string name;      // shown on the chip only; never logged
-    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
-    int width = 0;         // pixels of the prepared image
-    int height = 0;
-  };
-  std::optional<PendingAiImage> pending_image_;
-  uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
 
-  /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
-  struct StreamingRow {
-    std::string row_id; // "streaming-<user message id>"; also the __ENTRY__ of its links
-    std::string thread_id;
-    std::string text;
-    std::string rml;
-    bool dirty = false;
-    std::optional<std::chrono::steady_clock::time_point> last_render;
-  };
-  std::optional<StreamingRow> streaming_;
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
   std::map<std::string, std::vector<std::string>> chat_links_;
+  /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
+  AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
+  /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
+  ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
+                   call_actions_};
+  ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
+  // AgentTurnHost, ChatMenusHost
+  ConversationsFacade* Facade() const override { return facade_; }
+  bool MessagingIsReady() const override { return messaging_ready_; }
+  void RegisterMessagingTools(ToolRegistry& tools) override {
+    if (register_messaging_tools_) {
+      register_messaging_tools_(tools);
+    }
+  }
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
   bool focus_draft_after_sync_ = false;
-
-  static ChatController* installed_instance_;
 };
 
 } // namespace pbr

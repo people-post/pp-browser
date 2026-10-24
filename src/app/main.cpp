@@ -4,8 +4,9 @@
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/calls/CallMobility.h"
+#include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
+#include "foundation/platform/IncomingLink.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -13,6 +14,7 @@
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformStartupHints.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/PlatformHooks.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/ProductBranding.h"
 
@@ -81,6 +83,8 @@ int main(int argc, char** argv) {
       ++i;
     } else if (std::strncmp(argv[i], "--mobility=", 11) == 0) {
       pbr::SetMobilityCliOverride(argv[i] + 11);
+    } else if (pbr::IncomingLink::LooksLikeLink(argv[i])) {
+      pbr::IncomingLink::Deliver(argv[i]);  // a desktop launcher's %u: an invite link opened with the app
     }
   }
 
@@ -111,6 +115,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   pbr::StartupMark("after_early_init");
+
+  // Path providers before anything resolves AppPaths::DataDir(): without this the
+  // desktop default answers, which on Android is a relative path in a read-only cwd,
+  // so the crash dump and the log file below were silently disabled there (B94).
+  // Bootstrap::Run registers again; that is idempotent.
+  pbr::PlatformHooks::Register();
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
   pbr::CrashDump::Install(pbr::AppPaths::DataDir());

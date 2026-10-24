@@ -16,7 +16,11 @@ declare -A REPOS=(
   [opus]="https://github.com/xiph/opus.git|v1.5.2"
 )
 
-DEFAULT_ORDER=(curl opus sqlite)
+DEFAULT_ORDER=(curl opus sqlite qrcodegen)
+
+# QR Code generator (C++ only: two files and the license, from the tag's tree).
+QRCODEGEN_REPO="https://github.com/nayuki/QR-Code-generator.git"
+QRCODEGEN_TAG="v1.8.0"
 
 # PQ natives (libsodium / mlkem / mldsa) live in people-post/pp-cpp-crypto.
 # SDL3 / SDL3_image live in people-post/pp-cpp-ui.
@@ -63,6 +67,30 @@ path.write_text(json.dumps(data))
 PY
 }
 
+import_qrcodegen() {
+  local dest="${THIRD_PARTY}/qrcodegen"
+  local clone_dir="${TMP}/qrcodegen"
+  echo "==> qrcodegen @ ${QRCODEGEN_TAG}"
+  preserve_pp_cmake qrcodegen
+  git clone --depth 1 --branch "${QRCODEGEN_TAG}" "${QRCODEGEN_REPO}" "${clone_dir}"
+  local commit
+  commit="$(git -C "${clone_dir}" rev-parse HEAD)"
+  rm -rf "${dest}"
+  mkdir -p "${dest}"
+  cp "${clone_dir}/cpp/qrcodegen.hpp" "${clone_dir}/cpp/qrcodegen.cpp" "${dest}/"
+  # The license is the Readme's last section.
+  sed -n '/^License$/,$p' "${clone_dir}/Readme.markdown" > "${dest}/LICENSE"
+  restore_pp_cmake qrcodegen
+  python3 - "${PATCH_JSON}" <<PY
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["qrcodegen"] = {"repository": "${QRCODEGEN_REPO}", "tag": "${QRCODEGEN_TAG}", "commit": "${commit}"}
+path.write_text(json.dumps(data))
+PY
+}
+
 preserve_pp_cmake() {
   local name="$1"
   local dest="${THIRD_PARTY}/${name}"
@@ -99,6 +127,10 @@ fi
 for name in "${ORDER[@]}"; do
   if [[ "${name}" == "sqlite" ]]; then
     import_sqlite_amalgamation
+    continue
+  fi
+  if [[ "${name}" == "qrcodegen" ]]; then
+    import_qrcodegen
     continue
   fi
 

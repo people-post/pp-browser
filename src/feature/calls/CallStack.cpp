@@ -1,20 +1,21 @@
 #include "feature/calls/CallStack.h"
-#include "domain/calls/CallControlFamily.h"
+#include "lib/calls/CallControlFamily.h"
 
 
 #include "foundation/data/MeshRole.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/calls/PeerCapsLogic.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/calls/PeerCapsLogic.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "domain/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallLifecycleTypes.h"
 
 #include <functional>
 #include <optional>
@@ -215,6 +216,7 @@ void CallStack::PublishUiState() {
     state.media_status = live.Status();
     if (const LiveCall* shown = live.Shown()) {
       state.active_call_id = shown->Id();
+      state.live_since_ms = shown->MediaProgress().live_since_ms;
     }
     state.accepting_call_id = call_sessions_->AcceptingCallId();
     if (const LiveCall* ring = live.TheRing()) {
@@ -225,9 +227,7 @@ void CallStack::PublishUiState() {
       state.remote_ended_call_id = ended->Id();
       state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
     }
-    state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();
-    state.soft_migrate_in_flight = call_sessions_->IsSoftMigrateInFlight();
-    state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();
+    state.recovery = call_sessions_->Recovery();
     state.p2p_connect_failed = call_sessions_->IsP2pConnectFailed();
     state.p2p_connect_missing_mic = call_sessions_->P2pConnectMissingMic();
     state.p2p_connect_seed_unreachable = call_sessions_->P2pConnectSeedUnreachable();
@@ -236,12 +236,6 @@ void CallStack::PublishUiState() {
     state.hop_health = call_sessions_->HopHealth();
     state.media_path_kind = call_sessions_->MediaPathKind();
     state.media_link = call_sessions_->MediaLinkCounters();
-  }
-  if (call_sessions_) {
-    const CallMediaSeat& seat = call_sessions_->Seat();
-    state.seat_bound_call_id = seat.BoundCallId();
-    state.seat_state = seat.State();
-    state.seat_live = seat.IsLive(state.seat_bound_call_id);
   }
   state.want_ephemeral_listen = want_ephemeral_listen_;
   state.connect_in_flight = call_sessions_ && call_sessions_->IsDirectConnectInFlight();
@@ -417,6 +411,7 @@ void CallStack::BindCallControlInbound() {
 
 /** What the sessions read about this node: listen addrs, mesh PeerId, caps; and where peers' addrs go. */
 void CallStack::BindSessionProviders() {
+  call_sessions_->SetOnPeerDevice(deps_.note_peer_device);
   call_sessions_->SetPrefetchPeerReachability([prefetch = deps_.prefetch_peer_reachability](const std::string& identity) {
     // Warm only (async association / DHT lookup) — on the hub's thread, which owns what it reads.
     // Captures the hub's port, not this stack: a teardown may race the post.
@@ -668,6 +663,8 @@ void CallStack::SetOnChromeRefresh(std::function<void()> fn) {
 
 void CallStack::OnCallStateChangedOnOwner() {
   const bool want = call_sessions_ && call_sessions_->Live().Phase() != CallPhase::Idle;
+  // A call keeps the app working in the background (its signaling goes on).
+  AppLifecycle::SetCallInProgress(want);
   if (want != want_ephemeral_listen_) {
     want_ephemeral_listen_ = want;
     log().info << "WantEphemeralListen=" << (want ? 1 : 0)

@@ -1,6 +1,6 @@
 #include "feature/conversations/PushDeviceCoordinator.h"
 
-#include "domain/net/IPushDeviceClient.h"
+#include "lib/net/IPushDeviceClient.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "common/PbrCompat.h"
@@ -23,26 +23,9 @@ PushDeviceRegistration MakeRegistration(ConversationsHub& hub, const std::string
 
 } // namespace
 
-Roe<void> PushDeviceCoordinator::UnregisterCurrent(ConversationsHub& hub) {
-  if (!hub.IsMessagingReady()) {
-    return {};
-  }
-  IPushDeviceClient* client = hub.PushDevices();
-  if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {
-    return {};
-  }
-  auto token = IPushDeviceRegistrar::Instance().GetPushToken();
-  PushDeviceRegistration reg = MakeRegistration(hub, token ? *token : std::string{});
-  if (reg.relay_user_id.empty() || reg.device_id.empty()) {
-    return {};
-  }
-  return client->UnregisterDevice(reg);
-}
-
-Roe<void> PushDeviceCoordinator::SyncWithPreference(ConversationsHub& hub, const bool show_notifications) {
-  if (!show_notifications) {
-    return UnregisterCurrent(hub);
-  }
+Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
+  // Registered whatever "Show notifications" says (P005 / P010): in the background a phone is
+  // reached by push only, and calls ring with alerts off too; the setting hides message banners.
   if (!hub.IsMessagingReady()) {
     return {};
   }
@@ -58,7 +41,18 @@ Roe<void> PushDeviceCoordinator::SyncWithPreference(ConversationsHub& hub, const
   if (reg.relay_user_id.empty()) {
     return Error("Relay user not registered");
   }
-  return client->RegisterDevice(reg);
+  auto registered = client->RegisterDevice(reg);
+  // A CallKit iPhone's calls come by VoIP push, to their own token (P013).
+  if (const std::string call_token = IPushDeviceRegistrar::Instance().CallPushToken(); !call_token.empty()) {
+    PushDeviceRegistration call_reg = reg;
+    call_reg.platform = IPushDeviceRegistrar::kCallPushPlatform;
+    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kCallPushDeviceSuffix;
+    call_reg.push_token = call_token;
+    if (auto call_registered = client->RegisterDevice(call_reg); !call_registered && registered) {
+      return call_registered;
+    }
+  }
+  return registered;
 }
 
 } // namespace pbr

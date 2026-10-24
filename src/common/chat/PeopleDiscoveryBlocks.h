@@ -21,7 +21,7 @@ struct PeopleDiscoveryContactView {
 
 /**
  * User-visible strings of people-discovery blocks. Defaults are English; layers that may use i18n
- * (see domain/ai/LocalizedLabels.h) fill localized text. `{count}`, `{shown}`, `{name}` are placeholders.
+ * (see lib/ai/LocalizedLabels.h) fill localized text. `{count}`, `{shown}`, `{name}` are placeholders.
  */
 struct PeopleDiscoveryLabels {
   std::string message = "Message";
@@ -36,7 +36,9 @@ struct PeopleDiscoveryLabels {
   std::string refine_label = "Refine search…";
   std::string refine_message = "Search for someone more specifically by nickname or account id";
   std::string found_one = "Found 1 person on the network:";
-  std::string found_many_partial = "Found {count} people — showing the first {shown}. Open the panel to pick who you mean.";
+  std::string found_many_paged = "Found {count} people — showing {from}–{to}:";
+  std::string show_more_label = "Show more ({rest} left)";
+  std::string show_more_message = "Show the next people";
   std::string found_many = "Found {count} people on the network:";
   std::string results_title = "Search results";
   std::string results_title_partial = "Search results (partial)";
@@ -56,6 +58,10 @@ struct PeopleDiscoveryBuildOptions {
   std::unordered_set<std::string> self_identity_values;
   /** Cap visible directory / contact rows; remainder noted in footer. */
   size_t max_visible_items = 10;
+  /** Directory rows start here (a "show more" page); 0 = first page. */
+  size_t offset = 0;
+  /** The search the hits came from: "show more" re-runs it from the next offset. */
+  std::string query;
 };
 
 /** account_id / relay_user_id / peer_id from local identity (non-empty only). */

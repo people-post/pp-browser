@@ -4,8 +4,8 @@
 
 #include "amp/link/LinkIdentity.h"
 
-#include "domain/broadcast/PeerAnnounceCodec.h"
-#include "domain/broadcast/PeerAnnounceRpcCodec.h"
+#include "lib/broadcast/PeerAnnounceCodec.h"
+#include "lib/broadcast/PeerAnnounceRpcCodec.h"
 
 #include "common/chat/IDirectMessageClient.h"
 #include "amp/L3/ChannelPolicy.h"
@@ -111,14 +111,13 @@ struct AmpPeerAnnounceTransport::Impl {
     return ack;
   }
 
-  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::LinkHandle link, const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || !feed || remote_peer_id.empty()) {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
-    *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+    *session_holder = links->BindChannelOnLink(link, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
       auto session = *session_holder;
       if (!session || !frame || stopped.load(std::memory_order_acquire)) {
         return false;
@@ -179,10 +178,10 @@ void AmpPeerAnnounceTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kRpcPeerAnnounceProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
                                                 const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
-        impl->HandleInboundChannel(remote_peer_id, channel_id);
+        impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
 }
 

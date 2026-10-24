@@ -209,7 +209,7 @@ optional<string> LastGoodCircuitR1(peer);  // L3.1b
 | Layer | Owns |
 |-------|------|
 | **media-hop-reachability (this doc)** | Rendezvous contract, phasing, H011 |
-| **`src/domain/mesh/` + Amp circuit** | Reserve / ServeDial / StartBridge |
+| **`src/lib/mesh/` + Amp circuit** | Reserve / ServeDial / StartBridge |
 | **`CallMediaPlane` / `AmpCircuitHopReach`** | Surface collect, dialer select, answerer park, sticky |
 | **p2p-av-calls / CSM** | Kick/await ready only; optional L3.1c wire field codec |
 | **p2p-mesh** | Who is eligible on the surface (`BuildCircuitHopList`) |

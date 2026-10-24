@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- P011: "Stay connected in the background" (opt-in) runs PpConnectionService. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -44,7 +47,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Contact invites (QR codes, links): docs/contracts/ACCOUNT_CARD.md#locator-qr-code-invite-link -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pp-browser-contact-v1" />
+            </intent-filter>
         </activity>
+
+        <service
+            android:name="dev.pp_browser.app.PpConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Opt-in: keeps the connection to the user's message relay and peers open so incoming calls and messages arrive on phones without a push service." />
+        </service>
 
         <service
             android:name="dev.pp_browser.app.PpFirebaseMessagingService"

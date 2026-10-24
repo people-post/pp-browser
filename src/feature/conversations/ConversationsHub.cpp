@@ -1,27 +1,30 @@
 #include "feature/conversations/ConversationsHub.h"
-#include "feature/conversations/AttachmentContent.h"
-#include "domain/messaging/DeleteForEveryone.h"
-#include "feature/node/AppRuntimeMeshExecutors.h"
+#include "domain/attachments/AttachmentContent.h"
+#include "lib/messaging/DeleteForEveryone.h"
+#include "domain/node/AppRuntimeMeshExecutors.h"
 
-#include "domain/people/LocalAccountBackup.h"
+#include "lib/people/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
-#include "domain/pricing/PaymentPromiseLifecycle.h"
-#include "domain/pricing/PaymentPromiseAvoid.h"
-#include "domain/pricing/PaymentPromiseWireCodec.h"
-#include "domain/pricing/PricingControlFamilies.h"
+#include "lib/pricing/PaymentPromiseLifecycle.h"
+#include "lib/pricing/PaymentPromiseAvoid.h"
+#include "lib/pricing/PaymentPromiseWireCodec.h"
+#include "lib/pricing/PricingControlFamilies.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/ValueJson.h"
 
-#include "domain/people/ContactReachability.h"
-#include "domain/messaging/GroupInviteGate.h"
-#include "feature/conversations/GroupInviteStanding.h"
-#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "lib/people/ContactReachability.h"
+#include "lib/messaging/GroupInviteGate.h"
+#include "domain/peers/GroupInviteStanding.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
-#include "feature/conversations/RelayDirectoryKemKeyResolver.h"
-#include "feature/conversations/RelayDirectorySigningKeyResolver.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
+#include "domain/peers/AccountKeyResolver.h"
+#include "feature/conversations/ContactCardExchange.h"
+#include "lib/messaging/ContactLocator.h"
+#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/messaging/PeerCardStore.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -32,22 +35,22 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/people/DirectChatTargetFromContact.h"
-#include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/messaging/GroupTypes.h"
-#include "domain/messaging/SendRelayOptions.h"
-#include "feature/conversations/AttachmentClient.h"
-#include "domain/net/BlobQuota.h"
-#include "domain/net/HttpClient.h"
-#include "feature/conversations/ProfileIconClient.h"
-#include "feature/conversations/ProfileIconFetch.h"
-#include "feature/node/NodeMeshServices.h"
-#include "feature/registration/RegistrationClient.h"
-#include "domain/people/ProfileIconCache.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/GroupTypes.h"
+#include "lib/messaging/SendRelayOptions.h"
+#include "domain/attachments/AttachmentClient.h"
+#include "lib/net/BlobQuota.h"
+#include "lib/net/HttpClient.h"
+#include "domain/peers/ProfileIconClient.h"
+#include "domain/peers/ProfileIconFetch.h"
+#include "domain/node/NodeMeshServices.h"
+#include "domain/registration/RegistrationClient.h"
+#include "lib/people/ProfileIconCache.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
-#include "domain/people/ContactIdentity.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/people/ContactIdentity.h"
+#include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -63,8 +66,8 @@
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "common/SettledWait.h"
-#include "domain/people/ContactAddressDisclosure.h"
-#include "domain/people/MeshHopPolicy.h"
+#include "lib/people/ContactAddressDisclosure.h"
+#include "lib/people/MeshHopPolicy.h"
 #include "mesh/dht/DhtRecordCodec.h"
 #include "mesh/discovery/AmpDirectoryProtocol.h"
 #include "mesh/discovery/NameDirectory.h"
@@ -138,7 +141,7 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
   reach.contacts = contacts_.get();
   reach.mesh_config = [this]() { return MeshConfigSnapshot(); };
   reach.list_directory_nodes = [this]() {
-    return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<mesh::MeshDirectoryNode>{};
+    return DirectoryNodes();
   };
   reach.list_dht_nodes = [this]() {
     if (!mesh_ || !mesh_->AmpDht()) {
@@ -293,23 +296,20 @@ void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
       backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
     }
     if (backends.empty()) {
-      directory_owned_.reset();
       http_directory_url_.clear();
-      directory_ = nullptr;
+      directory_.SetBackend(nullptr);
       log().warning << "directory providers empty; directory client disabled";
-    } else if (!directory_owned_ || http_directory_url_ != fingerprint) {
+    } else if (!directory_.Configured() || http_directory_url_ != fingerprint) {
       http_directory_url_ = std::move(fingerprint);
       if (backends.size() == 1) {
-        directory_owned_ = std::move(backends.front());
+        directory_.SetBackend(std::shared_ptr<mesh::IDirectoryClient>(std::move(backends.front())));
       } else {
-        directory_owned_ = std::make_unique<FailoverDirectoryClient>(std::move(backends));
+        directory_.SetBackend(std::make_shared<FailoverDirectoryClient>(std::move(backends)));
       }
-      directory_ = directory_owned_.get();
     }
   } else {
-    directory_owned_.reset();
     http_directory_url_.clear();
-    directory_ = nullptr;
+    directory_.SetBackend(nullptr);
     log().warning << "directory.base_url is empty; directory client disabled";
   }
 
@@ -682,7 +682,37 @@ std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
   return mesh_config_snapshot_;
 }
 
+void ConversationsHub::SyncStayReachable() {
+  const bool want = config_.mesh.reachable_without_relay && Platform::IsDesktop() && mesh_ && mesh_ready_ &&
+                    !shutdown_requested_.load(std::memory_order_acquire);
+  if (!want) {
+    if (stay_reachable_timer_ != 0) {
+      AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
+      stay_reachable_timer_ = 0;
+    }
+    return;
+  }
+  if (stay_reachable_timer_ != 0) {
+    return;
+  }
+  // A seed reservation lasts about 30 s; renewing every 20 s keeps contacts able to reach this device by
+  // its PeerId through a seed, with no relay (docs/contracts/ACCOUNT_CARD.md).
+  const auto renew = [this]() {
+    AppRuntime::PostUI([this]() {
+      if (stay_reachable_timer_ != 0 && mesh_ && mesh_ready_) {
+        mesh_connectivity_->Rendezvous().ReserveOnBootstrapSeeds();
+      }
+    });
+  };
+  renew();
+  stay_reachable_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::seconds(20), renew);
+}
+
 void ConversationsHub::StopMesh() {
+  if (stay_reachable_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
+    stay_reachable_timer_ = 0;
+  }
   StopNetworkMonitor();
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
@@ -812,12 +842,17 @@ void ConversationsHub::RegisterContactEndpoints() {
   ApplyMeshAdmissionPolicies();
 }
 
+std::vector<mesh::MeshDirectoryNode> ConversationsHub::DirectoryNodes() const {
+  return mesh_directory_cache_ ? DirectoryNodesForDial(mesh_directory_cache_->Snapshot())
+                               : std::vector<mesh::MeshDirectoryNode>{};
+}
+
 void ConversationsHub::RegisterMeshDirectoryEndpoints() {
   if (!mesh_messaging_ || !mesh_directory_cache_) {
     return;
   }
   const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
-  for (const mesh::MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
+  for (const mesh::MeshDirectoryNode& node : DirectoryNodes()) {
     if (node.peer_id.empty() || node.multiaddrs.empty()) {
       continue;
     }
@@ -832,9 +867,7 @@ void ConversationsHub::RegisterDhtBootstrapEndpoints() {
   }
   MeshConfig mesh_cfg = config_.mesh;
   std::vector<mesh::MeshDirectoryNode> directory_nodes;
-  if (mesh_directory_cache_) {
-    directory_nodes = mesh_directory_cache_->Snapshot();
-  }
+  directory_nodes = DirectoryNodes();
   for (const std::string& ma : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes)) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || ma.empty()) {
@@ -860,9 +893,7 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   RegisterDhtBootstrapEndpoints();
 
   std::vector<mesh::MeshDirectoryNode> directory_nodes;
-  if (mesh_directory_cache_) {
-    directory_nodes = mesh_directory_cache_->Snapshot();
-  }
+  directory_nodes = DirectoryNodes();
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
   // The DHT's liveness is the reach record's (pp-cpp-mesh docs/DHT.md D5). mesh_ (and its DHT)
@@ -938,7 +969,7 @@ void ConversationsHub::ConfigureAmpDirectoryProtocol() {
         nodes.push_back(BuildLocalMeshNodeHit(*identity_, *mesh_, mesh_cfg));
       }
       if (mesh_directory_cache_) {
-        for (const mesh::MeshDirectoryNode& row : mesh_directory_cache_->Snapshot()) {
+        for (const mesh::MeshDirectoryNode& row : DirectoryNodes()) {
           if (row.peer_id.empty()) {
             continue;
           }
@@ -1061,7 +1092,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   {
     StartupPhase phase("ConversationsHub::ReconcileOutbox");
-    (void)store_->ReconcileOutbox();
+    // Also the first open of profile.db: an unusable chat store shows here, not only at its first use.
+    if (auto reconciled = store_->ReconcileOutbox(); !reconciled) {
+      log().warning << "Chat store: " << reconciled.error().message;
+    }
   }
 
   InstallOrgBackendClients(config);
@@ -1075,7 +1109,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     }
   }
   group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
-  directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
+  directory_shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
   inbox_->SetSystemControls(&system_controls_);
@@ -1118,13 +1152,13 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     }
   });
 
-  if (directory_) {
+  if (directory_.Configured()) {
     mesh_directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([this]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
       // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
-      if (!directory_) {
+      if (!directory_.Configured()) {
         return std::vector<mesh::MeshDirectoryNode>{};
       }
-      mesh::DirectoryClientNameDirectory names(*directory_);
+      mesh::DirectoryClientNameDirectory names(directory_);
       auto records = names.ListService("mesh_node");
       if (!records) {
         return records.error();
@@ -1139,11 +1173,11 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     mesh_directory_cache_->SetAsyncFetcher([this](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
       auto fetch_http = [this, done]() {
         AppRuntime::PostWorkerNormal([this, done]() {
-          if (!directory_) {
+          if (!directory_.Configured()) {
             done(std::vector<mesh::MeshDirectoryNode>{});
             return;
           }
-          mesh::DirectoryClientNameDirectory names(*directory_);
+          mesh::DirectoryClientNameDirectory names(directory_);
           auto records = names.ListService("mesh_node");
           if (!records) {
             done(records.error());
@@ -1193,14 +1227,28 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       }
     }
   }
-  signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   BindPricingFamilies();
-  kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
+  peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
+  account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
+  account_keys_->LoadKeptCards();
+  contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
+  contact_cards_->SetCardFetcher([this](const std::string& peer_id, const std::string& account_id,
+                                        std::function<void(Roe<PeerCardRecord>)> done) {
+    if (!mesh_messaging_) {
+      done(Error("Messaging not ready"));
+      return;
+    }
+    mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+  });
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
 
   messaging_ready_ = false;
+  if (lifecycle_background_id_ == 0) {
+    lifecycle_background_id_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
+    lifecycle_foreground_id_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
+  }
   initialized_ = true;
   return {};
 }
@@ -1250,16 +1298,28 @@ void ConversationsHub::NotifyMeshReady() {
 
 void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
-                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
+                                                *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
+  // A device with no link up is reached through the seed it is parked on (on the hub's thread).
+  mesh_messaging_->AccountCards().SetReach([this](const std::string& peer_id, std::function<void(bool)> done) {
+    AppRuntime::PostUI([this, peer_id, done = std::move(done)]() {
+      if (!mesh_ || !mesh_ready_) {
+        done(false);
+        return;
+      }
+      mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [done](mesh::CircuitReachRoe reached) {
+        done(static_cast<bool>(reached));
+      });
+    });
+  });
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
+  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *mesh_messaging_);
+                                                               *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   NotifyMessagingBuilt();
@@ -1284,7 +1344,8 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
     BuildMessagingObjects();
   }
   RegisterContactEndpoints();
-  if (agent_inbound_.IsBound() && !router_) {
+  // The router exists with messaging, agent or not: a send to a person needs no agent.
+  if (!router_) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
   if (shutdown_requested_.load(std::memory_order_acquire)) {
@@ -1398,6 +1459,7 @@ void ConversationsHub::ScheduleMeshBringUp() {
         mesh_ready_ = false;
       }
       NotifyMeshReady();
+      SyncStayReachable();
     });
   });
 }
@@ -1470,7 +1532,11 @@ Roe<void> ConversationsHub::Reinitialize(const AppConfig& config, const std::str
 
 void ConversationsHub::BindAgentInbound(AgentInboundPorts ports) {
   agent_inbound_ = std::move(ports);
-  if (mesh_messaging_ && agent_inbound_.IsBound()) {
+  // In place: the router keeps its callbacks, and an unbound agent (teardown, profile reset) leaves
+  // it no ports into the old agent session.
+  if (router_) {
+    router_->SetAgent(agent_inbound_);
+  } else if (mesh_messaging_) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
 }
@@ -1678,6 +1744,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.peer_id = identity->peer_id;
   view.relay_id = identity->relay_user_id;
   view.account_id = identity->account_id;
+  view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
   FillRegistrationFields(view, *identity);
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
@@ -2146,11 +2213,11 @@ Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,
 }
 
 AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
-  return [resolver = signing_resolver_.get()](const std::string& account_id) -> Roe<ByteVector> {
-    if (!resolver) {
+  return [keys = account_keys_.get()](const std::string& account_id) -> Roe<ByteVector> {
+    if (!keys) {
       return Error("account signing keys unavailable");
     }
-    auto record = resolver->Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), account_id);
+    auto record = keys->Signing().Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), account_id);
     if (!record) {
       return record.error();
     }
@@ -2452,7 +2519,9 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
   config_.mesh.direct_connections = next.direct_connections;
   config_.mesh.trusted_relays_only = next.trusted_relays_only;
-  PublishMeshConfig();  // republishes who may learn our address too
+  config_.mesh.reachable_without_relay = next.reachable_without_relay;
+  PublishMeshConfig();
+  SyncStayReachable();  // republishes who may learn our address too
 
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_);
@@ -2485,10 +2554,12 @@ void ConversationsHub::Apply(const PolicyPrefs& prefs) {
 }
 
 void ConversationsHub::Apply(const NotificationPrefs& prefs) {
+  AppLifecycle::SetStayConnected(prefs.stay_connected);
   if (!initialized_ || !messaging_ready_) {
     return;
   }
-  (void)PushDeviceCoordinator::SyncWithPreference(*this, prefs.show_notifications);
+  // Banners only: the push registration does not follow the setting (P005).
+  (void)PushDeviceCoordinator::Register(*this);
 }
 
 ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig& config) {
@@ -2503,6 +2574,7 @@ ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
   out.direct_connections = config.mesh.direct_connections;
   out.trusted_relays_only = config.mesh.trusted_relays_only;
+  out.reachable_without_relay = config.mesh.reachable_without_relay;
   return out;
 }
 
@@ -2513,11 +2585,27 @@ ConversationsHub::PolicyPrefs ConversationsHub::ProjectPolicy(const ProfilePrefe
 }
 
 ConversationsHub::NotificationPrefs ConversationsHub::ProjectNotifications(const ProfilePreferences& prefs) {
-  return {.show_notifications = prefs.show_notifications};
+  return {.show_notifications = prefs.show_notifications, .stay_connected = prefs.stay_connected};
 }
 
 void ConversationsHub::SuspendMeshColdPeers() {
   SyncMobileEphemeralListen();
+}
+
+void ConversationsHub::OnAppBackground() {
+  if (messaging_ready_) {
+    SuspendMeshColdPeers();
+  }
+}
+
+void ConversationsHub::OnAppForeground() {
+  // The open chat's peer is the one the user is about to talk to: warm its link.
+  if (!messaging_ready_ || !mesh_messaging_ || !inbox_) {
+    return;
+  }
+  if (const std::string active = inbox_->ActiveThreadId(); !active.empty()) {
+    mesh_messaging_->WarmPeerForThread(active);
+  }
 }
 
 
@@ -2538,6 +2626,10 @@ void ConversationsHub::Shutdown() {
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
+  AppLifecycle::RemoveListener(lifecycle_background_id_);
+  AppLifecycle::RemoveListener(lifecycle_foreground_id_);
+  lifecycle_background_id_ = 0;
+  lifecycle_foreground_id_ = 0;
 
   on_messaging_ready_ = nullptr;
   on_reachability_updated_ = nullptr;
@@ -2617,8 +2709,9 @@ void ConversationsHub::Shutdown() {
   group_invite_gate_.reset();
   group_roster_.reset();
   thread_prefs_.reset();
-  signing_resolver_.reset();
-  kem_resolver_.reset();
+  contact_cards_.reset();
+  account_keys_.reset();
+  peer_cards_.reset();
   // Participants free the rest (media engine, key and session stores) after DEK unregister above.
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnShutdown();
@@ -2632,14 +2725,13 @@ void ConversationsHub::Shutdown() {
   directory_shadows_.reset();
   mesh_directory_cache_.reset();
   http_relay_.reset();
-  directory_owned_.reset();
   http_registration_.reset();
   http_push_devices_.reset();
   http_client_compat_.reset();
   relay_ = nullptr;
   push_devices_ = nullptr;
   client_compat_ = nullptr;
-  directory_ = nullptr;
+  directory_.SetBackend(nullptr);
   registration_ = nullptr;
   http_relay_url_.clear();
   http_directory_url_.clear();
@@ -2700,8 +2792,54 @@ ProfileSecretsEngine* ConversationsHub::Secrets() {
   return secrets_;
 }
 
+ContactCardExchange& ConversationsHub::ContactCards() {
+  return *contact_cards_;
+}
+
+Roe<std::string> ConversationsHub::OwnContactLocator() {
+  auto identity = Identity().Get();
+  if (!identity || identity->account_id.empty()) {
+    return Error("Account not set up");
+  }
+  ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
+  if (auto self = PeerRequestAuth::DevicePeerId(identity->public_key_b64)) {
+    locator.devices.push_back(*self);
+  }
+  if (account_keys_) {
+    if (auto kept = account_keys_->Kept(identity->account_id); kept && *kept) {
+      for (const std::string& peer_id : (*kept)->devices) {
+        if (std::find(locator.devices.begin(), locator.devices.end(), peer_id) == locator.devices.end()) {
+          locator.devices.push_back(peer_id);
+        }
+      }
+    }
+  }
+  return EncodeContactLocator(locator);
+}
+
+Roe<ThreadMessage> ConversationsHub::ShareContact(const std::string& thread_id, const std::string& contact_id) {
+  if (!IsInitialized() || !contact_cards_ || !mesh_messaging_) {
+    return Error("Messaging not ready");
+  }
+  auto card = contact_cards_->CardFor(contact_id);
+  if (!card) {
+    return card.error();
+  }
+  auto thread = store_->GetThread(thread_id);
+  if (!thread || !*thread) {
+    return Error("Thread not found");
+  }
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::ContactCard;
+  opts.payload_json = ChatPayloadCodec::ContactCardFieldsToJson(*card);
+  if ((*thread)->kind == ThreadKind::Group) {
+    return mesh_messaging_->SendGroupMessage(thread_id, card->display_name, opts);
+  }
+  return mesh_messaging_->SendUserMessage(thread_id, card->display_name, opts);
+}
+
 mesh::IDirectoryClient& ConversationsHub::Directory() {
-  return *directory_;
+  return directory_;
 }
 
 DirectoryShadowCache& ConversationsHub::DirectoryShadows() {

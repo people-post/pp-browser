@@ -1,9 +1,9 @@
 #include "feature/broadcast/AmpPeerAnnounceTransport.h"
 
-#include "domain/broadcast/PeerAnnounceCodec.h"
-#include "domain/broadcast/PeerAnnounceKeyResolve.h"
-#include "domain/broadcast/PeerAnnouncePublisher.h"
-#include "domain/messaging/PeerSigningKeyStore.h"
+#include "lib/broadcast/PeerAnnounceCodec.h"
+#include "lib/broadcast/PeerAnnounceKeyResolve.h"
+#include "lib/broadcast/PeerAnnouncePublisher.h"
+#include "lib/messaging/PeerSigningKeyStore.h"
 #include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"

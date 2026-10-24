@@ -8,7 +8,7 @@
 #include "common/Logger.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/people/PeerDisplayLabel.h"
+#include "lib/people/PeerDisplayLabel.h"
 
 #include <ui/Core.h>
 #include <ui/base/SystemInterface.h>

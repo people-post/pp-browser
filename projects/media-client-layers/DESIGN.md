@@ -13,17 +13,17 @@ feature/calls                                             feature/broadcast
  └─ CallMediaConnectCoordinator (1:1 bundle)               └─ BroadcasterWorkflow
                                                                 capture-only → publish to first relay
         │                         │                                  │
-        │            MediaRelayAttach  (domain/mesh, stateless — L009)  ◄───┘
+        │            MediaRelayAttach  (lib/mesh, stateless — L009)  ◄───┘
         │              AttachToMediaRelayAsync(ports, request, hooks) → service reach → quote →
         │              quote gate → AcceptAndAttach; recovery stays with each feature
         │                         │
-        │                         └──► service reach: ICircuitHopReach::TryEnsureHopReachable (domain/mesh)
+        │                         └──► service reach: ICircuitHopReach::TryEnsureHopReachable (lib/mesh)
         │                                media_relay dialable via protocol-keyed circuit hop (L008)
-        └──────────► PeerReachCoordinator  (domain/mesh) — link reach: Connected PeerLink to a peer
+        └──────────► PeerReachCoordinator  (lib/mesh) — link reach: Connected PeerLink to a peer
                                   │
                       Amp links / circuit / punch
 
-Media (domain/media):  CapturePipeline  (device → encode → send fn)
+Media (lib/media):  CapturePipeline  (device → encode → send fn)
                        PlaybackPipeline (receive → jitter → decode → mix → device)
                        calls = both (duplex) · broadcaster = capture · viewer = playback
 Devices:               DeviceArbiter — leases per kind (mic / camera / speaker); policy exclusive for now

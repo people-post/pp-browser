@@ -1,6 +1,6 @@
 #include "gui/chat/WorkingSetController.h"
 
-#include "domain/ui/ChatFormHelper.h"
+#include "lib/ui/ChatFormHelper.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/shell/DataModelHost.h"
 

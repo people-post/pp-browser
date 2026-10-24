@@ -2,7 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
 #include "gui/shell/DataModelHost.h"
 

@@ -1,0 +1,58 @@
+#pragma once
+
+#include "foundation/crypto/ReplayWindow.h"
+#include "common/thread/SyncStateTypes.h"
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+namespace pbr {
+
+enum class IngestDecision {
+  BenignDuplicate,
+  SilentDiscard,
+  AcceptContiguous,
+  AcceptBootstrap,
+  AcceptLateFill,
+  AcceptBackfill,
+  AcceptEpochAdvance,
+  AcceptGap,
+  SoftCompromised,
+  HardReject,
+  /** A control-lane message applied by its family (nothing stored; not part of any stream). */
+  AcceptControl,
+};
+
+struct IngestClassifierInput {
+  uint64_t sender_seq = 0;
+  uint32_t session_epoch = 1;
+  std::string message_id;
+  PeerSyncState sync_state;
+  uint32_t chat_target_epoch = 1;
+  bool strict_mode = true;
+  std::optional<std::string> existing_message_id_at_seq;
+  bool has_message_id = false;
+  /** D059/D058 — authorized older-history fetch below contiguous tail. */
+  bool authorized_older_backfill = false;
+};
+
+struct IngestClassifierResult {
+  IngestDecision decision = IngestDecision::HardReject;
+  PeerSyncState sync_state;
+  bool persist_message = false;
+  /** Why, when the message is not kept (for the receive log): a fixed string, never empty then. */
+  const char* reason = "";
+};
+
+/** D013 ingest classifier — authoritative over ReplayWindow (D020). */
+class E2eIngestClassifier {
+public:
+  static IngestClassifierResult Classify(const IngestClassifierInput& input, ReplayWindow& replay_window);
+
+  static void ApplyContiguousAdvance(PeerSyncState& state, const uint64_t sender_seq);
+  static void ApplyPersistedMessage(PeerSyncState& state, const uint64_t sender_seq);
+  static void ApplyBackfillMessage(PeerSyncState& state, const uint64_t sender_seq);
+};
+
+} // namespace pbr

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/ShellTypes.h"
 #include "gui/shell/ShellPinGatePorts.h"
 #include "gui/UnlockGateCompletePorts.h"
 
@@ -18,13 +18,15 @@ public:
   PinGateController() = default;
 
   void BindGateComplete(UnlockGateCompletePorts ports);
-  /** Shell PIN chrome without ShellHost::Instance(). Clear via BindShellPinGate({}). */
+  /** Shell PIN chrome. Clear via BindShellPinGate({}). */
   void BindShellPinGate(ShellPinGatePorts ports);
 
   /** Ports filled onto ProfileUnlockPorts::ui by Application. */
   void ShowIdentityFork();
   /** Identity fork plus "Restore my account: <nickname>" (local backup found on a fresh install). */
   void ShowIdentityRestore(const std::string& nickname);
+  /** Restore: ask for the PIN the account used (enter mode); `wrong_pin` shows "that PIN is not right". */
+  void ShowRestorePin(bool wrong_pin);
   void ShowChooser();
   void ShowUnlock();
   void Dismiss();
@@ -52,8 +54,6 @@ private:
   ShellPinGatePorts shell_pin_gate_;
   PinGateState pin_state_;
   bool link_flow_ = false;
-  /** PIN chosen here completes a local-backup restore instead of creating a new vault. */
-  bool restore_flow_ = false;
   bool pending_link_default_pin_ = false;
   std::string pending_link_pin_;
 };

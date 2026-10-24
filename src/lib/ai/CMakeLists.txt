@@ -1,0 +1,35 @@
+pp_browser_add_lib_library(pp_lib_ai
+  SOURCES
+    AppActionClassifier.cpp
+    ArticleFeedBlocks.cpp
+    BriefAiClient.cpp
+    BriefTurnRunner.cpp
+    LlmClient.cpp
+    MarkdownToRml.cpp
+    PromptBuilder.cpp
+    PayloadTurnPlanBuilder.cpp
+    RmlValidator.cpp
+    SseClient.cpp
+    SseParser.cpp
+    StructuredTextParser.cpp
+    ToolPermissionPolicy.cpp
+    ToolPermissionPrompt.cpp
+    ToolRegistry.cpp
+    ToolResultFormatter.cpp
+    TurnPlan.cpp
+    TurnPlanner.cpp
+    TurnTrace.cpp
+    WorkingSetPolicy.cpp
+  PUBLIC_LIBS
+    pp_foundation_crypto
+    pp_foundation_error
+    pp_foundation_platform_core
+    CURL::libcurl)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()
+
+add_subdirectory(conversation)
+add_subdirectory(mcp)
+add_subdirectory(tools)

@@ -3,17 +3,18 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "common/ValueJson.h"
 
-#include "domain/ai/StructuredTextParser.h"
-#include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/ChatPayloadCodec.h"
-#include "domain/messaging/GroupMembershipCodec.h"
-#include "domain/messaging/PlainTextLinks.h"
-#include "domain/messaging/PskRotateCodec.h"
-#include "domain/messaging/QuoteReply.h"
-#include "domain/ui/ChatFormHelper.h"
+#include "lib/ai/StructuredTextParser.h"
+#include "lib/calls/CallControlFamily.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/PlainTextLinks.h"
+#include "lib/messaging/PskRotateCodec.h"
+#include "lib/messaging/QuoteReply.h"
+#include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
-#include "feature/conversations/AttachmentContent.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <algorithm>
@@ -121,9 +122,25 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
 }
 
-std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts) {
+/** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
+std::string CallRowRml(const CallSummaryRow& row) {
+  std::string html = "<div class=\"chat-call-row";
+  if (!row.connected) {
+    html += " muted";
+  }
+  html += "\"><svg class=\"chat-call-row-icon\" src=\"";
+  html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
+  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(row.text) + "</span></div>";
+  return html;
+}
+
+std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
+                      const std::optional<CallSummaryRow>& call_row) {
   const ThreadMessage& message = entry.message;
   if (entry.control) {
+    if (call_row) {
+      return CallRowRml(*call_row);
+    }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
     return SystemLineRml(line.value_or(message.text));
@@ -177,15 +194,22 @@ std::string ContactCardRml(const ThreadMessage& message) {
   auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
   const std::string name =
       fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
-  const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
-  std::string html = "<div class=\"chat-card chat-contact-card\">";
-  if (fields && !fields->avatar_url.empty()) {
-    html += "<img class=\"chat-contact-card-avatar\" src=\"" +
-            StructuredTextParser::EscapeText(fields->avatar_url) + "\"/>";
+  // The person's own name and Account ID, from the card (checked before *Add*; shown escaped).
+  std::string nickname;
+  std::string account_id;
+  if (fields) {
+    if (auto card = TryParseObject(fields->card_json)) {
+      nickname = card->getString("nickname").value_or("");
+      account_id = card->getString("account_id").value_or("");
+    }
   }
+  std::string html = "<div class=\"chat-card chat-contact-card\">";
   html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(name) + "</h3>";
-  if (!relay.empty()) {
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";
+  if (!nickname.empty() && nickname != name) {
+    html += "<p class=\"text\">" + StructuredTextParser::EscapeText(nickname) + "</p>";
+  }
+  if (!account_id.empty()) {
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(account_id) + "</p>";
   }
   html += "</div>";
   return html;
@@ -301,7 +325,8 @@ std::string OneLine(std::string text) {
   return text;
 }
 
-std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts) {
+std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
+                       const std::optional<CallSummaryRow>& call_row) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -320,7 +345,7 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts)
     return rml;
   }
   if (message.content_type == ChatContentType::System) {
-    return SystemRml(entry, facts);
+    return SystemRml(entry, facts, call_row);
   }
   if (message.content_type == ChatContentType::Deleted) {
     // On the sender's side, small and grey, so it is clear whose message it was.
@@ -421,7 +446,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       continue;
     }
     const ThreadMessage& message = entry.message;
-    std::string content = MessageRml(entry, facts);
+    // A call summary: decoded once, its side is the starter's (a group's is written locally).
+    const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
+    std::string content = MessageRml(entry, facts, call_row);
     if (content.empty()) {
       continue;
     }
@@ -444,7 +471,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.sender_label =
         entry.control || !facts.sender_label ? "" : facts.sender_label(message.sender_contact_id).c_str();
     row.content_rml = content.c_str();
-    row.row_class = RowClass(message.sender_contact_id).c_str();
+    row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
+                             : RowClass(message.sender_contact_id).c_str();
     // Local is expected for AI/system-local rows — skip it to keep meta quiet.
     if (!entry.control && message.transport && *message.transport != MessageTransport::Local) {
       row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();

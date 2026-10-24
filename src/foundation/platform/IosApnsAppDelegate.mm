@@ -1,5 +1,7 @@
 // Subclass SDL's UIApplicationDelegate so we can register for APNs and handle
-// silent wakes without replacing SDL's launch / scene lifecycle.
+// silent wakes without replacing SDL's launch / scene lifecycle. It is also the
+// notification-center delegate: the relay's call alert (P012) and the app's own
+// banners (IosLocalNotifier).
 // Pattern: category overrides +getAppDelegateClassName (documented by SDL).
 
 #if defined(__APPLE__)
@@ -9,6 +11,10 @@
 #import <UIKit/UIKit.h>
 #import <UserNotifications/UserNotifications.h>
 
+#include "foundation/platform/IosLocalNotifier.h"
+#if defined(PP_IOS_CALLKIT)
+#include "foundation/platform/IosCallSystemUi.h"
+#endif
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
@@ -21,8 +27,18 @@
     didFinishLaunchingWithOptions:(NSDictionary*)launchOptions;
 @end
 
-@interface PpSdlUIKitDelegate : SDLUIKitDelegate
+@interface PpSdlUIKitDelegate : SDLUIKitDelegate <UNUserNotificationCenterDelegate>
 @end
+
+namespace {
+
+/** The relay's call alert (P012) carries `type: call_wake`. */
+bool IsCallWake(NSDictionary* userInfo) {
+  id raw = userInfo[@"type"];
+  return [raw isKindOfClass:[NSString class]] && [(NSString*)raw isEqualToString:@"call_wake"];
+}
+
+} // namespace
 
 @implementation PpSdlUIKitDelegate
 
@@ -30,6 +46,12 @@
     didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
   // Request alert permission for local banners; remote token registration is separate.
   UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
+  // Before launch returns, so a tap that launched the app is delivered.
+  center.delegate = self;
+#if defined(PP_IOS_CALLKIT)
+  // Likewise a VoIP push that launched it (P013).
+  pbr::InstallIosCallSystemUi();
+#endif
   [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound |
                                            UNAuthorizationOptionBadge)
                         completionHandler:^(BOOL /*granted*/, NSError* /*error*/) {
@@ -82,6 +104,35 @@
   if (completionHandler) {
     completionHandler(UIBackgroundFetchResultNewData);
   }
+}
+
+// In the foreground: the app rings and shows messages itself, so the alert is not shown; a call
+// alert still makes it look for the ring now.
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+       willPresentNotification:(UNNotification*)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
+  (void)center;
+  if (IsCallWake(notification.request.content.userInfo)) {
+    pbr::BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+  }
+  completionHandler(UNNotificationPresentationOptionNone);
+}
+
+// A tap: a call alert brings the app up to ring; a message banner opens its chat.
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+    didReceiveNotificationResponse:(UNNotificationResponse*)response
+             withCompletionHandler:(void (^)(void))completionHandler {
+  (void)center;
+  NSDictionary* userInfo = response.notification.request.content.userInfo;
+  if (IsCallWake(userInfo)) {
+    pbr::BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+  } else {
+    id thread = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationThreadKey]];
+    if ([thread isKindOfClass:[NSString class]] && [(NSString*)thread length] > 0) {
+      pbr::DispatchIosNotificationActivation(std::string([(NSString*)thread UTF8String]));
+    }
+  }
+  completionHandler();
 }
 
 @end

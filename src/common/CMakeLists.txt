@@ -10,6 +10,7 @@ add_library(pp_pbr_common STATIC
   chat/RelayStreamKey.cpp
   chat/SystemControl.cpp
   directory/DirectoryJson.cpp
+  directory/KeyCard.cpp
   ui/WorkingSetCodec.cpp
   LengthPrefixedCodec.cpp
 )

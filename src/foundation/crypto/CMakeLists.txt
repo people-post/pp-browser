@@ -11,10 +11,12 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     FileCipher.cpp
     HybridKem.cpp
     IdentitySeedDeriver.cpp
+    KemKeyBinding.cpp
     MlDsa.cpp
     MessageCipher.cpp
     MediaKeyWrap.cpp
     PinKeyDeriver.cpp
+    PskSessionRestart.cpp
     PinResolver.cpp
     ProfileSecretsEngine.cpp
     ProfileUnlockGate.cpp

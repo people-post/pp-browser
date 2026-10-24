@@ -1,31 +1,31 @@
 # `src/domain`
 
-Independent **product peer** libraries (North Star). Peers must not `#include` or
-`PUBLIC_LIBS`-link each other — cross-need goes through `src/common/` contracts and
-`src/feature/` wiring.
+**Shared capabilities** composed from [`src/lib/`](../lib/README.md) peers: what two or more features
+(or pp-node, the probes) need, without any one feature's hub. Rules: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md).
 
-| Peer (today) | Path | CMake |
-|--------------|------|-------|
-| people | `domain/people/` | `pp_domain_people` |
-| media | `domain/media/` | `pp_domain_media` |
-| net | `domain/net/` | `pp_domain_net` |
-| ui | `domain/ui/` | `pp_domain_ui` (product shell: theme/catalogs/input) |
-| messaging | `domain/messaging/` | `pp_domain_messaging` |
-| calls | `domain/calls/` | `pp_domain_calls` |
-| broadcast | `domain/broadcast/` | `pp_domain_broadcast` |
-| pricing | `domain/pricing/` | `pp_domain_pricing` |
-| content | `domain/content/` | `pp_domain_content` |
-| ai | `domain/ai/` | `pp_domain_ai` (+ conversation/mcp sublibs) |
+```
+app → gui → feature → domain → lib → foundation → common
+                      ↑ you are here
+```
 
-The mesh is not a peer here: it is [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)
-(`#include "mesh/…"`, `pp_mesh`), which `feature/` and `app/` compose. Domain code may embed only its
-vocabulary (`mesh/types/…`, `pp_mesh_types`, through `pp_pbr_common`) — `check_base_includes.sh`.
+- **Belongs here:** a capability that combines two or more libs, or that two or more features use —
+  and owns **no user-facing lifecycle** (no hub, session, screen). Anything with a hub / session /
+  screen is a feature.
+- **Downward only:** `lib/`, `foundation/`, `common/`, the mesh and Amp. Never `feature/`, `gui/`,
+  `app/`; never RmlUi.
+- **Ordered:** a module uses only the modules before it in [`CMakeLists.txt`](CMakeLists.txt);
+  `scripts/check/check_domain_includes.sh` holds the same order.
+- **Names what it links:** `pp_browser_add_domain_library` (`cmake/PpBrowserDomain.cmake`) — no
+  `pp_base`, so headless modules stay linkable by pp-node (its allowlist:
+  `cmake/PpBrowserNoUiDeps.cmake`).
 
-Window host / RmlUi Backend / overlays live in `foundation/platform/ui/` (not a domain peer).
+| Module | CMake | What it does | Used by |
+|--------|-------|--------------|---------|
+| `registration/` | `pp_domain_registration` | Registration finish / renew / nickname over the relay client and the identity store (headless) | conversations, pp-node |
+| `node/` | `pp_domain_node` (+ `pp_domain_node_ledger`) | Node-role mesh services: hosting from capabilities, DHT / directory config, self row, org-seed admission; the ledger role (headless) | conversations, pp-node |
+| `call_media/` | `pp_domain_call_media` | pp-browser's realtime protocol on the mesh: call-media transport, leg coordinator, frame crypto (headless) | calls, product, pp-call-probe |
+| `peers/` | `pp_domain_peers` | Who a peer is: directory nicknames for strangers and the names threads / senders show (`DirectoryShadowCache`, `PeerDisplaySources`), signing / KEM keys from the relay directory, profile icons; the people → messaging bridges (`LocalKeysFromIdentity`, `GroupInviteStanding`) | conversations, gui |
+| `attachments/` | `pp_domain_attachments` | Chat attachments: the peer-direct blob request and its mesh transport (`AmpChatBlobTransport`), CDN upload / fetch, background fetch + decrypt (`AttachmentFetchWorkflow`), the content-store binding (`AttachmentContent`) | conversations, gui |
+| `delivery/` | `pp_domain_delivery` | Getting a chat envelope to a peer and its history back: where each peer is reached on the relay (`PeerRouteBook`: contacts, routes learned from verified envelopes, the directory) and on the mesh (`PeerTransports`: the direct chat, history and blob transports on one Amp peer-links instance, the peers' dial endpoints, warm-up), the outbox (`DeliveryOutbox`: Amp or relay, retries, outcomes to the owner), and the control lane (`ControlLane`: identified system messages — call signaling — E2E under the pair's e2e_public session, `E2ePublicSessionKeys`) | conversations, broadcast, calls (through the hub) |
 
-Includes: `#include "domain/people/…"`, `#include "domain/media/…"`, `#include "domain/net/…"`, `#include "domain/ui/…"`, `#include "domain/messaging/…"`, `#include "domain/calls/…"`, `#include "domain/broadcast/…"`, `#include "domain/pricing/…"`, `#include "domain/content/…"`, `#include "domain/ai/…"`.
-Aggregate `pp_domain` is defined in this folder’s [`CMakeLists.txt`](CMakeLists.txt). Product-stack convenience `pp_base` (foundation + Amp + `pp_domain`) is in [`src/CMakeLists.txt`](../CMakeLists.txt).
-
-**Testing:** domain peers should be almost fully coverable by **unit** tests (and loopback compose where the peer owns the stack). Prefer extracting a seam over sprawling integration when a path is too hard. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md). Add `tests/README.md` under a peer only when coverage/skips are non-obvious.
-
-North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+Tests sit in each module's `tests/` (`pp_browser_domain_<module>_test`).

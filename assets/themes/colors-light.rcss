@@ -25,6 +25,15 @@ selection {
   background-color: #b4d5fe;
 }
 
+.shell-dialog-prompt {
+  background-color: #ffffff;
+  border-color: #c7cbd3;
+}
+
+.shell-dialog-prompt:focus {
+  border-color: #4a6cf7;
+}
+
 .prompt-composer-input scrollbarvertical sliderbar {
   background-color: #00000040;
 }
@@ -194,6 +203,28 @@ select selectbox option:hover {
 .bubble-user {
   background-color: #4a6cf7;
   color: #ffffff;
+}
+
+/* Call rows: ours like our bubbles, theirs like theirs. Icons are white sources tinted with image-color. */
+.message-row-user .chat-call-row {
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.message-row-user .chat-call-row svg {
+  image-color: #ffffff;
+}
+
+.message-row-user .chat-call-row.muted {
+  background-color: #a3b3f9;
+}
+
+.message-row-peer .chat-call-row {
+  background-color: #f3f4f6;
+}
+
+.message-row-peer .chat-call-row svg {
+  image-color: #374151;
 }
 
 .bubble-text {

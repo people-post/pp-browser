@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/calls/LiveCall.h"
+#include "lib/calls/LiveCall.h"
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>

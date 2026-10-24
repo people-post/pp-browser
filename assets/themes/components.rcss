@@ -2103,6 +2103,19 @@ select selectbox option {
   margin-bottom: 8dp;
 }
 
+/* The prompt dialog's text field: a visible box (it was invisible against the dialog, Kenneth 2026-10-23). */
+.shell-dialog-prompt {
+  display: block;
+  width: 100%;
+  min-height: 40dp;
+  margin: 4dp 0 12dp 0;
+  padding: 8dp 12dp;
+  border-width: 1dp;
+  border-radius: 8dp;
+  box-sizing: border-box;
+  cursor: text;
+}
+
 .shell-call-meters {
   display: block;
   margin-top: 12dp;
@@ -2823,6 +2836,26 @@ input.checkbox {
   margin: 8dp 0;
 }
 
+/* A call in the transcript: icon + duration (or outcome), a pill on the starter's side. */
+.chat-call-row {
+  display: inline-block;
+  padding: 7dp 12dp;
+  border-radius: 12dp;
+  font-size: 13dp;
+}
+
+.chat-call-row-icon {
+  display: inline-block;
+  width: 16dp;
+  height: 16dp;
+  margin-right: 6dp;
+  vertical-align: middle;
+}
+
+.chat-call-row-text {
+  vertical-align: middle;
+}
+
 .chat-card {
   border-radius: 8dp;
   padding: 10dp 12dp;
@@ -3277,6 +3310,18 @@ input.checkbox {
   flex-wrap: wrap;
 }
 
+.me-invite-qr {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8dp;
+  margin-top: 12dp;
+}
+
+.me-invite-qr-code {
+  width: 200dp;
+  height: 200dp;
+}
+
 .me-profile-avatar-row {
   align-items: center;
   flex-wrap: wrap;
@@ -3392,13 +3437,6 @@ input.checkbox {
 .contact-detail-title-block {
   flex: 1;
   min-width: 0;
-}
-
-.chat-contact-card-avatar {
-  width: 48dp;
-  height: 48dp;
-  border-radius: 24dp;
-  margin-bottom: 8dp;
 }
 
 .chat-attachment-card {

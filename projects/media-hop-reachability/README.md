@@ -50,7 +50,7 @@ flowchart LR
 
 | Layer | Owns |
 |-------|------|
-| **Amp + `src/domain/mesh/`** | Discovery, listen/observed addrs, reachability probes, punch, circuit, dial |
+| **Amp + `src/lib/mesh/`** | Discovery, listen/observed addrs, reachability probes, punch, circuit, dial |
 | **p2p-mesh policy** | Who may be a hop (contacts ∪ seed), **relay scope / domain bridging** ([RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md)), budgets, incentives, settle; introducer eligibility policy |
 | **p2p-av-calls** | SoftMigrate / attach **consume** “is dialable?” |
 | **This project** | Spec for the **in-stack** program; thin consume notes |

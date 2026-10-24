@@ -1,6 +1,6 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
-#include "feature/node/AppRuntimeMeshExecutors.h"
-#include "domain/people/ContactAddressDisclosure.h"
+#include "domain/node/AppRuntimeMeshExecutors.h"
+#include "lib/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -9,11 +9,11 @@
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/chat/RelayEnvelope.h"
-#include "domain/calls/CallControlCodec.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/people/ContactIdentity.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/people/ContactIdentity.h"
+#include "lib/people/ContactTypes.h"
+#include "lib/calls/CallLifecycleTypes.h"
 #include "common/directory/DirectoryJson.h"
 #include "mesh/types/DirectoryTypes.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -21,7 +21,7 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
-#include "domain/people/MeshHopPolicy.h"
+#include "lib/people/MeshHopPolicy.h"
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
@@ -228,7 +228,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
   };
   deps.delivery.send_control = [this](const std::string& peer_account, const ThreadMessage& control,
-                                      const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+                                      const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
     ThreadMessage msg = control;
     msg.sender_contact_id = local_account_;
     if (peer_account.empty()) {
@@ -300,7 +300,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
                                                    chat_deps->io.post_worker, chat_deps->io.post_io,
                                                    chat_deps->io.post_after);
   chat_->Start();
-  chat_->SetInboundHandler([this](RelayEnvelope env) { OnChatInbound(std::move(env)); });
+  chat_->SetInboundHandler([this](RelayEnvelope env, std::string /*from_peer_id*/) { OnChatInbound(std::move(env)); });
 
   std::cout << "ok  product-stack CallStack+CallUiBackend wired account=" << local_account_
             << " peer_id=" << local_peer_id_ << "\n";

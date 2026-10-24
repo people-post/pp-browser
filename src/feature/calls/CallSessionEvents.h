@@ -1,8 +1,8 @@
 #pragma once
 
-#include "feature/call_media/ICallMediaTransport.h"
+#include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "domain/calls/CallTypes.h"
+#include "lib/calls/CallTypes.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "foundation/runtime/OwnerSteps.h"
 

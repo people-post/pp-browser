@@ -1,7 +1,7 @@
 #include "feature/calls/CallUiBackend.h"
 
-#include "domain/media/CallMediaEngine.h"
-#include "domain/media/CameraCaptureOrientation.h"
+#include "lib/media/CallMediaEngine.h"
+#include "lib/media/CameraCaptureOrientation.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallStack.h"
 #include "foundation/runtime/AppRuntime.h"

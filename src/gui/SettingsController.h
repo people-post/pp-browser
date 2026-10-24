@@ -5,6 +5,10 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
+#include "gui/SettingsCasLibrary.h"
+#include "gui/SettingsHost.h"
+#include "gui/SettingsProfileActions.h"
+#include "gui/SettingsSecurityActions.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -32,7 +36,7 @@ class Context;
 
 namespace pbr {
 
-class SettingsController : public Module {
+class SettingsController : public Module, public SettingsHost {
 public:
   struct SectionListRow {
     ui::String id;
@@ -49,30 +53,15 @@ public:
     bool enabled = true;
   };
 
-  struct CasLibraryRow {
-    ui::String content_id_hex;
-    ui::String title;
-    ui::String detail;
-    ui::String realm_label;
-    ui::String pin_label;
-    bool can_share_publicly = false;
-    bool can_unpublish = false;
-    bool can_copy_tip = false;
-  };
 
   SettingsController();
   ~SettingsController() override = default;
 
-  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
-  static void InstallInstance(SettingsController& controller);
-  static void ClearInstance();
-  static SettingsController& Instance();
-
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
-  /** Shell layout / navigation without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
-  /** Toast / dialog feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();
@@ -110,8 +99,6 @@ private:
     ui::String promoted_mcp_url;
     ui::String search_provider = "duckduckgo";
     std::vector<McpServerRow> mcp_servers;
-    std::vector<CasLibraryRow> cas_library_rows;
-    ui::String cas_library_empty_label;
     ui::String relay_base_url;
     ui::String directory_base_url;
     ui::String registration_base_url;
@@ -134,6 +121,7 @@ private:
     ui::String direct_connections = "contacts";
     ui::String direct_connections_label;
     ui::String trusted_relays_only = "off";
+    ui::String reachable_without_relay = "off";
     bool show_prefer_contacts_toggle = false;
     ui::String profile_nickname;
     ui::String profile_peer_id;
@@ -153,6 +141,9 @@ private:
     int profile_avatar_tone = 0;
     ui::String auto_renew_registration = "auto";
     ui::String show_notifications = "on";
+    ui::String stay_connected = "off";
+    /** The "Stay connected" row shows (Android: phones without a push service). */
+    bool stay_connected_available = false;
     ui::String brief_llm_key_masked;
     ui::String appearance = "system";
     ui::String appearance_label = "System";
@@ -177,9 +168,6 @@ private:
     bool pin_protection_not_setup = false;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
-    ui::String pin_change_old;
-    ui::String pin_change_new;
-    ui::String pin_change_confirm;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
     ui::String call_invite_policy = "everyone";
@@ -193,76 +181,27 @@ private:
     ui::String support_subtitle;
   };
 
-  static void SelectSectionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ResetSectionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnLlmFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnLlmPresetChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseThemeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseLanguageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseGroupInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseCallInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseDirectConnectionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                       const ui::VariantList& args);
-  static void DrainPendingAttachmentMediaCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                  const ui::VariantList& args);
-  static void ClearDownloadedAttachmentsCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                 const ui::VariantList& args);
-  static void SetCasLibraryFilterCallback(ui::DataModelHandle model, ui::Event& ev,
-                                         const ui::VariantList& args);
-  static void ShareCasPubliclyCallback(ui::DataModelHandle model, ui::Event& ev,
-                                      const ui::VariantList& args);
-  static void UnpublishCasCallback(ui::DataModelHandle model, ui::Event& ev,
-                                  const ui::VariantList& args);
-  static void CopyCasTipCallback(ui::DataModelHandle model, ui::Event& ev,
-                               const ui::VariantList& args);
-  static void FetchCasTipCallback(ui::DataModelHandle model, ui::Event& ev,
-                                const ui::VariantList& args);
-  void RefreshCasLibrary();
-  void PushCasLibraryBindings();
-  void OnSetCasLibraryFilter(const std::string& filter);
-  void OnShareCasPublicly(int index);
-  void OnUnpublishCas(int index);
-  void OnCopyCasTip(int index);
-  void OnFetchCasTip();
-  void PerformShareCasPublicly(const std::string& content_id_hex);
-  void PerformUnpublishCas(const std::string& content_id_hex);
-  void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
-  static void ToggleShowNotificationsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleReduceTransparencyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleCallDiagnosticsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleShowAdvancedSettingsCallback(ui::DataModelHandle model, ui::Event& ev,
-                                                 const ui::VariantList& args);
-  static void ToggleCrashReportsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleAutoRenewRegistrationCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnIntegrationsFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnNetworkFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleNodeEnabledCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void RetestReachabilityCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TryUpnpPortCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ShowReachabilityHelpCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void DismissReachabilityHelpCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleCircuitRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleMediaRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleDhtCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void TogglePreferContactsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ToggleTrustedRelaysCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnProfileNicknameCommitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnRegisterProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnRotateBriefLlmKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnCopyProfileIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnPickProfileIconCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnClearProfileIconCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnShareProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnAddMcpServerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnRemoveMcpServerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnChangePinCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnExportLinkDeviceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnClearUndeliveredCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnResetToolPermissionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OnResetProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void OpenSupportChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  // Data-model events with more to them than one call.
+  void OnLlmPresetChanged(ui::Event& ev);
+  void ToggleNodeEnabled();
+  void RetestReachability();
+  void TryUpnpPort();
+  void ShowReachabilityHelp();
+  void DismissReachabilityHelp();
+  void ToggleCircuitRelay();
+  void ToggleMediaRelay();
+  void ToggleDht();
+  void TogglePreferContacts();
+  void ToggleReachableWithoutRelay();
+  void ToggleTrustedRelays();
+  void ToggleShowNotifications();
+  void ToggleStayConnected();
+  void ToggleReduceTransparency();
+  void ToggleCallDiagnostics();
+  void ToggleShowAdvancedSettings();
+  void ToggleCrashReports();
+  void ToggleAutoRenewRegistration();
+
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -275,7 +214,16 @@ private:
   void ApplySupportDiscovery();
   void ApplySectionAttention();
   bool ComputeNetworkAttention() const;
-  SessionStore& Store();
+  // SettingsHost
+  SessionStore& Store() override;
+  void ShowStatus(const std::string& status) override;
+  void Resync(bool include_profile_nickname) override;
+  SettingsUiState& UiState() override;
+  void PullFromView() override;
+  void PushToView(bool include_profile_nickname) override;
+  void SaveProfileNickname() override;
+  void RequestSyncLayout(const char* reason) override;
+  Roe<void> ForgetToolPermissions() override;
   void FinishPaneResync();
   /** Mount selected section RML into #settings-section-mount (one section at a time). */
   void MountSelectedSettingsSection();
@@ -293,25 +241,12 @@ private:
   /** Blur / leave-Me: flush nickname only when it differs from last loaded/saved. */
   void CommitProfileNickname(bool show_toast = false);
   void MaybeShowSaveToast(const std::string& section_id);
-  void ReportFailure(const Error& err);
+  void ReportFailure(const Error& err) override;
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
-  void OnRegisterProfile();
-  void OnRotateBriefLlmKey();
-  void OnCopyProfileId();
-  void OnPickProfileIcon();
-  void OnClearProfileIcon();
-  void OnShareProfile(ShareAnchor anchor = {});
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
-  void OnChangePin();
-  void OnExportLinkDevice();
-  void EnsureSecurityUnlocked(std::function<void()> then);
-  void OnClearUndeliveredOlderThan();
-  void OnResetToolPermissions();
-  void OnResetProfile();
-  void PerformResetProfile();
   void OnChooseTheme(ui::Event& ev);
   void ApplyThemeChoice(const std::string& appearance_pref);
   void OnChooseLanguage(ui::Event& ev);
@@ -354,8 +289,11 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   UnlockEnsurePorts unlock_ensure_;
+  SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
+                                  [this](const Error& err) { ReportFailure(err); }};
+  SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
+  SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
 
-  static SettingsController* installed_instance_;
 };
 
 } // namespace pbr

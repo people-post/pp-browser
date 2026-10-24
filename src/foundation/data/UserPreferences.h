@@ -47,8 +47,13 @@ struct ProfilePreferences {
   bool pin_is_default = false;
   /** When true, renew network registration near/past expiry after unlock. */
   bool auto_renew_registration = true;
-  /** P005 — OS banners + FCM registration; sync continues when false. */
+  /** P005 (amended by P010) — message banners; push stays registered and calls ring either way. */
   bool show_notifications = true;
+  /**
+   * P011 — Android: stay connected in the background (a foreground service keeps the app working,
+   * the relay polled slowly) so calls and messages arrive without push. Opt-in: costs battery.
+   */
+  bool stay_connected = false;
   /**
    * V032 — show call media diagnostics (debug subtitle + rich Call details).
    * OR'd with CLI `--debug` via CallDiagnosticsEnabled().

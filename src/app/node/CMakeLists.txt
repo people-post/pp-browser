@@ -20,11 +20,11 @@ target_include_directories(pp-node PRIVATE
 )
 
 target_link_libraries(pp-node PRIVATE
-  pp_feature_registration
-  pp_feature_node
+  pp_domain_registration
+  pp_domain_node
   pp_mesh
-  pp_domain_people
-  pp_domain_net
+  pp_lib_people
+  pp_lib_net
   pp_foundation_crypto
   pp_foundation_data
   pp_foundation_platform_core
@@ -36,13 +36,13 @@ target_link_libraries(pp-node PRIVATE
   sodium
   CURL::libcurl
 )
-if(TARGET pp_feature_node_ledger)
-  target_link_libraries(pp-node PRIVATE pp_feature_node_ledger)
+if(TARGET pp_domain_node_ledger)
+  target_link_libraries(pp-node PRIVATE pp_domain_node_ledger)
 endif()
 pp_browser_apply_warnings(pp-node)
 # Fail configure / link if a PUBLIC_LIBS edge reintroduces SDL/RmlUi/GUI.
 pp_browser_assert_no_ui_dependencies(pp-node)
-# First-party closure stays foundation / common / domain {mesh,people,net} / headless feature.
+# First-party closure stays foundation / common / lib {people,net} / headless feature.
 pp_browser_assert_node_link_allowlist(pp-node)
 pp_browser_add_no_ui_link_check(pp-node)
 

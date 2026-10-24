@@ -22,7 +22,7 @@ pp-browser is a native AI-oriented UI shell:
 - **First-party UI engine** — layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`ui::` / `#include <ui/…>`; RmlUi-derived)
 - **PeerId** — derived by [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`crypto/PeerId.h`: ML-DSA key wire / multihash / base58); the mesh underlay is Amp
 - **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
-- **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-amp` + `pp-cpp-mesh` + `pp-cpp-ui` + `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
+- **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-amp` + `pp-cpp-mesh` + `pp-cpp-ui` + `src/common/`, `src/foundation/`, `src/lib/`, `src/feature/`, `src/gui/`, `src/app/` — North Star: `app → feature → domain → lib → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Logging:** [docs/architecture/LOGGING.md](docs/architecture/LOGGING.md) (Module `redirectLogger` / static `InitLogging` / free-fn `Logger&`). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh); L4 kinds gate [docs/contracts/L4_PROTOCOL_KINDS.md](docs/contracts/L4_PROTOCOL_KINDS.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
@@ -32,7 +32,7 @@ We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/peo
 
 - Edit the engine in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document integration notes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
-- App-specific host/overlays stay in [`src/foundation/platform/ui/`](src/foundation/platform/ui/); product shell (theme/catalogs) in [`src/domain/ui/`](src/domain/ui/); reusable SDL/GL backend lives in pp-cpp-ui `src/platform` + `src/render`.
+- App-specific host/overlays stay in [`src/foundation/platform/ui/`](src/foundation/platform/ui/); product shell (theme/catalogs) in [`src/lib/ui/`](src/lib/ui/); reusable SDL/GL backend lives in pp-cpp-ui `src/platform` + `src/render`.
 
 ### Fork features (pp-browser)
 
@@ -55,7 +55,7 @@ AI-generated UI and chat output must follow:
 - [docs/ui/RML_PROFILE.md](docs/ui/RML_PROFILE.md) — allowed RML elements, structured JSON chat blocks
 - [docs/ui/RCSS_PROFILE.md](docs/ui/RCSS_PROFILE.md) — supported RCSS properties
 
-Prompt text for LLMs is built in [`src/domain/ai/PromptBuilder.cpp`](src/domain/ai/PromptBuilder.cpp).
+Prompt text for LLMs is built in [`src/lib/ai/PromptBuilder.cpp`](src/lib/ai/PromptBuilder.cpp).
 
 ## Common tasks
 
@@ -68,11 +68,11 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Working set panel | [docs/ui/WORKING_SET_PANEL.md](docs/ui/WORKING_SET_PANEL.md) |
 | Theme / layout | `assets/themes/base.rcss`, [docs/ui/UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) |
 | App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/gui/chat/ChatController.cpp` |
-| Structured AI replies | `src/domain/ai/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/domain/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| Structured AI replies | `src/lib/ai/StructuredTextParser.cpp` |
+| Turn planning pipeline | `src/lib/ai/TurnPlan.*`, `src/lib/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| Chat storage / SQLite | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
+| Chat storage / SQLite | `src/lib/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | Mesh channel framing / hangs | [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), pp-cpp-amp `docs/STACK.md` (channels, sessions), pp-cpp-mesh (`host/`, `l4/`) |
 | P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
 | P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |
@@ -81,14 +81,14 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) |
 | Call path migration / link events / mobility | [projects/call-path-resilience/](projects/call-path-resilience/) |
 | Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) |
-| Contacts UI / store | `src/gui/contacts/ContactsController.*`, `src/domain/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
+| Contacts UI / store | `src/gui/contacts/ContactsController.*`, `src/lib/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | Profile icons / chat attachments | [docs/contracts/SERVICE_ENDPOINTS.md](docs/contracts/SERVICE_ENDPOINTS.md), [projects/relay-blob-upload/](projects/relay-blob-upload/) |
 | E2E message crypto | `src/foundation/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md), [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
 | At-rest encryption (PIN vault) | `ProfileSecretsEngine`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md), [projects/at-rest-crypto/](projects/at-rest-crypto/) |
 | Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) |
 | User privacy (IP disclosure, metadata, presence) | [projects/privacy/](projects/privacy/) |
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — [at-rest A007](projects/at-rest-crypto/DECISIONS.md) |
-| pp-node / node role | `src/app/node/` (thin: main, bootstrap, status HTTP), `src/feature/node/NodeMeshServices.*` (shared with desktop `MeshRole::Node`), probes in `src/app/node/tools/`; link allowlist + `scripts/dev/pp_node_closure.sh` — [docs/ops/BUILD.md](docs/ops/BUILD.md#headless-mesh-node-pp-node) |
+| pp-node / node role | `src/app/node/` (thin: main, bootstrap, status HTTP), `src/domain/node/NodeMeshServices.*` (shared with desktop `MeshRole::Node`), probes in `src/app/node/tools/`; link allowlist + `scripts/dev/pp_node_closure.sh` — [docs/ops/BUILD.md](docs/ops/BUILD.md#headless-mesh-node-pp-node) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/foundation/data/`, `src/foundation/runtime/`, `src/foundation/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
 | Doc map / contracts | [docs/README.md](docs/README.md) |
 | In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
@@ -109,14 +109,14 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
-- Respect layer dependencies: `app → feature → domain → foundation → common` (today paths still `base/` for foundation+domain; see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **domain peer → domain peer** edges; put shared seams in `src/common/` and wire in `feature/`.
+- Respect layer dependencies: `app → feature → domain → lib → foundation → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **lib peer → lib peer** edges; put shared seams in `src/common/` and wire in `feature/`.
 - **Design as oracle:** tests guard documented intent / purpose IDs, not today’s call graph or harness heals — [TESTING.md § Design as oracle](docs/architecture/TESTING.md#design-as-oracle). Older suites may still drift; when you hit a mismatch in work you are already doing, tighten that case in the same change (no courtesy freeze, no repo-wide rewrite).
 - **Promote test failures downward:** if smoke/hard-lab finds a policy bug that loopback/gtest can reproduce, fix **and** add the cheaper regression — see [TESTING.md § When a higher tier finds a bug](docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
 - **Composition vocabulary:** lower peers must not embed higher peers’ concepts (ports speak consumer needs; roots project upward) — [COMPOSITION_VOCABULARY.md](docs/architecture/COMPOSITION_VOCABULARY.md) ([V048](projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 - **Keep function complexity low:** prefer shallow methods with one job. As a rule of thumb, avoid growing a single function past ~80–100 lines or nesting deep branching/lambdas when a named helper would clarify the steps. Orchestrators (`Wire`, `Build*`, phase hooks) should call helpers — do not re-inline multi-step setup into one mega-function. Extract when you touch the area; do not open a repo-wide rewrite.
-- **Do not split one class across `.cpp` files for size:** prefer named helpers in the **same** translation unit, or a **new type** with a clear role (`*Ports`, `*Coordinator`, logic in `domain/`). Do **not** add another `.cpp` that only implements more methods of an existing class to shrink a file (inbound call-control arms live in `CallSessionManager.cpp`).
+- **Do not split one class across `.cpp` files for size:** prefer named helpers in the **same** translation unit, or a **new type** with a clear role (`*Ports`, `*Coordinator`, logic in `lib/`). Do **not** add another `.cpp` that only implements more methods of an existing class to shrink a file (inbound call-control arms live in `CallSessionManager.cpp`).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).
 
 ### Naming drift (reorg / renames)
@@ -127,7 +127,7 @@ Layer moves and renames leave stale names in chat memory, summaries, and project
 - When you hit doc↔code or comment↔code drift in files you are already editing, fix that local drift in the same change (or a tiny adjacent doc tweak). Do **not** open a rename campaign.
 - Layer dual names can be intentional (e.g. domain `CasLibraryRow` vs settings port `CasLibraryItemView`) — match the vocabulary of the layer you are in; do not invent aliases.
 - Prefer documenting **paths** (`CasLibrary.h`, `CasLibraryCommands.*`) over restating full signatures that rot.
-- Keep app wiring thin (readiness + deps only); put orchestration in `feature/` / `domain/` so renames stay localized.
+- Keep app wiring thin (readiness + deps only); put orchestration in `feature/` / `lib/` so renames stay localized.
 
 ### Role naming (avoid overloaded `*Service`)
 
@@ -141,7 +141,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | UI-safe surface | `*Facade` | `ConversationsFacade` |
 | Durable state | `*Store` | thread/CAS/contacts stores |
 | Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
-| Org HTTP client bag | `OrgBackendClients` | `domain/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
+| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
 | Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
 | L4 protocol ends | `serve/*Server`, `client/*ClientCoordinator` | `MediaRelayServer` / `MediaRelayClientCoordinator`, `CircuitRelayServer` / `CircuitClientCoordinator`, `DhtServer` / `DhtClient` — [SRC_LAYOUT § L4 protocols](docs/architecture/SRC_LAYOUT.md#l4-protocols-serve-and-client) |
 | Reachability engine | `*Engine` | `ReachabilityEngine` |

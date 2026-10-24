@@ -1,0 +1,40 @@
+# Call vocabulary, control codec, session and media-key stores, and pure path / hop / migration
+# logic. Messaging carries call control without knowing it (docs/architecture/CALLS.md).
+pp_browser_add_lib_library(pp_lib_calls
+  SOURCES
+    CallControlCodec.cpp
+    CallControlFamily.cpp
+    CallMediaErrorText.cpp
+    CallDirectPathLogic.cpp
+    CallHopAttachLogic.cpp
+    CallHopJoinLogic.cpp
+    CallHopPlan.cpp
+    CallLifecycleTypes.cpp
+    CallMediaBundleLogic.cpp
+    CallMediaControlCodec.cpp
+    CallMediaKeyExchange.cpp
+    CallMediaKeyStore.cpp
+    CallMediaSeat.cpp
+    CallMediaSessionLogic.cpp
+    CallMobility.cpp
+    CallPathMobility.cpp
+    CallPathPolicy.cpp
+    CallScreen.cpp
+    CallSessionLogic.cpp
+    CallSessionQueries.cpp
+    CallSessionStore.cpp
+    CallSummaryLogic.cpp
+    CallTypes.cpp
+    LiveCall.cpp
+    PeerCapsLogic.cpp
+    SoftMigrateLogic.cpp
+  PUBLIC_LIBS
+    pp_foundation_error
+    pp_foundation_data
+    pp_foundation_crypto
+    sodium
+    SQLite::SQLite3)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

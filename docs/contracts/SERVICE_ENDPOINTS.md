@@ -42,11 +42,11 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg?, initiation_floor? }` | `{ success, relay_user_id, message, expires_at, llm_api_key, initiation_floor? }` |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_signature_b64?, signature, timestamp, nickname?, signature_alg?, initiation_floor? }` | `{ success, relay_user_id, message, expires_at, llm_api_key, initiation_floor?, kem_bound }` |
 
 Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
 
-Brief derives and stores `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and binds **at most one** `relay_user_id` per Account ID (M006). Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device).
+Brief derives and stores `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and binds **at most one** `relay_user_id` per Account ID (M006). Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_signature_b64`: the account's signature binding that KEM key to it ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), `pp-browser:kem-binding-v1`). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
 
 ## HTTP relay API auth (per-request sign bytes)
 
@@ -184,19 +184,22 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 | HTTP | Purpose |
 |------|---------|
 | `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
-| `POST /v1/devices/unregister` | Remove device binding (alerts off / logout) |
+| `POST /v1/devices/unregister` | Remove device binding (the client keeps its binding with alerts off — P005 amended; account revoke removes all of them) |
 
 On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
 
 | Condition | Opaque type |
 |-----------|-------------|
-| Ordinary message / default | `inbox_wake` |
-| Call-invite class system control (`control_type=call_invite`) or dedicated call-invite accept path | `call_wake` |
+| Accepted message | `inbox_wake` |
+| Accepted message with `"urgent": true`, within the urgent rate limit | `call_wake` |
+
+The relay cannot tell a call invite from a message (the control type is inside the end-to-end payload). The sender says so instead: a call invite's send record carries `"urgent": true` (P012). The hint sits next to the record's fields and is **not** in the signed bytes, so a relay that does not know it ignores it and verifies the request as before. The relay trusts it no further than a rate limit: per sender → recipient, at most one urgent wake per 15 s; over the limit the message wakes as `inbox_wake`. Every wake syncs the inbox, a call invite in it rings, and every ring raises the "Incoming call" notification where the user is not looking (P010 / `CallPresenter`).
 
 | `platform` | Provider shape |
 |------------|----------------|
 | `android` | FCM **data** message `{ "type": "…" }` |
-| `ios` | APNs silent push (`content-available: 1`, `apns-push-type: background`) with custom `type` |
+| `ios` | `inbox_wake`: APNs silent push (`content-available: 1`, `apns-push-type: background`, priority 5) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `apns-collapse-id: pp-call`, `aps.interruption-level: time-sensitive`, `aps.sound: default`, `aps.alert: { title-loc-key: CALL_INCOMING_TITLE, loc-key: CALL_INCOMING_BODY }` — worded on the device from `packaging/ios/*.lproj`, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and does not wake an app the user swiped away. The collapse id is the app's own incoming-call banner id, so the two replace each other |
+| `ios_voip` | PushKit token of a CallKit build (P013), `device_id` = its `ios` device id + `.voip`. Calls only: `call_wake` as a VoIP push (`apns-push-type: voip`, priority 10, topic `<bundle id>.voip`, `{ "type": "call_wake" }`), which then replaces that phone's `ios` call alert. Never anything else — iOS requires the app to report a CallKit call for every VoIP push |
 
 Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 

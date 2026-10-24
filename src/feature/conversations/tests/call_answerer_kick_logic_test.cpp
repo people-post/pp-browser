@@ -1,4 +1,4 @@
-#include "domain/calls/CallAnswererKickLogic.h"
+#include "lib/calls/CallAnswererKickLogic.h"
 
 #include <gtest/gtest.h>
 

@@ -1,7 +1,7 @@
 #include "feature/calls/CallReachSignals.h"
 
-#include "domain/calls/CallControlCodec.h"
-#include "domain/calls/CallMobility.h"
+#include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallMobility.h"
 
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"

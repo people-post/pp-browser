@@ -1,10 +1,10 @@
 #pragma once
 
-#include "domain/broadcast/AnnounceNotificationInbox.h"
-#include "domain/broadcast/AnnounceOverlayReply.h"
-#include "domain/broadcast/PeerAnnounceFeed.h"
-#include "domain/broadcast/PeerAnnouncePublisher.h"
-#include "domain/broadcast/PeerAnnounceRpcCodec.h"
+#include "lib/broadcast/AnnounceNotificationInbox.h"
+#include "lib/broadcast/AnnounceOverlayReply.h"
+#include "lib/broadcast/PeerAnnounceFeed.h"
+#include "lib/broadcast/PeerAnnouncePublisher.h"
+#include "lib/broadcast/PeerAnnounceRpcCodec.h"
 #include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/broadcast/AmpPeerAnnounceTransport.h"
 #include "mesh/host/MeshPorts.h"

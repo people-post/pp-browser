@@ -3,13 +3,13 @@
 #include "common/chat/SystemControl.h"
 
 #include "common/Module.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/messaging/TranscriptAssembly.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/messaging/TranscriptAssembly.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "feature/conversations/DirectoryShadowCache.h"
-#include "feature/conversations/AttachmentFetchWorkflow.h"
-#include "feature/conversations/PeerDisplaySources.h"
+#include "domain/peers/DirectoryShadowCache.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
+#include "domain/peers/PeerDisplaySources.h"
 
 #include <functional>
 #include <optional>

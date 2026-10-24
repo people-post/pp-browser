@@ -1,17 +1,17 @@
 #pragma once
 
-#include "domain/messaging/AtAiParser.h"
-#include "domain/ai/BriefAiClient.h"
-#include "domain/ai/ToolRegistry.h"
-#include "domain/ai/TurnPlan.h"
-#include "domain/ai/TurnTrace.h"
-#include "domain/ai/conversation/ConversationTypes.h"
-#include "domain/ai/mcp/McpClient.h"
+#include "lib/messaging/AtAiParser.h"
+#include "lib/ai/BriefAiClient.h"
+#include "lib/ai/ToolRegistry.h"
+#include "lib/ai/TurnPlan.h"
+#include "lib/ai/TurnTrace.h"
+#include "lib/ai/conversation/ConversationTypes.h"
+#include "lib/ai/mcp/McpClient.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"
-#include "domain/ai/BriefTurnRunner.h"
-#include "domain/ai/ParkedApproval.h"
+#include "lib/ai/BriefTurnRunner.h"
+#include "lib/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
 #include <chrono>
@@ -53,6 +53,8 @@ struct AgentEvent {
   ResponseGoal response_goal = ResponseGoal::General;
   RenderMode render_mode = RenderMode::Blocks;
   std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
+  /** AssistantReady: false only for blocks the host built itself; the GUI filters privileged payloads of the rest (PB-007). */
+  bool from_model = true;
   bool retryable = false;             // Error
   /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
   std::string error_kind;
@@ -158,11 +160,11 @@ private:
                                           const std::string& assistant_content);
   static void HandleSynthesisResponse(const std::shared_ptr<Impl>& state, const ChatCompletionResponse& response);
   static void ValidateAndFinishAssistant(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
-                                         const std::string& finish_reason, bool allow_repair);
+                                         const std::string& finish_reason, bool allow_repair, bool from_model = true);
   static void RunOutputRepair(const std::shared_ptr<Impl>& state, const std::string& raw_output,
                               const std::string& parse_error);
   static void FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
-                                    const std::string& finish_reason);
+                                    const std::string& finish_reason, bool from_model = true);
   static void PersistAssistantToThread(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                        std::string* out_message_id = nullptr);
   static void InjectSynthesisPolicy(const std::shared_ptr<Impl>& state);
@@ -182,7 +184,7 @@ private:
                                const std::string& status);
   static void PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
                                  const std::string& text, const std::string& finish_reason,
-                                 std::vector<BriefAiSource> sources = {});
+                                 std::vector<BriefAiSource> sources = {}, bool from_model = true);
   static void PushError(const std::shared_ptr<Impl>& state, const std::string& message, bool retryable = false,
                         const std::string& error_kind = {});
   static void PushError(const std::shared_ptr<Impl>& state, const Error& err);

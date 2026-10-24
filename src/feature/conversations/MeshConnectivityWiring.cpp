@@ -1,6 +1,6 @@
 #include "feature/conversations/MeshConnectivityWiring.h"
 
-#include "domain/people/MeshHopPolicy.h"
+#include "lib/people/MeshHopPolicy.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
 
@@ -79,6 +79,7 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
   std::vector<mesh::MeshHopCandidate> rendezvous =
       BuildCircuitHopList(contacts, directory_nodes, dht_nodes, ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes),
                           mesh_cfg.prefer_contacts_for_routing, include_seeds);
+  rendezvous = KeepCircuitRelays(std::move(rendezvous), directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers);
   // Trusted relays only: the configured org seeds, not the directory's volunteers merged into them.
   // Seeds known unreachable are no park target either: Accept would wait out the park for nothing.
   std::vector<mesh::MeshHopCandidate> seeds = CollectSeedHopCandidates(

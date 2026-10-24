@@ -44,3 +44,25 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 1. Keep hard-w5 `all` green in nightly (success oracles); stack fail → Bridge/reach fix + gtest promote
 2. ~~Retire Phase-2 / Phase-3 probe reach copies~~ — done (COLD phases)
 3. N-HARD-DIR / DHT when hooks exist
+
+## Replan gates (from docs/ops/TEST_STRATEGY.md)
+
+Later work is intentionally underspecified until evidence exists:
+
+| Gate | When | Decide |
+|------|------|--------|
+| **A** | After this inventory signed off | Phase 1 (Tier B glue) vs Phase 2 (`N-FANOUT`) order — **done:** Phase 1 then N-FANOUT |
+| **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` — **done:** soft N-CAP-MEDIA next |
+| **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
+| **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
+| **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallMediaBridge` glue and GUI remain deferred. |
+| **F** | Hard lab design signed off | Wave order + sparse set — **done (design):** [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); carry out [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md) h1+ |
+
+## Test delivery sequence (from docs/ops/TEST_STRATEGY.md)
+
+1. **Phase 0** — this doc + IMAGE_SMOKE cross-link.
+2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
+3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
+4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
+5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
+6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 `--suite hard`; Wave 2 `--suite hard-w2`; Wave 3 STALE/SEED `--suite hard-w3`; Wave 5 CGNAT `--suite hard-w5`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

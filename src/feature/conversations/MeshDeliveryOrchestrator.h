@@ -2,31 +2,39 @@
 
 #include "mesh/host/DisclosureGatedPeerLinks.h"
 #include "common/Module.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/pricing/InitiationBillingStore.h"
-#include "domain/pricing/PaymentPromiseStore.h"
-#include "domain/messaging/DeliveryNotice.h"
-#include "domain/messaging/GroupRosterStore.h"
-#include "domain/messaging/PeerKemKeyStore.h"
+#include "lib/pricing/InitiationBillingStore.h"
+#include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/messaging/DeliveryNotice.h"
+#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/PeerKemKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
-#include "domain/messaging/PeerSigningKeyStore.h"
-#include "domain/messaging/SendRelayOptions.h"
+#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/messaging/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
-#include "feature/conversations/DirectoryShadowCache.h"
-#include "domain/messaging/EpochBumpCoordinator.h"
+#include "domain/peers/AccountKeyResolver.h"
+#include "domain/peers/OwnCards.h"
+#include "domain/delivery/AccountCardService.h"
+#include "domain/peers/DirectoryShadowCache.h"
+#include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
 #include "common/chat/IDirectMessageClient.h"
-#include "domain/messaging/PskSessionCoordinator.h"
-#include "domain/messaging/PublicPskLockCoordinator.h"
-#include "domain/messaging/E2ePublicSessionLogic.h"
+#include "lib/messaging/PskSessionCoordinator.h"
+#include "lib/messaging/PublicPskLockCoordinator.h"
+#include "lib/messaging/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
-#include "domain/messaging/ControlLaneSeenStore.h"
-#include "domain/messaging/RelayReceivePipeline.h"
-#include "domain/messaging/GroupInviteGate.h"
+#include "lib/messaging/ControlLaneSeenStore.h"
+#include "domain/delivery/PeerRouteBook.h"
+#include "domain/delivery/ControlLane.h"
+#include "domain/delivery/DeliveryOutbox.h"
+#include "domain/delivery/E2ePublicSessionKeys.h"
+#include "domain/delivery/PeerTransports.h"
+#include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/net/OrgBackendClients.h"
+#include "lib/net/OrgBackendClients.h"
 
 #include <atomic>
 #include <chrono>
@@ -79,9 +87,7 @@ class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, PeerSigningKeyStore& signing_key_store,
-                      IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                      InboxController& inbox, AccountKeyResolver& account_keys, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
@@ -139,7 +145,15 @@ public:
    * projects/privacy T1: chat, attachments and history dial only peers this gate allows (others over
    * a link that is already up, else the Brief relay). Set before AttachAmpTransports. Not owned.
    */
-  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
+  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) {
+    transports_.SetAddressDisclosure(gate);
+    card_service_.SetAudienceEveryone(
+        [gate]() { return gate && gate->Snapshot()->audience == mesh::DirectAudience::Everyone; });
+  }
+  /** Where an account is reached on the relay, from what is known here (no lookup). */
+  std::optional<std::string> RelayRouteOf(const std::string& account_id) const;
+  /** Account cards between devices (the card exchange over Amp). */
+  AccountCardService& AccountCards() { return card_service_; }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -158,10 +172,11 @@ public:
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
   void SetOnBackgroundUnread(
       std::function<void(std::string title, std::string body, std::string thread_id)> callback);
-  void RegisterPeerSigningKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                              const std::string& signing_public_key_b64, const std::string& source = "manual");
-  void RegisterPeerKemKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-                          const std::string& kem_public_key_b64, const std::string& source = "manual");
+  /**
+   * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
+   * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
+   */
+  void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);
 
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
 
@@ -225,38 +240,19 @@ public:
    * critical lane — relay when a route is known (retried while fresh), else Amp.
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                        const std::optional<std::string>& key_init_b64 = std::nullopt);
+                        const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
   void RetryPeerDial(const std::string& thread_id);
 
 private:
-  struct PendingRelaySend {
-    RelayEnvelope envelope;
-    std::string message_id;
-    std::string thread_id;
-    int attempt_count = 0;
-  };
 
-  std::optional<std::string> ResolvePeerRelayId(const Thread& thread) const;
-  /** Sync directory LookupByAccount when contacts/learned/shadow miss (send path). */
-  std::optional<std::string> ResolvePeerRelayIdWithDirectory(const Thread& thread);
-  void RememberRouteFromEnvelope(const RelayEnvelope& envelope, const RelayReceiveOutcome& outcome);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
-  /** The pair's e2e_public session as the lane and media-key wraps use it. */
-  struct E2ePublicSession {
-    ChatTargetKey target_key;
-    uint32_t epoch = 1;
-    ByteVector master_psk;
-    /** Set when this call just opened the session (attach on the first send). */
-    std::optional<std::string> key_init_b64;
-  };
-  Roe<E2ePublicSession> ResolveE2ePublicSession(const std::string& peer_identity);
+  /** The direct-chat transport is attached and reaches `peer_key` now. */
+  bool AmpReaches(const std::string& peer_key) const;
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
-  uint64_t NextControlOrderKey();
-  void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
@@ -266,6 +262,12 @@ private:
   /** `detail`: the transport's own text, for the log. */
   void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
                        const std::string& detail);
+  /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
+  Roe<void> StartNextEpochIfRestored(const Thread& thread);
+  /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
+  void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
+  void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
+  void NotifyGroupMembersMissed();
   /** The message row's delivery state; false when there is no row (a control-lane send). */
   bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
@@ -280,7 +282,7 @@ private:
   Roe<void> MaybeSendPublicAutoRekey(const std::string& thread_id);
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
-  void HandleDirectInbound(RelayEnvelope envelope);
+  void HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id);
   void LoadPersistedRelayCursor(const std::string& relay_user_id);
   void PersistRelayCursor(const std::string& relay_user_id);
 
@@ -291,46 +293,44 @@ private:
   IdentityStore& identity_;
   IRelayClient* relay_ = nullptr;
   InboxController& inbox_;
-  PeerSigningKeyStore& signing_key_store_;
-  IPeerSigningKeyResolver& signing_key_resolver_;
-  PeerKemKeyStore& kem_key_store_;
-  IPeerKemKeyResolver& kem_key_resolver_;
+  AccountKeyResolver& account_keys_;
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
-  mesh::IChatPeerLinks* amp_links_ = nullptr;
-  const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
-  /** `amp_links_` limited to the audience, for the people-facing transports (outlives them). */
-  std::unique_ptr<mesh::DisclosureGatedPeerLinks> people_links_;
   /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
   std::unique_ptr<ControlLaneSeenStore> control_lane_seen_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
-  std::unique_ptr<IChatHistoryPeerClient> peer_history_;
-  std::unique_ptr<IChatBlobPeerService> peer_blob_;
-  std::unique_ptr<IDirectMessageClient> direct_chat_;
+  /** The mesh transports (direct chat, history, blobs) and the peers' dial endpoints; after the
+   *  pipeline their inbound handler feeds, so they go first. */
+  PeerTransports transports_;
+  /** Amp-or-relay sends and their retries; outcomes come back to ApplySend* on a worker. */
+  DeliveryOutbox outbox_;
   std::unique_ptr<ChatSyncWorkflow> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
   const SystemControlRegistry* controls_ = nullptr;
-  DirectoryShadowCache* directory_shadows_ = nullptr;
-  mesh::IDirectoryClient* directory_ = nullptr;
   std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
-  mutable std::mutex retry_mutex_;
-  std::vector<PendingRelaySend> retry_queue_;
-  std::atomic<uint64_t> control_order_key_{0};
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
-  mutable std::mutex account_relay_mutex_;
-  /** Inbound-learned Account ID → Brief `relay:` (non-contact call/message). */
-  std::unordered_map<std::string, std::string> account_to_relay_;
+  /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
+  std::optional<KeyCard> OwnKeys();
+  /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
+  PeerRouteBook routes_;
+  /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
+  E2ePublicSessionKeys session_keys_;
+  /** Our cards: the key card carried with every key_init, the account card served to who asks. */
+  OwnCards own_cards_;
+  AccountCardService card_service_;
+  /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
+  ControlLane control_lane_;
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};

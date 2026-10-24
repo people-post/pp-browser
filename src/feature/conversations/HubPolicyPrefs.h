@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/chat/AttachmentDownloadPolicy.h"
-#include "domain/messaging/GroupTypes.h"
+#include "lib/messaging/GroupTypes.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"

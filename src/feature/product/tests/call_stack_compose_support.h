@@ -9,12 +9,12 @@
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 
-#include "feature/call_media/ICallMediaTransport.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
-#include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
+#include "domain/call_media/ICallMediaTransport.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/Config.h"
@@ -240,7 +240,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.identity = side.identity.get();
   deps.psk = side.psk.get();
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
-                                       const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+                                       const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {
       side.on_send(peer, control);
     }

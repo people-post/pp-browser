@@ -1,15 +1,16 @@
 #pragma once
 
-#include "domain/media/CallMediaEngine.h"
+#include "lib/media/CallMediaEngine.h"
 #include "feature/calls/SharedPorts.h"
-#include "domain/calls/CallControlCodec.h"
-#include "domain/calls/CallHopPlan.h"
-#include "domain/calls/CallSessionStore.h"
-#include "domain/calls/PeerCapsLogic.h"
-#include "domain/calls/SoftMigrateLogic.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/MeshHopPolicy.h"
-#include "domain/calls/CallMediaKeyStore.h"
+#include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallHopPlan.h"
+#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/PeerCapsLogic.h"
+#include "lib/calls/SoftMigrateLogic.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/MeshHopPolicy.h"
+#include "lib/calls/CallMediaKeyStore.h"
 #include "feature/calls/CallHopDriver.h"
 #include "feature/calls/CallHopPlanning.h"
 #include "feature/calls/CallHopRanking.h"
@@ -18,9 +19,9 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "domain/calls/CallMediaSeat.h"
+#include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
-#include "domain/calls/CallHopPlannerLogic.h"
+#include "lib/calls/CallHopPlannerLogic.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -102,6 +103,8 @@ public:
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(CallMediaKeyStore* keys);
+  /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
+  void OnLocalNetworkMoved();
   /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
   void OnMediaKeyInstalled(const std::string& call_id) { hop_migrate_.InstallMediaKey(call_id); }
   /** V046 exclusive media bind / epoch via ports. */
@@ -114,12 +117,15 @@ public:
   void Handle(TopologyEvent& event);
 
   bool IsAwaitingSfuRecovery() const override;
+  /** This guest's hop transport was lost and is not back yet (the call screen reads Reconnecting). */
   bool IsSfuAttached() const override;
   /** Hop driver: SoftMigrate / hint / N≥3 / recovery — the call's 1:1 stream closing is expected. */
   bool ExpectsGroupMedia(const std::string& call_id) const override;
   bool IsOnSfuForCall(const std::string& call_id) const;
   /** Soft-migrate / attach-wait in flight (suppress ICE→SFU re-entry + stale LeaveCall). */
   bool IsSoftMigrateInFlight() const;
+  /** Why the hop path is being recovered, for the screen (one reason; path decisions use the above). */
+  CallRecovery Recovery() const;
   bool IsSfuAttachWaitActive() const;
 
   /** The media hops this device could use, ranked (shared with SoftMigrate). */

@@ -24,9 +24,11 @@ set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
+  CallSystemUi.cpp
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
   ILocalNotifier.cpp
+  IncomingLink.cpp
   IosAssetLocator.cpp
   IosPathProvider.cpp
   IPushDeviceRegistrar.cpp
@@ -80,6 +82,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsProcess_Win32.cpp
     os/OsLocale_Win32.cpp
     os/OsExecutablePath_Win32.cpp
+    os/OsDownloadMark_Win32.cpp
     os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
@@ -99,6 +102,11 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
   )
+  if(PP_BROWSER_IS_IOS)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp)
+  else()
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp)
+  endif()
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Darwin.mm
     desktop/WindowChrome_Darwin.mm
@@ -115,6 +123,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
 else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
+    os/OsDownloadMark_Default.cpp
     os/OsProcessStats_Linux.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
@@ -179,7 +188,7 @@ endif()
 # CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).
 
 # Low-level UI host (window / RmlUi Backend / overlays) — same foundation band.
-# domain/ui is product shell only (theme/catalogs). See PLATFORM_CODE.md.
+# lib/ui is product shell only (theme/catalogs). See PLATFORM_CODE.md.
 set(_pp_platform_ui_sources
   ui/DesktopWindowChrome.cpp
   ui/PlatformNavigation.cpp
@@ -260,15 +269,27 @@ endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
-  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp NetworkMonitor_Android.cpp)
+  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp NetworkMonitor_Android.cpp
+                 StayConnectedService_Android.cpp)
   target_link_libraries(pp_foundation_platform PUBLIC CURL::libcurl)
+else()
+  target_sources(pp_foundation_platform PRIVATE StayConnectedService_Default.cpp)
 endif()
 
 if(PP_BROWSER_IS_IOS)
   target_sources(pp_foundation_platform PRIVATE
     NetworkConnectivity_Ios.mm
     IosPushDeviceRegistrar.mm
+    IosLocalNotifier.mm
     IosApnsAppDelegate.mm)
+  if(PP_BROWSER_IOS_CALLKIT)
+    target_sources(pp_foundation_platform PRIVATE CallSystemUi_Ios.mm)
+    target_compile_definitions(pp_foundation_platform PRIVATE PP_IOS_CALLKIT=1)
+    target_link_libraries(pp_foundation_platform PUBLIC
+      "-framework CallKit"
+      "-framework PushKit"
+      "-framework AVFoundation")
+  endif()
   target_link_libraries(pp_foundation_platform PUBLIC
     "-framework UserNotifications"
     "-framework UIKit"

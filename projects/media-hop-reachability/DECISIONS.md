@@ -7,7 +7,7 @@ Call: [V026](../p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--lib
 ## H001 — Separate project; implementation in Amp mesh
 
 **Status:** Accepted (updated 2026-09-04 — Amp underlay)  
-**Decision:** This project owns the **program and consume contract**. **Implementation of reachability** lives in **Amp + `src/domain/mesh/`** (ch0 addr ads, addr book, DialBack, UPnP, circuit, **Amp Coordinated Punch**). Calls/mesh **consume** dialability; they do not reimplement NAT traversal. In-tree libp2p retains PeerId/crypto helpers only (A017) — not a product Host/DCUtR path.  
+**Decision:** This project owns the **program and consume contract**. **Implementation of reachability** lives in **Amp + `src/lib/mesh/`** (ch0 addr ads, addr book, DialBack, UPnP, circuit, **Amp Coordinated Punch**). Calls/mesh **consume** dialability; they do not reimplement NAT traversal. In-tree libp2p retains PeerId/crypto helpers only (A017) — not a product Host/DCUtR path.  
 **Rationale:** One peer stack (N022/V026/D10); app ICE-alikes diverge and rot.  
 **Alternatives:** Forever SoftMigrate-only multiaddr glue (rejected — H007); revive libp2p DCUtR as product punch (rejected — A017).
 
@@ -157,7 +157,7 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindLinkByPeerId` + `OpenChannelOnLink` on the live link. Event-wait for Connected far leg; fail `not registered` on deadline so H010 sticky retry can advance.
 
-**Single policy home:** [`CircuitServeDialPolicy.h`](../../src/domain/mesh/l4/circuit/CircuitServeDialPolicy.h) — shared by hop `BeginServe` / `NormalizeAmpCircuitTarget` and CallMediaBridge seed-park skip (same dual-NAT rule, one header).
+**Single policy home:** [`CircuitServeDialPolicy.h`](../../src/lib/mesh/l4/circuit/CircuitServeDialPolicy.h) — shared by hop `BeginServe` / `NormalizeAmpCircuitTarget` and CallMediaBridge seed-park skip (same dual-NAT rule, one header).
 
 CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle slack), not N×20s.
 

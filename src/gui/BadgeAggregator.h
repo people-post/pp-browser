@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/ui/NavBadgeFormat.h"
-#include "domain/ui/ShellTypes.h"
+#include "lib/ui/NavBadgeFormat.h"
+#include "lib/ui/ShellTypes.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
 #include <functional>
@@ -23,7 +23,7 @@ public:
 
   /** App fills from ConversationsHub / ShellHost. Not a process singleton. Clear with BindSource({}). */
   void BindSource(std::function<BadgeUnreadInputs()> source);
-  /** Nav badge write port without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  /** Nav badge write port. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
 
   void Refresh();

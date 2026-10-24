@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/ai/ToolRegistry.h"
+#include "lib/ai/ToolRegistry.h"
 #include "feature/conversations/ConversationsFacade.h"
 
 namespace pbr {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/ui/ShellTypes.h"
-#include "domain/ui/ShellGestureAxis.h"
+#include "lib/ui/ShellTypes.h"
+#include "lib/ui/ShellGestureAxis.h"
 
 #include <ui/dom/Element.h>
 #include <ui/dom/EventListener.h>

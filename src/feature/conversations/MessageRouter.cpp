@@ -1,9 +1,9 @@
 #include "feature/conversations/MessageRouter.h"
 
-#include "domain/messaging/AtAiParser.h"
+#include "lib/messaging/AtAiParser.h"
 #include "common/PlatformLimits.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/messaging/SendRelayOptions.h"
+#include "lib/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/thread/ThreadTypes.h"

@@ -54,6 +54,7 @@ private:
   ui::String step_key_;
   ui::String nickname_;
   ui::String account_id_;
+  std::string contact_locator_;
   ui::String error_;
   bool busy_ = false;
 };

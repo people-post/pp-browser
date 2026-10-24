@@ -50,10 +50,12 @@ if(WIN32)
     set(CMAKE_ASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_${_rt} "")
   endforeach()
   unset(_rt)
-elseif(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+elseif(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Desktop macOS needs OBJCXX for .mm sources (e.g. LocalNotifier_Darwin.mm).
   # enable_language(OBJCXX) from a subdirectory leaves CMAKE_OBJCXX_COMPILE_OBJECT
   # unset at generate time under CMake 4.x.
+  # APPLE is pre-set from the host before project(), so an Android cross build
+  # on a Mac host must be excluded explicitly (the NDK clang has no OBJCXX).
   project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C OBJCXX)
 else()
   project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C)
@@ -110,6 +112,10 @@ if(PP_BROWSER_BUILD_TESTS)
   enable_testing()
   pp_browser_enable_googletest()
 endif()
+
+# iPhone: ring incoming calls on CallKit's screen, reached by VoIP push (P013). Off for builds
+# sold in China, where App Store review rejects CallKit: those ring by the alert push (P012).
+option(PP_BROWSER_IOS_CALLKIT "iOS: CallKit + PushKit for incoming calls" ON)
 
 # Runtime asset paths: read by foundation/platform/DesktopPathProvider.cpp and the app
 # target, so it must be declared before add_subdirectory(src).

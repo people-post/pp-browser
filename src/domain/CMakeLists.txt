@@ -1,41 +1,29 @@
-include(PpBrowserBase)
+include(PpBrowserDomain)
 
-# Domain peers (strict independence).
-add_subdirectory(people)
-# net is available in headless too (pp-node uses HTTP helpers).
-add_subdirectory(net)
+# Domain modules: capabilities composed from lib peers that features share (docs/architecture/
+# SRC_LAYOUT.md). Acyclic, in this order: a module may use only the ones above it
+# (scripts/check/check_domain_includes.sh). Each names what it links (no pp_base).
+add_subdirectory(registration)
+add_subdirectory(node)
+add_subdirectory(call_media)
 
-set(_pp_domain_peers
-  pp_domain_people
-  pp_domain_net
-)
-
+# The rest need the full product libs (not in headless configures).
 if(NOT PP_BROWSER_HEADLESS)
-  add_subdirectory(messaging)
-  add_subdirectory(calls)
-  add_subdirectory(broadcast)
-  add_subdirectory(pricing)
-  add_subdirectory(content)
-  add_subdirectory(ai)
-  add_subdirectory(media)
-  # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
-  add_subdirectory(ui)
-  list(APPEND _pp_domain_peers
-    pp_domain_messaging
-    pp_domain_calls
-    pp_domain_broadcast
-    pp_domain_pricing
-    pp_domain_content
-    pp_domain_ai
-    pp_domain_ai_conversation
-    pp_domain_ai_mcp
-    pp_domain_ai_tools
-    pp_domain_media
-    pp_domain_ui
-  )
+  add_subdirectory(peers)
+  add_subdirectory(attachments)
+  add_subdirectory(delivery)
 endif()
 
-# Aggregate for this build's domain peers (mirrors pp_foundation).
+set(_pp_domain_modules
+  pp_domain_registration
+  pp_domain_node
+  pp_domain_call_media
+)
+if(NOT PP_BROWSER_HEADLESS)
+  list(APPEND _pp_domain_modules pp_domain_peers pp_domain_attachments pp_domain_delivery)
+endif()
+
+# Aggregate for this build's domain modules (mirrors pp_lib).
 add_library(pp_domain INTERFACE)
-target_link_libraries(pp_domain INTERFACE ${_pp_domain_peers})
-unset(_pp_domain_peers)
+target_link_libraries(pp_domain INTERFACE ${_pp_domain_modules})
+unset(_pp_domain_modules)

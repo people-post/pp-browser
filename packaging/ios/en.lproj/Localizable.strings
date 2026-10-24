@@ -1,0 +1,3 @@
+/* The relay's incoming-call alert (P012): the push carries these keys, the words are here. */
+"CALL_INCOMING_TITLE" = "Incoming call";
+"CALL_INCOMING_BODY" = "Someone is calling you";

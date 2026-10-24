@@ -2,7 +2,7 @@
 
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/people/AvatarGlyph.h"
+#include "lib/people/AvatarGlyph.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -60,6 +60,7 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_nickname = view.nickname;
   state.profile_peer_id = view.peer_id;
   state.profile_relay_id = view.relay_id;
+  state.profile_contact_locator = view.contact_locator;
   state.profile_account_id = view.account_id;
   state.profile_public_key = view.public_key_b64;
   state.profile_registered = view.registered;
@@ -90,6 +91,7 @@ SettingsFlushMode ProfileSettingsSection::FlushMode() const {
 void ProfileSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.auto_renew_registration = bootstrap.profile_prefs.auto_renew_registration ? "auto" : "off";
   state.show_notifications = bootstrap.profile_prefs.show_notifications ? "on" : "off";
+  state.stay_connected = bootstrap.profile_prefs.stay_connected ? "on" : "off";
   if (!commands_ || !commands_->load_profile_identity) {
     return;
   }
@@ -103,6 +105,9 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   }
   const bool show_notifications = state.show_notifications != "off";
   if (show_notifications != bootstrap.profile_prefs.show_notifications) {
+    return false;
+  }
+  if ((state.stay_connected == "on") != bootstrap.profile_prefs.stay_connected) {
     return false;
   }
   if (!commands_ || !commands_->load_profile_identity) {
@@ -126,6 +131,10 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
   }
   if (show_notifications != prefs.show_notifications) {
     prefs.show_notifications = show_notifications;
+    prefs_dirty = true;
+  }
+  if (const bool stay_connected = state.stay_connected == "on"; stay_connected != prefs.stay_connected) {
+    prefs.stay_connected = stay_connected;
     prefs_dirty = true;
   }
   if (prefs_dirty) {

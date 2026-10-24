@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/people/ProfileIdentityView.h"
+#include "lib/people/ProfileIdentityView.h"
 #include "foundation/platform/PlatformShare.h"
 #include "common/Error.h"
 

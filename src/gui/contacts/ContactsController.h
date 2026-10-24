@@ -112,6 +112,11 @@ public:
   void OnDetailDismissed();
 
   /** Contacts → find people; also the first-run wizard's "Find friends". */
+  /**
+   * An invite link the OS opened the app with (a scanned QR code, a tapped link): once unlocked, asks
+   * whether to add the person it names, then adds them as a pasted invite would. Anything else is ignored.
+   */
+  void OfferInvite(const std::string& link);
   void OnFindSomeone();
 
 private:
@@ -142,8 +147,13 @@ private:
   void OnSecureMessage();
   void OnAddContactMenu(ui::Event& ev);
   void OnAddContact();
+  void AddContactByQuery(const std::string& query);
+  void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
+  void AddContactFromHit(const mesh::DirectoryHit& hit);
   void OnCopyId();
-  void OnShareContact();
+  void OnShareContact(ui::Vector2i position);
+  /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
+  void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
   void OnSetTrust(const std::string& trust);
   void OnRemoveContact();
   void OnOpenThread(const std::string& thread_id);

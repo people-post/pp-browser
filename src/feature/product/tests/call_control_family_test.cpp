@@ -1,7 +1,7 @@
 // Call control as a system-control family: signaling on the lane, one summary line per call.
-#include "domain/calls/CallControlFamily.h"
+#include "lib/calls/CallControlFamily.h"
 
-#include "domain/calls/CallControlCodec.h"
+#include "lib/calls/CallControlCodec.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/ValueJson.h"
 

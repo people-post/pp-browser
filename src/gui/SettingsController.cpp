@@ -1,5 +1,7 @@
 #include <stdexcept>
 #include "gui/SettingsController.h"
+
+#include "lib/ui/DataEvent.h"
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
@@ -7,10 +9,10 @@
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/net/ClientCompat.h"
+#include "lib/net/ClientCompat.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/ui/ContextMenuHost.h"
-#include "domain/ui/ViewCatalog.h"
+#include "lib/ui/ContextMenuHost.h"
+#include "lib/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
@@ -20,10 +22,11 @@
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/SecuritySettingsSection.h"
-#include "domain/ui/UiEditSession.h"
+#include "lib/ui/UiEditSession.h"
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "gui/AccountInvite.h"
@@ -40,27 +43,9 @@
 #include <filesystem>
 #include <functional>
 #include "common/PbrCompat.h"
-#include "domain/content/CasLibrary.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
-
-SettingsController* SettingsController::installed_instance_ = nullptr;
-
-void SettingsController::InstallInstance(SettingsController& controller) {
-  installed_instance_ = &controller;
-}
-
-void SettingsController::ClearInstance() {
-  installed_instance_ = nullptr;
-}
-
-SettingsController& SettingsController::Instance() {
-  if (!installed_instance_) {
-    throw std::runtime_error("SettingsController not installed");
-  }
-  return *installed_instance_;
-}
 
 namespace {
 
@@ -202,7 +187,6 @@ SessionStore& SettingsController::Store() {
   return commands_.session_store();
 }
 
-
 SettingsSectionHandler* SettingsController::FindHandler(const std::string& section_id) {
   const auto it = section_handlers_by_id_.find(section_id);
   return it == section_handlers_by_id_.end() ? nullptr : it->second;
@@ -258,6 +242,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.prefer_contacts_for_routing = bindings_.prefer_contacts_for_routing.c_str();
   ui_state_.direct_connections = bindings_.direct_connections.c_str();
   ui_state_.trusted_relays_only = bindings_.trusted_relays_only.c_str();
+  ui_state_.reachable_without_relay = bindings_.reachable_without_relay.c_str();
   ui_state_.show_prefer_contacts_toggle = bindings_.show_prefer_contacts_toggle;
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
@@ -277,6 +262,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_avatar_tone = bindings_.profile_avatar_tone;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
+  ui_state_.stay_connected = bindings_.stay_connected.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
   ui_state_.appearance_label = bindings_.appearance_label.c_str();
@@ -340,6 +326,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.prefer_contacts_for_routing = ui_state_.prefer_contacts_for_routing.c_str();
   bindings_.direct_connections = ui_state_.direct_connections.c_str();
   bindings_.trusted_relays_only = ui_state_.trusted_relays_only.c_str();
+  bindings_.reachable_without_relay = ui_state_.reachable_without_relay.c_str();
   bindings_.direct_connections_label = DirectConnectionsDisplayLabel(ui_state_.direct_connections).c_str();
   bindings_.show_prefer_contacts_toggle = ui_state_.show_prefer_contacts_toggle;
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
@@ -351,6 +338,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
+  profile_actions_.ShowInvite(ui_state_.profile_contact_locator);
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
   bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
   bindings_.profile_has_icon = ui_state_.profile_has_icon;
@@ -361,6 +349,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_avatar_tone = ui_state_.profile_avatar_tone;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
+  bindings_.stay_connected = ui_state_.stay_connected.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
   bindings_.appearance_label = ui_state_.appearance_label.c_str();
@@ -406,7 +395,7 @@ void SettingsController::PushUiStateToBindings() {
 
 void SettingsController::SyncBindingsFromSession() {
   if (selected_id_ == "storage") {
-    RefreshCasLibrary();
+    cas_library_.Refresh();
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -482,19 +471,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       mcp_handle.RegisterMember("args_text", &McpServerRow::args_text);
       mcp_handle.RegisterMember("enabled", &McpServerRow::enabled);
     }
-    if (auto cas_handle = ctor.RegisterStruct<CasLibraryRow>()) {
-      cas_handle.RegisterMember("content_id_hex", &CasLibraryRow::content_id_hex);
-      cas_handle.RegisterMember("title", &CasLibraryRow::title);
-      cas_handle.RegisterMember("detail", &CasLibraryRow::detail);
-      cas_handle.RegisterMember("realm_label", &CasLibraryRow::realm_label);
-      cas_handle.RegisterMember("pin_label", &CasLibraryRow::pin_label);
-      cas_handle.RegisterMember("can_share_publicly", &CasLibraryRow::can_share_publicly);
-      cas_handle.RegisterMember("can_unpublish", &CasLibraryRow::can_unpublish);
-      cas_handle.RegisterMember("can_copy_tip", &CasLibraryRow::can_copy_tip);
-    }
     ctor.RegisterArray<std::vector<SectionListRow>>();
     ctor.RegisterArray<std::vector<McpServerRow>>();
-    ctor.RegisterArray<std::vector<CasLibraryRow>>();
     ctor.Bind("sections", &controller.sections_);
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
@@ -508,8 +486,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("promoted_mcp_url", &controller.bindings_.promoted_mcp_url);
     ctor.Bind("search_provider", &controller.bindings_.search_provider);
     ctor.Bind("mcp_servers", &controller.bindings_.mcp_servers);
-    ctor.Bind("cas_library_rows", &controller.bindings_.cas_library_rows);
-    ctor.Bind("cas_library_empty_label", &controller.bindings_.cas_library_empty_label);
+    cas_library_.Bind(ctor);
     ctor.Bind("relay_base_url", &controller.bindings_.relay_base_url);
     ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
@@ -531,6 +508,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
     ctor.Bind("direct_connections_label", &controller.bindings_.direct_connections_label);
     ctor.Bind("trusted_relays_only", &controller.bindings_.trusted_relays_only);
+    ctor.Bind("reachable_without_relay", &controller.bindings_.reachable_without_relay);
     ctor.Bind("show_prefer_contacts_toggle", &controller.bindings_.show_prefer_contacts_toggle);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
     ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
@@ -541,6 +519,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
+    profile_actions_.Bind(ctor);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
     ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
     ctor.Bind("profile_has_icon", &controller.bindings_.profile_has_icon);
@@ -550,6 +529,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_avatar_tone", &controller.bindings_.profile_avatar_tone);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
+    ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
+    controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
+    ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("appearance_label", &controller.bindings_.appearance_label);
@@ -583,63 +565,46 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_visible", &controller.bindings_.support_visible);
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
-    ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
-    ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
-    ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
+    security_actions_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
-    ctor.BindEventCallback("select_section", &SettingsController::SelectSectionCallback);
-    ctor.BindEventCallback("back_to_list", &SettingsController::BackToListCallback);
-    ctor.BindEventCallback("reset_section", &SettingsController::ResetSectionCallback);
-    ctor.BindEventCallback("open_support_chat", &SettingsController::OpenSupportChatCallback);
-    ctor.BindEventCallback("on_llm_field_changed", &SettingsController::OnLlmFieldChangedCallback);
-    ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
-    ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
-    ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
-    ctor.BindEventCallback("on_choose_group_invite_policy", &SettingsController::OnChooseGroupInvitePolicyCallback);
-    ctor.BindEventCallback("on_choose_call_invite_policy", &SettingsController::OnChooseCallInvitePolicyCallback);
-    ctor.BindEventCallback("on_choose_direct_connections", &SettingsController::OnChooseDirectConnectionsCallback);
-    ctor.BindEventCallback("on_choose_attachment_download_policy",
-                           &SettingsController::OnChooseAttachmentDownloadPolicyCallback);
-    ctor.BindEventCallback("drain_pending_attachment_media", &SettingsController::DrainPendingAttachmentMediaCallback);
-    ctor.BindEventCallback("clear_downloaded_attachments", &SettingsController::ClearDownloadedAttachmentsCallback);
-    ctor.BindEventCallback("set_cas_library_filter", &SettingsController::SetCasLibraryFilterCallback);
-    ctor.BindEventCallback("share_cas_publicly", &SettingsController::ShareCasPubliclyCallback);
-    ctor.BindEventCallback("unpublish_cas", &SettingsController::UnpublishCasCallback);
-    ctor.BindEventCallback("copy_cas_tip", &SettingsController::CopyCasTipCallback);
-    ctor.BindEventCallback("fetch_cas_tip", &SettingsController::FetchCasTipCallback);
-    ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
-    ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
-    ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
-    ctor.BindEventCallback("toggle_show_advanced_settings",
-                           &SettingsController::ToggleShowAdvancedSettingsCallback);
-    ctor.BindEventCallback("toggle_crash_reports", &SettingsController::ToggleCrashReportsCallback);
-    ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
-    ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
-    ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
-    ctor.BindEventCallback("toggle_node_enabled", &SettingsController::ToggleNodeEnabledCallback);
-    ctor.BindEventCallback("retest_reachability", &SettingsController::RetestReachabilityCallback);
-    ctor.BindEventCallback("try_upnp_port", &SettingsController::TryUpnpPortCallback);
-    ctor.BindEventCallback("show_reachability_help", &SettingsController::ShowReachabilityHelpCallback);
-    ctor.BindEventCallback("dismiss_reachability_help", &SettingsController::DismissReachabilityHelpCallback);
-    ctor.BindEventCallback("toggle_circuit_relay", &SettingsController::ToggleCircuitRelayCallback);
-    ctor.BindEventCallback("toggle_media_relay", &SettingsController::ToggleMediaRelayCallback);
-    ctor.BindEventCallback("toggle_dht", &SettingsController::ToggleDhtCallback);
-    ctor.BindEventCallback("toggle_prefer_contacts", &SettingsController::TogglePreferContactsCallback);
-    ctor.BindEventCallback("toggle_trusted_relays", &SettingsController::ToggleTrustedRelaysCallback);
-    ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
-    ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
-    ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
-    ctor.BindEventCallback("copy_profile_id", &SettingsController::OnCopyProfileIdCallback);
-    ctor.BindEventCallback("pick_profile_icon", &SettingsController::OnPickProfileIconCallback);
-    ctor.BindEventCallback("clear_profile_icon", &SettingsController::OnClearProfileIconCallback);
-    ctor.BindEventCallback("share_profile", &SettingsController::OnShareProfileCallback);
-    ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
-    ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
-    ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
-    ctor.BindEventCallback("export_link_device", &SettingsController::OnExportLinkDeviceCallback);
-    ctor.BindEventCallback("clear_undelivered_older_than", &SettingsController::OnClearUndeliveredCallback);
-    ctor.BindEventCallback("reset_tool_permissions", &SettingsController::OnResetToolPermissionsCallback);
-    ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
+    ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
+    ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
+    ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
+    ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
+    ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
+    ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
+    ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
+    ctor.BindEventCallback("on_choose_language", DataEventAt([this](ui::Event& ev) { OnChooseLanguage(ev); }));
+    ctor.BindEventCallback("on_choose_group_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
+    ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
+    ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
+    ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
+    ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
+    ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
+    ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
+    ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
+    ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
+    ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
+    ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
+    ctor.BindEventCallback("toggle_crash_reports", DataEvent<>([this]() { ToggleCrashReports(); }));
+    ctor.BindEventCallback("toggle_auto_renew_registration", DataEvent<>([this]() { ToggleAutoRenewRegistration(); }));
+    ctor.BindEventCallback("on_integrations_field_changed", DataEvent<>([this]() { MarkSectionDirty("integrations"); }));
+    ctor.BindEventCallback("on_network_field_changed", DataEvent<>([this]() { MarkSectionDirty("network"); }));
+    ctor.BindEventCallback("toggle_node_enabled", DataEvent<>([this]() { ToggleNodeEnabled(); }));
+    ctor.BindEventCallback("retest_reachability", DataEvent<>([this]() { RetestReachability(); }));
+    ctor.BindEventCallback("try_upnp_port", DataEvent<>([this]() { TryUpnpPort(); }));
+    ctor.BindEventCallback("show_reachability_help", DataEvent<>([this]() { ShowReachabilityHelp(); }));
+    ctor.BindEventCallback("dismiss_reachability_help", DataEvent<>([this]() { DismissReachabilityHelp(); }));
+    ctor.BindEventCallback("toggle_circuit_relay", DataEvent<>([this]() { ToggleCircuitRelay(); }));
+    ctor.BindEventCallback("toggle_media_relay", DataEvent<>([this]() { ToggleMediaRelay(); }));
+    ctor.BindEventCallback("toggle_dht", DataEvent<>([this]() { ToggleDht(); }));
+    ctor.BindEventCallback("toggle_prefer_contacts", DataEvent<>([this]() { TogglePreferContacts(); }));
+    ctor.BindEventCallback("toggle_trusted_relays", DataEvent<>([this]() { ToggleTrustedRelays(); }));
+    ctor.BindEventCallback("toggle_reachable_without_relay", DataEvent<>([this]() { ToggleReachableWithoutRelay(); }));
+    // Persist on blur only when the field differs from last loaded/saved nickname.
+    ctor.BindEventCallback("on_profile_nickname_commit", DataEvent<>([this]() { CommitProfileNickname(/*show_toast=*/false); }));
+    ctor.BindEventCallback("add_mcp_server", DataEvent<>([this]() { OnAddMcpServer(); }));
+    ctor.BindEventCallback("remove_mcp_server", DataEvent<int>([this](int index) { OnRemoveMcpServer(index); }));
   });
 }
 
@@ -662,8 +627,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "promoted_mcp_url");
   host.Dirty("settings", "search_provider");
   host.Dirty("settings", "mcp_servers");
-  host.Dirty("settings", "cas_library_rows");
-  host.Dirty("settings", "cas_library_empty_label");
   host.Dirty("settings", "relay_base_url");
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
@@ -685,6 +648,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "prefer_contacts_for_routing");
   host.Dirty("settings", "direct_connections_label");
   host.Dirty("settings", "trusted_relays_only");
+  host.Dirty("settings", "reachable_without_relay");
   host.Dirty("settings", "show_prefer_contacts_toggle");
   if (push_nick) {
     host.Dirty("settings", "profile_nickname");
@@ -706,6 +670,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_avatar_tone");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
+  host.Dirty("settings", "stay_connected");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "appearance_label");
@@ -1267,82 +1232,43 @@ void SettingsController::OnBackToList() {
   }
 }
 
-void SettingsController::SelectSectionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                const ui::VariantList& args) {
-  if (args.empty()) {
-    SettingsController::Instance().log().warning << "select_section called with no args";
-    return;
-  }
-  if (args[0].GetType() != ui::Variant::STRING) {
-    SettingsController::Instance().log().warning << "select_section arg type="
-                                              << static_cast<int>(args[0].GetType());
-    return;
-  }
-  Instance().OnSelectSection(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void SettingsController::BackToListCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  Instance().OnBackToList();
-}
-
-void SettingsController::ResetSectionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                              const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().OnResetSection(std::string(args[0].Get<ui::String>().c_str()));
-}
-
-void SettingsController::OnLlmFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                   const ui::VariantList& /*args*/) {
-  Instance().MarkSectionDirty("llm");
-}
-
-void SettingsController::OnLlmPresetChangedCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                    const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (controller.suppress_auto_save_) {
+void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
+  if (suppress_auto_save_) {
     return;
   }
 
   const ui::String value = EventValue(ev);
   if (!value.empty()) {
-    controller.bindings_.llm_preset = value;
+    bindings_.llm_preset = value;
   }
 
-  controller.PullBindingsToUiState();
+  PullBindingsToUiState();
   // Translate preset intent → precise default model before flush/normalize.
-  const std::string preset = controller.ui_state_.llm_preset;
+  const std::string preset = ui_state_.llm_preset;
   if (const std::string default_model = DefaultModelForPreset(preset); !default_model.empty()) {
-    controller.ui_state_.llm_model = default_model;
-    controller.bindings_.llm_model = default_model.c_str();
+    ui_state_.llm_model = default_model;
+    bindings_.llm_model = default_model.c_str();
   }
   if (preset != "custom") {
     // Known presets own base_url; clear custom URL so Normalize/ApplyPreset fill it.
     AppConfig scratch;
     ApplyPreset(scratch, preset, {});
-    controller.ui_state_.llm_base_url = scratch.llm.base_url;
-    controller.bindings_.llm_base_url = scratch.llm.base_url.c_str();
+    ui_state_.llm_base_url = scratch.llm.base_url;
+    bindings_.llm_base_url = scratch.llm.base_url.c_str();
   }
   DataModelHost::Instance().Dirty("settings", "llm_model");
   DataModelHost::Instance().Dirty("settings", "llm_base_url");
   DataModelHost::Instance().Dirty("settings", "llm_preset");
 
-  const SettingsSectionHandler* handler = controller.FindHandler("llm");
+  const SettingsSectionHandler* handler = FindHandler("llm");
   if (!handler) {
     return;
   }
-  if (handler->IsPersisted(controller.ui_state_, controller.Store().Snapshot())) {
+  if (handler->IsPersisted(ui_state_, Store().Snapshot())) {
     return;
   }
 
-  controller.FlushSection("llm");
-}
-
-void SettingsController::OnChooseThemeCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                 const ui::VariantList& /*args*/) {
-  Instance().OnChooseTheme(ev);
+  FlushSection("llm");
 }
 
 void SettingsController::OnChooseTheme(ui::Event& ev) {
@@ -1385,11 +1311,6 @@ void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
   MarkSectionDirty("appearance");
   FlushPending();
   DirtyAll();
-}
-
-void SettingsController::OnChooseLanguageCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                    const ui::VariantList& /*args*/) {
-  Instance().OnChooseLanguage(ev);
 }
 
 void SettingsController::OnChooseLanguage(ui::Event& ev) {
@@ -1450,11 +1371,6 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
-void SettingsController::OnChooseDirectConnectionsCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                           const ui::VariantList& /*args*/) {
-  Instance().OnChooseDirectConnections(ev);
-}
-
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
@@ -1486,11 +1402,6 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
   DirtyAll();
 }
 
-void SettingsController::OnChooseCallInvitePolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                          const ui::VariantList& /*args*/) {
-  Instance().OnChooseCallInvitePolicy(ev);
-}
-
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
@@ -1519,11 +1430,6 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
   MarkSectionDirty("security");
   FlushPending();
   DirtyAll();
-}
-
-void SettingsController::OnChooseGroupInvitePolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                           const ui::VariantList& /*args*/) {
-  Instance().OnChooseGroupInvitePolicy(ev);
 }
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
@@ -1565,11 +1471,6 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   DirtyAll();
 }
 
-void SettingsController::OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                                  const ui::VariantList& /*args*/) {
-  Instance().OnChooseAttachmentDownloadPolicy(ev);
-}
-
 void SettingsController::OnChooseAttachmentDownloadPolicy(ui::Event& ev) {
   const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current = bindings_.attachment_download_policy.empty()
@@ -1599,30 +1500,12 @@ void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& 
   if (suppress_auto_save_) {
     return;
   }
-  bindings_.cas_library_rows.clear();
-  bindings_.cas_library_rows.reserve(ui_state_.cas_library_rows.size());
-  for (const CasLibraryRowUiState& row : ui_state_.cas_library_rows) {
-    bindings_.cas_library_rows.push_back({.content_id_hex = row.content_id_hex.c_str(),
-                                          .title = row.title.c_str(),
-                                          .detail = row.detail.c_str(),
-                                          .realm_label = row.realm_label.c_str(),
-                                          .pin_label = row.pin_label.c_str(),
-                                          .can_share_publicly = row.can_share_publicly,
-                                          .can_unpublish = row.can_unpublish,
-                                          .can_copy_tip = row.can_copy_tip});
-  }
-  bindings_.cas_library_empty_label = ui_state_.cas_library_empty_label.c_str();
   bindings_.attachment_download_policy = policy.c_str();
   bindings_.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(policy).c_str();
   PullBindingsToUiState();
   MarkSectionDirty("storage");
   FlushPending();
   DirtyAll();
-}
-
-void SettingsController::DrainPendingAttachmentMediaCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                             const ui::VariantList& /*args*/) {
-  Instance().OnDrainPendingAttachmentMedia();
 }
 
 void SettingsController::OnDrainPendingAttachmentMedia() {
@@ -1632,11 +1515,6 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
   }
   commands_.drain_pending_attachment_media();
   UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
-}
-
-void SettingsController::ClearDownloadedAttachmentsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                             const ui::VariantList& /*args*/) {
-  Instance().OnClearDownloadedAttachments();
 }
 
 void SettingsController::OnClearDownloadedAttachments() {
@@ -1703,11 +1581,6 @@ void SettingsController::ApplySupportDiscovery() {
       discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
 }
 
-void SettingsController::OpenSupportChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                 const ui::VariantList& /*args*/) {
-  Instance().OnOpenSupportChat();
-}
-
 void SettingsController::OnOpenSupportChat() {
   if (!commands_.open_support_chat) {
     ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
@@ -1729,16 +1602,6 @@ void SettingsController::OpenNetworkSettings() {
     return;
   }
   OnSelectSection("network");
-}
-
-void SettingsController::OnIntegrationsFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                            const ui::VariantList& /*args*/) {
-  Instance().MarkSectionDirty("integrations");
-}
-
-void SettingsController::OnNetworkFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                       const ui::VariantList& /*args*/) {
-  Instance().MarkSectionDirty("network");
 }
 
 void SettingsController::ApplyReachability() {
@@ -1771,6 +1634,7 @@ void SettingsController::ApplyReachability() {
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
     ui_state_.direct_connections = mesh::DirectAudienceName(cfg.direct_connections);
     ui_state_.trusted_relays_only = cfg.trusted_relays_only ? "on" : "off";
+    ui_state_.reachable_without_relay = cfg.reachable_without_relay ? "on" : "off";
   }
   PushUiStateToBindings();
   ApplySectionAttention();
@@ -1833,421 +1697,163 @@ void SettingsController::AckReachabilityNudge(const std::string& status_key) {
   }
 }
 
-void SettingsController::ToggleNodeEnabledCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                   const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (!controller.bindings_.show_node_toggle) {
+void SettingsController::ToggleNodeEnabled() {
+  if (!bindings_.show_node_toggle) {
     return;
   }
-  controller.bindings_.node_enabled = controller.bindings_.node_enabled == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network", /*show_toast=*/false);
-  controller.ApplyReachability();
-  if (controller.commands_.refresh_nav_badges) {
-    controller.commands_.refresh_nav_badges();
+  bindings_.node_enabled = bindings_.node_enabled == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("network", /*show_toast=*/false);
+  ApplyReachability();
+  if (commands_.refresh_nav_badges) {
+    commands_.refresh_nav_badges();
   }
-  controller.DirtyAll();
+  DirtyAll();
 }
 
-void SettingsController::RetestReachabilityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  if (Instance().Commands().run_reachability_probe) {
-    Instance().Commands().run_reachability_probe(false);
+void SettingsController::RetestReachability() {
+  if (Commands().run_reachability_probe) {
+    Commands().run_reachability_probe(false);
   }
-  Instance().SyncReachability();
+  SyncReachability();
 }
 
-void SettingsController::TryUpnpPortCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& /*args*/) {
-  if (Instance().Commands().try_upnp_port_mapping) {
-    Instance().Commands().try_upnp_port_mapping();
+void SettingsController::TryUpnpPort() {
+  if (Commands().try_upnp_port_mapping) {
+    Commands().try_upnp_port_mapping();
   }
-  Instance().SyncReachability();
+  SyncReachability();
 }
 
-void SettingsController::ShowReachabilityHelpCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                      const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.show_reachability_help = true;
-  controller.PullBindingsToUiState();
-  controller.DirtyAll();
+void SettingsController::ShowReachabilityHelp() {
+  bindings_.show_reachability_help = true;
+  PullBindingsToUiState();
+  DirtyAll();
 }
 
-void SettingsController::DismissReachabilityHelpCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                         const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  const std::string help_kind = controller.bindings_.reachability_help_kind.c_str();
-  controller.bindings_.show_reachability_help = false;
-  controller.PullBindingsToUiState();
+void SettingsController::DismissReachabilityHelp() {
+  const std::string help_kind = bindings_.reachability_help_kind.c_str();
+  bindings_.show_reachability_help = false;
+  PullBindingsToUiState();
   if (help_kind == kReachabilityNudgeOutboundOnly || help_kind == kReachabilityNudgeBlocked) {
-    controller.AckReachabilityNudge(help_kind);
+    AckReachabilityNudge(help_kind);
   }
-  controller.DirtyAll();
+  DirtyAll();
 }
 
-void SettingsController::ToggleCircuitRelayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (!controller.bindings_.show_circuit_relay_toggle) {
+void SettingsController::ToggleCircuitRelay() {
+  if (!bindings_.show_circuit_relay_toggle) {
     return;
   }
-  controller.bindings_.circuit_relay_enabled =
-      controller.bindings_.circuit_relay_enabled == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleMediaRelayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                  const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (!controller.bindings_.show_media_relay_toggle) {
-    return;
-  }
-  controller.bindings_.media_relay_enabled =
-      controller.bindings_.media_relay_enabled == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleDhtCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                           const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (!controller.bindings_.show_dht_toggle) {
-    return;
-  }
-  controller.bindings_.dht_enabled = controller.bindings_.dht_enabled == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::TogglePreferContactsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                      const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (!controller.bindings_.show_prefer_contacts_toggle) {
-    return;
-  }
-  controller.bindings_.prefer_contacts_for_routing =
-      controller.bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleTrustedRelaysCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                     const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.trusted_relays_only = controller.bindings_.trusted_relays_only == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::OnProfileNicknameCommitCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                         const ui::VariantList& /*args*/) {
-  // Persist on blur only when the field differs from last loaded/saved nickname.
-  Instance().CommitProfileNickname(/*show_toast=*/false);
-}
-
-void SettingsController::ToggleShowNotificationsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                         const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.show_notifications =
-      controller.bindings_.show_notifications == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleReduceTransparencyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                          const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.reduce_transparency =
-      controller.bindings_.reduce_transparency == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleCallDiagnosticsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                       const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.call_diagnostics =
-      controller.bindings_.call_diagnostics == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleShowAdvancedSettingsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                            const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.show_advanced_settings =
-      controller.bindings_.show_advanced_settings == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("about", /*show_toast=*/false);
-  controller.InitSections(); // the advanced-only sections appear or go
-  controller.PushUiStateToBindings();
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleCrashReportsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.crash_reports_enabled =
-      controller.bindings_.crash_reports_enabled == "on" ? "off" : "on";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("security", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::ToggleAutoRenewRegistrationCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                             const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  controller.bindings_.auto_renew_registration =
-      controller.bindings_.auto_renew_registration == "auto" ? "off" : "auto";
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile", /*show_toast=*/false);
-  controller.DirtyAll();
-}
-
-void SettingsController::OnRegisterProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                   const ui::VariantList& /*args*/) {
-  Instance().OnRegisterProfile();
-}
-
-void SettingsController::OnRotateBriefLlmKeyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                     const ui::VariantList& /*args*/) {
-  Instance().OnRotateBriefLlmKey();
-}
-
-void SettingsController::OnCopyProfileIdCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                 const ui::VariantList& /*args*/) {
-  Instance().OnCopyProfileId();
-}
-
-void SettingsController::OnPickProfileIconCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                   const ui::VariantList& /*args*/) {
-  Instance().OnPickProfileIcon();
-}
-
-void SettingsController::OnClearProfileIconCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  Instance().OnClearProfileIcon();
-}
-
-void SettingsController::OnShareProfileCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                                const ui::VariantList& /*args*/) {
-  Instance().OnShareProfile(ShareAnchorFromEvent(ev));
-}
-
-void SettingsController::OnAddMcpServerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                              const ui::VariantList& /*args*/) {
-  Instance().OnAddMcpServer();
-}
-
-void SettingsController::OnRemoveMcpServerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                   const ui::VariantList& args) {
-  if (args.empty()) {
-    return;
-  }
-  Instance().OnRemoveMcpServer(static_cast<int>(args[0].Get<int>(0)));
-}
-
-void SettingsController::OnRegisterProfile() {
-  CommitProfileNickname(/*show_toast=*/false);
+  bindings_.circuit_relay_enabled =
+      bindings_.circuit_relay_enabled == "on" ? "off" : "on";
   PullBindingsToUiState();
-  const bool renewing = ui_state_.profile_registered == "yes";
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this, renewing](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
-      return;
-    }
-    if (!commands_.register_identity) {
-      ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Registration is not available"));
-      return;
-    }
-    if (auto registered = commands_.register_identity({.nickname = ui_state_.profile_nickname}); !registered) {
-      ReportFailure(registered.error());
-      return;
-    }
-    if (commands_.load_profile_identity) {
-      const ProfileIdentityView view = commands_.load_profile_identity();
-      if (view.ready) {
-        UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
-      }
-    }
-    const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
-    status_ = message.c_str();
-    SyncBindingsFromSession();
-    DirtyAll();
-    UserFeedback::Ok(message);
-  });
+  MarkSectionDirty("network", /*show_toast=*/false);
+  DirtyAll();
 }
 
-void SettingsController::OnRotateBriefLlmKey() {
+void SettingsController::ToggleMediaRelay() {
+  if (!bindings_.show_media_relay_toggle) {
+    return;
+  }
+  bindings_.media_relay_enabled =
+      bindings_.media_relay_enabled == "on" ? "off" : "on";
   PullBindingsToUiState();
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
-      return;
-    }
-    if (!commands_.rotate_brief_llm_key) {
-      ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Key rotation is not available"));
-      return;
-    }
-    if (auto rotated = commands_.rotate_brief_llm_key(); !rotated) {
-      // Identity may have been marked expired on 401/403.
-      SyncBindingsFromSession();
-      DirtyAll();
-      ReportFailure(rotated.error());
-      return;
-    }
-    status_ = Tr("settings.llm.brief_key_rotated").c_str();
-    SyncBindingsFromSession();
-    DirtyAll();
-    UserFeedback::Ok(Tr("settings.llm.brief_key_rotated"));
-  });
+  MarkSectionDirty("network", /*show_toast=*/false);
+  DirtyAll();
 }
 
-void SettingsController::OnCopyProfileId() {
-  const std::string peer_id = bindings_.profile_peer_id.c_str();
-  if (peer_id.empty()) {
-    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
+void SettingsController::ToggleDht() {
+  if (!bindings_.show_dht_toggle) {
     return;
   }
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(bindings_.profile_peer_id);
-  }
-  UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
+  bindings_.dht_enabled = bindings_.dht_enabled == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("network", /*show_toast=*/false);
+  DirtyAll();
 }
 
-void SettingsController::OnPickProfileIcon() {
-  if (bindings_.profile_icon_uploading) {
+void SettingsController::TogglePreferContacts() {
+  if (!bindings_.show_prefer_contacts_toggle) {
     return;
   }
-  if (!commands_.pick_profile_icon_image || !commands_.upload_profile_icon_file) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-    return;
-  }
-  // Open the native picker immediately (same pattern as chat attach_file). PIN/unlock runs only
-  // after the user chooses a file, so the vault gate cannot block the dialog from appearing.
-  commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-      if (paths.empty()) {
-        if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
-          ReportFailure(Error(err).WithUser(Tr("settings.profile.picker_failed")));
-          SDL_ClearError();
-        }
-        return;
-      }
-      const std::string path = std::move(paths.front());
-      if (!unlock_ensure_.ensure_unlocked) {
-        ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-        return;
-      }
-      unlock_ensure_.ensure_unlocked([this, path = std::move(path)](const bool unlocked) mutable {
-        if (!unlocked) {
-          ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-          return;
-        }
-        if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
-          ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-          return;
-        }
-        ui_state_.profile_icon_uploading = true;
-        PushUiStateToBindings();
-        DirtyAll(/*include_profile_nickname=*/false);
-        status_ = Tr("settings.profile.photo_uploading").c_str();
-        BlobQuotaRecoveryFlow::RunVoidUpload(
-            [this, path]() { return commands_.upload_profile_icon_file(path); },
-            [this, path](Roe<void> result) {
-              ReleasePickedFile(path);
-              ui_state_.profile_icon_uploading = false;
-              if (!result) {
-                status_.clear();
-                SyncBindingsFromSession();
-                DirtyAll(/*include_profile_nickname=*/false);
-                ReportFailure(result.error());
-                return;
-              }
-              status_ = Tr("settings.profile.photo_updated").c_str();
-              SyncBindingsFromSession();
-              DirtyAll(/*include_profile_nickname=*/false);
-              UserFeedback::Ok(Tr("settings.profile.photo_updated"));
-            },
-            [this]() { return commands_.plan_relay_quota_recovery(); },
-            [this]() { return commands_.free_oldest_relay_blob_slot(); });
-      });
-    });
-  });
+  bindings_.prefer_contacts_for_routing =
+      bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("network", /*show_toast=*/false);
+  DirtyAll();
 }
 
-void SettingsController::OnClearProfileIcon() {
-  if (bindings_.profile_icon_uploading) {
-    return;
-  }
-  if (!commands_.clear_profile_icon) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-    return;
-  }
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-      return;
-    }
-    ui_state_.profile_icon_uploading = true;
-    PushUiStateToBindings();
-    DirtyAll(/*include_profile_nickname=*/false);
-    AppRuntime::PostWorkerNormal([this]() {
-      Roe<void> result = commands_.clear_profile_icon();
-      AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-        ui_state_.profile_icon_uploading = false;
-        if (!result) {
-          status_.clear();
-          SyncBindingsFromSession();
-          DirtyAll(/*include_profile_nickname=*/false);
-          ReportFailure(result.error());
-          return;
-        }
-        status_ = Tr("settings.profile.photo_removed").c_str();
-        SyncBindingsFromSession();
-        DirtyAll(/*include_profile_nickname=*/false);
-        UserFeedback::Ok(Tr("settings.profile.photo_removed"));
-      });
-    });
-  });
+void SettingsController::ToggleReachableWithoutRelay() {
+  bindings_.reachable_without_relay =
+      bindings_.reachable_without_relay == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("network", /*show_toast=*/false);
+  DirtyAll();
 }
 
-void SettingsController::OnShareProfile(const ShareAnchor anchor) {
-  // The account id is what friends type to find you; without one there is nothing to share yet.
-  const std::string account_id = bindings_.profile_relay_id.c_str();
-  if (account_id.empty()) {
-    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
-    return;
-  }
-  ShareInviteOrCopy(
-      AccountInviteText(bindings_.profile_nickname.c_str(), account_id),
-      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
-      anchor, [](const std::string& text) {
-        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-          system->SetClipboardText(text.c_str());
-        }
-      });
+void SettingsController::ToggleTrustedRelays() {
+  bindings_.trusted_relays_only = bindings_.trusted_relays_only == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("network", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleShowNotifications() {
+  bindings_.show_notifications =
+      bindings_.show_notifications == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("profile", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleStayConnected() {
+  bindings_.stay_connected = bindings_.stay_connected == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("profile", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleReduceTransparency() {
+  bindings_.reduce_transparency =
+      bindings_.reduce_transparency == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("appearance", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleCallDiagnostics() {
+  bindings_.call_diagnostics =
+      bindings_.call_diagnostics == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("appearance", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleShowAdvancedSettings() {
+  bindings_.show_advanced_settings =
+      bindings_.show_advanced_settings == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("about", /*show_toast=*/false);
+  InitSections(); // the advanced-only sections appear or go
+  PushUiStateToBindings();
+  DirtyAll();
+}
+
+void SettingsController::ToggleCrashReports() {
+  bindings_.crash_reports_enabled =
+      bindings_.crash_reports_enabled == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("security", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleAutoRenewRegistration() {
+  bindings_.auto_renew_registration =
+      bindings_.auto_renew_registration == "auto" ? "off" : "auto";
+  PullBindingsToUiState();
+  MarkSectionDirty("profile", /*show_toast=*/false);
+  DirtyAll();
 }
 
 void SettingsController::OnAddMcpServer() {
@@ -2271,498 +1877,52 @@ void SettingsController::OnRemoveMcpServer(const int index) {
   MarkSectionDirty("integrations");
 }
 
-void SettingsController::OnChangePinCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                             const ui::VariantList& /*args*/) {
-  Instance().OnChangePin();
+void SettingsController::ShowStatus(const std::string& status) {
+  status_ = status.c_str();
+  DataModelHost::Instance().Dirty("settings", "status");
 }
 
-void SettingsController::OnExportLinkDeviceCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  Instance().OnExportLinkDevice();
-}
-
-void SettingsController::OnClearUndeliveredCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                    const ui::VariantList& /*args*/) {
-  Instance().OnClearUndeliveredOlderThan();
-}
-
-void SettingsController::OnResetToolPermissionsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                        const ui::VariantList& /*args*/) {
-  Instance().OnResetToolPermissions();
-}
-
-void SettingsController::OnResetToolPermissions() {
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(
-      Tr("settings.security.tool_permissions.reset_title"),
-      Tr("settings.security.tool_permissions.reset_message"),
-      [this](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
-        if (!security) {
-          return;
-        }
-        PullBindingsToUiState();
-        if (auto reset = security->ResetToolPermissions(ui_state_, Store()); !reset) {
-          ReportFailure(reset.error());
-          return;
-        }
-        PushUiStateToBindings();
-        DirtyAll(false);
-        MaybeShowSaveToast("security");
-      },
-      {});
-}
-
-void SettingsController::OnClearUndeliveredOlderThan() {
-  if (!commands_.clear_undelivered_older_than) {
-    ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
-    return;
-  }
-
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(
-      Tr("settings.security.clear_undelivered_confirm_title"),
-      Tr("settings.security.clear_undelivered_confirm_message"),
-      [this](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        AppRuntime::PostWorkerNormal([this]() {
-          auto result = commands_.clear_undelivered_older_than
-                            ? commands_.clear_undelivered_older_than(7)
-                            : Roe<void>{Error("Messaging is not ready")};
-          AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-            if (!result) {
-              ReportFailure(result.error());
-              return;
-            }
-            UserFeedback::Ok(Tr("settings.security.clear_undelivered_done"));
-            status_ = "";
-            DirtyAll();
-          });
-        });
-      },
-      {});
-}
-
-void SettingsController::OnResetProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                const ui::VariantList& /*args*/) {
-  Instance().OnResetProfile();
-}
-
-void SettingsController::OnResetProfile() {
-  if (!shell_feedback_.show_confirm_with_checkbox) {
-    return;
-  }
-  shell_feedback_.show_confirm_with_checkbox(
-      Tr("settings.storage.reset_confirm_title"), Tr("settings.storage.reset_confirm_message"),
-      Tr("settings.storage.reset_confirm_check"), false,
-      [this](const bool confirmed, const bool checked) {
-        if (!confirmed) {
-          return;
-        }
-        if (!checked) {
-          UserFeedback::Fail(Tr("settings.storage.reset_confirm_check"));
-          return;
-        }
-        PerformResetProfile();
-      });
-}
-
-void SettingsController::PerformResetProfile() {
-  if (!commands_.reset_active_profile) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile reset is not available"));
-    return;
-  }
-
-  log().info << "Requesting active profile reset";
-  if (auto reset = commands_.reset_active_profile(); !reset) {
-    ReportFailure(reset.error());
-    return;
-  }
-
-  bindings_.pin_change_old = "";
-  bindings_.pin_change_new = "";
-  bindings_.pin_change_confirm = "";
-  status_ = "";
+void SettingsController::Resync(const bool include_profile_nickname) {
   SyncBindingsFromSession();
-  DirtyAll();
-  UserFeedback::Ok(Tr("settings.storage.profile_reset"));
+  DirtyAll(include_profile_nickname);
+}
+
+SettingsUiState& SettingsController::UiState() {
+  return ui_state_;
+}
+
+void SettingsController::PullFromView() {
+  PullBindingsToUiState();
+}
+
+void SettingsController::PushToView(const bool include_profile_nickname) {
+  PushUiStateToBindings();
+  DirtyAll(include_profile_nickname);
+}
+
+void SettingsController::SaveProfileNickname() {
+  CommitProfileNickname(/*show_toast=*/false);
+}
+
+void SettingsController::RequestSyncLayout(const char* reason) {
   if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_profile_reset");
+    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, reason);
   }
 }
 
-void SettingsController::EnsureSecurityUnlocked(std::function<void()> then) {
-  const PinProtectionView pin_state =
-      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
-  if (!pin_state.ready) {
-    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
-                      .WithUser(Tr("settings.security.link_device.not_ready")));
-    return;
+Roe<void> SettingsController::ForgetToolPermissions() {
+  auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
+  if (!security) {
+    return Error("Security settings unavailable");
   }
-  if (!pin_state.unlocked) {
-    if (!unlock_ensure_.ensure_unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
-                        .WithUser(Tr("settings.security.link_device.not_ready")));
-      return;
-    }
-    unlock_ensure_.ensure_unlocked([this, then = std::move(then)](const bool unlocked) {
-      if (!unlocked) {
-        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
-                          .WithUser(Tr("settings.security.link_device.not_ready")));
-        return;
-      }
-      then();
-    });
-    return;
+  PullBindingsToUiState();
+  if (auto reset = security->ResetToolPermissions(ui_state_, Store()); !reset) {
+    return reset.error();
   }
-  then();
-}
-
-void SettingsController::OnExportLinkDevice() {
-  EnsureSecurityUnlocked([this]() {
-    if (!commands_.export_link_device) {
-      ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
-      return;
-    }
-    if (!shell_feedback_.show_confirm) {
-      return;
-    }
-    shell_feedback_.show_confirm(
-        Tr("settings.security.link_device.export_confirm_title"),
-        Tr("settings.security.link_device.export_confirm_message"),
-        [this](const bool ok) {
-          if (!ok) {
-            return;
-          }
-          AppRuntime::PostWorkerNormal([this]() {
-            auto result = commands_.export_link_device ? commands_.export_link_device()
-                                                       : Roe<std::string>{Error("Messaging is not ready")};
-            AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-              if (!result) {
-                ReportFailure(result.error());
-                return;
-              }
-              if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-                system->SetClipboardText(result->c_str());
-              }
-              UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-              status_ = "";
-              DirtyAll();
-            });
-          });
-        },
-        {});
-  });
-}
-
-void SettingsController::OnChangePin() {
-  const PinProtectionView pin_state =
-      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
-  if (!pin_state.ready) {
-    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
-                      .WithUser(Tr("settings.security.pin_setup_first")));
-    return;
-  }
-  if (!pin_state.unlocked) {
-    if (!unlock_ensure_.ensure_unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
-      return;
-    }
-    unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-      if (!unlocked) {
-        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
-        return;
-      }
-      OnChangePin();
-    });
-    return;
-  }
-
-  const std::string old_pin = bindings_.pin_change_old.c_str();
-  const std::string new_pin = bindings_.pin_change_new.c_str();
-  const std::string confirm = bindings_.pin_change_confirm.c_str();
-  if (old_pin.empty() || new_pin.empty()) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "Current and new PIN are required")
-                      .WithUser(Tr("settings.security.pin_both_required")));
-    return;
-  }
-  if (new_pin != confirm) {
-    ReportFailure(AppError::Pin(Err::Pin::Mismatch, "New PINs do not match"));
-    return;
-  }
-  if (new_pin.size() < 4) {
-    ReportFailure(AppError::Pin(Err::Pin::TooShort, "Use at least 4 characters"));
-    return;
-  }
-
-  if (!commands_.change_pin) {
-    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
-    return;
-  }
-  if (auto changed = commands_.change_pin(old_pin, new_pin); !changed) {
-    ReportFailure(changed.error());
-    return;
-  }
-
-  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
-  prefs.pin_is_default = false;
-  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
-    ReportFailure(saved.error());
-    return;
-  }
-
-  bindings_.pin_change_old = "";
-  bindings_.pin_change_new = "";
-  bindings_.pin_change_confirm = "";
-  status_ = Tr("settings.security.pin_updated").c_str();
-  SyncBindingsFromSession();
-  DirtyAll();
-  UserFeedback::Ok(Tr("settings.security.pin_updated"));
-}
-
-
-void SettingsController::PushCasLibraryBindings() {
-  bindings_.cas_library_rows.clear();
-  bindings_.cas_library_rows.reserve(ui_state_.cas_library_rows.size());
-  for (const CasLibraryRowUiState& row : ui_state_.cas_library_rows) {
-    bindings_.cas_library_rows.push_back({.content_id_hex = row.content_id_hex.c_str(),
-                                          .title = row.title.c_str(),
-                                          .detail = row.detail.c_str(),
-                                          .realm_label = row.realm_label.c_str(),
-                                          .pin_label = row.pin_label.c_str(),
-                                          .can_share_publicly = row.can_share_publicly,
-                                          .can_unpublish = row.can_unpublish,
-                                          .can_copy_tip = row.can_copy_tip});
-  }
-  bindings_.cas_library_empty_label = ui_state_.cas_library_empty_label.c_str();
-}
-
-void SettingsController::RefreshCasLibrary() {
-  if (!commands_.list_cas_library) {
-    ui_state_.cas_library_rows.clear();
-    ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
-    return;
-  }
-  auto listed = commands_.list_cas_library(ui_state_.cas_library_filter);
-  ui_state_.cas_library_rows.clear();
-  if (!listed) {
-    ReportFailure(listed.error());
-    ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
-    return;
-  }
-  ui_state_.cas_library_rows.reserve(listed->size());
-  for (const CasLibraryItemView& row : *listed) {
-    ui_state_.cas_library_rows.push_back({.content_id_hex = row.content_id_hex,
-                                         .title = row.title,
-                                         .detail = row.detail,
-                                         .realm_label = row.realm_label,
-                                         .pin_label = row.pin_label,
-                                         .can_share_publicly = row.can_share_publicly,
-                                         .can_unpublish = row.can_unpublish,
-                                         .can_copy_tip = row.can_copy_tip});
-  }
-  ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
-}
-
-void SettingsController::SetCasLibraryFilterCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
-  if (args.empty()) {
-    return;
-  }
-  Instance().OnSetCasLibraryFilter(args[0].Get<ui::String>().c_str());
-}
-
-void SettingsController::OnSetCasLibraryFilter(const std::string& filter) {
-  ui_state_.cas_library_filter = filter.empty() ? "all" : filter;
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-}
-
-
-void SettingsController::ShareCasPubliclyCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
-  if (args.empty()) {
-    return;
-  }
-  Instance().OnShareCasPublicly(args[0].Get<int>());
-}
-
-void SettingsController::UnpublishCasCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
-  if (args.empty()) {
-    return;
-  }
-  Instance().OnUnpublishCas(args[0].Get<int>());
-}
-
-void SettingsController::OnShareCasPublicly(const int index) {
-  if (index < 0 || index >= static_cast<int>(ui_state_.cas_library_rows.size())) {
-    return;
-  }
-  const std::string content_id_hex = ui_state_.cas_library_rows[static_cast<size_t>(index)].content_id_hex;
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(Tr("settings.storage.library.share_confirm_title"),
-                               Tr("settings.storage.library.share_confirm_message"),
-                               [this, content_id_hex](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 if (!unlock_ensure_.ensure_unlocked) {
-                                   PerformShareCasPublicly(content_id_hex);
-                                   return;
-                                 }
-                                 unlock_ensure_.ensure_unlocked([this, content_id_hex](const bool unlocked) {
-                                   if (!unlocked) {
-                                     return;
-                                   }
-                                   PerformShareCasPublicly(content_id_hex);
-                                 });
-                               },
-                               {});
-}
-
-void SettingsController::OnUnpublishCas(const int index) {
-  if (index < 0 || index >= static_cast<int>(ui_state_.cas_library_rows.size())) {
-    return;
-  }
-  const std::string content_id_hex = ui_state_.cas_library_rows[static_cast<size_t>(index)].content_id_hex;
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(Tr("settings.storage.library.unpublish_confirm_title"),
-                               Tr("settings.storage.library.unpublish_confirm_message"),
-                               [this, content_id_hex](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 PerformUnpublishCas(content_id_hex);
-                               },
-                               {});
-}
-
-void SettingsController::PerformShareCasPublicly(const std::string& content_id_hex) {
-  if (!commands_.share_cas_publicly) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS share is not available"));
-    return;
-  }
-  if (auto shared = commands_.share_cas_publicly(content_id_hex); !shared) {
-    ReportFailure(shared.error());
-    return;
-  }
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-  UserFeedback::Ok(Tr("settings.storage.library.share_done"));
-}
-
-
-void SettingsController::PerformUnpublishCas(const std::string& content_id_hex) {
-  if (!commands_.unpublish_cas) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS unpublish is not available"));
-    return;
-  }
-  if (auto unpublished = commands_.unpublish_cas(content_id_hex); !unpublished) {
-    ReportFailure(unpublished.error());
-    return;
-  }
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-  UserFeedback::Ok(Tr("settings.storage.library.unpublish_done"));
-}
-
-
-
-void SettingsController::CopyCasTipCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
-  if (args.empty()) {
-    return;
-  }
-  Instance().OnCopyCasTip(args[0].Get<int>());
-}
-
-void SettingsController::FetchCasTipCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
-  Instance().OnFetchCasTip();
-}
-
-void SettingsController::OnCopyCasTip(const int index) {
-  if (index < 0 || index >= static_cast<int>(ui_state_.cas_library_rows.size())) {
-    return;
-  }
-  const auto& row = ui_state_.cas_library_rows[static_cast<size_t>(index)];
-  if (!row.can_copy_tip) {
-    return;
-  }
-  const std::string tip = FormatCasPublicTip(row.content_id_hex);
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(tip.c_str());
-  }
-  UserFeedback::Ok(Tr("settings.storage.library.copy_tip_done"));
-}
-
-void SettingsController::OnFetchCasTip() {
-  if (!shell_feedback_.show_prompt) {
-    return;
-  }
-  shell_feedback_.show_prompt(
-      Tr("settings.storage.library.fetch_tip_title"),
-      Tr("settings.storage.library.fetch_tip_message"), "",
-      [this](const bool confirmed, std::string tip) {
-        if (!confirmed) {
-          return;
-        }
-        while (!tip.empty() && (tip.back() == '\n' || tip.back() == '\r' || tip.back() == ' ')) {
-          tip.pop_back();
-        }
-        if (tip.empty()) {
-          return;
-        }
-        shell_feedback_.show_prompt(
-            Tr("settings.storage.library.fetch_tip_peer_title"),
-            Tr("settings.storage.library.fetch_tip_peer_message"), "",
-            [this, tip](const bool peer_ok, std::string peer) {
-              if (!peer_ok) {
-                return;
-              }
-              while (!peer.empty() && (peer.back() == '\n' || peer.back() == '\r' || peer.back() == ' ')) {
-                peer.pop_back();
-              }
-              if (peer.empty()) {
-                return;
-              }
-              PerformFetchCasTip(tip, peer);
-            });
-      });
-}
-
-void SettingsController::PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id) {
-  if (!commands_.fetch_cas_public_tip) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS tip fetch is not available"));
-    return;
-  }
-  // Answered on UI once the mesh fetch lands (the singleton outlives the request).
-  commands_.fetch_cas_public_tip(tip, peer_relay_user_id, [this](Roe<void> fetched) {
-    if (!fetched) {
-      ReportFailure(fetched.error());
-      return;
-    }
-    RefreshCasLibrary();
-    PushCasLibraryBindings();
-    DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-    DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-    UserFeedback::Ok(Tr("settings.storage.library.fetch_tip_done"));
-  });
+  PushUiStateToBindings();
+  DirtyAll(false);
+  MaybeShowSaveToast("security");
+  return {};
 }
 
 } // namespace pbr

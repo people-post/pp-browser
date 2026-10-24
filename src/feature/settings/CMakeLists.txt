@@ -12,9 +12,9 @@ pp_browser_add_feature_library(pp_feature_settings
     SettingsTools.cpp
     StorageSettingsSection.cpp
   PUBLIC_LIBS
-    pp_domain_messaging
-    pp_domain_content
-    pp_domain_net)
+    pp_lib_messaging
+    pp_lib_content
+    pp_lib_net)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

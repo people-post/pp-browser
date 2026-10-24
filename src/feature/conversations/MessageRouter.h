@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/AtAiParser.h"
+#include "lib/messaging/AtAiParser.h"
 #include "common/thread/IThreadStore.h"
 #include "common/Module.h"
 #include "feature/conversations/AgentInboundPorts.h"
@@ -19,6 +19,8 @@ class MessageRouter : public Module {
 public:
   MessageRouter(InboxController& inbox, MeshDeliveryOrchestrator& mesh_messaging, AgentInboundPorts agent,
                 IThreadStore& store);
+  /** The agent's entry points (empty: none — a send that needs the agent fails "Agent not bound"). */
+  void SetAgent(AgentInboundPorts agent) { agent_ = std::move(agent); }
 
   Roe<void> Route(const std::string& thread_id, const std::string& text,
                   std::optional<std::string> user_payload = std::nullopt);

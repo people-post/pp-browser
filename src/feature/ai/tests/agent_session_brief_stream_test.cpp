@@ -1,12 +1,12 @@
 #include "feature/ai/AgentSession.h"
 
-#include "domain/ai/conversation/Conversation.h"
+#include "lib/ai/conversation/Conversation.h"
 #include "foundation/data/Config.h"
 #include "foundation/error/AppError.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/thread/IThreadStore.h"
-#include "domain/ai/ToolRegistry.h"
-#include "domain/ai/mcp/McpClient.h"
+#include "lib/ai/ToolRegistry.h"
+#include "lib/ai/mcp/McpClient.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
@@ -1068,9 +1068,17 @@ TEST_F(AgentSessionPayloadTurnTest, FindSomeoneChipListsThePeopleWithoutAnyModel
   const auto ready = Of(events, AgentEventType::AssistantReady);
   ASSERT_EQ(ready.size(), 1u);
   EXPECT_EQ(ready[0].render_mode, RenderMode::PeopleList);
+  EXPECT_FALSE(ready[0].from_model); // host-built blocks, the only text that may keep its button payloads
   const auto calls = Calls();
   ASSERT_EQ(calls.size(), 1u);
   EXPECT_NE(calls[0].find(R"("query":"")"), std::string::npos);
+}
+
+// PB-007: provenance is carried by the event, never guessed from the text. A reply that is a bare blocks document
+// is still model output unless the host built it, so the default must be "model".
+TEST(AgentEventTest, ReplyIsModelOutputUnlessTheHostBuiltIt) {
+  AgentEvent event{.type = AgentEventType::AssistantReady, .text = R"({"blocks":[]})"};
+  EXPECT_TRUE(event.from_model);
 }
 
 // --- Typed sentences judged on the device (AppActionClassifier) ---

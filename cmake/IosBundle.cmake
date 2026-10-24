@@ -9,6 +9,13 @@ if(NOT PP_BROWSER_IOS_DEPLOYMENT_TARGET)
     "Minimum iOS version (IPHONEOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET)")
 endif()
 
+# Info.plist: PushKit VoIP pushes need the `voip` background mode (CallKit builds only, P013).
+if(PP_BROWSER_IOS_CALLKIT)
+  set(PP_BROWSER_IOS_VOIP_BACKGROUND_MODE "\n    <string>voip</string>")
+else()
+  set(PP_BROWSER_IOS_VOIP_BACKGROUND_MODE "")
+endif()
+
 function(pp_browser_configure_ios_app target)
   if(NOT PP_BROWSER_IS_IOS)
     return()
@@ -65,6 +72,16 @@ function(pp_browser_configure_ios_app target)
     COMMENT "Copying assets into iOS app bundle"
     VERBATIM
   )
+
+  # Words for the relay's call alert (its push carries only loc-keys; P012).
+  foreach(_lproj en zh-Hans)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${CMAKE_SOURCE_DIR}/packaging/ios/${_lproj}.lproj"
+        "$<TARGET_BUNDLE_DIR:${target}>/${_lproj}.lproj"
+      VERBATIM
+    )
+  endforeach()
 
   install(TARGETS ${target} BUNDLE DESTINATION .)
   install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets/"

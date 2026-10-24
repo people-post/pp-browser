@@ -1,8 +1,8 @@
 #include "app/node/NodeMeshPublish.h"
 
-#include "domain/net/HttpClient.h"
-#include "feature/registration/RegistrationClient.h"
-#include "domain/net/RegistrationSignPayload.h"
+#include "lib/net/HttpClient.h"
+#include "domain/registration/RegistrationClient.h"
+#include "lib/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -13,7 +13,7 @@
 namespace pbr {
 namespace {
 
-/** Headless-safe registration client (no pp_domain_net / messaging). */
+/** Headless-safe registration client (no pp_lib_net / messaging). */
 class ThinHttpRegistrationClient : public IRegistrationClient {
 public:
   explicit ThinHttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
@@ -70,7 +70,8 @@ public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const std::string& signature,
                                              int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64, const std::string& peer_id,
+                                             const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
                                              const std::vector<std::string>& multiaddrs, int64_t initiation_floor,
                                              const RegistrationPublishOpts& publish) override {
     if (base_url_.empty()) {
@@ -87,6 +88,9 @@ public:
     body.set("timestamp", timestamp);
     body.set("signature_alg", signature_alg);
     body.set("kem_public_key_b64", kem_public_key_b64);
+    if (!kem_binding_signature_b64.empty()) {
+      body.set("kem_binding_signature_b64", kem_binding_signature_b64);
+    }
     body.set("initiation_floor", initiation_floor);
     if (!peer_id.empty()) {
       body.set("peer_id", peer_id);
@@ -125,6 +129,7 @@ public:
       if (auto expires = root->getString("expires_at")) {
         result.expires_at = *expires;
       }
+      result.kem_bound = root->getIf<bool>("kem_bound").value_or(false);
     }
     return result;
   }

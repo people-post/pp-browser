@@ -14,7 +14,7 @@ Shrink and clarify `feature/` and `app/` by moving **sure** engines into domain,
 
 | Lock now | Keep revisable / phased |
 |----------|-------------------------|
-| Layer litmus; domain peer independence; sure peels first | When folders physically rename |
+| Layer litmus; lib peer independence; sure peels first | When folders physically rename |
 | Vocabulary + end-state names ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names)) | Exact bands under `gui/` |
 | Calls: nested then top-level ([F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) | App-owned `CallStack` timing |
 | No top-level `feature/chat` | `ChatController` class rename |
@@ -26,7 +26,7 @@ See [NORTH_STAR.md](NORTH_STAR.md) and [DECISIONS.md](DECISIONS.md) (F001–F008
 
 1. **Foundation/domain peels taught ownership.** Feature still holds stores and pure helpers that already match domain litmus.
 2. **Folder splits without peels just move the god-objects.** `ConversationsHub` stays hard until mass drops; UI nesting (f5) was staging only.
-3. **Presenters are not feature peers.** `gui` above feature matches [UI_FUNCTIONAL_BOUNDARY](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md); name **`gui`** avoids clash with `domain/ui`.
+3. **Presenters are not feature peers.** `gui` above feature matches [UI_FUNCTIONAL_BOUNDARY](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md); name **`gui`** avoids clash with `lib/ui`.
 
 ## Scope
 

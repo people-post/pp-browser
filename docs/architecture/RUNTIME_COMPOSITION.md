@@ -37,10 +37,10 @@ flowchart TB
   subgraph base_layer["base/"]
     SessionStore["SessionStore<br/><small>base/data/</small>"]
     LocalizationService["LocalizationService<br/><small>base/i18n/</small>"]
-    Theme["Theme<br/><small>domain/ui/</small>"]
+    Theme["Theme<br/><small>lib/ui/</small>"]
     IdentityStore["IdentityStore<br/><small>base/people/</small>"]
-    ThreadStore["SqliteThreadStore<br/><small>domain/messaging/</small>"]
-    LlmClient["LlmClient<br/><small>domain/ai/</small>"]
+    ThreadStore["SqliteThreadStore<br/><small>lib/messaging/</small>"]
+    LlmClient["LlmClient<br/><small>lib/ai/</small>"]
     CallMediaEngine["CallMediaEngine<br/><small>base/media/</small>"]
   end
 
@@ -108,11 +108,11 @@ flowchart LR
     Mesh["MeshHost<br/><small>pp-cpp-mesh — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
-    ThemeNode["Theme<br/><small>domain/ui/</small>"]
+    ThemeNode["Theme<br/><small>lib/ui/</small>"]
     ActionRouter["ActionRouter<br/><small>feature/ai/bindings/</small>"]
     ClientCompat["ClientCompatController<br/><small>feature/ui/</small>"]
     Badges["BadgeAggregator<br/><small>feature/ui/</small>"]
-    Input["InputCoordinator<br/><small>domain/ui/</small>"]
+    Input["InputCoordinator<br/><small>lib/ui/</small>"]
     Flow["FlowCoordinator<br/><small>feature/ui/</small>"]
     Call["CallController<br/><small>feature/ui/</small>"]
   end
@@ -246,7 +246,7 @@ flowchart TB
 
   subgraph coord["Coordinator thread"]
     Coord["CoordinatorThread<br/><small>mailbox + timer wheel</small>"]
-    RelayPoll["BackgroundSyncScheduler<br/><small>relay poll 2s/45s</small>"]
+    RelayPoll["BackgroundSyncScheduler<br/><small>relay poll 2s fg; bg push only</small>"]
     HubPolicy["ConversationsHub policy<br/><small>peer sweep · mDNS · reachability</small>"]
     Coord --> RelayPoll
     Coord --> HubPolicy
@@ -286,9 +286,9 @@ flowchart TB
 | **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
-| **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
-| **Media devices** | `MediaDeviceArbiter` | `domain/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
-| **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread (speaker lease) |
+| **Media capture / video** | `CallMediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
+| **Media devices** | `MediaDeviceArbiter` | `lib/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
+| **Ringtone** | `CallRingtone` | `lib/media/` | Playback loop thread (speaker lease) |
 | **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 
 ### Cross-thread rules of thumb
@@ -317,7 +317,7 @@ Full model: [THREADING.md](THREADING.md).
 | **ClientCompatController** | `gui/` | Relay client-compat check; app-owned; deferred startup |
 | **BadgeAggregator** | `gui/` | Nav unread badges; app-owned; `BindSource` via `ConversationsFacade`; chat via `BadgeNotifyPorts` |
 | **BadgeNotifyPorts** | `gui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
-| **InputCoordinator** | `domain/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
+| **InputCoordinator** | `lib/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
 | **FlowCoordinator** | `gui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |
 | **FlowCoordinatorPorts** | `gui/` | Modal begin/end/dismiss; app-filled from `FlowCoordinator` |
 | **CallController** | `gui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
@@ -334,9 +334,9 @@ Full model: [THREADING.md](THREADING.md).
 | **ContactsNotifyPorts** | `gui/` | Contacts refresh/select for chat; app-filled from `ContactsController` |
 | **PeoplePickerNotifyPorts** | `gui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
 | **CallActionsPorts** | `gui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
-| **ProfileIdentityView** | `domain/people/` | Presentation projection of local identity |
+| **ProfileIdentityView** | `lib/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
 | **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
-| **CallMediaEngine** | `domain/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
+| **CallMediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

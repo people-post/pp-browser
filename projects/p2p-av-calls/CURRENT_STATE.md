@@ -16,7 +16,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
 | **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |
 | **V038 rewrite debt** | N=2 = direct → punch → **circuit** call-media; SoftMigrate / `media_relay` = **N≥3 only** — [DECISIONS V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
-| **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/domain/calls/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
+| **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/lib/calls/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
 | **V039 planner FSMs** | **pm0–pm4 landed** — Direct/Hop `Apply` + logic gtests; health/attach-wait SM timers; CALLS race homes → planner phases — [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines) |
 | **V040 CallMediaPlane** | **Landed (cs0–cs2)** — `CallMediaPlane` owns Amp/dial/relay/hop/bridge/dial book; Lifecycle sole N025 desire; CALLS.md ownership promoted — [DECISIONS V040](DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane) |
 | **V041 Lifecycle ports** | **Landed (ci0–ci3)** — `CallLifecycleSignalingPorts`; Stack composition root; CALLS.md table — [DECISIONS V041](DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports) |
@@ -96,8 +96,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 | Gate | Purpose / evidence | Status |
 |------|-------------------|--------|
-| **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/domain/calls/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
-| **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/domain/calls/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
+| **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/lib/calls/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
+| **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/lib/calls/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
 | **D3 direct duplex** | `B-CALL-DIRECT`: Bridge + Kick + CSM compose + CallUiBackend + dual-stack (Invite/InCall/Leave + K-cycle + conflict) + `pp_call_direct_smoke` / `pp_call_conflict_smoke` | **Improved** (in-process product wire + K-cycle + conflict); Amp smokes green |
 | **D4 circuit duplex** | `B-CALL-HOP`: `AmpCircuitCallMediaComposeTest` + `pp_call_hop_smoke` | **PASS** loopback; smoke scaffold |
 | **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold / nightly — **replaces** “two NATed phones” as regression wall |
@@ -124,7 +124,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Reintroduce `call_hop_addrs` / app ICE gather | H007 — reachability **in** libp2p |
 | Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
-| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/domain/calls/CallMediaPlannerSelectLogic.h) |
+| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/lib/calls/CallMediaPlannerSelectLogic.h) |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
 | Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |
@@ -150,3 +150,53 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Rewrite transport SM in same PR as planner Apply | V039 / V033 — one machine layer per PR |
 | Put SoftMigrate side effects on Bridge | Hop `Apply(SoftMigrateRequested)` only |
 | Reintroduce CallController PollPendingSfuAttach / PollP2pConnectHealth tick | V039 — Direct health timer + Hop attach-wait timer; chrome may heal once on media `failed` |
+
+## Call state consolidation (2026-10)
+
+A live call's state was kept in about ten places by seven owners (2026-10 map): `LiveCall` (call
+state, media Status), `CallSessionManager` (accept in flight, activity line), the topology / hop
+structs (flight, attach wait, guest reattach), `CallMediaBridge` (direct planner, connect failed),
+`CallMediaSeat` (path, media state), `CallMediaCoordinator` (path), the engine (`connection_state`,
+`connected_at_ms`), the `CallUiState` snapshot, `CallPresenter` latches and the stored row. The
+status line read seven of them at two moments (the snapshot, and the engine live); "Reconnecting"
+had five sources, "live" three, the path four. The bugs that came of it: a call read Connected
+while its direct stream had ended and the hop was not attached; the call timer reset to 0:00 on
+every reconnect.
+
+**Target:** `LiveCall` owns, per call: call state and end reason; one media sub-state (Deciding /
+Direct: Connecting, Live, TxOnly, Reconnecting / Hop: Waiting, Attaching, Live, Migrating,
+Reattaching / Failed, with its details); `live_since_ms`; the accepting sub-state; the recovery
+reason. The planners send it events instead of reporting progress beside their own phases; the
+seat keeps only the exclusive lock (holder, epoch, attach ticket); the engine's connection state
+becomes an input event. `CallUiState` publishes one copy; the presenter keeps only UI latches (ring
+shown, a click the owner has not taken yet). Pure deciders stay pure (`Decide*PlannerPhase`,
+`DecideInCallStatus` on one snapshot, `CallMediaStatusLogic`, `PlannerFor` / `Allows*`).
+
+**Landed (2026-10-23):**
+
+1. `LiveCalls::NoteDirectHandedToHop` — a 1:1 stream ended for a hop not attached yet waits for it
+   (HopWaiting), instead of a synthetic "connected" that promoted it to HopLive.
+2. `LiveCallMediaProgress::live_since_ms` — when the call first went live, kept through failures
+   and reconnects: the call timer and "was connected" read it (the engine's per-path
+   `connected_at_ms` and the presenter's latch are gone from the screen).
+3. `CallRecovery` — one reason (Migrating / WaitingForHop / Reattaching / HopLost) from
+   `CallTopologyController::Recovery()` replaces the four recovery flags the screen read;
+   `RecoveryInFlight` is the old "awaiting SFU recovery".
+
+**Next, in order:** fold `accept_in_flight_` into `LiveCallState::Accepting`; make the seat's
+Live / Failed derive from `LiveCall` (drop the hand-paired `note_live` + `on_connected` writes);
+planners emit events into `LiveCall` (drop `report_progress` beside `Apply`); feed the engine's
+connection state in as an event (the screen stops reading the engine); one path value.
+
+End state: [CALLS.md § Call state: one owner](../../docs/architecture/CALLS.md#call-state-one-owner).
+
+## Extraction sequence (history)
+
+Landed (behavior-preserving + who-picks fix):
+
+1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
+2. **Libp2p media bridge** — `CallMediaBridge` owns schedule/dial/retry/stop-media + 1:1 connect-fail / Retry.
+3. **Dispatch cleanup** — thin `ApplyInboundControl` → `CallSessionWorkflow::HandleInbound*`.
+4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `CallHopAttachLogic` + fakes (`IMediaRelayClient` / `IDialRegistry`).
+5. **Tests** — `CallMediaTopology` N≥3-only; SoftMigrate / wait / fan-out / topology controller unit tests; `media_relay_service_test` loopback remains integration.
+6. **m2 teardown** — removed `CallP2pSignalingBridge` + libdatachannel from build; wire-compat ignore for `call_sdp` / `call_ice`.

@@ -2,7 +2,7 @@
 
 #include "gui/AccountInvite.h"
 
-#include "domain/ui/ViewCatalog.h"
+#include "lib/ui/ViewCatalog.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
@@ -102,6 +102,7 @@ void OnboardingController::LoadIdentityFields() {
   }
   // The id friends type: the same "account ID" Me → Profile shows and shares (relay id; M002 id as fallback).
   account_id_ = (!view.relay_id.empty() ? view.relay_id : view.account_id).c_str();
+  contact_locator_ = view.contact_locator;
 }
 
 void OnboardingController::ShowStep(const OnboardingStep step) {
@@ -194,7 +195,7 @@ void OnboardingController::OnShare(const ShareAnchor anchor) {
   if (account_id_.empty()) {
     return;
   }
-  ShareInviteOrCopy(AccountInviteText(nickname_.c_str(), account_id_.c_str()), ports_.share_text, anchor,
+  ShareInviteOrCopy(AccountInviteText(nickname_.c_str(), account_id_.c_str(), contact_locator_), ports_.share_text, anchor,
                     ports_.copy_text);
 }
 

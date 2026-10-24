@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/ui/ChatWidgetTypes.h"
+#include "lib/ui/ChatWidgetTypes.h"
 #include "feature/conversations/ConversationsFacade.h"
 
 #include <ui/base/Types.h>

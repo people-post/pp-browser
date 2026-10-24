@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 
@@ -17,13 +18,14 @@
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/media/MediaDeviceArbiter.h"
-#include "domain/messaging/ChatPayloadValidator.h"
+#include "lib/media/MediaDeviceArbiter.h"
+#include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/ProductBranding.h"
-#include "domain/ui/InputCoordinator.h"
-#include "domain/ui/ContextMenuHost.h"
-#include "domain/ui/ViewCatalog.h"
+#include "lib/ui/InputCoordinator.h"
+#include "lib/ui/ContextMenuHost.h"
+#include "lib/ui/ViewCatalog.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "gui/chat/ChatController.h"
 #include "feature/conversations/MessagingTools.h"
@@ -38,6 +40,7 @@
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/SdlAppEvents.h"
+#include "foundation/platform/StayConnectedService.h"
 #include "foundation/platform/WindowIcon.h"
 #include "feature/ai/AgentUiPorts.h"
 #include "feature/conversations/AgentInboundPorts.h"
@@ -83,7 +86,7 @@
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UserFeedback.h"
-#include "domain/people/ContactTypes.h"
+#include "lib/people/ContactTypes.h"
 #include "common/Utilities.h"
 #include "feature/conversations/MessagingCompatPorts.h"
 #include "feature/conversations/MessagingContactsPorts.h"
@@ -93,7 +96,7 @@
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
-#include "domain/ui/Theme.h"
+#include "lib/ui/Theme.h"
 #include "common/StartupTiming.h"
 #include "common/Metrics.h"
 #include "mesh/reachability/Reachability.h"
@@ -238,11 +241,9 @@ Application::Application() {
   input_ = std::make_unique<InputCoordinator>();
   flow_ = std::make_unique<FlowCoordinator>();
   shell_ = std::make_unique<ShellHost>();
-  ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
-  SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
@@ -253,7 +254,6 @@ Application::Application() {
   emoji_picker_ = std::make_unique<EmojiPickerController>();
   EmojiPickerController::InstallInstance(*emoji_picker_);
   chat_ = std::make_unique<ChatController>();
-  ChatController::InstallInstance(*chat_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
   onboarding_ = std::make_unique<OnboardingController>();
@@ -265,7 +265,6 @@ Application::~Application() {
   EmojiPickerController::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
-  SettingsController::ClearInstance();
   Shutdown();
   messaging_facade_.reset();
   messaging_ = nullptr;
@@ -323,19 +322,9 @@ Roe<void> Application::ResetActiveProfile() {
     }
   }
 
-  if (messaging_) {
-    messaging_->RequestShutdown();
+  if (auto stopped = StopMessagingForReset(/*with_secrets=*/true); !stopped) {
+    return stopped.error();
   }
-  // Same teardown quiesce as quit, but the process lives on: reopen before re-initializing.
-  if (!AppRuntime::QuiesceForTeardown(kProfileResetQuiesceBudget)) {
-    AppRuntime::ReopenAfterTeardown();
-    if (messaging_) {
-      messaging_->CancelShutdownRequest();
-    }
-    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
-  }
-  ShutdownMessaging();
-  AppRuntime::ReopenAfterTeardown();
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
@@ -357,6 +346,7 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
     return hub.error();
   }
+  WireHubCallbacks();
 
   if (auto prefs = store_.ReloadProfilePrefs(); !prefs) {
     return prefs.error();
@@ -364,6 +354,94 @@ Roe<void> Application::ResetActiveProfile() {
 
   chat_->OnProfileDataReset();
   contacts_->Refresh();
+  return {};
+}
+
+Roe<void> Application::ResetChatData() {
+  const BootstrapResult& bootstrap = store_.Snapshot();
+  const std::string profile_dir = bootstrap.profile_data_dir;
+  const AppConfig config = bootstrap.config;
+
+  if (profile_dir.empty()) {
+    return AppError::Storage(Err::Storage::Unavailable, "Profile path unavailable");
+  }
+
+  const std::string chats_dir = SqliteThreadsRoot(profile_dir);
+  log().info << "Resetting chat data at " << chats_dir;
+
+  // Public sessions outlive a chat reset: their epoch is what lets each pair start its next one
+  // instead of this device rewinding its numbering where the peer still holds the old messages (D014, #378).
+  std::vector<PskSessionRecord> kept_sessions;
+  if (messaging_ && messaging_->IsInitialized()) {
+    if (IPskSessionStore* psk = messaging_->PskStore()) {
+      if (auto listed = psk->List()) {
+        for (PskSessionRecord& record : *listed) {
+          if (record.key.channel == CryptoChannel::E2ePublic && record.master_psk_b64) {
+            kept_sessions.push_back(std::move(record));
+          }
+        }
+      } else {
+        log().warning << "chat reset: public sessions not kept: " << listed.error().message;
+      }
+    }
+  }
+
+  if (auto stopped = StopMessagingForReset(/*with_secrets=*/false); !stopped) {
+    return stopped.error();
+  }
+
+  // profile.db (catalog, outbox, peer sessions, group rosters) and one thread.db per chat; the
+  // account (identity.enc, vault.bin), contacts.json and the preferences live beside threads/.
+  std::error_code ec;
+  std::filesystem::remove_all(chats_dir, ec);
+  if (ec) {
+    log().error << "remove_all(" << chats_dir << "): " << ec.message();
+    return AppError::Storage(Err::Storage::Failed, "Failed to delete chat data: " + ec.message());
+  }
+
+  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+    return hub.error();
+  }
+  WireHubCallbacks();
+
+  chat_->OnProfileDataReset();
+  contacts_->Refresh();
+  // The vault is still open: bring messaging back now rather than at the next send — then put the kept
+  // sessions back (the stores encrypt them under the DEK they get at unlock), each pair marked to restart.
+  unlock_gate_->EnsureUnlocked([this, kept = std::move(kept_sessions)](const bool unlocked) mutable {
+    IPskSessionStore* psk = messaging_ ? messaging_->PskStore() : nullptr;
+    if (!unlocked || !psk) {
+      return;
+    }
+    for (PskSessionRecord& record : kept) {
+      record.restart_pending = true;
+      if (auto saved = psk->Save(record); !saved) {
+        log().warning << "chat reset: a public session not kept: " << saved.error().message;
+      }
+    }
+  });
+  return {};
+}
+
+Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  if (messaging_) {
+    messaging_->RequestShutdown();
+  }
+  // Same teardown quiesce as quit, but the process lives on: reopen before re-initializing.
+  if (!AppRuntime::QuiesceForTeardown(kProfileResetQuiesceBudget)) {
+    AppRuntime::ReopenAfterTeardown();
+    if (messaging_) {
+      messaging_->CancelShutdownRequest();
+    }
+    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
+  }
+  if (with_secrets) {
+    ShutdownMessaging();
+  } else if (messaging_ && messaging_->IsInitialized()) {
+    StartupPhase phase("Shutdown::ConversationsHub");
+    messaging_->Shutdown();
+  }
+  AppRuntime::ReopenAfterTeardown();
   return {};
 }
 
@@ -471,6 +549,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
           },
   });
   SdlAppEvents::Install();
+  InstallStayConnectedService();  // P011: Android's foreground service follows the setting
 
   ContextMenuHost::Instance().Install(context);
   return true;
@@ -587,6 +666,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
+  settings_commands.reset_chat_data = [this]() { return ResetChatData(); };
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
   };
@@ -670,13 +750,17 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  settings_commands.change_pin = [this](const std::string& current_pin,
-                                        const std::string& new_pin) -> Roe<void> {
+  settings_commands.change_pin = [this, &facade](const std::string& current_pin,
+                                                  const std::string& new_pin) -> Roe<void> {
     DataKeyVault* vault = secrets_->Vault();
     if (vault == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
     }
-    return vault->ChangePin(current_pin, new_pin);
+    if (auto changed = vault->ChangePin(current_pin, new_pin); !changed) {
+      return changed.error();
+    }
+    facade.WriteLocalBackupAsync(); // the backup keeps a copy of the vault: refresh it under the new PIN
+    return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
@@ -954,6 +1038,7 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_identity_restore = [this](const std::string& nickname) {
     pin_gate_->ShowIdentityRestore(nickname);
   };
+  unlock_ports.ui.show_restore_pin = [this](const bool wrong_pin) { pin_gate_->ShowRestorePin(wrong_pin); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
@@ -981,8 +1066,8 @@ void Application::WireUnlockPinAndFlow() {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
     }
     // Import runs before EnsureMessagingReady; push attach after the vault is open.
-    AppRuntime::PostWorkerNormal([this, &facade]() {
-      (void)facade.SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
+    AppRuntime::PostWorkerNormal([&facade]() {
+      (void)facade.SyncPushDevices();
     });
     if (chat_) {
       chat_->ReloadAgentConfig();
@@ -1058,6 +1143,12 @@ void Application::WireUnlockPinAndFlow() {
     contacts_->BindUnlockEnsure(unlock_ensure);
     people_picker_->BindUnlockEnsure(std::move(unlock_ensure));
   }
+  // Invite links the OS opens the app with (QR codes, tapped links); those from a cold start waited.
+  IncomingLink::SetHandler([this](const std::string& link) {
+    if (contacts_) {
+      contacts_->OfferInvite(link);
+    }
+  });
   {
     MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
     shell_messaging.open_network_settings = [this]() {
@@ -1306,26 +1397,8 @@ bool Application::MountPresenters(ui::Context* context) {
   return true;
 }
 
-void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
+void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
-  ShellHost& shell = *shell_;
-  ChatSessionPorts chat_ports;
-  chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
-  chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
-  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
-  contacts_->BindChatPorts(chat_ports);
-  people_picker_->BindChatPorts(std::move(chat_ports));
-
-  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
-  shell_->SetOnBottomChromeDismissed([this]() {
-    if (emoji_picker_) {
-      emoji_picker_->Close();
-    }
-  });
-
-  // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
-  config_apply_->InstallListeners();
-
   messaging.SetOnMessagingReady([this]() {
     chat_->OnMessagingReady();
     contacts_->Refresh();
@@ -1378,6 +1451,28 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
       }
     });
   });
+}
+
+void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
+  ShellHost& shell = *shell_;
+  ChatSessionPorts chat_ports;
+  chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
+  chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
+  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
+  contacts_->BindChatPorts(chat_ports);
+  people_picker_->BindChatPorts(std::move(chat_ports));
+
+  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
+  shell_->SetOnBottomChromeDismissed([this]() {
+    if (emoji_picker_) {
+      emoji_picker_->Close();
+    }
+  });
+
+  // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
+  config_apply_->InstallListeners();
+
+  WireHubCallbacks();
 
   LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
     settings_->RefreshLocalizedChrome();
@@ -1489,14 +1584,14 @@ void Application::Run() {
   int slow_frames_skipped = 0;
 #if UI_SDL_VERSION_MAJOR >= 3
   // Live layout+Present while the OS modal resize loop blocks Poll/WaitEvent.
-  Backend::SetLiveResizeHandler(context, [](ui::Context* ctx) {
+  Backend::SetLiveResizeHandler(context, [this](ui::Context* ctx) {
     if (!ctx)
       return;
     Backend::SyncContext(ctx);
-    ShellHost::Instance().Update(ctx);
+    shell_->Update(ctx);
     ctx->Update();
-    ChatController::Instance().AfterLayout();
-    ShellHost::Instance().NotifyFrameEnd(ctx);
+    chat_->AfterLayout();
+    shell_->NotifyFrameEnd(ctx);
     if (!Backend::CanRender())
       return;
     Backend::BeginFrame();
@@ -1697,13 +1792,11 @@ void Application::Shutdown() {
   if (contacts_) {
     contacts_->BindUnlockEnsure({});
   }
+  IncomingLink::SetHandler({});
   call_ui_.reset();
   shell_->BindShellMessaging({});
-  ChatController::ClearInstance();
-  ShellHost::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
-  SettingsController::ClearInstance();
   g_input_coordinator = nullptr;
   if (unlock_gate_) {
     unlock_gate_->BindPorts({});

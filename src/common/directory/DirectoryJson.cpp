@@ -202,6 +202,9 @@ Object DirectoryHitToJson(const mesh::DirectoryHit& hit) {
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
     out.set("kem_public_key_b64", *hit.kem_public_key_b64);
   }
+  if (hit.kem_binding_signature_b64 && !hit.kem_binding_signature_b64->empty()) {
+    out.set("kem_binding_signature_b64", *hit.kem_binding_signature_b64);
+  }
   if (hit.icon && !hit.icon->empty()) {
     out.set("icon", ProfileIconRefToJson(*hit.icon));
   }
@@ -249,6 +252,9 @@ mesh::DirectoryHit DirectoryHitFromJson(const Object& json) {
   }
   if (auto kem = json.getString("kem_public_key_b64")) {
     hit.kem_public_key_b64 = *kem;
+  }
+  if (auto binding = json.getString("kem_binding_signature_b64")) {
+    hit.kem_binding_signature_b64 = *binding;
   }
   if (const Array* endpoints = json.getArray("endpoints")) {
     ParseDirectoryEndpointsArray(*endpoints, hit.endpoints);
