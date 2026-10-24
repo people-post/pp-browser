@@ -35,8 +35,10 @@ u64 BE   target count (≤ 8), then per target: LenUtf8 url (https, ≤ 256 byte
 
 ## 2. Relay post API (`post_relay`)
 
-HTTP under the relay's base URL (the default relay: `…/api/relay`). JSON bodies; binary fields base64.
-Failures are coded ([CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md)).
+HTTP under the target's base URL; JSON bodies; binary fields base64; failures as `{ "error": code,
+"message" }`. The service is [app-posts](https://github.com/nfsc-brief-web3/app-posts) (deployable on its
+own, base URL = its root); the default relay forwards `…/api/relay/v1/posts/*` to it, so the default
+target is `https://www.brief.global/api/relay/v1`.
 
 ### Writes — authenticated by the author's own signatures (S018)
 

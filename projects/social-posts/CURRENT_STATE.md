@@ -12,4 +12,11 @@ no UI, no network.
 **Distribution designed (2026-10-23):** [DISTRIBUTION.md](DISTRIBUTION.md), S017–S021 — targets in the head
 statement, the relay post API, `/pp/posts/1.0.0`, head discovery, publish outbox, refresh.
 
-**Next:** review; then P2 — the relay PR first (merged and deployed before the client), then the client.
+**P2 relay side (2026-10-23, in review):** the post relay service
+[nfsc-brief-web3/app-posts#1](https://github.com/nfsc-brief-web3/app-posts/pull/1) (verify / keep / serve,
+tested against `lib/posts` vectors) and the gateway route
+[app-static-api#201](https://github.com/nfsc-brief-reader/app-static-api/pull/201)
+(`/api/relay/v1/posts/*` → app-posts). Deploy needs an `app-posts` ECR repository, the service, and
+`BRF_WWW_POSTS_URI`.
+
+**Next:** once deployed, the client side of P2.
