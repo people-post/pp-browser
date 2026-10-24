@@ -178,3 +178,16 @@ entries already out. Conflicting claims are shown side by side; an anchored clai
 
 **Rationale:** Anyone holding the account key can sign anything, so these are statements, not proofs;
 the full fix is account-key rotation (M019).
+
+---
+
+## S016 — Stubs keep chains whole; protocol limits only grow
+
+**Status:** Accepted (2026-10-23)
+
+**Decision:** An entry a reader will not keep (over its limits, an unknown kind, deleted) is kept as a stub
+— lane, seq, `entry_hash`, size — and the lane continues. Protocol limits for an entry version may be
+raised, never lowered.
+
+**Rationale:** Limits inside signed, hashed bytes outlive any client. With stubs, raising one later costs
+older clients only the larger entries; lowering would invalidate history already published and anchored.

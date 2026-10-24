@@ -293,8 +293,26 @@ cost — and **relay quotas**, which a relay states in its `post_relay` service 
 | Media per account per day | 256 MiB |
 | Retention | stated by the relay (e.g. entries forever, media 1 year) |
 
-Entries over a protocol limit are invalid everywhere; over a relay quota, that relay refuses them and
-others may not.
+Over a relay quota, that relay refuses an entry and others may not.
+
+### Adjusting limits (S016)
+
+**A reader that will not keep an entry does not break the chain.** An entry over the reader's limits, or
+of a kind it does not know, is kept as a **stub** (lane, seq, `entry_hash`, size — the same stub as after a
+delete) and the lane continues past it. So raising a limit later only means older clients skip the larger
+entries; it does not cut the author's lane for them.
+
+| Limit | Raise | Lower | Why |
+|-------|-------|-------|-----|
+| Relay quotas | easy | easy | each relay's policy, stated in its terms |
+| Entries per fetch page | easy | easy | a request parameter; a relay may return fewer |
+| Lanes per head | easy | easy | heads are reissued, not history (anchored heads keep the rule they were made under) |
+| Media size / count | easy | hard | media is fetched apart and can be declined; lowering would hide existing posts |
+| Entry / text size | moderate (with stubs) | not for an existing version | inside signed, hashed bytes; lowering would invalidate published and anchored history |
+
+Never lower a protocol limit for an existing entry version; start conservative on what is hashed. Not
+limits but fixed for a version: the canonical encoding, hash, signature scheme and field widths — changing
+them is a new entry version (the version byte).
 
 ---
 
