@@ -49,9 +49,13 @@ Failures are coded ([CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md)).
 - An entry or head **is** its own authentication: the relay verifies the signature against the author's
   key (from its directory, or the `key_card` sent along — checked against the account id like any card).
   Republishing someone else's entries is allowed (mirroring) and idempotent.
-- The media presign is signed by the author's account key over
-  `"pp-browser:post-media-v1" NUL ‖ account_id ‖ content_id ‖ size ‖ mime ‖ issued_at` (fresh within 5
-  minutes), because the bytes are not signed by an entry until the post is published.
+- The media presign is signed by the author's account key (`PostMediaPresignSignBytes`) over
+  `"pp-browser:post-media-v1" NUL ‖ u8 1 ‖ LenUtf8 account_id ‖ 32 B content_id ‖ u64 BE size ‖ LenUtf8 mime ‖
+  i64 BE issued_at` (fresh within 5 minutes), because the bytes are not signed by an entry until the post
+  is published.
+- **Cross-implementation vectors:** `src/lib/posts/tests/data/post_vectors.json` — entries of every kind,
+  a head and a media presign, signed by `lib/posts`; every implementation (the relay) must parse, hash and
+  verify them alike.
 - The relay enforces the protocol limits (S014) and **its quotas per author**, stated in its `post_relay`
   terms. A relay may also require registration on its own terms; the default relay serves registered accounts.
 - **Forks** are stored side by side (both entries are proof) and flagged on the author (S019).

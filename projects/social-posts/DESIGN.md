@@ -102,8 +102,8 @@ An entry is valid on its own when:
    [ACCOUNT_CARD § Resolving keys](../../docs/contracts/ACCOUNT_CARD.md#resolving-keys));
 2. `seq ≥ 1`, and `prev` is zeros exactly when `seq = 1`;
 3. `claimed_at` is no more than 5 minutes ahead of the reader's clock;
-4. the body decodes for its kind and is within the protocol limits (§ 6); refs are well formed;
-   `edit` / `delete` / `disavow` targets name the same author.
+4. the body decodes for its kind and is within the protocol limits (§ 6); every string in it is
+   well-formed UTF-8; refs are well formed; `edit` / `delete` / `disavow` targets name the same author.
 
 With its predecessor at hand it is also **chained**: `prev` = the predecessor's `entry_hash`, and
 `claimed_at ≥` the predecessor's `claimed_at`. A reader may hold a lane with gaps (it fetched e7 before

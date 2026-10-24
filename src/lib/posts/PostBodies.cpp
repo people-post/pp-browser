@@ -62,7 +62,8 @@ Roe<T> Decode(const ByteVector& bytes, const char* what, Read read) {
 }
 
 Roe<void> CheckRef(const PostRef& ref) {
-  if (ref.author.empty() || ref.author.size() > kMaxPostAuthorBytes || ref.seq == 0) {
+  if (ref.author.empty() || ref.author.size() > kMaxPostAuthorBytes || !IsWellFormedUtf8(ref.author) ||
+      ref.seq == 0) {
     return Error("post: malformed ref");
   }
   return {};
@@ -86,7 +87,8 @@ Roe<void> CheckPostFields(const PostBody& body) {
     return Error("post: too many media");
   }
   for (const PostMedia& media : body.media) {
-    if (media.mime.empty() || media.mime.size() > kMaxPostMimeBytes || media.size == 0 ||
+    if (media.mime.empty() || media.mime.size() > kMaxPostMimeBytes || !IsWellFormedUtf8(media.mime) ||
+        media.size == 0 ||
         media.size > kMaxPostMediaObjectBytes) {
       return Error("post: media too large or unnamed");
     }

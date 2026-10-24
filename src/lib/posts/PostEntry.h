@@ -53,4 +53,11 @@ Roe<SignedPostHead> SignPostHead(const PostHead& head, const PostSigner& signer)
 /** A head statement signed by its author's account key, at most 64 lanes, not from the future. */
 Roe<PostHead> VerifyPostHead(const SignedPostHead& signed_head, const ByteVector& author_signing_key, int64_t now_ms);
 
+/**
+ * What an author signs to upload a post's media to a relay (domain "pp-browser:post-media-v1", version 1,
+ * account id, content id, size, mime, issued_at): the bytes are not covered by an entry until it is published.
+ */
+ByteVector PostMediaPresignSignBytes(const std::string& account_id, const PostHash& content_id, uint64_t size,
+                                     const std::string& mime, int64_t issued_at);
+
 } // namespace pbr

@@ -15,6 +15,7 @@ namespace {
 
 const std::string kEntryDomain("pp-browser:post-entry-v1\0", 25);
 const std::string kHeadDomain("pp-browser:post-head-v1\0", 24);
+const std::string kMediaDomain("pp-browser:post-media-v1\0", 25);
 constexpr uint8_t kEntryVersion = 1;
 constexpr uint8_t kHeadVersion = 1;
 
@@ -223,7 +224,7 @@ Roe<PostHead> ParsePostHead(const ByteVector& canonical) {
   }
   for (uint64_t i = 0; i < targets; ++i) {
     std::string target = r.Utf8();
-    if (target.size() > kMaxPostTargetUrlBytes || target.rfind("https://", 0) != 0) {
+    if (target.size() > kMaxPostTargetUrlBytes || target.rfind("https://", 0) != 0 || !IsWellFormedUtf8(target)) {
       return Error("post: a head target is not an https URL");
     }
     head.targets.push_back(std::move(target));
@@ -244,7 +245,7 @@ Roe<SignedPostHead> SignPostHead(const PostHead& head, const PostSigner& signer)
   }
   if (head.targets.size() > kMaxPostHeadTargets ||
       std::any_of(head.targets.begin(), head.targets.end(), [](const std::string& target) {
-        return target.size() > kMaxPostTargetUrlBytes || target.rfind("https://", 0) != 0;
+        return target.size() > kMaxPostTargetUrlBytes || target.rfind("https://", 0) != 0 || !IsWellFormedUtf8(target);
       })) {
     return Error("post: head targets must be at most 8 https URLs");
   }
@@ -273,6 +274,19 @@ Roe<PostHead> VerifyPostHead(const SignedPostHead& signed_head, const ByteVector
     return Error("post: head issued in the future");
   }
   return head;
+}
+
+ByteVector PostMediaPresignSignBytes(const std::string& account_id, const PostHash& content_id, const uint64_t size,
+                                     const std::string& mime, const int64_t issued_at) {
+  post_wire::Writer w;
+  w.Raw(kMediaDomain);
+  w.U8(1);
+  w.Utf8(account_id);
+  w.Hash(content_id);
+  w.U64(size);
+  w.Utf8(mime);
+  w.I64(issued_at);
+  return w.Take();
 }
 
 } // namespace pbr
