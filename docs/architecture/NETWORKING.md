@@ -59,6 +59,8 @@ A link that is already up may carry traffic (P003). Relays and seeds use the pla
 
 **Inbound control** (privacy T3): a Blocked contact's direct messages and call control are discarded on receipt (`RelayReceivePipeline::SetContactTrust`) and its Amp link is dropped on connect (`MeshHost`); `call_invite_policy` (Me → Security → Who can call me) drops invites from outside `everyone` | `contacts_only` | `nobody` silently (`CallSessionManager::AllowsInboundCall`).
 
+**Who is a relay** (#379): circuit rendezvous — parking and circuit dialing — goes only through circuit relays: the configured org seeds and peers the directory or the DHT lists with `circuit_relay` (`KeepCircuitRelays` in `MeshHopPolicy`, applied in `MeshConnectivityWiring`). A contact's phone or a node the DHT merely knows is no relay; contacts stay punch introducers. A relay that refuses a circuit is tried after the others for ten minutes (pp-cpp-mesh `CircuitRelayRefusals`). Directory listings and a node's own published addresses leave out private-range and local-scope addresses beside a public one (`DialWorthyMultiaddrs`): a relay's container address is no use to a reader and only made dials fall back to it.
+
 **Relay trust** (privacy T4): relays see both ends' addresses. `mesh.trusted_relays_only` (Me → Network → Trusted relays only) keeps every relay role — rendezvous parking, circuit dialing, punch introducers, call media hops — to the configured org seeds and Friendly contacts' nodes (`TrustedRelayPeerIds` / `KeepTrustedRelays` in `MeshHopPolicy`; applied in `MeshConnectivityWiring`, `CallHopRanking`, the hub's preferred bridge).
 
 ## Calls

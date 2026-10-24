@@ -1,6 +1,7 @@
 #include "foundation/data/MeshRole.h"
 
 #include "foundation/platform/Platform.h"
+#include "mesh/types/MeshHopDial.h"
 #include "common/MeshAlias.h"
 
 #include <algorithm>
@@ -39,6 +40,17 @@ void NormalizeMeshConfig(MeshConfig& config) {
   }
 }
 
+std::vector<std::string> DialWorthyMultiaddrs(std::vector<std::string> multiaddrs) {
+  const auto local_scope = [](const std::string& ma) {
+    const bool ip = ma.rfind("/ip6/", 0) == 0 || ma.find("/ip4/") != std::string::npos;
+    return ip && !mesh::MultiaddrHasPublicDialHost(ma);
+  };
+  if (!std::all_of(multiaddrs.begin(), multiaddrs.end(), local_scope)) {
+    std::erase_if(multiaddrs, local_scope);
+  }
+  return multiaddrs;
+}
+
 std::vector<std::string> ResolveEffectiveBootstrapPeers(const MeshConfig& config,
                                                         const std::vector<mesh::MeshDirectoryNode>& directory_nodes) {
   MeshConfig normalized = config;
@@ -65,16 +77,13 @@ std::vector<std::string> ResolveEffectiveBootstrapPeers(const MeshConfig& config
     if (!seen.insert(node.peer_id).second) {
       continue;
     }
-    std::string ma;
+    std::vector<std::string> own;
     for (const std::string& candidate : node.multiaddrs) {
       if (!candidate.empty() && PeerIdFromMultiaddr(candidate) == node.peer_id) {
-        ma = candidate;
-        break;
+        own.push_back(candidate);
       }
     }
-    if (ma.empty() && !node.multiaddrs.empty()) {
-      ma = node.multiaddrs.front();
-    }
+    std::string ma = mesh::PreferredDialMultiaddr(own.empty() ? node.multiaddrs : own);
     if (ma.empty()) {
       seen.erase(node.peer_id);
       continue;

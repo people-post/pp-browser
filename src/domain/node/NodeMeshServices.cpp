@@ -77,7 +77,7 @@ void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const Me
 
   mesh::AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
-  cfg.listen_multiaddrs = mesh.AdvertisedListenMultiaddrs();
+  cfg.listen_multiaddrs = DialWorthyMultiaddrs(mesh.AdvertisedListenMultiaddrs());
   if (cfg.listen_multiaddrs.empty() && mesh::IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
     cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
   }
@@ -153,6 +153,8 @@ mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost&
       ep.multiaddrs.push_back(ma);
     }
   }
+  // Published for readers anywhere: not the container's or the LAN's address beside a public one (#379).
+  ep.multiaddrs = DialWorthyMultiaddrs(std::move(ep.multiaddrs));
   if (!ep.peer_id.empty()) {
     hit.endpoints.push_back(std::move(ep));
   }

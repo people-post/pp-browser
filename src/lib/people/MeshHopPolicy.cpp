@@ -212,6 +212,34 @@ std::vector<mesh::MeshHopCandidate> BuildCircuitHopList(const std::vector<Contac
                           std::move(seed_hops), prefer_contacts);
 }
 
+std::vector<mesh::MeshDirectoryNode> DirectoryNodesForDial(std::vector<mesh::MeshDirectoryNode> nodes) {
+  for (mesh::MeshDirectoryNode& node : nodes) {
+    node.multiaddrs = DialWorthyMultiaddrs(std::move(node.multiaddrs));
+  }
+  return nodes;
+}
+
+std::vector<mesh::MeshHopCandidate> KeepCircuitRelays(std::vector<mesh::MeshHopCandidate> hops,
+                                                     const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+                                                     const std::vector<mesh::MeshDirectoryNode>& dht_nodes,
+                                                     const std::vector<std::string>& org_seeds) {
+  std::unordered_set<std::string> relays;
+  for (const auto* nodes : {&directory_nodes, &dht_nodes}) {
+    for (const mesh::MeshDirectoryNode& node : *nodes) {
+      if (node.circuit_relay && !node.peer_id.empty()) {
+        relays.insert(node.peer_id);
+      }
+    }
+  }
+  for (const std::string& ma : org_seeds) {
+    if (std::string peer_id = PeerIdFromMultiaddr(ma); !peer_id.empty()) {
+      relays.insert(std::move(peer_id));
+    }
+  }
+  std::erase_if(hops, [&relays](const mesh::MeshHopCandidate& hop) { return !relays.contains(hop.peer_id); });
+  return hops;
+}
+
 std::vector<mesh::MeshHopCandidate> RankMediaHops(std::vector<mesh::MeshHopCandidate> candidates,
                                             bool prefer_contacts) {
   std::vector<mesh::MeshHopCandidate> filtered;

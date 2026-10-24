@@ -287,5 +287,47 @@ TEST(MeshHopPolicyTest, TrustedRelaysAreOrgSeedsAndFriendlyContacts) {
   EXPECT_EQ(kept[1].peer_id, "12D3KooWFriend");
 }
 
+// #379: a public listing's container and LAN addresses are dropped when the node lists a public one.
+TEST(MeshHopPolicyTest, DirectoryNodesKeepOnlyAddressesWorthDialling) {
+  mesh::MeshDirectoryNode relay;
+  relay.peer_id = "12D3KooWRelay";
+  relay.multiaddrs = {"/ip4/172.17.0.2/udp/443/adp/1.0.0/p2p/12D3KooWRelay",
+                      "/ip6/fd00::2/udp/443/adp/1.0.0/p2p/12D3KooWRelay",
+                      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/12D3KooWRelay",
+                      "/dns4/relay.example/udp/443/adp/1.0.0/p2p/12D3KooWRelay"};
+  mesh::MeshDirectoryNode lan;
+  lan.peer_id = "12D3KooWLan";
+  lan.multiaddrs = {"/ip4/192.168.1.5/udp/443/adp/1.0.0/p2p/12D3KooWLan"};
+  const auto nodes = DirectoryNodesForDial({relay, lan});
+  ASSERT_EQ(nodes.size(), 2u);
+  EXPECT_EQ(nodes[0].multiaddrs, (std::vector<std::string>{relay.multiaddrs[2], relay.multiaddrs[3]}));
+  EXPECT_EQ(nodes[1].multiaddrs, lan.multiaddrs) << "nothing else listed: kept";
+}
+
+// #379: only org seeds and listed circuit relays are rendezvous candidates — not a contact's phone,
+// not a node the DHT knows without the capability.
+TEST(MeshHopPolicyTest, OnlyCircuitRelaysAreRendezvousCandidates) {
+  const std::string seed = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  mesh::MeshDirectoryNode relay;
+  relay.peer_id = "12D3KooWRelay";
+  relay.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWRelay"};
+  relay.circuit_relay = true;
+  mesh::MeshDirectoryNode dht_only;
+  dht_only.peer_id = "12D3KooWStranger";
+  dht_only.multiaddrs = {"/ip6/2001:db8::1/udp/443/adp/1.0.0/p2p/12D3KooWStranger"};
+  mesh::MeshDirectoryNode friend_node = relay;
+  friend_node.peer_id = "12D3KooWFriendNode";
+  const std::vector<std::string> seeds = {"/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/" + seed};
+  const auto hops = BuildCircuitHopList({MakeContact("12D3KooWPhone"), MakeContact("12D3KooWFriendNode")}, {relay},
+                                        {dht_only, friend_node}, seeds, true, true);
+  const auto kept = KeepCircuitRelays(hops, {relay}, {dht_only, friend_node}, seeds);
+  std::vector<std::string> ids;
+  for (const auto& hop : kept) {
+    ids.push_back(hop.peer_id);
+  }
+  EXPECT_EQ(ids, (std::vector<std::string>{"12D3KooWFriendNode", "12D3KooWRelay", seed}))
+      << "a contact that relays keeps its place first";
+}
+
 } // namespace
 } // namespace pbr

@@ -43,6 +43,29 @@ TEST(MeshRoleTest, ResolveEffectivePrefersDirectoryThenConfig) {
   EXPECT_EQ(peers[1], config.bootstrap_peers.front());
 }
 
+TEST(MeshRoleTest, ResolveEffectiveDialsADirectoryNodeAtItsBestAddress) {
+  pbr::MeshConfig config;
+  pp::mesh::MeshDirectoryNode dir;
+  dir.peer_id = "12D3KooWDirNode";
+  dir.multiaddrs = {"/ip4/172.17.0.2/udp/443/adp/1.0.0/p2p/12D3KooWDirNode",
+                    "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/12D3KooWDirNode"};
+  const auto peers = pbr::ResolveEffectiveBootstrapPeers(config, {dir});
+  ASSERT_FALSE(peers.empty());
+  EXPECT_EQ(peers[0], dir.multiaddrs[1]) << "the public address, not the first listed";
+}
+
+// #379: what a node publishes and what a reader dials leaves out a container's or a LAN's address
+// beside a public one; a LAN-only list stays.
+TEST(MeshRoleTest, DialWorthyMultiaddrsDropLocalAddressesBesideAPublicOne) {
+  const std::string container = "/ip4/172.17.0.2/udp/443/adp/1.0.0/p2p/12D3KooWNode";
+  const std::string loopback = "/ip4/127.0.0.1/udp/443/adp/1.0.0/p2p/12D3KooWNode";
+  const std::string ula = "/ip6/fd12::5/udp/443/adp/1.0.0/p2p/12D3KooWNode";
+  const std::string pub = "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/12D3KooWNode";
+  const std::string named = "/dns4/relay.example/udp/443/adp/1.0.0/p2p/12D3KooWNode";
+  EXPECT_EQ(pbr::DialWorthyMultiaddrs({container, loopback, pub, ula, named}), (std::vector<std::string>{pub, named}));
+  EXPECT_EQ(pbr::DialWorthyMultiaddrs({container, ula}), (std::vector<std::string>{container, ula}));
+}
+
 TEST(MeshRoleTest, ResolveEffectiveFallsBackToHardcoded) {
   pbr::MeshConfig config;
   config.bootstrap_peers.clear();

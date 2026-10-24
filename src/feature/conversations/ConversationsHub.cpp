@@ -141,7 +141,7 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
   reach.contacts = contacts_.get();
   reach.mesh_config = [this]() { return MeshConfigSnapshot(); };
   reach.list_directory_nodes = [this]() {
-    return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<mesh::MeshDirectoryNode>{};
+    return DirectoryNodes();
   };
   reach.list_dht_nodes = [this]() {
     if (!mesh_ || !mesh_->AmpDht()) {
@@ -842,12 +842,17 @@ void ConversationsHub::RegisterContactEndpoints() {
   ApplyMeshAdmissionPolicies();
 }
 
+std::vector<mesh::MeshDirectoryNode> ConversationsHub::DirectoryNodes() const {
+  return mesh_directory_cache_ ? DirectoryNodesForDial(mesh_directory_cache_->Snapshot())
+                               : std::vector<mesh::MeshDirectoryNode>{};
+}
+
 void ConversationsHub::RegisterMeshDirectoryEndpoints() {
   if (!mesh_messaging_ || !mesh_directory_cache_) {
     return;
   }
   const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
-  for (const mesh::MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
+  for (const mesh::MeshDirectoryNode& node : DirectoryNodes()) {
     if (node.peer_id.empty() || node.multiaddrs.empty()) {
       continue;
     }
@@ -862,9 +867,7 @@ void ConversationsHub::RegisterDhtBootstrapEndpoints() {
   }
   MeshConfig mesh_cfg = config_.mesh;
   std::vector<mesh::MeshDirectoryNode> directory_nodes;
-  if (mesh_directory_cache_) {
-    directory_nodes = mesh_directory_cache_->Snapshot();
-  }
+  directory_nodes = DirectoryNodes();
   for (const std::string& ma : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes)) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || ma.empty()) {
@@ -890,9 +893,7 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   RegisterDhtBootstrapEndpoints();
 
   std::vector<mesh::MeshDirectoryNode> directory_nodes;
-  if (mesh_directory_cache_) {
-    directory_nodes = mesh_directory_cache_->Snapshot();
-  }
+  directory_nodes = DirectoryNodes();
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
   // The DHT's liveness is the reach record's (pp-cpp-mesh docs/DHT.md D5). mesh_ (and its DHT)
@@ -968,7 +969,7 @@ void ConversationsHub::ConfigureAmpDirectoryProtocol() {
         nodes.push_back(BuildLocalMeshNodeHit(*identity_, *mesh_, mesh_cfg));
       }
       if (mesh_directory_cache_) {
-        for (const mesh::MeshDirectoryNode& row : mesh_directory_cache_->Snapshot()) {
+        for (const mesh::MeshDirectoryNode& row : DirectoryNodes()) {
           if (row.peer_id.empty()) {
             continue;
           }

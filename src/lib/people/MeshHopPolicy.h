@@ -45,6 +45,19 @@ std::vector<mesh::MeshHopCandidate> OrderCircuitHops(std::vector<mesh::MeshHopCa
                                                std::vector<mesh::MeshHopCandidate> seeds,
                                                bool prefer_contacts = true);
 
+/** Each node's addresses as DialWorthyMultiaddrs keeps them: a directory is read off the node's LAN. */
+std::vector<mesh::MeshDirectoryNode> DirectoryNodesForDial(std::vector<mesh::MeshDirectoryNode> nodes);
+
+/**
+ * Circuit relays among `hops`: the configured org seeds, and peers the directory or the DHT lists with
+ * `circuit_relay`. A contact's phone or a peer the DHT merely knows is no relay — it refuses a circuit
+ * (#379) — so it is not offered as one.
+ */
+std::vector<mesh::MeshHopCandidate> KeepCircuitRelays(std::vector<mesh::MeshHopCandidate> hops,
+                                                     const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+                                                     const std::vector<mesh::MeshDirectoryNode>& dht_nodes,
+                                                     const std::vector<std::string>& org_seeds);
+
 /** Collect + order circuit/media hop candidates (n-dir + n2-caps). Omits seeds when `include_seeds` is false. */
 std::vector<mesh::MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
                                                   const std::vector<mesh::MeshDirectoryNode>& directory_nodes,

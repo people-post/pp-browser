@@ -390,6 +390,8 @@ private:
   void NotifyMessagingBuilt();
   void NotifyPolicyPrefs(const PolicyPrefs& prefs);
   void RegisterContactEndpoints();
+  /** The directory cache's nodes with only the addresses worth dialling (DirectoryNodesForDial). */
+  std::vector<mesh::MeshDirectoryNode> DirectoryNodes() const;
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
   void ConfigureAmpDhtProtocol();

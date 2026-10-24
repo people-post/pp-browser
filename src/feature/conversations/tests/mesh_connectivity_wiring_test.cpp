@@ -63,6 +63,14 @@ protected:
       node.circuit_relay = true;
       return std::vector<mesh::MeshDirectoryNode>{node};
     };
+    in.list_dht_nodes = []() {
+      // The Friendly contact's node publishes itself as a circuit relay; the plain contact is a phone.
+      mesh::MeshDirectoryNode node;
+      node.peer_id = kFriend;
+      node.multiaddrs = {std::string("/ip4/198.51.100.8/udp/443/adp/1.0.0/p2p/") + kFriend};
+      node.circuit_relay = true;
+      return std::vector<mesh::MeshDirectoryNode>{node};
+    };
     in.seed_dial_ok = []() { return true; };
     return in;
   }
@@ -86,7 +94,9 @@ TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
   const mesh::MeshHopPolicy open = ComputeMeshHopPolicy(Inputs(false));
   const auto open_surface = Ids(open.Rendezvous());
   EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kVolunteer), open_surface.end());
-  EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kPlain), open_surface.end());
+  EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kFriend), open_surface.end());
+  EXPECT_EQ(std::find(open_surface.begin(), open_surface.end(), kPlain), open_surface.end())
+      << "a contact that is no circuit relay is not offered as one (#379)";
 
   MeshConfig normalized;
   NormalizeMeshConfig(normalized);
@@ -143,7 +153,9 @@ TEST_F(MeshConnectivityWiringTest, TheFeedPushesWhileStartedAndNeverAfterStop) {
 
     feed.Start();
     EXPECT_EQ(directory_reads->load(), 1) << "Start pushes on the caller";
-    const auto surface = Ids(connectivity.HopPolicy()->Rendezvous());
+    // Contacts are punch introducers: the pushed policy shows them.
+    const auto introducers = [&connectivity]() { return connectivity.HopPolicy()->Introducers().contact_peer_ids; };
+    const auto surface = introducers();
     EXPECT_NE(std::find(surface.begin(), surface.end(), kPlain), surface.end());
 
     AddContact("c-new", "12D3KooWNewContact", TrustLevel::Unknown);
@@ -153,13 +165,13 @@ TEST_F(MeshConnectivityWiringTest, TheFeedPushesWhileStartedAndNeverAfterStop) {
     }
     ASSERT_GE(directory_reads->load(), 2) << "PushSoon pushes from a worker";
     for (int i = 0; i < 200; ++i) {
-      const auto now = Ids(connectivity.HopPolicy()->Rendezvous());
+      const auto now = introducers();
       if (std::find(now.begin(), now.end(), "12D3KooWNewContact") != now.end()) {
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    const auto updated = Ids(connectivity.HopPolicy()->Rendezvous());
+    const auto updated = introducers();
     EXPECT_NE(std::find(updated.begin(), updated.end(), "12D3KooWNewContact"), updated.end());
 
     feed.Stop();
