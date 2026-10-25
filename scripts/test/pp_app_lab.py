@@ -1819,6 +1819,9 @@ def main():
     ap.add_argument("--only", action="append", default=[])
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
+    ap.add_argument("--retry-failed", action="store_true",
+                    help="run each failed scenario once more: passing then is a flake, failing again a failure")
+    ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the nightly lab")
     args = ap.parse_args()
     if not args.hop:
         import urllib.request
@@ -1830,31 +1833,52 @@ def main():
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
-    failures = 0
+    results = []
     for round_no in range(args.repeat):
         for name, fn in selected:
-            lab = Lab(args)
-            started = time.time()
-            ok = False
-            try:
-                extra = fn(lab) or {}
-                ok = True
-                print("PASS %-30s %5.1fs %s" % (name, time.time() - started, json.dumps(extra) if extra else ""))
-            except Exception as e:  # noqa: BLE001 — report every way a scenario can go wrong
-                failures += 1
-                print("FAIL %-30s %5.1fs %s" % (name, time.time() - started, e))
-                if not isinstance(e, ProbeError):
-                    traceback.print_exc()
-                for u in lab.users:
-                    tail = [m for _, m in u.history[-12:]]
-                    print("  %s surface=%s" % (u.name, u.surface))
-                    for m in tail:
-                        print("    %s" % json.dumps(m))
-                print("  profiles and logs kept in %s" % lab.root)
-            finally:
-                lab.close(ok)
-            sys.stdout.flush()
-    sys.exit(1 if failures else 0)
+            results.append(run_scenario(args, name, fn))
+    if args.retry_failed:
+        for result in [r for r in results if r["result"] == "fail"]:
+            print("RETRY %s" % result["name"])
+            again = run_scenario(args, result["name"], dict(SCENARIOS)[result["name"]])
+            if again["result"] == "pass":
+                result.update(result="flaky", retry=again)
+            else:
+                result["retry"] = again
+    if args.summary:
+        with open(args.summary, "w") as f:
+            json.dump({"nat": bool(args.nat), "results": results}, f, indent=2)
+    sys.exit(1 if any(r["result"] == "fail" for r in results) else 0)
+
+
+def run_scenario(args, name, fn):
+    """One scenario on a fresh lab: PASS / FAIL on stdout, and its outcome for the summary."""
+    lab = Lab(args)
+    started = time.time()
+    ok = False
+    outcome = {"name": name, "result": "fail", "seconds": 0.0, "detail": "", "extra": {}}
+    try:
+        extra = fn(lab) or {}
+        ok = True
+        outcome.update(result="pass", extra=extra)
+        print("PASS %-30s %5.1fs %s" % (name, time.time() - started, json.dumps(extra) if extra else ""))
+    except Exception as e:  # noqa: BLE001 — report every way a scenario can go wrong
+        outcome["detail"] = str(e).splitlines()[0][:300] if str(e) else type(e).__name__
+        print("FAIL %-30s %5.1fs %s" % (name, time.time() - started, e))
+        if not isinstance(e, ProbeError):
+            traceback.print_exc()
+        for u in lab.users:
+            tail = [m for _, m in u.history[-12:]]
+            print("  %s surface=%s" % (u.name, u.surface))
+            for m in tail:
+                print("    %s" % json.dumps(m))
+        print("  profiles and logs kept in %s" % lab.root)
+        outcome["kept"] = lab.root
+    finally:
+        lab.close(ok)
+        outcome["seconds"] = round(time.time() - started, 1)
+    sys.stdout.flush()
+    return outcome
 
 
 if __name__ == "__main__":

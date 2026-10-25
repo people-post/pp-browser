@@ -72,6 +72,7 @@ Environment:
   PP_HARD_COMPOSE_FILE / PP_HARD_STATUS_URL (default http://127.0.0.1:18618)
   PP_LEDGER_ROOT / PP_LEDGER_BUILD_DIR (--suite ledger: a pp-ledger checkout with its apps built)
   PP_WEB2_ROOT (--suite app: a web2 checkout; default ../web2 beside web3) / PP_APP_LAB_ARGS
+  PP_APP_LAB_WWW_IMAGE + PP_APP_LAB_MESSENGER_IMAGE (--suite app: the relay from these images instead)
 
 Examples:
   $(basename "$0") run --suite unit
@@ -312,6 +313,8 @@ run_call() {
 
 APP_LAB_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab.yml"
 APP_LAB_NAT_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab-nat.yml"
+# The relay from published images (both set) instead of PP_WEB2_ROOT: the nightly lab.
+APP_LAB_IMAGES_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab-images.yml"
 APP_LAB_NAT=0  # --suite app-nat: users behind their own NATs
 
 app_lab_compose() {
@@ -319,6 +322,11 @@ app_lab_compose() {
   local files=(-f "${APP_LAB_COMPOSE}")
   if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
     files+=(-f "${APP_LAB_NAT_COMPOSE}")
+  fi
+  if [[ -n "${PP_APP_LAB_WWW_IMAGE:-}" || -n "${PP_APP_LAB_MESSENGER_IMAGE:-}" ]]; then
+    [[ -n "${PP_APP_LAB_WWW_IMAGE:-}" && -n "${PP_APP_LAB_MESSENGER_IMAGE:-}" ]] ||
+      die "relay images: set both PP_APP_LAB_WWW_IMAGE and PP_APP_LAB_MESSENGER_IMAGE"
+    files+=(-f "${APP_LAB_IMAGES_COMPOSE}")
   fi
   PP_WEB2_ROOT="${PP_WEB2_ROOT:-$(cd "${ROOT}/../.." && pwd)/web2}" \
     PP_APP_LAB_PROBE_DIR="${BUILD_DIR}/src/app/node" PP_APP_LAB_NAT_SHARE="${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}" \

@@ -1,0 +1,17 @@
+# App lab overlay: the relay from its published images instead of a web2 checkout — what the nightly
+# lab runs (.github/workflows/nightly-lab.yml), so it tests the relay as deployed. pp_local_test.sh adds
+# it when both images are set:
+#
+#   PP_APP_LAB_WWW_IMAGE=553020909527.dkr.ecr.us-east-1.amazonaws.com/static-api:main \
+#   PP_APP_LAB_MESSENGER_IMAGE=405439564754.dkr.ecr.us-east-1.amazonaws.com/messenger:main \
+#     scripts/test/pp_local_test.sh run --suite app
+#
+# The images are pulled when missing; `docker pull` them first to take the newest of a moving tag.
+services:
+  messenger:
+    build: !reset null
+    image: ${PP_APP_LAB_MESSENGER_IMAGE:?set PP_APP_LAB_MESSENGER_IMAGE}
+
+  www:
+    build: !reset null
+    image: ${PP_APP_LAB_WWW_IMAGE:?set PP_APP_LAB_WWW_IMAGE}

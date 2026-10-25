@@ -132,9 +132,19 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 | Gate | Contents |
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched |
-| **Nightly** | Heavier local soak; L1; L2 `N-FANOUT` when stable; modest capacity (small N); `--suite mix` |
+| **Nightly** | The app lab — `--suite app` and `--suite app-nat` on develop ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
+
+### Nightly lab
+
+[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on develop, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios). Never on pull requests.
+
+- **Machine:** an EC2 instance in the web3 account (`c7i.2xlarge`, 150 GB; infra-terraform `pp-lab.tf`, provisioned by infra-ansible `lab-runner/`), registered as this repository's self-hosted runner `pp-lab`. It is stopped except while the workflow runs: a hosted job starts it (OIDC role `github-pp-lab`, start/stop of that one instance only), a hosted job stops it after, and it shuts itself down four hours after boot whatever happens. Its build and ccache stay on its disk between nights.
+- **Relay:** the published images — `static-api:main` (reader account ECR) and `messenger:main` (web3 ECR), pulled with the instance role — through [`docker-compose.app-lab-images.yml`](../../packaging/pp-node/docker-compose.app-lab-images.yml) (`PP_APP_LAB_WWW_IMAGE` + `PP_APP_LAB_MESSENGER_IMAGE`; the same works locally with any two images). The run records their digests.
+- **Flakes:** `pp_app_lab.py --retry-failed` runs each failed scenario once more; passing then is a flake (listed in the run's summary), failing again a failure. `--summary <file>` writes every outcome as JSON.
+- **Reporting:** [`nightly_lab_report.py`](../../scripts/test/nightly_lab_report.py) keeps one issue per failing scenario (label `nightly-lab`: opened, commented while it fails, closed the night it passes) and one per suite that did not finish. Issues carry the scenario, the first line of its error, the commit and the run link; profiles and logs of what failed are the run's artifact (14 days).
+- **Idle until configured:** the repository variables `PP_LAB_INSTANCE_ID` and `PP_LAB_AWS_ROLE` (and optionally `PP_LAB_WWW_IMAGE` / `PP_LAB_MESSENGER_IMAGE` for other tags) switch it on.
 
 Capacity tests emit a **curve** (success rate / latency vs N). First qualify “does not crash and recovers”; then tighten SLOs.
 
