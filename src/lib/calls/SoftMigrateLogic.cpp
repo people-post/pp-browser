@@ -76,16 +76,6 @@ SoftMigrateArming DecideSoftMigrateArming(const SoftMigrateArmingInput& in) {
   return in.migrate_ops_allowed ? SoftMigrateArming::Proceed : SoftMigrateArming::NotArmed;
 }
 
-SoftMigrateAction AdjustForHopHosting(const SoftMigrateAction action, const HopHostingFacts& facts) {
-  if (action == SoftMigrateAction::WaitForAttach && facts.prefer_local_allowed) {
-    return SoftMigrateAction::PickHop;  // V035: a PreferLocal Node hosts the hop on a confirmed LAN
-  }
-  if (action == SoftMigrateAction::PickHop && !facts.hosts_hops && facts.durable_hop_known) {
-    return SoftMigrateAction::WaitForAttach;
-  }
-  return action;
-}
-
 RepickOnHopAction DecideRepickOnHop(const RepickOnHopInput& in) {
   if (!in.current_hop.empty() && (in.prefer_hop.empty() || in.prefer_hop == in.current_hop)) {
     return in.prefer_hop == in.current_hop ? RepickOnHopAction::StayOnNamedHop : RepickOnHopAction::KeepCurrentHop;

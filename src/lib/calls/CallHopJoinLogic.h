@@ -133,6 +133,8 @@ struct InboundAttachInput {
   bool active_call = false;
   /** No arming bound, or the call's Status lets the hop act (V037). */
   bool status_allows_hop = false;
+  /** The direct attempt failed (Status Failed): a group call's attach is how it recovers (#380). */
+  bool direct_failed = false;
   size_t n_joined = 0;
   bool attach_wait_for_call = false;
   bool flight_for_call = false;

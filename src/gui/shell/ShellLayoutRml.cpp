@@ -344,7 +344,13 @@ std::string ShellLayoutRml::PinGate() const {
       << Tr("common.back") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
       << "</button>";
-  out << "</div></div></div>";
+  out << "</div>";
+  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_unlock_mode\" "
+         "data-event-click=\"pin_gate_forgot_toggle()\">"
+      << Tr("pin.forgot_link") << "</button>";
+  out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_unlock_mode && pin_gate_forgot_open\">"
+      << Tr("pin.forgot_explain") << "</p>";
+  out << "</div></div>";
   return out.str();
 }
 

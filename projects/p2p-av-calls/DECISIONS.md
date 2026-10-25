@@ -1,5 +1,15 @@
 # P2P A/V calls — decisions
 
+> **How to read this file.** It is history: what was decided, when and why, in order, never rewritten. Later entries amend or supersede earlier ones, and code sometimes moved on before an entry recorded it. So:
+> - **What holds now is [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md).** Where this file and CALLS.md disagree, CALLS.md is right.
+> - Before acting on an entry, read its **Status** line and search below for later entries that name it.
+> - When you amend or supersede an entry, add the new entry, update the old entry's Status in the same change, and update CALLS.md.
+>
+> | Topic | Current rule | Its history here |
+> |-------|--------------|------------------|
+> | Group call SFU hop: who picks, which relay | [CALLS.md § Group call hop](../../docs/architecture/CALLS.md#group-call-hop--the-rule-now) | V021 → V023 → V028 → V029 → V035 → V050 → **V054** |
+> | Group topology (1:1 first, planned hop, monotonic) | [CALLS.md § Topology rules](../../docs/architecture/CALLS.md#topology-rules-v021--v026--v038) | V021 → V038 → **V050**, V053 |
+
 Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001–P004](../push-notifications/DECISIONS.md), [group-chat G008](../group-chat/DECISIONS.md), [e2e E022](../e2e-message-crypto/DECISIONS.md).
 
 ---
@@ -401,6 +411,7 @@ Camera / send policy uses **A↑** (and session **B↑**). Receive / subscribe p
 ## V023 — Media hop pick: short-term closed set; pricing regulates later
 
 **Date:** 2026-07-30  
+**Status:** Accepted — **amended by [V054](#v054--one-hop-picker-durable-relays-first-for-the-group-sfu)**: the group SFU hop ranks durable relays before contacts (the closed set stays for other relay roles)  
 **Decision:** Hop selection for blind `media_relay` is a **risk-aware scorer over eligibility classes**, not a hardcoded contacts→seed→public list. **Making money is not the product goal**; the **pricing model exists to regulate** scarcity, strangers, and abuse over time. Mesh twin: [N020](../p2p-mesh/DECISIONS.md#n020--media-hop-pick-short-term-closed-set-pricing-as-regulation). **Scope escalation (outer loop):** [N023](../p2p-mesh/DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers) / [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md) — short term still closed set; `link`/`site` boost same-LAN contacts only.
 
 ### Thesis
@@ -589,7 +600,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 ## V028 — Call-scoped media_relay admission + prefer owner hop
 
 **Date:** 2026-08-03  
-**Status:** Accepted (**implemented**)  
+**Status:** Accepted (**implemented**) — **amended by [V054](#v054--one-hop-picker-durable-relays-first-for-the-group-sfu)**: §3 PreferLocal is only the owner's choice of its own Node; durable relays rank before contacts  
 **Decision:** For N≥3 SoftMigrate:
 
 1. **Owner picks the hop** (sticky initiator SoftMigrate, unchanged V021/V022).
@@ -603,7 +614,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 ## V029 — Durable hop rank + guest hop hints
 
 **Date:** 2026-08-03  
-**Status:** Accepted (**implemented**)  
+**Status:** Accepted (**implemented**) — **amended by [V054](#v054--one-hop-picker-durable-relays-first-for-the-group-sfu)**: §2 ranks durable relays before contacts' nodes  
 **Decision:** For N≥3 SoftMigrate / attach:
 
 1. **Owner picks + broadcasts** (`CallSfuAttach`) remains the sole attach authority (V021/V028).
@@ -760,7 +771,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V035 — Scope-aware SoftMigrate hop pick
 
 **Date:** 2026-09-14  
-**Status:** Accepted (**implementing**)  
+**Status:** Accepted (**implementing**) — **amended by [V054](#v054--one-hop-picker-durable-relays-first-for-the-group-sfu)**: a Node that is not the owner never picks  
 **Decision:** SoftMigrate first-hop selection is **scope-aware** (N023 link → site → org), not PreferLocal-first with hop-hint recovery.
 
 1. **Call hop scope** — From joined peers’ invite/accept `listen_multiaddrs` vs local advertise:
@@ -1229,7 +1240,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V050 — Group call topology: 1:1 first, planned hop, monotonic
 
 **Date:** 2026-09-28  
-**Status:** Accepted — phase [gt](PHASES.md#gt--group-call-topology-v050)  
+**Status:** Accepted — phase [gt](PHASES.md#gt--group-call-topology-v050) — **amended by [V054](#v054--one-hop-picker-durable-relays-first-for-the-group-sfu)** (who picks; hop order)  
 **Decision:** One small rule set for calls with 3+ invitees. Topology only moves **up** (direct → hop, or hop → a hop that can serve a newcomer); it is never re-evaluated because someone left.
 
 | When | Rule |
@@ -1304,3 +1315,20 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Rationale:** In a group, declining is "not now", not "never" — people drop out and back in. Ending a group call for the last person, and with it everyone's way back in, makes the call die the moment the second-to-last leaves. Removal is usually for a reason; keeping the removed person in the call (and its key) surprises the owner. The join handshake reuses the mid-call invite instead of letting a stale view of the call pick a media path: the answering participant knows the roster and the hop.
 
 **Cross-link:** app lab `pp_app_lab.py` group scenarios; CALLS.md § Group calls.
+
+---
+
+## V054 — One hop picker; durable relays first for the group SFU
+
+**Date:** 2026-10-25
+**Status:** Accepted (**implemented**, [#385](https://github.com/people-post/pp-browser/issues/385)) — the current rule is [CALLS.md § Group call hop](../../docs/architecture/CALLS.md#group-call-hop--the-rule-now)
+**Decision:**
+1. **The owner is the only picker** (earliest-joined; V050). Every other member waits for its `CallSfuAttach`. Retired: a phone owner deferring its pick to "a durable media_relay Node" (a code rule from 2026-09-17, never recorded here) and a non-owner PreferLocal Node picking itself (an override V035 was implemented with).
+2. **Participants suggest, the owner decides** — V050's planned hop, accept reports and attach-failure hints, unchanged.
+3. **Durable relays first:** for the group SFU hop the owner ranks org seeds and directory / DHT `media_relay` nodes before contacts' nodes, whatever `prefer_contacts_for_routing` says; the owner's own Node on a LAN-confirmed `Link` stays first (V035).
+
+**Rationale:** The deferral counted any listed media relay as a Node that would pick, but relays never pick; prod's seeds are listed in the directory, so a phone-owned group call never reached a hop (#385). Two pickers race. An SFU's upload grows with the square of the members, so a durable relay is the likely right host as a group grows; the old "short-term closed set" preference (V023) put a contact's home node first.
+
+**Later:** a desktop Node in the call offers itself (first in its `reachable_hops`) for a small all-LAN call; load / RTT hints among durable relays.
+
+**Alternatives rejected:** keep the deferral with a timeout (every phone-owned group call waits it out); let a Node host whenever it can (a second picker).

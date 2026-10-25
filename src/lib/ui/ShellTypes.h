@@ -156,6 +156,9 @@ struct PinGateState {
   bool link_paste_mode = false;
   /** Restore: enter the PIN the account used (one field, with Back). */
   bool restore_pin_mode = false;
+  /** Plain unlock (vault exists): shows the "Forgot PIN?" link; `forgot_open` expands its explanation. */
+  bool unlock_mode = false;
+  bool forgot_open = false;
   ui::String title;
   ui::String message;
   ui::String error;

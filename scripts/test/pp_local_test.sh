@@ -333,10 +333,22 @@ app_lab_compose() {
     docker compose -p pp-app-lab "${files[@]}" "$@"
 }
 
+# The lab seed's address in the lab directory: it carries the seed's PeerId (#385).
+lab_hop_advertise() {
+  local peer
+  peer="$(curl -fsS -m 2 http://127.0.0.1:18718/status 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("peer_id",""))' 2>/dev/null || true)"
+  if [[ -n "${peer}" ]]; then
+    export PP_APP_LAB_HOP_ADVERTISE="/ip4/198.51.100.10/udp/18517/adp/1.0.0/p2p/${peer}"
+    export PP_APP_LAB_HOP_PUBLISH=true
+  fi
+}
+
 run_app() {
   need_cmd cmake
   need_cmd python3
   ensure_docker_context
+  lab_hop_advertise  # a seed already running keeps its address (no recreate)
   stage_hop_binary_if_newer
   cmake --build "${BUILD_DIR}" --target pp-app-probe -j
   local args=(up -d)
@@ -354,6 +366,15 @@ run_app() {
       curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
     sleep 1
   done
+  if [[ -z "${PP_APP_LAB_HOP_ADVERTISE:-}" ]]; then
+    # A new seed has just minted its PeerId: start it again listed in the lab directory, as prod's are.
+    lab_hop_advertise
+    app_lab_compose up -d hop
+    for i in $(seq 1 60); do
+      curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
   local nat_args=()
   if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
     echo "=== suite app-nat (scripted users, each behind its own NAT, over the lab relay and hop) ==="

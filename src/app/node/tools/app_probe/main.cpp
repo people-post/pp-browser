@@ -27,6 +27,8 @@
 //   group_roster {group_id}             the members this user knows of
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
 //   remove_member {thread, account}     the owner removes a member from the group
+//   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
+//                                       them in the field, #382)
 //   backup_sessions                     what the account backup keeps of the chats: the public sessions
 //   restore_sessions {bundle}           put them back as a backup restore does (each pair marked to
 //                                       start its next epoch)
@@ -621,6 +623,13 @@ public:
     } else if (cmd == "push_wake") {
       // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
       BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      Emit(Reply(id, true));
+    } else if (cmd == "warm_seeds") {
+      if (!Hub().IsMeshReady()) {
+        ReplyError(id, "mesh not ready");
+        return;
+      }
+      Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
       Emit(Reply(id, true));
     } else if (cmd == "backup_sessions") {
       // The link bundle the local account backup seals (LocalAccountBackup::Write).

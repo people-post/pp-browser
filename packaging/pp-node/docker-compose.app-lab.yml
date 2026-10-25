@@ -23,6 +23,11 @@ services:
       PP_NODE_STATUS_ADDR: 0.0.0.0:18518
       PP_NODE_CAP_CIRCUIT_RELAY: 1
       PP_NODE_CAP_MEDIA_RELAY: 1
+      # Listed in the lab directory as a mesh node, as prod's seeds are (#385): its address carries its
+      # PeerId, so pp_local_test.sh passes it in once the seed has one (PP_APP_LAB_HOP_ADVERTISE).
+      PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP_ADVERTISE:-}
+      PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP_PUBLISH:-false}
+      PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
       # Never the production seeds (the default when none is set): a lab hop probing them loads
       # them, and their dial-backs fill its pending-handshake slots. TEST-NET-3: nothing answers.
