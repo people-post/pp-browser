@@ -120,6 +120,7 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
   message.generation = SqlTextOpt(stmt, 13);
   message.seq_owner_contact_id = SqlTextOpt(stmt, 14);
   message.ai_invoke_mode = SqlTextOpt(stmt, 15);
+  message.sender_device = SqlTextOpt(stmt, 16);
   message.content_type = row_type;
   if (auto applied = TranscriptBodyCodec::ApplyToMessage(*body, message); !applied) {
     return applied.error();
@@ -229,6 +230,11 @@ Roe<void> SqliteThreadStore::BindMessageInsert(sqlite3_stmt* stmt, const std::st
   } else {
     sqlite3_bind_null(stmt, 16);
   }
+  if (message.sender_device) {
+    sqlite3_bind_text(stmt, 17, message.sender_device->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 17);
+  }
   return {};
 }
 
@@ -280,7 +286,12 @@ Roe<void> SqliteThreadStore::BindMessageUpdate(sqlite3_stmt* stmt, const std::st
   } else {
     sqlite3_bind_null(stmt, 14);
   }
-  sqlite3_bind_text(stmt, 15, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  if (message.sender_device) {
+    sqlite3_bind_text(stmt, 15, message.sender_device->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 15);
+  }
+  sqlite3_bind_text(stmt, 16, message.id.c_str(), -1, SQLITE_TRANSIENT);
   (void)thread_id;
   return {};
 }
@@ -755,8 +766,8 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   const char* sql =
       "INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, control_type, "
       "timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, target_message_id, generation, "
-      "seq_owner_contact_id, ai_invoke_mode) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+      "seq_owner_contact_id, ai_invoke_mode, sender_device) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
@@ -797,7 +808,7 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   const char* sql =
       "UPDATE messages SET sender_contact_id = ?, content_enc = ?, content_type = ?, control_type = ?, timestamp = ?, "
       "relay_visible = ?, delivery = ?, transport = ?, sender_seq = ?, session_epoch = ?, target_message_id = ?, "
-      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ? WHERE id = ? "
+      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ?, sender_device = ? WHERE id = ? "
       "AND (content_type != 'deleted' OR ? = 'deleted');"; // a tombstone is final (a late send result cannot undo it)
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
@@ -806,7 +817,7 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
     sqlite3_finalize(stmt);
     return bound.error();
   }
-  sqlite3_bind_text(stmt, 16, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 17, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {
@@ -1425,8 +1436,17 @@ Roe<void> SqliteThreadStore::EnsurePeerSyncState(const std::string& thread_id, c
   return {};
 }
 
-Roe<PeerSyncState> SqliteThreadStore::GetPeerSyncState(const std::string& thread_id,
-                                                       const uint32_t session_epoch) const {
+namespace {
+
+/** Whose numbering a sync_state row tracks: the peer account, or one of its devices (M021). */
+std::string SyncStateOwner(const std::string& peer_identity_value, const std::string& sender_device) {
+  return sender_device.empty() ? peer_identity_value : peer_identity_value + "/" + sender_device;
+}
+
+} // namespace
+
+Roe<PeerSyncState> SqliteThreadStore::GetPeerSyncState(const std::string& thread_id, const uint32_t session_epoch,
+                                                       const std::string& sender_device) const {
   auto thread = GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -1450,8 +1470,9 @@ Roe<PeerSyncState> SqliteThreadStore::GetPeerSyncState(const std::string& thread
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare sync_state read");
   }
+  const std::string owner = SyncStateOwner(target->peer_identity_value, sender_device);
   sqlite3_bind_text(stmt, 1, target->peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 2, target->peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, owner.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
   if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
@@ -1463,7 +1484,7 @@ Roe<PeerSyncState> SqliteThreadStore::GetPeerSyncState(const std::string& thread
 }
 
 Roe<void> SqliteThreadStore::SetPeerSyncState(const std::string& thread_id, const uint32_t session_epoch,
-                                              const PeerSyncState& state) {
+                                              const PeerSyncState& state, const std::string& sender_device) {
   auto thread = GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -1490,8 +1511,9 @@ Roe<void> SqliteThreadStore::SetPeerSyncState(const std::string& thread_id, cons
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare sync_state upsert");
   }
+  const std::string owner = SyncStateOwner(target->peer_identity_value, sender_device);
   sqlite3_bind_text(stmt, 1, target->peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 2, target->peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, owner.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
   sqlite3_bind_text(stmt, 4, state_json.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
@@ -1674,8 +1696,8 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
     const char* sql =
         "INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, control_type, "
         "timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, target_message_id, generation, "
-        "seq_owner_contact_id, ai_invoke_mode) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+        "seq_owner_contact_id, ai_invoke_mode, sender_device) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
       return Error("Failed to prepare passive-adopt append");
     }
@@ -1746,7 +1768,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
   const char* order_clause = query.ascending ? "ASC" : "DESC";
   std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
                     " FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND "
-                    "sender_seq IS NOT NULL";
+                    "IFNULL(sender_device, '') = ? AND sender_seq IS NOT NULL";
   if (query.min_sender_seq) {
     sql += " AND sender_seq >= ?";
   }
@@ -1764,6 +1786,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
   int bind_index = 1;
   sqlite3_bind_int(stmt, bind_index++, static_cast<int>(query.session_epoch));
   sqlite3_bind_text(stmt, bind_index++, query.seq_owner_contact_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, bind_index++, query.sender_device.c_str(), -1, SQLITE_TRANSIENT);
   if (query.min_sender_seq) {
     sqlite3_bind_int64(stmt, bind_index++, static_cast<sqlite3_int64>(*query.min_sender_seq));
   }
