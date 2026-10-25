@@ -264,6 +264,8 @@ private:
                        const std::string& detail);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
+  /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
+  Roe<void> StartNextPairEpochIfRestored(const ChatTargetKey& key);
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);

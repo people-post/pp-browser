@@ -20,13 +20,7 @@ constexpr std::array<char, 34> kSignDomain = {
     'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r', 'e', 'l', 'a', 'y', '-',
     'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '2', '\0'};
 
-// v3 (group envelopes only): adds the pairwise key epoch (G011). Direct and control envelopes stay v2.
-constexpr std::array<char, 34> kSignDomainV3 = {
-    'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r', 'e', 'l', 'a', 'y', '-',
-    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '3', '\0'};
-
 constexpr uint8_t kSignVersion = 2;
-constexpr uint8_t kSignVersionGroup = 3;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
 void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
@@ -147,19 +141,9 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
     return body_hash.error();
   }
 
-  // A group envelope names the pairwise key epoch apart from the group's numbering epoch (G011); an
-  // older group envelope without it is refused, not read as if the two were one.
-  const bool group = envelope.route.kind == kRelayRouteGroup;
-  if (group && !envelope.key_epoch) {
-    return Error("Group envelope without key_epoch");
-  }
-  if (!group && envelope.key_epoch) {
-    return Error("key_epoch outside a group envelope");
-  }
   std::ostringstream oss;
-  const auto& domain = group ? kSignDomainV3 : kSignDomain;
-  oss.write(domain.data(), static_cast<std::streamsize>(domain.size()));
-  const uint8_t sign_version = group ? kSignVersionGroup : kSignVersion;
+  oss.write(kSignDomain.data(), static_cast<std::streamsize>(kSignDomain.size()));
+  const uint8_t sign_version = kSignVersion;
   const uint8_t envelope_version = static_cast<uint8_t>(envelope.envelope_version);
   const uint8_t route_kind = RouteKindByte(envelope.route);
   const uint8_t channel = ChannelByte(envelope.route);
@@ -170,9 +154,6 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
   AppendBigEndianInt64(oss, envelope.timestamp);
   AppendBigEndianUInt64(oss, envelope.sender_seq);
   AppendBigEndianUInt32(oss, envelope.session_epoch);
-  if (group) {
-    AppendBigEndianUInt32(oss, *envelope.key_epoch);
-  }
   oss.write(reinterpret_cast<const char*>(body_hash->data()), static_cast<std::streamsize>(body_hash->size()));
 
   {

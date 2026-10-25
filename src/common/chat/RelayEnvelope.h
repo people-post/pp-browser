@@ -53,13 +53,6 @@ struct RelayEnvelope {
   RelayMessageBody body;
   uint64_t sender_seq = 0;
   uint32_t session_epoch = 1;
-  /**
-   * Group envelopes only (signed, sign v3): the epoch of the pairwise e2e_public session that keyed this
-   * member's ciphertext. `session_epoch` stays the group's own numbering epoch — the two move apart
-   * (a member removal moves the group's, a 1:1 restart the pair's), so neither is read as the other
-   * (G011).
-   */
-  std::optional<uint32_t> key_epoch;
   int64_t timestamp = 0;
   std::string signature;
   /** Opaque conversation scope for relay indexing (unsigned). */

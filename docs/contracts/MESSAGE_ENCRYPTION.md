@@ -146,11 +146,9 @@ Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-
 
 Then: `sign_version=2`, `envelope_version=1`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `body.e2e.key_init_b64` LenUtf8 (empty when none).
 
-**Group envelopes (sign v3, G011):** domain `"pp-browser:relay-envelope-sign-v3"` + NUL, `sign_version=3`, and `key_epoch` (u32 BE) right after `session_epoch`; the rest as v2. `session_epoch` is the group's numbering epoch, `key_epoch` the epoch of the pairwise `e2e_public` session that keyed the member's payload — they move apart (a member removal moves the group's, a 1:1 restart the pair's). A group envelope without `key_epoch` (an older sender) is refused; a direct or control envelope with one is refused. Each member's payload is exactly a pairwise `e2e_public` message at `key_epoch` (master, HKDF and AAD with that epoch); the receiver reads it as one and keeps what it proves about the pair's session (`ReconcileE2ePublicSession`) — the group never selects, opens or writes a pair's session by the group's epoch.
-
 Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, and the relay route it may learn for the sender (learned only from envelopes whose signature verified).
 
-**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). Signer and parser refuse anything else, and unknown route kinds.
+**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). A group envelope's single member payload is a pairwise `e2e_public` message at the envelope's `session_epoch` — the pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
 
 **Body hash:**
 

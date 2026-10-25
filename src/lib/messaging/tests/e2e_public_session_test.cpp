@@ -227,34 +227,41 @@ struct Side {
     ASSERT_TRUE(store->FindOrCreateGroupThread(group_id, "group", ids));
   }
 
-  /** A group message to `members`, one envelope each, as SendGroupMessage builds them; `group_epoch` is
-   * the group's own numbering epoch. */
+  /** A group message to `members`, one envelope each, as SendGroupMessage builds them: each copy numbered
+   * in its pair (a pair this side lost its count in restarts first). */
   std::map<std::string, RelayEnvelope> GroupChat(const std::string& group_id, const std::vector<const Side*>& members,
-                                                 const std::string& text, uint32_t group_epoch) {
+                                                 const std::string& text) {
     ThreadMessage message;
     message.id = util::GenerateUuid();
-    message.sender_seq = ++group_seq[group_epoch];
-    message.session_epoch = group_epoch;
     message.timestamp = util::NowUnixMs();
     std::vector<GroupMemberTarget> targets;
     for (const Side* m : members) {
-      if (m != this) {
-        targets.push_back(GroupMemberTarget{m->account, GroupE2ePayloadCodec::PairTargetKey(m->account)});
+      if (m == this) {
+        continue;
       }
+      GroupMemberTarget target{m->account, GroupE2ePayloadCodec::PairTargetKey(m->account)};
+      if (auto record = psk->Load(target.target_key); record && record->has_value() && (*record)->restart_pending) {
+        RestartIfPending(*m);
+      }
+      target.session_epoch = PairEpoch(*m) > 0 ? PairEpoch(*m) : 1;
+      target.sender_seq = ++group_seq[{m->account, target.session_epoch}];
+      targets.push_back(target);
     }
     auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-        text, group_id, account, message.id, *message.sender_seq, message.timestamp, targets, *psk,
+        text, group_id, account, message.id, message.timestamp, targets, *psk,
         [this](const ChatTargetKey& key) { return Base64Decode(peer_kem.at(key.peer_identity_value)); });
     EXPECT_TRUE(encrypted) << encrypted.error().message;
     std::map<std::string, RelayEnvelope> out;
-    for (const auto& [recipient, payload] : encrypted->member_payloads) {
+    for (const GroupMemberTarget& target : targets) {
+      const std::string& recipient = target.member_identity;
       std::optional<std::string> key_init;
       if (auto it = encrypted->member_key_inits.find(recipient); it != encrypted->member_key_inits.end()) {
         key_init = it->second;
       }
-      RelayEnvelope envelope =
-          BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:" + tag, account, keys.Card()}, group_id, recipient,
-                                   recipient, payload, encrypted->member_key_epochs.at(recipient), key_init);
+      RelayEnvelope envelope = BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:" + tag, account, keys.Card()},
+                                                        group_id, recipient, recipient,
+                                                        encrypted->member_payloads.at(recipient),
+                                                        target.session_epoch, target.sender_seq, key_init);
       envelope.signature = keys.Sign(EnvelopeSigner::BuildSignBytes(envelope).value()).value();
       out[recipient] = envelope;
     }
@@ -295,7 +302,7 @@ struct Side {
   std::unique_ptr<RelayReceivePipeline> pipeline;
   int landed = 0;
   std::map<uint32_t, uint64_t> chat_seq;  // next seq per epoch
-  std::map<uint32_t, uint64_t> group_seq;  // next group seq per group epoch
+  std::map<std::pair<std::string, uint32_t>, uint64_t> group_seq;  // our seq per (member, pair epoch)
   /** Carry our key card with a key_init (as the app does). */
   bool carry_keys = false;
 };
@@ -446,11 +453,10 @@ TEST_F(E2ePublicSessionTest, OnceHeardTheSenderStopsAnnouncingItsSession) {
 namespace pbr {
 namespace {
 
-// G011: a group's numbering epoch and the pairs' session epochs move apart (a member removal moves the
-// group's; a 1:1 restart a pair's). Each member's copy is keyed by the pair's own session at the pair's
-// epoch, named in the envelope's key_epoch — so every copy is read, and the group never writes its epoch
-// into a pair's 1:1 session.
-TEST(GroupPairwiseKeyTest, AGroupWhoseEpochIsNotThePairsKeepsBeingRead) {
+// G010/G011: a group copy is a pairwise message, numbered in the pair — the pair's session epoch and the
+// sender's own seq for the group there. A member only sees its own copy, so that is all it needs; a sender
+// that lost its count restarts the pair (D014), for the group as for the 1:1 chat.
+TEST(GroupPairwiseKeyTest, AGroupCopyIsAPairMessageNumberedInThePair) {
   EnsureSodiumInit();
   Side alice("alice-g", 0x10);
   Side bob("bob-g", 0x40);
@@ -468,34 +474,44 @@ TEST(GroupPairwiseKeyTest, AGroupWhoseEpochIsNotThePairsKeepsBeingRead) {
     s->JoinGroup(group, everyone);
   }
 
-  // The group is at epoch 3 (two removals since it began); no pair has a session yet.
+  // No pair has a session yet: the first copies open them; every copy is read, and the next ones too.
   for (int i = 0; i < 3; ++i) {
-    auto sent = alice.GroupChat(group, everyone, "from alice " + std::to_string(i), 3);
+    auto sent = alice.GroupChat(group, everyone, "from alice " + std::to_string(i));
     EXPECT_TRUE(bob.Keep(sent.at(bob.account))) << "bob reads alice's message " << i;
     EXPECT_TRUE(carol.Keep(sent.at(carol.account))) << "carol reads alice's message " << i;
   }
-  auto answer = bob.GroupChat(group, everyone, "from bob", 3);
+  auto answer = bob.GroupChat(group, everyone, "from bob");
   EXPECT_FALSE(answer.at(alice.account).body.e2e.key_init_b64) << "bob kept the session alice opened";
   EXPECT_TRUE(alice.Keep(answer.at(alice.account)));
-  EXPECT_TRUE(carol.Keep(answer.at(carol.account)));
-  auto again = alice.GroupChat(group, everyone, "alice, heard", 3);
+  auto from_carol = carol.GroupChat(group, everyone, "from carol");
+  EXPECT_EQ(answer.at(alice.account).sender_seq, from_carol.at(alice.account).sender_seq)
+      << "both start their count in their own pair";
+  EXPECT_TRUE(alice.Keep(from_carol.at(alice.account))) << "one sender's seq is not another's";
+  auto again = alice.GroupChat(group, everyone, "alice, heard");
   EXPECT_FALSE(again.at(bob.account).body.e2e.key_init_b64) << "heard under it: alice stops announcing it";
   EXPECT_TRUE(bob.Keep(again.at(bob.account)));
 
-  // The pairs stay at their own epoch: the group's never reached the 1:1 sessions, and the 1:1 chat reads.
+  // The pairs stay at their own epoch, and the 1:1 chat keeps reading.
   EXPECT_EQ(alice.PairEpoch(bob), 1u);
   EXPECT_EQ(bob.PairEpoch(alice), 1u);
   EXPECT_TRUE(bob.Keep(alice.Chat(bob, "a 1:1 message")));
 
-  // Bob restarts his pair with alice (restored device, D014): the pair moves to epoch 2, the group stays at 3.
+  // Bob restores from his backup (the pair sessions back, marked to restart; his counts gone): his first
+  // group copy to alice restarts their pair at epoch 2 from seq 1 — not taken for one alice already holds.
   bob.RestoreFromBackup();
   bob.JoinGroup(group, everyone);
-  bob.RestartIfPending(alice);
-  EXPECT_TRUE(alice.Keep(bob.Chat(alice, "bob is back")));
-  EXPECT_EQ(alice.PairEpoch(bob), 2u);
-  auto after_restart = alice.GroupChat(group, everyone, "alice to the group", 3);
-  EXPECT_EQ(after_restart.at(bob.account).key_epoch, std::optional<uint32_t>(2)) << "the pair's epoch, not the group's";
-  EXPECT_TRUE(bob.Keep(after_restart.at(bob.account)));
+  bob.group_seq.clear();
+  auto restored = bob.GroupChat(group, everyone, "bob is back");
+  EXPECT_EQ(restored.at(alice.account).session_epoch, 2u);
+  EXPECT_EQ(restored.at(alice.account).sender_seq, 1u);
+  EXPECT_TRUE(restored.at(alice.account).body.e2e.key_init_b64) << "the restarted pair's new session";
+  EXPECT_TRUE(alice.Keep(restored.at(alice.account)));
+  EXPECT_TRUE(carol.Keep(restored.at(carol.account)));
+  EXPECT_EQ(alice.PairEpoch(bob), 2u) << "alice follows the pair to its next epoch";
+  auto back = alice.GroupChat(group, everyone, "welcome back");
+  EXPECT_EQ(back.at(bob.account).session_epoch, 2u);
+  EXPECT_TRUE(bob.Keep(back.at(bob.account)));
+  EXPECT_TRUE(alice.Keep(bob.Chat(alice, "and in our 1:1 chat")));
 }
 
 } // namespace

@@ -195,26 +195,6 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
   EXPECT_FALSE(with([](Object& json) { json.set("recipient_contact_id", std::string("account:b\tx")); }));
   EXPECT_TRUE(with([](Object& json) { json.set("sender_relay_id", std::string()); }))
       << "no Brief route yet is allowed";
-  EXPECT_FALSE(with([](Object& json) { json.set("key_epoch", kTwo32); })) << "key_epoch past u32";
-  EXPECT_FALSE(with([](Object& json) { json.set("key_epoch", int64_t{0}); })) << "no epoch 0";
-}
-
-// G011: a group envelope's pairwise key epoch travels next to the group's numbering epoch.
-TEST(MessagingFoundationTest, AGroupEnvelopeKeepsItsKeyEpoch) {
-  RelayEnvelope group;
-  group.message_id = "m1";
-  group.sender_relay_id = "relay:a";
-  group.sender_contact_id = "account:a";
-  group.route.kind = kRelayRouteGroup;
-  group.route.group_id = "group:a";
-  group.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:b", "AQID"}};
-  group.session_epoch = 3;
-  group.key_epoch = 2;
-  group.timestamp = 1;
-  auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(group));
-  ASSERT_TRUE(parsed) << parsed.error().message;
-  EXPECT_EQ(parsed->session_epoch, 3u);
-  EXPECT_EQ(parsed->key_epoch, std::optional<uint32_t>(2));
 }
 
 // The store keeps an account's KEM key only under that account's own binding.

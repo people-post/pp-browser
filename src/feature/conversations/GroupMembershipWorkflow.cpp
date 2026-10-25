@@ -552,8 +552,7 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
   }
   metadata->roster_epoch = removal.roster_epoch;
   update.unlock();  // not across the sends below
-  // The removed member must not read what follows: our group session moves on.
-  (void)roster_.BumpGroupSessionEpoch(group_id, metadata->session_epoch + 1);
+  // The removed member reads nothing that follows: no copy is made for it (every copy is pairwise, G011).
   ClearMemberUnreachable(group_id, member_identity);
 
   auto thread = store_.FindGroupThread(group_id);

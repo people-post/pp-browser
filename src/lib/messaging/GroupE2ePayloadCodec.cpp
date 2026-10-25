@@ -24,7 +24,7 @@ bool GroupE2ePayloadCodec::IsGroupEnvelope(const RelayEnvelope& envelope) {
 
 Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     const std::string& text, const std::string& group_id, const std::string& sender_contact_id,
-    const std::string& message_id, const uint64_t sender_seq, const int64_t timestamp,
+    const std::string& message_id, const int64_t timestamp,
     const std::vector<GroupMemberTarget>& members, IPskSessionStore& psk_store,
     const std::function<Roe<ByteVector>(const ChatTargetKey&)>& resolve_peer_kem_public,
     const std::optional<std::vector<uint8_t>>& chat_payload_plaintext) {
@@ -34,15 +34,14 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     if (member.member_identity == sender_contact_id) {
       continue;
     }
-    // Each member's copy is a pairwise e2e_public message: the pair's own session at the pair's own
-    // epoch, opened (and announced until the peer is heard under it) exactly as a 1:1 send opens it. The
-    // group's numbering epoch never selects or writes the pair's session (G011).
+    // Each member's copy is a pairwise e2e_public message at the pair's own epoch, opened (and announced
+    // until the peer is heard under it) exactly as a 1:1 send opens it (G011).
     auto loaded = psk_store.Load(member.target_key);
     if (!loaded) {
       result.failed_member_identities.push_back(member.member_identity);
       continue;
     }
-    const uint32_t key_epoch = loaded->has_value() ? (*loaded)->session_epoch : 1;
+    const uint32_t key_epoch = member.session_epoch;
     ByteVector master_psk;
     std::optional<std::string> key_init_b64;
     auto stored = psk_store.ResolveMasterPskForEpoch(member.target_key, key_epoch);
@@ -57,7 +56,7 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
         continue;
       }
       master_psk = std::move(*decoded);
-      if (loaded->has_value()) {
+      if (loaded->has_value() && (*loaded)->session_epoch == key_epoch) {
         key_init_b64 = (*loaded)->auto_key_init_pending;  // ours, not confirmed yet: keep announcing it
       }
     } else {
@@ -81,7 +80,7 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     params.peer_contact_id = member.member_identity;
     params.sender_contact_id = sender_contact_id;
     params.message_id = message_id;
-    params.sender_seq = sender_seq;
+    params.sender_seq = member.sender_seq;
     params.session_epoch = key_epoch;
     params.timestamp = timestamp;
     auto encrypted =
@@ -94,7 +93,6 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
       continue;
     }
     result.member_payloads[member.member_identity] = std::move(encrypted->payload_b64);
-    result.member_key_epochs[member.member_identity] = key_epoch;
     if (encrypted->key_init_b64 && !encrypted->key_init_b64->empty()) {
       result.member_key_inits[member.member_identity] = std::move(*encrypted->key_init_b64);
     }
@@ -113,9 +111,7 @@ Roe<ThreadMessage> GroupE2ePayloadCodec::DecryptForLocalMember(const RelayEnvelo
   if (!envelope.body.e2e.member_payloads.has_value()) {
     return Error("Missing group member_payloads");
   }
-  if (!envelope.key_epoch) {
-    return Error("Group envelope without key_epoch");
-  }
+
   const auto it = envelope.body.e2e.member_payloads->find(local_contact_id);
   if (it == envelope.body.e2e.member_payloads->end()) {
     return Error("No ciphertext for local member");
@@ -126,8 +122,6 @@ Roe<ThreadMessage> GroupE2ePayloadCodec::DecryptForLocalMember(const RelayEnvelo
   direct_envelope.route.group_id = std::nullopt;
   direct_envelope.body.e2e.payload_b64 = it->second;
   direct_envelope.body.e2e.member_payloads = std::nullopt;
-  direct_envelope.session_epoch = *envelope.key_epoch;  // the pair's epoch keyed this payload
-  direct_envelope.key_epoch = std::nullopt;
 
   ChatTargetKey target_key;
   target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);

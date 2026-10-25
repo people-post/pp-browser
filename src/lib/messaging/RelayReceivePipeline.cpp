@@ -424,8 +424,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   return {};
 }
 
-ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch) {
-  const ReplayKey key{thread_id, session_epoch};
+ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch,
+                                                    const std::string& sender) {
+  const ReplayKey key{thread_id, session_epoch, sender};
   return replay_windows_[key];
 }
 
@@ -916,7 +917,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   classifier_input.existing_message_id_at_seq =
       FindMessageIdAtSeq(resolved_thread_id, envelope.session_epoch, seq_owner, envelope.sender_seq);
 
-  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch);
+  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id);
   const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
   outcome.decision = classified.decision;
 
@@ -1145,7 +1146,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   // Signed by the member (checked above) and read: what that proves about the pair's session is kept,
   // at the pair's epoch, as for a 1:1 message — so the next copy, without the key_init, is read too (G011).
   if (auto kept = ReconcileE2ePublicSession(psk_store_, GroupE2ePayloadCodec::PairTargetKey(envelope.sender_contact_id),
-                                            *envelope.key_epoch, read, envelope.body.e2e.key_init_b64,
+                                            envelope.session_epoch, read, envelope.body.e2e.key_init_b64,
                                             envelope.timestamp);
       !kept) {
     log().warning << "group: pair session not updated: " << kept.error().message;
@@ -1198,7 +1199,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   classifier_input.existing_message_id_at_seq = FindMessageIdAtSeq(
       resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id, envelope.sender_seq);
 
-  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch);
+  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id);
   const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
   outcome.decision = classified.decision;
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {

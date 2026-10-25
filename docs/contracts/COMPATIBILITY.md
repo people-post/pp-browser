@@ -78,12 +78,6 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 
 **Implementation note:** ingest today often **hard-rejects** unknown `content_type` and exact-mismatched `envelope_version`. Soft-skip / placeholder is the intended direction for **newer** peers; keep hard rejects for crypto and known-legacy shapes.
 
-### Clean cutovers
-
-| Change | Old ↔ new |
-|--------|-----------|
-| Group envelopes sign v3 with `key_epoch` (G011, 2026-10-25) | Group messages between apps before and after it are refused (signature / missing field) — update every member's app. 1:1, control lane and calls are unchanged. |
-
 ### HTTP / libp2p
 
 - Prefer **additive** JSON on existing `/v1/…` responses; old clients ignore unknown fields.
