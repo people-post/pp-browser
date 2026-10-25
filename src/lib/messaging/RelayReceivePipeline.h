@@ -139,18 +139,21 @@ private:
   RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
+  /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */
   struct ReplayKey {
     std::string thread_id;
     uint32_t session_epoch = 0;
+    std::string sender;
 
     bool operator==(const ReplayKey& other) const {
-      return thread_id == other.thread_id && session_epoch == other.session_epoch;
+      return thread_id == other.thread_id && session_epoch == other.session_epoch && sender == other.sender;
     }
   };
 
   struct ReplayKeyHash {
     size_t operator()(const ReplayKey& key) const {
-      return std::hash<std::string>{}(key.thread_id) ^ (static_cast<size_t>(key.session_epoch) << 1);
+      return std::hash<std::string>{}(key.thread_id) ^ (static_cast<size_t>(key.session_epoch) << 1) ^
+             (std::hash<std::string>{}(key.sender) << 2);
     }
   };
 
@@ -158,7 +161,7 @@ private:
   std::optional<std::string> FindMessageIdAtSeq(const std::string& thread_id, const uint32_t session_epoch,
                                                 const std::string& seq_owner_contact_id,
                                                 const uint64_t sender_seq) const;
-  ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
+  ReplayWindow& ReplayWindowFor(const std::string& thread_id, uint32_t session_epoch, const std::string& sender);
   Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                           RelayReceiveOutcome* outcome) const;
   /** A bound family's side effects for `message` (none when no family owns it). */

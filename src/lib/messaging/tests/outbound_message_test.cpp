@@ -219,19 +219,21 @@ TEST(OutboundSendRulesTest, AGroupMembersCopy) {
   message.session_epoch = 2;
   message.timestamp = 5;
   RelayEnvelope e = BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1",
-                                             "account:b", "relay:b", "payload", std::string("init"));
+                                             "account:b", "relay:b", "payload", 5, 9, std::string("init"));
   EXPECT_EQ(e.route.kind, "group");
+  EXPECT_EQ(e.session_epoch, 5u) << "numbered in the pair: its session epoch (G010/G011)";
+  EXPECT_EQ(e.sender_seq, 9u) << "and our seq for the group in that pair";
   EXPECT_EQ(e.route.group_id, "group-1");
   EXPECT_EQ(e.body.e2e.member_payloads->at("account:b"), "payload");
   EXPECT_EQ(e.body.e2e.key_init_b64, std::optional<std::string>("init"));
-  EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", 2, "account:b"));
+  EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", 5, "account:b"));
   EXPECT_NE(BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1", "account:c",
-                                     "relay:c", "payload", std::nullopt)
+                                     "relay:c", "payload", 5, 9, std::nullopt)
                 .stream_key,
             e.stream_key)
       << "the relay keeps one row per sender, stream and seq: each member's copy has its own stream";
   EXPECT_EQ(e.recipient_contact_id, "relay:b") << "the relay delivers to relay ids";
-  EXPECT_EQ(e.order_key, 7u);
+  EXPECT_EQ(e.order_key, 9u);
 }
 
 } // namespace

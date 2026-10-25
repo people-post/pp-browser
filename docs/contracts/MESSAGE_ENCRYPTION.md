@@ -148,7 +148,7 @@ Then: `sign_version=2`, `envelope_version=1`, `route_kind`, `channel`, `timestam
 
 Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, and the relay route it may learn for the sender (learned only from envelopes whose signature verified).
 
-**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). Signer and parser refuse anything else, and unknown route kinds.
+**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). A group envelope's single member payload is a pairwise `e2e_public` message at the envelope's `session_epoch` — the pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
 
 **Body hash:**
 

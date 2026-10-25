@@ -180,7 +180,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 |-------|------|----------|-------|
 | `member_payloads` | object map | yes | Keys = recipient relay ids; values = RFC 4648 base64 ciphertext blobs (pairwise `e2e_public` per member). Each value uses the same AEAD layout as direct `payload_b64`. |
 
-**Rules:** `route.kind=group` requires `member_payloads` (non-empty) and `group_id`; `payload_b64` must be absent (rejected), and `route.channel` omitted. `direct` / `control` envelopes must not carry `member_payloads` or `group_id`. One envelope is fan-out per member on send (client may emit N relay records). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
+**Rules:** `route.kind=group` requires `member_payloads` (non-empty) and `group_id`; `payload_b64` must be absent (rejected), and `route.channel` omitted. `direct` / `control` envelopes must not carry `member_payloads` or `group_id`. One envelope is fan-out per member on send (client may emit N relay records). Each member's copy is numbered in the pair (G010/G011): `session_epoch` is the pair's `e2e_public` session epoch — the copy is keyed by that session — and `sender_seq` the sender's own count for the group in that pair; receivers tell senders apart per (thread, epoch, sender). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
 ---
 

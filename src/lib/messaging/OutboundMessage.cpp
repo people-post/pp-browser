@@ -237,10 +237,15 @@ bool DirectSendTriesAmpFirst(const bool amp_reachable, const bool has_relay_rout
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
                                        const std::string& route_party, std::string payload_b64,
+                                       const uint32_t session_epoch, const uint64_t sender_seq,
                                        std::optional<std::string> key_init_b64) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender);
   envelope.route.kind = "group";
   envelope.route.group_id = group_id;
+  // Numbered in the pair, as the member sees it (G010/G011): the pair's epoch and our seq for the group.
+  envelope.session_epoch = session_epoch;
+  envelope.sender_seq = sender_seq;
+  envelope.order_key = sender_seq;
   envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, std::move(payload_b64)}};
   // A member with no pairwise session yet derives it from the key_init.
   if (key_init_b64) {

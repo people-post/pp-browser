@@ -50,6 +50,9 @@ public:
   Roe<void> ClearGroupTargetByThreadId(const std::string& local_thread_id) const;
   Roe<std::optional<std::string>> FindThreadIdForGroup(const std::string& group_id) const;
   Roe<uint64_t> AllocateGroupSenderSeq(const std::string& group_id) const;
+  /** Our next seq for `member_identity`'s copy of a group message, at the pair's session epoch (G010/G011). */
+  Roe<uint64_t> AllocateMemberSeq(const std::string& group_id, const std::string& member_identity,
+                                  uint32_t pair_epoch) const;
   Roe<uint32_t> GetGroupSessionEpoch(const std::string& group_id) const;
   Roe<void> BumpGroupSessionEpoch(const std::string& group_id, uint32_t new_epoch) const;
 

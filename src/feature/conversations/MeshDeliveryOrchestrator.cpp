@@ -890,7 +890,10 @@ void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, con
 }
 
 Roe<void> MeshDeliveryOrchestrator::StartNextEpochIfRestored(const Thread& thread) {
-  const ChatTargetKey key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+  return StartNextPairEpochIfRestored(E2eRelayPayloadCodec::ChatTargetFromThread(thread));
+}
+
+Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const ChatTargetKey& key) {
   auto loaded = psk_store_.Load(key);
   if (!loaded) {
     return loaded.error();
@@ -899,18 +902,24 @@ Roe<void> MeshDeliveryOrchestrator::StartNextEpochIfRestored(const Thread& threa
     return {};
   }
   // This device lost its numbering in the pair (restored from a backup, or through a chat reset): the
-  // pair moves to its next epoch at seq 1 instead of rewinding in this one (D014, #378). A fresh session
-  // opens there with this send's key_init, which is how the peer follows; the old one is kept retired.
+  // pair moves to its next epoch at seq 1 instead of rewinding in this one (D014, #378) — for the 1:1 chat
+  // and for every group copy, which are numbered in the pair too (G010). A fresh session opens there with
+  // this send's key_init, which is how the peer follows; the old one is kept retired.
   const uint32_t old_epoch = (*loaded)->session_epoch;
-  auto new_epoch = store_.BumpLocalChatTargetEpoch(thread.id);
-  if (!new_epoch) {
-    return new_epoch.error();
+  uint32_t new_epoch = old_epoch + 1;
+  DirectChatTarget direct{key.peer_identity_kind, key.peer_identity_value, ThreadChannel::E2ePublic};
+  if (auto thread = store_.FindDirectThread(direct); thread && thread->has_value()) {
+    auto bumped = store_.BumpLocalChatTargetEpoch((**thread).id);  // the 1:1 count starts over too
+    if (!bumped) {
+      return bumped.error();
+    }
+    new_epoch = *bumped;
   }
-  if (auto restarted = RestartE2ePublicSession(psk_store_, key, old_epoch, *new_epoch, util::NowUnixMs()); !restarted) {
+  if (auto restarted = RestartE2ePublicSession(psk_store_, key, old_epoch, new_epoch, util::NowUnixMs()); !restarted) {
     return restarted.error();
   }
-  log().info << "restored pair restarts at epoch " << *new_epoch << " (was " << old_epoch
-             << ") peer=" << thread.peer_identity_value;
+  log().info << "restored pair restarts at epoch " << new_epoch << " (was " << old_epoch
+             << ") peer=" << key.peer_identity_value;
   return {};
 }
 
@@ -1136,6 +1145,18 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     GroupMemberTarget target;
     target.member_identity = member.member_identity;
     target.target_key = GroupE2ePayloadCodec::PairTargetKey(member.member_identity);
+    // Numbered in the pair (G010/G011): a pair this device lost its count in restarts first, as a 1:1 send does.
+    if (auto restarted = StartNextPairEpochIfRestored(target.target_key); !restarted) {
+      log().warning << "group send: pair restart failed peer=" << member.member_identity << ": "
+                    << restarted.error().message;
+    }
+    auto pair = psk_store_.Load(target.target_key);
+    target.session_epoch = pair && pair->has_value() ? (*pair)->session_epoch : 1;
+    auto seq = group_roster_.AllocateMemberSeq(*(*thread)->group_id, member.member_identity, target.session_epoch);
+    if (!seq) {
+      return FailOutbound(store_, *appended, seq.error());
+    }
+    target.sender_seq = *seq;
     targets.push_back(std::move(target));
   }
 
@@ -1152,8 +1173,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
 
   const std::string group_id = *(*thread)->group_id;
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-      text, group_id, identity->account_id, message.id, *message.sender_seq, *message.session_epoch,
-      message.timestamp, targets, psk_store_, resolve_kem, rich_plaintext);
+      text, group_id, identity->account_id, message.id, message.timestamp, targets, psk_store_, resolve_kem,
+      rich_plaintext);
   if (!encrypted) {
     if (groups_) {
       for (const GroupMemberTarget& target : targets) {
@@ -1184,8 +1205,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       any_missed = true;
       continue;
     }
+    const auto numbered = std::find_if(targets.begin(), targets.end(), [&recipient](const GroupMemberTarget& t) {
+      return t.member_identity == recipient;
+    });
     RelayEnvelope envelope = BuildGroupMemberEnvelope(message, sender, group_id, recipient,
                                                       relay_route.value_or(recipient), payload_b64,
+                                                      numbered->session_epoch, numbered->sender_seq,
                                                       std::move(key_init));
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
