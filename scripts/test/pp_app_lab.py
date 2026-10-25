@@ -506,6 +506,66 @@ def scenario_bystander_is_no_relay(lab):
     return timing
 
 
+# Seconds after an idle app reconnects to the seeds that a call starts: either side of the 20 s mark
+# where that link dies (a 15 s reservation nothing renews, then 5 s cold — #382).
+SEED_CHURN_CALL_OFFSETS_S = (3, 12, 18.5, 19.5, 26)
+# The idle seed link dies this long after it connects (and the call must outlive that mark).
+SEED_CHURN_LINK_LIFE_S = 20
+
+
+def seed_link_events(u):
+    """The user's link to the lab seed, as its log tells it: "up" / "down" in order."""
+    hop_peer = u.lab.hop.rsplit("/p2p/", 1)[-1]
+    events = []
+    for line in u.log_text().splitlines():
+        if "link connected key=%s " % hop_peer in line:
+            events.append("up")
+        elif "link dropped key=%s " % hop_peer in line:
+            events.append("down")
+    return events
+
+
+def assert_audio_still_flows(*users, window_s=2.0):
+    """Audio is arriving now, not only earlier in the call: each user's received frames keep rising."""
+    before = {u.name: u.state().get("rx_audio_frames", 0) for u in users}
+    time.sleep(window_s)
+    for u in users:
+        now = u.state().get("rx_audio_frames", 0)
+        if now <= before[u.name]:
+            raise ProbeError("%s: no audio for %.0f s (rx frames %s -> %s)" % (u.name, window_s, before[u.name], now))
+
+
+def scenario_call_during_seed_churn(lab):
+    """#382: an idle app's link to the seeds comes and goes (it reconnects, reserves once, and the
+    link dies 20 s later). Calls placed at any point of that cycle — just before the link dies too —
+    connect within the usual bound and keep their audio past the moment the idle link would have died."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    # Any first call parks on the seeds, after which every reconnect to them reserves again.
+    connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    timings = {}
+    for offset in SEED_CHURN_CALL_OFFSETS_S:
+        for u in (a, b):
+            wait_for(lambda u=u: not seed_link_events(u) or seed_link_events(u)[-1] == "down", 60,
+                     "%s: the idle seed link to drop" % u.name)
+        ups = {u.name: seed_link_events(u).count("up") for u in (a, b)}
+        for u in (a, b):
+            u.cmd("warm_seeds")  # what reconnects an idle app to the seeds in the field
+        for u in (a, b):
+            wait_for(lambda u=u: seed_link_events(u).count("up") > ups[u.name], 20, "%s: seed reconnect" % u.name)
+        reconnected = time.time()
+        time.sleep(max(0.0, reconnected + offset - time.time()))
+        _, took = connect(a, a_thread, b)
+        # Past the mark where the idle link would have died: the call still carries audio both ways.
+        time.sleep(max(0.0, reconnected + SEED_CHURN_LINK_LIFE_S + 5 - time.time()))
+        assert_audio_still_flows(a, b)
+        a.cmd("leave")
+        assert_idle(a, b)
+        timings["at_%ss" % offset] = took["answer_to_audio_s"]
+    return timings
+
+
 def scenario_calling_each_other_at_once(lab):
     """Both press call at the same moment, then try again: one call must get through."""
     a, a_thread, b, b_thread = open_pair(lab)
@@ -1752,6 +1812,7 @@ SCENARIOS = [
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
+    ("call_during_seed_churn", scenario_call_during_seed_churn),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),
