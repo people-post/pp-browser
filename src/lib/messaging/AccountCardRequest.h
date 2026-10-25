@@ -26,6 +26,11 @@ struct AccountCardRequest {
   int64_t timestamp_ms = 0;
   std::string signature;
   std::optional<KeyCard> requester_keys;
+  /**
+   * When the requester asks a sibling (its own account's other device): its account card, the device list
+   * as it knows it — the answering device takes it (OwnCards::Learn), as the requester takes the reply (M021).
+   */
+  std::optional<AccountCard> requester_card;
 };
 
 /** The answer: the account card, the key card (unauthenticated asker, audience Everyone), or neither. */

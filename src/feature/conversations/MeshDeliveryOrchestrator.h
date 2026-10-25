@@ -16,6 +16,7 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "domain/peers/OwnCards.h"
+#include "lib/messaging/OutboundMessage.h"
 #include "domain/delivery/AccountCardService.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
@@ -156,6 +157,13 @@ public:
   AccountCardService& AccountCards() { return card_service_; }
   /** This account's own key card and device list (M021). */
   OwnCards& OwnAccountCards() { return own_cards_; }
+  /**
+   * Our device list changed, or the mesh came up: `reach` makes our other devices reachable (their directory
+   * endpoints, our address disclosed to them), then they and we share the list (M021). Unset: just share it.
+   */
+  void SetOnOwnDevicesChanged(std::function<void()> reach) { on_own_devices_changed_ = std::move(reach); }
+  /** Dial keys for our other devices, as the directory lists them (M017). */
+  void RegisterSiblingEndpoints(const std::vector<mesh::DirectoryEndpoint>& endpoints);
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -273,7 +281,8 @@ private:
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
   void NotifyGroupMembersMissed();
   /** The message row's delivery state; false when there is no row (a control-lane send). */
-  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport);
+  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport,
+                    bool unless_delivered = false);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id,
                    std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
@@ -325,13 +334,21 @@ private:
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
-  std::optional<KeyCard> OwnKeys();
+  /** Our account card as envelopes carry it (with a key_init); none when it cannot be issued. */
+  std::optional<Object> OwnCardJson();
+  /** Who we are on the envelopes we send (this device signs them). */
+  Roe<EnvelopeSender> OwnSender(const LocalIdentity& identity);
+  /** The peer's devices on its newest kept card (M021); empty while we know none (an account copy then). */
+  std::vector<AccountCardDevice> PeerDevices(const std::string& account_id);
+  /** This device's signature on an envelope. */
+  Roe<void> SignEnvelope(RelayEnvelope& envelope);
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
   PeerRouteBook routes_;
   /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
   E2ePublicSessionKeys session_keys_;
   /** Our cards: the key card carried with every key_init, the account card served to who asks. */
   OwnCards own_cards_;
+  std::function<void()> on_own_devices_changed_;
   AccountCardService card_service_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
   ControlLane control_lane_;

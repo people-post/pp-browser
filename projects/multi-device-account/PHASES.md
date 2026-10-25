@@ -122,17 +122,18 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [x] Each device mints its own ML-KEM key (additive in `identity.enc`; from the seed on a node); never in a link bundle or backup
 - [x] Account card v2: device entries `{peer_id, signing key, KEM key}`, signed by the account key, newest `issued_at` wins (no union merge); re-issued only when it changes; at most 5 devices
 - [x] Link bundle carries the issuing device's card; the new device signs itself in (`OwnCards::Learn`; siblings issuing at once converge)
-- [ ] The new device tells its siblings its card through the shared mailbox — with d2 (it needs device-addressed envelopes)
+- [ ] The new device tells its siblings its card — the relay refuses an account's envelopes to itself; over Amp card exchange (built, not yet passing the lab) or a relay change (open)
 
 ### d2 — Envelopes and sessions per device pair (wire cutover)
 
-- [ ] Envelope: `sender_device`, `recipient_device` (empty = account copy), signed by the sender device's key (sign v3); the sender's card rides every key_init
-- [ ] Session store keyed by (peer account, peer device, channel); numbering per device pair (1:1 and group copies)
-- [ ] Send: one copy per device on the peer's card; account copy when there is no card yet; groups one copy per member device
-- [ ] Receive: skip siblings' copies; verify against the card; replay / seq / sync state per sender device
-- [ ] Calls keep working (the media key per device pair)
-- [ ] Link bundle stops carrying public sessions (M020 moot)
-- [ ] Lab: two linked devices both send and both read (1:1 and group)
+- [x] Envelope v2: `sender_device`, `recipient_device` (empty = account copy), signed by the sender device's key (sign v3); the sender's card rides every key_init (`sender_card`)
+- [x] Session store keyed by (peer account, peer device, channel); numbering per device pair (1:1 and group copies)
+- [x] Send: one copy per device on the peer's card; account copy when there is no card yet; groups one copy per member device
+- [x] Receive: skip siblings' copies; verify against the card (a carried card only when newer); replay / seq / sync state per sender device (account copies on public chats per sending device too)
+- [x] Calls: unchanged on the account-level session (one account copy; single-device accounts work; several devices — d5)
+- [x] Link bundle carries the card and no sessions; backups keep account-level sessions only
+- [x] Unit tests: two linked devices both send and both read (1:1, group, account copies), new device's card, old card refused
+- [ ] Lab `linked_devices_both_send`: fails — the new device's first message does not reach the peer yet (under investigation; relay design question open)
 
 ### d3 — Siblings
 

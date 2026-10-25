@@ -95,16 +95,18 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 ---
 
-## `RelayEnvelope` (v1 — `envelope_version: 1`)
+## `RelayEnvelope` (v2 — `envelope_version: 2`)
 
 Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIGN § Relay envelope](../../projects/chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056-d063).
 
 ```json
 {
-  "envelope_version": 1,
+  "envelope_version": 2,
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
   "sender_relay_id": "relay:alice123",
-  "sender_contact_id": "relay:alice123",
+  "sender_contact_id": "account:…",
+  "sender_device": "12D3Koo…",
+  "recipient_device": "12D3Koo…",
   "route": {
     "kind": "direct",
     "channel": "e2e"
@@ -121,6 +123,8 @@ Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIG
 
 **Public direct:** same shape with `"channel": "e2e_public"`.
 
+**Devices (v2, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)):** every envelope names the device that sent it (`sender_device`, its PeerId) and is signed by that device's key, as the sender's account card lists it ([ACCOUNT_CARD](ACCOUNT_CARD.md)). A copy for one of the recipient's devices names it (`recipient_device`) and is a message in that device pair's `e2e_public` session, numbered there; with no `recipient_device` it is an **account copy**, in the account-level session, for every device of the account (a first contact before the sender knows the recipient's devices, the control lane, a private `e2e` chat). One mailbox serves all of an account's devices (M013): a device skips the copies for its siblings.
+
 ### Ed25519 canonical signing (E014)
 
 Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `dump()` of the envelope. String fields in sign bytes use **LenUtf8** (D088).
@@ -128,25 +132,26 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `body_hash`, `sender_seq`, `session_epoch`, `body.e2e.key_init_b64` (sign v2 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `body_hash`, `sender_seq`, `session_epoch`, `body.e2e.key_init_b64`, `sender_device`, `recipient_device` (sign v3 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
 | `body_hash` | BLAKE2b-256 over exactly what the receiver decrypts: `0x02` ‖ LenBytes(blob) (direct / control), or `0x02` ‖ each LenUtf8(member_id) ‖ LenBytes(blob) (group) — no `0x01` public path |
-| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, relay metadata, unknown keys |
+| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), relay metadata, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `envelope_version` | integer | yes | **1** in v1. Signed (D072). Bump independently of `ChatPayload.payload_version`. |
+| `envelope_version` | integer | yes | **2** (devices, M021; 1 is refused). Signed (D072). Bump independently of `ChatPayload.payload_version`. |
 | `message_id` | string, 1–96 chars of `[A-Za-z0-9_-]` (a UUID in practice) | yes | Dedup key (D034). Inbound envelopes with any other character or length are rejected: the id lands in generated RML and as a SQLite key |
 | `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
-| `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:abc123` (D082) |
+| `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — the Account ID |
+| `sender_device` | string | yes | The sending device's PeerId; its key signs the envelope (M021) |
+| `recipient_device` | string | no | The recipient's device this copy is for (M021); absent: an account copy |
 | `route` | object | yes | See `Route` below |
 | `body` | object | yes | **`body.e2e`** — see below (D090) |
 | `sender_seq` | integer (u64) | yes on direct | Both tiers (D045) |
 | `session_epoch` | integer (u32) | yes on direct | |
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
-| `signature` | string | yes | Ed25519 over [canonical sign bytes](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes); **base64** (RFC 4648, padded) in v1 |
-| `sender_instance_id` | string (UUID) | **`[future]`** | Multi-device extension (D074); omit in v1 |
+| `signature` | string | yes | ML-DSA-65 by the sending device's key over the canonical sign bytes; **base64** (RFC 4648, padded) |
 
 ### Relay routing metadata (unsigned — v1)
 
@@ -155,7 +160,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required on send | Notes |
 |-------|------|------------------|-------|
 | `recipient_contact_id` | string | yes | Inbox owner — relay delivery target |
-| `stream_id` | string | yes | Opaque conversation scope; v1 canonical: `v1:{channel}:{session_epoch}:{id_lo}:{id_hi}` with sorted relay ids |
+| `stream_id` | string | yes | Opaque conversation scope; v1 canonical: `v1:{channel}:{session_epoch}:{id_lo}:{id_hi}` with sorted relay ids; a device copy appends `:dev:{device_lo}:{device_hi}` (sorted PeerIds — every device pair numbers on its own) |
 | `index_key` | integer (u64) | yes | Monotonic per-stream ordering for gap fill; **v1:** equals `sender_seq` |
 
 **Client builders:** `BuildCanonicalRelayStreamKey` (`base/messaging/RelayStreamKey.*`) maps to wire `stream_id`.
@@ -172,7 +177,8 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Signed** (sign v2). Group envelopes carry the recipient's `key_init` when the sender opened that member's pairwise session on this send. Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message in a session: wrap to the recipient **device's** KEM for a device copy, to the **account** KEM for an account copy (M021). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Signed** (sign v2). Group envelopes carry the recipient's `key_init` when the sender opened that member's pairwise session on this send. Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
+| `sender_card` | object | no | Only with `key_init_b64`: the sender's account card ([ACCOUNT_CARD](ACCOUNT_CARD.md)) — the device list the receiver verifies the sending device with and answers. Must name `sender_contact_id`. |
 
 ### `body.e2e` (group tier — D095, E022)
 
@@ -180,7 +186,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 |-------|------|----------|-------|
 | `member_payloads` | object map | yes | Keys = recipient relay ids; values = RFC 4648 base64 ciphertext blobs (pairwise `e2e_public` per member). Each value uses the same AEAD layout as direct `payload_b64`. |
 
-**Rules:** `route.kind=group` requires `member_payloads` (non-empty) and `group_id`; `payload_b64` must be absent (rejected), and `route.channel` omitted. `direct` / `control` envelopes must not carry `member_payloads` or `group_id`. One envelope is fan-out per member on send (client may emit N relay records). Each member's copy is numbered in the pair (G010/G011): `session_epoch` is the pair's `e2e_public` session epoch — the copy is keyed by that session — and `sender_seq` the sender's own count for the group in that pair; receivers tell senders apart per (thread, epoch, sender). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
+**Rules:** `route.kind=group` requires `member_payloads` (non-empty) and `group_id`; `payload_b64` must be absent (rejected), and `route.channel` omitted. `direct` / `control` envelopes must not carry `member_payloads` or `group_id`. One envelope is fan-out per member device on send (client may emit N relay records): a copy for each device on the member's card (`recipient_device`), or one account copy while we know none (M021). Each copy is numbered in its pair (G010/G011): `session_epoch` is the pair's `e2e_public` session epoch — the copy is keyed by that session — and `sender_seq` the sender's own count for the group in that pair; receivers tell senders apart per (thread, epoch, sender). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
 ---
 

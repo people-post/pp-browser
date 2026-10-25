@@ -133,7 +133,9 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Carrier | What | When |
 |---------|------|------|
 | Relay directory | key card fields (+ endpoints) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
-| `e2e_public` envelope | sender's key card, `body.e2e.sender_keys` | with every `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) |
+| `e2e_public` envelope | sender's account card, `body.e2e.sender_card` | with every `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)): a new device's first message to anyone brings its account's newer list |
+| Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
+| Sibling notice | the account card, on the control lane to our own mailbox | after a device issues a new card (it linked in, the name changed): its siblings take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |
 | Locator | account id, nickname, devices | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |

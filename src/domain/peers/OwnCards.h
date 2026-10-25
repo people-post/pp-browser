@@ -8,6 +8,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -40,10 +41,16 @@ public:
   Roe<AccountCardDevice> Self();
   /** This device's PeerId (its mesh identity, from the device key). */
   Roe<std::string> DevicePeerId();
+  /**
+   * Runs when the account's card changed here — this device issued one, or took a sibling's newer one — so its
+   * siblings hear of it and its own devices are reached; outside any lock.
+   */
+  void SetOnChanged(std::function<void(const AccountCard&)> on_changed) { on_changed_ = std::move(on_changed); }
 
 private:
+  /** The card to stand: `base` when it says it all, else a new one (`issued` set). */
   Roe<AccountCard> IssueLocked(const std::optional<AccountCard>& base, const std::vector<AccountCardDevice>& also,
-                               const std::string& nickname, int64_t now_ms);
+                               const std::string& nickname, int64_t now_ms, bool& issued);
   Roe<std::optional<AccountCard>> NewestLocked();
 
   IdentityStore& identity_;
@@ -51,6 +58,7 @@ private:
   std::mutex mutex_;  // issuing a card
   std::mutex keys_mutex_;
   std::optional<KeyCard> keys_;
+  std::function<void(const AccountCard&)> on_changed_;
 };
 
 } // namespace pbr

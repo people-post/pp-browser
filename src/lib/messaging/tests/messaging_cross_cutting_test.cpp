@@ -48,23 +48,19 @@ public:
         local(test::TestAccount::Make()),
         roster_store(store.ProfileDbPath()),
         psk_store(store.ProfileDbPath(), "test"),
-        key_resolver(key_store),
-        pipeline(store, key_resolver, psk_store, local.Keys(), roster_store) {
+        peer(test::TestAccount::Make()),
+        pipeline(
+            store,
+            [this](const std::string& account) -> std::optional<AccountCard> {
+              // The peer's device as its kept card lists it (filed under the fixture's readable id).
+              return account == "account:peer" ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
+            },
+            psk_store, local.Keys(), roster_store) {
     std::filesystem::remove_all(data_dir);
     if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = MlDsa::GenerateKeyPair();
-    if (!generated) {
-      throw std::runtime_error("Failed to generate peer keys");
-    }
-    peer_keys = *generated;
-
-    PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
-    record.source = "test";
-    key_store.PutUncheckedForTest("account", "account:peer", record);
 
     DirectChatTarget target;
     target.peer_identity_kind = "account";
@@ -158,15 +154,7 @@ public:
       envelope.body.e2e.payload_b64 = *payload;
     }
 
-    auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-    if (!sign_bytes) {
-      throw std::runtime_error("Failed to build sign bytes");
-    }
-    auto signature = MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
-    if (!signature) {
-      throw std::runtime_error("Failed to sign envelope");
-    }
-    envelope.signature = Base64Encode(*signature);
+    peer.SignEnvelope(envelope);
     return envelope;
   }
 
@@ -200,15 +188,7 @@ public:
       throw std::runtime_error("Failed to encrypt payload");
     }
     envelope.body.e2e.payload_b64 = *payload;
-    auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-    if (!sign_bytes) {
-      throw std::runtime_error("Failed to build sign bytes");
-    }
-    auto signature = MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
-    if (!signature) {
-      throw std::runtime_error("Failed to sign envelope");
-    }
-    envelope.signature = Base64Encode(*signature);
+    peer.SignEnvelope(envelope);
     return envelope;
   }
 
@@ -236,16 +216,12 @@ public:
     params.master_psk = lane_session->master_psk;
     params.key_init_b64 = lane_session->key_init_b64;
     params.order_key = 1;
+    params.sender_device = peer.device.peer_id;
     ThreadMessage control = body;
     control.id = message_id;
     control.timestamp = sent_ms;
-    auto envelope = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
-      auto signature = MlDsa::Sign(peer_keys.secret_key, bytes);
-      if (!signature) {
-        return signature.error();
-      }
-      return Base64Encode(*signature);
-    });
+    auto envelope = BuildControlLaneEnvelope(
+        params, control, [this](const std::vector<uint8_t>& bytes) { return peer.device.Sign(bytes); });
     if (!envelope) {
       throw std::runtime_error("Failed to build control envelope: " + envelope.error().message);
     }
@@ -278,11 +254,10 @@ public:
   test::TestAccount local;
   GroupRosterStore roster_store;
   SqlitePskSessionStore psk_store;
-  PeerSigningKeyStore key_store;
-  PeerSigningKeyResolver key_resolver;
+  /** The peer: its device signs what it sends. */
+  test::TestAccount peer;
   RelayReceivePipeline pipeline;
   Thread thread;
-  MlDsaKeyPair peer_keys;
   std::string local_account_id;
   std::optional<ByteVector> local_kem_private;
   /** The peer's e2e_public session as its control-lane sends use it. */

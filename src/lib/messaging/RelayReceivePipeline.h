@@ -3,6 +3,7 @@
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
+#include "lib/messaging/AccountCard.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/E2eIngestClassifier.h"
@@ -79,18 +80,24 @@ inline constexpr int64_t kControlLaneSignedSkewMs = 60 * 60 * 1000;
 bool ControlLaneFresh(const RelayEnvelope& envelope, int64_t max_age_ms, int64_t now_ms);
 
 /**
- * This device's account id and hybrid KEM private key (people's): what decrypting, PSK rotation and
- * group membership need of the local identity.
+ * This device's account id and KEM keys (people's): what decrypting, PSK rotation and group membership
+ * need of the local identity — the account's KEM opens account copies, the device's its device pairs (M021).
  */
 struct LocalKeys {
   std::function<Roe<std::string>()> account_id;
   std::function<Roe<ByteVector>()> kem_private_key;
+  /** This device's PeerId: copies for it are its own; other devices' are its siblings'. */
+  std::function<Roe<std::string>()> device_peer_id;
+  std::function<Roe<ByteVector>()> device_kem_private_key;
 };
+
+/** An account's newest kept account card — its device list (docs/contracts/ACCOUNT_CARD.md); none when not known. */
+using AccountCardLookup = std::function<std::optional<AccountCard>(const std::string& account_id)>;
 
 /** v6 receive pipeline steps 0–12: an inbound envelope verified, decrypted, applied and stored. */
 class RelayReceivePipeline : public Module {
 public:
-  RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store,
+  RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards, IPskSessionStore& psk_store,
                        LocalKeys local_keys, GroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
@@ -103,8 +110,11 @@ public:
    * on receipt. Not owned; null = no blocking.
    */
   void SetContactTrust(IContactTrustAccess* trust) { contact_trust_ = trust; }
-  /** A sender's key card that verified the envelope it came with (docs/contracts/ACCOUNT_CARD.md): keep it. */
-  void SetOnSenderKeys(std::function<void(const KeyCard&)> callback) { on_sender_keys_ = std::move(callback); }
+  /**
+   * A sender's account card that verified the envelope it came with, newer than any kept
+   * (docs/contracts/ACCOUNT_CARD.md): keep it.
+   */
+  void SetOnSenderCard(std::function<void(const AccountCard&)> callback) { on_sender_card_ = std::move(callback); }
   /**
    * Another member as the group owner's roster (member_joined) gives them: their card — keep it if it
    * proves itself (docs/contracts/ACCOUNT_CARD.md) — and their relay route.
@@ -127,7 +137,7 @@ private:
   /** A message whose retract arrived first is stored as a tombstone straight away. */
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
-  std::function<void(const KeyCard&)> on_sender_keys_;
+  std::function<void(const AccountCard&)> on_sender_card_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
@@ -157,10 +167,20 @@ private:
     }
   };
 
+  /**
+   * Checked with the sending device's key from the sender's account card (M021): the card the envelope
+   * carries when it proves itself and is newer than the one kept, else the kept one. A device the card does
+   * not list is refused.
+   */
   Roe<bool> VerifySignature(const RelayEnvelope& envelope, const DirectChatTarget& target) const;
+  /** Which copy of a message an envelope is, to this device (M021). */
+  enum class CopyTo { ThisDevice, Account, Sibling };
+  CopyTo WhoseCopy(const RelayEnvelope& envelope) const;
+  /** The KEM secret that opens a copy's key_init: this device's for its device pair, the account's for an account copy. */
+  Roe<ByteVector> CopyKemPrivateKey(const RelayEnvelope& envelope) const;
   std::optional<std::string> FindMessageIdAtSeq(const std::string& thread_id, const uint32_t session_epoch,
                                                 const std::string& seq_owner_contact_id,
-                                                const uint64_t sender_seq) const;
+                                                const uint64_t sender_seq, const std::string& sender_device) const;
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, uint32_t session_epoch, const std::string& sender);
   Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                           RelayReceiveOutcome* outcome) const;
@@ -181,7 +201,7 @@ private:
                                  const ThreadMessage& message);
 
   IThreadStore& store_;
-  IPeerSigningKeyResolver& signing_keys_;
+  AccountCardLookup account_cards_;
   IPskSessionStore& psk_store_;
   LocalKeys local_keys_;
   GroupRosterStore& group_roster_;

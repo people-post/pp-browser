@@ -559,6 +559,22 @@ Roe<std::string> IdentityStore::SignAccountBytes(const AccountSignBytes& sign_by
   return Base64Encode(*signature);
 }
 
+Roe<std::string> IdentityStore::SignDeviceBytes(const std::vector<uint8_t>& sign_bytes) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  if (private_key_.size() != kMlDsa65SecretKeyBytes) {
+    return Error("Invalid device ML-DSA-65 private key size");
+  }
+  auto signature = MlDsa::Sign(private_key_, sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+  return Base64Encode(*signature);
+}
+
 Roe<ByteVector> IdentityStore::GetDeviceMlDsaPrivateKey() const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();

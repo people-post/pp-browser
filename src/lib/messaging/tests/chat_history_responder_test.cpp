@@ -106,7 +106,8 @@ public:
   Roe<ChatHistoryResponse> Serve(const ChatHistoryRequest& request, const std::string& remote_peer_id) {
     return ChatHistoryResponder::Serve(
         store, psk_store, request, local_relay_id,
-        local.account_id, [this](const std::vector<uint8_t>& bytes) { return local.Sign(bytes); }, remote_peer_id, keys_resolver,
+        local.account_id, local.device.peer_id,
+        [this](const std::vector<uint8_t>& bytes) { return local.device.Sign(bytes); }, remote_peer_id, keys_resolver,
         util::NowUnixMs());
   }
 
@@ -135,7 +136,7 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 1u);
   EXPECT_EQ(response->messages[1].sender_seq, 2u);
-  auto verified = EnvelopeSigner::Verify(response->messages[0], harness.local.SigningPublicB64());
+  auto verified = EnvelopeSigner::Verify(response->messages[0], Base64Encode(harness.local.device.signing_public));
   ASSERT_TRUE(static_cast<bool>(verified));
   EXPECT_TRUE(*verified);
 }

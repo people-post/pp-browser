@@ -18,6 +18,9 @@ std::string EncodeAccountCardRequest(const AccountCardRequest& request) {
   if (request.requester_keys) {
     auth.set("requester_keys", KeyCardToJson(*request.requester_keys));
   }
+  if (request.requester_card) {
+    auth.set("requester_card", AccountCardToJson(*request.requester_card));
+  }
   json.set("auth", auth);
   return DumpJson(json);
 }
@@ -40,6 +43,11 @@ Roe<AccountCardRequest> DecodeAccountCardRequest(const std::string& json_text) {
     if (const Object* keys = auth->getObject("requester_keys")) {
       if (auto card = KeyCardFromJson(*keys)) {
         request.requester_keys = std::move(card.value());
+      }
+    }
+    if (const Object* card_json = auth->getObject("requester_card")) {
+      if (auto card = AccountCardFromJson(*card_json)) {
+        request.requester_card = std::move(card.value());
       }
     }
   }

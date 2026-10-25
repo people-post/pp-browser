@@ -28,4 +28,13 @@ std::string BuildGroupRelayStreamKey(const std::string& group_id, const uint32_t
   return "v1:group:" + group_id + ":" + std::to_string(session_epoch) + ":" + member;
 }
 
+std::string WithDevicePair(const std::string& stream_key, const std::string& device_a, const std::string& device_b) {
+  std::string lo = device_a;
+  std::string hi = device_b;
+  if (lo > hi) {
+    std::swap(lo, hi);
+  }
+  return stream_key + ":dev:" + lo + ":" + hi;
+}
+
 } // namespace pbr

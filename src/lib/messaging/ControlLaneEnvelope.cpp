@@ -15,7 +15,8 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   if (control.content_type != ChatContentType::System || control.id.empty()) {
     return Error("control lane carries identified system messages only");
   }
-  if (params.sender_account_id.empty() || params.peer_account_id.empty() || params.route_party.empty() || !sign) {
+  if (params.sender_account_id.empty() || params.sender_device.empty() || params.peer_account_id.empty() ||
+      params.route_party.empty() || !sign) {
     return Error("control lane send missing a party");
   }
   auto plaintext = ChatPayloadCodec::EncodeToRow(control);
@@ -42,12 +43,13 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   envelope.message_id = control.id;
   envelope.sender_relay_id = params.sender_relay_id;
   envelope.sender_contact_id = params.sender_account_id;
+  envelope.sender_device = params.sender_device;
   envelope.route.kind = kRelayRouteControl;
   envelope.route.channel = ThreadChannel::E2ePublic;
   envelope.body.e2e.payload_b64 = std::move(encrypted->payload_b64);
   if (encrypted->key_init_b64 && !encrypted->key_init_b64->empty()) {
     envelope.body.e2e.key_init_b64 = std::move(*encrypted->key_init_b64);
-    envelope.body.e2e.sender_keys = params.sender_keys;
+    envelope.body.e2e.sender_card = params.sender_card;
   }
   envelope.sender_seq = 0;
   envelope.order_key = params.order_key;

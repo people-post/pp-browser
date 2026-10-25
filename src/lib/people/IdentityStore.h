@@ -43,6 +43,8 @@ public:
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
   Roe<std::string> SignAccountBytes(const AccountSignBytes& sign_bytes) const override;
+  /** Signs with this device's own ML-DSA-65 key (its PeerId's; M021: the device signs its envelopes). */
+  Roe<std::string> SignDeviceBytes(const std::vector<uint8_t>& sign_bytes) const;
   /** Raw device ML-DSA-65 private key for libp2p Host identity binding. */
   Roe<ByteVector> GetDeviceMlDsaPrivateKey() const;
   Roe<ByteVector> GetDeviceMlDsaPublicKey() const;

@@ -18,9 +18,9 @@ namespace {
 
 constexpr std::array<char, 34> kSignDomain = {
     'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r', 'e', 'l', 'a', 'y', '-',
-    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '2', '\0'};
+    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '3', '\0'};
 
-constexpr uint8_t kSignVersion = 2;
+constexpr uint8_t kSignVersion = 3;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
 void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
@@ -170,6 +170,12 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
     ar & group_id;
     WireLenUtf8 key_init{envelope.body.e2e.key_init_b64.value_or(std::string{})};
     ar & key_init;
+    // v3 (M021): which device sent it (its key signs) and which device it is for — a copy for one device
+    // is not another's, nor an account copy.
+    WireLenUtf8 sender_device{envelope.sender_device};
+    ar & sender_device;
+    WireLenUtf8 recipient_device{envelope.recipient_device};
+    ar & recipient_device;
   }
 
   const std::string packed = oss.str();

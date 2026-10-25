@@ -155,6 +155,7 @@ TEST(V6SchemaTest, RelayEnvelopeRoundTripPreservesSeqFields) {
   envelope.message_id = "msg-seq";
   envelope.sender_relay_id = "relay:peer";
   envelope.sender_contact_id = "relay:peer";
+  envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = "aGk=";

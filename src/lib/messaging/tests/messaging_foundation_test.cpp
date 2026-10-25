@@ -43,6 +43,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   envelope.message_id = "m1";
   envelope.sender_relay_id = "relay:x";
   envelope.sender_contact_id = "relay:x";
+  envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = *payload_b64;
@@ -137,6 +138,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
   direct.message_id = "m1";
   direct.sender_relay_id = "relay:a";
   direct.sender_contact_id = "account:a";
+  direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
   direct.route.channel = ThreadChannel::E2ePublic;
   direct.body.e2e.payload_b64 = "AQID";
@@ -176,6 +178,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
   direct.message_id = "m1";
   direct.sender_relay_id = "relay:a";
   direct.sender_contact_id = "account:a";
+  direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
   direct.route.channel = ThreadChannel::E2ePublic;
   direct.body.e2e.payload_b64 = "AQID";

@@ -18,6 +18,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <filesystem>
+#include <map>
 #include <gtest/gtest.h>
 #include <memory>
 #include "common/PbrCompat.h"
@@ -45,7 +46,13 @@ struct Device {
     roster = std::make_unique<GroupRosterStore>(store->ProfileDbPath());
     psk = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), tag);
     EXPECT_TRUE(psk->SetDek(TestDek(seed)));
-    pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, keys.Keys(), *roster);
+    pipeline = std::make_unique<RelayReceivePipeline>(
+        *store,
+        [this](const std::string& account) -> std::optional<AccountCard> {
+          auto found = cards.find(account);
+          return found == cards.end() ? std::nullopt : std::optional<AccountCard>(found->second);
+        },
+        *psk, keys.Keys(), *roster);
   }
   ~Device() {
     pipeline.reset();
@@ -65,12 +72,7 @@ struct Device {
     return *thread;
   }
 
-  void Know(const Device& peer) {
-    PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = peer.keys.SigningPublicB64();
-    record.source = "test";
-    signing.Put(ContactIdKindToString(mesh::ContactIdKind::Account), peer.keys.account_id, record);
-  }
+  void Know(const Device& peer) { cards[peer.keys.account_id] = peer.keys.DeviceCard(); }
 
   /** The direct send as MeshDeliveryOrchestrator runs it, minus the transports. */
   Roe<RelayEnvelope> Send(const Thread& thread, const Device& peer, const std::string& text,
@@ -85,25 +87,18 @@ struct Device {
     if (!sealed) {
       return sealed.error();
     }
-    RelayEnvelope envelope = BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id},
-                                                 thread.channel, "relay:" + peer.tag, std::move(*sealed));
-    auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
-    if (!bytes) {
-      return bytes.error();
-    }
-    auto signature = keys.Sign(*bytes);
-    if (!signature) {
-      return signature.error();
-    }
-    envelope.signature = *signature;
+    RelayEnvelope envelope =
+        BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id},
+                            thread.channel, "relay:" + peer.tag, std::move(*sealed));
+    keys.SignEnvelope(envelope);
     return envelope;
   }
 
   std::string tag;
   std::filesystem::path root;
   test::TestAccount keys;
-  PeerSigningKeyStore signing;
-  PeerSigningKeyResolver resolver{signing};
+  /** The peers' cards this device keeps. */
+  std::map<std::string, AccountCard> cards;
   std::unique_ptr<SqliteThreadStore> store;
   std::unique_ptr<GroupRosterStore> roster;
   std::unique_ptr<SqlitePskSessionStore> psk;

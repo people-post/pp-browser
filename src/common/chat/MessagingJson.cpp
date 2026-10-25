@@ -112,8 +112,8 @@ Object BuildE2eBody(const RelayEnvelope& envelope) {
   if (envelope.body.e2e.key_init_b64) {
     e2e_body.set("key_init_b64", *envelope.body.e2e.key_init_b64);
   }
-  if (envelope.body.e2e.sender_keys) {
-    e2e_body.set("sender_keys", KeyCardToJson(*envelope.body.e2e.sender_keys));
+  if (envelope.body.e2e.sender_card) {
+    e2e_body.set("sender_card", *envelope.body.e2e.sender_card);
   }
   return e2e_body;
 }
@@ -339,6 +339,10 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   json.set("message_id", envelope.message_id);
   json.set("sender_relay_id", envelope.sender_relay_id);
   json.set("sender_contact_id", envelope.sender_contact_id);
+  json.set("sender_device", envelope.sender_device);
+  if (!envelope.recipient_device.empty()) {
+    json.set("recipient_device", envelope.recipient_device);
+  }
   json.set("route", BuildRouteObject(envelope));
   json.set("body", body);
   json.setJsonUInt("sender_seq", envelope.sender_seq);
@@ -362,6 +366,10 @@ Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
   json.set("message_id", envelope.message_id);
   json.set("sender_relay_id", envelope.sender_relay_id);
   json.set("sender_contact_id", envelope.sender_contact_id);
+  json.set("sender_device", envelope.sender_device);
+  if (!envelope.recipient_device.empty()) {
+    json.set("recipient_device", envelope.recipient_device);
+  }
   json.set("route", BuildRouteObject(envelope));
   json.set("body", body);
   json.setJsonUInt("sender_seq", envelope.sender_seq);
@@ -403,6 +411,10 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!sender_contact_id) {
     return Error("Missing sender_contact_id");
   }
+  auto sender_device = json.getString("sender_device");
+  if (!sender_device || sender_device->empty()) {
+    return Error("Missing sender_device");
+  }
   const Object* route = json.getObject("route");
   if (!route) {
     return Error("Missing route");
@@ -439,6 +451,8 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   envelope.message_id = *message_id;
   envelope.sender_relay_id = *sender_relay_id;
   envelope.sender_contact_id = *sender_contact_id;
+  envelope.sender_device = *sender_device;
+  envelope.recipient_device = json.getString("recipient_device").value_or("");
   if (auto payload_b64 = e2e->getString("payload_b64")) {
     envelope.body.e2e.payload_b64 = *payload_b64;
   }
@@ -456,15 +470,14 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (auto key_init = e2e->getString("key_init_b64")) {
     envelope.body.e2e.key_init_b64 = *key_init;
   }
-  if (const Object* sender_keys = e2e->getObject("sender_keys")) {
+  if (const Object* sender_card = e2e->getObject("sender_card")) {
     if (!envelope.body.e2e.key_init_b64) {
-      return Error("body.e2e.sender_keys without key_init_b64");
+      return Error("body.e2e.sender_card without key_init_b64");
     }
-    auto keys = KeyCardFromJson(*sender_keys);
-    if (!keys || keys->account_id != envelope.sender_contact_id) {
-      return Error("Invalid body.e2e.sender_keys");
+    if (sender_card->getString("account_id").value_or("") != envelope.sender_contact_id) {
+      return Error("Invalid body.e2e.sender_card");
     }
-    envelope.body.e2e.sender_keys = std::move(keys.value());
+    envelope.body.e2e.sender_card = *sender_card;  // the receiver checks it (VerifyAccountCard)
   }
 
   if (auto kind = route->getString("kind")) {

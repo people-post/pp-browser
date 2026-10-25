@@ -70,15 +70,20 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   params.route_party = peer_relay_id ? *peer_relay_id : peer_identity;
   params.session_epoch = session->epoch;
   params.master_psk = std::move(session->master_psk);
+  auto device = own_keys_.DevicePeerId();
+  if (!device) {
+    return device.error();
+  }
+  params.sender_device = *device;
   if (key_init) {
-    if (auto own = own_keys_.Keys()) {
-      params.sender_keys = std::move(own.value());
+    if (auto own = own_keys_.Card(util::NowUnixMs())) {
+      params.sender_card = AccountCardToJson(*own);
     }
   }
   params.key_init_b64 = std::move(key_init);
   params.order_key = NextOrderKey();
-  auto built = BuildControlLaneEnvelope(params, control,
-                                        [this](const std::vector<uint8_t>& bytes) { return identity_.SignBytes(bytes); });
+  auto built = BuildControlLaneEnvelope(
+      params, control, [this](const std::vector<uint8_t>& bytes) { return identity_.SignDeviceBytes(bytes); });
   if (!built) {
     return built.error();
   }

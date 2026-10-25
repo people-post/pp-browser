@@ -15,6 +15,7 @@ RelayEnvelope MakeE2eVectorEnvelope() {
   envelope.message_id = "660e8400-e29b-41d4-a716-446655440001";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 =
@@ -60,8 +61,8 @@ TEST(EnvelopeSignerTest, SignAndVerifyRoundTrip) {
   EXPECT_TRUE(*verified);
 }
 
-// v2: everything that decides something on receipt is signed — the decrypted blob, the group,
-// the AutoKey key_init and the sender's relay id.
+// Everything that decides something on receipt is signed — the decrypted blob, the group, the AutoKey
+// key_init, the sender's relay id (v2) and the sending and recipient devices (v3).
 TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   const RelayEnvelope base = MakeE2eVectorEnvelope();
   auto base_bytes = EnvelopeSigner::BuildSignBytes(base);
@@ -79,6 +80,12 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   changed = base;
   changed.sender_relay_id = "relay:other";
   EXPECT_TRUE(differs(changed)) << "sender_relay_id";
+  changed = base;
+  changed.sender_device = "QmOtherDevice";
+  EXPECT_TRUE(differs(changed)) << "the sending device (v3, M021)";
+  changed = base;
+  changed.recipient_device = "QmSomeDevice";
+  EXPECT_TRUE(differs(changed)) << "the device the copy is for (v3)";
 
   RelayEnvelope group = base;
   group.route.kind = kRelayRouteGroup;

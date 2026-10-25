@@ -357,6 +357,21 @@ class Lab:
             raise ProbeError("%s: no account after register" % u.name)
         return u
 
+    def linked_device(self, of, name):
+        """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
+        Security → Copy link payload), then starts on it — the same account, a device of its own."""
+        bundle = of.cmd("link_export")["bundle"]
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
+        self.users.append(u)
+        u.start()
+        u.wait_ready()
+        u.cmd("link_import", bundle=bundle, pin=PIN, timeout=60)
+        u.restart()
+        u.account = u.cmd("whoami")["account"]
+        if u.account != of.account:
+            raise ProbeError("%s: linked as %s, not %s" % (u.name, u.account, of.account))
+        return u
+
     def close(self, ok):
         for u in self.users:
             try:
@@ -1491,6 +1506,31 @@ def scenario_restored_device_is_heard(lab):
     wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer after the restore")
 
 
+def scenario_linked_devices_both_send(lab):
+    """Alice's phone and her newly linked laptop are two devices of one account (M021). The laptop's first
+    message brings Bob its device list; from then on Bob's answers reach both devices, and both keep writing
+    — each in its own device pair, so neither's message is taken for the other's."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    first = a.cmd("send", thread=a_thread, text="hi from the phone")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, first), 30, "bob: the phone's first message")
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "phone: bob's answer")
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    from_laptop = laptop.cmd("send", thread=l_thread, text="hi from the laptop")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, from_laptop), 30, "bob: the laptop's first message")
+    both = b.cmd("send", thread=b_thread, text="hello both")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, both), 30, "phone: bob's answer to both")
+    wait_for(lambda: transcript_row(laptop, l_thread, both), 30, "laptop: bob's answer to both")
+    sent = []
+    for i in range(3):
+        sent.append(("phone %d" % i, a.cmd("send", thread=a_thread, text="phone %d" % i)["message_id"]))
+        sent.append(("laptop %d" % i, laptop.cmd("send", thread=l_thread, text="laptop %d" % i)["message_id"]))
+    for what, m in sent:
+        wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: %s" % what)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -1851,6 +1891,7 @@ SCENARIOS = [
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
+    ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),

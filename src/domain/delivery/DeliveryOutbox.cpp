@@ -41,7 +41,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     // cannot carry the envelope either.
     auto finish_relay = [this, request](std::optional<DirectSendFailure> direct) {
       DeliveryOutcome outcome{.thread_id = request.thread_id, .message_id = request.message_id,
-                              .group_member = request.group_member};
+                              .group_member = request.group_member, .copy_device = request.copy_device};
       outcome.relay_after_direct = direct.has_value();
       if (!request.relay_route) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::NoAddress;
@@ -60,8 +60,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
                       << " err=" << sent.error().message << " (queued for retry)";
         Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
-                        .thread_id = request.thread_id, .attempt_count = 1,
-                        .amp_peer_key = request.amp_peer_key, .group_member = request.group_member});
+                        .thread_id = request.thread_id, .attempt_count = 1, .amp_peer_key = request.amp_peer_key,
+                        .group_member = request.group_member, .copy_device = request.copy_device});
         outcome.failure = SendFailureFromRelay(sent.error());
         outcome.detail = sent.error().message;
         Report(std::move(outcome));
@@ -88,7 +88,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
           post_continue([this, request, direct = std::move(direct), finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
               Report(DeliveryOutcome{.thread_id = request.thread_id, .message_id = request.message_id, .ok = true,
-                                     .transport = MessageTransport::Direct, .group_member = request.group_member});
+                                     .transport = MessageTransport::Direct, .group_member = request.group_member,
+                                     .copy_device = request.copy_device});
               return;
             }
             log().info << "direct send failed message_id=" << request.message_id << " peer=" << request.amp_peer_key
@@ -156,14 +157,14 @@ void DeliveryOutbox::Retry() {
         if (result) {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
                                  .transport = MessageTransport::Relay, .relay_after_direct = tried_direct,
-                                 .group_member = item.group_member});
+                                 .group_member = item.group_member, .copy_device = item.copy_device});
         } else if (OutboxRetryAgain(item.attempt_count)) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
         } else {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id,
                                  .failure = SendFailureFromRelay(result.error()), .detail = result.error().message,
-                                 .group_member = item.group_member});
+                                 .group_member = item.group_member, .copy_device = item.copy_device});
         }
         (*process)(index + 1);
       };
@@ -179,7 +180,8 @@ void DeliveryOutbox::Retry() {
                                             direct = std::move(direct)]() mutable {
                 if (direct) {
                   Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
-                                         .transport = MessageTransport::Direct, .group_member = item.group_member});
+                                         .transport = MessageTransport::Direct, .group_member = item.group_member,
+                                         .copy_device = item.copy_device});
                   (*process)(index + 1);
                   return;
                 }

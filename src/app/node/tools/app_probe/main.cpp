@@ -32,6 +32,9 @@
 //   backup_sessions                     what the account backup keeps of the chats: the public sessions
 //   restore_sessions {bundle}           put them back as a backup restore does (each pair marked to
 //                                       start its next epoch)
+//   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
+//   link_import {bundle, pin}           a new device takes it (then restart): another device of the
+//                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
 //                                       per-stream rx frames)
 //   quit                                quit the app (orderly shutdown)
@@ -344,6 +347,24 @@ public:
       const std::string nickname = request->getString("nickname").value_or("");
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal, [this, nickname]() { return facade_->RegisterIdentity(nickname); },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "link_export") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+          WorkerLane::Normal, [this]() { return facade_->ExportLinkDevice(); },
+          [id](Roe<std::string> bundle) {
+            if (!bundle) {
+              ReplyError(id, bundle.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("bundle", *bundle);
+            Emit(out);
+          });
+    } else if (cmd == "link_import") {
+      const std::string bundle = request->getString("bundle").value_or("");
+      const std::string pin = request->getString("pin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal, [this, bundle, pin]() { return facade_->ImportLinkDevice(bundle, pin); },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "open_chat") {
       OpenChat(id, request->getString("account").value_or(""));

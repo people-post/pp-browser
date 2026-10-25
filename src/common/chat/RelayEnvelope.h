@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/directory/KeyCard.h"
+#include "common/Value.h"
 #include "common/thread/ThreadChannel.h"
 
 #include <cstdint>
@@ -8,10 +8,12 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
-inline constexpr int kRelayEnvelopeVersion = 1;
+/** 2: the sender and recipient devices, signed by the sending device (M021; sign v3). */
+inline constexpr int kRelayEnvelopeVersion = 2;
 
 /** Route kinds: a 1:1 chat stream, a group stream, the control lane (signaling off the stream). */
 inline constexpr const char* kRelayRouteDirect = "direct";
@@ -32,10 +34,11 @@ struct RelayE2eBody {
   std::string payload_b64;
   std::optional<std::string> key_init_b64;
   /**
-   * The sender's key card, with a key_init only (docs/contracts/ACCOUNT_CARD.md): lets the receiver verify
-   * the envelope and answer with no lookup. Signed by the account it names, not by the envelope signature.
+   * The sender's account card (JSON; docs/contracts/ACCOUNT_CARD.md), with a key_init only: the account's
+   * device list, which lists the sending device — the receiver verifies the envelope and answers every
+   * device with no lookup. Signed by the account it names, not by the envelope signature.
    */
-  std::optional<KeyCard> sender_keys;
+  std::optional<Object> sender_card;
   /** D095 — one AEAD blob per group member (recipient identity → base64). */
   std::optional<std::map<std::string, std::string>> member_payloads;
 };
@@ -49,6 +52,13 @@ struct RelayEnvelope {
   std::string message_id;
   std::string sender_relay_id;
   std::string sender_contact_id;
+  /** The sending device's PeerId (M021): its key signs the envelope; numbering is per sending device. */
+  std::string sender_device;
+  /**
+   * The device this copy is for (M021): a copy in that device pair's session. Empty: an account copy, in
+   * the account-level session, for every device of the account (a first contact, the control lane).
+   */
+  std::string recipient_device;
   RelayRoute route;
   RelayMessageBody body;
   uint64_t sender_seq = 0;

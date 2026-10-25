@@ -49,6 +49,11 @@ public:
    * that device yet, ask the device for it (once in a while per device).
    */
   void NoteDevice(const std::string& account_id, const std::string& peer_id);
+  /**
+   * Tell this account's other devices our card (M021): ask each for its card, ours riding the ask — each
+   * takes the other's (OwnCards::Learn). Siblings not reached are tried again a few times.
+   */
+  void TellSiblings();
   /** The PeerIds of `account_id`'s devices this device knows (kept cards). */
   std::vector<std::string> DevicesOf(const std::string& account_id);
   /** What is kept for `account_id` (no lookup). */
@@ -67,6 +72,8 @@ private:
   void FetchOver(std::vector<std::string> link_keys, const std::string& peer_id, const std::string& account_id,
                  std::function<void(Outcome, Roe<PeerCardRecord>)> on_done);
   AccountCardReply Answer(const AccountCardRequest& request, const std::string& remote_peer_id);
+  /** One sibling, `attempt` of kMaxTries. */
+  void TellSibling(const std::string& account_id, const std::string& peer_id, int attempt);
   /** A contact's device rows follow its account's card (so dials to them pass the address audience). */
   void AddDevicesToContact(const PeerCardRecord& record);
 

@@ -78,7 +78,8 @@ Roe<std::optional<AccountCard>> OwnCards::NewestLocked() {
 }
 
 Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, const std::vector<AccountCardDevice>& also,
-                                       const std::string& nickname, const int64_t now_ms) {
+                                       const std::string& nickname, const int64_t now_ms, bool& issued) {
+  issued = false;
   auto keys = Keys();
   if (!keys) {
     return keys.error();
@@ -124,6 +125,7 @@ Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, c
   if (auto kept = cards_.AddAccountCard(*signed_card, std::max(now_ms, issued_at), "self"); !kept) {
     return kept.error();
   }
+  issued = true;
   return signed_card;
 }
 
@@ -132,12 +134,19 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
   if (!identity) {
     return identity.error();
   }
-  std::lock_guard lock(mutex_);
-  auto newest = NewestLocked();
-  if (!newest) {
-    return newest.error();
+  bool issued = false;
+  Roe<AccountCard> card = [&]() -> Roe<AccountCard> {
+    std::lock_guard lock(mutex_);
+    auto newest = NewestLocked();
+    if (!newest) {
+      return newest.error();
+    }
+    return IssueLocked(*newest, {}, identity->nickname, now_ms, issued);
+  }();
+  if (card && issued && on_changed_) {
+    on_changed_(*card);
   }
-  return IssueLocked(*newest, {}, identity->nickname, now_ms);
+  return card;
 }
 
 Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) {
@@ -151,32 +160,42 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
   if (auto checked = VerifyAccountCard(card, now_ms); !checked) {
     return checked.error();
   }
-  std::lock_guard lock(mutex_);
-  auto newest = NewestLocked();
-  if (!newest) {
-    return newest.error();
+  bool issued = false;
+  std::optional<AccountCard> ours;
+  Roe<AccountCard> result = [&]() -> Roe<AccountCard> {
+    std::lock_guard lock(mutex_);
+    auto newest = NewestLocked();
+    if (!newest) {
+      return newest.error();
+    }
+    ours = *newest;
+    if (auto kept = cards_.AddAccountCard(card, now_ms, "sibling"); !kept) {
+      return kept.error();
+    }
+    auto now_newest = NewestLocked();
+    if (!now_newest) {
+      return now_newest.error();
+    }
+    // Whichever is newer is the base; the other one's devices are kept too (see the header).
+    const std::vector<AccountCardDevice> other =
+        ours && *now_newest && now_newest->value() == card ? ours->devices : card.devices;
+    const std::string nickname = *now_newest ? (*now_newest)->nickname : identity->nickname;
+    return IssueLocked(*now_newest, other, nickname, now_ms, issued);
+  }();
+  if (!result) {
+    return result;
   }
-  const std::optional<AccountCard> ours = *newest;
-  if (auto kept = cards_.AddAccountCard(card, now_ms, "sibling"); !kept) {
-    return kept.error();
-  }
-  auto now_newest = NewestLocked();
-  if (!now_newest) {
-    return now_newest.error();
-  }
-  // Whichever is newer is the base; the other one's devices are kept too (see the header).
-  const std::vector<AccountCardDevice> other =
-      ours && *now_newest && now_newest->value() == card ? ours->devices : card.devices;
-  const std::string nickname = *now_newest ? (*now_newest)->nickname : identity->nickname;
-  auto issued = IssueLocked(*now_newest, other, nickname, now_ms);
-  if (issued && identity->nickname != issued->nickname) {
+  if (identity->nickname != result->nickname) {
     LocalIdentity renamed = *identity;
-    renamed.nickname = issued->nickname;
+    renamed.nickname = result->nickname;
     if (auto updated = identity_.Update(renamed); !updated) {
       return updated.error();
     }
   }
-  return issued;
+  if ((issued || !ours || !(*ours == *result)) && on_changed_) {
+    on_changed_(*result);
+  }
+  return result;
 }
 
 } // namespace pbr

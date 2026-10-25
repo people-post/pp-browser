@@ -4,6 +4,7 @@
 // messaging does not include), made here from foundation crypto.
 
 #include "lib/messaging/AccountCard.h"
+#include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "crypto/PeerId.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -93,6 +94,8 @@ struct TestAccount {
   ByteVector kem_private;
   /** The device's own key (its mesh peer id derives from it), apart from the account's. */
   ByteVector device_public;
+  /** The account's one device (M021): its key signs what the account sends, its KEM opens its device pairs. */
+  TestDevice device;
 
   static TestAccount Make() {
     TestAccount a;
@@ -105,9 +108,8 @@ struct TestAccount {
     EXPECT_TRUE(static_cast<bool>(kem));
     a.kem_public = kem->public_key;
     a.kem_private = kem->private_key;
-    auto device = MlDsa::GenerateKeyPair();
-    EXPECT_TRUE(static_cast<bool>(device));
-    a.device_public = device->public_key;
+    a.device = TestDevice::Make();
+    a.device_public = a.device.signing_public;
     return a;
   }
 
@@ -137,11 +139,40 @@ struct TestAccount {
     return Base64Encode(*signature);
   }
 
-  /** The receive pipeline's view of this account as the local one. */
+  /** The account's card listing its device (as a key_init carries it, as a peer keeps it). */
+  AccountCard DeviceCard(const int64_t issued_at = 1) const {
+    AccountCard card{.keys = Card(), .nickname = "test", .devices = {device.Entry()}, .issued_at = issued_at};
+    return SignAccountCard(card, [this](const ByteVector& bytes) { return Sign(bytes); }).value();
+  }
+
+  /** Signs `envelope` as this account's device sends it (naming the device). */
+  void SignEnvelope(RelayEnvelope& envelope) const {
+    envelope.sender_device = device.peer_id;
+    envelope.signature = device.Sign(EnvelopeSigner::BuildSignBytes(envelope).value()).value();
+  }
+
+  /** The receive pipeline's view of this account (and its device) as the local one. */
   LocalKeys Keys() const {
     return LocalKeys{[id = account_id]() -> Roe<std::string> { return id; },
-                     [kem = kem_private]() -> Roe<ByteVector> { return kem; }};
+                     [kem = kem_private]() -> Roe<ByteVector> { return kem; },
+                     [peer_id = device.peer_id]() -> Roe<std::string> { return peer_id; },
+                     [kem = device.kem_private]() -> Roe<ByteVector> { return kem; }};
   }
 };
+
+/** A receiver's kept cards: `accounts`' device cards (AccountCardLookup). */
+inline AccountCardLookup CardsOf(std::vector<const TestAccount*> accounts) {
+  std::map<std::string, AccountCard> cards;
+  for (const TestAccount* account : accounts) {
+    cards.emplace(account->account_id, account->DeviceCard());
+  }
+  return [cards = std::move(cards)](const std::string& account_id) -> std::optional<AccountCard> {
+    auto found = cards.find(account_id);
+    if (found == cards.end()) {
+      return std::nullopt;
+    }
+    return found->second;
+  };
+}
 
 } // namespace pbr::test

@@ -31,6 +31,11 @@ struct DeliveryRequest {
   bool critical_lane = false;
   /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
   std::string group_member;
+  /**
+   * One of a 1:1 message's copies, for this device of the peer (M021): the row is delivered once any copy
+   * is, and failed only while none is.
+   */
+  std::string copy_device;
 };
 
 /** How a request (or its retry) ended. Reported on a worker thread, in send order per request. */
@@ -45,6 +50,7 @@ struct DeliveryOutcome {
   std::string detail;
   /** As the request's. */
   std::string group_member;
+  std::string copy_device;
 };
 
 /**
@@ -82,6 +88,7 @@ private:
     /** The request's Amp dial key (empty: the envelope's recipient) and group member. */
     std::string amp_peer_key;
     std::string group_member;
+    std::string copy_device;
   };
 
   void Report(DeliveryOutcome outcome);

@@ -78,8 +78,13 @@ struct PartyHarness {
       : data_dir(std::filesystem::temp_directory_path() /
                  ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
         store(data_dir.string()), keys(test::TestAccount::Make()), roster(store.ProfileDbPath()),
-        psk_store(store.ProfileDbPath(), "test"), key_resolver(key_store), gate(contacts.Standing(), roster),
-        pipeline(store, key_resolver, psk_store,
+        psk_store(store.ProfileDbPath(), "test"), peer(test::TestAccount::Make()), gate(contacts.Standing(), roster),
+        pipeline(store,
+                 [this, peer_account](const std::string& account) -> std::optional<AccountCard> {
+                   // The peer's device as its kept card lists it (filed under the fixture's readable id).
+                   return account == peer_account ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
+                 },
+                 psk_store,
                  LocalKeys{[local_account]() -> Roe<std::string> { return local_account; },
                            [kem = keys.kem_private]() -> Roe<ByteVector> { return kem; }},
                  roster, &gate),
@@ -91,15 +96,6 @@ struct PartyHarness {
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = MlDsa::GenerateKeyPair();
-    if (!generated) {
-      throw std::runtime_error("Failed to generate peer keys");
-    }
-    peer_keys = *generated;
-    PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
-    record.source = "test";
-    key_store.PutUncheckedForTest("account", peer_account, record);
 
     contacts.known.insert(peer_account); // a friendly contact
     gate.SetInboundPolicy(GroupInvitePolicy::ContactsOnly);
@@ -173,16 +169,7 @@ struct PartyHarness {
     }
     envelope.body.e2e.payload_b64 = *payload;
 
-    auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-    if (!sign_bytes) {
-      throw std::runtime_error("Failed to build sign bytes");
-    }
-    auto signature =
-        MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
-    if (!signature) {
-      throw std::runtime_error("Failed to sign envelope");
-    }
-    envelope.signature = Base64Encode(*signature);
+    peer.SignEnvelope(envelope);
     return envelope;
   }
 
@@ -192,11 +179,10 @@ struct PartyHarness {
   FakeContacts contacts;
   GroupRosterStore roster;
   SqlitePskSessionStore psk_store;
-  PeerSigningKeyStore key_store;
-  PeerSigningKeyResolver key_resolver;
+  /** The peer: its device signs what it sends. */
+  test::TestAccount peer;
   GroupInviteGate gate;
   RelayReceivePipeline pipeline;
-  MlDsaKeyPair peer_keys;
   Thread dm_thread;
   std::string local_account;
   std::string peer_account;
@@ -394,7 +380,9 @@ TEST(GroupInviteIngestTest, InboundAcceptOnPublicClearsCompromisedLatch) {
   compromised.loaded_min_seq = 1;
   compromised.loaded_max_seq = 5;
   compromised.phase = PeerSyncPhase::Compromised;
-  ASSERT_TRUE(owner.store.SetPeerSyncState(owner.dm_thread.id, 1, compromised));
+  // The state of what Bob's device numbered in its account copies (M021: per sending device on a public chat).
+  ASSERT_TRUE(
+      owner.store.SetPeerSyncState(owner.dm_thread.id, 1, compromised, owner.peer.device.peer_id + "@account"));
 
   auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-accept-public", "group:hike");
   ASSERT_TRUE(detail);
@@ -406,7 +394,7 @@ TEST(GroupInviteIngestTest, InboundAcceptOnPublicClearsCompromisedLatch) {
   ASSERT_TRUE(outcome.publish_member_joined_group_id);
   EXPECT_EQ(*outcome.publish_member_joined_member_identity, "account:bob");
 
-  auto sync = owner.store.GetPeerSyncState(owner.dm_thread.id, 1);
+  auto sync = owner.store.GetPeerSyncState(owner.dm_thread.id, 1, owner.peer.device.peer_id + "@account");
   ASSERT_TRUE(sync);
   EXPECT_NE(sync->phase, PeerSyncPhase::Compromised);
   EXPECT_EQ(sync->contiguous_peer_seq, 6u);

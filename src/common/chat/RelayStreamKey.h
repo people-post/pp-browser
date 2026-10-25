@@ -17,5 +17,10 @@ std::string BuildControlRelayStreamKey(const std::string& contact_id_a, const st
  * seq, so copies of one message to different members must not share a stream.
  */
 std::string BuildGroupRelayStreamKey(const std::string& group_id, uint32_t session_epoch, const std::string& member);
+/**
+ * A stream between two devices (M021): `stream_key` narrowed to the device pair, since the relay keeps one
+ * row per sender, stream and seq, and every device pair numbers on its own.
+ */
+std::string WithDevicePair(const std::string& stream_key, const std::string& device_a, const std::string& device_b);
 
 } // namespace pbr
