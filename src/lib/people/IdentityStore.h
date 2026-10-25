@@ -49,6 +49,8 @@ public:
   /** Account ML-KEM-768 secret (M015). Mints only if identity has no valid KEM yet. */
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
+  /** This device's own ML-KEM-768 secret (M021): opens the sessions peers start with this device. */
+  Roe<ByteVector> GetDeviceKemPrivateKey() const;
   Roe<std::string> GetAccountId() const override;
   void Flush();
 

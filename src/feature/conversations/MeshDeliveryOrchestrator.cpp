@@ -98,7 +98,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       account_keys_(account_keys), psk_store_(psk_store), group_roster_(group_roster),
       transports_(store, identity, account_keys.Signing(), psk_store), outbox_([this]() { return transports_.DirectChat(); }),
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
-      session_keys_(psk_store, account_keys.Kem()), own_cards_(identity),
+      session_keys_(psk_store, account_keys.Kem()), own_cards_(identity, account_keys),
       card_service_(identity, own_cards_, account_keys, contacts),
       control_lane_(identity, own_cards_, contacts, routes_, session_keys_, transports_, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");

@@ -26,6 +26,12 @@ struct LocalIdentity {
   std::string kem_public_key_b64;
   /** Account ML-KEM-768 private key (base64). Copied on link-device; not the device key. */
   std::string kem_private_key_b64;
+  /**
+   * This device's own ML-KEM-768 key pair (base64; M021): peers open sessions with this device under it.
+   * Never leaves the device (not in a link bundle or a backup); minted on first load.
+   */
+  std::string device_kem_public_key_b64;
+  std::string device_kem_private_key_b64;
   std::string nickname;
   /** Device endpoint: mesh PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;

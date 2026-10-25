@@ -44,9 +44,7 @@ AccountCardReply AccountCardService::Answer(const AccountCardRequest& request, c
   }
   CardServeContext context;
   context.own_account_id = identity->account_id;
-  context.own_card = [this, account = identity->account_id]() {
-    return own_.Card(DevicesOf(account), util::NowUnixMs());
-  };
+  context.own_card = [this]() { return own_.Card(util::NowUnixMs()); };
   context.own_keys = [this]() { return own_.Keys(); };
   context.authenticate = [this](const AccountCardRequest& asked, const std::string& remote) -> Roe<void> {
     if (auto verified = PeerRequestAuth::Verify(asked, remote, util::NowUnixMs(), keys_.KeptSigning()); !verified) {

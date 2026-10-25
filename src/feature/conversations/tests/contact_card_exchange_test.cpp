@@ -39,7 +39,7 @@ protected:
     std::filesystem::remove_all(dir_);
   }
 
-  AccountCard SignedCard(const test::TestAccount& account, std::vector<std::string> devices) {
+  AccountCard SignedCard(const test::TestAccount& account, std::vector<AccountCardDevice> devices) {
     AccountCard card{.keys = account.Card(), .nickname = "bob", .devices = std::move(devices), .issued_at = kNow};
     return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
   }
@@ -61,13 +61,13 @@ protected:
 };
 
 TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysDevicesAndRoute) {
-  const AccountCard card = SignedCard(bob_, {"QmBobPhone"});
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
   ASSERT_TRUE(contact) << contact.error().message;
   EXPECT_EQ(contact->local.display_name, "Bob from work");
   EXPECT_EQ(contact->remote.nickname, "bob");
   ASSERT_EQ(contact->remote.endpoints.size(), 1u);
-  EXPECT_EQ(contact->remote.endpoints[0].peer_id, "QmBobPhone");
+  EXPECT_EQ(contact->remote.endpoints[0].peer_id, test::PeerIdOf("QmBobPhone"));
   const auto has = [&](mesh::ContactIdKind kind, const std::string& value) {
     for (const auto& id : contact->remote.ids) {
       if (id.kind == kind && id.value == value) {
@@ -84,11 +84,11 @@ TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysDevicesAndRoute) {
 }
 
 TEST_F(ContactCardExchangeTest, AForgedCardAddsNobody) {
-  AccountCard card = SignedCard(mallory_, {"QmMallory"});
+  AccountCard card = SignedCard(mallory_, test::Devices({"QmMallory"}));
   card.keys.account_id = bob_.account_id;  // Mallory's keys presented as Bob's
   EXPECT_FALSE(exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow));
-  AccountCard tampered = SignedCard(bob_, {"QmBobPhone"});
-  tampered.devices.push_back("QmMallory");
+  AccountCard tampered = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  tampered.devices.push_back(test::NamedDevice("QmMallory").Entry());
   EXPECT_FALSE(exchange_->Add(Shared(DumpJson(AccountCardToJson(tampered))), kNow));
   EXPECT_FALSE(contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account).value().has_value());
 }
@@ -103,7 +103,7 @@ TEST_F(ContactCardExchangeTest, ASharersRelayHintDoesNotRerouteAKnownContact) {
 }
 
 TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard) {
-  const AccountCard card = SignedCard(bob_, {"QmBobPhone"});
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
   ASSERT_TRUE(contact);
   auto shared = exchange_->CardFor(contact->id);
@@ -116,7 +116,7 @@ TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard)
 }
 
 TEST_F(ContactCardExchangeTest, AnInviteAddsThePersonAndFetchesTheirCardFromAListedDevice) {
-  const AccountCard card = SignedCard(bob_, {"QmBobLaptop"});
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobLaptop"}));
   std::vector<std::string> asked;
   exchange_->SetCardFetcher([&](const std::string& peer_id, const std::string& account_id,
                                 std::function<void(Roe<PeerCardRecord>)> done) {

@@ -154,6 +154,8 @@ public:
   std::optional<std::string> RelayRouteOf(const std::string& account_id) const;
   /** Account cards between devices (the card exchange over Amp). */
   AccountCardService& AccountCards() { return card_service_; }
+  /** This account's own key card and device list (M021). */
+  OwnCards& OwnAccountCards() { return own_cards_; }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},

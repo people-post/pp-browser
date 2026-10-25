@@ -2796,6 +2796,54 @@ ContactCardExchange& ConversationsHub::ContactCards() {
   return *contact_cards_;
 }
 
+std::optional<std::string> ConversationsHub::OwnAccountCardJson() {
+  if (!mesh_messaging_) {
+    return std::nullopt;
+  }
+  auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs());
+  if (!card) {
+    log().warning << "own account card unavailable: " << card.error().message;
+    return std::nullopt;
+  }
+  return DumpJson(AccountCardToJson(*card));
+}
+
+Roe<void> ConversationsHub::LearnLinkedAccountCard(const std::string& card_json) {
+  auto learned = KeepLinkedAccountCard(card_json);
+  if (!learned) {
+    log().warning << "link import: account card not kept: " << learned.error().message;
+  }
+  return learned;
+}
+
+Roe<void> ConversationsHub::KeepLinkedAccountCard(const std::string& card_json) {
+  auto json = TryParseObject(card_json);
+  if (!json) {
+    return Error("link bundle: account card is not JSON");
+  }
+  auto card = AccountCardFromJson(*json);
+  if (!card) {
+    return card.error();
+  }
+  const int64_t now = util::NowUnixMs();
+  if (mesh_messaging_) {
+    auto learned = mesh_messaging_->OwnAccountCards().Learn(*card, now);
+    if (!learned) {
+      return learned.error();
+    }
+    return {};
+  }
+  if (!account_keys_) {
+    return Error("Messaging is not ready");
+  }
+  // Kept now; this device signs itself into it once its own card is first asked for (OwnCards::Card).
+  auto kept = account_keys_->AddAccountCard(*card, now, "sibling");
+  if (!kept) {
+    return kept.error();
+  }
+  return {};
+}
+
 Roe<std::string> ConversationsHub::OwnContactLocator() {
   auto identity = Identity().Get();
   if (!identity || identity->account_id.empty()) {

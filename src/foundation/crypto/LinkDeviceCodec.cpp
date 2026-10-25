@@ -129,6 +129,9 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
     psks.push_back(ObjectValue(std::move(item)));
   }
   json.set("public_psks", ArrayValue(std::move(psks)));
+  if (bundle.account_card_json) {
+    json.set("account_card_json", *bundle.account_card_json);
+  }
   const std::string serialized = DumpJson(json);
   if (serialized.size() > kMaxLinkDeviceBundleBytes) {
     return Error("Serialized link-device bundle exceeds size limit");
@@ -191,6 +194,8 @@ Roe<LinkDeviceBundleV1> LinkDeviceCodec::Parse(const std::string& json) {
       bundle.public_psks.push_back(std::move(row));
     }
   }
+
+  bundle.account_card_json = parsed->getString("account_card_json");
 
   if (auto valid = Validate(bundle); !valid) {
     return valid.error();

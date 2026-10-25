@@ -14,7 +14,7 @@ namespace {
 
 constexpr int64_t kNow = 1'761'235'200'000;
 
-AccountCard SignedCard(const test::TestAccount& account, std::vector<std::string> devices) {
+AccountCard SignedCard(const test::TestAccount& account, std::vector<AccountCardDevice> devices) {
   AccountCard card{.keys = account.Card(), .nickname = "me", .devices = std::move(devices), .issued_at = kNow};
   return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
 }
@@ -23,7 +23,7 @@ class AccountCardPolicyTest : public ::testing::Test {
 protected:
   void SetUp() override {
     context_.own_account_id = me_.account_id;
-    context_.own_card = [this]() -> Roe<AccountCard> { return SignedCard(me_, {"QmMe"}); };
+    context_.own_card = [this]() -> Roe<AccountCard> { return SignedCard(me_, test::Devices({"QmMe"})); };
     context_.own_keys = [this]() -> Roe<KeyCard> { return me_.Card(); };
     context_.authenticate = [this](const AccountCardRequest&, const std::string&) -> Roe<void> {
       return authenticated_ ? Roe<void>() : Roe<void>(Error("Request not authorized"));
@@ -72,14 +72,16 @@ TEST_F(AccountCardPolicyTest, WithAudienceEveryoneAnAnonymousAskerGetsTheKeysBut
 }
 
 TEST_F(AccountCardPolicyTest, AReplyCountsOnlyForTheAccountAskedAndADeviceItLists) {
-  const AccountCardReply reply{.card = SignedCard(me_, {"QmMe"})};
-  EXPECT_TRUE(AcceptCardReply(reply, me_.account_id, "QmMe", kNow));
-  EXPECT_FALSE(AcceptCardReply(reply, asker_.account_id, "QmMe", kNow)) << "another account's card";
-  EXPECT_FALSE(AcceptCardReply(reply, me_.account_id, "QmElse", kNow)) << "the answering device is not on it";
+  const AccountCardReply reply{.card = SignedCard(me_, test::Devices({"QmMe"}))};
+  const std::string me = test::PeerIdOf("QmMe");
+  const std::string other = test::PeerIdOf("QmElse");
+  EXPECT_TRUE(AcceptCardReply(reply, me_.account_id, me, kNow));
+  EXPECT_FALSE(AcceptCardReply(reply, asker_.account_id, me, kNow)) << "another account's card";
+  EXPECT_FALSE(AcceptCardReply(reply, me_.account_id, other, kNow)) << "the answering device is not on it";
   AccountCardReply tampered = reply;
-  tampered.card->devices.push_back("QmElse");
-  EXPECT_FALSE(AcceptCardReply(tampered, me_.account_id, "QmElse", kNow));
-  EXPECT_FALSE(AcceptCardReply(AccountCardReply{.error = "not_available"}, me_.account_id, "QmMe", kNow));
+  tampered.card->devices.push_back(test::NamedDevice("QmElse").Entry());
+  EXPECT_FALSE(AcceptCardReply(tampered, me_.account_id, other, kNow));
+  EXPECT_FALSE(AcceptCardReply(AccountCardReply{.error = "not_available"}, me_.account_id, me, kNow));
 }
 
 TEST(AccountCardRequestAuthTest, TheRequestersOwnKeyCardStandsInForALookup) {

@@ -68,29 +68,15 @@ PeerCardRecord MergeKeyCard(std::optional<PeerCardRecord> known, const KeyCard& 
 PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card,
                                 const std::string& source) {
   PeerCardRecord merged = known.value_or(PeerCardRecord{});
-  const bool newest = !known || card.issued_at >= known->issued_at;
-  std::vector<std::string> devices;
-  const auto add = [&devices](const std::vector<std::string>& from) {
-    for (const std::string& peer_id : from) {
-      if (devices.size() < kMaxAccountCardDevices &&
-          std::find(devices.begin(), devices.end(), peer_id) == devices.end()) {
-        devices.push_back(peer_id);
-      }
-    }
-  };
-  if (newest) {
-    add(card.devices);
-    add(merged.devices);
-    merged.keys = card.keys;
-    merged.nickname = card.nickname;
-    merged.issued_at = card.issued_at;
-    merged.source = source;
-    merged.newest_card = card;
-  } else {
-    add(merged.devices);
-    add(card.devices);
+  if (known && card.issued_at < known->issued_at) {
+    return merged;
   }
-  merged.devices = std::move(devices);
+  merged.keys = card.keys;
+  merged.nickname = card.nickname;
+  merged.issued_at = card.issued_at;
+  merged.devices = CardDevicePeerIds(card);
+  merged.source = source;
+  merged.newest_card = card;
   return merged;
 }
 

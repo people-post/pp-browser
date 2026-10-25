@@ -16,7 +16,7 @@ Roe<KeyCard> OwnCards::Keys() {
       identity->kem_public_key_b64.empty()) {
     return Error("account keys not set");
   }
-  std::lock_guard lock(mutex_);
+  std::lock_guard lock(keys_mutex_);
   if (keys_ && keys_->account_id == identity->account_id &&
       keys_->signing_public_key_b64 == identity->account_signing_public_key_b64 &&
       keys_->kem_public_key_b64 == identity->kem_public_key_b64) {
@@ -45,37 +45,138 @@ Roe<std::string> OwnCards::DevicePeerId() {
   return PeerRequestAuth::DevicePeerId(identity->public_key_b64);
 }
 
-Roe<AccountCard> OwnCards::Card(const std::vector<std::string>& siblings, const int64_t now_ms) {
-  auto keys = Keys();
-  if (!keys) {
-    return keys.error();
-  }
-  auto self = DevicePeerId();
-  if (!self) {
-    return self.error();
-  }
+Roe<AccountCardDevice> OwnCards::Self() {
   auto identity = identity_.Get();
   if (!identity) {
     return identity.error();
   }
-  std::vector<std::string> devices{*self};
-  for (const std::string& peer_id : siblings) {
-    if (devices.size() < kMaxAccountCardDevices && std::find(devices.begin(), devices.end(), peer_id) == devices.end()) {
-      devices.push_back(peer_id);
+  auto peer_id = PeerRequestAuth::DevicePeerId(identity->public_key_b64);
+  if (!peer_id) {
+    return peer_id.error();
+  }
+  if (identity->device_kem_public_key_b64.empty()) {
+    return Error("device KEM key not set");
+  }
+  return AccountCardDevice{.peer_id = *peer_id,
+                           .signing_public_key_b64 = identity->public_key_b64,
+                           .kem_public_key_b64 = identity->device_kem_public_key_b64};
+}
+
+Roe<std::optional<AccountCard>> OwnCards::NewestLocked() {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  auto kept = cards_.Kept(identity->account_id);
+  if (!kept) {
+    return kept.error();
+  }
+  if (!kept->has_value() || !(*kept)->newest_card) {
+    return std::optional<AccountCard>{};
+  }
+  return std::optional<AccountCard>((*kept)->newest_card);
+}
+
+Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, const std::vector<AccountCardDevice>& also,
+                                       const std::string& nickname, const int64_t now_ms) {
+  auto keys = Keys();
+  if (!keys) {
+    return keys.error();
+  }
+  auto self = Self();
+  if (!self) {
+    return self.error();
+  }
+  // The newest card's devices in its order, this device as it is now (first when it is new to the list), then
+  // any other known one — at most the cap. Nothing new: the same list, so the card stands.
+  std::vector<AccountCardDevice> devices;
+  if (base) {
+    for (const AccountCardDevice& device : base->devices) {
+      devices.push_back(device.peer_id == self->peer_id ? *self : device);
     }
   }
-  std::lock_guard lock(mutex_);
-  if (card_ && SameKeys(card_->keys, *keys) && card_->nickname == identity->nickname && card_->devices == devices) {
-    return *card_;
+  const auto listed = [&devices](const std::string& peer_id) {
+    return std::any_of(devices.begin(), devices.end(),
+                       [&peer_id](const AccountCardDevice& d) { return d.peer_id == peer_id; });
+  };
+  if (!listed(self->peer_id)) {
+    devices.insert(devices.begin(), *self);
   }
+  for (const AccountCardDevice& device : also) {
+    if (!listed(device.peer_id)) {
+      devices.push_back(device);
+    }
+  }
+  if (devices.size() > kMaxAccountCardDevices) {
+    devices.resize(kMaxAccountCardDevices);
+  }
+  if (base && SameKeys(base->keys, *keys) && base->nickname == nickname && base->devices == devices) {
+    return *base;
+  }
+  // Newer than any card the account has issued that this device knows, whatever its clock says.
+  const int64_t issued_at = std::max(now_ms, base ? base->issued_at + 1 : now_ms);
   auto signed_card = SignAccountCard(
-      AccountCard{.keys = *keys, .nickname = identity->nickname, .devices = devices, .issued_at = now_ms},
+      AccountCard{.keys = *keys, .nickname = nickname, .devices = devices, .issued_at = issued_at},
       [this](const ByteVector& bytes) { return identity_.SignBytes(bytes); });
   if (!signed_card) {
     return signed_card.error();
   }
-  card_ = std::move(signed_card.value());
-  return *card_;
+  if (auto kept = cards_.AddAccountCard(*signed_card, std::max(now_ms, issued_at), "self"); !kept) {
+    return kept.error();
+  }
+  return signed_card;
+}
+
+Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  std::lock_guard lock(mutex_);
+  auto newest = NewestLocked();
+  if (!newest) {
+    return newest.error();
+  }
+  return IssueLocked(*newest, {}, identity->nickname, now_ms);
+}
+
+Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (card.keys.account_id != identity->account_id) {
+    return Error("account card: not our account");
+  }
+  if (auto checked = VerifyAccountCard(card, now_ms); !checked) {
+    return checked.error();
+  }
+  std::lock_guard lock(mutex_);
+  auto newest = NewestLocked();
+  if (!newest) {
+    return newest.error();
+  }
+  const std::optional<AccountCard> ours = *newest;
+  if (auto kept = cards_.AddAccountCard(card, now_ms, "sibling"); !kept) {
+    return kept.error();
+  }
+  auto now_newest = NewestLocked();
+  if (!now_newest) {
+    return now_newest.error();
+  }
+  // Whichever is newer is the base; the other one's devices are kept too (see the header).
+  const std::vector<AccountCardDevice> other =
+      ours && *now_newest && now_newest->value() == card ? ours->devices : card.devices;
+  const std::string nickname = *now_newest ? (*now_newest)->nickname : identity->nickname;
+  auto issued = IssueLocked(*now_newest, other, nickname, now_ms);
+  if (issued && identity->nickname != issued->nickname) {
+    LocalIdentity renamed = *identity;
+    renamed.nickname = issued->nickname;
+    if (auto updated = identity_.Update(renamed); !updated) {
+      return updated.error();
+    }
+  }
+  return issued;
 }
 
 } // namespace pbr

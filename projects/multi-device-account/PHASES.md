@@ -119,9 +119,10 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 
 ### d1 — Device keys and the device list
 
-- [ ] Each device mints its own ML-KEM key (identity schema bump); never in link bundle or backup
-- [ ] Account card v2: device entries `{peer_id, signing key, KEM key}`, signed by the account key, newest `issued_at` wins (no union merge); issued only when the device set changes; at most 5 devices
-- [ ] Link bundle carries the issuing device's card; the new device signs itself in and tells its siblings (own-account card notice through the shared mailbox)
+- [x] Each device mints its own ML-KEM key (additive in `identity.enc`; from the seed on a node); never in a link bundle or backup
+- [x] Account card v2: device entries `{peer_id, signing key, KEM key}`, signed by the account key, newest `issued_at` wins (no union merge); re-issued only when it changes; at most 5 devices
+- [x] Link bundle carries the issuing device's card; the new device signs itself in (`OwnCards::Learn`; siblings issuing at once converge)
+- [ ] The new device tells its siblings its card through the shared mailbox — with d2 (it needs device-addressed envelopes)
 
 ### d2 — Envelopes and sessions per device pair (wire cutover)
 

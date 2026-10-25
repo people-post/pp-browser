@@ -47,7 +47,7 @@ Roe<void> LinkDeviceCoordinator::ApplyPublicPsks(IPskSessionStore& psk_store,
 
 Roe<std::string> LinkDeviceCoordinator::ExportJson(IdentityStore& identity, DataKeyVault& vault,
                                                   IPskSessionStore& psk_store, const int64_t now_ms,
-                                                  const int64_t ttl_ms) {
+                                                  const int64_t ttl_ms, std::optional<std::string> account_card_json) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
@@ -60,7 +60,8 @@ Roe<std::string> LinkDeviceCoordinator::ExportJson(IdentityStore& identity, Data
   if (!public_psks) {
     return public_psks.error();
   }
-  return LinkDeviceExchange::ExportJson(*loaded, *dek, std::move(*public_psks), now_ms, ttl_ms);
+  return LinkDeviceExchange::ExportJson(*loaded, *dek, std::move(*public_psks), now_ms, ttl_ms,
+                                        std::move(account_card_json));
 }
 
 Roe<LinkDeviceImportResult> LinkDeviceCoordinator::Import(IdentityStore& identity, DataKeyVault& vault,
