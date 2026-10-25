@@ -28,39 +28,40 @@ void WaitUntil(const std::function<bool()>& predicate, const std::chrono::millis
 
 } // namespace
 
+// Both are queued while the thread is busy: when it is free, the Critical one runs first. (Queueing
+// them on an idle thread raced: the Normal one could start before the Critical one was posted.)
 TEST(CoordinatorThreadTest, CriticalRunsBeforeNormal) {
   CoordinatorThread coordinator;
   coordinator.Start();
 
   std::mutex mu;
   std::condition_variable cv;
-  bool gate_open = false;
+  bool busy = false;
+  bool release = false;
   std::vector<std::string> order;
 
   coordinator.Post(CoordinatorPriority::Normal, [&]() {
     std::unique_lock lock(mu);
-    cv.wait(lock, [&]() { return gate_open; });
+    busy = true;
+    cv.notify_all();
+    cv.wait(lock, [&]() { return release; });
+  });
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&]() { return busy; })) << "the thread took the blocker";
+  }
+
+  coordinator.Post(CoordinatorPriority::Normal, [&]() {
+    std::lock_guard lock(mu);
     order.push_back("normal");
   });
-
   coordinator.Post(CoordinatorPriority::Critical, [&]() {
     std::lock_guard lock(mu);
     order.push_back("critical");
   });
-
-  WaitUntil([&]() {
-    std::lock_guard lock(mu);
-    return order.size() == 1;
-  }, std::chrono::milliseconds(2000));
   {
     std::lock_guard lock(mu);
-    ASSERT_EQ(order.size(), 1u);
-    EXPECT_EQ(order.front(), "critical");
-  }
-
-  {
-    std::lock_guard lock(mu);
-    gate_open = true;
+    release = true;
   }
   cv.notify_all();
 
@@ -70,6 +71,7 @@ TEST(CoordinatorThreadTest, CriticalRunsBeforeNormal) {
   }, std::chrono::milliseconds(2000));
   {
     std::lock_guard lock(mu);
+    ASSERT_EQ(order.size(), 2u);
     EXPECT_EQ(order[0], "critical");
     EXPECT_EQ(order[1], "normal");
   }
