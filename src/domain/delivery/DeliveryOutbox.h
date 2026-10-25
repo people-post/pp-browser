@@ -32,8 +32,8 @@ struct DeliveryRequest {
   /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
   std::string group_member;
   /**
-   * One of a 1:1 message's copies, for this device of the peer (M021): the row is delivered once any copy
-   * is, and failed only while none is.
+   * One of a message's several records (M022: a device's copy over its link, the relay record for the rest):
+   * the row is delivered once any is, and failed only while none is. Names the device, or "relay".
    */
   std::string copy_device;
 };

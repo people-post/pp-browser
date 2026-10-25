@@ -56,6 +56,8 @@ public:
 
   virtual ~IDirectMessageClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
+  /** A link to `peer_key` is up now (M022: that device gets its copy over it, the others share the relay). */
+  virtual bool IsPeerConnected(const std::string& peer_key) const { return false; }
   virtual DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) = 0;
 
   /** Prefer over SendEnvelope on product paths; default wraps sync SendEnvelope. */

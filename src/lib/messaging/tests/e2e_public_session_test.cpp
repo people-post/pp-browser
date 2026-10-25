@@ -3,6 +3,8 @@
 // ways real calls stop getting through: both sides open at once, the opening send is lost, one side
 // starts over (reinstall / wiped store).
 
+#include "common/chat/MessagingJson.h"
+#include "common/chat/RelayStreamKey.h"
 #include "common/chat/SystemControl.h"
 #include "lib/messaging/ControlLaneEnvelope.h"
 #include "lib/messaging/ControlLaneSeenStore.h"
@@ -230,12 +232,26 @@ struct Side {
       auto copy = SealPairCopy(message, account, SendRelayOptions{}, *psk, pair,
                                Base64Decode(device.kem_public_key_b64).value());
       EXPECT_TRUE(copy) << copy.error().message;
-      RelayEnvelope envelope = BuildDirectEnvelope(copy->numbered, Sender(), ThreadChannel::E2ePublic,
-                                                   "relay:" + peer_account, std::move(copy->sealed), device.peer_id);
+      RelayEnvelope envelope =
+          BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "relay:" + peer_account,
+                              {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
       keys.SignEnvelope(envelope);
       out[device.peer_id] = envelope;
     }
     return out;
+  }
+
+  /** As DeviceChat, but as the relay carries it (M022): one record with every device's copy. */
+  RelayEnvelope DeviceChatRecord(const std::string& peer_account, const std::string& text) {
+    std::vector<RelayCopy> copies;
+    RelayEnvelope first;
+    for (auto& [device, envelope] : DeviceChat(peer_account, text)) {
+      copies.push_back(envelope.body.e2e.copies.front());
+      first = envelope;
+    }
+    first.body.e2e.copies = copies;
+    keys.SignEnvelope(first);
+    return first;
   }
 
   /** This device's PeerId. */
@@ -337,9 +353,13 @@ struct Side {
       const GroupMemberTarget& target = targets[i];
       const std::string& recipient = target.member_identity;
       EXPECT_TRUE(encrypted->copies[i]);
-      RelayEnvelope envelope = BuildGroupMemberEnvelope(
-          message, Sender(), group_id, recipient, recipient, encrypted->copies[i]->payload_b64, target.session_epoch,
-          target.sender_seq, encrypted->copies[i]->key_init_b64, target.target_key.peer_device);
+      const RelayCopy copy{.recipient_device = target.target_key.peer_device,
+                           .session_epoch = target.session_epoch,
+                           .sender_seq = target.sender_seq,
+                           .key_init_b64 = encrypted->copies[i]->key_init_b64,
+                           .payload_b64 = encrypted->copies[i]->payload_b64};
+      RelayEnvelope envelope = BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, recipient, {copy},
+                                                        NextRelayOrderKey());
       keys.SignEnvelope(envelope);
       out[per_device ? target.target_key.peer_device : recipient] = envelope;
     }
@@ -665,13 +685,29 @@ TEST_F(LinkedDevicesTest, AccountCopiesFromBothDevicesAreBothKept) {
 
 TEST_F(LinkedDevicesTest, ACopyIsReadInItsOwnPairOnly) {
   auto from_phone = phone_->DeviceChat(bob_->account, "for Bob's device");
+  // The device each copy is for is signed: re-addressing one breaks the signature.
   RelayEnvelope readdressed = from_phone.at(bob_->Device());
-  readdressed.recipient_device = laptop_->Device();  // signed: re-addressing it breaks the signature
+  readdressed.body.e2e.copies.front().recipient_device = laptop_->Device();
   EXPECT_FALSE(laptop_->Keep(readdressed));
   RelayEnvelope as_account_copy = from_phone.at(bob_->Device());
-  as_account_copy.recipient_device.clear();
+  as_account_copy.body.e2e.copies.front().recipient_device.clear();
   EXPECT_FALSE(bob_->Keep(as_account_copy)) << "not an account copy either";
   EXPECT_TRUE(bob_->Keep(from_phone.at(bob_->Device())));
+}
+
+TEST_F(LinkedDevicesTest, OneRecordCarriesEveryDevicesCopy) {
+  ASSERT_TRUE(bob_->Keep(phone_->DeviceChat(bob_->account, "hi").at(bob_->Device())));
+  // Bob's answer as the relay carries it: one record, a copy for each of Alice's devices.
+  const RelayEnvelope record = bob_->DeviceChatRecord(phone_->account, "one record for both");
+  ASSERT_EQ(record.body.e2e.copies.size(), 2u);
+  const auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(record));
+  ASSERT_TRUE(parsed) << parsed.error().message;
+  EXPECT_TRUE(phone_->Keep(*parsed)) << "the phone reads its copy";
+  EXPECT_TRUE(laptop_->Keep(*parsed)) << "and the laptop its own, from the same record";
+  // A record that has no copy for a device (one the sender did not know yet) is not that device's to read.
+  Side tablet("alice-tablet", 0x30, phone_.get());
+  tablet.Know(*bob_);
+  EXPECT_FALSE(tablet.Keep(*parsed));
 }
 
 TEST_F(LinkedDevicesTest, ANewDevicesFirstMessageBringsTheNewerDeviceList) {

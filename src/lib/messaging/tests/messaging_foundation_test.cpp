@@ -167,9 +167,22 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
   EXPECT_FALSE(with([](Object& json) {
     Object route;
     route.set("kind", "group");
-    route.set("group_id", "group:a");
     json.set("route", route);
-  })) << "group with payload_b64";
+  })) << "group without group_id";
+  EXPECT_FALSE(with([](Object& json) {
+    Object body = *json.getObject("body");
+    Object e2e = *body.getObject("e2e");
+    e2e.set("payload_b64", "AQID");
+    body.set("e2e", e2e);
+    json.set("body", body);
+  })) << "a payload beside the copies (envelope v1's shape)";
+  EXPECT_FALSE(with([](Object& json) {
+    Object body = *json.getObject("body");
+    Object e2e = *body.getObject("e2e");
+    e2e.set("copies", ArrayValue({}));
+    body.set("e2e", e2e);
+    json.set("body", body);
+  })) << "no copy";
 }
 
 // Numbers are range-checked before narrowing, and ids carry no control characters.
@@ -190,7 +203,15 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
   };
   constexpr int64_t kTwo32 = int64_t{1} << 32;
   EXPECT_TRUE(with([](Object&) {}));
-  EXPECT_FALSE(with([](Object& json) { json.set("session_epoch", kTwo32 + 1); })) << "epoch past u32";
+  EXPECT_FALSE(with([](Object& json) {
+    Object body = *json.getObject("body");
+    Object e2e = *body.getObject("e2e");
+    Object copy = *asObject(e2e.getArray("copies")->elements.front());
+    copy.set("session_epoch", kTwo32 + 1);
+    e2e.set("copies", ArrayValue({ObjectValue(copy)}));
+    body.set("e2e", e2e);
+    json.set("body", body);
+  })) << "a copy's epoch past u32";
   EXPECT_FALSE(with([](Object& json) { json.set("envelope_version", kTwo32 + kRelayEnvelopeVersion); }))
       << "version that only matches once narrowed";
   EXPECT_FALSE(with([](Object& json) { json.set("sender_contact_id", std::string("account:a\nx")); }));

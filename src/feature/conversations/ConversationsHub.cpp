@@ -611,22 +611,6 @@ void ConversationsHub::PublishAddressDisclosure() {
   address_disclosure_.Publish(BuildAddressDisclosurePolicy(audience, book, own_devices));
 }
 
-void ConversationsHub::ReachSiblings() {
-  if (!mesh_messaging_) {
-    return;
-  }
-  PublishAddressDisclosure();
-  auto identity = Identity().Get();
-  if (identity && !identity->account_id.empty() && HasDirectory()) {
-    // Our other devices' addresses, as the directory lists the account's endpoints (M017).
-    if (auto hit = Directory().LookupByAccount(identity->account_id); hit) {
-      mesh_messaging_->RegisterSiblingEndpoints(hit->endpoints);
-    } else {
-      log().info << "own account's endpoints not found: " << hit.error().message;
-    }
-  }
-  mesh_messaging_->AccountCards().TellSiblings();
-}
 
 void ConversationsHub::ApplyMeshAdmissionPolicies() {
   PublishAddressDisclosure();
@@ -1327,8 +1311,8 @@ void ConversationsHub::BuildMessagingObjects() {
                                                 *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
-  // Our device list changed or the mesh came up: reach our other devices and share the list (M021).
-  mesh_messaging_->SetOnOwnDevicesChanged([this]() { ReachSiblings(); });
+  // Our device list changed: our address goes to our other devices too (M021).
+  mesh_messaging_->SetOnOwnDevicesChanged([this]() { PublishAddressDisclosure(); });
   // A device with no link up is reached through the seed it is parked on (on the hub's thread).
   mesh_messaging_->AccountCards().SetReach([this](const std::string& peer_id, std::function<void(bool)> done) {
     AppRuntime::PostUI([this, peer_id, done = std::move(done)]() {

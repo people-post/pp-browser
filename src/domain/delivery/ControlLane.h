@@ -38,6 +38,12 @@ public:
   Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control,
                  const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
 
+  /**
+   * Tell this account's other devices (through its own mailbox, M022) our account card — the device list —
+   * riding `notice`, a system message they take nothing else from.
+   */
+  Roe<void> NotifySiblings(const ThreadMessage& notice);
+
 private:
   uint64_t NextOrderKey();
 

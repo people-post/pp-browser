@@ -18,19 +18,19 @@ RelayEnvelope MakeE2eVectorEnvelope() {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 =
-      "AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=";
-  envelope.sender_seq = 42;
-  envelope.session_epoch = 1;
   envelope.timestamp = 1719662400456;
-  return envelope;
+  return WithSingleRelayCopy(
+      std::move(envelope),
+      RelayCopy{.session_epoch = 1,
+                .sender_seq = 42,
+                .payload_b64 = "AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU="});
 }
 
 } // namespace
 
-TEST(EnvelopeSignerTest, BodyHashMatchesFrozenVector) {
+TEST(EnvelopeSignerTest, CopyHashMatchesFrozenVector) {
   const RelayEnvelope envelope = MakeE2eVectorEnvelope();
-  auto body_hash = EnvelopeSigner::BodyHash(envelope);
+  auto body_hash = EnvelopeSigner::CopyHash(envelope.body.e2e.copies.front());
   ASSERT_TRUE(body_hash);
   EXPECT_EQ(BytesToHex(*body_hash), "f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c");
 }
@@ -71,27 +71,53 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
     auto bytes = EnvelopeSigner::BuildSignBytes(changed);
     return !bytes || *bytes != *base_bytes;
   };
+  const auto with_copy = [&](RelayCopy copy) {
+    RelayEnvelope changed = base;
+    changed.body.e2e.copies = {copy};
+    return changed;
+  };
+  const RelayCopy copy = base.body.e2e.copies.front();
+  RelayCopy other = copy;
+  other.payload_b64 = "AQID";
+  EXPECT_TRUE(differs(with_copy(other))) << "payload";
+  other = copy;
+  other.key_init_b64 = "AQID";
+  EXPECT_TRUE(differs(with_copy(other))) << "key_init";
+  other = copy;
+  other.sender_seq = 43;
+  EXPECT_TRUE(differs(with_copy(other))) << "the copy's seq";
+  other = copy;
+  other.session_epoch = 2;
+  EXPECT_TRUE(differs(with_copy(other))) << "the copy's epoch";
+  other = copy;
+  other.recipient_device = "QmSomeDevice";
+  EXPECT_TRUE(differs(with_copy(other))) << "the device the copy is for (M022)";
   RelayEnvelope changed = base;
-  changed.body.e2e.payload_b64 = "AQID";
-  EXPECT_TRUE(differs(changed)) << "payload";
-  changed = base;
-  changed.body.e2e.key_init_b64 = "AQID";
-  EXPECT_TRUE(differs(changed)) << "key_init";
-  changed = base;
   changed.sender_relay_id = "relay:other";
   EXPECT_TRUE(differs(changed)) << "sender_relay_id";
   changed = base;
   changed.sender_device = "QmOtherDevice";
-  EXPECT_TRUE(differs(changed)) << "the sending device (v3, M021)";
-  changed = base;
-  changed.recipient_device = "QmSomeDevice";
-  EXPECT_TRUE(differs(changed)) << "the device the copy is for (v3)";
+  EXPECT_TRUE(differs(changed)) << "the sending device";
+
+  // Every copy of the envelope is signed, in device order whatever the list's order.
+  RelayCopy phone = copy;
+  phone.recipient_device = "QmPhone";
+  RelayCopy laptop = copy;
+  laptop.recipient_device = "QmLaptop";
+  laptop.sender_seq = 7;
+  RelayEnvelope both = base;
+  both.body.e2e.copies = {phone, laptop};
+  RelayEnvelope reordered = base;
+  reordered.body.e2e.copies = {laptop, phone};
+  EXPECT_EQ(EnvelopeSigner::BuildSignBytes(both).value(), EnvelopeSigner::BuildSignBytes(reordered).value());
+  RelayEnvelope one_dropped = base;
+  one_dropped.body.e2e.copies = {phone};
+  EXPECT_TRUE(EnvelopeSigner::BuildSignBytes(one_dropped).value() != EnvelopeSigner::BuildSignBytes(both).value())
+      << "a copy taken out breaks the signature";
 
   RelayEnvelope group = base;
   group.route.kind = kRelayRouteGroup;
   group.route.group_id = "group:a";
-  group.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:bob", base.body.e2e.payload_b64}};
-  group.body.e2e.payload_b64.clear();
   auto group_bytes = EnvelopeSigner::BuildSignBytes(group);
   ASSERT_TRUE(group_bytes) << group_bytes.error().message;
   RelayEnvelope other_group = group;
@@ -99,37 +125,40 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   auto other_bytes = EnvelopeSigner::BuildSignBytes(other_group);
   ASSERT_TRUE(other_bytes);
   EXPECT_NE(*group_bytes, *other_bytes) << "group_id";
-  RelayEnvelope other_member = group;
-  other_member.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:carol", base.body.e2e.payload_b64}};
-  auto member_bytes = EnvelopeSigner::BuildSignBytes(other_member);
-  ASSERT_TRUE(member_bytes);
-  EXPECT_NE(*group_bytes, *member_bytes) << "member id";
 }
 
 // One body shape per route: the signer refuses (and so verification fails on) anything else.
-TEST(EnvelopeSignerTest, MixedBodyShapesAreRefused) {
-  RelayEnvelope direct = MakeE2eVectorEnvelope();
-  direct.body.e2e.member_payloads = std::map<std::string, std::string>{{"x", direct.body.e2e.payload_b64}};
-  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(direct)) << "direct with member_payloads";
+TEST(EnvelopeSignerTest, MalformedEnvelopesAreRefused) {
+  const RelayEnvelope base = MakeE2eVectorEnvelope();
+  RelayEnvelope none = base;
+  none.body.e2e.copies.clear();
+  none.body.e2e.payload_b64.clear();
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(none)) << "no copy";
+  RelayEnvelope twice = base;
+  twice.body.e2e.copies = {base.body.e2e.copies.front(), base.body.e2e.copies.front()};
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(twice)) << "two copies for one device";
+  RelayEnvelope empty_payload = base;
+  empty_payload.body.e2e.copies = {RelayCopy{.recipient_device = "QmDevice", .session_epoch = 1}};
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(empty_payload)) << "a copy without a payload";
 
-  RelayEnvelope control = MakeE2eVectorEnvelope();
+  RelayEnvelope control = base;
   control.route.kind = kRelayRouteControl;
-  control.body.e2e.member_payloads = std::map<std::string, std::string>{{"x", control.body.e2e.payload_b64}};
-  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(control)) << "control with member_payloads";
+  EXPECT_TRUE(EnvelopeSigner::BuildSignBytes(control)) << "the control lane: one account copy";
+  control.body.e2e.copies.front().recipient_device = "QmDevice";
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(control)) << "a control envelope for one device";
 
-  RelayEnvelope group = MakeE2eVectorEnvelope();
+  RelayEnvelope group = base;
   group.route.kind = kRelayRouteGroup;
-  group.route.group_id = "group:a";
-  group.body.e2e.member_payloads = std::map<std::string, std::string>{{"x", group.body.e2e.payload_b64}};
-  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(group)) << "group with payload_b64";
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(group)) << "group without group_id";
+  RelayEnvelope direct = base;
+  direct.route.group_id = "group:a";
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(direct)) << "direct with a group_id";
 
-  RelayEnvelope unknown = MakeE2eVectorEnvelope();
+  RelayEnvelope unknown = base;
   unknown.route.kind = "other";
   EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(unknown)) << "unknown route kind";
 }
 
-// An account's signing key must hash to the account (self-certifying Account ID): a key filed under
-// another account, or under another identity kind, is refused whoever offers it.
 TEST(PeerSigningKeyStoreTest, AKeyIsKeptOnlyUnderTheAccountItHashesTo) {
   auto mine = MlDsa::GenerateKeyPair();
   auto other = MlDsa::GenerateKeyPair();

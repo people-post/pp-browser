@@ -586,10 +586,20 @@ bool RelayReceivePipeline::SenderBlocked(const std::string& sender) const {
   return blocked && *blocked;
 }
 
-RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope,
+RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& received,
                                                           const std::string& local_relay_user_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
+  // The copy this device reads (M022): its own, else the account copy. With copies for our other devices
+  // only, the message is theirs (or one is missing for us).
+  auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
+  const std::optional<RelayEnvelope> selected = SelectRelayCopy(received, self ? *self : std::string());
+  if (!selected) {
+    RelayReceiveOutcome outcome;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  const RelayEnvelope& envelope = *selected;
   if (envelope.route.kind == kRelayRouteGroup) {
     return ProcessGroupEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
   }
@@ -628,11 +638,19 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
-  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {
-    outcome.decision = IngestDecision::SilentDiscard;  // another device's copy; our own account's (M021 d3)
+  if (WhoseCopy(envelope) == CopyTo::Sibling) {
+    outcome.decision = IngestDecision::SilentDiscard;  // another device's copy, in the shared mailbox (M013)
     return outcome;
   }
   const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+  if (envelope.sender_contact_id == local_relay_user_id) {
+    // A sibling's notice (M022): the account card it carries — the device list — is what counts, taken once
+    // the envelope verifies with it (SetOnSenderCard). Nothing else to apply.
+    auto verified = VerifySignature(envelope, inbound_target);
+    outcome.sender_verified = verified && *verified;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
   auto verified = VerifySignature(envelope, inbound_target);
   if (!verified || !*verified) {
     log().warning << "control lane: signature check failed message_id=" << envelope.message_id

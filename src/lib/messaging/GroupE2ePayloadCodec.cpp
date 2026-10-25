@@ -118,20 +118,15 @@ Roe<ThreadMessage> GroupE2ePayloadCodec::DecryptForLocalMember(const RelayEnvelo
                                                                IPskSessionStore& psk_store,
                                                                const std::optional<ByteVector>& local_kem_private_key,
                                                                AutoKeyRead* read) {
-  if (!envelope.body.e2e.member_payloads.has_value()) {
-    return Error("Missing group member_payloads");
-  }
-
-  const auto it = envelope.body.e2e.member_payloads->find(local_contact_id);
-  if (it == envelope.body.e2e.member_payloads->end()) {
-    return Error("No ciphertext for local member");
+  // The copy this device reads (SelectRelayCopy: its device's, or the account copy), read as the direct
+  // e2e_public message it is.
+  if (envelope.body.e2e.payload_b64.empty()) {
+    return Error("No copy for this device");
   }
   RelayEnvelope direct_envelope = envelope;
   direct_envelope.route.kind = "direct";
   direct_envelope.route.channel = ThreadChannel::E2ePublic;
   direct_envelope.route.group_id = std::nullopt;
-  direct_envelope.body.e2e.payload_b64 = it->second;
-  direct_envelope.body.e2e.member_payloads = std::nullopt;
   return E2eRelayPayloadCodec::DecryptEnvelope(direct_envelope, local_contact_id, target_key, psk_store,
                                                local_kem_private_key, read);
 }

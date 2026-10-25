@@ -213,6 +213,10 @@ std::string AmpDirectChatTransport::ReachableKey(const std::string& key) const {
   return {};
 }
 
+bool AmpDirectChatTransport::IsPeerConnected(const std::string& peer_key) const {
+  return !peer_key.empty() && links_.IsConnected(peer_key);
+}
+
 bool AmpDirectChatTransport::IsPeerReachable(const std::string& peer_identity_value) const {
   return !ReachableKey(peer_identity_value).empty();
 }

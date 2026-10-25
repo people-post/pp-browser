@@ -91,10 +91,12 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.sender_device = local_device;
   envelope.route.kind = "direct";
   envelope.route.channel = thread.channel;
-  envelope.body.e2e.payload_b64 = *payload_b64;
-  envelope.sender_seq = *message.sender_seq;
+  RelayCopy copy;  // served as the account copy it was numbered as (the thread's numbering)
+  copy.session_epoch = *message.session_epoch;
+  copy.sender_seq = *message.sender_seq;
+  copy.payload_b64 = *payload_b64;
+  envelope = WithSingleRelayCopy(std::move(envelope), std::move(copy));
   envelope.order_key = envelope.sender_seq;
-  envelope.session_epoch = *message.session_epoch;
   envelope.stream_key =
       BuildCanonicalRelayStreamKey(local_relay_user_id, peer_relay_user_id, thread.channel, *message.session_epoch);
   envelope.recipient_contact_id = peer_relay_user_id;

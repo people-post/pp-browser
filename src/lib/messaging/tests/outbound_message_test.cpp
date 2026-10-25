@@ -89,7 +89,8 @@ struct Device {
     }
     RelayEnvelope envelope =
         BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id},
-                            thread.channel, "relay:" + peer.tag, std::move(*sealed));
+                            thread.channel, "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))},
+                            NextRelayOrderKey());
     keys.SignEnvelope(envelope);
     return envelope;
   }
@@ -126,9 +127,11 @@ TEST_F(OutboundMessageTest, AFirstPublicSendOpensTheSessionAndThePeerReadsIt) {
   EXPECT_TRUE(first->body.e2e.key_init_b64 && !first->body.e2e.key_init_b64->empty()) << "the opening send carries its key_init";
   EXPECT_EQ(first->route.kind, "direct");
   EXPECT_EQ(first->recipient_contact_id, "relay:bob");
-  EXPECT_EQ(first->stream_key,
-            BuildCanonicalRelayStreamKey("relay:alice", "relay:bob", ThreadChannel::E2ePublic, first->session_epoch));
-  EXPECT_EQ(first->order_key, first->sender_seq);
+  EXPECT_EQ(first->stream_key, BuildDeviceRelayStreamKey("relay:alice", "relay:bob", ThreadChannel::E2ePublic,
+                                                         alice_->keys.device.peer_id))
+      << "the sending device's stream: an account's devices share its relay id (M022)";
+  ASSERT_EQ(first->body.e2e.copies.size(), 1u) << "one account copy: Bob's devices are not known yet";
+  EXPECT_TRUE(first->body.e2e.copies.front().recipient_device.empty());
 
   auto second = alice_->Send(thread, *bob_, "again");
   ASSERT_TRUE(second);
@@ -207,28 +210,34 @@ TEST(OutboundSendRulesTest, WhoMaySendAndHow) {
   EXPECT_FALSE(DirectSendTriesAmpFirst(false, false, false));
 }
 
-TEST(OutboundSendRulesTest, AGroupMembersCopy) {
+TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
   ThreadMessage message;
   message.id = "m";
   message.sender_seq = 7;
   message.session_epoch = 2;
   message.timestamp = 5;
-  RelayEnvelope e = BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1",
-                                             "account:b", "relay:b", "payload", 5, 9, std::string("init"));
+  const EnvelopeSender sender{"relay:a", "account:a", "QmA"};
+  const RelayCopy phone{.recipient_device = "QmBPhone", .session_epoch = 5, .sender_seq = 9,
+                        .key_init_b64 = std::string("init"), .payload_b64 = "cGF5bG9hZA=="};
+  const RelayCopy laptop{.recipient_device = "QmBLaptop", .session_epoch = 1, .sender_seq = 3,
+                         .payload_b64 = "cGF5bG9hZDI="};
+  RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", "relay:b", {phone, laptop}, 11);
   EXPECT_EQ(e.route.kind, "group");
-  EXPECT_EQ(e.session_epoch, 5u) << "numbered in the pair: its session epoch (G010/G011)";
-  EXPECT_EQ(e.sender_seq, 9u) << "and our seq for the group in that pair";
   EXPECT_EQ(e.route.group_id, "group-1");
-  EXPECT_EQ(e.body.e2e.member_payloads->at("account:b"), "payload");
-  EXPECT_EQ(e.body.e2e.key_init_b64, std::optional<std::string>("init"));
-  EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", 5, "account:b"));
-  EXPECT_NE(BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1", "account:c",
-                                     "relay:c", "payload", 5, 9, std::nullopt)
-                .stream_key,
+  EXPECT_EQ(e.body.e2e.copies, (std::vector<RelayCopy>{phone, laptop})) << "one record, each device's copy (M022)";
+  EXPECT_EQ(e.order_key, 11u) << "the record's own relay index";
+  EXPECT_EQ(e.stream_key, BuildGroupDeviceRelayStreamKey("group-1", "account:b", "QmA"));
+  EXPECT_NE(BuildGroupMemberEnvelope(message, sender, "group-1", "account:c", "relay:c", {phone}, 12).stream_key,
             e.stream_key)
-      << "the relay keeps one row per sender, stream and seq: each member's copy has its own stream";
+      << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
   EXPECT_EQ(e.recipient_contact_id, "relay:b") << "the relay delivers to relay ids";
-  EXPECT_EQ(e.order_key, 9u);
+  // Each device reads its own copy, numbered in its own pair.
+  auto on_laptop = SelectRelayCopy(e, "QmBLaptop");
+  ASSERT_TRUE(on_laptop);
+  EXPECT_EQ(on_laptop->sender_seq, 3u);
+  EXPECT_EQ(on_laptop->session_epoch, 1u);
+  EXPECT_FALSE(on_laptop->body.e2e.key_init_b64);
+  EXPECT_FALSE(SelectRelayCopy(e, "QmBTablet")) << "no copy for a device the sender did not know";
 }
 
 } // namespace

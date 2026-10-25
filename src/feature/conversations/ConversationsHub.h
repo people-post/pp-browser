@@ -196,8 +196,6 @@ public:
   std::optional<std::string> OwnAccountCardJson();
   /** A linked device's first look at its account's device list (the bundle's card): kept, and this device signed in. */
   Roe<void> LearnLinkedAccountCard(const std::string& card_json);
-  /** Our other devices reachable (directory endpoints, our address disclosed to them), then the device list shared (M021). */
-  void ReachSiblings();
   GroupMembershipWorkflow& Groups();
   /**
    * k5: the device's network changed (any thread; the OS monitor calls it, tests may too). The mesh

@@ -145,8 +145,18 @@ struct TestAccount {
     return SignAccountCard(card, [this](const ByteVector& bytes) { return Sign(bytes); }).value();
   }
 
-  /** Signs `envelope` as this account's device sends it (naming the device). */
+  /**
+   * Signs `envelope` as this account's device sends it (naming the device). A fixture that set only the
+   * read view (payload, numbering, recipient device) gets it as the envelope's one copy first.
+   */
   void SignEnvelope(RelayEnvelope& envelope) const {
+    if (envelope.body.e2e.copies.empty()) {
+      envelope.body.e2e.copies = {RelayCopy{.recipient_device = envelope.recipient_device,
+                                            .session_epoch = envelope.session_epoch,
+                                            .sender_seq = envelope.sender_seq,
+                                            .key_init_b64 = envelope.body.e2e.key_init_b64,
+                                            .payload_b64 = envelope.body.e2e.payload_b64}};
+    }
     envelope.sender_device = device.peer_id;
     envelope.signature = device.Sign(EnvelopeSigner::BuildSignBytes(envelope).value()).value();
   }

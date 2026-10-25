@@ -82,9 +82,11 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(payload_b64));
   envelope.body.e2e.payload_b64 = *payload_b64;
 
-  auto body_hash = EnvelopeSigner::BodyHash(envelope);
+  const RelayCopy copy{.session_epoch = envelope.session_epoch, .sender_seq = envelope.sender_seq,
+                       .payload_b64 = envelope.body.e2e.payload_b64};
+  auto body_hash = EnvelopeSigner::CopyHash(copy);
   ASSERT_TRUE(static_cast<bool>(body_hash));
-  auto body_hash_again = EnvelopeSigner::BodyHash(envelope);
+  auto body_hash_again = EnvelopeSigner::CopyHash(copy);
   ASSERT_TRUE(static_cast<bool>(body_hash_again));
   EXPECT_EQ(*body_hash, *body_hash_again);
 

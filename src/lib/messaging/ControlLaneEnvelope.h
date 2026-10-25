@@ -27,7 +27,7 @@ struct ControlLaneSendParams {
   std::optional<std::string> key_init_b64;
   /** This device's PeerId (M021): it signs the envelope. */
   std::string sender_device;
-  /** Our account card (JSON), carried with the key_init (docs/contracts/ACCOUNT_CARD.md). */
+  /** Our account card (JSON; docs/contracts/ACCOUNT_CARD.md): every lane envelope carries it (an account copy). */
   std::optional<Object> sender_card;
   /** The relay index within the lane's stream (unique, rising per sender). */
   uint64_t order_key = 0;

@@ -106,7 +106,12 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(someone_elses))) << "a card for another account";
   RelayEnvelope no_key_init = envelope;
   no_key_init.body.e2e.key_init_b64.reset();
-  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_key_init))) << "sender_card only with a key_init";
+  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_key_init)))
+      << "a device copy carries the card only with a key_init";
+  RelayEnvelope account_copy_no_key_init = no_key_init;
+  account_copy_no_key_init.recipient_device.clear();
+  EXPECT_TRUE(ParseRelayEnvelope(RelayEnvelopeToJson(account_copy_no_key_init)))
+      << "an account copy may always carry it: its reader may know none of our devices";
   RelayEnvelope no_device = envelope;
   no_device.sender_device.clear();
   EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_device))) << "every envelope names its sending device";

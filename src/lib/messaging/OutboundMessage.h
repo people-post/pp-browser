@@ -96,13 +96,18 @@ struct EnvelopeSender {
   std::optional<Object> card;
 };
 
+/** The account copy of a numbered message (M021: every device of the account reads it). */
+RelayCopy AccountCopy(const ThreadMessage& numbered, SealedPayload sealed);
+/** A device's copy (M021), as SealPairCopy numbered and sealed it. */
+RelayCopy DeviceCopy(const std::string& device, PairCopy copy);
+
 /**
- * A direct send's envelope to `route_party` (relay id, or the account for an Amp-only peer): the copy for
- * `recipient_device` in that device pair's session (M021), or with none the account copy.
+ * A direct send's envelope to `route_party` (relay id, or the account for an Amp-only peer): one relay record
+ * with `copies` for the account's devices, or the account copy (M022). `order_key`: its relay index.
  */
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender, ThreadChannel channel,
-                                  const std::string& route_party, SealedPayload sealed,
-                                  const std::string& recipient_device = {});
+                                  const std::string& route_party, std::vector<RelayCopy> copies,
+                                  uint64_t order_key);
 
 /**
  * Call control prefers the relay when a route is known (Amp's open + ack per message races the
@@ -113,15 +118,14 @@ bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool crit
 // --- A group send -------------------------------------------------------------------------------------
 
 /**
- * One member's copy of a group send (its pairwise payload under the member's account, numbered in the pair,
- * and key_init when the pair's session is ours and not yet confirmed). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
+ * One member's envelope of a group send: `copies` for the member's devices (each a pairwise payload numbered
+ * in its device pair, with a key_init while that session is ours and not yet confirmed), or the member's
+ * account copy (M022). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
  */
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       const std::string& route_party, std::string payload_b64,
-                                       uint32_t session_epoch, uint64_t sender_seq,
-                                       std::optional<std::string> key_init_b64,
-                                       const std::string& recipient_device = {});
+                                       const std::string& route_party, std::vector<RelayCopy> copies,
+                                       uint64_t order_key);
 
 // --- The outbox: sends queued after a failed relay attempt ----------------------------------------
 

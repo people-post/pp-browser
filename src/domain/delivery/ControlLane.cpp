@@ -5,6 +5,8 @@
 #include "domain/delivery/PeerRouteBook.h"
 #include "domain/delivery/PeerTransports.h"
 #include "lib/messaging/ControlLaneEnvelope.h"
+#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -75,10 +77,8 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
     return device.error();
   }
   params.sender_device = *device;
-  if (key_init) {
-    if (auto own = own_keys_.Card(util::NowUnixMs())) {
-      params.sender_card = AccountCardToJson(*own);
-    }
+  if (auto own = own_keys_.Card(util::NowUnixMs())) {
+    params.sender_card = AccountCardToJson(*own);
   }
   params.key_init_b64 = std::move(key_init);
   params.order_key = NextOrderKey();
@@ -97,6 +97,54 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
                                .message_id = message_id,
                                .amp_peer_key = peer_identity,
                                .relay_route = peer_relay_id,
+                               .critical_lane = true});
+  return {};
+}
+
+Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice) {
+  auto identity = identity_.Get();
+  if (!identity || identity->account_id.empty() || identity->relay_user_id.empty()) {
+    return Error("Local account identity unavailable");
+  }
+  auto device = own_keys_.DevicePeerId();
+  if (!device) {
+    return device.error();
+  }
+  auto card = own_keys_.Card(util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  // A one-off opener to our own account KEM (no session kept): the card rides only with a key_init, and the
+  // siblings take the card, not the payload.
+  auto account_kem = Base64Decode(identity->kem_public_key_b64);
+  if (!account_kem) {
+    return account_kem.error();
+  }
+  auto opened = AutoKeyEstablishment::EncapsulateForRecipient(*account_kem);
+  if (!opened) {
+    return opened.error();
+  }
+  ControlLaneSendParams params;
+  params.sender_account_id = identity->account_id;
+  params.sender_relay_id = identity->relay_user_id;
+  params.sender_device = *device;
+  params.sender_card = AccountCardToJson(*card);
+  params.peer_account_id = identity->account_id;
+  params.route_party = identity->relay_user_id;
+  params.session_epoch = 1;
+  params.master_psk = std::move(opened->master_psk);
+  params.key_init_b64 = std::move(opened->key_init_b64);
+  params.order_key = NextOrderKey();
+  auto built = BuildControlLaneEnvelope(
+      params, notice, [this](const std::vector<uint8_t>& bytes) { return identity_.SignDeviceBytes(bytes); });
+  if (!built) {
+    return built.error();
+  }
+  const std::string message_id = built->message_id;
+  // The relay only: the account's own mailbox, read by every sibling.
+  outbox_.Send(DeliveryRequest{.envelope = std::move(*built),
+                               .message_id = message_id,
+                               .relay_route = identity->relay_user_id,
                                .critical_lane = true});
   return {};
 }

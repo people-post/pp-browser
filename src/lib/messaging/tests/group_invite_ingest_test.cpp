@@ -585,7 +585,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsClosedThreadEvenIfStillMembe
   envelope.route.group_id = "group:hike";
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:bob", "deadbeef"}};
+  envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   const RelayReceiveOutcome outcome = party.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
@@ -617,7 +617,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   envelope.route.group_id = "group:hike";
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:bob", "deadbeef"}};
+  envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   const RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
@@ -635,7 +635,8 @@ RelayEnvelope GroupEnvelopeFrom(const std::string& sender, const std::string& gr
   envelope.route.group_id = group_id;
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{to, "deadbeef"}};
+  (void)to;
+  envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   return envelope;
 }
 

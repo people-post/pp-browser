@@ -144,23 +144,21 @@ Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-
 
 **Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v3"` + NUL.
 
-Then: `sign_version=3`, `envelope_version=2`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `body.e2e.key_init_b64` LenUtf8 (empty when none), `sender_device` LenUtf8, `recipient_device` LenUtf8 (empty for an account copy).
+Then: `sign_version=3`, `envelope_version=2`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
 
 **Signer:** the sending device's ML-DSA-65 key (its PeerId's), not the account's (M021). The receiver takes that key from the sender's account card — the carried `sender_card` when it proves itself and is newer than the one kept, else the kept one — and refuses a device the card does not list.
 
 Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, the relay route it may learn for the sender (learned only from envelopes whose signature verified), and which device sent it and which device it is for.
 
-**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). A group envelope's single member payload is a pairwise `e2e_public` message at the envelope's `session_epoch` — the pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
+**Body shape (M022):** every envelope carries 1–8 copies (one per recipient device, at most one account copy); a `group` envelope names its `group_id`, a `direct` / `control` one does not; the control lane is one account copy. A group copy is a pairwise `e2e_public` message at the copy's `session_epoch` — its device pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
 
-**Body hash:**
+**Copy hash:**
 
 ```
-direct / control:  body_hash = BLAKE2b-256( 0x02 || LenBytes(decoded payload_b64) )
-group:             body_hash = BLAKE2b-256( 0x02 || for each (member_id, blob) in member_payloads, by member_id:
-                                                    LenUtf8(member_id) || LenBytes(decoded blob) )
+copy_hash = BLAKE2b-256( 0x02 || LenBytes(decoded copies[i].payload_b64) )
 ```
 
-(`LenBytes` / `LenUtf8` = u64 BE length + bytes.) The hash covers exactly what the receiver decrypts.
+(`LenBytes` / `LenUtf8` = u64 BE length + bytes.) The hash covers exactly what the copy's device decrypts; one signature covers every copy, so none can be moved to another device, dropped or added.
 
 Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 

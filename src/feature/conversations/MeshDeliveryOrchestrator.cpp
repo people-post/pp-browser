@@ -128,17 +128,11 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "sender's account card not kept: " << kept.error().message;
     }
   });
-  // A card this device issued (it linked in, a sibling's was merged, the nickname changed): its siblings hear,
-  // over the mesh (M021 — the relay does not deliver an account's envelopes to itself).
+  // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
+  // hear, through our own mailbox (M022).
   own_cards_.SetOnChanged([this](const AccountCard& card) {
     log().info << "own account card now lists " << card.devices.size() << " device(s)";
-    AppRuntime::PostWorkerNormal([this]() {
-      if (on_own_devices_changed_) {
-        on_own_devices_changed_();
-      } else {
-        card_service_.TellSiblings();
-      }
-    });
+    AppRuntime::PostWorkerNormal([this]() { NotifySiblings(); });
   });
   receive_pipeline_->SetOnRosterMember([this](const GroupMembershipCodec::MemberJoinedEntry& member) {
     if (member.card) {
@@ -207,15 +201,24 @@ std::optional<Object> MeshDeliveryOrchestrator::OwnCardJson() {
   return AccountCardToJson(*card);
 }
 
-void MeshDeliveryOrchestrator::RegisterSiblingEndpoints(const std::vector<mesh::DirectoryEndpoint>& endpoints) {
-  auto self = own_cards_.DevicePeerId();
-  const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
-  for (const mesh::DirectoryEndpoint& endpoint : endpoints) {
-    if (endpoint.peer_id.empty() || (self && endpoint.peer_id == *self) || endpoint.multiaddrs.empty()) {
-      continue;
-    }
-    transports_.RegisterEndpoints(endpoint.peer_id, mesh::RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx));
+void MeshDeliveryOrchestrator::NotifySiblings() {
+  ThreadMessage notice;
+  notice.id = util::GenerateUuid();
+  notice.content_type = ChatContentType::System;
+  notice.text = "Device list";
+  notice.payload_json = R"({"control_type":"device_list"})";
+  notice.timestamp = util::NowUnixMs();
+  if (auto sent = control_lane_.NotifySiblings(notice); !sent) {
+    log().info << "siblings not told of the device list: " << sent.error().message;
   }
+  if (on_own_devices_changed_) {
+    on_own_devices_changed_();
+  }
+}
+
+bool MeshDeliveryOrchestrator::LinkedTo(const std::string& peer_id) const {
+  IDirectMessageClient* chat = transports_.DirectChat();
+  return chat && chat->IsPeerConnected(peer_id);
 }
 
 Roe<EnvelopeSender> MeshDeliveryOrchestrator::OwnSender(const LocalIdentity& identity) {
@@ -1114,8 +1117,11 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       (*thread)->channel == ThreadChannel::E2ePublic && !rotating ? PeerDevices(amp_peer_key)
                                                                    : std::vector<AccountCardDevice>{};
   if (!devices.empty()) {
+    // M022: a device we have a live link to gets its copy over it (the relay if that fails — a record of its
+    // own); every other device's copy shares one relay record to the account.
     std::optional<Error> failure;
     bool any = false;
+    std::vector<RelayCopy> relay_copies;
     for (const AccountCardDevice& device : devices) {
       const ChatTargetKey pair = GroupE2ePayloadCodec::PairTargetKey(amp_peer_key, device.peer_id);
       if (auto restarted = StartNextPairEpochIfRestored(pair); !restarted) {
@@ -1129,13 +1135,17 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         failure = copy.error();
         continue;
       }
-      RelayEnvelope envelope = BuildDirectEnvelope(copy->numbered, *sender, (*thread)->channel, route_party,
-                                                   std::move(copy->sealed), device.peer_id);
+      RelayCopy sealed_copy = DeviceCopy(device.peer_id, std::move(*copy));
+      if (!LinkedTo(device.peer_id)) {
+        relay_copies.push_back(std::move(sealed_copy));
+        continue;
+      }
+      RelayEnvelope envelope = BuildDirectEnvelope(wire, *sender, (*thread)->channel, route_party,
+                                                   {std::move(sealed_copy)}, NextRelayOrderKey());
       if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
         failure = signed_ok.error();
         continue;
       }
-      // Amp to that device when it is reachable; else the relay (the shared mailbox — M013).
       outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
                                    .thread_id = thread_id,
                                    .message_id = appended->id,
@@ -1144,6 +1154,23 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                    .critical_lane = options.critical_lane,
                                    .copy_device = device.peer_id});
       any = true;
+    }
+    if (!relay_copies.empty()) {
+      RelayEnvelope envelope = BuildDirectEnvelope(wire, *sender, (*thread)->channel, route_party,
+                                                   std::move(relay_copies), NextRelayOrderKey());
+      if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
+        failure = signed_ok.error();
+      } else {
+        // The relay; an Amp-only peer (no route), over a link to one of its devices.
+        outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
+                                     .thread_id = thread_id,
+                                     .message_id = appended->id,
+                                     .amp_peer_key = peer_relay_id ? std::string() : amp_peer_key,
+                                     .relay_route = peer_relay_id,
+                                     .critical_lane = options.critical_lane,
+                                     .copy_device = "relay"});
+        any = true;
+      }
     }
     if (!any) {
       return FailOutbound(store_, *appended, failure.value_or(Error("No copy could be sealed")));
@@ -1154,8 +1181,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     if (!sealed) {
       return FailOutbound(store_, *appended, sealed.error());
     }
-    RelayEnvelope envelope =
-        BuildDirectEnvelope(*appended, *sender, (*thread)->channel, route_party, std::move(*sealed));
+    RelayEnvelope envelope = BuildDirectEnvelope(*appended, *sender, (*thread)->channel, route_party,
+                                                 {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       return FailOutbound(store_, *appended, signed_ok.error());
     }
@@ -1345,6 +1372,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     return FailOutbound(store_, *appended, sender.error());
   }
   bool any_missed = !encrypted->failed_member_identities.empty();
+  // Per member (M022): copies for devices we have a live link to go over it, the rest in one relay record.
+  std::map<std::string, std::vector<RelayCopy>> relay_copies;
+  std::vector<std::string> members_in_order;
   for (size_t i = 0; i < targets.size() && i < encrypted->copies.size(); ++i) {
     if (!encrypted->copies[i]) {
       continue;
@@ -1352,16 +1382,23 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     const GroupMemberTarget& target = targets[i];
     const std::string& recipient = target.member_identity;
     const std::string& device = target.target_key.peer_device;
-    const std::optional<std::string> relay_route = routes_.ResolveAccountWithDirectory(recipient);
-    const std::string amp_key = device.empty() ? recipient : device;
-    if (!relay_route && !AmpReaches(amp_key)) {
-      MarkGroupMemberMissed(group_id, recipient);
-      any_missed = true;
+    RelayCopy copy;
+    copy.recipient_device = device;
+    copy.session_epoch = target.session_epoch;
+    copy.sender_seq = target.sender_seq;
+    copy.key_init_b64 = encrypted->copies[i]->key_init_b64;
+    copy.payload_b64 = encrypted->copies[i]->payload_b64;
+    if (device.empty() || !LinkedTo(device)) {
+      if (relay_copies.find(recipient) == relay_copies.end()) {
+        members_in_order.push_back(recipient);
+      }
+      relay_copies[recipient].push_back(std::move(copy));
       continue;
     }
-    RelayEnvelope envelope = BuildGroupMemberEnvelope(
-        message, *sender, group_id, recipient, relay_route.value_or(recipient), encrypted->copies[i]->payload_b64,
-        target.session_epoch, target.sender_seq, encrypted->copies[i]->key_init_b64, device);
+    const std::optional<std::string> relay_route = routes_.ResolveAccountWithDirectory(recipient);
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, *sender, group_id, recipient,
+                                                      relay_route.value_or(recipient), {std::move(copy)},
+                                                      NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       MarkGroupMemberMissed(group_id, recipient);
       any_missed = true;
@@ -1370,7 +1407,29 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
                                  .thread_id = thread_id,
                                  .message_id = message.id,
-                                 .amp_peer_key = amp_key,
+                                 .amp_peer_key = device,
+                                 .relay_route = relay_route,
+                                 .group_member = recipient});
+  }
+  for (const std::string& recipient : members_in_order) {
+    const std::optional<std::string> relay_route = routes_.ResolveAccountWithDirectory(recipient);
+    if (!relay_route && !AmpReaches(recipient)) {
+      MarkGroupMemberMissed(group_id, recipient);
+      any_missed = true;
+      continue;
+    }
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, *sender, group_id, recipient,
+                                                      relay_route.value_or(recipient),
+                                                      std::move(relay_copies[recipient]), NextRelayOrderKey());
+    if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
+      MarkGroupMemberMissed(group_id, recipient);
+      any_missed = true;
+      continue;
+    }
+    outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
+                                 .thread_id = thread_id,
+                                 .message_id = message.id,
+                                 .amp_peer_key = relay_route ? std::string() : recipient,
                                  .relay_route = relay_route,
                                  .group_member = recipient});
   }
@@ -1692,13 +1751,10 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
     chat_sync_->SetPeerHistoryClient(transports_.History());
   }
   card_service_.Attach(transports_.AccountCards());
-  // The mesh is up: siblings that changed the device list while we were away (a device linked in) and we
-  // share it again — once per start (M021).
+  // Once a start, with other devices on our list: they hear our card again (a notice lost to a restart).
   AppRuntime::PostWorkerNormal([this]() {
-    if (on_own_devices_changed_) {
-      on_own_devices_changed_();
-    } else {
-      card_service_.TellSiblings();
+    if (auto card = own_cards_.Card(util::NowUnixMs()); card && card->devices.size() > 1) {
+      NotifySiblings();
     }
   });
 }

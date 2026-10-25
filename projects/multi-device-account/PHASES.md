@@ -122,7 +122,7 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [x] Each device mints its own ML-KEM key (additive in `identity.enc`; from the seed on a node); never in a link bundle or backup
 - [x] Account card v2: device entries `{peer_id, signing key, KEM key}`, signed by the account key, newest `issued_at` wins (no union merge); re-issued only when it changes; at most 5 devices
 - [x] Link bundle carries the issuing device's card; the new device signs itself in (`OwnCards::Learn`; siblings issuing at once converge)
-- [ ] The new device tells its siblings its card — the relay refuses an account's envelopes to itself; over Amp card exchange (built, not yet passing the lab) or a relay change (open)
+- [x] The new device tells its siblings its card: a control-lane notice to our own mailbox (M022), on a change and once a start
 
 ### d2 — Envelopes and sessions per device pair (wire cutover)
 
@@ -133,9 +133,10 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [x] Calls: unchanged on the account-level session (one account copy; single-device accounts work; several devices — d5)
 - [x] Link bundle carries the card and no sessions; backups keep account-level sessions only
 - [x] Unit tests: two linked devices both send and both read (1:1, group, account copies), new device's card, old card refused
-- [ ] Lab `linked_devices_both_send`: fails — the new device's first message does not reach the peer yet (under investigation)
-- [ ] **M022:** one relay record per account with an entry per device (one signature); split delivery (mesh for linked devices, one relay record for the rest, a follow-up for a failed mesh send); a record to our own account for our other devices; replaces the sibling card exchange over the mesh
-- [ ] **M022 relay (messenger):** a record to one's own account allowed (and its history); mailbox cap doubled — merges and deploys before the client
+- [x] Lab `linked_devices_both_send` (against the M022 relay branch)
+- [x] **M022:** one relay record per account with a copy per device (one signature); split delivery (a device with a live link gets its own envelope over it, the relay if that fails; the others share one relay record); account copies carry the sender's card; the sibling card exchange over the mesh dropped
+- [ ] **M022 relay (messenger `feat/self-send-multi-device`):** a record to one's own account allowed (and its history); mailbox cap doubled — merges and deploys before the client
+- [ ] Sent messages to our own other devices (the own-account record's copies) — d3
 
 ### d3 — Siblings
 

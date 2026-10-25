@@ -409,7 +409,7 @@ TEST(MessagingCrossCuttingTest, OversizeEnvelopeHardRejected) {
 
   RelayEnvelope envelope = harness.MakeSignedEnvelope("oversize-msg", 1, "x", ThreadChannel::E2ePublic);
   const ByteVector huge(kMaxRelayEnvelopeBytes + 1, static_cast<uint8_t>('a'));
-  envelope.body.e2e.payload_b64 = Base64Encode(huge);
+  envelope.body.e2e.copies.front().payload_b64 = Base64Encode(huge);
 
   const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);

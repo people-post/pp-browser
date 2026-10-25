@@ -157,13 +157,8 @@ public:
   AccountCardService& AccountCards() { return card_service_; }
   /** This account's own key card and device list (M021). */
   OwnCards& OwnAccountCards() { return own_cards_; }
-  /**
-   * Our device list changed, or the mesh came up: `reach` makes our other devices reachable (their directory
-   * endpoints, our address disclosed to them), then they and we share the list (M021). Unset: just share it.
-   */
-  void SetOnOwnDevicesChanged(std::function<void()> reach) { on_own_devices_changed_ = std::move(reach); }
-  /** Dial keys for our other devices, as the directory lists them (M017). */
-  void RegisterSiblingEndpoints(const std::vector<mesh::DirectoryEndpoint>& endpoints);
+  /** Our device list changed (our address goes to our other devices too, M021). */
+  void SetOnOwnDevicesChanged(std::function<void()> changed) { on_own_devices_changed_ = std::move(changed); }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -342,6 +337,10 @@ private:
   std::vector<AccountCardDevice> PeerDevices(const std::string& account_id);
   /** This device's signature on an envelope. */
   Roe<void> SignEnvelope(RelayEnvelope& envelope);
+  /** Our card to our other devices, through our own mailbox (M022). */
+  void NotifySiblings();
+  /** A link to device `peer_id` is up (its copy goes over it, M022). */
+  bool LinkedTo(const std::string& peer_id) const;
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
   PeerRouteBook routes_;
   /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
