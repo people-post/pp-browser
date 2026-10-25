@@ -10,6 +10,7 @@
 #include "common/chat/RelayStreamKey.h"
 #include "foundation/crypto/CryptoUtil.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace pbr {
@@ -154,6 +155,40 @@ Roe<SendKey> ResolveSendKey(const ThreadMessage& message, const Thread& thread, 
 
 } // namespace
 
+namespace {
+
+/** `message` (numbered) sealed under `master_psk` for `peer_account_id`, the key_init riding along when given. */
+Roe<SealedPayload> EncryptNumbered(const ThreadMessage& message, const CryptoChannel channel,
+                                   const std::string& sender_account_id, const std::string& peer_account_id,
+                                   const SendRelayOptions& options, const ByteVector& master_psk,
+                                   const std::optional<std::string>& key_init_b64) {
+  E2eEncryptParams params;
+  params.text = message.text;
+  params.channel = channel;
+  params.peer_contact_id = peer_account_id;
+  params.sender_contact_id = sender_account_id;
+  params.message_id = message.id;
+  params.sender_seq = *message.sender_seq;
+  params.session_epoch = *message.session_epoch;
+  params.timestamp = message.timestamp;
+  Roe<E2eEncryptResult> encrypted = [&]() -> Roe<E2eEncryptResult> {
+    if (options.content_type && *options.content_type != ChatContentType::Text) {
+      auto plaintext = ChatPayloadCodec::EncodeToRow(message);
+      if (!plaintext) {
+        return plaintext.error();
+      }
+      return E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(params, *plaintext, master_psk, key_init_b64);
+    }
+    return E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
+  }();
+  if (!encrypted) {
+    return encrypted.error();
+  }
+  return SealedPayload{std::move(encrypted->payload_b64), std::move(encrypted->key_init_b64)};
+}
+
+} // namespace
+
 Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread& thread,
                                      const std::string& sender_account_id, const SendRelayOptions& options,
                                      IPskSessionStore& psk_store, const PeerKemPublicFn& peer_kem) {
@@ -171,61 +206,97 @@ Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread&
   if (!key) {
     return key.error();
   }
-  E2eEncryptParams params;
-  params.text = message.text;
-  params.channel = E2eRelayPayloadCodec::ChannelFromThread(thread.channel);
-  params.peer_contact_id = thread.peer_identity_value;
-  params.sender_contact_id = sender_account_id;
-  params.message_id = message.id;
-  params.sender_seq = *message.sender_seq;
-  params.session_epoch = *message.session_epoch;
-  params.timestamp = message.timestamp;
-  Roe<E2eEncryptResult> encrypted = [&]() -> Roe<E2eEncryptResult> {
-    if (options.content_type && *options.content_type != ChatContentType::Text) {
-      auto plaintext = ChatPayloadCodec::EncodeToRow(message);
-      if (!plaintext) {
-        return plaintext.error();
-      }
-      return E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(params, *plaintext, key->master_psk,
-                                                                 key->key_init_b64);
-    }
-    return E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, key->master_psk, key->key_init_b64);
-  }();
-  if (!encrypted) {
-    return encrypted.error();
+  return EncryptNumbered(message, E2eRelayPayloadCodec::ChannelFromThread(thread.channel), sender_account_id,
+                         thread.peer_identity_value, options, key->master_psk, key->key_init_b64);
+}
+
+Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& sender_account_id,
+                           const SendRelayOptions& options, IPskSessionStore& psk_store, const ChatTargetKey& pair,
+                           const ByteVector& peer_device_kem) {
+  if (pair.peer_device.empty() || pair.channel != CryptoChannel::E2ePublic) {
+    return Error("A pair copy is for one device, on a public chat");
   }
-  return SealedPayload{std::move(encrypted->payload_b64), std::move(encrypted->key_init_b64)};
+  auto record = psk_store.Load(pair);
+  if (!record) {
+    return record.error();
+  }
+  const uint32_t epoch = record->has_value() ? (*record)->session_epoch : 1;
+  // The session first (a new one is made here), then our number in it.
+  auto session = EnsureE2ePublicMasterPsk(psk_store, pair, epoch, peer_device_kem);
+  if (!session) {
+    return session.error();
+  }
+  auto seq = psk_store.AllocateSenderSeq(pair);
+  if (!seq) {
+    return seq.error();
+  }
+  PairCopy copy{.numbered = message};
+  copy.numbered.session_epoch = epoch;
+  copy.numbered.sender_seq = *seq;
+  auto sealed = EncryptNumbered(copy.numbered, pair.channel, sender_account_id, pair.peer_identity_value, options,
+                                session->master_psk, session->key_init_b64);
+  if (!sealed) {
+    return sealed.error();
+  }
+  copy.sealed = std::move(*sealed);
+  return copy;
 }
 
 namespace {
 
-RelayEnvelope EnvelopeFrom(const ThreadMessage& message, const EnvelopeSender& sender) {
+RelayEnvelope EnvelopeFrom(const ThreadMessage& message, const EnvelopeSender& sender, std::vector<RelayCopy> copies,
+                           const uint64_t order_key) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
   envelope.sender_relay_id = sender.relay_user_id;
   envelope.sender_contact_id = sender.account_id;
-  envelope.sender_seq = message.sender_seq.value_or(0);
-  envelope.order_key = envelope.sender_seq;
-  envelope.session_epoch = message.session_epoch.value_or(1);
+  envelope.sender_device = sender.device;
+  envelope.order_key = order_key;
   envelope.timestamp = message.timestamp;
+  // Our card rides a session opener, and every account copy: either may reach someone who knows none of our
+  // devices yet — the card is what they check our device's signature with (M021).
+  const bool introduces = std::any_of(copies.begin(), copies.end(), [](const RelayCopy& copy) {
+    return (copy.key_init_b64 && !copy.key_init_b64->empty()) || copy.recipient_device.empty();
+  });
+  if (introduces) {
+    envelope.body.e2e.sender_card = sender.card;
+  }
+  if (copies.size() == 1) {
+    const RelayCopy only = copies.front();
+    envelope = WithSingleRelayCopy(std::move(envelope), only);
+  } else {
+    envelope.body.e2e.copies = std::move(copies);
+  }
   return envelope;
 }
 
 } // namespace
 
+RelayCopy AccountCopy(const ThreadMessage& numbered, SealedPayload sealed) {
+  RelayCopy copy;
+  copy.session_epoch = numbered.session_epoch.value_or(1);
+  copy.sender_seq = numbered.sender_seq.value_or(0);
+  if (sealed.key_init_b64 && !sealed.key_init_b64->empty()) {
+    copy.key_init_b64 = std::move(sealed.key_init_b64);
+  }
+  copy.payload_b64 = std::move(sealed.payload_b64);
+  return copy;
+}
+
+RelayCopy DeviceCopy(const std::string& device, PairCopy pair_copy) {
+  RelayCopy copy = AccountCopy(pair_copy.numbered, std::move(pair_copy.sealed));
+  copy.recipient_device = device;
+  return copy;
+}
+
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
-                                  const ThreadChannel channel, const std::string& route_party, SealedPayload sealed) {
-  RelayEnvelope envelope = EnvelopeFrom(message, sender);
+                                  const ThreadChannel channel, const std::string& route_party,
+                                  std::vector<RelayCopy> copies, const uint64_t order_key) {
+  RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "direct";
   envelope.route.channel = channel;
-  envelope.body.e2e.payload_b64 = std::move(sealed.payload_b64);
-  if (sealed.key_init_b64 && !sealed.key_init_b64->empty()) {
-    envelope.body.e2e.key_init_b64 = std::move(*sealed.key_init_b64);
-    envelope.body.e2e.sender_keys = sender.keys;
-  }
-  envelope.stream_key =
-      BuildCanonicalRelayStreamKey(sender.relay_user_id, route_party, channel, envelope.session_epoch);
+  envelope.stream_key = BuildDeviceRelayStreamKey(sender.relay_user_id, route_party, channel, sender.device);
   envelope.recipient_contact_id = route_party;
   return envelope;
 }
@@ -236,23 +307,12 @@ bool DirectSendTriesAmpFirst(const bool amp_reachable, const bool has_relay_rout
 
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       const std::string& route_party, std::string payload_b64,
-                                       const uint32_t session_epoch, const uint64_t sender_seq,
-                                       std::optional<std::string> key_init_b64) {
-  RelayEnvelope envelope = EnvelopeFrom(message, sender);
+                                       const std::string& route_party, std::vector<RelayCopy> copies,
+                                       const uint64_t order_key) {
+  RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "group";
   envelope.route.group_id = group_id;
-  // Numbered in the pair, as the member sees it (G010/G011): the pair's epoch and our seq for the group.
-  envelope.session_epoch = session_epoch;
-  envelope.sender_seq = sender_seq;
-  envelope.order_key = sender_seq;
-  envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, std::move(payload_b64)}};
-  // A member with no pairwise session yet derives it from the key_init.
-  if (key_init_b64) {
-    envelope.body.e2e.key_init_b64 = std::move(*key_init_b64);
-    envelope.body.e2e.sender_keys = sender.keys;
-  }
-  envelope.stream_key = BuildGroupRelayStreamKey(group_id, envelope.session_epoch, recipient);
+  envelope.stream_key = BuildGroupDeviceRelayStreamKey(group_id, recipient, sender.device);
   envelope.recipient_contact_id = route_party;
   return envelope;
 }

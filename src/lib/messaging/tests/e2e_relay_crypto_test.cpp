@@ -82,9 +82,11 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(payload_b64));
   envelope.body.e2e.payload_b64 = *payload_b64;
 
-  auto body_hash = EnvelopeSigner::BodyHash(envelope);
+  const RelayCopy copy{.session_epoch = envelope.session_epoch, .sender_seq = envelope.sender_seq,
+                       .payload_b64 = envelope.body.e2e.payload_b64};
+  auto body_hash = EnvelopeSigner::CopyHash(copy);
   ASSERT_TRUE(static_cast<bool>(body_hash));
-  auto body_hash_again = EnvelopeSigner::BodyHash(envelope);
+  auto body_hash_again = EnvelopeSigner::CopyHash(copy);
   ASSERT_TRUE(static_cast<bool>(body_hash_again));
   EXPECT_EQ(*body_hash, *body_hash_again);
 
@@ -104,14 +106,9 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
   const test::TestAccount local = test::TestAccount::Make();
   const std::string local_account_id = local.account_id;
-  PeerSigningKeyStore key_store;
-
-  auto peer_keys = MlDsa::GenerateKeyPair();
-  ASSERT_TRUE(static_cast<bool>(peer_keys));
-  PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Base64Encode(peer_keys->public_key);
-  record.source = "test";
-  key_store.PutUncheckedForTest("account", "account:peer", record);
+  // The peer's device, as its kept card lists it (filed under the fixture's readable id).
+  const test::TestAccount peer = test::TestAccount::Make();
+  const AccountCard peer_card = peer.DeviceCard();
 
   DirectChatTarget target;
   target.peer_identity_kind = "account";
@@ -121,9 +118,12 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(thread));
   InstallTestPsk(psk_store, *thread);
 
-  PeerSigningKeyResolver key_resolver(key_store);
   GroupRosterStore roster_store(store.ProfileDbPath());
-  RelayReceivePipeline pipeline(store, key_resolver, psk_store, local.Keys(), roster_store);
+  RelayReceivePipeline pipeline(
+      store, [&peer_card](const std::string& account) -> std::optional<AccountCard> {
+        return account == "account:peer" ? std::optional<AccountCard>(peer_card) : std::nullopt;
+      },
+      psk_store, local.Keys(), roster_store);
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
@@ -148,12 +148,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(payload_b64));
   envelope.body.e2e.payload_b64 = *payload_b64;
 
-  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  ASSERT_TRUE(static_cast<bool>(sign_bytes));
-  auto signature =
-      MlDsa::Sign(peer_keys->secret_key, *sign_bytes);
-  ASSERT_TRUE(static_cast<bool>(signature));
-  envelope.signature = Base64Encode(*signature);
+  peer.SignEnvelope(envelope);
 
   const RelayReceiveOutcome outcome = pipeline.ProcessEnvelope(envelope, local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptBootstrap);

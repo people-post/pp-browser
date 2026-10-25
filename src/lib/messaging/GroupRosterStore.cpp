@@ -552,7 +552,9 @@ Roe<uint64_t> GroupRosterStore::AllocateGroupSenderSeq(const std::string& group_
 }
 
 Roe<uint64_t> GroupRosterStore::AllocateMemberSeq(const std::string& group_id, const std::string& member_identity,
-                                                  const uint32_t pair_epoch) const {
+                                                  const uint32_t pair_epoch, const std::string& member_device) const {
+  // A device pair counts on its own: its row is the member's with the device (M021).
+  const std::string counter = member_device.empty() ? member_identity : member_identity + "/" + member_device;
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -572,7 +574,7 @@ Roe<uint64_t> GroupRosterStore::AllocateMemberSeq(const std::string& group_id, c
     return Error("Failed to prepare group member seq");
   }
   sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 2, member_identity.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, counter.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(pair_epoch));
   std::optional<uint64_t> seq;
   if (sqlite3_step(stmt) == SQLITE_ROW) {

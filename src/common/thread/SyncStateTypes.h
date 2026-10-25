@@ -29,6 +29,8 @@ struct PeerSyncState {
 struct SeqRangeQuery {
   uint32_t session_epoch = 1;
   std::string seq_owner_contact_id;
+  /** The owner's device whose numbering this is (M021); empty: rows with none. */
+  std::string sender_device;
   std::optional<uint64_t> min_sender_seq;
   std::optional<uint64_t> max_sender_seq;
   size_t limit = 50;

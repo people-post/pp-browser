@@ -9,9 +9,16 @@
 namespace pbr {
 
 mesh::AddressDisclosurePolicy BuildAddressDisclosurePolicy(const mesh::DirectAudience audience,
-                                                     const std::vector<Contact>& contacts) {
+                                                     const std::vector<Contact>& contacts,
+                                                     const std::vector<std::string>& own_devices) {
   mesh::AddressDisclosurePolicy policy;
   policy.audience = audience;
+  for (const std::string& peer_id : own_devices) {
+    if (!peer_id.empty()) {
+      policy.contacts.insert(peer_id);
+      policy.friendly.insert(peer_id);
+    }
+  }
   for (const Contact& contact : contacts) {
     std::vector<std::string> keys = PeerIdsFromContact(contact);
     for (const mesh::ContactId& id : contact.ids) {

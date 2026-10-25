@@ -25,7 +25,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
                                              const std::string& local_relay_user_id,
                                              const std::string& peer_relay_user_id,
                                              const std::string& local_account_id,
-                                             IPskSessionStore& psk_store,
+                                             const std::string& local_device, IPskSessionStore& psk_store,
                                              const ChatHistoryResponder::SignBytesFn& sign_bytes) {
   if (!message.sender_seq || !message.session_epoch) {
     return Error("History row missing seq fields");
@@ -88,12 +88,15 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.message_id = message.id;
   envelope.sender_relay_id = local_relay_user_id;
   envelope.sender_contact_id = sender_contact_id;
+  envelope.sender_device = local_device;
   envelope.route.kind = "direct";
   envelope.route.channel = thread.channel;
-  envelope.body.e2e.payload_b64 = *payload_b64;
-  envelope.sender_seq = *message.sender_seq;
+  RelayCopy copy;  // served as the account copy it was numbered as (the thread's numbering)
+  copy.session_epoch = *message.session_epoch;
+  copy.sender_seq = *message.sender_seq;
+  copy.payload_b64 = *payload_b64;
+  envelope = WithSingleRelayCopy(std::move(envelope), std::move(copy));
   envelope.order_key = envelope.sender_seq;
-  envelope.session_epoch = *message.session_epoch;
   envelope.stream_key =
       BuildCanonicalRelayStreamKey(local_relay_user_id, peer_relay_user_id, thread.channel, *message.session_epoch);
   envelope.recipient_contact_id = peer_relay_user_id;
@@ -120,6 +123,7 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
                                                      const ChatHistoryRequest& request,
                                                      const std::string& local_relay_user_id,
                                                      const std::string& local_account_id,
+                                                     const std::string& local_device,
                                                      const SignBytesFn& sign_bytes,
                                                      const std::string& remote_peer_id,
                                                      IPeerSigningKeyResolver& signing_keys, const int64_t now_ms) {
@@ -189,7 +193,7 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
       served.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, message.id, "");
     }
     auto envelope = OutboundMessageToEnvelope(served, **thread, local_relay_user_id, request.requester_identity_value,
-                                              local_account_id, psk_store, sign_bytes);
+                                              local_account_id, local_device, psk_store, sign_bytes);
     if (!envelope) {
       if (served.content_type == ChatContentType::Annotation) {
         continue; // not servable on this channel: the requester closes the seq as empty

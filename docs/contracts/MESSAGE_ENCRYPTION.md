@@ -48,7 +48,7 @@ Not protected in v1: traffic metadata. Local disk: identity, PSK, and transcript
 
 - 32 bytes from CSPRNG; fingerprint = BLAKE2b-256(PSK) as grouped hex.
 - Initial setup (E011): either peer generates; export raw base64 + fingerprint OOB; peer imports; both confirm fingerprint before first send (`psk_verified_at` on `chat_targets`). Rotation: export/import `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
-- **Public direct (`e2e_public`):** encapsulate to the recipient **account** ML-KEM-768 (E013 / E024 / **M015**) → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it, with the sender's key card in `body.e2e.sender_keys` ([ACCOUNT_CARD.md](ACCOUNT_CARD.md#key-card)) so the peer can verify it and answer without any lookup. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. A device that got its sessions back without its message numbering (account backup restore, *Reset chats*) holds them `restart_pending`: its next send in the pair moves to `session_epoch + 1` from `sender_seq` 1 under a fresh session (`key_init`), the old master kept as retired for the old epoch. A receiver reading a `key_init` at a higher epoch than its own retires its master at its epoch and moves to the new epoch and session; an envelope at a lower epoch than the stored session leaves the session alone. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
+- **Public direct (`e2e_public`):** a session is between **two devices** ([M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)): a message goes as one copy per device on the recipient's account card, each opened by encapsulating to **that device's** ML-KEM-768 and numbered in that device pair (`ChatTargetKey.peer_device`; the session's epoch, our own `sender_seq` there). While the sender knows none of the recipient's devices (a first contact) it goes as one **account copy**, encapsulated to the recipient **account** ML-KEM-768 (E024 / M015) and numbered by the sending device's account copies; every device of the account reads it. → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it, with the sender's account card in `body.e2e.sender_card` ([ACCOUNT_CARD.md](ACCOUNT_CARD.md)) so the peer can verify the sending device and answer every device of the account without any lookup. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. A device that got its sessions back without its message numbering (account backup restore, *Reset chats*) holds them `restart_pending`: its next send in the pair moves to `session_epoch + 1` from `sender_seq` 1 under a fresh session (`key_init`), the old master kept as retired for the old epoch. A receiver reading a `key_init` at a higher epoch than its own retires its master at its epoch and moves to the new epoch and session; an envelope at a lower epoch than the stored session leaves the session alone. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
 
 ### Session key (HKDF — E015)
 
@@ -132,9 +132,9 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 ```
 
 | `e2e` / `e2e_public` | `{ "e2e": { "payload_b64": "…" } }` |
-| `e2e_public` opening a session | `{ "e2e": { "payload_b64": "…", "key_init_b64": "…", "sender_keys": { …key card… } } }` |
+| `e2e_public` opening a session | `{ "e2e": { "payload_b64": "…", "key_init_b64": "…", "sender_card": { …account card… } } }` |
 
-`sender_keys` appears only with `key_init_b64`, must be the key card of `sender_contact_id`, and is checked on its own (it is signed by the account it names), so it is not part of the envelope signing bytes.
+`sender_card` appears only with `key_init_b64`, must be the account card of `sender_contact_id`, and is checked on its own (it is signed by the account it names), so it is not part of the envelope signing bytes. It speaks for the sender only when newer than the card the receiver keeps: an older card cannot bring back a device taken off the list.
 
 Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknown `envelope_version`.
 
@@ -142,23 +142,23 @@ Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknow
 
 Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `MlDsa::Sign`). String fields use **LenUtf8** (D088).
 
-**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v2"` + NUL.
+**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v3"` + NUL.
 
-Then: `sign_version=2`, `envelope_version=1`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `body.e2e.key_init_b64` LenUtf8 (empty when none).
+Then: `sign_version=3`, `envelope_version=2`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
 
-Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, and the relay route it may learn for the sender (learned only from envelopes whose signature verified).
+**Signer:** the sending device's ML-DSA-65 key (its PeerId's), not the account's (M021). The receiver takes that key from the sender's account card — the carried `sender_card` when it proves itself and is newer than the one kept, else the kept one — and refuses a device the card does not list.
 
-**Body shape:** a `direct` / `control` envelope carries `payload_b64` only; a `group` envelope `member_payloads` only (and a `group_id`). A group envelope's single member payload is a pairwise `e2e_public` message at the envelope's `session_epoch` — the pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
+Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, the relay route it may learn for the sender (learned only from envelopes whose signature verified), and which device sent it and which device it is for.
 
-**Body hash:**
+**Body shape (M022):** every envelope carries 1–8 copies (one per recipient device, at most one account copy); a `group` envelope names its `group_id`, a `direct` / `control` one does not; the control lane is one account copy. A group copy is a pairwise `e2e_public` message at the copy's `session_epoch` — its device pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
+
+**Copy hash:**
 
 ```
-direct / control:  body_hash = BLAKE2b-256( 0x02 || LenBytes(decoded payload_b64) )
-group:             body_hash = BLAKE2b-256( 0x02 || for each (member_id, blob) in member_payloads, by member_id:
-                                                    LenUtf8(member_id) || LenBytes(decoded blob) )
+copy_hash = BLAKE2b-256( 0x02 || LenBytes(decoded copies[i].payload_b64) )
 ```
 
-(`LenBytes` / `LenUtf8` = u64 BE length + bytes.) The hash covers exactly what the receiver decrypts.
+(`LenBytes` / `LenUtf8` = u64 BE length + bytes.) The hash covers exactly what the copy's device decrypts; one signature covers every copy, so none can be moved to another device, dropped or added.
 
 Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
@@ -170,7 +170,7 @@ Peer verify keys: `PeerSigningKeyStore` / `PeerKemKeyStore`, filled from account
 
 1. Build binary `ChatPayload` → canonical AAD from envelope fields → `MessageCipher::Encrypt` → blob → base64 → `body.e2e.payload_b64`.
 2. `EnvelopeSigner::BuildSignBytes` → sign.
-3. Receive: when `body.e2e.sender_keys` is present, check it as the key card of `sender_contact_id` and keep it → verify signature → resolve PSK for `envelope.session_epoch` → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest.
+3. Receive: skip a copy for another device of ours (`recipient_device` set and not ours) → verify with the sending device's key from the sender's card (keep a carried, newer card once it verified) → resolve PSK for `envelope.session_epoch` in the copy's session (the device pair's, or the account's for an account copy; its `key_init` opened with this device's or the account's KEM key) → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest, numbered per sending device.
 
 Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_epoch` (E019).
 

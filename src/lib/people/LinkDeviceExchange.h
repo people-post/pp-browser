@@ -7,6 +7,7 @@
 
 #include "common/Error.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,8 @@ namespace pbr {
 struct LinkDeviceImportResult {
   LocalIdentity identity;
   std::vector<LinkDevicePublicPsk> public_psks;
+  /** The issuing device's account card, when the bundle carries one (M021). */
+  std::optional<std::string> account_card_json;
 };
 
 /** Capture / apply `pp-browser-link-device-v1` (M012). UI and push re-attach stay in feature. */
@@ -27,7 +30,8 @@ public:
                                          int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
   static Roe<std::string> ExportJson(const LocalIdentity& identity, const ByteVector& dek,
                                      std::vector<LinkDevicePublicPsk> public_psks, int64_t now_ms,
-                                     int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
+                                     int64_t ttl_ms = kLinkDeviceDefaultTtlMs,
+                                     std::optional<std::string> account_card_json = std::nullopt);
 
   /**
    * Apply `pp-browser-link-device-v1`: wrap the shared DEK, keep local device

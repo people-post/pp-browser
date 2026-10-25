@@ -24,6 +24,7 @@ inline constexpr const char* kNodeIdentityHkdfSalt = "pp-node-identity-v1";
 inline constexpr const char* kNodeIdentityMlDsaDeviceInfo = "pp-node/ml-dsa-device/v1";
 inline constexpr const char* kNodeIdentityMlDsaAccountInfo = "pp-node/ml-dsa-account/v1";
 inline constexpr const char* kNodeIdentityMlKemAccountInfo = "pp-node/ml-kem-account/v1";
+inline constexpr const char* kNodeIdentityMlKemDeviceInfo = "pp-node/ml-kem-device/v1";
 
 inline constexpr size_t kReplayWindowSize = 32;
 inline constexpr uint32_t kMaxRetiredPskEpochs = 8;

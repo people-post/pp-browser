@@ -22,7 +22,7 @@ struct PeerCardRecord {
   std::string nickname;
   /** The newest account card's; 0 while only a key card (the directory's, a first message's) is known. */
   int64_t issued_at = 0;
-  /** The union of devices from every account card seen, the newest card's first. */
+  /** The newest account card's devices (its PeerIds): the account's device list (M021). */
   std::vector<std::string> devices;
   /** Where the newest information came from (directory, envelope, contact_card, device, locator). */
   std::string source;
@@ -38,8 +38,8 @@ struct PeerCardRecord {
  */
 PeerCardRecord MergeKeyCard(std::optional<PeerCardRecord> known, const KeyCard& card, const std::string& source);
 /**
- * Folds a checked account card in: keys and nickname from the newest card, devices as the union (the
- * newest card's first, at most kMaxAccountCardDevices) so a device that does not know a sibling cannot hide it.
+ * Folds a checked account card in: the newest card (`issued_at`) is the account's word on its keys,
+ * nickname and device list (M021) — an older one changes nothing.
  */
 PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card, const std::string& source);
 

@@ -94,9 +94,13 @@ struct AmpChatHistoryTransport::Impl {
                       const std::string local_account_id = !local_identity->account_id.empty()
                                                                ? local_identity->account_id
                                                                : local_identity->relay_user_id;
+                      auto local_device = PeerRequestAuth::DevicePeerId(local_identity->public_key_b64);
+                      if (!local_device) {
+                        return;
+                      }
                       auto response = ChatHistoryResponder::Serve(
-                          store, psk_store, *request, local_identity->relay_user_id, local_account_id,
-                          [this](const std::vector<uint8_t>& bytes) { return identity.SignBytes(bytes); },
+                          store, psk_store, *request, local_identity->relay_user_id, local_account_id, *local_device,
+                          [this](const std::vector<uint8_t>& bytes) { return identity.SignDeviceBytes(bytes); },
                           remote_peer_id, signing_keys, util::NowUnixMs());
                       if (!response) {
                         return;  // refused or failed: the asker gets no answer either way

@@ -192,6 +192,10 @@ public:
   /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
   ThreadLocalPrefsStore& ThreadPrefs();
   MeshDeliveryOrchestrator& MeshMessaging();
+  /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
+  std::optional<std::string> OwnAccountCardJson();
+  /** A linked device's first look at its account's device list (the bundle's card): kept, and this device signed in. */
+  Roe<void> LearnLinkedAccountCard(const std::string& card_json);
   GroupMembershipWorkflow& Groups();
   /**
    * k5: the device's network changed (any thread; the OS monitor calls it, tests may too). The mesh
@@ -459,6 +463,7 @@ private:
   std::unique_ptr<PeerCardStore> peer_cards_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
+  Roe<void> KeepLinkedAccountCard(const std::string& card_json);
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<InboxController> inbox_;

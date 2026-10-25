@@ -43,12 +43,16 @@ public:
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
   Roe<std::string> SignAccountBytes(const AccountSignBytes& sign_bytes) const override;
+  /** Signs with this device's own ML-DSA-65 key (its PeerId's; M021: the device signs its envelopes). */
+  Roe<std::string> SignDeviceBytes(const std::vector<uint8_t>& sign_bytes) const;
   /** Raw device ML-DSA-65 private key for libp2p Host identity binding. */
   Roe<ByteVector> GetDeviceMlDsaPrivateKey() const;
   Roe<ByteVector> GetDeviceMlDsaPublicKey() const;
   /** Account ML-KEM-768 secret (M015). Mints only if identity has no valid KEM yet. */
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
+  /** This device's own ML-KEM-768 secret (M021): opens the sessions peers start with this device. */
+  Roe<ByteVector> GetDeviceKemPrivateKey() const;
   Roe<std::string> GetAccountId() const override;
   void Flush();
 

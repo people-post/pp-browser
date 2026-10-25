@@ -39,6 +39,11 @@ struct LinkDeviceBundleV1 {
   int64_t created_at_ms = 0;
   int64_t expires_at_ms = 0;
   std::vector<LinkDevicePublicPsk> public_psks;
+  /**
+   * The issuing device's account card (JSON text; M021): the account's device list, which the new device
+   * signs itself into. Absent in a local backup (a restore starts a list of its own).
+   */
+  std::optional<std::string> account_card_json;
 };
 
 class LinkDeviceCodec {

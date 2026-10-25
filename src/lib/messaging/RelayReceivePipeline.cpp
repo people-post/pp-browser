@@ -78,6 +78,41 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   return target;
 }
 
+/**
+ * The session a copy is read under (M021): the pair with the sending device for a copy to this device,
+ * the account-level session for an account copy.
+ */
+ChatTargetKey CopyTargetKey(const RelayEnvelope& envelope, const DirectChatTarget& sender, const CryptoChannel channel) {
+  ChatTargetKey key;
+  key.peer_identity_kind = sender.peer_identity_kind;
+  key.peer_identity_value = sender.peer_identity_value;
+  key.channel = channel;
+  if (!envelope.recipient_device.empty()) {
+    key.peer_device = envelope.sender_device;
+  }
+  return key;
+}
+
+/**
+ * Whose numbering a copy is in (M021): the sending device's in its pair with us; for an account copy that
+ * device's account copies (two linked devices both write to a contact that knows neither yet — each numbers
+ * its own). A private chat is one device's (M014): the account's numbering, which its integrity checks read.
+ */
+std::string CopyNumbering(const RelayEnvelope& envelope) {
+  if (!envelope.recipient_device.empty()) {
+    return envelope.sender_device;
+  }
+  if (envelope.route.kind == kRelayRouteDirect && envelope.route.channel == ThreadChannel::E2e) {
+    return {};
+  }
+  return envelope.sender_device + "@account";
+}
+
+/** A row's sending device: the device pair's, none for an account copy. */
+std::optional<std::string> RowDevice(const std::string& numbering) {
+  return numbering.empty() ? std::nullopt : std::optional<std::string>(numbering);
+}
+
 void MarkReceiveFailure(RelayReceiveOutcome& outcome, const std::string& sender, const ReceiveFailure reason,
                         const std::string& detail, const std::optional<std::string>& thread_id = std::nullopt,
                         const std::string& family = {}) {
@@ -99,10 +134,10 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
 
 } // namespace
 
-RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
+RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards,
                                            IPskSessionStore& psk_store, LocalKeys local_keys,
                                            GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
-    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), local_keys_(std::move(local_keys)),
+    : store_(store), account_cards_(std::move(account_cards)), psk_store_(psk_store), local_keys_(std::move(local_keys)),
       group_roster_(group_roster), invite_gate_(invite_gate), public_lock_(store, psk_store) {
   redirectLogger("RelayReceivePipeline");
 }
@@ -432,22 +467,53 @@ ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id
 
 Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
                                               const DirectChatTarget& target) const {
-  // The opening message of a session carries the sender's key card: one that proves itself for this sender
-  // verifies the envelope with no lookup, and is kept once the envelope it came with has verified.
-  if (const auto& carried = envelope.body.e2e.sender_keys;
-      carried && target.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) &&
-      carried->account_id == target.peer_identity_value && VerifyKeyCard(*carried)) {
-    auto verified = EnvelopeSigner::Verify(envelope, carried->signing_public_key_b64);
-    if (verified && *verified && on_sender_keys_) {
-      on_sender_keys_(*carried);
+  if (target.peer_identity_kind != ContactIdKindToString(mesh::ContactIdKind::Account) ||
+      envelope.sender_device.empty()) {
+    return Error("Envelope names no sending device of an account");
+  }
+  std::optional<AccountCard> kept = account_cards_ ? account_cards_(target.peer_identity_value) : std::nullopt;
+  // The opening message of a session carries the sender's card: one that proves itself for this sender and
+  // is newer than the kept one (a new device, a newer list) speaks for the sender, and is kept once the
+  // envelope it came with has verified. An older one does not undo a newer list (a device taken out).
+  std::optional<AccountCard> carried;
+  if (const auto& card_json = envelope.body.e2e.sender_card) {
+    if (auto card = AccountCardFromJson(*card_json);
+        card && card->keys.account_id == target.peer_identity_value && VerifyAccountCard(*card, util::NowUnixMs()) &&
+        (!kept || card->issued_at > kept->issued_at)) {
+      carried = std::move(card.value());
     }
-    return verified;
   }
-  auto key = signing_keys_.Resolve(target.peer_identity_kind, target.peer_identity_value);
-  if (!key) {
-    return key.error();
+  const AccountCard* card = carried ? &*carried : (kept ? &*kept : nullptr);
+  if (!card) {
+    return Error("No account card for the sender");
   }
-  return EnvelopeSigner::Verify(envelope, key->signing_public_key_b64);
+  const AccountCardDevice* device = FindCardDevice(*card, envelope.sender_device);
+  if (!device) {
+    return Error("The sending device is not on the sender's account card");
+  }
+  auto verified = EnvelopeSigner::Verify(envelope, device->signing_public_key_b64);
+  if (verified && *verified && carried && on_sender_card_) {
+    on_sender_card_(*carried);
+  }
+  return verified;
+}
+
+RelayReceivePipeline::CopyTo RelayReceivePipeline::WhoseCopy(const RelayEnvelope& envelope) const {
+  if (envelope.recipient_device.empty()) {
+    return CopyTo::Account;
+  }
+  auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
+  return self && *self == envelope.recipient_device ? CopyTo::ThisDevice : CopyTo::Sibling;
+}
+
+Roe<ByteVector> RelayReceivePipeline::CopyKemPrivateKey(const RelayEnvelope& envelope) const {
+  if (envelope.recipient_device.empty()) {
+    return local_keys_.kem_private_key();
+  }
+  if (!local_keys_.device_kem_private_key) {
+    return Error("No device KEM key");
+  }
+  return local_keys_.device_kem_private_key();
 }
 
 Roe<void> RelayReceivePipeline::ValidateInboundPskRotate(const RelayEnvelope& envelope,
@@ -496,10 +562,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundPskRotate(const std::string& thread_
 std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::string& thread_id,
                                                                     const uint32_t session_epoch,
                                                                     const std::string& seq_owner_contact_id,
-                                                                    const uint64_t sender_seq) const {
+                                                                    const uint64_t sender_seq,
+                                                                    const std::string& sender_device) const {
   SeqRangeQuery query;
   query.session_epoch = session_epoch;
   query.seq_owner_contact_id = seq_owner_contact_id;
+  query.sender_device = sender_device;
   query.min_sender_seq = sender_seq;
   query.max_sender_seq = sender_seq;
   query.limit = 1;
@@ -518,10 +586,20 @@ bool RelayReceivePipeline::SenderBlocked(const std::string& sender) const {
   return blocked && *blocked;
 }
 
-RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope,
+RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& received,
                                                           const std::string& local_relay_user_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
+  // The copy this device reads (M022): its own, else the account copy. With copies for our other devices
+  // only, the message is theirs (or one is missing for us).
+  auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
+  const std::optional<RelayEnvelope> selected = SelectRelayCopy(received, self ? *self : std::string());
+  if (!selected) {
+    RelayReceiveOutcome outcome;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  const RelayEnvelope& envelope = *selected;
   if (envelope.route.kind == kRelayRouteGroup) {
     return ProcessGroupEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
   }
@@ -560,25 +638,35 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
+  if (WhoseCopy(envelope) == CopyTo::Sibling) {
+    outcome.decision = IngestDecision::SilentDiscard;  // another device's copy, in the shared mailbox (M013)
+    return outcome;
+  }
   const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+  if (envelope.sender_contact_id == local_relay_user_id) {
+    // A sibling's notice (M022): the account card it carries — the device list — is what counts, taken once
+    // the envelope verifies with it (SetOnSenderCard). Nothing else to apply.
+    auto verified = VerifySignature(envelope, inbound_target);
+    outcome.sender_verified = verified && *verified;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
   auto verified = VerifySignature(envelope, inbound_target);
   if (!verified || !*verified) {
     log().warning << "control lane: signature check failed message_id=" << envelope.message_id
-                  << " sender=" << envelope.sender_contact_id;
+                  << " sender=" << envelope.sender_contact_id
+                  << (verified ? std::string() : " err=" + verified.error().message);
     return outcome;
   }
   outcome.sender_verified = true;
   if (local_relay_user_id.empty()) {
     return outcome;
   }
-  auto kem_private = local_keys_.kem_private_key();
+  auto kem_private = CopyKemPrivateKey(envelope);
   if (!kem_private) {
     return outcome;
   }
-  ChatTargetKey target_key;
-  target_key.peer_identity_kind = inbound_target.peer_identity_kind;
-  target_key.peer_identity_value = inbound_target.peer_identity_value;
-  target_key.channel = CryptoChannel::E2ePublic;
+  const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
                                                          *kem_private, &read);
@@ -660,6 +748,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
+  // The shared mailbox (M013) holds every device's copies: another device's is not ours to read; our own
+  // account's siblings do not write to us yet (M021 d3).
+  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  const std::string numbering = CopyNumbering(envelope);
 
   const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
   auto thread = store_.FindDirectThread(inbound_target);
@@ -700,14 +795,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       auto verified_dup = VerifySignature(envelope, inbound_target);
       outcome.sender_verified = verified_dup && *verified_dup;
       if (verified_dup && *verified_dup && E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
-        ChatTargetKey target_key;
-        target_key.peer_identity_kind = inbound_target.peer_identity_kind;
-        target_key.peer_identity_value = inbound_target.peer_identity_value;
-        target_key.channel = E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel);
+        const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target,
+                                                       E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
         std::optional<ByteVector> local_kem_private_key;
         if (envelope.route.channel == ThreadChannel::E2ePublic) {
-          // Account KEM secret (shared across linked devices after import — M015).
-          if (auto kem_private = local_keys_.kem_private_key()) {
+          if (auto kem_private = CopyKemPrivateKey(envelope)) {
             local_kem_private_key = std::move(*kem_private);
           }
         }
@@ -724,6 +816,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
             side.transport = transport;
             side.sender_seq = envelope.sender_seq;
             side.session_epoch = envelope.session_epoch;
+            side.sender_device = RowDevice(numbering);
             ApplyOutOfOrderControls(side, envelope, IngestDecision::BenignDuplicate, outcome);
           }
         }
@@ -749,8 +842,16 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   // The pair's epoch as it stood before this envelope: reading it may move the session to a later epoch
   // the peer restarted at (ReconcileE2ePublicSession), and that is still an advance to classify.
+  const bool device_copy = !envelope.recipient_device.empty();
+  const ChatTargetKey copy_key =
+      CopyTargetKey(envelope, inbound_target, E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
   std::optional<uint32_t> epoch_before;
-  if (!auto_create) {
+  if (device_copy) {
+    // A device pair's epoch is its session's (M021), not the thread's.
+    if (auto loaded = psk_store_.Load(copy_key); loaded && loaded->has_value()) {
+      epoch_before = (*loaded)->session_epoch;
+    }
+  } else if (!auto_create) {
     if (auto loaded = store_.GetChatTargetSessionEpoch(resolved_thread_id); loaded) {
       epoch_before = *loaded;
     }
@@ -767,14 +868,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     const std::string& local_aad_id = local_relay_user_id;
 
-    ChatTargetKey target_key;
-    target_key.peer_identity_kind = inbound_target.peer_identity_kind;
-    target_key.peer_identity_value = inbound_target.peer_identity_value;
-    target_key.channel = E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel);
+    const ChatTargetKey& target_key = copy_key;
 
     std::optional<ByteVector> local_kem_private_key;
     if (envelope.route.channel == ThreadChannel::E2ePublic) {
-      auto kem_private = local_keys_.kem_private_key();
+      auto kem_private = CopyKemPrivateKey(envelope);
       if (!kem_private) {
         outcome.decision = IngestDecision::HardReject;
         MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MissingKey, kem_private.error().message,
@@ -883,6 +981,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   uint32_t chat_target_epoch = envelope.session_epoch;
   if (auto_create) {
     sync_state = DefaultPeerSyncState();
+  } else if (device_copy) {
+    // The device pair's numbering (M021): its own receive state, from scratch for a pair new to us.
+    chat_target_epoch = epoch_before.value_or(envelope.session_epoch);
+    auto loaded_sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch, numbering);
+    sync_state = loaded_sync_state ? *loaded_sync_state : DefaultPeerSyncState();
   } else {
     auto loaded_epoch = store_.GetChatTargetSessionEpoch(resolved_thread_id);
     if (!loaded_epoch) {
@@ -892,9 +995,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     chat_target_epoch = epoch_before.value_or(*loaded_epoch);
 
-    auto loaded_sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch);
+    auto loaded_sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch, numbering);
     if (loaded_sync_state) {
       sync_state = *loaded_sync_state;
+    } else if (!numbering.empty()) {
+      sync_state = DefaultPeerSyncState();  // a sending device's account copies, new to us (M021)
     } else if (envelope.session_epoch > chat_target_epoch) {
       sync_state = DefaultPeerSyncState();  // the peer moved the pair to an epoch nothing is held in yet
     } else {
@@ -915,9 +1020,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   classifier_input.authorized_older_backfill = authorized_older_backfill;
   classifier_input.has_message_id = false;
   classifier_input.existing_message_id_at_seq =
-      FindMessageIdAtSeq(resolved_thread_id, envelope.session_epoch, seq_owner, envelope.sender_seq);
+      FindMessageIdAtSeq(resolved_thread_id, envelope.session_epoch, seq_owner, envelope.sender_seq, numbering);
 
-  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id);
+  const std::string replay_owner = envelope.sender_contact_id + "/" + numbering;
+  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch, replay_owner);
   const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
   outcome.decision = classified.decision;
 
@@ -935,6 +1041,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     side.transport = transport;
     side.sender_seq = envelope.sender_seq;
     side.session_epoch = envelope.session_epoch;
+    side.sender_device = RowDevice(numbering);
     ApplyOutOfOrderControls(side, envelope, decision_label, outcome);
   };
 
@@ -957,7 +1064,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       // D038: private e2e latches compromised until rotate/pause.
       PeerSyncState compromised_state = classified.sync_state;
       compromised_state.phase = PeerSyncPhase::Compromised;
-      (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, compromised_state);
+      (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, compromised_state, numbering);
       // Defense-in-depth: membership DMs still apply on a frozen private stream.
       if (AppliesOutOfOrder(message)) {
         ThreadMessage persisted = message;
@@ -970,6 +1077,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         persisted.transport = transport;
         persisted.sender_seq = envelope.sender_seq;
         persisted.session_epoch = envelope.session_epoch;
+        persisted.sender_device = RowDevice(numbering);
         if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
             !membership) {
           MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
@@ -1014,6 +1122,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   persisted.transport = transport;
   persisted.sender_seq = envelope.sender_seq;
   persisted.session_epoch = envelope.session_epoch;
+  persisted.sender_device = RowDevice(numbering);
 
   if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
       !membership) {
@@ -1036,14 +1145,16 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return outcome;
   }
 
-  if (classified.decision == IngestDecision::AcceptEpochAdvance) {
+  if (classified.decision == IngestDecision::AcceptEpochAdvance && !device_copy) {
+    // The account-level pair moved on: the thread's epoch follows (a device pair's epoch is its session's,
+    // moved by ReconcileE2ePublicSession).
     const uint32_t old_epoch = chat_target_epoch;
     if (!store_.AppendMessageWithPassiveEpochAdopt(persisted, old_epoch, envelope.session_epoch,
                                                    classified.sync_state)) {
       outcome.decision = IngestDecision::HardReject;
       return outcome;
     }
-    replay_windows_.erase(ReplayKey{resolved_thread_id, old_epoch});
+    replay_windows_.erase(ReplayKey{resolved_thread_id, old_epoch, replay_owner});
     outcome.persisted = true;
     outcome.persisted_message = persisted;
     outcome.thread_changed = true;
@@ -1060,7 +1171,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return outcome;
   }
 
-  (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
+  (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state, numbering);
+  if (classified.decision == IngestDecision::AcceptEpochAdvance) {
+    replay_windows_.erase(ReplayKey{resolved_thread_id, chat_target_epoch, replay_owner});
+  }
   outcome.persisted = true;
   outcome.persisted_message = persisted;
   outcome.thread_changed = true;
@@ -1104,6 +1218,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
+  // Another device's copy in the shared mailbox (M013); our own account's siblings do not write yet (M021 d3).
+  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  const std::string numbering = CopyNumbering(envelope);
 
   DirectChatTarget inbound_target;
   inbound_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
@@ -1123,15 +1243,16 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   }
   outcome.sender_verified = true;
 
-  auto kem_private = local_keys_.kem_private_key();
+  auto kem_private = CopyKemPrivateKey(envelope);
   if (!kem_private) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MissingKey, kem_private.error().message);
     return outcome;
   }
 
+  const ChatTargetKey pair_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
-  auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, psk_store_,
+  auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, pair_key, psk_store_,
                                                                  *kem_private, &read);
   if (!decrypted) {
     outcome.decision = IngestDecision::HardReject;
@@ -1145,9 +1266,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   ThreadMessage message = std::move(*decrypted);
   // Signed by the member (checked above) and read: what that proves about the pair's session is kept,
   // at the pair's epoch, as for a 1:1 message — so the next copy, without the key_init, is read too (G011).
-  if (auto kept = ReconcileE2ePublicSession(psk_store_, GroupE2ePayloadCodec::PairTargetKey(envelope.sender_contact_id),
-                                            envelope.session_epoch, read, envelope.body.e2e.key_init_b64,
-                                            envelope.timestamp);
+  if (auto kept = ReconcileE2ePublicSession(psk_store_, pair_key, envelope.session_epoch, read,
+                                            envelope.body.e2e.key_init_b64, envelope.timestamp);
       !kept) {
     log().warning << "group: pair session not updated: " << kept.error().message;
   }
@@ -1183,7 +1303,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   }
 
   PeerSyncState sync_state = DefaultPeerSyncState();
-  if (auto loaded = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch)) {
+  if (auto loaded = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch, numbering)) {
     sync_state = *loaded;
   }
 
@@ -1197,9 +1317,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   classifier_input.authorized_older_backfill = authorized_older_backfill;
   classifier_input.has_message_id = false;
   classifier_input.existing_message_id_at_seq = FindMessageIdAtSeq(
-      resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id, envelope.sender_seq);
+      resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id, envelope.sender_seq, numbering);
 
-  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id);
+  auto& replay_window =
+      ReplayWindowFor(resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id + "/" + numbering);
   const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
   outcome.decision = classified.decision;
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
@@ -1223,6 +1344,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   persisted.transport = transport;
   persisted.sender_seq = envelope.sender_seq;
   persisted.session_epoch = envelope.session_epoch;
+  persisted.sender_device = RowDevice(numbering);
 
   if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
       !membership) {
@@ -1245,7 +1367,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
+  (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state, numbering);
   outcome.persisted = true;
   outcome.persisted_message = persisted;
   outcome.thread_changed = true;

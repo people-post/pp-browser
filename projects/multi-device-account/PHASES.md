@@ -4,7 +4,7 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
 **Rollout note (2026-08-13):** Skip interim dogfood/wipe between Account-ID cut and multi-device; keep implementing until a coherent multi-device slice is ready to test once.
 
-**Next:** **m4c** (contacts + public index in paste, **M018**) → dogfood two installs with **one sender** (**M016**) → unlink phase 1 (**M019**).
+**Next:** per-device sessions (**M021**), phases **d1–d6** below. m4c / m4d are folded into them (contacts in the link paste stays m4c; unlink becomes the d4 revoke).
 
 ## m0 — Design freeze
 
@@ -112,3 +112,51 @@ After m3 so Brief can drop the Peer ID row.
 - Call multi-ring across device Peer IDs
 - Server min-watermark GC across registered `device_id`s
 - Account ML-DSA / Account ID rotation (new person)
+
+## d — Per-device sessions (M021)
+
+Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383). Clean wire cutover at d2 (pre-release): apps before and after it do not read each other.
+
+### d1 — Device keys and the device list
+
+- [x] Each device mints its own ML-KEM key (additive in `identity.enc`; from the seed on a node); never in a link bundle or backup
+- [x] Account card v2: device entries `{peer_id, signing key, KEM key}`, signed by the account key, newest `issued_at` wins (no union merge); re-issued only when it changes; at most 5 devices
+- [x] Link bundle carries the issuing device's card; the new device signs itself in (`OwnCards::Learn`; siblings issuing at once converge)
+- [x] The new device tells its siblings its card: a control-lane notice to our own mailbox (M022), on a change and once a start
+
+### d2 — Envelopes and sessions per device pair (wire cutover)
+
+- [x] Envelope v2: `sender_device`, `recipient_device` (empty = account copy), signed by the sender device's key (sign v3); the sender's card rides every key_init (`sender_card`)
+- [x] Session store keyed by (peer account, peer device, channel); numbering per device pair (1:1 and group copies)
+- [x] Send: one copy per device on the peer's card; account copy when there is no card yet; groups one copy per member device
+- [x] Receive: skip siblings' copies; verify against the card (a carried card only when newer); replay / seq / sync state per sender device (account copies on public chats per sending device too)
+- [x] Calls: unchanged on the account-level session (one account copy; single-device accounts work; several devices — d5)
+- [x] Link bundle carries the card and no sessions; backups keep account-level sessions only
+- [x] Unit tests: two linked devices both send and both read (1:1, group, account copies), new device's card, old card refused
+- [x] Lab `linked_devices_both_send` (against the M022 relay branch)
+- [x] **M022:** one relay record per account with a copy per device (one signature); split delivery (a device with a live link gets its own envelope over it, the relay if that fails; the others share one relay record); account copies carry the sender's card; the sibling card exchange over the mesh dropped
+- [ ] **M022 relay (messenger `feat/self-send-multi-device`):** a record to one's own account allowed (and its history); mailbox cap doubled — merges and deploys before the client
+- [ ] Sent messages to our own other devices (the own-account record's copies) — d3
+
+### d3 — Siblings
+
+- [ ] Copies to our own siblings (sent messages show on every device)
+- [ ] Missing copy: ask the sender's device to send one (M021 §9)
+- [ ] A new device introduces itself to its contacts (opens its device pairs)
+
+### d4 — Master device
+
+- [ ] Only the master holds the account signing key; two-step link (new device shows its keys, master signs it in)
+- [ ] Revoke = a list without the device; master hand-over while both are online
+- [ ] Restore = a new master with a fresh list; an old master that sees it stops sending
+
+### d5 — Calls on every device
+
+- [ ] Ring every device; the first answer wins; the others stop
+
+### d6 — Later
+
+- [ ] Directory carries the card (first contact without the account KEM)
+- [ ] Card version in every envelope (peers fetch a newer list: faster revoke)
+- [ ] Re-decide E027 device-lock on per-device sessions
+

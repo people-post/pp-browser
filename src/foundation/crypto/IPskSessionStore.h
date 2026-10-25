@@ -75,6 +75,11 @@ public:
   virtual Roe<bool> IsPskVerified(const ChatTargetKey& key) const = 0;
   virtual Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& key) const = 0;
   virtual Roe<void> ImportPskBundle(const ChatTargetKey& key, const PskBundleV1& bundle) = 0;
+  /**
+   * Our next `sender_seq` in a device pair's session at its current epoch (M021: numbering is the pair's;
+   * a new epoch starts at 1). Device-pair keys only; the session must exist.
+   */
+  virtual Roe<uint64_t> AllocateSenderSeq(const ChatTargetKey& key) = 0;
 };
 
 } // namespace pbr

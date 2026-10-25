@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -100,20 +101,23 @@ Value StringArrayToJson(const std::vector<std::string>& values) {
 
 Object BuildE2eBody(const RelayEnvelope& envelope) {
   Object e2e_body;
-  if (envelope.body.e2e.member_payloads && !envelope.body.e2e.member_payloads->empty()) {
-    Object payloads;
-    for (const auto& [key, value] : *envelope.body.e2e.member_payloads) {
-      payloads.set(key, value);
+  std::vector<Value> copies;
+  for (const RelayCopy& copy : RelayCopiesOf(envelope)) {
+    Object row;
+    if (!copy.recipient_device.empty()) {
+      row.set("recipient_device", copy.recipient_device);
     }
-    e2e_body.set("member_payloads", payloads);
-  } else {
-    e2e_body.set("payload_b64", envelope.body.e2e.payload_b64);
+    row.setJsonUInt("session_epoch", copy.session_epoch);
+    row.setJsonUInt("sender_seq", copy.sender_seq);
+    if (copy.key_init_b64) {
+      row.set("key_init_b64", *copy.key_init_b64);
+    }
+    row.set("payload_b64", copy.payload_b64);
+    copies.push_back(ObjectValue(std::move(row)));
   }
-  if (envelope.body.e2e.key_init_b64) {
-    e2e_body.set("key_init_b64", *envelope.body.e2e.key_init_b64);
-  }
-  if (envelope.body.e2e.sender_keys) {
-    e2e_body.set("sender_keys", KeyCardToJson(*envelope.body.e2e.sender_keys));
+  e2e_body.set("copies", ArrayValue(std::move(copies)));
+  if (envelope.body.e2e.sender_card) {
+    e2e_body.set("sender_card", *envelope.body.e2e.sender_card);
   }
   return e2e_body;
 }
@@ -339,10 +343,9 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   json.set("message_id", envelope.message_id);
   json.set("sender_relay_id", envelope.sender_relay_id);
   json.set("sender_contact_id", envelope.sender_contact_id);
+  json.set("sender_device", envelope.sender_device);
   json.set("route", BuildRouteObject(envelope));
   json.set("body", body);
-  json.setJsonUInt("sender_seq", envelope.sender_seq);
-  json.setJsonUInt("session_epoch", envelope.session_epoch);
   json.set("timestamp", envelope.timestamp);
   json.set("signature", envelope.signature);
   json.set("stream_key", envelope.stream_key);
@@ -362,10 +365,9 @@ Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
   json.set("message_id", envelope.message_id);
   json.set("sender_relay_id", envelope.sender_relay_id);
   json.set("sender_contact_id", envelope.sender_contact_id);
+  json.set("sender_device", envelope.sender_device);
   json.set("route", BuildRouteObject(envelope));
   json.set("body", body);
-  json.setJsonUInt("sender_seq", envelope.sender_seq);
-  json.setJsonUInt("session_epoch", envelope.session_epoch);
   json.set("timestamp", envelope.timestamp);
   json.set("signature", envelope.signature);
   return json;
@@ -403,6 +405,10 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!sender_contact_id) {
     return Error("Missing sender_contact_id");
   }
+  auto sender_device = json.getString("sender_device");
+  if (!sender_device || sender_device->empty()) {
+    return Error("Missing sender_device");
+  }
   const Object* route = json.getObject("route");
   if (!route) {
     return Error("Missing route");
@@ -430,8 +436,12 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (e2e->contains("content_rml")) {
     return Error("Remote content_rml is not supported on wire");
   }
-  if (!e2e->contains("payload_b64") && !e2e->contains("member_payloads")) {
-    return Error("Missing body.e2e.payload_b64 or member_payloads");
+  if (e2e->contains("payload_b64") || e2e->contains("member_payloads") || e2e->contains("key_init_b64")) {
+    return Error("body.e2e carries copies only (envelope v2, M022)");
+  }
+  const Array* copies = e2e->getArray("copies");
+  if (!copies || copies->elements.empty() || copies->elements.size() > kMaxRelayCopies) {
+    return Error("Missing or too many body.e2e.copies");
   }
 
   RelayEnvelope envelope;
@@ -439,32 +449,50 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   envelope.message_id = *message_id;
   envelope.sender_relay_id = *sender_relay_id;
   envelope.sender_contact_id = *sender_contact_id;
-  if (auto payload_b64 = e2e->getString("payload_b64")) {
-    envelope.body.e2e.payload_b64 = *payload_b64;
-  }
-  if (const Object* payloads = e2e->getObject("member_payloads")) {
-    std::map<std::string, std::string> mapped;
-    for (const auto& [key, value] : payloads->fields()) {
-      auto s = asString(value);
-      if (!s || key.empty()) {
-        return Error("Invalid body.e2e.member_payloads entry");
-      }
-      mapped[key] = *s;
+  envelope.sender_device = *sender_device;
+  bool introduces = false;  // a session opener or an account copy: the sender's card may ride it
+  std::set<std::string> devices;
+  for (const Value& item : copies->elements) {
+    const Object* row = asObject(item);
+    if (!row) {
+      return Error("Invalid body.e2e.copies entry");
     }
-    envelope.body.e2e.member_payloads = std::move(mapped);
-  }
-  if (auto key_init = e2e->getString("key_init_b64")) {
-    envelope.body.e2e.key_init_b64 = *key_init;
-  }
-  if (const Object* sender_keys = e2e->getObject("sender_keys")) {
-    if (!envelope.body.e2e.key_init_b64) {
-      return Error("body.e2e.sender_keys without key_init_b64");
+    RelayCopy copy;
+    copy.recipient_device = row->getString("recipient_device").value_or("");
+    auto epoch = row->getNonNegInt("session_epoch");
+    auto seq = row->getNonNegInt("sender_seq");
+    auto payload = row->getString("payload_b64");
+    if (!epoch || *epoch > UINT32_MAX || !seq || !payload || payload->empty()) {
+      return Error("Invalid body.e2e.copies entry");  // out of range is rejected, not truncated
     }
-    auto keys = KeyCardFromJson(*sender_keys);
-    if (!keys || keys->account_id != envelope.sender_contact_id) {
-      return Error("Invalid body.e2e.sender_keys");
+    if (!devices.insert(copy.recipient_device).second) {
+      return Error("Two copies for one device");
     }
-    envelope.body.e2e.sender_keys = std::move(keys.value());
+    if (!copy.recipient_device.empty() && !IsPlainIdentifier(copy.recipient_device)) {
+      return Error("Invalid recipient_device");
+    }
+    copy.session_epoch = static_cast<uint32_t>(*epoch);
+    copy.sender_seq = *seq;
+    copy.payload_b64 = *payload;
+    if (auto key_init = row->getString("key_init_b64")) {
+      copy.key_init_b64 = *key_init;
+      introduces = true;
+    }
+    introduces = introduces || copy.recipient_device.empty();
+    envelope.body.e2e.copies.push_back(std::move(copy));
+  }
+  if (envelope.body.e2e.copies.size() == 1) {
+    const RelayCopy only = envelope.body.e2e.copies.front();
+    envelope = ViewRelayCopy(std::move(envelope), only);  // a single copy reads as itself
+  }
+  if (const Object* sender_card = e2e->getObject("sender_card")) {
+    if (!introduces) {
+      return Error("body.e2e.sender_card without a key_init or an account copy");
+    }
+    if (sender_card->getString("account_id").value_or("") != envelope.sender_contact_id) {
+      return Error("Invalid body.e2e.sender_card");
+    }
+    envelope.body.e2e.sender_card = *sender_card;  // the receiver checks it (VerifyAccountCard)
   }
 
   if (auto kind = route->getString("kind")) {
@@ -495,29 +523,18 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (envelope.route.kind == "group" && !envelope.route.group_id) {
     return Error("Missing route.group_id for group envelope");
   }
-  // One body shape per route (both are signed as such): a direct / control envelope carries
-  // payload_b64 only, a group envelope member_payloads only.
-  if (envelope.route.kind == "group") {
-    if (!envelope.body.e2e.member_payloads || envelope.body.e2e.member_payloads->empty() ||
-        e2e->contains("payload_b64")) {
-      return Error("Group envelope must carry member_payloads only");
+  // One shape per route (signed as such): a group envelope names its group; a direct / control one does not;
+  // the control lane is one account copy.
+  if (envelope.route.kind == "direct" || envelope.route.kind == kRelayRouteControl) {
+    if (envelope.route.group_id) {
+      return Error("Direct / control envelope with a group_id");
     }
-  } else if (envelope.route.kind == "direct" || envelope.route.kind == kRelayRouteControl) {
-    if (e2e->contains("member_payloads") || envelope.body.e2e.payload_b64.empty() || envelope.route.group_id) {
-      return Error("Direct / control envelope must carry payload_b64 only");
+    if (envelope.route.kind == kRelayRouteControl &&
+        (envelope.body.e2e.copies.size() != 1 || !envelope.body.e2e.copies.front().recipient_device.empty())) {
+      return Error("Control envelope must carry one account copy");
     }
-  } else {
+  } else if (envelope.route.kind != "group") {
     return Error("Unknown route.kind");
-  }
-
-  if (auto sender_seq = json.getNonNegInt("sender_seq")) {
-    envelope.sender_seq = *sender_seq;
-  }
-  if (auto session_epoch = json.getNonNegInt("session_epoch")) {
-    if (*session_epoch > UINT32_MAX) {
-      return Error("session_epoch out of range");  // rejected, not truncated
-    }
-    envelope.session_epoch = static_cast<uint32_t>(*session_epoch);
   }
   if (auto timestamp = json.getIf<int64_t>("timestamp")) {
     envelope.timestamp = *timestamp;

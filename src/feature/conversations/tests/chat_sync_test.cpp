@@ -17,6 +17,7 @@
 #include "domain/peers/PeerDisplaySources.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/messaging/tests/TestAccount.h"
 #include "domain/peers/LocalKeysFromIdentity.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "common/MeshAlias.h"
@@ -45,30 +46,25 @@ public:
         store(data_dir.string()),
         identity(data_dir.string(), "test"),
         psk_store(store.ProfileDbPath(), "test"),
-        key_resolver(key_store),
+        peer(test::TestAccount::Make()),
         roster_store(store.ProfileDbPath()),
         contacts(data_dir.string()),
         shadows(directory),
         labels(contacts, PeerDisplaySourcesFrom(shadows)),
         inbox(store, contacts, labels, &shadows),
-        receive_pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store),
+        receive_pipeline(
+            store,
+            [this](const std::string& account) -> std::optional<AccountCard> {
+              // The peer's device as its kept card lists it (filed under the fixture's readable id).
+              return account == "account:peer" ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
+            },
+            psk_store, LocalKeysFromIdentity(identity), roster_store),
         sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = MlDsa::GenerateKeyPair();
-    if (!generated) {
-      throw std::runtime_error("Failed to generate peer keys");
-    }
-    peer_keys = *generated;
-    peer_private_key = peer_keys.secret_key;
-
-    PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
-    record.source = "test";
-    key_store.PutUncheckedForTest("account", "account:peer", record);
 
     Contact peer_contact;
     peer_contact.id = "contact-peer";
@@ -150,15 +146,7 @@ public:
     envelope.timestamp = static_cast<int64_t>(seq);
     envelope.stream_key =
         BuildCanonicalRelayStreamKey(local_relay_id, "relay:peer", ThreadChannel::E2e, envelope.session_epoch);
-    auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-    if (!sign_bytes) {
-      throw std::runtime_error("Failed to build sign bytes");
-    }
-    auto signature = MlDsa::Sign(peer_private_key, *sign_bytes);
-    if (!signature) {
-      throw std::runtime_error("Failed to sign envelope");
-    }
-    envelope.signature = Base64Encode(*signature);
+    peer.SignEnvelope(envelope);
     return envelope;
   }
 
@@ -193,8 +181,8 @@ public:
   SqlitePskSessionStore psk_store;
   MockRelayClient relay;
   MockChatHistoryPeerClient peer_history;
-  PeerSigningKeyStore key_store;
-  PeerSigningKeyResolver key_resolver;
+  /** The peer: its device signs what it sends. */
+  test::TestAccount peer;
   GroupRosterStore roster_store;
   ContactsStore contacts;
   MockDirectoryClient directory;
@@ -206,8 +194,6 @@ public:
   Thread thread;
   std::string local_relay_id;
   std::string local_account_id;
-  MlDsaKeyPair peer_keys;
-  std::vector<uint8_t> peer_private_key;
 };
 
 } // namespace

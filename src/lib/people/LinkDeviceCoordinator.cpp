@@ -16,6 +16,9 @@ Roe<std::vector<LinkDevicePublicPsk>> LinkDeviceCoordinator::CollectPublicPsks(I
     if (record.key_scope != PublicKeyScope::Account) {
       continue;
     }
+    if (!record.key.peer_device.empty()) {
+      continue;  // a session with one of the peer's devices is this device's own (M021): never copied
+    }
     LinkDevicePublicPsk row;
     row.key = record.key;
     row.session_epoch = record.session_epoch;
@@ -47,7 +50,7 @@ Roe<void> LinkDeviceCoordinator::ApplyPublicPsks(IPskSessionStore& psk_store,
 
 Roe<std::string> LinkDeviceCoordinator::ExportJson(IdentityStore& identity, DataKeyVault& vault,
                                                   IPskSessionStore& psk_store, const int64_t now_ms,
-                                                  const int64_t ttl_ms) {
+                                                  const int64_t ttl_ms, std::optional<std::string> account_card_json) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
@@ -56,11 +59,16 @@ Roe<std::string> LinkDeviceCoordinator::ExportJson(IdentityStore& identity, Data
   if (!dek) {
     return dek.error();
   }
-  auto public_psks = CollectPublicPsks(psk_store);
-  if (!public_psks) {
-    return public_psks.error();
+  std::vector<LinkDevicePublicPsk> sessions;
+  if (!account_card_json) {
+    auto public_psks = CollectPublicPsks(psk_store);
+    if (!public_psks) {
+      return public_psks.error();
+    }
+    sessions = std::move(*public_psks);
   }
-  return LinkDeviceExchange::ExportJson(*loaded, *dek, std::move(*public_psks), now_ms, ttl_ms);
+  return LinkDeviceExchange::ExportJson(*loaded, *dek, std::move(sessions), now_ms, ttl_ms,
+                                        std::move(account_card_json));
 }
 
 Roe<LinkDeviceImportResult> LinkDeviceCoordinator::Import(IdentityStore& identity, DataKeyVault& vault,

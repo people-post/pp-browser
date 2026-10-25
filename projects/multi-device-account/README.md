@@ -1,6 +1,6 @@
 # Multi-device account
 
-**Status:** Design freeze (m0) + **M009–M019** / **D100**; **m1–m2b** + **m4a–m4b** + **m3** `endpoints[]` done; next **m4c** paste contacts (**M018**)  
+**Status:** **m1–m2b** + **m4a–m4b** + **m3** done; **next: per-device sessions (M021, phases d1–d6)** — read M021 first: it supersedes M003 / M015 §2–3 / M016 / M020 and D074 as its phases ship  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
@@ -42,7 +42,8 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | m4b | Link-device + DEK seal + sync policy | **Done** (first-run paste; QR later) |
 | m3 | Directory `endpoints[]` (M017) + one-sender help (M016) | **Done** (hard cut; no top-level `peer_id`) |
 | m4c | Paste contacts + public thread index (M018) | **Next** |
-| m4d | Unlink phase 1 (M019) | After m3 |
+| m4d | Unlink phase 1 (M019) | Folded into d4 (revoke) |
+| d1–d6 | Per-device sessions, master device (**M021**) | **Next** — see PHASES |
 
 ## Normative promotion
 

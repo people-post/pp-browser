@@ -572,6 +572,7 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
   env.message_id = msg.id;
   env.sender_relay_id = local_peer_id_;
   env.sender_contact_id = local_account_;
+  env.sender_device = local_peer_id_;
   env.timestamp = msg.timestamp;
   env.body.e2e.payload_b64 =
       Base64Encode(ByteVector(reinterpret_cast<const uint8_t*>(json.data()),
@@ -668,6 +669,7 @@ void ProductStackHarness::PollSignalInbox() {
     env.message_id = obj->getString("message_id").value_or("");
     env.sender_relay_id = obj->getString("sender_relay_id").value_or("");
     env.sender_contact_id = obj->getString("sender_contact_id").value_or("");
+    env.sender_device = env.sender_relay_id;
     env.timestamp = static_cast<int64_t>(obj->getNonNegInt("timestamp").value_or(0));
     env.body.e2e.payload_b64 = obj->getString("payload_b64").value_or("");
     // Relay inbox ingestion runs off the UI thread in the product — do the same.
