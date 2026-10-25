@@ -271,8 +271,6 @@ private:
                       uint64_t expected_gen, std::function<void(Roe<void>)> on_done);
   SoftMigrateAction DecideFirstSoftMigrate(const HopPick& pick, SoftMigrateTrigger trigger,
                                            const std::vector<CallParticipant>& participants);
-  bool PreferLocalHopAllowed(const std::string& call_id, const std::string& local_identity) const;
-  bool HasDurableMediaRelayHop() const;
   /** Re-pick while attached: true when settled on the current hop, false after detaching to re-pick. */
   bool SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id);
   std::vector<mesh::MeshHopCandidate> RankHopsForSoftMigrate(HopPick& pick, const std::string& prefer_hop_peer_id);

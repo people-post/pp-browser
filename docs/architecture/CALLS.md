@@ -229,7 +229,7 @@ Product surface: `on_path_changed` → planner `PathMigrated` (Live stays Live; 
 |----------|---------------------|-------|
 | 1 (ringing / solo) | No media yet | Invite outstanding |
 | **2** | **Direct Amp call-media** when dialable; else **punch → circuit** nested Session | [V038](../../projects/p2p-av-calls/DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3) — never SoftMigrate for NAT |
-| **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator); circuit may still reach the hop |
+| **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; the owner picks the hop ([§ Group call hop](#group-call-hop--the-rule-now)); circuit may still reach the hop |
 
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 call-media after SFU attach.
 - **Monotonic group topology ([V050](../../projects/p2p-av-calls/DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic)):** planners arm on **joined** count on every side (ringing never arms the hop); the first accept is direct 1:1, the third join migrates onto the **planned hop** chosen at StartCall from the invite list (one adjustment if an accept reported it unreachable); later joins re-pick only when the hop is full or unreachable for the newcomer; nobody leaving triggers re-evaluation (N→2 stays on the hop). The earliest-joined remaining participant owns re-picks after the initiator leaves.
@@ -377,9 +377,21 @@ Single A/V device for the process (owned by the seat’s bound call):
 ### media_relay (mesh)
 Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile may host ephemerally on Wi‑Fi (V027) with contacts-only *new* sessions.
 
-**Who picks (V021 / V022):** first soft-migrate is the sticky **call initiator** (earliest `joined_at` = session payer). Mid-call invite: `CallAccept` reaches only the inviter (WaitForAttach); **CallRoster** drives `JoinedCountObserved` so the initiator SoftMigrates. Joiners without hint WaitForAttach. ICE re-pick is epoch coordinator only. Fan-out clears `quote_id` (peers `RequestQuote` locally).
+#### Group call hop — the rule now
 
-**Hop preference (V035):** infer call hop scope from joined peers’ `listen_multiaddrs` (`Link` / `Site` / `Wide`; missing remotes → `Wide`). PreferLocal (`AttachAsLocalHop`) only for **LAN-confirmed Link** (Amp connected / mDNS) — not Site, and not same-/24 alone. On `Wide`/unconfirmed Link, SoftMigrate picks org/directory public seeds first — never fan-out RFC1918 PreferLocal MAs. Guests fail-fast private hop MAs unless LAN-confirmed; ignore attach for non-active calls. Contacts still need `caps.media_relay` (V030). **Do not** PreferInCall phones as SFU host (V029). Guest attach failure → rare hop-hint SoftMigrate under per-call Attached/Attaching FSM (same hop = re-fan-out only; coalesce hints; gen bump on Leave). Owner re-picks or `call_hop_refuse` with friendly copy.
+This is the whole current rule for a group call's SFU hop. The decisions linked at the end are its history (some of what they say no longer holds); when they disagree with this section, this section is right.
+
+1. **One picker: the owner.** The owner is the earliest-joined member (the initiator, until it leaves). Nobody else picks; every other member waits for the owner's `CallSfuAttach`. Nothing about a relay — a durable one being known, a member's Node being able to host — changes who picks. An ICE re-pick is the epoch coordinator's.
+2. **Participants suggest** ([V050](../../projects/p2p-av-calls/DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic)): the owner plans a hop at `StartCall` from the invite list and sends it as `planned_hop`; each `CallAccept` carries a `CallHopReport` (planned hop reachable, hops reached, hops not reached); a newcomer that cannot attach names the hops it can reach in `CallSfuAttachFailed`.
+3. **Eligible hops:** ones the owner can dial (a public address, unless the call is on one LAN-confirmed `Link`); none a joined member reported unreachable; a contact's node only with `caps.media_relay` (V030); with *Trusted relays only*, the trusted set (privacy T4). Phones never host.
+4. **Order:** the owner's own Node, only when the call is on a LAN-confirmed `Link` (V035 PreferLocal — the owner's choice of itself); then **durable relays** — org seeds, directory and DHT `media_relay` nodes — the planned hop first; then contacts' nodes. An SFU's upload grows with the square of the members, which a home node runs out of first. `prefer_contacts_for_routing` does not apply to this hop (`DurableRelaysFirst` in `CallHopRanking`).
+5. **Monotonic** (V050): pick once at the third join, adjust once for an unreachable report, re-pick only for a newcomer the hop cannot serve; nobody leaving re-evaluates.
+
+Not yet: a desktop Node in the call offering itself (first in its `reachable_hops`) for a small all-LAN call; load / RTT hints to choose among durable relays.
+
+History: [V021](../../projects/p2p-av-calls/DECISIONS.md#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) · V023 · V028 · V029 · V035 · V050 · [V054](../../projects/p2p-av-calls/DECISIONS.md#v054--one-hop-picker-durable-relays-first-for-the-group-sfu) (#385, which retired two earlier overrides: a phone owner deferring its pick to a "durable media_relay Node", and a non-owner Node picking itself).
+
+**Mid-call invite and guests:** `CallAccept` reaches only the inviter (WaitForAttach); **CallRoster** drives `JoinedCountObserved` so the owner SoftMigrates; joiners without a hint WaitForAttach. Fan-out clears `quote_id` (peers `RequestQuote` locally). Call hop scope comes from joined peers' `listen_multiaddrs` (`Link` / `Site` / `Wide`; missing remotes → `Wide`); never fan out an RFC1918 PreferLocal multiaddr on `Wide` / unconfirmed `Link`; guests fail fast on a private hop multiaddr unless LAN-confirmed and ignore attaches for calls not active. A guest's attach failure → a rare hop-hint SoftMigrate under the per-call Attached/Attaching FSM (same hop = re-fan-out only; hints coalesce; generation bumps on Leave); the owner re-picks or sends `call_hop_refuse` with friendly copy.
 
 **Call-scoped admission:** the first dialer (or local hop) that opens a `HostSession` for `call_id` must pass contact/scope admission. After that session exists, further dialers for the same `call_id` are admitted even if strangers to the hop (owner-picked hop serves the whole call, including mid-call joiners). Mobile stays non-Public for *new* sessions. The session exists while it has participants, and for a **60 s grace** after the last one leaves (a participant leaves when its channel ends — closed, reset, link dropped — not only on `detach`): everyone dropping at once (the hop's links flap, a path migration) can re-attach in any order. After the grace the call is over and the session is dropped; a new one for the same `call_id` needs contact/scope admission again.
 
@@ -412,9 +424,9 @@ Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attach
 
 | Unit | Job |
 |------|-----|
-| `SoftMigrateLogic` | Who-picks: initiator first hop (V021/V022); `JoinedCountObserved` / `RemoteAcceptObserved`; ICE → coordinator |
+| `SoftMigrateLogic` | Who picks: the owner only ([§ Group call hop](#group-call-hop--the-rule-now)); `JoinedCountObserved` / `RemoteAcceptObserved`; ICE → coordinator |
 | `CallHopAttachLogic` | Attach-wait poll (**no TimeoutLeave while migrate in flight**); fan-out detail with empty `quote_id`; publisher stream id; hop-hint owner decision |
-| `MeshHopPolicy` | Contact∪seed rank; Prefer contacts; `ExcludeSelfHop`; `PreferLocalMediaHop` / `PreferInCallMediaHops` |
+| `MeshHopPolicy` | Contact∪seed rank; `DurableRelaysFirst` (group SFU hop); `ExcludeSelfHop`; `PreferLocalMediaHop` / `PreferInCallMediaHops` |
 
 ### 1. `CallTopologyController` (feature adapter)
 Responsibilities:
@@ -583,7 +595,7 @@ is live until the hop attaches (`LiveCalls::NoteDirectHandedToHop`).
 | `src/lib/calls/CallSessionQueries.*` | What a call's rows say (who is in it, who is awaited, sticky initiator, our unanswered call to a peer, a peer still to answer our 1:1); a peer's roster applied (our own row never overridden, no resurrection, no demotion) |
 | `src/lib/calls/CallSummaryLogic.*` | The history entry a device writes when a call ends (who reports, answered / outcome, talk time, local only) |
 | `src/lib/calls/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick / roster join stamps and co-invitees |
-| `src/lib/calls/SoftMigrateLogic.*` | Pure who-picks, the arming gate (1:1 stays Direct), who hosts the hop, a re-pick while on a hop, what a failed pick tells the user |
+| `src/lib/calls/SoftMigrateLogic.*` | Pure who-picks (the owner), the arming gate (1:1 stays Direct), a re-pick while on a hop, what a failed pick tells the user |
 | `src/lib/calls/CallHopAttachLogic.*` | Pure attach-wait / fan-out / hop-hint |
 | `src/lib/calls/CallDirectPathLogic.*` | Pure 1:1-path decisions: connect health, a failed carrier, network change, when to try for a direct link / keep a relayed standby and their backoff |
 | `src/lib/calls/CallMediaSessionTypes.h`, `CallMediaSessionLogic.*`, `CallMediaBundleLogic.*` | The 1:1 media session's vocabulary (phases, events, link kind, connect params) and its pure decisions (phase table, glare, bundle hello / close, failover, retiring a left path) |

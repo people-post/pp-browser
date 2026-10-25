@@ -12,6 +12,7 @@ This document orients coding agents working in this repository.
 
 - **Do not** put phase checklists or “what’s next” lines in this file — they drift. Link the project folder; read **CURRENT_STATE.md** for status.
 - When wire/disk/HTTP ships, **promote** into `docs/contracts/` (or the right docs tier) in the same PR; mark ADRs **superseded by** the stable doc; do not leave a second editable normative copy under `projects/`.
+- **Decisions are history, `docs/` is now.** A `projects/*/DECISIONS.md` entry records what was decided then and why; later entries amend or supersede it, and code sometimes moved on before an entry did. Before acting on one, read its **Status** line and look for later entries naming it — the matching `docs/` file states what holds now and wins when they disagree. When you amend or supersede a decision, update the old entry's Status and the `docs/` statement in the same change, so there is never a second current version.
 - Index of active vs done projects: [`projects/README.md`](projects/README.md). Doc map: [`docs/README.md`](docs/README.md).
 
 ## Architecture

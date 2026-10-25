@@ -152,21 +152,6 @@ TEST(SoftMigrateArmingTest, A1To1StaysDirectUnlessRecoveringOrNamed) {
   EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::Proceed) << "already migrating";
 }
 
-TEST(SoftMigrateHostingTest, WhoHostsAdjustsWhoPicks) {
-  HopHostingFacts node;
-  node.hosts_hops = true;
-  node.prefer_local_allowed = true;
-  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::WaitForAttach, node), SoftMigrateAction::PickHop);
-  node.prefer_local_allowed = false;
-  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::WaitForAttach, node), SoftMigrateAction::WaitForAttach);
-
-  HopHostingFacts phone;
-  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::PickHop, phone), SoftMigrateAction::PickHop);
-  phone.durable_hop_known = true;
-  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::PickHop, phone), SoftMigrateAction::WaitForAttach);
-  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::NoOp, phone), SoftMigrateAction::NoOp);
-}
-
 TEST(SoftMigrateRepickTest, ARepickOnAHopNeverDetachesForTheSameHop) {
   RepickOnHopInput in;
   in.current_hop = "hop:a";

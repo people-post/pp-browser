@@ -253,52 +253,16 @@ SoftMigrateAction CallHopMigrateWorkflow::DecideFirstSoftMigrate(const HopPick& 
   decision_in.trigger = trigger;
   decision_in.already_on_sfu = IsLiveOnHopFor(pick.call_id);
 
-  const SoftMigrateAction who_picks = DecideSoftMigrate(decision_in);
-  HopHostingFacts hosting;
-  hosting.hosts_hops = relay_deps_->prefer_local_as_hop;
-  if (who_picks == SoftMigrateAction::WaitForAttach) {
-    hosting.prefer_local_allowed = PreferLocalHopAllowed(pick.call_id, pick.local_identity);
-  } else if (who_picks == SoftMigrateAction::PickHop && !hosting.hosts_hops) {
-    hosting.durable_hop_known = HasDurableMediaRelayHop();
-  }
-  const SoftMigrateAction action = AdjustForHopHosting(who_picks, hosting);
-  log().info << "SoftMigrate decide action=" << static_cast<int>(action) << " who_picks=" << static_cast<int>(who_picks)
+  // The owner picks; everyone else waits for its CallSfuAttach (V050). Who hosts is the owner's ranking
+  // (durable relays first, its own Node on a confirmed LAN) — never a reason for a second picker or for
+  // the owner to wait (#385).
+  const SoftMigrateAction action = DecideSoftMigrate(decision_in);
+  log().info << "SoftMigrate decide action=" << static_cast<int>(action)
              << " trigger=" << static_cast<int>(trigger)
              << " joined=" << decision_in.joined_identities.size()
              << " initiator=" << decision_in.initiator_identity << " local=" << pick.local_identity
              << " call_id=" << pick.call_id;
   return action;
-}
-
-bool CallHopMigrateWorkflow::PreferLocalHopAllowed(const std::string& call_id,
-                                                   const std::string& local_identity) const {
-  const CallHopScope scope = ops_.infer_scope_for_call(call_id, local_identity);
-  std::string local_peer_id;
-  if (auto pid = relay_deps_->relay->LocalPeerIdBase58()) {
-    local_peer_id = *pid;
-  }
-  const std::string local_ma = ops_.resolve_local_advertise_ma(local_peer_id);
-  const bool lan_ok = ops_.lan_reachability_confirmed_for_call(call_id, local_identity);
-  return PreferLocalAllowedForScope(scope, relay_deps_->prefer_local_as_hop && relay_deps_->relay->IsStarted(),
-                                    local_ma, lan_ok);
-}
-
-bool CallHopMigrateWorkflow::HasDurableMediaRelayHop() const {
-  if (relay_deps_->list_media_relay_peers) {
-    for (const std::string& pid : relay_deps_->list_media_relay_peers()) {
-      if (!pid.empty()) {
-        return true;
-      }
-    }
-  }
-  if (relay_deps_->peer_has_media_relay) {
-    for (const mesh::MeshHopCandidate& hop : ops_.ranked_media_hop_candidates()) {
-      if (!hop.peer_id.empty() && relay_deps_->peer_has_media_relay(hop.peer_id)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id) {
