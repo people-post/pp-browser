@@ -321,3 +321,67 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 - Multi-device seq coordination (D074)
 - End-to-end encrypted roster on relay
 - Copy-to-fork-point history (v1.1)
+
+---
+
+## Restore and roster sync (proposed, 2026-10-25)
+
+Status: proposed, needs Hongwei (ADRs G010–G014). Found on devices 2026-10-25: a device restored from the local account backup, or a member who lost the group and is re-invited, restarts its own group `sender_seq` at 1 in its old epoch (AcceptInvite seeds `group_targets` with 1, 1), so peers silently drop its first messages. Same mechanism as the 1:1 bug fixed in 3cf0a14c8, which covers Direct threads only. The client team (Kenneth) is adding groups to the local backup (backup v3: per-group metadata, roster as identities, own `session_epoch`; no seq, no history) and a group members screen where the owner can add, remove and re-invite. The pieces below need the protocol owner.
+
+### Sender restart (G010, G011)
+
+`group_targets` adds `restart_pending` (additive). Set on restore, and on accepting a `group_invite` with `rejoin: true` (the owner sets it when the invitee is already on its roster; it also carries that member's `sender_epoch_floor`). Next send: `epoch = max(sender_epoch_floor, max seen_epoch_from_you, backup epoch, local max) + 1`, `seq = 1`, clear flag. Group sends take the pair's current session; the envelope epoch is for de-dup only.
+
+### roster_statement (G012)
+
+```json
+{
+  "group_id": "group:…",
+  "roster_epoch": 7,
+  "members": [{ "identity": "relay:abc", "role": "owner", "joined_at": 1735689600000 }],
+  "sender_epoch_floor": { "relay:abc": 3 },
+  "owner_signature": "<base64, over the canonical encoding of the fields above>"
+}
+```
+
+`sender_epoch_floor[m]` = highest group epoch the owner has seen from `m`. Sent with every roster event (`member_joined`, `member_left`, `member_removed`, `owner_transferred`) as an added `roster_statement` field in `detail`; members store the latest.
+
+### group_roster_request / group_roster_reply (G013)
+
+```json
+{ "control_type": "group_roster_request", "detail": { "group_id": "…", "request_id": "uuid", "roster_epoch": 5 } }
+{ "control_type": "group_roster_reply",   "detail": { "group_id": "…", "request_id": "uuid", "roster_statement": { … }, "removed": false, "seen_epoch_from_you": 4 } }
+```
+
+Request goes to the owner and all members in the backup roster. Reply: any member may send its stored statement; `removed=true` (with the latest statement, if any) when the replier knows we are no longer a member. `seen_epoch_from_you` is the replier's own highest group epoch seen from the requester; it is unsigned by the owner, which is fine because it only raises the requester's next epoch (the owner's floor alone misses messages the owner never received).
+
+### group_invite_refused (G014)
+
+```json
+{ "control_type": "group_invite_refused", "detail": { "group_id": "…", "invite_nonce": "uuid", "reason": "group_full" } }
+```
+
+Signer: owner. Invitee drops the pending local group and shows the refusal.
+
+### State machine (per group, restored device)
+
+```
+restored (not owner) --send group_roster_request--> syncing   [receive: yes, send: no]
+syncing --valid reply, owner sig ok, removed=false--> active  [apply highest roster_epoch; owner reply wins]
+syncing --valid reply, removed=true--> removed                [read-only, "you were removed"]
+restored (owner)  --> active            (backup roster trusted)
+re-invited (rejoin: true) --> active, restart_pending   (member_joined snapshot is fresh)
+active/restart_pending --first send--> active                 [epoch = max(...)+1, seq 1]
+```
+
+A reply counts only if `request_id` matches an open request. Completion does not go through `RequireNewerEpoch`. Unanswered requests stay `syncing` and are retried; UI shows "syncing members".
+
+### Tests we will add with the implementation
+
+- G010: restore, send in group; peers hold the message (lab: `restored_device_is_heard` for groups); re-invite after loss, same; epoch never reused.
+- G011: restore, 1:1 then group and group then 1:1; both delivered, pair epoch never decreases.
+- G012: roster_statement signature verifies; forged or older statement rejected; every roster event stores one.
+- G013: stale backup (member removed after backup) leaves no send before sync; unchanged roster completes sync; removed=true gives read-only; owner reply beats a member's.
+- G014: 51st invite refused; accept at full yields `group_invite_refused`; pending invites not counted.
+
+Not proposed: dissolve-for-everyone. Kenneth 2026-10-25: owner transfer (G009) stays; a hijacked owner account must not be able to erase a group.
