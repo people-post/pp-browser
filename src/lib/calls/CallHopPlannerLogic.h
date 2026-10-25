@@ -37,6 +37,8 @@ enum class CallHopPlannerDecision : uint8_t {
 
 struct CallHopPlannerApplyContext {
   bool allows_hop_path = false;
+  /** The direct attempt failed (Status Failed): a group call still takes its hop's attach (#380). */
+  bool direct_failed = false;
   bool should_arm_hop = false; // N≥3 / effective planner N
   bool has_sfu_hint = false;
   bool soft_migrate_in_flight = false;
@@ -138,7 +140,7 @@ inline CallHopPlannerPhaseOutcome DecideCallHopPlannerPhase(CallHopPlannerPhase 
     return out;
 
   case CallHopPlannerEvent::SfuAttachInbound:
-    if (!ctx.allows_hop_path) {
+    if (!ctx.allows_hop_path && !(ctx.direct_failed && ctx.should_arm_hop)) {
       out.decision = CallHopPlannerDecision::Ignore;
       return out;
     }

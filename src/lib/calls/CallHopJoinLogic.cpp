@@ -97,10 +97,16 @@ JoinedCountHopAction DecideJoinedCountHop(const JoinedCountHopInput& in) {
 }
 
 bool ExpectsGroupAttach(const InboundAttachInput& in) {
-  if (!in.active_call || !in.status_allows_hop) {
+  if (!in.active_call) {
     return false;
   }
-  return ShouldArmHopPlanner(in.n_joined) || in.attach_wait_for_call || in.flight_for_call || in.on_hop;
+  const bool group = ShouldArmHopPlanner(in.n_joined);
+  // A late accepter tries direct before it knows the group's size; when that fails, the hop's attach
+  // still takes it into the call (#380) instead of waiting out the attach wait it would then refuse.
+  if (!in.status_allows_hop && !(in.direct_failed && group)) {
+    return false;
+  }
+  return group || in.attach_wait_for_call || in.flight_for_call || in.on_hop;
 }
 
 HopFailureAction DecideHopFailure(const HopFailureInput& in) {

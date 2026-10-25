@@ -47,6 +47,8 @@ namespace pbr {
  */
 struct CallHopArmingPorts {
   std::function<bool()> hop_ops_allowed;
+  /** The call's direct attempt failed (Status Failed): a group call still takes its hop's attach (#380). */
+  std::function<bool()> direct_failed;
   std::function<bool()> soft_migrate_may_arm;
   std::function<uint64_t()> media_cancel_gen;
   std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;

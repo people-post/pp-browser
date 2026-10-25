@@ -795,6 +795,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   const std::string& call_id = at.call_id;
   live_keys_ = at.keys;  // a rotation from now on reaches this attach's frames
   live_keys_call_id_ = call_id;
+  InstallMediaKey(call_id);  // and one that arrived while attaching (the ring holds the epoch it started with)
   // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
   // join request — V053) names the hop the call is on, not only the picker's.
   if (auto session = sessions_.LoadSession(call_id);
@@ -1243,6 +1244,7 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
   at.frames_ready->store(true, std::memory_order_release);
   live_keys_ = at.keys;
   live_keys_call_id_ = call_id;
+  InstallMediaKey(call_id);  // a rotation that arrived while the transport was down
   log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ops_.resolve_hop_multiaddr(at.attach.hop_peer_id);
