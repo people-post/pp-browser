@@ -326,7 +326,7 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 ## Restore and roster sync (proposed, 2026-10-25)
 
-Status: proposed, needs Hongwei (ADRs G010–G014). Found on devices 2026-10-25: a device restored from the local account backup, or a member who lost the group and is re-invited, restarts its own group `sender_seq` at 1 in its old epoch (AcceptInvite seeds `group_targets` with 1, 1), so peers silently drop its first messages. Same mechanism as the 1:1 bug fixed in 3cf0a14c8, which covers Direct threads only. The client team (Kenneth) is adding groups to the local backup (backup v3: per-group metadata, roster as identities, own `session_epoch`; no seq, no history) and a group members screen where the owner can add, remove and re-invite. The pieces below need the protocol owner.
+Status: accepted 2026-10-25 — G010–G013 with amendments (G014 separate); implementing on this branch. The restore section below is the design being built; docs/ gets the shipped rule. Found on devices 2026-10-25: a device restored from the local account backup, or a member who lost the group and is re-invited, restarts its own group `sender_seq` at 1 in its old epoch (AcceptInvite seeds `group_targets` with 1, 1), so peers silently drop its first messages. Same mechanism as the 1:1 bug fixed in 3cf0a14c8, which covers Direct threads only. The client team (Kenneth) is adding groups to the local backup (backup v3: per-group metadata, roster as identities, own `session_epoch`; no seq, no history) and a group members screen where the owner can add, remove and re-invite. The pieces below need the protocol owner.
 
 ### Sender restart (G010, G011)
 
@@ -366,15 +366,15 @@ Signer: owner. Invitee drops the pending local group and shows the refusal.
 ### State machine (per group, restored device)
 
 ```
-restored (not owner) --send group_roster_request--> syncing   [receive: yes, send: no]
-syncing --valid reply, owner sig ok, removed=false--> active  [apply highest roster_epoch; owner reply wins]
-syncing --valid reply, removed=true--> removed                [read-only, "you were removed"]
-restored (owner)  --> active            (backup roster trusted)
+restored (owner or not) --send group_roster_request--> checking   [receive: yes, send: no]
+checking --valid owner-signed reply, removed=false--> active, restart_pending   [apply highest roster_epoch]
+checking --valid reply, removed=true--> removed                    [read-only, "you were removed"]
+any state --group message arrives while no check is running--> checking (again)  [its sender is online]
 re-invited (rejoin: true) --> active, restart_pending   (member_joined snapshot is fresh)
-active/restart_pending --first send--> active                 [epoch = max(...)+1, seq 1]
+active + restart_pending --first send--> active                   [epoch = max(floors, local) + 1, seq 1]
 ```
 
-A reply counts only if `request_id` matches an open request. Completion does not go through `RequireNewerEpoch`. Unanswered requests stay `syncing` and are retried; UI shows "syncing members".
+The owner checks too (G013 amendment): a member may hold a newer statement the owner signed after the backup was written. A reply counts only if `request_id` matches an open request; completion does not go through `RequireNewerEpoch`. Unanswered checks stay `checking` and are retried (and restarted by any incoming group message); UI shows "checking members". History is not restored (a later feature, 1:1 and groups alike).
 
 ### Tests we will add with the implementation
 
