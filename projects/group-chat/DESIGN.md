@@ -330,7 +330,7 @@ Status: accepted 2026-10-25 — G010–G013 with amendments (G014 separate); imp
 
 ### Sender restart (G010, G011)
 
-`group_targets` adds `restart_pending` (additive). Set on restore, and on accepting a `group_invite` with `rejoin: true` (the owner sets it when the invitee is already on its roster; it also carries that member's `sender_epoch_floor`). Next send: `epoch = max(sender_epoch_floor, max seen_epoch_from_you, backup epoch, local max) + 1`, `seq = 1`, clear flag. Group sends take the pair's current session; the envelope epoch is for de-dup only.
+`group_targets` adds `restart_pending` (additive). Set on restore, and on accepting a `group_invite` with `rejoin: true` (the owner sets it when the invitee is already on its roster; it also carries that member's `sender_epoch_floor`). Next send: `epoch = max(sender_epoch_floor, max seen_epoch_from_you, backup epoch, local max) + 1`, `seq = 1`, clear flag. Group sends take the pair's current session, and the envelope names its epoch in `key_epoch` (sign v3, G011); `session_epoch` stays the group's numbering, for de-dup and ordering only.
 
 ### roster_statement (G012)
 

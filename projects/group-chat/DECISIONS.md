@@ -101,11 +101,12 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G011 — Group epoch decoupled from the pair session epoch
 
 **Date:** 2026-10-25  
-**Status:** Accepted (Hongwei, 2026-10-25) — done first  
+**Status:** Accepted (Hongwei, 2026-10-25) — **implemented** with a wire field (option B): the group envelope carries the pair's `key_epoch` (sign v3); see the amendment  
 **Decision:** Group sends use the pair's current PSK session. The group epoch in the envelope is used only for receiver de-dup and ordering, not to select or create a pair session. Suspected, not yet proven: first pin it with a test (restore, then send 1:1 then group, and the reverse; assert both delivered and the pair epoch never decreases).  
 **Rationale:** `GroupE2ePayloadCodec.cpp:39` resolves the pairwise master PSK with `ResolveMasterPskForEpoch(target_key, group_epoch)`, which matches only the current or retired epochs. On a miss it opens a new key_init session and saves it with `record.session_epoch = group epoch` (`:67`). After a restore, where the group epoch (G010: higher or lower than the pair's) differs from the pair's epoch (bumped by 3cf0a14c8), this could write a lower epoch into the pair record and rewind the 1:1 chat.  
 **Alternatives:** Keep one shared epoch and make the group bump also bump the pair (couples two sequences, more key_init churn); give groups their own PSK table keyed by (peer, group_id).
 **Accepted amendment (Hongwei, 2026-10-25):** confirmed in code — on a miss `EncryptForMembers` saves a new session into the pair's `chat_targets` row with `session_epoch = group epoch`, overwriting the 1:1 session, and the 1:1 restart of 3cf0a14c8 makes the two epochs differ more often. The group's message numbering keeps its own epoch; a group send uses the pair's current session (opening one at the pair's own epoch when there is none) and never writes the group epoch into the pair row.
+**How (Hongwei, 2026-10-25, option B):** the group envelope names the pair's session epoch in a signed `key_epoch` (sign v3; MESSAGE_ENCRYPTION § Canonical relay-envelope signing bytes). Each member's copy is exactly a pairwise `e2e_public` message at that epoch, opened and announced as a 1:1 send does; the receiver reads and keeps it as one (`ReconcileE2ePublicSession`). Chosen over trial decryption (no wire change, but the receiver could not tell which pair epoch a group-carried opener belonged to). Clean cutover: group messages between old and new apps are refused. Also found and fixed by it: after any member removal (which moves the group epoch) the owner's second message and every other member's failed ("Missing key_init_b64"); lab `group_after_member_removed`.
 
 ---
 

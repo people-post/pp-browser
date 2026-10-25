@@ -61,7 +61,7 @@ TEST(EnvelopeSignerTest, SignAndVerifyRoundTrip) {
 }
 
 // v2: everything that decides something on receipt is signed — the decrypted blob, the group,
-// the AutoKey key_init and the sender's relay id.
+// the AutoKey key_init and the sender's relay id; v3 (group envelopes) also the pairwise key epoch.
 TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   const RelayEnvelope base = MakeE2eVectorEnvelope();
   auto base_bytes = EnvelopeSigner::BuildSignBytes(base);
@@ -85,8 +85,18 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   group.route.group_id = "group:a";
   group.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:bob", base.body.e2e.payload_b64}};
   group.body.e2e.payload_b64.clear();
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(group)) << "a group envelope names its pairwise key epoch (G011)";
+  group.key_epoch = 3;
   auto group_bytes = EnvelopeSigner::BuildSignBytes(group);
   ASSERT_TRUE(group_bytes) << group_bytes.error().message;
+  RelayEnvelope other_key_epoch = group;
+  other_key_epoch.key_epoch = 4;
+  auto key_epoch_bytes = EnvelopeSigner::BuildSignBytes(other_key_epoch);
+  ASSERT_TRUE(key_epoch_bytes);
+  EXPECT_NE(*group_bytes, *key_epoch_bytes) << "key_epoch";
+  RelayEnvelope direct_with_key_epoch = base;
+  direct_with_key_epoch.key_epoch = 3;
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(direct_with_key_epoch)) << "key_epoch is a group field";
   RelayEnvelope other_group = group;
   other_group.route.group_id = "group:b";
   auto other_bytes = EnvelopeSigner::BuildSignBytes(other_group);

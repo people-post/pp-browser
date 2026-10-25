@@ -1433,6 +1433,45 @@ def scenario_group_members_key_each_other(lab):
     wait_for(lambda: said(b, "hi bob"), 30, "bob: carol's group message")
 
 
+def scenario_group_after_member_removed(lab):
+    """The owner removes a member, which moves the group's epoch: everyone left keeps reading everyone —
+    each copy is keyed by the pair's own session, not by the group's epoch (G011). Before, the owner's
+    second message and every other member's failed: "Missing key_init_b64"."""
+    users, threads = open_group(lab, n=4)
+    a, b, c, d = users
+
+    def said(u, text):
+        return any(r.get("text") == text for r in u.cmd("transcript", thread=threads[u.name])["rows"])
+
+    def send(u, text):
+        u.cmd("show_chat", thread=threads[u.name])
+        u.cmd("compose_send", text=text)
+
+    send(a, "before the removal")
+    for u in (b, c, d):
+        wait_for(lambda u=u: said(u, "before the removal") or None, 30, "%s: alice's message" % u.name)
+    a.cmd("remove_member", thread=threads[a.name], account=d.account)
+    for u in (b, c):
+        wait_for(lambda u=u: d.account not in u.cmd("group_roster", group_id=lab_group_id(a, threads))["members"]
+                 or None, 30, "%s: dave removed" % u.name)
+    for sender, readers in ((a, (b, c)), (b, (a, c)), (c, (a, b))):
+        for i in (1, 2):
+            text = "%s %d after the removal" % (sender.name, i)
+            send(sender, text)
+            for r in readers:
+                wait_for(lambda r=r, text=text: said(r, text) or None, 30, "%s: %r" % (r.name, text))
+    if said(d, "alice 1 after the removal"):
+        raise ProbeError("dave read the group after his removal")
+
+
+def lab_group_id(owner, threads):
+    """The group id of the owner's group thread."""
+    for t in owner.cmd("threads")["threads"]:
+        if t.get("id") == threads[owner.name] and t.get("group_id"):
+            return t["group_id"]
+    raise ProbeError("%s: no group id for its group thread" % owner.name)
+
+
 def scenario_restored_device_is_heard(lab):
     """Bob reinstalls and restores his account from the backup (#378): his chat with Alice starts empty
     and his numbering is gone, while Alice still holds their old chat. His first send starts their next
@@ -1810,6 +1849,7 @@ SCENARIOS = [
     ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
+    ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),

@@ -1152,8 +1152,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
 
   const std::string group_id = *(*thread)->group_id;
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-      text, group_id, identity->account_id, message.id, *message.sender_seq, *message.session_epoch,
-      message.timestamp, targets, psk_store_, resolve_kem, rich_plaintext);
+      text, group_id, identity->account_id, message.id, *message.sender_seq, message.timestamp, targets,
+      psk_store_, resolve_kem, rich_plaintext);
   if (!encrypted) {
     if (groups_) {
       for (const GroupMemberTarget& target : targets) {
@@ -1186,7 +1186,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     }
     RelayEnvelope envelope = BuildGroupMemberEnvelope(message, sender, group_id, recipient,
                                                       relay_route.value_or(recipient), payload_b64,
-                                                      std::move(key_init));
+                                                      encrypted->member_key_epochs.at(recipient), std::move(key_init));
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
       MarkGroupMemberMissed(group_id, recipient);

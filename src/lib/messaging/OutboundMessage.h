@@ -98,7 +98,7 @@ bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool crit
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
                                        const std::string& route_party, std::string payload_b64,
-                                       std::optional<std::string> key_init_b64);
+                                       uint32_t key_epoch, std::optional<std::string> key_init_b64);
 
 // --- The outbox: sends queued after a failed relay attempt ----------------------------------------
 

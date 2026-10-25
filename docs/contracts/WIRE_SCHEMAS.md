@@ -128,7 +128,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `body_hash`, `sender_seq`, `session_epoch`, `body.e2e.key_init_b64` (sign v2 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `body_hash`, `sender_seq`, `session_epoch`, `body.e2e.key_init_b64` (sign v2 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)); group envelopes also `key_epoch` (sign v3) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
 | `body_hash` | BLAKE2b-256 over exactly what the receiver decrypts: `0x02` ‖ LenBytes(blob) (direct / control), or `0x02` ‖ each LenUtf8(member_id) ‖ LenBytes(blob) (group) — no `0x01` public path |
 | Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, relay metadata, unknown keys |
@@ -143,7 +143,8 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | `route` | object | yes | See `Route` below |
 | `body` | object | yes | **`body.e2e`** — see below (D090) |
 | `sender_seq` | integer (u64) | yes on direct | Both tiers (D045) |
-| `session_epoch` | integer (u32) | yes on direct | |
+| `session_epoch` | integer (u32) | yes on direct | On a group envelope: the group's numbering epoch |
+| `key_epoch` | integer (u32, ≥ 1) | yes on group; absent otherwise | The pairwise `e2e_public` session epoch that keyed this member's payload (sign v3, G011) |
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
 | `signature` | string | yes | Ed25519 over [canonical sign bytes](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes); **base64** (RFC 4648, padded) in v1 |
 | `sender_instance_id` | string (UUID) | **`[future]`** | Multi-device extension (D074); omit in v1 |

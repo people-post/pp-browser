@@ -219,14 +219,16 @@ TEST(OutboundSendRulesTest, AGroupMembersCopy) {
   message.session_epoch = 2;
   message.timestamp = 5;
   RelayEnvelope e = BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1",
-                                             "account:b", "relay:b", "payload", std::string("init"));
+                                             "account:b", "relay:b", "payload", 5, std::string("init"));
   EXPECT_EQ(e.route.kind, "group");
+  EXPECT_EQ(e.session_epoch, 2u) << "the group's numbering";
+  EXPECT_EQ(e.key_epoch, std::optional<uint32_t>(5)) << "the pair's session, apart from it (G011)";
   EXPECT_EQ(e.route.group_id, "group-1");
   EXPECT_EQ(e.body.e2e.member_payloads->at("account:b"), "payload");
   EXPECT_EQ(e.body.e2e.key_init_b64, std::optional<std::string>("init"));
   EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", 2, "account:b"));
   EXPECT_NE(BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1", "account:c",
-                                     "relay:c", "payload", std::nullopt)
+                                     "relay:c", "payload", 1, std::nullopt)
                 .stream_key,
             e.stream_key)
       << "the relay keeps one row per sender, stream and seq: each member's copy has its own stream";

@@ -343,6 +343,9 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   json.set("body", body);
   json.setJsonUInt("sender_seq", envelope.sender_seq);
   json.setJsonUInt("session_epoch", envelope.session_epoch);
+  if (envelope.key_epoch) {
+    json.setJsonUInt("key_epoch", *envelope.key_epoch);
+  }
   json.set("timestamp", envelope.timestamp);
   json.set("signature", envelope.signature);
   json.set("stream_key", envelope.stream_key);
@@ -366,6 +369,9 @@ Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
   json.set("body", body);
   json.setJsonUInt("sender_seq", envelope.sender_seq);
   json.setJsonUInt("session_epoch", envelope.session_epoch);
+  if (envelope.key_epoch) {
+    json.setJsonUInt("key_epoch", *envelope.key_epoch);
+  }
   json.set("timestamp", envelope.timestamp);
   json.set("signature", envelope.signature);
   return json;
@@ -518,6 +524,12 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
       return Error("session_epoch out of range");  // rejected, not truncated
     }
     envelope.session_epoch = static_cast<uint32_t>(*session_epoch);
+  }
+  if (auto key_epoch = json.getNonNegInt("key_epoch")) {
+    if (*key_epoch == 0 || *key_epoch > UINT32_MAX) {
+      return Error("key_epoch out of range");  // rejected, not truncated
+    }
+    envelope.key_epoch = static_cast<uint32_t>(*key_epoch);
   }
   if (auto timestamp = json.getIf<int64_t>("timestamp")) {
     envelope.timestamp = *timestamp;

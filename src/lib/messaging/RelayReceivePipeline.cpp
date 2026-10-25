@@ -1129,8 +1129,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
 
+  AutoKeyRead read;
   auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, psk_store_,
-                                                                 *kem_private);
+                                                                 *kem_private, &read);
   if (!decrypted) {
     outcome.decision = IngestDecision::HardReject;
     std::optional<std::string> tid;
@@ -1141,6 +1142,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
   ThreadMessage message = std::move(*decrypted);
+  // Signed by the member (checked above) and read: what that proves about the pair's session is kept,
+  // at the pair's epoch, as for a 1:1 message — so the next copy, without the key_init, is read too (G011).
+  if (auto kept = ReconcileE2ePublicSession(psk_store_, GroupE2ePayloadCodec::PairTargetKey(envelope.sender_contact_id),
+                                            *envelope.key_epoch, read, envelope.body.e2e.key_init_b64,
+                                            envelope.timestamp);
+      !kept) {
+    log().warning << "group: pair session not updated: " << kept.error().message;
+  }
   if (controls_ && controls_->OnLane(message)) {
     log().info << "drop control-lane message sent in a group stream message_id=" << envelope.message_id;
     outcome.decision = IngestDecision::SilentDiscard;
