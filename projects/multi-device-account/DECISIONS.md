@@ -362,3 +362,26 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 **Rationale:** Shared account sessions break as soon as two devices act: they collide on numbering, and any session one device opens (first contact, a restart, a peer's restart) is unknown to its siblings, so their copies of the replies fail. Syncing sessions between siblings races the mailbox. Per-device sessions remove the shared state instead of syncing it, and turn restore and new devices into the ordinary "a new device appears" case.
 
 **Alternatives:** note-to-self session sync between siblings (rejected — races the mailbox, conflict rules on top of a fragile base); `sender_instance_id` on shared sessions (D074 — fixes numbering only, not session divergence); a sync hub master that relays messages (rejected — single point of failure; fan-out already reaches every device); every linked device holding the account key forever (rejected at d4 — no real revoke).
+
+---
+
+## M022 — One relay record per account carries every device's copy; an account writes to itself
+
+**Date:** 2026-10-25  
+**Status:** Accepted (Hongwei, 2026-10-25): split delivery; the mailbox cap raised. Amends [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §5, §7, §9 (d2/d3) and [M013](#m013--soft-inbox-ack-shared-mailbox-no-sibling-starve) §3 (the cap).
+
+**Problem:** with per-device sessions (M021) a message to an account is one copy per device. As separate relay records each device downloads all of them anyway (one mailbox per account), the relay refuses an account's records to itself (no sibling channel: card notices, sent messages on our other devices), and a device that is not addressed cannot tell a copy is missing.
+
+**Decision:**
+
+1. **The relay stays account-keyed and knows no device list.** A send to an account is **one record**: one envelope holding an entry per recipient device — its device id, its `session_epoch` and `sender_seq` in that device pair, its session opener (`key_init`) if any, its payload — and one signature by the sending device over the envelope and every entry. An account copy (M021: no device known yet) is the entry with no device.
+2. **An account writes to itself.** Each send also goes, as one record to our own account, with entries for our other devices: what we sent shows on them (d3), and a device's new card reaches its siblings through the mailbox. The relay allows a record whose sender and recipient are the same account (and its stream's history).
+3. **Split delivery.** A device we have a live link to gets its entry over the mesh (Amp, a one-entry envelope); all the others share the relay record; an entry whose mesh send fails follows in another relay record. Messages stay relay-optional where devices are reachable, and no device is left out because a sibling was.
+4. **A missing copy shows.** A device that finds a record with entries for its siblings but none for itself knows it is missing one (the ask of M021 §9).
+5. **Mailbox cap doubled** (trim toward 2000 when past ~2400): our own records land in our mailbox too. TTL stays 90 days. The relay does not trim per device (it does not know devices).
+
+**Limits:** a record's size shows roughly how many devices an account has (device PeerIds are public in the directory already, M017); every device downloads every entry of its account's records (at most 5×); the mailbox is trimmed by count and age, not by what each device has read; a device offline past either loses what was trimmed (M021 limit 3).
+
+**Later (d4):** the relay authenticates requests with the account key; once only the master holds it, the relay accepts a device key with the account card listing it. Separate from this.
+
+**Alternatives:** device-addressed mailbox (the relay keeps `recipient_device`, a device polls its own queue — less download, but the relay holds the device list and a device cannot see a missing copy; rejected); the relay fans one upload out per device (rejected — complicates signing for little at 5 devices); every message always through the relay, the mesh only a speed-up (rejected — relay-optional where peers reach each other); siblings only over the mesh (built, rejected — needs both online and reachable, and the privacy gate does not know siblings).

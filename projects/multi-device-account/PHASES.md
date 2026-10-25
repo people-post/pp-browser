@@ -133,7 +133,9 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [x] Calls: unchanged on the account-level session (one account copy; single-device accounts work; several devices — d5)
 - [x] Link bundle carries the card and no sessions; backups keep account-level sessions only
 - [x] Unit tests: two linked devices both send and both read (1:1, group, account copies), new device's card, old card refused
-- [ ] Lab `linked_devices_both_send`: fails — the new device's first message does not reach the peer yet (under investigation; relay design question open)
+- [ ] Lab `linked_devices_both_send`: fails — the new device's first message does not reach the peer yet (under investigation)
+- [ ] **M022:** one relay record per account with an entry per device (one signature); split delivery (mesh for linked devices, one relay record for the rest, a follow-up for a failed mesh send); a record to our own account for our other devices; replaces the sibling card exchange over the mesh
+- [ ] **M022 relay (messenger):** a record to one's own account allowed (and its history); mailbox cap doubled — merges and deploys before the client
 
 ### d3 — Siblings
 
