@@ -39,6 +39,12 @@ protected:
 // Fresh install (no vault): the first frame is followed by the "I'm new / I already have an
 // account" page, so the user is led into PIN creation and the first-run wizard instead of an
 // empty home screen that only asks when some feature needs the vault (Kenneth, 2026-10-13).
+TEST(ProfileUnlockGateWrongPinTest, OnlyTheVaultRefusalIsAWrongPin) {
+  EXPECT_TRUE(ProfileUnlockGate::IsWrongPinError(AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault")));
+  EXPECT_FALSE(ProfileUnlockGate::IsWrongPinError(AppError::Pin(Err::Pin::VaultUnavailable, "no vault")));
+  EXPECT_FALSE(ProfileUnlockGate::IsWrongPinError(Error("disk full")));
+}
+
 TEST_F(ProfileUnlockGateTest, FreshInstallShowsIdentityForkAfterFirstPresent) {
   ASSERT_FALSE(engine_.HasVault());
   bool fork_shown = false;

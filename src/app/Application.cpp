@@ -1167,6 +1167,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
     pin_actions.on_identity_restore = [this]() { pin_gate_->OnIdentityRestore(); };
+    pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {

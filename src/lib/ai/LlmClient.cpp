@@ -5,11 +5,13 @@
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/CurlSsl.h"
 
 #include <curl/curl.h>
 #include "common/PbrCompat.h"
 
+#include <cctype>
 #include <limits>
 
 namespace pbr {
@@ -117,6 +119,27 @@ LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) 
   redirectLogger("LlmClient");
 }
 
+bool LlmClient::IsBriefGatewayLimit(const std::string& api_message) {
+  return api_message.find("Brief LLM") != std::string::npos || api_message.find("Guest LLM") != std::string::npos;
+}
+
+LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
+  // The gateway sends one `rate_limit_error` code for every limit; only its message tells them apart
+  // (app-static-api r_llm.ts: "Guest Brief LLM daily limit exceeded", "Per-user Brief LLM rate limit
+  // exceeded", "Guest Brief LLM rate limit exceeded"; the global and mint limits stay "busy").
+  std::string text = api_message;
+  for (char& c : text) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  if (text.find("daily limit") != std::string::npos) {
+    return LlmLimitKind::GuestDaily;
+  }
+  if (text.rfind("per-user ", 0) == 0 || text.rfind("guest brief llm rate limit", 0) == 0) {
+    return LlmLimitKind::PerMinute;
+  }
+  return LlmLimitKind::Other;
+}
+
 Error LlmClient::MapHttpError(long http_code, const std::string& response_body) {
   std::string api_message;
   std::string api_code;
@@ -144,8 +167,22 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
 
   if (http_code == 429) {
     auto err = AppError::Auth(Err::Auth::RateLimited, detail);
-    if (!api_message.empty()) {
-      err.WithUser(api_message);
+    // The gateway's own text is English; the user reads our wording for the limit that was hit.
+    // Other limits keep the catalog's "service is busy".
+    switch (ClassifyLimit(api_message)) {
+    case LlmLimitKind::GuestDaily:
+      err.WithUser(Tr("errors.ai.limit_daily"));
+      break;
+    case LlmLimitKind::PerMinute:
+      err.WithUser(Tr("errors.ai.limit_minute"));
+      break;
+    case LlmLimitKind::Other:
+      // Another provider's own text says what to fix (quota, billing); the gateway's global / mint
+      // limits keep "busy".
+      if (!api_message.empty() && !IsBriefGatewayLimit(api_message)) {
+        err.WithUser(api_message);
+      }
+      break;
     }
     return err;
   }
