@@ -16,6 +16,7 @@ struct PinGateActionPorts {
   std::function<void()> on_identity_new;
   std::function<void()> on_identity_link;
   std::function<void()> on_identity_restore;
+  std::function<void()> on_forgot_toggle;
 };
 
 } // namespace pbr

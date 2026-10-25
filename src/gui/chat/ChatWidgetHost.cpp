@@ -1,5 +1,6 @@
 #include "gui/chat/ChatWidgetHost.h"
 
+#include "gui/chat/ChatActionLabel.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "lib/ui/CalendarHelper.h"
@@ -14,7 +15,7 @@ std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& 
   std::ostringstream out;
   for (size_t i = 0; i < chat_actions.size(); ++i) {
     out << "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " << i << ")\">"
-        << StructuredTextParser::EscapeText(chat_actions[i].label) << "</button>";
+        << StructuredTextParser::EscapeText(ChatActionLabel(chat_actions[i])) << "</button>";
   }
   return out.str();
 }
