@@ -15,7 +15,8 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   if (control.content_type != ChatContentType::System || control.id.empty()) {
     return Error("control lane carries identified system messages only");
   }
-  if (params.sender_account_id.empty() || params.peer_account_id.empty() || params.route_party.empty() || !sign) {
+  if (params.sender_account_id.empty() || params.sender_device.empty() || params.peer_account_id.empty() ||
+      params.route_party.empty() || !sign) {
     return Error("control lane send missing a party");
   }
   auto plaintext = ChatPayloadCodec::EncodeToRow(control);
@@ -42,17 +43,24 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   envelope.message_id = control.id;
   envelope.sender_relay_id = params.sender_relay_id;
   envelope.sender_contact_id = params.sender_account_id;
+  envelope.sender_device = params.sender_device;
   envelope.route.kind = kRelayRouteControl;
   envelope.route.channel = ThreadChannel::E2ePublic;
-  envelope.body.e2e.payload_b64 = std::move(encrypted->payload_b64);
+  RelayCopy copy;  // one account copy: every device of the peer reads the lane (M021)
+  copy.session_epoch = params.session_epoch;
+  copy.sender_seq = 0;
+  copy.payload_b64 = std::move(encrypted->payload_b64);
   if (encrypted->key_init_b64 && !encrypted->key_init_b64->empty()) {
-    envelope.body.e2e.key_init_b64 = std::move(*encrypted->key_init_b64);
-    envelope.body.e2e.sender_keys = params.sender_keys;
+    copy.key_init_b64 = std::move(*encrypted->key_init_b64);
   }
-  envelope.sender_seq = 0;
+  // An account copy: our card rides it, for a peer that knows none of our devices yet (M021).
+  envelope.body.e2e.sender_card = params.sender_card;
+  envelope = WithSingleRelayCopy(std::move(envelope), std::move(copy));
   envelope.order_key = params.order_key;
-  envelope.session_epoch = params.session_epoch;
-  envelope.stream_key = BuildControlRelayStreamKey(params.sender_relay_id, params.route_party);
+  // Per sending device: an account's devices share its `relay:` id, and the relay keeps one row per sender,
+  // stream and index (M022).
+  envelope.stream_key = BuildControlRelayStreamKey(params.sender_relay_id, params.route_party) + ":from:" +
+                        params.sender_device;
   envelope.recipient_contact_id = params.route_party;
   envelope.timestamp = control.timestamp;
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);

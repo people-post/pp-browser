@@ -51,6 +51,14 @@ std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& pee
 
 } // namespace
 
+std::vector<mesh::MeshHopCandidate> DurableRelaysFirst(std::vector<mesh::MeshHopCandidate> hops) {
+  std::stable_partition(hops.begin(), hops.end(), [](const mesh::MeshHopCandidate& hop) {
+    return hop.affinity == mesh::MeshHopAffinity::OrgSeed || hop.affinity == mesh::MeshHopAffinity::DirectoryNode ||
+           hop.affinity == mesh::MeshHopAffinity::DhtDiscovered;
+  });
+  return hops;
+}
+
 mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
   mesh::RelayScopeMask mask = 0;

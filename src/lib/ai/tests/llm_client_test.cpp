@@ -13,6 +13,26 @@
 
 namespace {
 
+TEST(LlmLimitKindTest, ClassifiesTheGatewayMessages) {
+  using pbr::LlmClient;
+  using pbr::LlmLimitKind;
+  EXPECT_EQ(LlmClient::ClassifyLimit("Guest Brief LLM daily limit exceeded"), LlmLimitKind::GuestDaily);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Guest Brief LLM rate limit exceeded"), LlmLimitKind::PerMinute);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Per-user Brief LLM rate limit exceeded"), LlmLimitKind::PerMinute);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Global Brief LLM rate limit exceeded"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Guest LLM mint rate limit exceeded"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimit(""), LlmLimitKind::Other);
+}
+
+TEST(LlmLimitKindTest, OtherProvidersKeepTheirOwnText) {
+  const pbr::Error gateway = pbr::LlmClient::MapHttpError(
+      429, R"({"error":{"message":"Global Brief LLM rate limit exceeded","code":"rate_limit_error"}})");
+  EXPECT_NE(gateway.user, "Global Brief LLM rate limit exceeded");
+  const pbr::Error openai = pbr::LlmClient::MapHttpError(
+      429, R"({"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}})");
+  EXPECT_EQ(openai.user, "You exceeded your current quota");
+}
+
 class LlmClientLimitsTest : public ::testing::Test {
 protected:
   pbr::LlmClient Client() const {

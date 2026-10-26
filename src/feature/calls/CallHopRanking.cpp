@@ -72,7 +72,8 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
   if (deps_->trusted_relays_only) {  // privacy T4: a relay sees both ends' addresses
     ranked = KeepTrustedRelays(std::move(ranked), TrustedRelayPeerIds(contacts, deps_->bootstrap_peers));
   }
-  return ranked;
+  // Only group calls take a media hop: durable relays first, whatever prefer_contacts says (#385).
+  return DurableRelaysFirst(std::move(ranked));
 }
 
 bool CallHopRanking::HasCandidates() const {

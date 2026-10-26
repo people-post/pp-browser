@@ -84,6 +84,13 @@ std::vector<mesh::MeshHopCandidate> RankMediaHopsEscalating(
     const std::string& local_listen_multiaddr = {},
     mesh::RelayScopeMask consumer_scopes = mesh::kRelayScopeShortTerm);
 
+/**
+ * A group call's SFU hop: durable relays (org seeds, directory and DHT nodes) before contacts' nodes,
+ * each part in its order (#385). An SFU's upload grows with the square of the members, which a home
+ * node runs out of first; a contact's node stays a fallback.
+ */
+std::vector<mesh::MeshHopCandidate> DurableRelaysFirst(std::vector<mesh::MeshHopCandidate> hops);
+
 /** Scope tags for a candidate (eligible closed-set peers only). */
 mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr = {});

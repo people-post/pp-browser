@@ -26,6 +26,7 @@ Roe<DerivedNodeIdentitySeeds> DeriveNodeIdentitySeeds(const ByteVector& master_s
   out.device_ml_dsa_seed.resize(32);
   out.account_ml_dsa_seed.resize(32);
   out.account_ml_kem_coins.resize(64);
+  out.device_ml_kem_coins.resize(64);
 
   if (crypto_kdf_hkdf_sha256_expand(out.device_ml_dsa_seed.data(), out.device_ml_dsa_seed.size(),
                                     kNodeIdentityMlDsaDeviceInfo, std::strlen(kNodeIdentityMlDsaDeviceInfo),
@@ -44,6 +45,12 @@ Roe<DerivedNodeIdentitySeeds> DeriveNodeIdentitySeeds(const ByteVector& master_s
                                     prk) != 0) {
     sodium_memzero(prk, sizeof(prk));
     return Error("identity seed HKDF expand (account ML-KEM) failed");
+  }
+  if (crypto_kdf_hkdf_sha256_expand(out.device_ml_kem_coins.data(), out.device_ml_kem_coins.size(),
+                                    kNodeIdentityMlKemDeviceInfo, std::strlen(kNodeIdentityMlKemDeviceInfo),
+                                    prk) != 0) {
+    sodium_memzero(prk, sizeof(prk));
+    return Error("identity seed HKDF expand (device ML-KEM) failed");
   }
   sodium_memzero(prk, sizeof(prk));
   return out;

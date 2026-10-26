@@ -132,6 +132,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
     ctor.Bind("pin_gate_restore_pin_mode", &host.state_.pin_gate.restore_pin_mode);
+    ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
+    ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -250,6 +252,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_identity_new", DataEvent<>([this]() { PinGateIdentityNew(); }));
     ctor.BindEventCallback("pin_gate_identity_link", DataEvent<>([this]() { PinGateIdentityLink(); }));
     ctor.BindEventCallback("pin_gate_identity_restore", DataEvent<>([this]() { PinGateIdentityRestore(); }));
+    ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
     ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
     ctor.BindEventCallback("call_accept_charge", DataEvent<>([this]() { CallAcceptCharge(); }));
@@ -791,6 +794,8 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_restore_pin_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
@@ -2010,6 +2015,12 @@ void ShellHost::PinGateIdentityLink() {
 void ShellHost::PinGateIdentityRestore() {
   if (pin_gate_actions_.on_identity_restore) {
     pin_gate_actions_.on_identity_restore();
+  }
+}
+
+void ShellHost::PinGateForgotToggle() {
+  if (pin_gate_actions_.on_forgot_toggle) {
+    pin_gate_actions_.on_forgot_toggle();
   }
 }
 

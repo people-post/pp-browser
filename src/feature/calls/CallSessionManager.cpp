@@ -543,6 +543,7 @@ void CallSessionManager::SetDirectMediaPorts(CallDirectMediaPorts ports) {
 CallHopArmingPorts CallSessionManager::MakeHopArmingPorts() {
   CallHopArmingPorts ports;
   ports.hop_ops_allowed = [this]() { return live_calls_.AllowsHopPath(); };
+  ports.direct_failed = [this]() { return live_calls_.Status() == CallMediaStatus::Failed; };
   ports.soft_migrate_may_arm = [this]() { return live_calls_.SoftMigrateMayArm(); };
   ports.media_cancel_gen = [this]() { return live_calls_.MediaCancelGen(); };
   ports.report_progress = [this](CallHopPlannerPhase phase, const std::string& call_id) {

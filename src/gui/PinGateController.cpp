@@ -143,6 +143,7 @@ void PinGateController::ShowUnlock() {
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.create_mode = false;
+  pin_state_.unlock_mode = true;
   pin_state_.title = Tr("pin.unlock_title").c_str();
   pin_state_.message = Tr("pin.unlock_message").c_str();
   ApplyPinGate();
@@ -215,6 +216,16 @@ void PinGateController::OnIdentityRestore() {
   DirtyPinFields();
   // Accounts on the default PIN come back without a question; otherwise the gate calls ShowRestorePin.
   gate_complete_.complete_restore_backup(std::string(kDefaultProfilePin), /*set_default_pin=*/true);
+}
+
+void PinGateController::OnForgotToggle() {
+  if (!shell_pin_gate_.apply_pin_gate || !pin_state_.active || !pin_state_.unlock_mode) {
+    return;
+  }
+  PullBoundPinFields();
+  pin_state_.forgot_open = !pin_state_.forgot_open;
+  ApplyPinGate();
+  DirtyPinFields();
 }
 
 void PinGateController::ShowRestorePin(const bool wrong_pin) {

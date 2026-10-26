@@ -62,6 +62,11 @@ struct ThreadMessage {
   std::optional<std::string> target_message_id;
   std::optional<std::string> generation;
   std::optional<std::string> seq_owner_contact_id;
+  /**
+   * The sending device's PeerId, for a message a peer's device numbered in its device pair with us (M021):
+   * the numbering (seq, epoch) is that device's, apart from its siblings'.
+   */
+  std::optional<std::string> sender_device;
   std::optional<std::string> ai_invoke_mode;
   std::optional<std::string> content_rml;
   std::vector<TranscriptChatAction> chat_actions;

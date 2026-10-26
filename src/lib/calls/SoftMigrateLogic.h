@@ -70,8 +70,9 @@ struct SoftMigrateDecisionInput {
 };
 
 /**
- * Pure soft-migrate who-picks (V021 + V022).
- * First hop: call initiator only. Re-pick / ICE: epoch coordinator.
+ * Who picks the hop (V050, #385): the owner — the earliest-joined initiator — and nobody else; every
+ * other member waits for its CallSfuAttach. Which relay hosts is the owner's ranking, never a reason to
+ * change who picks. Re-pick / ICE: epoch coordinator.
  */
 SoftMigrateAction DecideSoftMigrate(const SoftMigrateDecisionInput& in);
 
@@ -106,21 +107,6 @@ enum class SoftMigrateArming {
  * recover or a named hop — a relay-cap nudge must not turn a connecting 1:1 into a group setup.
  */
 SoftMigrateArming DecideSoftMigrateArming(const SoftMigrateArmingInput& in);
-
-struct HopHostingFacts {
-  /** This device may host the hop for the call (PreferLocal allowed for its scope, V035). */
-  bool prefer_local_allowed = false;
-  /** This device is configured to host hops at all. */
-  bool hosts_hops = false;
-  /** A durable media_relay Node is known. */
-  bool durable_hop_known = false;
-};
-
-/**
- * Who hosts adjusts who-picks: a PreferLocal Node picks (itself) even where the rule says wait; a
- * phone defers its pick to a durable media_relay Node (its quote would hit a stranger refusal).
- */
-SoftMigrateAction AdjustForHopHosting(SoftMigrateAction action, const HopHostingFacts& facts);
 
 struct RepickOnHopInput {
   /** The hop media runs on now (attached, else the stored hint; empty: unknown). */

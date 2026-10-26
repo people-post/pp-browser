@@ -70,9 +70,10 @@ public:
   Roe<uint32_t> GetChatTargetSessionEpoch(const std::string& thread_id) const override;
   Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string& thread_id,
                                                         const SeqRangeQuery& query) const override;
-  Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch) const override;
-  Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
-                             const PeerSyncState& state) override;
+  Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
+                                      const std::string& sender_device = {}) const override;
+  Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch, const PeerSyncState& state,
+                             const std::string& sender_device = {}) override;
   Roe<void> CancelOldEpochPending(const std::string& thread_id, uint32_t old_session_epoch) override;
   Roe<void> AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) override;
   Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t old_session_epoch,

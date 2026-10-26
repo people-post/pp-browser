@@ -48,6 +48,47 @@ protected:
   std::unique_ptr<SqlitePskSessionStore> psk_;
 };
 
+// M021: a session per device pair, apart from the account's and from the peer's other devices, numbered in
+// the pair — a new epoch numbers from 1.
+TEST_F(E2ePublicSessionLogicTest, EachPeerDeviceHasItsOwnSessionAndNumbering) {
+  auto phone = HybridKem::GenerateKeyPair();
+  auto laptop = HybridKem::GenerateKeyPair();
+  ASSERT_TRUE(phone && laptop);
+  const ChatTargetKey account{"account", "account:bob", CryptoChannel::E2ePublic};
+  ChatTargetKey bob_phone = account;
+  bob_phone.peer_device = "QmBobPhone";
+  ChatTargetKey bob_laptop = account;
+  bob_laptop.peer_device = "QmBobLaptop";
+
+  auto with_phone = EnsureE2ePublicMasterPsk(*psk_, bob_phone, 1, phone->public_key);
+  auto with_laptop = EnsureE2ePublicMasterPsk(*psk_, bob_laptop, 1, laptop->public_key);
+  ASSERT_TRUE(with_phone && with_laptop);
+  EXPECT_NE(with_phone->master_psk, with_laptop->master_psk);
+  EXPECT_FALSE(psk_->Load(account).value().has_value()) << "no account-level session made";
+  EXPECT_EQ(psk_->Load(bob_phone).value()->key, bob_phone);
+
+  EXPECT_EQ(psk_->AllocateSenderSeq(bob_phone).value(), 1u);
+  EXPECT_EQ(psk_->AllocateSenderSeq(bob_phone).value(), 2u);
+  EXPECT_EQ(psk_->AllocateSenderSeq(bob_laptop).value(), 1u) << "each pair counts on its own";
+  EXPECT_FALSE(psk_->AllocateSenderSeq(account)) << "the account's numbering is the thread's";
+  ChatTargetKey nobody = account;
+  nobody.peer_device = "QmUnknown";
+  EXPECT_FALSE(psk_->AllocateSenderSeq(nobody)) << "no session to number in";
+
+  // The pair restarts at its next epoch (D014): numbering there starts over; the laptop's goes on.
+  ASSERT_TRUE(RestartE2ePublicSession(*psk_, bob_phone, 1, 2, 1000));
+  ASSERT_TRUE(EnsureE2ePublicMasterPsk(*psk_, bob_phone, 2, phone->public_key));
+  EXPECT_EQ(psk_->AllocateSenderSeq(bob_phone).value(), 1u);
+  EXPECT_EQ(psk_->AllocateSenderSeq(bob_laptop).value(), 2u);
+  EXPECT_TRUE(psk_->ResolveMasterPskForEpoch(bob_phone, 1).value().has_value()) << "the old epoch kept, retired";
+
+  auto listed = psk_->List();
+  ASSERT_TRUE(listed);
+  EXPECT_EQ(std::count_if(listed->begin(), listed->end(),
+                          [](const PskSessionRecord& r) { return r.key.peer_identity_value == "account:bob"; }),
+            2);
+}
+
 TEST_F(E2ePublicSessionLogicTest, CreatesOnceAndAnnouncesUntilConfirmed) {
   auto bob = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob));

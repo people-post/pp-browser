@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "common/StartupTiming.h"
 
 #include <memory>
@@ -86,6 +87,28 @@ void ProfileUnlockGate::ReportError(const std::string& message) {
   }
 }
 
+void ProfileUnlockGate::ReportError(const Error& error) {
+  // The vault's text ("Incorrect PIN or corrupt vault") is English; the log keeps it, the screen
+  // gets our wording. A silent unlock (no PIN typed) opens the unlock screen without that line.
+  if (!IsWrongPinError(error)) {
+    ReportError(error.message);
+    return;
+  }
+  log().warning << "Unlock failed: " << error.message;
+  SetUnlockInProgress(false);
+  const bool silent = !showing_;
+  if (silent) {
+    RequestShowUnlock(nullptr);
+  }
+  if (!silent && ports_.ui.show_error) {
+    ports_.ui.show_error(Tr("pin.error.wrong"));
+  }
+}
+
+bool ProfileUnlockGate::IsWrongPinError(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Pin && error.code == static_cast<int32_t>(Err::Pin::Generic);
+}
+
 void ProfileUnlockGate::RequestShowIdentityFork(std::function<void(bool)> done) {
   if (done) {
     pending_.push_back(std::move(done));
@@ -161,7 +184,7 @@ void ProfileUnlockGate::RunUnlockAndReadyAsync(std::string pin, const bool set_d
   auto on_done = [this, set_default_pin, clear_default_pin](Roe<void> result) {
     if (!result) {
       StartupMark("unlock_and_ready_fail");
-      ReportError(result.error().message);
+      ReportError(result.error());
       return;
     }
     if (set_default_pin && ports_.set_pin_is_default) {
@@ -347,7 +370,7 @@ void ProfileUnlockGate::CompleteRestoreBackup(const std::string& pin, const bool
     }
     if (!result) {
       StartupMark("local_backup_restore_fail");
-      ReportError(result.error().message);
+      ReportError(result.error());
       return;
     }
     if (ports_.set_pin_is_default) {
@@ -391,7 +414,7 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
   auto on_done = [this, set_default_pin](Roe<void> result) {
     if (!result) {
       StartupMark("link_device_import_fail");
-      ReportError(result.error().message);
+      ReportError(result.error());
       return;
     }
     if (set_default_pin && ports_.set_pin_is_default) {

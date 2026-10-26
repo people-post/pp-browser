@@ -1,0 +1,158 @@
+name: nightly-lab
+
+# The app lab every night on develop (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
+# `--suite app-nat` on the lab machine — an EC2 instance in the web3 account (infra-terraform
+# pp-lab.tf, infra-ansible lab-runner/) that is stopped except while this runs. The relay is its
+# published images (packaging/pp-node/docker-compose.app-lab-images.yml). A scenario that fails twice
+# (one retry) opens or updates an issue labelled nightly-lab; one that passes again closes it.
+#
+# Never on pull requests: the lab machine runs only what this workflow, from the default branch, gives
+# it. Idle until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE are set.
+
+on:
+  schedule:
+    - cron: '17 7 * * *' # 07:17 UTC, past midnight in California
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: 'Suites to run (space-separated)'
+        default: 'app app-nat'
+      only:
+        description: 'Scenarios only (space-separated; empty: all)'
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-lab
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  start:
+    if: vars.PP_LAB_INSTANCE_ID != '' && vars.PP_LAB_AWS_ROLE != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.PP_LAB_AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Start the lab machine
+        run: |
+          aws ec2 start-instances --instance-ids "${{ vars.PP_LAB_INSTANCE_ID }}" >/dev/null
+          aws ec2 wait instance-running --instance-ids "${{ vars.PP_LAB_INSTANCE_ID }}"
+
+  lab:
+    needs: start
+    runs-on: [self-hosted, pp-lab]
+    timeout-minutes: 220
+    env:
+      # Outside the workspace (checkout cleans it): the build and its ccache carry over between nights.
+      PP_LOCAL_BUILD_DIR: /home/runner/pp-lab/build
+      CCACHE_DIR: /home/runner/pp-lab/ccache
+      PP_APP_LAB_WWW_IMAGE: ${{ vars.PP_LAB_WWW_IMAGE || '553020909527.dkr.ecr.us-east-1.amazonaws.com/static-api:main' }}
+      PP_APP_LAB_MESSENGER_IMAGE: ${{ vars.PP_LAB_MESSENGER_IMAGE || '405439564754.dkr.ecr.us-east-1.amazonaws.com/messenger:main' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pull the relay images
+        run: |
+          # The machine's instance role may pull from both registries.
+          for image in "$PP_APP_LAB_WWW_IMAGE" "$PP_APP_LAB_MESSENGER_IMAGE"; do
+            registry="${image%%/*}"
+            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
+            docker pull "$image"
+          done
+          docker image inspect --format '{{index .RepoDigests 0}}' "$PP_APP_LAB_WWW_IMAGE" "$PP_APP_LAB_MESSENGER_IMAGE" \
+            | tee "$RUNNER_TEMP/relay-images.txt"
+
+      - name: Build the probe and pp-node
+        run: |
+          mkdir -p "$PP_LOCAL_BUILD_DIR" "$CCACHE_DIR"
+          if [ ! -f "$PP_LOCAL_BUILD_DIR/CMakeCache.txt" ]; then
+            cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPP_BROWSER_COMPILER_CACHE=ON
+          fi
+          cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node -j "$(nproc)"
+
+      - name: Run the suites
+        env:
+          LAB_SUITES: ${{ inputs.suites || 'app app-nat' }}
+          LAB_ONLY: ${{ inputs.only }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lab"
+          only=""
+          for name in $LAB_ONLY; do only="$only --only $name"; done
+          for suite in $LAB_SUITES; do
+            echo "::group::--suite $suite"
+            PP_APP_LAB_ARGS="--retry-failed --summary $RUNNER_TEMP/lab/$suite.json$only" \
+              timeout 100m scripts/test/pp_local_test.sh run --suite "$suite" 2>&1 | tee "$RUNNER_TEMP/lab/$suite.log" || true
+            echo "::endgroup::"
+          done
+          # What failed keeps its profiles and logs: gather them for the artifact.
+          python3 - "$RUNNER_TEMP/lab" <<'EOF'
+          import glob, json, os, shutil, sys
+          out = sys.argv[1]
+          for path in glob.glob(os.path.join(out, "*.json")):
+              suite = os.path.basename(path)[:-5]
+              for r in json.load(open(path))["results"]:
+                  for run in (r, r.get("retry") or {}):
+                      if run.get("kept") and os.path.isdir(run["kept"]):
+                          dest = os.path.join(out, "kept", suite, r["name"], os.path.basename(run["kept"]))
+                          shutil.copytree(run["kept"], dest, dirs_exist_ok=True)
+                          shutil.rmtree(run["kept"], ignore_errors=True)
+          EOF
+          cp "$RUNNER_TEMP/relay-images.txt" "$RUNNER_TEMP/lab/"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-lab
+          path: ${{ runner.temp }}/lab
+          retention-days: 14
+
+      - name: Tidy the lab
+        if: always()
+        run: docker compose -p pp-app-lab down --remove-orphans || true
+
+  report:
+    needs: [start, lab]
+    if: always() && needs.start.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        continue-on-error: true # the lab job may have died before uploading
+        with:
+          name: nightly-lab
+          path: lab
+      - name: Issues and summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAB_SUITES: ${{ inputs.suites || 'app app-nat' }}
+        run: |
+          args=()
+          for suite in $LAB_SUITES; do args+=(--summary "$suite=lab/$suite.json"); done
+          python3 scripts/test/nightly_lab_report.py "${args[@]}" --sha "$GITHUB_SHA" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+  stop:
+    needs: [start, lab]
+    if: always() && needs.start.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.PP_LAB_AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Stop the lab machine
+        run: aws ec2 stop-instances --instance-ids "${{ vars.PP_LAB_INSTANCE_ID }}" >/dev/null

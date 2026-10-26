@@ -41,6 +41,9 @@ struct ChatCompletionResponse {
   std::string finish_reason;
 };
 
+/** Which limit a 429 from the AI gateway hit; picks the words the user reads. */
+enum class LlmLimitKind { GuestDaily, PerMinute, Other };
+
 class LlmClient : public Module {
 public:
   explicit LlmClient(LlmConfig config);
@@ -51,6 +54,11 @@ public:
 
   // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient).
   static Error MapHttpError(long http_code, const std::string& response_body);
+
+  // Which limit a 429 hit, from the gateway's message (its code is the same for every limit).
+  static LlmLimitKind ClassifyLimit(const std::string& api_message);
+  // A limit message from the Brief gateway (English; never shown as is).
+  static bool IsBriefGatewayLimit(const std::string& api_message);
 
   static Roe<ChatCompletionResponse> ParseChatCompletionResponse(const std::string& response);
 

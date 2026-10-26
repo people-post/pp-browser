@@ -1,0 +1,187 @@
+name: ios-testflight
+
+# Manual TestFlight upload — does not run on push/PR. Verify CI stays in build.yml.
+# Uses the same scripts as local: scripts/platform/ios_build.sh ipa + upload-ipa.
+#
+# Actions → ios-testflight → Run workflow (pick branch/tag). Requires iOS signing + ASC secrets
+# (docs/ops/IOS_BUILD.md § GitHub Actions / TestFlight).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'CFBundleShortVersionString (empty → PP_BROWSER_VERSION from CMakeLists.txt)'
+        required: false
+        default: ''
+      build_number:
+        description: 'CFBundleVersion (empty → github.run_number + 100; must be new each upload)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: true
+      CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESSLEVEL: 5
+      IOS_EXPORT_METHOD: app-store
+      # Public App ID — same as packaging/ios/Info.plist / cmake/IosBundle.cmake
+      IOS_BUNDLE_IDENTIFIER: dev.pp-browser.ios
+      IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}
+      IOS_DISTRIBUTION_SIGNING_IDENTITY: ${{ secrets.IOS_DISTRIBUTION_SIGNING_IDENTITY }}
+      IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      IOS_ASC_KEY_ID: ${{ secrets.IOS_ASC_KEY_ID }}
+      IOS_ASC_ISSUER_ID: ${{ secrets.IOS_ASC_ISSUER_ID }}
+      IOS_ASC_P8_BASE64: ${{ secrets.IOS_ASC_P8_BASE64 }}
+      IOS_EXPORT_COMPLIANCE_CODE: ${{ secrets.IOS_EXPORT_COMPLIANCE_CODE }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Require signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            IOS_DEVELOPMENT_TEAM \
+            IOS_DISTRIBUTION_SIGNING_IDENTITY \
+            IOS_CERTIFICATE_BASE64 \
+            IOS_CERTIFICATE_PASSWORD \
+            IOS_PROVISIONING_PROFILE_BASE64 \
+            IOS_ASC_KEY_ID \
+            IOS_ASC_ISSUER_ID \
+            IOS_ASC_P8_BASE64
+          do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing repository secret: ${name}"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            echo "::error::Configure iOS TestFlight secrets — see docs/ops/IOS_BUILD.md"
+            exit 1
+          fi
+
+      - name: Select Xcode 26+ (iOS 26 SDK for ASC)
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in \
+            /Applications/Xcode_26.3.app \
+            /Applications/Xcode_26.2.app \
+            /Applications/Xcode_26.1.app \
+            /Applications/Xcode_26.0.app \
+            /Applications/Xcode_26.app \
+            /Applications/Xcode.app
+          do
+            if [[ -d "$candidate" ]]; then
+              sudo xcode-select -s "$candidate"
+              selected="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$selected" ]]; then
+            echo "::error::No Xcode.app found under /Applications"
+            ls /Applications/Xcode*.app 2>/dev/null || true
+            exit 1
+          fi
+          echo "Using ${selected}"
+          xcodebuild -version
+          sdk="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+          major="${sdk%%.*}"
+          if [[ -z "$major" || "$major" -lt 26 ]]; then
+            echo "::error::App Store Connect requires the iOS 26 SDK; active SDK is ${sdk:-unknown}"
+            echo "::error::Install Xcode 26+ on this runner image (or use a self-hosted Mac)."
+            exit 1
+          fi
+          echo "iphoneos SDK ${sdk}"
+
+      - name: Install deps
+        run: |
+          for tool in ccache ninja; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              brew install "$tool"
+            fi
+          done
+          mkdir -p "$CCACHE_DIR"
+
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: .cache/ccache
+          key: ${{ runner.os }}-ios-testflight-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/ios-testflight.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-testflight-ccache-v1-
+            ${{ runner.os }}-ios-ccache-v1-
+
+      - name: Resolve version stamps
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          marketing='${{ inputs.version }}'
+          if [[ -z "$marketing" ]]; then
+            marketing="$(sed -n 's/^set(PP_BROWSER_VERSION "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)"
+          fi
+          if [[ -z "$marketing" ]]; then
+            echo "::error::Could not resolve PP_BROWSER_VERSION"
+            exit 1
+          fi
+          build='${{ inputs.build_number }}'
+          if [[ -z "$build" ]]; then
+            # Offset avoids colliding with early local TestFlight uploads (1, 2, 3, …).
+            build="$(( ${{ github.run_number }} + 100 ))"
+          fi
+          echo "marketing=${marketing}" >> "$GITHUB_OUTPUT"
+          echo "build=${build}" >> "$GITHUB_OUTPUT"
+          echo "CFBundleShortVersionString=${marketing} CFBundleVersion=${build}"
+
+      - name: Build IPA and upload to App Store Connect
+        env:
+          PP_BROWSER_VERSION: ${{ steps.ver.outputs.marketing }}
+          PP_BROWSER_BUILD_NUMBER: ${{ steps.ver.outputs.build }}
+        run: |
+          set -euo pipefail
+          ./scripts/platform/ios_build.sh ipa
+          ./scripts/platform/ios_build.sh upload-ipa
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pp-browser-ios-${{ steps.ver.outputs.marketing }}-${{ steps.ver.outputs.build }}
+          path: out-ios/dist/*.ipa
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## TestFlight upload"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Ref | \`${{ github.sha }}\` (\`${{ github.ref_name }}\`) |"
+            echo "| Version | ${{ steps.ver.outputs.marketing }} (${{ steps.ver.outputs.build }}) |"
+            echo ""
+            echo "Wait for processing in App Store Connect, answer export compliance if prompted,"
+            echo "then enable the build under **TestFlight → Internal Testing**."
+          } >> "$GITHUB_STEP_SUMMARY"

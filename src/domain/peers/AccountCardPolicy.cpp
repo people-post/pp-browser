@@ -34,7 +34,7 @@ Roe<AccountCard> AcceptCardReply(const AccountCardReply& reply, const std::strin
   if (card.keys.account_id != account_id) {
     return Error("account card: answered for another account");
   }
-  if (std::find(card.devices.begin(), card.devices.end(), peer_id) == card.devices.end()) {
+  if (!FindCardDevice(card, peer_id)) {
     return Error("account card: the answering device is not on it");
   }
   if (auto checked = VerifyAccountCard(card, now_ms); !checked) {

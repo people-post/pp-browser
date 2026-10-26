@@ -71,17 +71,43 @@ Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread&
                                      const std::string& sender_account_id, const SendRelayOptions& options,
                                      IPskSessionStore& psk_store, const PeerKemPublicFn& peer_kem);
 
+/** A copy of a message for one of the peer's devices (M021): numbered in that device pair, sealed under its session. */
+struct PairCopy {
+  ThreadMessage numbered;
+  SealedPayload sealed;
+};
+
+/**
+ * `message`'s copy in the device-pair session `pair` (its `peer_device` set): at the session's epoch
+ * (opened to `peer_device_kem` if there is none yet, announced by a key_init on every send until the
+ * device is heard under it), numbered by the pair. E2E public only.
+ */
+Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& sender_account_id,
+                           const SendRelayOptions& options, IPskSessionStore& psk_store, const ChatTargetKey& pair,
+                           const ByteVector& peer_device_kem);
+
 /** Who sends, as an envelope names us. */
 struct EnvelopeSender {
   std::string relay_user_id;
   std::string account_id;
-  /** Our key card, carried with every key_init so the peer can verify and answer with no lookup. */
-  std::optional<KeyCard> keys;
+  /** This device's PeerId (M021): it signs the envelope. */
+  std::string device;
+  /** Our account card (JSON), carried with every key_init so the peer can verify and answer every device. */
+  std::optional<Object> card;
 };
 
-/** A direct send's envelope to `route_party` (relay id, or the account for an Amp-only peer). */
+/** The account copy of a numbered message (M021: every device of the account reads it). */
+RelayCopy AccountCopy(const ThreadMessage& numbered, SealedPayload sealed);
+/** A device's copy (M021), as SealPairCopy numbered and sealed it. */
+RelayCopy DeviceCopy(const std::string& device, PairCopy copy);
+
+/**
+ * A direct send's envelope to `route_party` (relay id, or the account for an Amp-only peer): one relay record
+ * with `copies` for the account's devices, or the account copy (M022). `order_key`: its relay index.
+ */
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender, ThreadChannel channel,
-                                  const std::string& route_party, SealedPayload sealed);
+                                  const std::string& route_party, std::vector<RelayCopy> copies,
+                                  uint64_t order_key);
 
 /**
  * Call control prefers the relay when a route is known (Amp's open + ack per message races the
@@ -92,13 +118,14 @@ bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool crit
 // --- A group send -------------------------------------------------------------------------------------
 
 /**
- * One member's copy of a group send (its pairwise payload under the member's account, and key_init when
- * it has no session yet). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
+ * One member's envelope of a group send: `copies` for the member's devices (each a pairwise payload numbered
+ * in its device pair, with a key_init while that session is ours and not yet confirmed), or the member's
+ * account copy (M022). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
  */
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       const std::string& route_party, std::string payload_b64,
-                                       std::optional<std::string> key_init_b64);
+                                       const std::string& route_party, std::vector<RelayCopy> copies,
+                                       uint64_t order_key);
 
 // --- The outbox: sends queued after a failed relay attempt ----------------------------------------
 

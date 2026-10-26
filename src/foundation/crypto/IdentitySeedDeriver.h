@@ -12,6 +12,7 @@ struct DerivedNodeIdentitySeeds {
   ByteVector device_ml_dsa_seed;   // 32
   ByteVector account_ml_dsa_seed;  // 32
   ByteVector account_ml_kem_coins; // 64
+  ByteVector device_ml_kem_coins;  // 64
 };
 
 /**

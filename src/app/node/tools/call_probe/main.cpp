@@ -368,6 +368,7 @@ pbr::RelayEnvelope MakeProbeChatEnvelope(const int cycle) {
   env.message_id = "pp-call-probe-chat-" + std::to_string(cycle);
   env.sender_relay_id = "probe";
   env.sender_contact_id = "probe";
+  env.sender_device = "probe";
   env.body.e2e.payload_b64 = "cGluZw=="; // "ping"
   env.sender_seq = static_cast<uint64_t>(cycle + 1);
   env.order_key = env.sender_seq;

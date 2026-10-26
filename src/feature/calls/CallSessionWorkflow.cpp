@@ -11,6 +11,7 @@
 #include "common/PbrCompat.h"
 
 #include <algorithm>
+#include <iterator>
 #include <type_traits>
 #include <variant>
 
@@ -868,7 +869,38 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
     (void)key_exchange_.Send(call_id, peer, *key);
     (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster");
   }
+  media_key_resends_[call_id] = MediaKeyResend{key->epoch, util::NowUnixMs(), 0};
   return {};
+}
+
+namespace {
+// After a rotation the key goes again at these times: CallMediaKey has no ack, and a member that missed
+// it would seal with the old epoch for the rest of the call (#381). Receiving it again is harmless.
+constexpr int64_t kMediaKeyResendAfterMs[] = {2'000, 6'000, 15'000};
+} // namespace
+
+void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identity, const int64_t now) {
+  for (auto it = media_key_resends_.begin(); it != media_key_resends_.end();) {
+    MediaKeyResend& resend = it->second;
+    if (resend.sent >= std::size(kMediaKeyResendAfterMs)) {
+      it = media_key_resends_.erase(it);
+      continue;
+    }
+    if (now - resend.rotated_at_ms < kMediaKeyResendAfterMs[resend.sent]) {
+      ++it;
+      continue;
+    }
+    ++resend.sent;
+    auto key = key_exchange_.Current(it->first);
+    if (!key || key->epoch != resend.epoch) {
+      it = media_key_resends_.erase(it);  // the call is gone, or a newer rotation resends its own key
+      continue;
+    }
+    for (const std::string& peer : call_queries::JoinedRemoteIdentities(sessions_, it->first, local_identity)) {
+      (void)key_exchange_.Send(it->first, peer, *key);
+    }
+    ++it;
+  }
 }
 
 void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
@@ -929,6 +961,12 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
     return {};
   }
   call_media_.StopMedia(call_id);
+  // Leaving is once: a second way into here (the stop running twice, #380) must not send another
+  // call_leave the others then drop as from someone no longer in the call.
+  if (auto me = sessions_.FindParticipant(call_id, *local);
+      me && me->has_value() && (*me)->state == CallParticipantState::Left) {
+    return {};
+  }
 
   const int64_t now = util::NowUnixMs();
   CallParticipant self;
@@ -955,6 +993,7 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   const size_t remaining = joined ? *joined : 0;
   const bool group = IsGroupCall(**session);
   alone_since_ms_.erase(call_id);
+  media_key_resends_.erase(call_id);
   const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining, group);
   if (next == CallSessionState::Ended) {
     std::optional<int64_t> duration;
@@ -1882,6 +1921,7 @@ void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity,
 
 void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_identity, const int64_t now) {
   DropWhoLeftTheGroup(local_identity, now);
+  ResendRotatedMediaKeys(local_identity, now);
   for (auto it = join_requested_until_ms_.begin(); it != join_requested_until_ms_.end();) {
     if (now < it->second) {
       // Halfway with no answer (our view of who joined first may be stale): anyone in it may answer.

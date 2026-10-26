@@ -83,6 +83,9 @@ public:
   void BindSecrets(ProfileSecretsEngine& secrets);
   void BindPorts(ProfileUnlockPorts ports);
 
+  /** The vault refused the PIN (its one code covers a wrong PIN and a damaged vault). */
+  static bool IsWrongPinError(const Error& error);
+
   /** If secrets + messaging already ready, runs done(true). Otherwise shows UI / silent unlock. */
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
 
@@ -126,6 +129,7 @@ private:
   void Finish(bool unlocked);
   void DrainQueue(bool unlocked);
   void ReportError(const std::string& message);
+  void ReportError(const Error& error);
 
   ProfileSecretsEngine* secrets_ = nullptr;
   ProfileUnlockPorts ports_;

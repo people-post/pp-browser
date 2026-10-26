@@ -360,6 +360,14 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */
+  struct MediaKeyResend {
+    uint32_t epoch = 0;
+    int64_t rotated_at_ms = 0;
+    size_t sent = 0;
+  };
+  std::unordered_map<std::string, MediaKeyResend> media_key_resends_;
+  void ResendRotatedMediaKeys(const std::string& local_identity, int64_t now);
   /** V053: the group's members at the last check, per group call this device is in or rung for. */
   std::unordered_map<std::string, std::set<std::string>> group_members_seen_;
   int64_t group_members_checked_ms_ = 0;

@@ -284,6 +284,7 @@ CallHopPlannerApplyContext CallTopologyController::BuildHopPlannerContext(
   const auto arming_ports = arming_.Get();
   CallHopPlannerApplyContext ctx;
   ctx.allows_hop_path = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
+  ctx.direct_failed = arming_ports->IsBound() && arming_ports->direct_failed && arming_ports->direct_failed();
   ctx.should_arm_hop = ShouldArmHopPlanner(joined_count);
   ctx.has_sfu_hint = has_sfu_hint;
   ctx.soft_migrate_in_flight = flight_.in_flight;
@@ -1254,6 +1255,7 @@ bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
     in.n_joined = *joined;
   }
   in.status_allows_hop = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
+  in.direct_failed = arming_ports->IsBound() && arming_ports->direct_failed && arming_ports->direct_failed();
   in.attach_wait_for_call = attach_wait_.call_id == call_id;
   in.flight_for_call = flight_.in_flight && flight_.call_id == call_id;
   in.on_hop = sfu_.attached;

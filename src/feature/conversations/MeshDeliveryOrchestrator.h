@@ -16,6 +16,7 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "domain/peers/OwnCards.h"
+#include "lib/messaging/OutboundMessage.h"
 #include "domain/delivery/AccountCardService.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
@@ -154,6 +155,10 @@ public:
   std::optional<std::string> RelayRouteOf(const std::string& account_id) const;
   /** Account cards between devices (the card exchange over Amp). */
   AccountCardService& AccountCards() { return card_service_; }
+  /** This account's own key card and device list (M021). */
+  OwnCards& OwnAccountCards() { return own_cards_; }
+  /** Our device list changed (our address goes to our other devices too, M021). */
+  void SetOnOwnDevicesChanged(std::function<void()> changed) { on_own_devices_changed_ = std::move(changed); }
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -264,12 +269,15 @@ private:
                        const std::string& detail);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
+  /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
+  Roe<void> StartNextPairEpochIfRestored(const ChatTargetKey& key);
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
   void NotifyGroupMembersMissed();
   /** The message row's delivery state; false when there is no row (a control-lane send). */
-  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport);
+  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport,
+                    bool unless_delivered = false);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id,
                    std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
@@ -321,13 +329,25 @@ private:
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
-  std::optional<KeyCard> OwnKeys();
+  /** Our account card as envelopes carry it (with a key_init); none when it cannot be issued. */
+  std::optional<Object> OwnCardJson();
+  /** Who we are on the envelopes we send (this device signs them). */
+  Roe<EnvelopeSender> OwnSender(const LocalIdentity& identity);
+  /** The peer's devices on its newest kept card (M021); empty while we know none (an account copy then). */
+  std::vector<AccountCardDevice> PeerDevices(const std::string& account_id);
+  /** This device's signature on an envelope. */
+  Roe<void> SignEnvelope(RelayEnvelope& envelope);
+  /** Our card to our other devices, through our own mailbox (M022). */
+  void NotifySiblings();
+  /** A link to device `peer_id` is up (its copy goes over it, M022). */
+  bool LinkedTo(const std::string& peer_id) const;
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
   PeerRouteBook routes_;
   /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
   E2ePublicSessionKeys session_keys_;
   /** Our cards: the key card carried with every key_init, the account card served to who asks. */
   OwnCards own_cards_;
+  std::function<void()> on_own_devices_changed_;
   AccountCardService card_service_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
   ControlLane control_lane_;

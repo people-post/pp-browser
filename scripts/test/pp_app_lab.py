@@ -357,6 +357,21 @@ class Lab:
             raise ProbeError("%s: no account after register" % u.name)
         return u
 
+    def linked_device(self, of, name):
+        """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
+        Security → Copy link payload), then starts on it — the same account, a device of its own."""
+        bundle = of.cmd("link_export")["bundle"]
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
+        self.users.append(u)
+        u.start()
+        u.wait_ready()
+        u.cmd("link_import", bundle=bundle, pin=PIN, timeout=60)
+        u.restart()
+        u.account = u.cmd("whoami")["account"]
+        if u.account != of.account:
+            raise ProbeError("%s: linked as %s, not %s" % (u.name, u.account, of.account))
+        return u
+
     def close(self, ok):
         for u in self.users:
             try:
@@ -504,6 +519,66 @@ def scenario_bystander_is_no_relay(lab):
         if "circuit-relay service not ready" in text:
             raise ProbeError("%s: a peer that is no relay was asked for a circuit" % name)
     return timing
+
+
+# Seconds after an idle app reconnects to the seeds that a call starts: either side of the 20 s mark
+# where that link dies (a 15 s reservation nothing renews, then 5 s cold — #382).
+SEED_CHURN_CALL_OFFSETS_S = (3, 12, 18.5, 19.5, 26)
+# The idle seed link dies this long after it connects (and the call must outlive that mark).
+SEED_CHURN_LINK_LIFE_S = 20
+
+
+def seed_link_events(u):
+    """The user's link to the lab seed, as its log tells it: "up" / "down" in order."""
+    hop_peer = u.lab.hop.rsplit("/p2p/", 1)[-1]
+    events = []
+    for line in u.log_text().splitlines():
+        if "link connected key=%s " % hop_peer in line:
+            events.append("up")
+        elif "link dropped key=%s " % hop_peer in line:
+            events.append("down")
+    return events
+
+
+def assert_audio_still_flows(*users, window_s=2.0):
+    """Audio is arriving now, not only earlier in the call: each user's received frames keep rising."""
+    before = {u.name: u.state().get("rx_audio_frames", 0) for u in users}
+    time.sleep(window_s)
+    for u in users:
+        now = u.state().get("rx_audio_frames", 0)
+        if now <= before[u.name]:
+            raise ProbeError("%s: no audio for %.0f s (rx frames %s -> %s)" % (u.name, window_s, before[u.name], now))
+
+
+def scenario_call_during_seed_churn(lab):
+    """#382: an idle app's link to the seeds comes and goes (it reconnects, reserves once, and the
+    link dies 20 s later). Calls placed at any point of that cycle — just before the link dies too —
+    connect within the usual bound and keep their audio past the moment the idle link would have died."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    # Any first call parks on the seeds, after which every reconnect to them reserves again.
+    connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    timings = {}
+    for offset in SEED_CHURN_CALL_OFFSETS_S:
+        for u in (a, b):
+            wait_for(lambda u=u: not seed_link_events(u) or seed_link_events(u)[-1] == "down", 60,
+                     "%s: the idle seed link to drop" % u.name)
+        ups = {u.name: seed_link_events(u).count("up") for u in (a, b)}
+        for u in (a, b):
+            u.cmd("warm_seeds")  # what reconnects an idle app to the seeds in the field
+        for u in (a, b):
+            wait_for(lambda u=u: seed_link_events(u).count("up") > ups[u.name], 20, "%s: seed reconnect" % u.name)
+        reconnected = time.time()
+        time.sleep(max(0.0, reconnected + offset - time.time()))
+        _, took = connect(a, a_thread, b)
+        # Past the mark where the idle link would have died: the call still carries audio both ways.
+        time.sleep(max(0.0, reconnected + SEED_CHURN_LINK_LIFE_S + 5 - time.time()))
+        assert_audio_still_flows(a, b)
+        a.cmd("leave")
+        assert_idle(a, b)
+        timings["at_%ss" % offset] = took["answer_to_audio_s"]
+    return timings
 
 
 def scenario_calling_each_other_at_once(lab):
@@ -1373,6 +1448,45 @@ def scenario_group_members_key_each_other(lab):
     wait_for(lambda: said(b, "hi bob"), 30, "bob: carol's group message")
 
 
+def scenario_group_after_member_removed(lab):
+    """The owner removes a member, which moves the group's epoch: everyone left keeps reading everyone —
+    each copy is keyed by the pair's own session, not by the group's epoch (G011). Before, the owner's
+    second message and every other member's failed: "Missing key_init_b64"."""
+    users, threads = open_group(lab, n=4)
+    a, b, c, d = users
+
+    def said(u, text):
+        return any(r.get("text") == text for r in u.cmd("transcript", thread=threads[u.name])["rows"])
+
+    def send(u, text):
+        u.cmd("show_chat", thread=threads[u.name])
+        u.cmd("compose_send", text=text)
+
+    send(a, "before the removal")
+    for u in (b, c, d):
+        wait_for(lambda u=u: said(u, "before the removal") or None, 30, "%s: alice's message" % u.name)
+    a.cmd("remove_member", thread=threads[a.name], account=d.account)
+    for u in (b, c):
+        wait_for(lambda u=u: d.account not in u.cmd("group_roster", group_id=lab_group_id(a, threads))["members"]
+                 or None, 30, "%s: dave removed" % u.name)
+    for sender, readers in ((a, (b, c)), (b, (a, c)), (c, (a, b))):
+        for i in (1, 2):
+            text = "%s %d after the removal" % (sender.name, i)
+            send(sender, text)
+            for r in readers:
+                wait_for(lambda r=r, text=text: said(r, text) or None, 30, "%s: %r" % (r.name, text))
+    if said(d, "alice 1 after the removal"):
+        raise ProbeError("dave read the group after his removal")
+
+
+def lab_group_id(owner, threads):
+    """The group id of the owner's group thread."""
+    for t in owner.cmd("threads")["threads"]:
+        if t.get("id") == threads[owner.name] and t.get("group_id"):
+            return t["group_id"]
+    raise ProbeError("%s: no group id for its group thread" % owner.name)
+
+
 def scenario_restored_device_is_heard(lab):
     """Bob reinstalls and restores his account from the backup (#378): his chat with Alice starts empty
     and his numbering is gone, while Alice still holds their old chat. His first send starts their next
@@ -1390,6 +1504,31 @@ def scenario_restored_device_is_heard(lab):
         wait_for(lambda: transcript_row(a, a_thread, sent), 30, "alice: bob's message %d after the restore" % i)
     reply = a.cmd("send", thread=a_thread, text="welcome back")["message_id"]
     wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer after the restore")
+
+
+def scenario_linked_devices_both_send(lab):
+    """Alice's phone and her newly linked laptop are two devices of one account (M021). The laptop's first
+    message brings Bob its device list; from then on Bob's answers reach both devices, and both keep writing
+    — each in its own device pair, so neither's message is taken for the other's."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    first = a.cmd("send", thread=a_thread, text="hi from the phone")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, first), 30, "bob: the phone's first message")
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "phone: bob's answer")
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    from_laptop = laptop.cmd("send", thread=l_thread, text="hi from the laptop")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, from_laptop), 30, "bob: the laptop's first message")
+    both = b.cmd("send", thread=b_thread, text="hello both")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, both), 30, "phone: bob's answer to both")
+    wait_for(lambda: transcript_row(laptop, l_thread, both), 30, "laptop: bob's answer to both")
+    sent = []
+    for i in range(3):
+        sent.append(("phone %d" % i, a.cmd("send", thread=a_thread, text="phone %d" % i)["message_id"]))
+        sent.append(("laptop %d" % i, laptop.cmd("send", thread=l_thread, text="laptop %d" % i)["message_id"]))
+    for what, m in sent:
+        wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: %s" % what)
 
 
 def scenario_chat_quote_reply(lab):
@@ -1750,8 +1889,11 @@ SCENARIOS = [
     ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
+    ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
+    ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
+    ("call_during_seed_churn", scenario_call_during_seed_churn),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),
     ("both_answer_each_other", scenario_both_answer_each_other),
     ("call_back_while_ringing", scenario_call_back_while_ringing),
@@ -1819,6 +1961,9 @@ def main():
     ap.add_argument("--only", action="append", default=[])
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
+    ap.add_argument("--retry-failed", action="store_true",
+                    help="run each failed scenario once more: passing then is a flake, failing again a failure")
+    ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the nightly lab")
     args = ap.parse_args()
     if not args.hop:
         import urllib.request
@@ -1830,31 +1975,52 @@ def main():
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
-    failures = 0
+    results = []
     for round_no in range(args.repeat):
         for name, fn in selected:
-            lab = Lab(args)
-            started = time.time()
-            ok = False
-            try:
-                extra = fn(lab) or {}
-                ok = True
-                print("PASS %-30s %5.1fs %s" % (name, time.time() - started, json.dumps(extra) if extra else ""))
-            except Exception as e:  # noqa: BLE001 — report every way a scenario can go wrong
-                failures += 1
-                print("FAIL %-30s %5.1fs %s" % (name, time.time() - started, e))
-                if not isinstance(e, ProbeError):
-                    traceback.print_exc()
-                for u in lab.users:
-                    tail = [m for _, m in u.history[-12:]]
-                    print("  %s surface=%s" % (u.name, u.surface))
-                    for m in tail:
-                        print("    %s" % json.dumps(m))
-                print("  profiles and logs kept in %s" % lab.root)
-            finally:
-                lab.close(ok)
-            sys.stdout.flush()
-    sys.exit(1 if failures else 0)
+            results.append(run_scenario(args, name, fn))
+    if args.retry_failed:
+        for result in [r for r in results if r["result"] == "fail"]:
+            print("RETRY %s" % result["name"])
+            again = run_scenario(args, result["name"], dict(SCENARIOS)[result["name"]])
+            if again["result"] == "pass":
+                result.update(result="flaky", retry=again)
+            else:
+                result["retry"] = again
+    if args.summary:
+        with open(args.summary, "w") as f:
+            json.dump({"nat": bool(args.nat), "results": results}, f, indent=2)
+    sys.exit(1 if any(r["result"] == "fail" for r in results) else 0)
+
+
+def run_scenario(args, name, fn):
+    """One scenario on a fresh lab: PASS / FAIL on stdout, and its outcome for the summary."""
+    lab = Lab(args)
+    started = time.time()
+    ok = False
+    outcome = {"name": name, "result": "fail", "seconds": 0.0, "detail": "", "extra": {}}
+    try:
+        extra = fn(lab) or {}
+        ok = True
+        outcome.update(result="pass", extra=extra)
+        print("PASS %-30s %5.1fs %s" % (name, time.time() - started, json.dumps(extra) if extra else ""))
+    except Exception as e:  # noqa: BLE001 — report every way a scenario can go wrong
+        outcome["detail"] = str(e).splitlines()[0][:300] if str(e) else type(e).__name__
+        print("FAIL %-30s %5.1fs %s" % (name, time.time() - started, e))
+        if not isinstance(e, ProbeError):
+            traceback.print_exc()
+        for u in lab.users:
+            tail = [m for _, m in u.history[-12:]]
+            print("  %s surface=%s" % (u.name, u.surface))
+            for m in tail:
+                print("    %s" % json.dumps(m))
+        print("  profiles and logs kept in %s" % lab.root)
+        outcome["kept"] = lab.root
+    finally:
+        lab.close(ok)
+        outcome["seconds"] = round(time.time() - started, 1)
+    sys.stdout.flush()
+    return outcome
 
 
 if __name__ == "__main__":

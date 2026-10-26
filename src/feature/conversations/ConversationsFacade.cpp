@@ -54,7 +54,7 @@ Roe<std::string> ConversationsFacade::ExportLinkDevice() {
     return Error("Messaging is not ready");
   }
   return LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
-                                           util::NowUnixMs());
+                                           util::NowUnixMs(), kLinkDeviceDefaultTtlMs, hub_.OwnAccountCardJson());
 }
 
 Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const std::string& pin) {
@@ -66,6 +66,11 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
                                                 hub_.Secrets(), bundle_json, pin, util::NowUnixMs());
   if (!imported) {
     return imported.error();
+  }
+  if (imported->account_card_json) {
+    // The account's device list as the linking device knows it; a failure (logged) leaves this device to
+    // start a list of its own (its siblings learn it from its card later), not a failed link.
+    (void)hub_.LearnLinkedAccountCard(*imported->account_card_json);
   }
   return {};
 }
