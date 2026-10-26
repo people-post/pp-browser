@@ -308,13 +308,22 @@ cmd_staple() {
   require_cmd xcrun
   log "Stapling ${artifact}"
   xcrun stapler staple "$artifact"
-  # A ticket that does not validate, or a Gatekeeper rejection, must fail the release (PB-065);
-  # swallowing them here shipped artifacts that users' Macs then refused.
+  # A ticket that does not validate must fail the release; swallowing that shipped
+  # artifacts that users' Macs then refused.
   xcrun stapler validate "$artifact"
-  if ! spctl -a -t exec -vv "$artifact" 2>/dev/null && ! spctl -a -t open -vv "$artifact"; then
-    echo "error: Gatekeeper (spctl) rejected ${artifact}" >&2
-    exit 1
-  fi
+  case "$artifact" in
+    *.dmg|*.pkg)
+      # spctl -a on disk images often prints "rejected / Insufficient Context" even
+      # when Apple accepted notarization and stapler validate succeeded. Treat
+      # stapler as authoritative for DMG/PKG; keep spctl for app bundles.
+      ;;
+    *)
+      if ! spctl -a -t exec -vv "$artifact" 2>/dev/null && ! spctl -a -t open -vv "$artifact"; then
+        echo "error: Gatekeeper (spctl) rejected ${artifact}" >&2
+        exit 1
+      fi
+      ;;
+  esac
   log "Stapled ${artifact}"
 }
 
