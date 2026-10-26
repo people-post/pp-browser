@@ -6,7 +6,7 @@ include(CompilerCache)
 pp_browser_configure_compiler_cache()
 
 set(PP_BROWSER_VERSION "1.0.0" CACHE STRING "Numeric application version for CMake project()")
-set(PP_BROWSER_RELEASE_VERSION "1.0.0-rc14" CACHE STRING "Full release version (e.g. 1.0.0-rc14); defaults to PP_BROWSER_VERSION")
+set(PP_BROWSER_RELEASE_VERSION "1.0.0-rc15" CACHE STRING "Full release version (e.g. 1.0.0-rc14); defaults to PP_BROWSER_VERSION")
 if(PP_BROWSER_RELEASE_VERSION STREQUAL "")
   set(PP_BROWSER_RELEASE_VERSION "${PP_BROWSER_VERSION}")
 endif()
