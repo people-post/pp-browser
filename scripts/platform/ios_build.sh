@@ -425,8 +425,10 @@ cmd_ipa() {
     echo "error: IOS_DISTRIBUTION_SIGNING_IDENTITY required for IPA export" >&2
     exit 1
   fi
-  if [[ -z "${IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH:-}" ]]; then
-    echo "error: IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH required for IPA export" >&2
+  # Local: path to .mobileprovision. CI: IOS_PROVISIONING_PROFILE_BASE64 (ios_sign.sh).
+  if [[ -z "${IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH:-}" \
+      && -z "${IOS_PROVISIONING_PROFILE_BASE64:-}" ]]; then
+    echo "error: IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH or IOS_PROVISIONING_PROFILE_BASE64 required for IPA export" >&2
     exit 1
   fi
 
