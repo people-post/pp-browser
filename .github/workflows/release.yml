@@ -286,7 +286,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_NOHASHDIR: true
-      CCACHE_COMPILERCHECK: string:android-ndk-r27.0.12077973
+      CCACHE_COMPILERCHECK: string:android-ndk-r28.0.13004108
       CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
       # Keep well under GitHub-hosted runner free disk (~14GB before cleanup).
       CCACHE_MAXSIZE: 2G
@@ -309,7 +309,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'ndk;27.0.12077973'
+          packages: 'ndk;28.0.13004108'
 
       - name: Install ccache
         run: |
@@ -341,9 +341,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-android-ccache-v4-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-android-ccache-v5-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-android-ccache-v4-
+            ${{ runner.os }}-android-ccache-v5-
 
       - name: Disk usage (pre-build)
         run: |
@@ -372,7 +372,7 @@ jobs:
       - name: Build release APK
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.0.13004108
           PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
         run: ./scripts/platform/android_build.sh apk-release

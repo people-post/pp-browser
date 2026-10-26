@@ -266,7 +266,7 @@ Build a debug APK with the Gradle project under [`android/`](../android/). The n
 
 ### Prerequisites
 
-- Android SDK (API 35) and NDK r26+
+- Android SDK (API 35) and NDK r28 (`28.0.13004108`; same pin as CI / `android/app/build.gradle`)
 - JDK 17+
 - Optional: Android emulator (API 34+, x86_64 image recommended on Linux hosts)
 
