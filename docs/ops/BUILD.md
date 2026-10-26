@@ -315,6 +315,6 @@ Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing pla
 ./scripts/platform/ios_build.sh run-sim
 ```
 
-Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md).
+Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md). Manual TestFlight upload from Actions: [ios-testflight.yml](../../.github/workflows/ios-testflight.yml) (`workflow_dispatch`).
 
 The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `PP.app/assets/` automatically.

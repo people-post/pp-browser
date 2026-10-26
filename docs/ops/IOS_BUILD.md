@@ -262,21 +262,42 @@ PP_BROWSER_BUILD_NUMBER=1   # bump every upload
 
 ---
 
-## GitHub Actions secrets (optional CI)
+## GitHub Actions / TestFlight (manual)
 
-When you add an iOS release job later, typical secrets mirror the local env:
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) uploads a Distribution IPA to App Store Connect on **workflow_dispatch** only (Actions → **ios-testflight** → Run workflow). It does **not** run on push/PR — verify CI stays in [`build.yml`](../../.github/workflows/build.yml) (unsigned iOS compile check).
+
+```text
+Actions → ios-testflight → Run workflow
+  → pick branch/tag
+  → optional version / build_number overrides
+  → ios_build.sh ipa → upload-ipa
+```
+
+Defaults: marketing version from `PP_BROWSER_VERSION` in `CMakeLists.txt`; build number `github.run_number + 100` (avoids colliding with early local uploads). Each App Store Connect upload still needs a **new** build number.
+
+### Repository secrets
 
 | Secret | Purpose |
 |--------|---------|
-| `IOS_CERTIFICATE_BASE64` | Base64 of signing `.p12` (Distribution for TestFlight) |
+| `IOS_CERTIFICATE_BASE64` | Base64 of Apple **Distribution** `.p12` |
 | `IOS_CERTIFICATE_PASSWORD` | `.p12` export password |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of App Store `.mobileprovision` |
-| `IOS_SIGNING_IDENTITY` / `IOS_DISTRIBUTION_SIGNING_IDENTITY` | Exact codesign identity string |
-| `IOS_DEVELOPMENT_TEAM` | Team ID |
-| `IOS_BUNDLE_IDENTIFIER` | `dev.pp-browser.ios` |
-| `IOS_ASC_KEY_ID` / `IOS_ASC_ISSUER_ID` / `IOS_ASC_P8_BASE64` | App Store Connect API upload |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of **App Store** `.mobileprovision` |
+| `IOS_DISTRIBUTION_SIGNING_IDENTITY` | Exact codesign identity (e.g. `Apple Distribution: Org (TEAMID)`) |
+| `IOS_DEVELOPMENT_TEAM` | 10-character Team ID |
+| `IOS_ASC_KEY_ID` / `IOS_ASC_ISSUER_ID` / `IOS_ASC_P8_BASE64` | App Store Connect API key for `altool` upload |
+| `IOS_EXPORT_COMPLIANCE_CODE` | Optional — paste after ASC issues an encryption compliance code |
 
-No iOS release workflow is wired yet — macOS release CI remains in [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
+Encode locally (same pattern as [MACOS_SIGNING.md](MACOS_SIGNING.md)):
+
+```bash
+base64 -i AppleDistribution.p12 | pbcopy          # → IOS_CERTIFICATE_BASE64
+base64 -i packaging/ios/pp-browser_iOS_App_Store.mobileprovision | pbcopy
+base64 -i AuthKey_XXXXXX.p8 | pbcopy              # → IOS_ASC_P8_BASE64
+```
+
+The runner needs **Xcode 26+ / iOS 26 SDK** (ASC requirement). The workflow selects `Xcode_26*.app` when present; if the hosted image lacks it, use a self-hosted Mac or wait for the image update.
+
+Tagged App Store / GitHub Release iOS shipping is still separate — macOS/Windows/Android remain in [`release.yml`](../../.github/workflows/release.yml).
 
 ---
 
