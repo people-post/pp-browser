@@ -599,8 +599,18 @@ void ConversationsHub::PublishAddressDisclosure() {
       book = std::move(*listed);
     }
   }
-  address_disclosure_.Publish(BuildAddressDisclosurePolicy(audience, book));
+  // Our own account's other devices (M021): reachable as a Friendly contact is.
+  std::vector<std::string> own_devices;
+  if (account_keys_) {
+    if (auto identity = Identity().Get(); identity && !identity->account_id.empty()) {
+      if (auto kept = account_keys_->Kept(identity->account_id); kept && *kept) {
+        own_devices = (*kept)->devices;
+      }
+    }
+  }
+  address_disclosure_.Publish(BuildAddressDisclosurePolicy(audience, book, own_devices));
 }
+
 
 void ConversationsHub::ApplyMeshAdmissionPolicies() {
   PublishAddressDisclosure();
@@ -1301,6 +1311,8 @@ void ConversationsHub::BuildMessagingObjects() {
                                                 *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
+  // Our device list changed: our address goes to our other devices too (M021).
+  mesh_messaging_->SetOnOwnDevicesChanged([this]() { PublishAddressDisclosure(); });
   // A device with no link up is reached through the seed it is parked on (on the hub's thread).
   mesh_messaging_->AccountCards().SetReach([this](const std::string& peer_id, std::function<void(bool)> done) {
     AppRuntime::PostUI([this, peer_id, done = std::move(done)]() {
@@ -2794,6 +2806,54 @@ ProfileSecretsEngine* ConversationsHub::Secrets() {
 
 ContactCardExchange& ConversationsHub::ContactCards() {
   return *contact_cards_;
+}
+
+std::optional<std::string> ConversationsHub::OwnAccountCardJson() {
+  if (!mesh_messaging_) {
+    return std::nullopt;
+  }
+  auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs());
+  if (!card) {
+    log().warning << "own account card unavailable: " << card.error().message;
+    return std::nullopt;
+  }
+  return DumpJson(AccountCardToJson(*card));
+}
+
+Roe<void> ConversationsHub::LearnLinkedAccountCard(const std::string& card_json) {
+  auto learned = KeepLinkedAccountCard(card_json);
+  if (!learned) {
+    log().warning << "link import: account card not kept: " << learned.error().message;
+  }
+  return learned;
+}
+
+Roe<void> ConversationsHub::KeepLinkedAccountCard(const std::string& card_json) {
+  auto json = TryParseObject(card_json);
+  if (!json) {
+    return Error("link bundle: account card is not JSON");
+  }
+  auto card = AccountCardFromJson(*json);
+  if (!card) {
+    return card.error();
+  }
+  const int64_t now = util::NowUnixMs();
+  if (mesh_messaging_) {
+    auto learned = mesh_messaging_->OwnAccountCards().Learn(*card, now);
+    if (!learned) {
+      return learned.error();
+    }
+    return {};
+  }
+  if (!account_keys_) {
+    return Error("Messaging is not ready");
+  }
+  // Kept now; this device signs itself into it once its own card is first asked for (OwnCards::Card).
+  auto kept = account_keys_->AddAccountCard(*card, now, "sibling");
+  if (!kept) {
+    return kept.error();
+  }
+  return {};
 }
 
 Roe<std::string> ConversationsHub::OwnContactLocator() {

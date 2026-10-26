@@ -92,6 +92,7 @@ public:
   Roe<bool> IsPskVerified(const ChatTargetKey& /*key*/) const override { return false; }
   Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& /*key*/) const override { return PskBundleV1{}; }
   Roe<void> ImportPskBundle(const ChatTargetKey& /*key*/, const PskBundleV1& /*bundle*/) override { return {}; }
+  Roe<uint64_t> AllocateSenderSeq(const ChatTargetKey& /*key*/) override { return uint64_t{1}; }
 
 private:
   std::optional<ByteVector> master_psk_;

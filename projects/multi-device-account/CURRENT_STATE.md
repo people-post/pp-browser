@@ -25,11 +25,9 @@
 | Unlink / revoke | **m4d** phase 1; KEM rotation later (**M019**) |
 | Device-scoped public PSK filter | **M020** (with e2e E027) |
 | Sibling public-PSK + chat-index *refresh* | Later (**M015**) — not a second paste |
-| Dual-writer seq | **D074** later |
+| Dual-writer seq; session divergence between siblings | **M021** d2 (replaces D074) |
 | `e2e_public` send | e2e c3+ / **D100** (not this project) |
 
 ## Next
 
-1. **m4c** paste `contacts[]` + `public_threads[]` (**M018**).
-2. Dogfood two installs, **one sender**.
-3. **m4d** unlink phase 1 (**M019**).
+Per-device sessions (**M021**): d1 device keys + device list, then the d2 wire cutover (sessions and numbering per device pair). Until d2 ships, the rows above hold: one sender (M016).

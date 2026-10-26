@@ -34,6 +34,7 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 ## M003 — Account ML-DSA-65 signs envelopes; device ML-DSA-65 is endpoint-only
 
 **Date:** 2026-08-11  
+**Superseded:** by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d2 — each device signs its envelopes; the account key signs the device list (the card).  
 **Updated:** 2026-08-11 — aggressive PQ: account signing is **ML-DSA-65 only** (not Ed25519 hybrid).  
 **Updated:** 2026-08-13 — dogfood is **one active sender** across linked devices (**M016**); `sender_instance_id` (D074) still later.  
 **Updated:** 2026-08-17 — [libp2p-pq-transport P004](../libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025): device endpoint key is **ML-DSA-65** (not Ed25519).  
@@ -147,6 +148,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M012 — Link-device ritual (deferred until m4)
 
 **Date:** 2026-08-13  
+**Superseded:** §2 by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) — no public sessions in the bundle from d2; no account signing key from d4 (the master signs the new device in).  
 **Updated:** 2026-08-13 — first-run identity fork; Security is export-only.  
 **Updated:** 2026-08-13 — paste snapshot of contacts + public thread index (**M018**); unlink spec (**M019**).  
 **Status:** **Accepted** (m4b paste path; QR later).  
@@ -206,6 +208,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M015 — Account KEM for public/group auto-key; private e2e stays device-local
 
 **Date:** 2026-08-13  
+**Superseded:** §2–3 by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d2 — sessions are per device pair, opened to the device KEM; the account KEM only opens a first contact (account copy).  
 **Updated:** 2026-08-13 — unlink vs KEM rotation (**M019**); paste contacts/index is not live sibling sync (**M018**).  
 **Updated:** 2026-08-15 — device-scoped public PSKs stay off the link bundle (**M020**).  
 **Amends:** [M012](#m012--link-device-ritual-deferred-until-m4) (bundle includes account KEM); [E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) (encapsulate-to is the person).  
@@ -226,6 +229,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M016 — Dogfood: one active sender on linked devices
 
 **Date:** 2026-08-13  
+**Superseded:** by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d2 — numbering is per device pair, so every device may send.  
 **Status:** Accepted (dogfood until D074).  
 **Amends:** [D015](../chat-storage-and-memory/DECISIONS.md#d015--single-active-sender-per-identity-v1) (two *devices* are allowed; two *senders* are not); [M014](#m014--private-secure-one-session-per-pair-transferable-lock-not-device-keyed) §4.
 
@@ -285,6 +289,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M019 — Unlink: local forget; KEM rotation is revoke
 
 **Date:** 2026-08-13  
+**Superseded:** §3 by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d4 — revoke is the master signing a device list without the device.  
 **Status:** Accepted (spec now; **ship after m3**).  
 **Amends:** [M012](#m012--link-device-ritual-deferred-until-m4) §5; [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §5.
 
@@ -303,6 +308,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M020 — Device-scoped public PSKs stay off the link bundle
 
 **Date:** 2026-08-15  
+**Superseded:** by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d2 — the link bundle carries no sessions at all.  
 **Status:** Accepted.  
 **Amends:** [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §3; [M005](#m005--private-psks-not-auto-synced-publicgroup-may-sync); [M012](#m012--link-device-ritual-deferred-until-m4) `public_psks[]`.  
 **Cross-project:** [E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound), [D101](../chat-storage-and-memory/DECISIONS.md#d101--public-key_scope-psk_rotate-ingest-and-rotation-policy).
@@ -316,3 +322,66 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Rationale:** Link-device is how public chats follow the person. Once the user opts a thread onto one device, copying that PSK would undo the lock.  
 **Alternatives:** Copy all public PSKs then mark locked-out on the new device (rejected — new device would briefly hold the key); include conversation KEM sk in the bundle (rejected — that is the lock).
+
+---
+
+## M021 — Per-device sessions; a master device keeps the device list; stated limits
+
+**Date:** 2026-10-25  
+**Status:** Accepted (Hongwei, 2026-10-25). Built in phases **d1–d6** ([PHASES.md](PHASES.md#d--per-device-sessions-m021)); until a phase ships, the decisions it supersedes still describe the code.  
+**Supersedes (as its phases ship):** [M003](#m003--account-ml-dsa-65-signs-envelopes-device-ml-dsa-65-is-endpoint-only) (devices sign envelopes, d2), [M012](#m012--link-device-ritual-deferred-until-m4) §2 and [M020](#m020--device-scoped-public-psks-stay-off-the-link-bundle) (no sessions in the link bundle, d2; no account signing key, d4), [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §2–3 (the account KEM only opens the first contact, d2), [M016](#m016--dogfood-one-active-sender-on-linked-devices) (every device may send, d2), [M019](#m019--unlink-local-forget-kem-rotation-is-revoke) §3 (revoke = a device list without it, d4), [D074](../chat-storage-and-memory/DECISIONS.md#d074--multi-device-extension-point-sender_instance_id) and [D015](../chat-storage-and-memory/DECISIONS.md#d015--single-active-sender-per-identity-v1) (no `sender_instance_id`; the device is in the pair, d2). Leaves [M014](#m014--private-secure-one-session-per-pair-transferable-lock-not-device-keyed) (private Secure stays on one device) as it is. [E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound) device-lock: to be re-decided on top of this (d6).
+
+**Principle:** there is no perfect multi-device design without a server that knows everything. This one keeps every rule local and simple, and **states its limits** (below) instead of trying to close every case.
+
+**Decision:**
+
+1. **The device is the endpoint.** A device's id is its Peer ID (its own ML-DSA key, M001). Each device also has its **own ML-KEM key**. Both stay on the device: never in a link bundle or a backup.
+2. **Device list.** The account card lists the account's devices: each entry is the Peer ID, the device signing key and the device KEM key. It is signed by the **account** key and versioned by `issued_at`; **the newest card wins** (no union of lists). Only a device holding the account key issues one — today every linked device; from d4 only the **master** (below).
+3. **Sessions per device pair.** An `e2e_public` session is between one of our devices and one of the peer's: the session key, its epoch and the numbering (`sender_seq`) are the pair's. A message is one copy per recipient device, each a 1:1 message in its device pair. Receivers tell senders apart per (thread, sender device, epoch). Two devices of one account never share a count, so there is nothing to collide (M016's limit goes away) and nothing to keep in sync between siblings.
+4. **Groups inherit it.** A group copy is a pair message (G010/G011); the pair is now a device pair: one copy per member device, numbered in that device pair.
+5. **Fan-out.** A send goes to every device on the peer's newest card we hold. With no card for the peer yet (first contact), one **account copy** goes to the account KEM, as today; it carries our card, and the replies (per device) carry theirs. From d3 a send also goes to our own siblings (what we sent shows on our other devices).
+6. **Cards travel with sessions.** Every session opener (key_init) carries the sender's card, so a receiver always learns a new sender device from its first message. A newly linked device tells its siblings its card through the shared mailbox.
+7. **Envelopes.** Each names its sender device and its recipient device (empty for an account copy), both signed, and is signed by the **sender device's** key, checked against the sender's card. A device skips copies for its siblings in the shared mailbox (M013).
+8. **Master device (d4).** One device per account holds the account signing key — by default the first; the user can move the role while both devices are online. The master signs new devices into the list (link becomes two-step: the new device shows its keys, the master signs it in) and takes devices out (revoke). The backup holds the account key: **restoring makes a new master**, which signs a fresh list holding only itself; the other devices re-link. An old master that sees a newer list without itself stops sending. Its other job is to be the device most likely to have everything — not a hub messages go through.
+9. **Missing copies (d3).** A device that finds a message in the shared mailbox with copies for its siblings but none for itself asks the sender's device, which still holds the plaintext, to send it one (its card goes with the ask).
+10. **Cap:** 5 devices per account (fan-out cost grows with devices × members).
+
+**Limits (stated, not designed away):**
+
+1. A newly linked device has nothing from before it joined (history recovery is later).
+2. A message reaches the devices on the sender's view of the recipient's list. A device the sender did not know yet (just linked, just restored) gets it only through the ask in 9 — so it is **lost for good** when the sending device is gone or reset before the ask reaches it. Until d3 it is not asked for at all.
+3. A device offline longer than the relay keeps its mailbox (90 days, M013) loses its own copies; siblings do not fill gaps (later, with history recovery).
+4. Revoking is eventual: a removed or stolen device keeps receiving from peers that have not fetched the newer list, and keeps what it already has. From d4 it cannot add itself back (no account key). Until d4 every linked device holds the account key, so removing one is not a revoke.
+5. The account KEM still opens first contacts (account copies), and every linked device holds it: a stolen device reads first-contact messages until the account KEM rotates (M019 phase 2).
+6. Master lost without a backup: the device list is frozen — the other devices keep working; none can be added or removed. With the backup: restore, which signs out every other device.
+7. A master that hands its role on is trusted to delete the account key; that cannot be proven.
+8. Up to 5 devices; a message costs one copy per recipient device (× members in a group).
+9. Read state and deletes do not sync between siblings yet.
+10. Calls ring every device and the first to answer wins; the others may ring a moment longer (d5).
+
+**Rationale:** Shared account sessions break as soon as two devices act: they collide on numbering, and any session one device opens (first contact, a restart, a peer's restart) is unknown to its siblings, so their copies of the replies fail. Syncing sessions between siblings races the mailbox. Per-device sessions remove the shared state instead of syncing it, and turn restore and new devices into the ordinary "a new device appears" case.
+
+**Alternatives:** note-to-self session sync between siblings (rejected — races the mailbox, conflict rules on top of a fragile base); `sender_instance_id` on shared sessions (D074 — fixes numbering only, not session divergence); a sync hub master that relays messages (rejected — single point of failure; fan-out already reaches every device); every linked device holding the account key forever (rejected at d4 — no real revoke).
+
+---
+
+## M022 — One relay record per account carries every device's copy; an account writes to itself
+
+**Date:** 2026-10-25  
+**Status:** Accepted (Hongwei, 2026-10-25): split delivery; the mailbox cap raised. Amends [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §5, §7, §9 (d2/d3) and [M013](#m013--soft-inbox-ack-shared-mailbox-no-sibling-starve) §3 (the cap).
+
+**Problem:** with per-device sessions (M021) a message to an account is one copy per device. As separate relay records each device downloads all of them anyway (one mailbox per account), the relay refuses an account's records to itself (no sibling channel: card notices, sent messages on our other devices), and a device that is not addressed cannot tell a copy is missing.
+
+**Decision:**
+
+1. **The relay stays account-keyed and knows no device list.** A send to an account is **one record**: one envelope holding an entry per recipient device — its device id, its `session_epoch` and `sender_seq` in that device pair, its session opener (`key_init`) if any, its payload — and one signature by the sending device over the envelope and every entry. An account copy (M021: no device known yet) is the entry with no device.
+2. **An account writes to itself.** Each send also goes, as one record to our own account, with entries for our other devices: what we sent shows on them (d3), and a device's new card reaches its siblings through the mailbox. The relay allows a record whose sender and recipient are the same account (and its stream's history).
+3. **Split delivery.** A device we have a live link to gets its entry over the mesh (Amp, a one-entry envelope); all the others share the relay record; an entry whose mesh send fails follows in another relay record. Messages stay relay-optional where devices are reachable, and no device is left out because a sibling was.
+4. **A missing copy shows.** A device that finds a record with entries for its siblings but none for itself knows it is missing one (the ask of M021 §9).
+5. **Mailbox cap doubled** (trim toward 2000 when past ~2400): our own records land in our mailbox too. TTL stays 90 days. The relay does not trim per device (it does not know devices).
+
+**Limits:** a record's size shows roughly how many devices an account has (device PeerIds are public in the directory already, M017); every device downloads every entry of its account's records (at most 5×); the mailbox is trimmed by count and age, not by what each device has read; a device offline past either loses what was trimmed (M021 limit 3).
+
+**Later (d4):** the relay authenticates requests with the account key; once only the master holds it, the relay accepts a device key with the account card listing it. Separate from this.
+
+**Alternatives:** device-addressed mailbox (the relay keeps `recipient_device`, a device polls its own queue — less download, but the relay holds the device list and a device cannot see a missing copy; rejected); the relay fans one upload out per device (rejected — complicates signing for little at 5 devices); every message always through the relay, the mesh only a speed-up (rejected — relay-optional where peers reach each other); siblings only over the mesh (built, rejected — needs both online and reachable, and the privacy gate does not know siblings).

@@ -9,6 +9,7 @@
 
 #include "common/Error.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,8 +24,13 @@ public:
   static Roe<void> ApplyPublicPsks(IPskSessionStore& psk_store, const std::vector<LinkDevicePublicPsk>& rows);
 
   /** `ttl_ms`: 15 min for a pasted transfer code; the local account backup passes a very long one. */
+  /**
+   * `account_card_json` set: a link to a new device (M021) — the account card rides, and no sessions do (the
+   * new device opens its own). Without it: the local account backup, which keeps the account-level sessions.
+   */
   static Roe<std::string> ExportJson(IdentityStore& identity, DataKeyVault& vault, IPskSessionStore& psk_store,
-                                     int64_t now_ms, int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
+                                     int64_t now_ms, int64_t ttl_ms = kLinkDeviceDefaultTtlMs,
+                                     std::optional<std::string> account_card_json = std::nullopt);
 
   /**
    * Vault + account import, then optional DEK fan-out, then public PSK apply.

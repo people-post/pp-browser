@@ -14,7 +14,11 @@ struct sqlite3;
 
 namespace pbr {
 
-/** v1 PSK persistence on profile.db chat_targets; PSK columns encrypted with profile DEK. */
+/**
+ * PSK persistence on profile.db, PSK columns encrypted with the profile DEK: account-level sessions on
+ * `chat_targets` (shared with the thread's numbering), device-pair sessions (M021) on `device_sessions`,
+ * which hold their own numbering.
+ */
 class SqlitePskSessionStore : public Module, public IPskSessionStore, public IDekConsumer {
 public:
   explicit SqlitePskSessionStore(std::string profile_db_path, std::string profile_id = {});
@@ -33,9 +37,11 @@ public:
   Roe<bool> IsPskVerified(const ChatTargetKey& key) const override;
   Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& key) const override;
   Roe<void> ImportPskBundle(const ChatTargetKey& key, const PskBundleV1& bundle) override;
+  Roe<uint64_t> AllocateSenderSeq(const ChatTargetKey& key) override;
 
 private:
   Roe<sqlite3*> OpenDb() const;
+  Roe<void> SaveDeviceSession(sqlite3* db, const PskSessionRecord& encrypted, const std::string& retired_json);
   Roe<void> RequireDek() const;
   Roe<std::string> EncryptPskB64(const std::string& plaintext_b64) const;
   Roe<std::string> DecryptPskB64(const std::string& ciphertext_b64) const;

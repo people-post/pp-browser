@@ -20,6 +20,16 @@ CREATE TABLE IF NOT EXISTS group_targets (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_group_targets_thread ON group_targets(local_thread_id);
 
+-- G010/G011: our seq for each member's copy, numbered in the pair (its session epoch). Kept when we leave:
+-- a re-join on this device continues the count; a lost count is the pair's restart (D014).
+CREATE TABLE IF NOT EXISTS group_member_seq (
+  group_id TEXT NOT NULL,
+  member_identity TEXT NOT NULL,
+  session_epoch INTEGER NOT NULL,
+  next_seq INTEGER NOT NULL,
+  PRIMARY KEY (group_id, member_identity)
+);
+
 CREATE TABLE IF NOT EXISTS group_metadata (
   group_id TEXT PRIMARY KEY,
   owner_identity TEXT NOT NULL,
@@ -539,6 +549,43 @@ Roe<uint64_t> GroupRosterStore::AllocateGroupSenderSeq(const std::string& group_
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   return seq;
+}
+
+Roe<uint64_t> GroupRosterStore::AllocateMemberSeq(const std::string& group_id, const std::string& member_identity,
+                                                  const uint32_t pair_epoch, const std::string& member_device) const {
+  // A device pair counts on its own: its row is the member's with the device (M021).
+  const std::string counter = member_device.empty() ? member_identity : member_identity + "/" + member_device;
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  // One statement: a new pair epoch starts the count at 1; the same one continues it. (An older epoch than
+  // the one held never comes — pair epochs only rise — and would continue the count, never repeat it.)
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO group_member_seq (group_id, member_identity, session_epoch, next_seq) VALUES (?, ?, ?, 2) "
+      "ON CONFLICT(group_id, member_identity) DO UPDATE SET "
+      "next_seq = CASE WHEN excluded.session_epoch > session_epoch THEN 2 ELSE next_seq + 1 END, "
+      "session_epoch = MAX(session_epoch, excluded.session_epoch) "
+      "RETURNING next_seq - 1;";
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare group member seq");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, counter.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(pair_epoch));
+  std::optional<uint64_t> seq;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  if (!seq) {
+    return Error("Failed to allocate group member seq");
+  }
+  return *seq;
 }
 
 Roe<uint32_t> GroupRosterStore::GetGroupSessionEpoch(const std::string& group_id) const {

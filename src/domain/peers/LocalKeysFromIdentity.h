@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/PeerRequestAuth.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/people/IdentityStore.h"
 
@@ -22,6 +23,14 @@ inline LocalKeys LocalKeysFromIdentity(IdentityStore& identity) {
         return local->account_id;
       },
       [&identity]() { return identity.GetOrCreateHybridKemPrivateKey(); },
+      [&identity]() -> Roe<std::string> {
+        auto local = identity.Get();
+        if (!local) {
+          return local.error();
+        }
+        return PeerRequestAuth::DevicePeerId(local->public_key_b64);
+      },
+      [&identity]() { return identity.GetDeviceKemPrivateKey(); },
   };
 }
 

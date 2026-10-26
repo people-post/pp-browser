@@ -18,6 +18,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <filesystem>
+#include <map>
 #include <gtest/gtest.h>
 #include <memory>
 #include "common/PbrCompat.h"
@@ -45,7 +46,13 @@ struct Device {
     roster = std::make_unique<GroupRosterStore>(store->ProfileDbPath());
     psk = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), tag);
     EXPECT_TRUE(psk->SetDek(TestDek(seed)));
-    pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, keys.Keys(), *roster);
+    pipeline = std::make_unique<RelayReceivePipeline>(
+        *store,
+        [this](const std::string& account) -> std::optional<AccountCard> {
+          auto found = cards.find(account);
+          return found == cards.end() ? std::nullopt : std::optional<AccountCard>(found->second);
+        },
+        *psk, keys.Keys(), *roster);
   }
   ~Device() {
     pipeline.reset();
@@ -65,12 +72,7 @@ struct Device {
     return *thread;
   }
 
-  void Know(const Device& peer) {
-    PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = peer.keys.SigningPublicB64();
-    record.source = "test";
-    signing.Put(ContactIdKindToString(mesh::ContactIdKind::Account), peer.keys.account_id, record);
-  }
+  void Know(const Device& peer) { cards[peer.keys.account_id] = peer.keys.DeviceCard(); }
 
   /** The direct send as MeshDeliveryOrchestrator runs it, minus the transports. */
   Roe<RelayEnvelope> Send(const Thread& thread, const Device& peer, const std::string& text,
@@ -85,25 +87,19 @@ struct Device {
     if (!sealed) {
       return sealed.error();
     }
-    RelayEnvelope envelope = BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id},
-                                                 thread.channel, "relay:" + peer.tag, std::move(*sealed));
-    auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
-    if (!bytes) {
-      return bytes.error();
-    }
-    auto signature = keys.Sign(*bytes);
-    if (!signature) {
-      return signature.error();
-    }
-    envelope.signature = *signature;
+    RelayEnvelope envelope =
+        BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id},
+                            thread.channel, "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))},
+                            NextRelayOrderKey());
+    keys.SignEnvelope(envelope);
     return envelope;
   }
 
   std::string tag;
   std::filesystem::path root;
   test::TestAccount keys;
-  PeerSigningKeyStore signing;
-  PeerSigningKeyResolver resolver{signing};
+  /** The peers' cards this device keeps. */
+  std::map<std::string, AccountCard> cards;
   std::unique_ptr<SqliteThreadStore> store;
   std::unique_ptr<GroupRosterStore> roster;
   std::unique_ptr<SqlitePskSessionStore> psk;
@@ -131,9 +127,11 @@ TEST_F(OutboundMessageTest, AFirstPublicSendOpensTheSessionAndThePeerReadsIt) {
   EXPECT_TRUE(first->body.e2e.key_init_b64 && !first->body.e2e.key_init_b64->empty()) << "the opening send carries its key_init";
   EXPECT_EQ(first->route.kind, "direct");
   EXPECT_EQ(first->recipient_contact_id, "relay:bob");
-  EXPECT_EQ(first->stream_key,
-            BuildCanonicalRelayStreamKey("relay:alice", "relay:bob", ThreadChannel::E2ePublic, first->session_epoch));
-  EXPECT_EQ(first->order_key, first->sender_seq);
+  EXPECT_EQ(first->stream_key, BuildDeviceRelayStreamKey("relay:alice", "relay:bob", ThreadChannel::E2ePublic,
+                                                         alice_->keys.device.peer_id))
+      << "the sending device's stream: an account's devices share its relay id (M022)";
+  ASSERT_EQ(first->body.e2e.copies.size(), 1u) << "one account copy: Bob's devices are not known yet";
+  EXPECT_TRUE(first->body.e2e.copies.front().recipient_device.empty());
 
   auto second = alice_->Send(thread, *bob_, "again");
   ASSERT_TRUE(second);
@@ -212,26 +210,34 @@ TEST(OutboundSendRulesTest, WhoMaySendAndHow) {
   EXPECT_FALSE(DirectSendTriesAmpFirst(false, false, false));
 }
 
-TEST(OutboundSendRulesTest, AGroupMembersCopy) {
+TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
   ThreadMessage message;
   message.id = "m";
   message.sender_seq = 7;
   message.session_epoch = 2;
   message.timestamp = 5;
-  RelayEnvelope e = BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1",
-                                             "account:b", "relay:b", "payload", std::string("init"));
+  const EnvelopeSender sender{"relay:a", "account:a", "QmA"};
+  const RelayCopy phone{.recipient_device = "QmBPhone", .session_epoch = 5, .sender_seq = 9,
+                        .key_init_b64 = std::string("init"), .payload_b64 = "cGF5bG9hZA=="};
+  const RelayCopy laptop{.recipient_device = "QmBLaptop", .session_epoch = 1, .sender_seq = 3,
+                         .payload_b64 = "cGF5bG9hZDI="};
+  RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", "relay:b", {phone, laptop}, 11);
   EXPECT_EQ(e.route.kind, "group");
   EXPECT_EQ(e.route.group_id, "group-1");
-  EXPECT_EQ(e.body.e2e.member_payloads->at("account:b"), "payload");
-  EXPECT_EQ(e.body.e2e.key_init_b64, std::optional<std::string>("init"));
-  EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", 2, "account:b"));
-  EXPECT_NE(BuildGroupMemberEnvelope(message, EnvelopeSender{"relay:a", "account:a"}, "group-1", "account:c",
-                                     "relay:c", "payload", std::nullopt)
-                .stream_key,
+  EXPECT_EQ(e.body.e2e.copies, (std::vector<RelayCopy>{phone, laptop})) << "one record, each device's copy (M022)";
+  EXPECT_EQ(e.order_key, 11u) << "the record's own relay index";
+  EXPECT_EQ(e.stream_key, BuildGroupDeviceRelayStreamKey("group-1", "account:b", "QmA"));
+  EXPECT_NE(BuildGroupMemberEnvelope(message, sender, "group-1", "account:c", "relay:c", {phone}, 12).stream_key,
             e.stream_key)
-      << "the relay keeps one row per sender, stream and seq: each member's copy has its own stream";
+      << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
   EXPECT_EQ(e.recipient_contact_id, "relay:b") << "the relay delivers to relay ids";
-  EXPECT_EQ(e.order_key, 7u);
+  // Each device reads its own copy, numbered in its own pair.
+  auto on_laptop = SelectRelayCopy(e, "QmBLaptop");
+  ASSERT_TRUE(on_laptop);
+  EXPECT_EQ(on_laptop->sender_seq, 3u);
+  EXPECT_EQ(on_laptop->session_epoch, 1u);
+  EXPECT_FALSE(on_laptop->body.e2e.key_init_b64);
+  EXPECT_FALSE(SelectRelayCopy(e, "QmBTablet")) << "no copy for a device the sender did not know";
 }
 
 } // namespace

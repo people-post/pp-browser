@@ -50,6 +50,7 @@ public:
   std::string ReachableKey(const std::string& key) const;
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
+  bool IsPeerConnected(const std::string& peer_key) const override;
   DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
 
   void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,

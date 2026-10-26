@@ -64,11 +64,12 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
 
 Roe<std::string> LinkDeviceExchange::ExportJson(const LocalIdentity& identity, const ByteVector& dek,
                                                 std::vector<LinkDevicePublicPsk> public_psks, const int64_t now_ms,
-                                                const int64_t ttl_ms) {
+                                                const int64_t ttl_ms, std::optional<std::string> account_card_json) {
   auto bundle = Capture(identity, dek, std::move(public_psks), now_ms, ttl_ms);
   if (!bundle) {
     return bundle.error();
   }
+  bundle->account_card_json = std::move(account_card_json);
   return LinkDeviceCodec::Serialize(*bundle);
 }
 
@@ -144,6 +145,7 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   LinkDeviceImportResult result;
   result.identity = *saved;
   result.public_psks = std::move(parsed->public_psks);
+  result.account_card_json = std::move(parsed->account_card_json);
   return result;
 }
 

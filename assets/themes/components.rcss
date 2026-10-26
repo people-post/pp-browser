@@ -2690,6 +2690,10 @@ input.checkbox {
   margin-bottom: 10dp;
 }
 
+.shell-pin-gate-note {
+  margin-top: 12dp;
+}
+
 .shell-pin-gate-error {
   min-height: 1.2em;
   margin-bottom: 8dp;

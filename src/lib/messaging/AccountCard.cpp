@@ -4,6 +4,7 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
+#include "crypto/PeerId.h"
 
 #include <algorithm>
 #include <set>
@@ -13,9 +14,9 @@ namespace pbr {
 
 namespace {
 
-constexpr char kAccountCardDomain[] = "pp-browser:account-card-v1";
-constexpr uint8_t kAccountCardSignVersion = 1;
-constexpr int64_t kAccountCardVersion = 1;
+constexpr char kAccountCardDomain[] = "pp-browser:account-card-v2";
+constexpr uint8_t kAccountCardSignVersion = 2;
+constexpr int64_t kAccountCardVersion = 2;
 
 void AppendU64(ByteVector& out, uint64_t value) {
   for (int shift = 56; shift >= 0; shift -= 8) {
@@ -46,9 +47,11 @@ Object AccountCardToJson(const AccountCard& card) {
   }
   std::vector<Value> devices;
   devices.reserve(card.devices.size());
-  for (const std::string& peer_id : card.devices) {
+  for (const AccountCardDevice& device : card.devices) {
     Object row;
-    row.set("peer_id", peer_id);
+    row.set("peer_id", device.peer_id);
+    row.set("signing_public_key_b64", device.signing_public_key_b64);
+    row.set("kem_public_key_b64", device.kem_public_key_b64);
     devices.push_back(ObjectValue(std::move(row)));
   }
   json.set("devices", ArrayValue(std::move(devices)));
@@ -71,11 +74,17 @@ Roe<AccountCard> AccountCardFromJson(const Object& json) {
   if (const Array* devices = json.getArray("devices")) {
     for (const Value& item : devices->elements) {
       const Object* row = asObject(item);
-      auto peer_id = row ? row->getString("peer_id") : std::nullopt;
-      if (!peer_id || peer_id->empty()) {
+      if (!row) {
         return Error("account card: bad device");
       }
-      card.devices.push_back(*peer_id);
+      AccountCardDevice device;
+      device.peer_id = row->getString("peer_id").value_or("");
+      device.signing_public_key_b64 = row->getString("signing_public_key_b64").value_or("");
+      device.kem_public_key_b64 = row->getString("kem_public_key_b64").value_or("");
+      if (device.peer_id.empty() || device.signing_public_key_b64.empty() || device.kem_public_key_b64.empty()) {
+        return Error("account card: bad device");
+      }
+      card.devices.push_back(std::move(device));
     }
   }
   card.issued_at = json.getIf<int64_t>("issued_at").value_or(0);
@@ -85,6 +94,38 @@ Roe<AccountCard> AccountCardFromJson(const Object& json) {
   }
   card.card_signature_b64 = std::move(signature.value());
   return card;
+}
+
+const AccountCardDevice* FindCardDevice(const AccountCard& card, const std::string& peer_id) {
+  for (const AccountCardDevice& device : card.devices) {
+    if (device.peer_id == peer_id) {
+      return &device;
+    }
+  }
+  return nullptr;
+}
+
+std::vector<std::string> CardDevicePeerIds(const AccountCard& card) {
+  std::vector<std::string> ids;
+  ids.reserve(card.devices.size());
+  for (const AccountCardDevice& device : card.devices) {
+    ids.push_back(device.peer_id);
+  }
+  return ids;
+}
+
+Roe<void> VerifyCardDevice(const AccountCardDevice& device) {
+  auto signing = Base64Decode(device.signing_public_key_b64);
+  auto kem = Base64Decode(device.kem_public_key_b64);
+  if (!signing || signing.value().size() != kMlDsa65PublicKeyBytes || !kem ||
+      kem.value().size() != kHybridKemPublicKeyBytes) {
+    return Error("account card: a device's keys do not decode");
+  }
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(signing.value());
+  if (!peer_id || *peer_id != device.peer_id) {
+    return Error("account card: a device's PeerId is not its signing key's");
+  }
+  return {};
 }
 
 Roe<void> VerifyKeyCard(const KeyCard& card) {
@@ -104,11 +145,20 @@ ByteVector AccountCardSignBytes(const AccountCard& card) {
   bytes.insert(bytes.end(), signing.value().begin(), signing.value().end());
   bytes.insert(bytes.end(), kem.value().begin(), kem.value().end());
   AppendLenUtf8(bytes, card.nickname);
-  std::vector<std::string> devices = card.devices;
-  std::sort(devices.begin(), devices.end());
+  std::vector<AccountCardDevice> devices = card.devices;
+  std::sort(devices.begin(), devices.end(),
+            [](const AccountCardDevice& a, const AccountCardDevice& b) { return a.peer_id < b.peer_id; });
   AppendU64(bytes, devices.size());
-  for (const std::string& peer_id : devices) {
-    AppendLenUtf8(bytes, peer_id);
+  for (const AccountCardDevice& device : devices) {
+    auto device_signing = Base64Decode(device.signing_public_key_b64);
+    auto device_kem = Base64Decode(device.kem_public_key_b64);
+    if (!device_signing || device_signing.value().size() != kMlDsa65PublicKeyBytes || !device_kem ||
+        device_kem.value().size() != kHybridKemPublicKeyBytes) {
+      return {};
+    }
+    AppendLenUtf8(bytes, device.peer_id);
+    bytes.insert(bytes.end(), device_signing.value().begin(), device_signing.value().end());
+    bytes.insert(bytes.end(), device_kem.value().begin(), device_kem.value().end());
   }
   AppendU64(bytes, static_cast<uint64_t>(card.issued_at));
   return bytes;
@@ -121,8 +171,17 @@ Roe<void> VerifyAccountCard(const AccountCard& card, int64_t now_ms) {
   if (card.devices.size() > kMaxAccountCardDevices) {
     return Error("account card: too many devices");
   }
-  if (std::set<std::string>(card.devices.begin(), card.devices.end()).size() != card.devices.size()) {
+  if (card.devices.empty()) {
+    return Error("account card: no device");
+  }
+  const std::vector<std::string> peer_ids = CardDevicePeerIds(card);
+  if (std::set<std::string>(peer_ids.begin(), peer_ids.end()).size() != peer_ids.size()) {
     return Error("account card: duplicate device");
+  }
+  for (const AccountCardDevice& device : card.devices) {
+    if (auto checked = VerifyCardDevice(device); !checked) {
+      return checked.error();
+    }
   }
   if (card.issued_at <= 0 || card.issued_at > now_ms + kAccountCardClockSkewMs) {
     return Error("account card: issued in the future");

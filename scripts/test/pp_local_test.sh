@@ -72,6 +72,7 @@ Environment:
   PP_HARD_COMPOSE_FILE / PP_HARD_STATUS_URL (default http://127.0.0.1:18618)
   PP_LEDGER_ROOT / PP_LEDGER_BUILD_DIR (--suite ledger: a pp-ledger checkout with its apps built)
   PP_WEB2_ROOT (--suite app: a web2 checkout; default ../web2 beside web3) / PP_APP_LAB_ARGS
+  PP_APP_LAB_WWW_IMAGE + PP_APP_LAB_MESSENGER_IMAGE (--suite app: the relay from these images instead)
 
 Examples:
   $(basename "$0") run --suite unit
@@ -312,6 +313,8 @@ run_call() {
 
 APP_LAB_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab.yml"
 APP_LAB_NAT_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab-nat.yml"
+# The relay from published images (both set) instead of PP_WEB2_ROOT: the nightly lab.
+APP_LAB_IMAGES_COMPOSE="${ROOT}/packaging/pp-node/docker-compose.app-lab-images.yml"
 APP_LAB_NAT=0  # --suite app-nat: users behind their own NATs
 
 app_lab_compose() {
@@ -320,15 +323,32 @@ app_lab_compose() {
   if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
     files+=(-f "${APP_LAB_NAT_COMPOSE}")
   fi
+  if [[ -n "${PP_APP_LAB_WWW_IMAGE:-}" || -n "${PP_APP_LAB_MESSENGER_IMAGE:-}" ]]; then
+    [[ -n "${PP_APP_LAB_WWW_IMAGE:-}" && -n "${PP_APP_LAB_MESSENGER_IMAGE:-}" ]] ||
+      die "relay images: set both PP_APP_LAB_WWW_IMAGE and PP_APP_LAB_MESSENGER_IMAGE"
+    files+=(-f "${APP_LAB_IMAGES_COMPOSE}")
+  fi
   PP_WEB2_ROOT="${PP_WEB2_ROOT:-$(cd "${ROOT}/../.." && pwd)/web2}" \
     PP_APP_LAB_PROBE_DIR="${BUILD_DIR}/src/app/node" PP_APP_LAB_NAT_SHARE="${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}" \
     docker compose -p pp-app-lab "${files[@]}" "$@"
+}
+
+# The lab seed's address in the lab directory: it carries the seed's PeerId (#385).
+lab_hop_advertise() {
+  local peer
+  peer="$(curl -fsS -m 2 http://127.0.0.1:18718/status 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("peer_id",""))' 2>/dev/null || true)"
+  if [[ -n "${peer}" ]]; then
+    export PP_APP_LAB_HOP_ADVERTISE="/ip4/198.51.100.10/udp/18517/adp/1.0.0/p2p/${peer}"
+    export PP_APP_LAB_HOP_PUBLISH=true
+  fi
 }
 
 run_app() {
   need_cmd cmake
   need_cmd python3
   ensure_docker_context
+  lab_hop_advertise  # a seed already running keeps its address (no recreate)
   stage_hop_binary_if_newer
   cmake --build "${BUILD_DIR}" --target pp-app-probe -j
   local args=(up -d)
@@ -346,6 +366,15 @@ run_app() {
       curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
     sleep 1
   done
+  if [[ -z "${PP_APP_LAB_HOP_ADVERTISE:-}" ]]; then
+    # A new seed has just minted its PeerId: start it again listed in the lab directory, as prod's are.
+    lab_hop_advertise
+    app_lab_compose up -d hop
+    for i in $(seq 1 60); do
+      curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
   local nat_args=()
   if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
     echo "=== suite app-nat (scripted users, each behind its own NAT, over the lab relay and hop) ==="

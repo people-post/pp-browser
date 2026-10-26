@@ -1,5 +1,6 @@
 // The group path's decisions as people join a call (CallTopologyController runs the outcomes).
 #include "lib/calls/CallHopJoinLogic.h"
+#include "lib/calls/CallHopPlannerLogic.h"
 
 #include <gtest/gtest.h>
 
@@ -99,6 +100,34 @@ TEST(CallHopJoinLogicTest, TheRosterMigratesOnlyAFirstGroup) {
   EXPECT_EQ(DecideJoinedCountHop(in), JoinedCountHopAction::SkipInFlight);
   in.on_hop_for_call = true;
   EXPECT_EQ(DecideJoinedCountHop(in), JoinedCountHopAction::SyncSubscriptions);
+}
+
+// #380: a late accepter that took a group call for 1:1 and failed its direct attempt still takes the
+// hop's attach; a 1:1 call that failed does not.
+TEST(CallHopJoinLogicTest, AGroupCallWhoseDirectAttemptFailedTakesTheHop) {
+  InboundAttachInput in;
+  in.active_call = true;
+  in.status_allows_hop = false;  // Status Failed
+  in.direct_failed = true;
+  in.n_joined = 3;
+  in.attach_wait_for_call = true;
+  EXPECT_TRUE(ExpectsGroupAttach(in));
+  in.n_joined = 2;
+  EXPECT_FALSE(ExpectsGroupAttach(in)) << "a failed 1:1 call stays off the hop";
+  in.n_joined = 3;
+  in.direct_failed = false;
+  EXPECT_FALSE(ExpectsGroupAttach(in)) << "a live direct path is not displaced";
+
+  CallHopPlannerApplyContext ctx;
+  ctx.allows_hop_path = false;
+  ctx.direct_failed = true;
+  ctx.should_arm_hop = true;
+  const auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::Idle, CallHopPlannerEvent::SfuAttachInbound, ctx);
+  EXPECT_EQ(out.decision, CallHopPlannerDecision::Transition);
+  EXPECT_EQ(out.next, CallHopPlannerPhase::Attaching);
+  ctx.should_arm_hop = false;
+  EXPECT_EQ(DecideCallHopPlannerPhase(CallHopPlannerPhase::Idle, CallHopPlannerEvent::SfuAttachInbound, ctx).decision,
+            CallHopPlannerDecision::Ignore);
 }
 
 TEST(CallHopJoinLogicTest, AStrayAttachNeverTakesA1To1Call) {

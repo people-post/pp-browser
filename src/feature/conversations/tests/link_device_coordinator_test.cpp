@@ -53,7 +53,7 @@ protected:
   std::unique_ptr<SqlitePskSessionStore> new_psks_;
 };
 
-TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) {
+TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivateAndDevicePairSessionsAndImportAppliesPublic) {
   const ByteVector shared = MakeDek();
   old_threads_ = std::make_unique<SqliteThreadStore>(old_dir_.string());
   ASSERT_TRUE(old_threads_->ListThreads());
@@ -100,6 +100,11 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   private_row.session_epoch = 1;
   private_row.master_psk_b64 = Base64Encode(*private_psk);
   ASSERT_TRUE(old_psks_->Save(private_row));
+
+  // A session with one of Bob's devices is the old device's own (M021): it stays there.
+  PskSessionRecord device_row = public_row;
+  device_row.key.peer_device = "QmBobPhone";
+  ASSERT_TRUE(old_psks_->Save(device_row));
 
   DataKeyVault old_vault(DataKeyVault::VaultPathForProfile(old_dir_.string()), "old");
   ASSERT_TRUE(old_vault.CreateWithDek("old-pin", shared));

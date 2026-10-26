@@ -47,6 +47,24 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag,
   return {};
 }
 
+/** This device's own KEM key pair (M021): minted once, kept on the device. */
+Roe<void> EnsureDeviceKemKeys(LocalIdentity& identity, bool& dirty_flag, const ByteVector* seeded_coins = nullptr) {
+  auto pk = Base64Decode(identity.device_kem_public_key_b64);
+  auto sk = Base64Decode(identity.device_kem_private_key_b64);
+  if (pk && sk && pk->size() == kHybridKemPublicKeyBytes && sk->size() == kHybridKemPrivateKeyBytes) {
+    return {};
+  }
+  Roe<HybridKemKeyPair> generated =
+      seeded_coins ? HybridKem::GenerateKeyPairFromSeed(*seeded_coins) : HybridKem::GenerateKeyPair();
+  if (!generated) {
+    return generated.error();
+  }
+  identity.device_kem_public_key_b64 = Base64Encode(generated->public_key);
+  identity.device_kem_private_key_b64 = Base64Encode(generated->private_key);
+  dirty_flag = true;
+  return {};
+}
+
 Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag,
                                  const ByteVector* seeded_seed = nullptr) {
   const bool have_both =
@@ -171,6 +189,12 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("kem_private_key_b64")) {
     identity.kem_private_key_b64 = *v;
   }
+  if (auto v = root.getString("device_kem_public_key_b64")) {
+    identity.device_kem_public_key_b64 = *v;
+  }
+  if (auto v = root.getString("device_kem_private_key_b64")) {
+    identity.device_kem_private_key_b64 = *v;
+  }
   if (auto v = root.getIf<int64_t>("initiation_floor")) {
     identity.initiation_floor = *v;
   }
@@ -190,6 +214,8 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("account_id", identity.account_id);
   root.set("kem_public_key_b64", identity.kem_public_key_b64);
   root.set("kem_private_key_b64", identity.kem_private_key_b64);
+  root.set("device_kem_public_key_b64", identity.device_kem_public_key_b64);
+  root.set("device_kem_private_key_b64", identity.device_kem_private_key_b64);
   root.set("nickname", identity.nickname);
   root.set("relay_user_id", identity.relay_user_id);
   root.set("brief_llm_api_key", identity.brief_llm_api_key);
@@ -321,6 +347,10 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_, account_seed); !account) {
       return account.error();
     }
+    if (auto device_kem = EnsureDeviceKemKeys(identity_, dirty_, derived ? &derived->device_ml_kem_coins : nullptr);
+        !device_kem) {
+      return device_kem.error();
+    }
     loaded_ = true;
     dirty_ = true;
     return {};
@@ -404,14 +434,21 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_); !account) {
     return account.error();
   }
+  std::optional<DerivedNodeIdentitySeeds> seeds;
   if (!identity_seed_.empty()) {
-    auto seeds = DeriveNodeIdentitySeeds(identity_seed_);
-    if (!seeds) {
-      return seeds.error();
+    auto derived = DeriveNodeIdentitySeeds(identity_seed_);
+    if (!derived) {
+      return derived.error();
     }
-    if (auto matched = FailClosedIfSeedMismatch(identity_, *seeds); !matched) {
+    if (auto matched = FailClosedIfSeedMismatch(identity_, *derived); !matched) {
       return matched.error();
     }
+    seeds = std::move(*derived);
+  }
+  // A profile from before M021 mints its device KEM here (from the seed on a node, so it stays stable).
+  if (auto device_kem = EnsureDeviceKemKeys(identity_, dirty_, seeds ? &seeds->device_ml_kem_coins : nullptr);
+      !device_kem) {
+    return device_kem.error();
   }
   loaded_ = true;
   return {};
@@ -522,6 +559,22 @@ Roe<std::string> IdentityStore::SignAccountBytes(const AccountSignBytes& sign_by
   return Base64Encode(*signature);
 }
 
+Roe<std::string> IdentityStore::SignDeviceBytes(const std::vector<uint8_t>& sign_bytes) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  if (private_key_.size() != kMlDsa65SecretKeyBytes) {
+    return Error("Invalid device ML-DSA-65 private key size");
+  }
+  auto signature = MlDsa::Sign(private_key_, sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+  return Base64Encode(*signature);
+}
+
 Roe<ByteVector> IdentityStore::GetDeviceMlDsaPrivateKey() const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
@@ -576,6 +629,22 @@ Roe<std::string> IdentityStore::GetHybridKemPublicKeyB64() const {
     return Error("Hybrid KEM public key missing");
   }
   return identity_.kem_public_key_b64;
+}
+
+Roe<ByteVector> IdentityStore::GetDeviceKemPrivateKey() const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  auto decoded = Base64Decode(identity_.device_kem_private_key_b64);
+  if (!decoded) {
+    return decoded.error();
+  }
+  if (decoded->size() != kHybridKemPrivateKeyBytes) {
+    return Error("Invalid device KEM private key size");
+  }
+  return *decoded;
 }
 
 Roe<std::string> IdentityStore::GetAccountId() const {

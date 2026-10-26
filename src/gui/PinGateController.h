@@ -41,6 +41,7 @@ public:
   void OnIdentityNew();
   void OnIdentityLink();
   void OnIdentityRestore();
+  void OnForgotToggle();
   void DirtyPinFields();
 
 private:

@@ -196,4 +196,4 @@ PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_lin
 | `pp-node` multi-arch (`linux/arm64`) | amd64 only for now |
 | L1 / L2 N-FANOUT / N-CAP in release CI | Local scripts done; CI optional — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md) |
 | Auto-update channel | Separate effort |
-| iOS distribution | [PLATFORMS.md](../architecture/PLATFORMS.md) |
+| iOS on `v*` release tags | Manual TestFlight: [`ios-testflight.yml`](../.github/workflows/ios-testflight.yml) — [IOS_BUILD.md](IOS_BUILD.md); fold into `release.yml` later |

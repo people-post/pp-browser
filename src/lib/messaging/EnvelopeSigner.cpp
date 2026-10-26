@@ -7,7 +7,9 @@
 
 #include <sodium.h>
 
+#include <algorithm>
 #include <array>
+#include <set>
 #include <cstring>
 #include <sstream>
 #include "common/PbrCompat.h"
@@ -18,9 +20,9 @@ namespace {
 
 constexpr std::array<char, 34> kSignDomain = {
     'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r', 'e', 'l', 'a', 'y', '-',
-    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '2', '\0'};
+    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '3', '\0'};
 
-constexpr uint8_t kSignVersion = 2;
+constexpr uint8_t kSignVersion = 3;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
 void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
@@ -69,65 +71,55 @@ uint8_t EnvelopeSigner::ChannelByte(const RelayRoute& route) {
 }
 
 Roe<void> EnvelopeSigner::CheckBodyShape(const RelayEnvelope& envelope) {
-  const bool has_members = envelope.body.e2e.member_payloads.has_value();
-  const bool has_payload = !envelope.body.e2e.payload_b64.empty();
+  const std::vector<RelayCopy> copies = RelayCopiesOf(envelope);
+  if (copies.empty() || copies.size() > kMaxRelayCopies) {
+    return Error("An envelope carries 1 to 8 copies");
+  }
+  std::set<std::string> devices;
+  for (const RelayCopy& copy : copies) {
+    if (copy.payload_b64.empty()) {
+      return Error("A copy without a payload");
+    }
+    if (!devices.insert(copy.recipient_device).second) {
+      return Error("Two copies for one device");
+    }
+  }
   if (envelope.route.kind == kRelayRouteGroup) {
     if (!envelope.route.group_id || envelope.route.group_id->empty()) {
       return Error("Group envelope without group_id");
     }
-    if (!has_members || envelope.body.e2e.member_payloads->empty() || has_payload) {
-      return Error("Group envelope must carry member_payloads only");
-    }
     return {};
   }
   if (envelope.route.kind == kRelayRouteDirect || envelope.route.kind == kRelayRouteControl) {
-    if (has_members || !has_payload) {
-      return Error("Direct / control envelope must carry payload_b64 only");
-    }
     if (envelope.route.group_id) {
       return Error("Direct / control envelope with a group_id");
+    }
+    if (envelope.route.kind == kRelayRouteControl && (copies.size() != 1 || !copies.front().recipient_device.empty())) {
+      return Error("Control envelope must carry one account copy");
     }
     return {};
   }
   return Error("Unknown route kind");
 }
 
-Roe<std::vector<uint8_t>> EnvelopeSigner::BodyHash(const RelayEnvelope& envelope) {
+Roe<std::vector<uint8_t>> EnvelopeSigner::CopyHash(const RelayCopy& copy) {
   EnsureSodiumInit();
-  if (auto shape = CheckBodyShape(envelope); !shape) {
-    return shape.error();
+  auto decoded = Base64Decode(copy.payload_b64);
+  if (!decoded) {
+    return decoded.error();
   }
-  // Exactly the bytes the receiver decrypts: the one blob of a direct / control envelope, or each
-  // (member, blob) pair of a group envelope, length-prefixed so pairs cannot be re-split.
   std::ostringstream oss;
   oss.put(static_cast<char>(kBodyKindE2e));
   {
     OutputArchive ar(oss);
-    if (envelope.route.kind == kRelayRouteGroup) {
-      for (const auto& [member_id, payload_b64] : *envelope.body.e2e.member_payloads) {
-        auto decoded = Base64Decode(payload_b64);
-        if (!decoded) {
-          return decoded.error();
-        }
-        WireLenUtf8 member{member_id};
-        ar & member;
-        WireLenBytes blob{*decoded};
-        ar & blob;
-      }
-    } else {
-      auto decoded = Base64Decode(envelope.body.e2e.payload_b64);
-      if (!decoded) {
-        return decoded.error();
-      }
-      WireLenBytes blob{*decoded};
-      ar & blob;
-    }
+    WireLenBytes blob{*decoded};
+    ar & blob;
   }
   const std::string input = oss.str();
   std::vector<uint8_t> digest(32);
   if (crypto_generichash(digest.data(), digest.size(), reinterpret_cast<const unsigned char*>(input.data()),
                          input.size(), nullptr, 0) != 0) {
-    return Error("BLAKE2b body hash failed");
+    return Error("BLAKE2b copy hash failed");
   }
   return digest;
 }
@@ -136,9 +128,8 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
   if (envelope.envelope_version != kRelayEnvelopeVersion) {
     return Error("Unsupported envelope version");
   }
-  auto body_hash = BodyHash(envelope);
-  if (!body_hash) {
-    return body_hash.error();
+  if (auto shape = CheckBodyShape(envelope); !shape) {
+    return shape.error();
   }
 
   std::ostringstream oss;
@@ -152,24 +143,48 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
   oss.write(reinterpret_cast<const char*>(&route_kind), 1);
   oss.write(reinterpret_cast<const char*>(&channel), 1);
   AppendBigEndianInt64(oss, envelope.timestamp);
-  AppendBigEndianUInt64(oss, envelope.sender_seq);
-  AppendBigEndianUInt32(oss, envelope.session_epoch);
-  oss.write(reinterpret_cast<const char*>(body_hash->data()), static_cast<std::streamsize>(body_hash->size()));
 
+  // Each copy (M022), by recipient device: who it is for, its numbering in that pair, the session it may
+  // open, and exactly what that device decrypts. Copies for one device cannot be moved to another.
+  const std::vector<RelayCopy> listed = RelayCopiesOf(envelope);
+  std::vector<const RelayCopy*> copies;
+  for (const RelayCopy& copy : listed) {
+    copies.push_back(&copy);
+  }
+  std::sort(copies.begin(), copies.end(),
+            [](const RelayCopy* a, const RelayCopy* b) { return a->recipient_device < b->recipient_device; });
   {
     OutputArchive ar(oss);
     WireLenUtf8 message_id{envelope.message_id};
     ar & message_id;
     WireLenUtf8 sender_contact_id{envelope.sender_contact_id};
     ar & sender_contact_id;
-    // v2: who the sender says it is on the relay, which group, and the AutoKey key_init — each
-    // decides something on receipt (route, thread, session), so each is the signer's word.
     WireLenUtf8 sender_relay_id{envelope.sender_relay_id};
     ar & sender_relay_id;
     WireLenUtf8 group_id{envelope.route.group_id.value_or(std::string{})};
     ar & group_id;
-    WireLenUtf8 key_init{envelope.body.e2e.key_init_b64.value_or(std::string{})};
-    ar & key_init;
+    WireLenUtf8 sender_device{envelope.sender_device};
+    ar & sender_device;
+  }
+  AppendBigEndianUInt64(oss, copies.size());
+  for (const RelayCopy* copy : copies) {
+    auto hash = CopyHash(*copy);
+    if (!hash) {
+      return hash.error();
+    }
+    {
+      OutputArchive ar(oss);
+      WireLenUtf8 device{copy->recipient_device};
+      ar & device;
+    }
+    AppendBigEndianUInt32(oss, copy->session_epoch);
+    AppendBigEndianUInt64(oss, copy->sender_seq);
+    {
+      OutputArchive ar(oss);
+      WireLenUtf8 key_init{copy->key_init_b64.value_or(std::string{})};
+      ar & key_init;
+    }
+    oss.write(reinterpret_cast<const char*>(hash->data()), static_cast<std::streamsize>(hash->size()));
   }
 
   const std::string packed = oss.str();

@@ -18,7 +18,7 @@ inline constexpr int kSqliteThreadUserVersion = 2;
 inline constexpr const char* kSqliteThreadMessageSelectColumns =
     "id, display_order, sender_contact_id, content_enc, content_type, control_type, timestamp, relay_visible, "
     "delivery, transport, sender_seq, session_epoch, target_message_id, generation, seq_owner_contact_id, "
-    "ai_invoke_mode";
+    "ai_invoke_mode, sender_device";
 
 inline constexpr const char* kSqliteThreadProfileSchemaV1 = R"sql(
 CREATE TABLE IF NOT EXISTS threads (
@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS messages (
   target_message_id TEXT,
   generation TEXT,
   seq_owner_contact_id TEXT,
-  ai_invoke_mode TEXT
+  ai_invoke_mode TEXT,
+  sender_device TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_display ON messages(display_order DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(session_epoch, sender_contact_id, sender_seq)

@@ -132,8 +132,12 @@ public:
   Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string&, const SeqRangeQuery&) const override {
     return std::vector<ThreadMessage>{};
   }
-  Roe<PeerSyncState> GetPeerSyncState(const std::string&, uint32_t) const override { return PeerSyncState{}; }
-  Roe<void> SetPeerSyncState(const std::string&, uint32_t, const PeerSyncState&) override { return {}; }
+  Roe<PeerSyncState> GetPeerSyncState(const std::string&, uint32_t, const std::string&) const override {
+    return PeerSyncState{};
+  }
+  Roe<void> SetPeerSyncState(const std::string&, uint32_t, const PeerSyncState&, const std::string&) override {
+    return {};
+  }
   Roe<void> CancelOldEpochPending(const std::string&, uint32_t) override { return {}; }
   Roe<void> AdoptChatTargetEpoch(const std::string&, uint32_t) override { return {}; }
   Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t, uint32_t,

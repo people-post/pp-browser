@@ -1,5 +1,6 @@
 #include "gui/chat/TranscriptRml.h"
 
+#include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "common/ValueJson.h"
 
@@ -30,7 +31,7 @@ std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& 
   std::ostringstream out;
   for (size_t i = 0; i < chat_actions.size(); ++i) {
     out << "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " << i << ")\">"
-        << StructuredTextParser::EscapeText(chat_actions[i].label) << "</button>";
+        << StructuredTextParser::EscapeText(ChatActionLabel(chat_actions[i])) << "</button>";
   }
   return out.str();
 }
@@ -153,10 +154,14 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
     auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
     const std::string title =
-        invite ? invite->group_title : (message.text.empty() ? "Group invitation" : message.text);
+        invite && !invite->group_title.empty()
+            ? invite->group_title
+            : (invite || message.text.empty() ? Tr("chat.group_invite.title") : message.text);
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
                        StructuredTextParser::EscapeText(title) + "</h3>";
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(message.text) + "</p>";
+    // The stored text is English ("Group invitation: <title>") and the title is already the heading.
+    html += "<p class=\"text muted\">" +
+            StructuredTextParser::EscapeText(invite ? Tr("chat.group_invite.body") : message.text) + "</p>";
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
     if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {
@@ -168,11 +173,9 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     if (GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
       return SystemLineRml(message.text);
     }
-    const std::string body =
-        "You can keep chatting with people who are online. Inviting, renaming for everyone, and removing "
-        "members need the owner. If they’ve left for good, start a new group from this one.";
+    const std::string body = Tr("chat.group_owner_unreachable.body");
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
-                       StructuredTextParser::EscapeText("Owner hasn’t been reachable") + "</h3>";
+                       StructuredTextParser::EscapeText(Tr("chat.group_owner_unreachable.title")) + "</h3>";
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
@@ -475,7 +478,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
                              : RowClass(message.sender_contact_id).c_str();
     // Local is expected for AI/system-local rows — skip it to keep meta quiet.
     if (!entry.control && message.transport && *message.transport != MessageTransport::Local) {
-      row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
+      row.transport_badge =
+          Tr(*message.transport == MessageTransport::Direct ? "chat.transport.direct" : "chat.transport.relay").c_str();
     }
     row.has_content = true;
     rows.push_back(std::move(row));

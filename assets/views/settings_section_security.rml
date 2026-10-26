@@ -19,6 +19,7 @@
             <span class="settings-label">{{i18n:settings.security.confirm_pin}}</span>
             <input class="field" type="password" data-value="pin_change_confirm" placeholder="{{i18n:settings.security.confirm_pin_placeholder}}"/>
           </label>
+          <p class="text muted settings-help">{{i18n:pin.forget_warning}}</p>
           <div class="settings-actions row">
             <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
           </div>

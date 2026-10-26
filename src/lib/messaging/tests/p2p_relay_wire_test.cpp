@@ -45,6 +45,7 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = *payload_b64;
@@ -63,13 +64,15 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   EXPECT_EQ(*decoded, "hello relay");
 }
 
-TEST(P2pRelayWireTest, SenderKeysRideWithAKeyInitAndAreNotSigned) {
+TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   using namespace pbr;
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440001";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "account:alice";
+  envelope.sender_device = "QmAlicePhone";
+  envelope.recipient_device = "QmBobLaptop";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2ePublic;
   envelope.body.e2e.payload_b64 = "cGF5bG9hZA==";
@@ -77,24 +80,46 @@ TEST(P2pRelayWireTest, SenderKeysRideWithAKeyInitAndAreNotSigned) {
   envelope.timestamp = 1719662400123;
   envelope.signature = "sig";
   const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  envelope.body.e2e.sender_keys = KeyCard{.account_id = "account:alice",
-                                          .signing_public_key_b64 = "c2lnbg==",
-                                          .kem_public_key_b64 = "a2Vt",
-                                          .kem_binding_signature_b64 = "YmluZA=="};
+  Object card;
+  card.set("account_id", "account:alice");
+  card.set("card_version", int64_t{2});
+  envelope.body.e2e.sender_card = card;
   ASSERT_TRUE(unsigned_bytes);
   EXPECT_EQ(EnvelopeSigner::BuildSignBytes(envelope).value(), *unsigned_bytes)
       << "the card proves itself; the envelope signature does not cover it";
+  RelayEnvelope other_device = envelope;
+  other_device.recipient_device = "QmBobPhone";
+  EXPECT_NE(EnvelopeSigner::BuildSignBytes(other_device).value(), *unsigned_bytes) << "which device it is for is signed";
+  RelayEnvelope other_sender = envelope;
+  other_sender.sender_device = "QmAliceLaptop";
+  EXPECT_NE(EnvelopeSigner::BuildSignBytes(other_sender).value(), *unsigned_bytes) << "and which device sent it";
 
   const auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
   ASSERT_TRUE(parsed) << parsed.error().message;
-  EXPECT_EQ(parsed.value().body.e2e.sender_keys, envelope.body.e2e.sender_keys);
+  EXPECT_EQ(parsed.value().sender_device, "QmAlicePhone");
+  EXPECT_EQ(parsed.value().recipient_device, "QmBobLaptop");
+  ASSERT_TRUE(parsed.value().body.e2e.sender_card);
+  EXPECT_EQ(parsed.value().body.e2e.sender_card->getString("account_id"), std::optional<std::string>("account:alice"));
 
   RelayEnvelope someone_elses = envelope;
-  someone_elses.body.e2e.sender_keys->account_id = "account:mallory";
+  someone_elses.body.e2e.sender_card->set("account_id", "account:mallory");
   EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(someone_elses))) << "a card for another account";
   RelayEnvelope no_key_init = envelope;
   no_key_init.body.e2e.key_init_b64.reset();
-  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_key_init))) << "sender_keys only with a key_init";
+  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_key_init)))
+      << "a device copy carries the card only with a key_init";
+  RelayEnvelope account_copy_no_key_init = no_key_init;
+  account_copy_no_key_init.recipient_device.clear();
+  EXPECT_TRUE(ParseRelayEnvelope(RelayEnvelopeToJson(account_copy_no_key_init)))
+      << "an account copy may always carry it: its reader may know none of our devices";
+  RelayEnvelope no_device = envelope;
+  no_device.sender_device.clear();
+  EXPECT_FALSE(ParseRelayEnvelope(RelayEnvelopeToJson(no_device))) << "every envelope names its sending device";
+  RelayEnvelope account_copy = envelope;
+  account_copy.recipient_device.clear();
+  auto parsed_copy = ParseRelayEnvelope(RelayEnvelopeToJson(account_copy));
+  ASSERT_TRUE(parsed_copy);
+  EXPECT_TRUE(parsed_copy->recipient_device.empty()) << "an account copy names no recipient device";
 }
 
 TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
@@ -105,6 +130,7 @@ TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
   envelope.message_id = R"(x');evil('&quot; onmouseover=&quot;alert(1))";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = "ignored";
@@ -126,6 +152,7 @@ TEST(P2pRelayWireTest, ChatHistoryResponseSkipsOneBadMessageInsteadOfFailingTheP
   good.message_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   good.sender_relay_id = "relay:alice123";
   good.sender_contact_id = "relay:alice123";
+  good.sender_device = "QmAliceDevice";
   good.route.kind = "direct";
   good.route.channel = ThreadChannel::E2e;
   good.body.e2e.payload_b64 = "ignored";
@@ -160,6 +187,7 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = "AA==";
@@ -198,6 +226,7 @@ TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "account:aliceAccountId";
+  envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = "AA==";
@@ -231,6 +260,7 @@ TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
   envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = "AA==";

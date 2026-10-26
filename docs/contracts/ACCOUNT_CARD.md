@@ -21,7 +21,8 @@ either, a person is added from a card or invite handed over out of band.
 |-----|--------|--------|
 | Account ML-DSA-65 (signing) | every linked device | the Account ID: `account:<base64url-unpadded(BLAKE2b-256(pk))>` |
 | Account ML-KEM-768 | every linked device | nothing by itself — bound by the **KEM binding** |
-| Device ML-DSA-65 | one device | its PeerId (mesh identity) |
+| Device ML-DSA-65 | one device | its PeerId (mesh identity); listed on the account card |
+| Device ML-KEM-768 | one device | nothing by itself — listed on the account card ([M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)); never leaves the device |
 
 ## Key card
 
@@ -52,13 +53,16 @@ A key card plus what the account says about itself, signed as a whole.
 
 ```json
 {
-  "card_version": 1,
+  "card_version": 2,
   "account_id": "account:…",
   "signing_public_key_b64": "…",
   "kem_public_key_b64": "…",
   "kem_binding_signature_b64": "…",
   "nickname": "alice",
-  "devices": [{ "peer_id": "Qm…" }, { "peer_id": "Qm…" }],
+  "devices": [
+    { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" },
+    { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" }
+  ],
   "issued_at": 1761235200000,
   "card_signature_b64": "…"
 }
@@ -66,29 +70,36 @@ A key card plus what the account says about itself, signed as a whole.
 
 - `nickname` — the account's own name for itself: a hint, shown as such; never an identity
   ([N029](../../projects/p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md): no second name system).
-- `devices` — the PeerIds of the account's linked devices the issuing device knows (itself first), at
-  most 16. This is the account's standing statement that those devices speak for it; nothing else in
-  the system makes it.
-- `issued_at` — ms since epoch. Linked devices issue cards independently, so there is no shared counter.
+- `devices` — **the account's device list** (M021), the issuing device first, at least 1 and at most 5:
+  each device's PeerId, the device ML-DSA-65 key that PeerId is derived from, and the device's own
+  ML-KEM-768 key. This is the account's standing statement that those devices speak for it; nothing else
+  in the system makes it.
+- `issued_at` — ms since epoch; the list's version. A device issues a new card only when what it says
+  changes (a device joins, a device's keys, the nickname), always later than the newest it knows.
 - No addresses: multiaddrs go stale and disclose IPs ([privacy](../../projects/privacy/DECISIONS.md));
   devices are reached through the mesh (below).
 
-**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v1` + NUL,
-version u8 `1`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
-u64 BE, then each `peer_id` LenUtf8 in byte order, `issued_at` i64 BE (LenUtf8 / u64 BE as
+**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v2` + NUL,
+version u8 `2`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
+u64 BE, then for each device in `peer_id` byte order: `peer_id` LenUtf8, the raw device ML-DSA-65 key, the
+raw device ML-KEM-768 key; then `issued_at` i64 BE (LenUtf8 / u64 BE as
 in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088)).
 
 An account card is valid when its key card is valid, `card_signature_b64` verifies with the signing key,
-`devices` holds no duplicates, and `issued_at` is not more than 5 minutes ahead of the receiver's clock.
+`devices` holds 1–5 entries with no duplicate PeerId, every entry's keys decode to their sizes and its
+`peer_id` is the one its device ML-DSA key derives, and `issued_at` is not more than 5 minutes ahead of the
+receiver's clock. Version 1 cards (PeerIds only) are refused.
 
-**Merging:** each of an account's devices issues its own card. A receiver takes the nickname and keys
-from the newest valid card (`issued_at`) and keeps the **union** of devices from all valid cards (at most
-16, the longest unseen dropped first): a device that does not yet know a sibling must not hide it. An old
-card stays valid — it lists devices the account once had. Revoking a device or rotating the KEM key needs
-more than a newer card ([M019](../../projects/multi-device-account/DECISIONS.md), later).
+**Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname and
+device list; an older card changes nothing. Until only a master device issues cards (M021 d4) every
+linked device holds the account key, so two may issue at once: a device that learns a card of its own
+account listing fewer devices than it knows re-issues with both, and takes the newest card's nickname as
+the account's. A newly linked device gets the linking device's card in the link bundle and signs itself
+in. Revoking a device is a newer list without it, from d4.
 
 **Size:** a key card is about 13 KB as JSON (two 3309-byte signatures and two public keys in base64);
-too large for a QR code, which is why invites carry a locator.
+each device adds about 4 KB to an account card. Too large for a QR code, which is why invites carry a
+locator.
 
 ## Locator (QR code, invite link)
 
@@ -122,7 +133,9 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Carrier | What | When |
 |---------|------|------|
 | Relay directory | key card fields (+ endpoints) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
-| `e2e_public` envelope | sender's key card, `body.e2e.sender_keys` | with every `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) |
+| Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) or is an account copy (the control lane, a first contact): whoever reads it can check the sending device; a new device's first message to anyone brings its account's newer list |
+| Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
+| Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |
 | Locator | account id, nickname, devices | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |

@@ -786,11 +786,11 @@ TEST_F(CallTopologyControllerTest, HopHintRefusesWhenGuestPrefsMissOwnerDialable
   EXPECT_TRUE(refused);
 }
 
-TEST_F(CallTopologyControllerTest, PreferLocalNodePicksEvenWhenNotInitiator) {
-  // Dogfood: sticky initiator wrongly = phone; durable Node must still PreferLocal SoftMigrate
-  // when call hop scope is Link (V035).
-  const std::string call_id = "call:prefer-local-override";
-  // B earliest (wrong initiator); A is PreferLocal Node.
+// #385 (V050): one picker. A durable Node that is not the call's owner waits for the owner's attach
+// instead of making itself the hop — two pickers raced each other.
+TEST_F(CallTopologyControllerTest, ANodeThatIsNotTheOwnerWaitsForTheOwnersAttach) {
+  const std::string call_id = "call:node-not-owner";
+  // B joined first (the owner); A is a PreferLocal Node.
   SeedJoinedCall(call_id, {"account:B", "account:A", "account:C"}, 1000);
   host_->local_identity = "account:A";
   relay_->started = true;
@@ -806,15 +806,16 @@ TEST_F(CallTopologyControllerTest, PreferLocalNodePicksEvenWhenNotInitiator) {
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
   ASSERT_TRUE(ok) << ok.error().message;
-  EXPECT_EQ(relay_->local_hop_calls, 1);
-  ASSERT_FALSE(host_->fanouts.empty());
-  EXPECT_EQ(host_->fanouts.back().type, CallControlType::CallSfuAttach);
+  EXPECT_EQ(relay_->local_hop_calls, 0);
+  EXPECT_TRUE(host_->fanouts.empty()) << "only the owner sends CallSfuAttach";
 }
 
-TEST_F(CallTopologyControllerTest, PhoneDefersPickHopWhenDurableMediaRelayListed) {
-  const std::string call_id = "call:phone-defer";
+// #385: the owner picks even when a durable relay is listed (prod lists its seeds in the directory).
+// It used to wait for that relay to pick — relays never pick, so nobody did.
+TEST_F(CallTopologyControllerTest, TheOwnerPicksWhenADurableRelayIsListed) {
+  const std::string call_id = "call:owner-picks";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
-  host_->local_identity = "account:A"; // earliest = initiator, but phone
+  host_->local_identity = "account:A"; // earliest = the owner; a phone
   relay_->started = false;
 
   CallTopologyController::MediaRelayDeps deps;
@@ -832,9 +833,8 @@ TEST_F(CallTopologyControllerTest, PhoneDefersPickHopWhenDurableMediaRelayListed
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok);
-  EXPECT_EQ(relay_->quote_calls, 0);
-  EXPECT_EQ(relay_->local_hop_calls, 0);
-  EXPECT_TRUE(host_->fanouts.empty());
+  EXPECT_GE(relay_->quote_calls, 1) << "the owner quotes a relay to pick it";
+  EXPECT_EQ(relay_->local_hop_calls, 0) << "a phone never hosts";
 }
 
 TEST_F(CallTopologyControllerTest, SoftMigrateRepickKeepsPreferLocalWhenPreferSelf) {

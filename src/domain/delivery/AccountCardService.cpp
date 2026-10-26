@@ -44,9 +44,7 @@ AccountCardReply AccountCardService::Answer(const AccountCardRequest& request, c
   }
   CardServeContext context;
   context.own_account_id = identity->account_id;
-  context.own_card = [this, account = identity->account_id]() {
-    return own_.Card(DevicesOf(account), util::NowUnixMs());
-  };
+  context.own_card = [this]() { return own_.Card(util::NowUnixMs()); };
   context.own_keys = [this]() { return own_.Keys(); };
   context.authenticate = [this](const AccountCardRequest& asked, const std::string& remote) -> Roe<void> {
     if (auto verified = PeerRequestAuth::Verify(asked, remote, util::NowUnixMs(), keys_.KeptSigning()); !verified) {
@@ -116,6 +114,7 @@ void AccountCardService::FetchOver(std::vector<std::string> link_keys, const std
   AccountCardRequest request;
   request.account_id = account_id;
   request.requester_keys = *own_keys;
+  const bool sibling = account_id == identity->account_id;
   if (auto signed_request =
           PeerRequestAuth::Sign(request, identity->account_id, *local_peer_id, util::NowUnixMs(),
                                 [this](const std::vector<uint8_t>& bytes) { return identity_.SignBytes(bytes); });
@@ -127,7 +126,8 @@ void AccountCardService::FetchOver(std::vector<std::string> link_keys, const std
   link_keys.erase(link_keys.begin());
   transport->FetchAsync(
       link_key, request,
-      [this, link_key, link_keys = std::move(link_keys), peer_id, account_id, on_done](Roe<AccountCardReply> reply) mutable {
+      [this, link_key, link_keys = std::move(link_keys), peer_id, account_id, sibling,
+       on_done](Roe<AccountCardReply> reply) mutable {
         if (!reply) {
           log().info << "card ask over " << link_key << " failed: " << reply.error().message;
           if (!link_keys.empty()) {
@@ -141,6 +141,20 @@ void AccountCardService::FetchOver(std::vector<std::string> link_keys, const std
         auto card = AcceptCardReply(*reply, account_id, peer_id, now);
         if (!card) {
           on_done(Outcome::Answered, card.error());
+          return;
+        }
+        if (sibling) {
+          // A sibling's device list: taken into ours (OwnCards::Learn), not filed as a peer's.
+          if (auto learned = own_.Learn(*card, now); !learned) {
+            on_done(Outcome::Answered, learned.error());
+            return;
+          }
+          auto kept = keys_.Kept(account_id);
+          if (!kept || !kept->has_value()) {
+            on_done(Outcome::Answered, Error("own card not kept"));
+            return;
+          }
+          on_done(Outcome::Answered, std::move(**kept));
           return;
         }
         auto kept = keys_.AddAccountCard(*card, now, "device");

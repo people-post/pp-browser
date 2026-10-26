@@ -62,6 +62,17 @@ TEST(LinkDeviceCodecTest, SerializeParseRoundTrip) {
   EXPECT_EQ(parsed->public_psks.front().key.channel, CryptoChannel::E2ePublic);
 }
 
+TEST(LinkDeviceCodecTest, TheIssuersAccountCardRidesAlongWhenGiven) {
+  LinkDeviceBundleV1 bundle = MakeValidBundle();
+  auto without = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
+  ASSERT_TRUE(without);
+  EXPECT_FALSE(without->account_card_json.has_value()) << "a backup carries none";
+  bundle.account_card_json = R"({"card_version":2})";
+  auto with = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
+  ASSERT_TRUE(with);
+  EXPECT_EQ(with->account_card_json, bundle.account_card_json) << "as given: the card checks itself on import";
+}
+
 TEST(LinkDeviceCodecTest, RejectsPrivateE2ePsks) {
   LinkDeviceBundleV1 bundle = MakeValidBundle();
   LinkDevicePublicPsk row;

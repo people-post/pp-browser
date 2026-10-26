@@ -87,6 +87,7 @@ RelayEnvelope MakeEnvelope() {
   envelope.message_id = "m-pump";
   envelope.sender_relay_id = "relay:a";
   envelope.sender_contact_id = "relay:a";
+  envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   auto payload_b64 = RelayWirePayload::EncodePlaintextText("hello over MeshPump");

@@ -78,6 +78,15 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 
 **Implementation note:** ingest today often **hard-rejects** unknown `content_type` and exact-mismatched `envelope_version`. Soft-skip / placeholder is the intended direction for **newer** peers; keep hard rejects for crypto and known-legacy shapes.
 
+### Clean cutovers (pre-release)
+
+Taken whole, with no old/new bridge: every app updates.
+
+| Change | Old ↔ new |
+|--------|-----------|
+| Account card v2 — the device list with each device's keys ([ACCOUNT_CARD.md](ACCOUNT_CARD.md), M021 d1) | Cards between apps before and after it are refused (card exchange over Amp, contact cards, roster cards): a contact added across the line has keys only once both update. |
+| Envelope v2 / sign v3 — one record per account with a copy per device, device signatures, sessions per device pair ([WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), M021 d2 / M022) | Messages, group copies and call signaling between apps before and after it are refused (unknown `envelope_version`). Sessions with a peer's devices start fresh; account-level sessions are kept. Needs the relay that accepts an account's records to itself (messenger, M022) — deployed first. |
+
 ### HTTP / libp2p
 
 - Prefer **additive** JSON on existing `/v1/…` responses; old clients ignore unknown fields.

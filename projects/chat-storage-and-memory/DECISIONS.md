@@ -147,6 +147,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — recovery UX per D038.  
 **Updated:** 2026-08-13 — linked *devices* allowed; still one *sender* ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)). Dual-writer remains D074.  
+**Superseded:** for `e2e_public` and groups by [M021](../multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from its phase d2 (numbering per device pair: every device may send). Private `e2e` stays one device (M014).  
 **Decision:** v1 assumes **one active sending client per profile identity** per **E2E** chat target (D045). Linked installs of the same Account ID may all **receive**; **two senders** without coordination is unsupported — conflicting `sender_seq` triggers a **soft integrity failure** (D011): pause + choice sheet (D038), not silent merge. Document in settings/help; no device-scoped sub-seq or relay seq lease until D074.  
 **Rationale:** Per-chat-target seq is simple and sufficient pre-launch; multi-device coordination is a large protocol surface.  
 **Alternatives:** Device-scoped seq in envelope; central seq lease via relay; per-device PSK.
@@ -857,6 +858,7 @@ Inner plaintext is a versioned **`TranscriptBodyCodec` v1** envelope (chat paylo
 ## D074 — Multi-device extension point (`sender_instance_id`)
 
 **Date:** 2026-06-29  
+**Superseded:** by [M021](../multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) — the device is part of the session pair (sender and recipient device on the envelope, sessions and numbering per device pair); no `sender_instance_id`.  
 **Decision:** **`[future]`** optional envelope field **`sender_instance_id`** (UUID per client install). **Omit in v1**; v1 assumes single active sender (D015). When multi-device ships, instance id participates in signing canonical bytes under a new **`envelope_version`**. Do not repurpose `sender_relay_id`.  
 **Rationale:** D015 is a product constraint, not a permanent protocol limit — reserve field now to avoid another D016 cutover.  
 **Alternatives:** Device sub-seq in `sender_seq` (deferred); no reserved field (rejected).

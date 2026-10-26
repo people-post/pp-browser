@@ -27,9 +27,14 @@
 //   group_roster {group_id}             the members this user knows of
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
 //   remove_member {thread, account}     the owner removes a member from the group
+//   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
+//                                       them in the field, #382)
 //   backup_sessions                     what the account backup keeps of the chats: the public sessions
 //   restore_sessions {bundle}           put them back as a backup restore does (each pair marked to
 //                                       start its next epoch)
+//   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
+//   link_import {bundle, pin}           a new device takes it (then restart): another device of the
+//                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
 //                                       per-stream rx frames)
 //   quit                                quit the app (orderly shutdown)
@@ -343,6 +348,24 @@ public:
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal, [this, nickname]() { return facade_->RegisterIdentity(nickname); },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "link_export") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+          WorkerLane::Normal, [this]() { return facade_->ExportLinkDevice(); },
+          [id](Roe<std::string> bundle) {
+            if (!bundle) {
+              ReplyError(id, bundle.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("bundle", *bundle);
+            Emit(out);
+          });
+    } else if (cmd == "link_import") {
+      const std::string bundle = request->getString("bundle").value_or("");
+      const std::string pin = request->getString("pin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal, [this, bundle, pin]() { return facade_->ImportLinkDevice(bundle, pin); },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "open_chat") {
       OpenChat(id, request->getString("account").value_or(""));
     } else if (cmd == "send") {
@@ -621,6 +644,13 @@ public:
     } else if (cmd == "push_wake") {
       // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
       BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      Emit(Reply(id, true));
+    } else if (cmd == "warm_seeds") {
+      if (!Hub().IsMeshReady()) {
+        ReplyError(id, "mesh not ready");
+        return;
+      }
+      Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
       Emit(Reply(id, true));
     } else if (cmd == "backup_sessions") {
       // The link bundle the local account backup seals (LocalAccountBackup::Write).

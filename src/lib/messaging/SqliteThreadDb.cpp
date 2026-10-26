@@ -241,6 +241,8 @@ Roe<sqlite3*> SqliteThreadDb::OpenThreadDb(const std::string& thread_id) const {
       return Error("Incompatible thread.db (schema " + std::to_string(user_version) + ", expected " +
                    std::to_string(kSqliteThreadUserVersion) + ") — reset chats in Me → Storage");
     }
+    // Additive messages column (M021; an older thread.db lacks it — already there: the ALTER fails, ignored).
+    (void)sqlite3_exec(handle.db, "ALTER TABLE messages ADD COLUMN sender_device TEXT;", nullptr, nullptr, nullptr);
     thread_dbs_[thread_id] = handle;
     it = thread_dbs_.find(thread_id);
   }
