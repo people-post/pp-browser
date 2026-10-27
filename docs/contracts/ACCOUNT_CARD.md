@@ -126,7 +126,10 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
   macOS `CFBundleURLTypes`, an Android `VIEW` intent filter; a desktop launcher passes it as an argument).
   So a phone's camera scanning the QR code, or a tap on the line in another app, opens the app with it
   (`IncomingLink`): once unlocked it asks *Add {name} to your contacts?* and then adds them as a pasted
-  invite. A link never adds anyone unasked. Scanning inside the app is not needed for this and not built.
+  invite. A link never adds anyone unasked.
+- **In-app scan:** *Contacts → + → Scan QR code* reads the same locator and offers the same explicit
+  confirmation before adding. The scanning surface returns decoded text through caller-owned ports;
+  it does not execute arbitrary QR contents. See [SCANNING.md](../ui/SCANNING.md).
 
 ## Where cards travel
 

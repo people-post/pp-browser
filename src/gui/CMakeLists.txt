@@ -25,6 +25,8 @@ pp_browser_add_feature_library(pp_gui
     contacts/ContactsController.cpp
     contacts/PeoplePickerChromeSync.cpp
     contacts/PeoplePickerController.cpp
+    scan/ElementScanPreview.cpp
+    scan/QrScanController.cpp
     ChatChromeSync.cpp
     EmojiPickerController.cpp
     FlowCoordinator.cpp

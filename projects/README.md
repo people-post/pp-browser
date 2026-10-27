@@ -46,6 +46,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | Project | Intent |
 |---------|--------|
 | [ai-centric-interface](ai-centric-interface/) | Intent taxonomy, agency, planner/tools |
+| [qr-scanning](qr-scanning/) | In-app friend QR scanning and reusable scan entry |
 | [chat-storage-and-memory](chat-storage-and-memory/) | SQLite threads, relay/history, memory/compaction |
 | [platform-safety-limits](platform-safety-limits/) | Non-chat limits (LLM HTTP, profile JSON, MCP, parsers) |
 | [e2e-message-crypto](e2e-message-crypto/) | Message AEAD / key UX residuals (contracts promoted) |

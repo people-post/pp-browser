@@ -7,6 +7,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
+#include "gui/scan/ScanPorts.h"
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
@@ -42,6 +43,7 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
+  void BindScanPorts(ScanPorts ports);
 
   struct ContactListRow {
     ui::String id;
@@ -118,6 +120,8 @@ public:
    */
   void OfferInvite(const std::string& link);
   void OnFindSomeone();
+  /** Contacts → Scan QR code. Successful friend scans still ask before saving. */
+  void OnScanQr();
 
 private:
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -186,6 +190,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   ContactsSurfaceNotifyPorts surface_notify_;
+  ScanPorts scan_ports_;
 
   static ContactsController* installed_instance_;
 };

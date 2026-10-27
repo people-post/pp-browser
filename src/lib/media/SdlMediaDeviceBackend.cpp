@@ -208,6 +208,10 @@ public:
 
   CameraGeometry Geometry() const override { return geometry_; }
 
+  std::string CaptureError() const override {
+    return SDL_GetCameraPermissionState(camera_) < 0 ? "Camera permission denied" : std::string();
+  }
+
   std::optional<VideoFrameRgba> NextFrame() override {
     Uint64 timestamp_ns = 0;
     SDL_Surface* surface = SDL_AcquireCameraFrame(camera_, &timestamp_ns);
@@ -282,7 +286,7 @@ public:
                         .borrowed = IsBorrowedCameraName(SDL_GetCameraName(cameras[i]))});
     }
     SDL_free(cameras);
-    const std::vector<SDL_CameraID> candidates = OrderCameraCandidates(listed);
+    const std::vector<SDL_CameraID> candidates = OrderCameraCandidates(listed, format.prefer_front_facing);
 
     std::string last_error;
     for (const SDL_CameraID id : candidates) {

@@ -68,6 +68,8 @@ struct CameraRequestFormat {
   /** Display rotation read on the requester's UI thread (`CameraDisplayRotationDegrees`). */
   int display_rotation_deg = 0;
   int fps = 20;
+  /** Calls prefer front cameras; QR scanning prefers rear cameras. */
+  bool prefer_front_facing = true;
 };
 
 /** How to turn the opened camera's frames upright and what size to encode. */
@@ -84,6 +86,8 @@ class ICameraEndpoint {
 public:
   virtual ~ICameraEndpoint() = default;
   virtual CameraGeometry Geometry() const = 0;
+  /** Empty while healthy or permission is pending; otherwise a user-visible capture failure. */
+  virtual std::string CaptureError() const { return {}; }
   /** Latest sensor frame as RGBA (not yet rotated / cropped); nullopt when none is ready. */
   virtual std::optional<VideoFrameRgba> NextFrame() = 0;
 };
@@ -189,6 +193,7 @@ public:
 
   const std::string& Holder() const;
   CameraGeometry Geometry() const;
+  std::string CaptureError() const;
   std::optional<VideoFrameRgba> NextFrame();
 
   struct State;
