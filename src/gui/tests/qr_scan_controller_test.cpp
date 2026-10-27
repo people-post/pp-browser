@@ -1,6 +1,7 @@
 #include "gui/scan/QrScanController.h"
 #include "gui/contacts/ContactsController.h"
 #include "lib/messaging/ContactLocator.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
@@ -58,6 +59,7 @@ TEST(QrScanControllerTest, EnteringBackgroundCancelsCaptureWithoutDeliveringText
 }
 
 TEST(ContactQrScanTest, FriendLocatorRequiresConfirmationBeforeSaving) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   ContactsController contacts;
   QrScanResultCallback decoded;
   contacts.BindScanPorts({.scan_qr = [&](QrScanResultCallback done) { decoded = std::move(done); }});
@@ -66,15 +68,21 @@ TEST(ContactQrScanTest, FriendLocatorRequiresConfirmationBeforeSaving) {
   ports.add_from_locator = [&](const std::string&, auto) { ++saves; };
   contacts.BindContactsPorts(std::move(ports));
   std::function<void(bool)> confirmation;
+  std::string identity_message;
   ShellFeedbackPorts feedback;
-  feedback.show_confirm = [&](const std::string&, const std::string&, std::function<void(bool)> done,
-                              const std::string&) { confirmation = std::move(done); };
+  feedback.show_confirm = [&](const std::string&, const std::string& message, std::function<void(bool)> done,
+                              const std::string&) {
+    identity_message = message;
+    confirmation = std::move(done);
+  };
   contacts.BindShellFeedback(std::move(feedback));
   contacts.OnScanQr();
   ASSERT_TRUE(decoded);
   decoded(EncodeContactLocator({.account_id = "account:alice", .nickname = "Alice"}));
   EXPECT_EQ(saves, 0);
   ASSERT_TRUE(confirmation);
+  EXPECT_NE(identity_message.find("Alice"), std::string::npos);
+  EXPECT_NE(identity_message.find("account:alice"), std::string::npos);
   confirmation(false);
   EXPECT_EQ(saves, 0);
   contacts.OnScanQr();
