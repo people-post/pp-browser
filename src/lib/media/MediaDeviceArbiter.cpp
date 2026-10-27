@@ -329,6 +329,11 @@ bool CameraDeviceLease::SetZoom(float factor) {
   return state_->endpoint && state_->endpoint->SetZoom(factor);
 }
 
+CameraZoomState CameraDeviceLease::ZoomState() const {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint ? state_->endpoint->ZoomState() : CameraZoomState{};
+}
+
 // ---------------------------------------------------------------------------------------------
 
 MediaDeviceArbiter::MediaDeviceArbiter(std::unique_ptr<IMediaDeviceBackend> backend, MediaDeviceSharePolicy policy)

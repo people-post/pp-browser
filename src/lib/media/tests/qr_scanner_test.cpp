@@ -42,6 +42,9 @@ struct FakeState {
   bool zoom_required = false;
   int candidate_offset_x = 0;
   std::atomic<float> zoom{1.f};
+  bool slow_zoom = false;
+  std::atomic<int> zoom_requests{0};
+  std::chrono::steady_clock::time_point zoom_started{};
 };
 class FakeCamera final : public ICameraEndpoint {
 public:
@@ -50,7 +53,7 @@ public:
   CameraGeometry Geometry() const override { return {}; }
   std::string CaptureError() const override { return state_.error; }
   std::optional<VideoFrameRgba> NextFrame() override {
-    if (state_.zoom_required && state_.zoom == 1.f) {
+    if (state_.zoom_required && (state_.zoom == 1.f || ZoomPending())) {
       auto damaged = frame_;
       for (int y = damaged.height * 38 / 100; y < damaged.height * 80 / 100; ++y) {
         for (int x = damaged.width * 38 / 100; x < damaged.width * 80 / 100; ++x) {
@@ -74,10 +77,19 @@ public:
   }
   bool SetZoom(float factor) override {
     if (!state_.zoom_required) { return false; }
+    if (state_.zoom_requests++ == 0) { state_.zoom_started = std::chrono::steady_clock::now(); }
     state_.zoom = factor;
     return true;
   }
+  CameraZoomState ZoomState() const override {
+    const bool pending = ZoomPending();
+    return {state_.zoom_required, pending ? 1.f : state_.zoom.load(), 3.f, pending};
+  }
 private:
+  bool ZoomPending() const {
+    return state_.slow_zoom && state_.zoom_requests > 0 &&
+        std::chrono::steady_clock::now() - state_.zoom_started < std::chrono::milliseconds(600);
+  }
   FakeState& state_;
   VideoFrameRgba frame_;
 };
@@ -241,6 +253,19 @@ TEST(QrScannerTest, OffCenterCandidateLimitsZoomToKeepTheCodeVisible) {
   scanner.Start();
   ASSERT_TRUE(WaitFor([&] { return scanner.Poll().text.has_value(); }));
   EXPECT_GT(state.zoom.load(), 1.f);
+  EXPECT_LT(state.zoom.load(), 1.7f);
+}
+
+TEST(QrScannerTest, PendingNativeRampDoesNotCompoundZoomFromOldFrames) {
+  FakeState state;
+  state.zoom_required = true;
+  state.slow_zoom = true;
+  state.candidate_offset_x = -128;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start();
+  ASSERT_TRUE(WaitFor([&] { return scanner.Poll().text.has_value(); }));
+  EXPECT_EQ(state.zoom_requests, 1);
   EXPECT_LT(state.zoom.load(), 1.7f);
 }
 } // namespace

@@ -60,7 +60,7 @@ public:
     frame = Upright(std::move(frame), rotation_);
     width = frame.width;
     height = frame.height;
-    if (width <= 0 || height <= 0) { return {}; }
+    if (width < 2 || height < 2) { return {}; }
     decode_ms = 0;
     detected = false;
     std::optional<std::string> text;
@@ -76,11 +76,15 @@ public:
         const float fraction = std::max(region.width, region.height);
         if (!text && fraction > .02f && fraction < .45f &&
             std::abs(region.center_x - .5f) < .25f && std::abs(region.center_y - .5f) < .25f) {
+          const auto state = camera_.ZoomState();
           // Native zoom is centered: retain the whole candidate and its quiet-zone margin.
           const float extent = std::max(std::abs(region.center_x - .5f) + region.width * .7f,
                                         std::abs(region.center_y - .5f) + region.height * .7f);
-          const float target = std::min(zoom * .5f / fraction, zoom * .5f / extent);
-          SetZoom(std::clamp(target, zoom, 3.f));
+          if (!native_zoom_ || (!state.ramping && std::abs(state.factor - zoom) < .05f)) {
+            const float base = native_zoom_ ? state.factor : zoom;
+            const float target = std::min(base * .5f / fraction, base * .5f / extent);
+            SetZoom(std::clamp(target, base, 3.f));
+          }
         }
       } else if (zoom > 1.f && now - last_region_ > std::chrono::seconds(2)) {
         SetZoom(1.f);
@@ -98,8 +102,11 @@ public:
   float zoom = 1.f;
 private:
   void SetZoom(float target) {
+    const auto state = camera_.ZoomState();
+    if (state.supported) { target = std::clamp(target, 1.f, state.maximum); }
     if (std::abs(target - zoom) < .1f) { return; }
     const bool native = camera_.SetZoom(target);
+    native_zoom_ = native;
     software_zoom_ = native ? 1.f : target;
     zoom = target;
     MetricsLine("scan.zoom").Add("factor", static_cast<double>(zoom)).Add("native", native).Emit();
@@ -107,6 +114,7 @@ private:
   CameraDeviceLease& camera_;
   int rotation_;
   float software_zoom_ = 1.f;
+  bool native_zoom_ = false;
   ScanClock::time_point next_decode_{};
   ScanClock::time_point last_region_{};
 };

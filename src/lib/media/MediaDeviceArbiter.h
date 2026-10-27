@@ -84,6 +84,13 @@ struct CameraGeometry {
   bool front_facing = false;
 };
 
+struct CameraZoomState {
+  bool supported = false;
+  float factor = 1.f;
+  float maximum = 1.f;
+  bool ramping = false;
+};
+
 /** One opened camera. NextFrame may run on any thread (one reader at a time). */
 class ICameraEndpoint {
 public:
@@ -93,6 +100,7 @@ public:
   virtual std::string CaptureError() const { return {}; }
   /** Requests bounded native zoom when supported; false lets the caller use a software viewport. */
   virtual bool SetZoom(float factor) { (void)factor; return false; }
+  virtual CameraZoomState ZoomState() const { return {}; }
   /** Latest sensor frame as RGBA (not yet rotated / cropped); nullopt when none is ready. */
   virtual std::optional<VideoFrameRgba> NextFrame() = 0;
 };
@@ -200,6 +208,7 @@ public:
   CameraGeometry Geometry() const;
   std::string CaptureError() const;
   bool SetZoom(float factor);
+  CameraZoomState ZoomState() const;
   std::optional<VideoFrameRgba> NextFrame();
 
   struct State;

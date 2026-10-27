@@ -221,6 +221,14 @@ public:
     return SDL_SetFloatProperty(props, "SDL.camera.coremedia.zoom", std::clamp(factor, 1.f, maximum));
   }
 
+  CameraZoomState ZoomState() const override {
+    const auto props = SDL_GetCameraProperties(camera_);
+    return {SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false),
+            SDL_GetFloatProperty(props, "SDL.camera.coremedia.zoom_current", 1.f),
+            SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f),
+            SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_ramping", false)};
+  }
+
   std::optional<VideoFrameRgba> NextFrame() override {
     Uint64 timestamp_ns = 0;
     SDL_Surface* surface = SDL_AcquireCameraFrame(camera_, &timestamp_ns);
