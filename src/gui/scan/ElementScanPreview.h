@@ -25,6 +25,7 @@ private:
   std::vector<uint8_t> pending_;
   ui::CallbackTexture texture_;
   ui::Geometry geometry_;
+  ui::Geometry scan_line_;
 };
 
 void RegisterScanPreviewElement();

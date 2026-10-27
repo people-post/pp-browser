@@ -35,6 +35,7 @@ struct FakeState {
   std::atomic<int> opens{0};
   std::atomic<int> closes{0};
   std::atomic<bool> rear_requested{false};
+  CameraRequestFormat requested_format;
   std::string error;
   bool no_frames = false;
 };
@@ -59,6 +60,7 @@ public:
   std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string*) override {
     const int open = ++state_.opens;
     state_.rear_requested = !format.prefer_front_facing;
+    state_.requested_format = format;
     std::unique_lock lock(state_.mutex);
     state_.cv.wait(lock, [&] { return !state_.block_open || state_.release_open; });
     return std::make_unique<FakeCamera>(state_, open == 1 ? "old payload" : "new payload");
@@ -95,6 +97,9 @@ TEST(QrScannerTest, DeliversPreviewAndPayloadThenReleasesCamera) {
   EXPECT_EQ(result.text, "old payload");
   ASSERT_TRUE(result.preview);
   EXPECT_TRUE(state.rear_requested);
+  EXPECT_EQ(state.requested_format.capture_width, 480);
+  EXPECT_EQ(state.requested_format.capture_height, 360);
+  EXPECT_EQ(state.requested_format.fps, 30);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
   EXPECT_TRUE(devices.Holders(MediaDeviceKind::Camera).empty());
 }

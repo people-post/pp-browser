@@ -19,6 +19,11 @@ The first cadence change did not resolve device feedback. Follow-up: request 30 
 15, wake the scan surface at 60 Hz instead of 20, install an optimized Release iPhone build,
 and log capture FPS / maximum decode time to distinguish remaining capture and decode stalls.
 
+The Release device log still showed only ~2 captured frames/second although SDL reported 30 FPS;
+decode took 2–3 ms and the first frame took ~2.5 seconds. Add capture polling/time/size metrics
+to isolate native delivery versus conversion. Request a scan-only 480×360 capture, use a compact
+300 dp-high viewfinder, and draw a local moving scan line. Full-frame QR recognition stays active.
+
 ## Delivery
 
 | Step | Acceptance | Status |

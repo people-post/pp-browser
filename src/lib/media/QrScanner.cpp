@@ -58,6 +58,8 @@ struct QrScanner::State {
     request.holder = "qr-scanner";
     request.format.display_rotation_deg = display_rotation;
     request.format.fps = 30;
+    request.format.capture_width = 480;
+    request.format.capture_height = 360;
     request.format.prefer_front_facing = false;
     if (!Current(epoch)) {
       return;
@@ -77,13 +79,21 @@ struct QrScanner::State {
     auto next_decode = last_frame;
     auto report_at = last_frame;
     int frames = 0;
+    int polls = 0;
+    int64_t capture_max_ms = 0;
     int64_t decode_max_ms = 0;
     while (Current(epoch)) {
+      const auto capture_started = std::chrono::steady_clock::now();
       if (auto error = lease->CaptureError(); !error.empty()) {
         Publish(epoch, Update{{}, {}, std::move(error)}, true);
         return;
       }
-      if (auto frame = lease->NextFrame()) {
+      auto frame = lease->NextFrame();
+      ++polls;
+      capture_max_ms = std::max(capture_max_ms, static_cast<int64_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - capture_started).count()));
+      if (frame) {
         last_frame = std::chrono::steady_clock::now();
         auto preview = Upright(std::move(*frame), rotate);
         std::optional<std::string> text;
@@ -99,9 +109,13 @@ struct QrScanner::State {
         const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(last_frame - report_at).count();
         if (elapsed_ms >= 1000) {
           MetricsLine("scan.capture").Add("frames", frames).Add("elapsed_ms", static_cast<int64_t>(elapsed_ms))
+              .Add("polls", polls).Add("capture_max_ms", capture_max_ms)
+              .Add("width", preview.width).Add("height", preview.height)
               .Add("decode_max_ms", decode_max_ms).Emit();
           report_at = last_frame;
           frames = 0;
+          polls = 0;
+          capture_max_ms = 0;
           decode_max_ms = 0;
         }
         const bool complete = text.has_value();

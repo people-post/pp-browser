@@ -303,8 +303,8 @@ public:
       // MJPG/NV12 on Windows); conversion happens per frame. Landscape sensor buffers; the holder
       // rotates / crops into the encode size.
       want.format = SDL_PIXELFORMAT_UNKNOWN;
-      want.width = std::max(geometry.encode_width, geometry.encode_height);
-      want.height = std::min(geometry.encode_width, geometry.encode_height);
+      want.width = format.capture_width > 0 ? format.capture_width : std::max(geometry.encode_width, geometry.encode_height);
+      want.height = format.capture_height > 0 ? format.capture_height : std::min(geometry.encode_width, geometry.encode_height);
       want.framerate_numerator = format.fps;
       want.framerate_denominator = 1;
       const auto open_t0 = std::chrono::steady_clock::now();
