@@ -324,6 +324,11 @@ std::optional<VideoFrameRgba> CameraDeviceLease::NextFrame() {
   return state_->endpoint ? state_->endpoint->NextFrame() : std::nullopt;
 }
 
+bool CameraDeviceLease::SetZoom(float factor) {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint && state_->endpoint->SetZoom(factor);
+}
+
 // ---------------------------------------------------------------------------------------------
 
 MediaDeviceArbiter::MediaDeviceArbiter(std::unique_ptr<IMediaDeviceBackend> backend, MediaDeviceSharePolicy policy)

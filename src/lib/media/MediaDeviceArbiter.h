@@ -91,6 +91,8 @@ public:
   virtual CameraGeometry Geometry() const = 0;
   /** Empty while healthy or permission is pending; otherwise a user-visible capture failure. */
   virtual std::string CaptureError() const { return {}; }
+  /** Requests bounded native zoom when supported; false lets the caller use a software viewport. */
+  virtual bool SetZoom(float factor) { (void)factor; return false; }
   /** Latest sensor frame as RGBA (not yet rotated / cropped); nullopt when none is ready. */
   virtual std::optional<VideoFrameRgba> NextFrame() = 0;
 };
@@ -197,6 +199,7 @@ public:
   const std::string& Holder() const;
   CameraGeometry Geometry() const;
   std::string CaptureError() const;
+  bool SetZoom(float factor);
   std::optional<VideoFrameRgba> NextFrame();
 
   struct State;

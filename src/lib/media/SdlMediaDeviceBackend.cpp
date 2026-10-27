@@ -212,6 +212,15 @@ public:
     return SDL_GetCameraPermissionState(camera_) < 0 ? "Camera permission denied" : std::string();
   }
 
+  bool SetZoom(float factor) override {
+    const auto props = SDL_GetCameraProperties(camera_);
+    if (!SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false)) {
+      return false;
+    }
+    const float maximum = SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f);
+    return SDL_SetFloatProperty(props, "SDL.camera.coremedia.zoom", std::clamp(factor, 1.f, maximum));
+  }
+
   std::optional<VideoFrameRgba> NextFrame() override {
     Uint64 timestamp_ns = 0;
     SDL_Surface* surface = SDL_AcquireCameraFrame(camera_, &timestamp_ns);

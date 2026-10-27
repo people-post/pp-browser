@@ -29,6 +29,14 @@ outside of a centered square, draw corner marks and a moving scan line. This sup
 compact preview layout. Native size now matches the request after the CoreMedia configuration
 fix, but delivery remains ~1 FPS; inspect the native frame durations before calling it resolved.
 
+Frame-rate resolution: native durations were 1 second because only continuous-range endpoints
+were advertised. Adding common in-range rates in pp-cpp-ui produced 33,333,333 ns and ~30 FPS
+on iPhone 11; the user confirmed smoothness. Next feedback: unreadable friend QR and distant
+codes need auto zoom. Capture 1280x720 for QR detail, keep the preview bounded to 640 pixels,
+return detected QR bounds even before payload decoding, and zoom a centered unreadable candidate
+up to 3x (native iOS rear camera, software viewport elsewhere). Reset zoom after losing a candidate.
+Verify dense payload decode, candidate→zoom→payload with a fake camera, and real phone scans.
+
 ## Delivery
 
 | Step | Acceptance | Status |

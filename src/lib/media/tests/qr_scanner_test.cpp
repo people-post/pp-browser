@@ -5,6 +5,7 @@
 #include <qrcodegen.hpp>
 #include <gtest/gtest.h>
 #include <atomic>
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -38,6 +39,8 @@ struct FakeState {
   CameraRequestFormat requested_format;
   std::string error;
   bool no_frames = false;
+  bool zoom_required = false;
+  std::atomic<float> zoom{1.f};
 };
 class FakeCamera final : public ICameraEndpoint {
 public:
@@ -46,7 +49,32 @@ public:
   CameraGeometry Geometry() const override { return {}; }
   std::string CaptureError() const override { return state_.error; }
   std::optional<VideoFrameRgba> NextFrame() override {
+    if (state_.zoom_required && state_.zoom == 1.f) {
+      auto damaged = frame_;
+      for (int y = damaged.height * 38 / 100; y < damaged.height * 80 / 100; ++y) {
+        for (int x = damaged.width * 38 / 100; x < damaged.width * 80 / 100; ++x) {
+          const size_t at = static_cast<size_t>(y * damaged.width + x) * 4;
+          damaged.rgba[at] = damaged.rgba[at + 1] = damaged.rgba[at + 2] = 255;
+        }
+      }
+      VideoFrameRgba distant;
+      distant.width = 640;
+      distant.height = 480;
+      distant.rgba.assign(640 * 480 * 4, 255);
+      for (int y = 0; y < damaged.height; ++y) {
+        const size_t at = static_cast<size_t>((y + (480 - damaged.height) / 2) * 640 +
+                                            (640 - damaged.width) / 2) * 4;
+        std::copy_n(damaged.rgba.data() + static_cast<size_t>(y * damaged.width) * 4,
+                    static_cast<size_t>(damaged.width) * 4, distant.rgba.data() + at);
+      }
+      return distant;
+    }
     return state_.no_frames ? std::nullopt : std::optional<VideoFrameRgba>(frame_);
+  }
+  bool SetZoom(float factor) override {
+    if (!state_.zoom_required) { return false; }
+    state_.zoom = factor;
+    return true;
   }
 private:
   FakeState& state_;
@@ -97,8 +125,8 @@ TEST(QrScannerTest, DeliversPreviewAndPayloadThenReleasesCamera) {
   EXPECT_EQ(result.text, "old payload");
   ASSERT_TRUE(result.preview);
   EXPECT_TRUE(state.rear_requested);
-  EXPECT_EQ(state.requested_format.capture_width, 480);
-  EXPECT_EQ(state.requested_format.capture_height, 360);
+  EXPECT_EQ(state.requested_format.capture_width, 1280);
+  EXPECT_EQ(state.requested_format.capture_height, 720);
   EXPECT_EQ(state.requested_format.fps, 30);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
   EXPECT_TRUE(devices.Holders(MediaDeviceKind::Camera).empty());
@@ -180,6 +208,27 @@ TEST(QrScannerTest, ReportsCameraAlreadyHeldWithoutOpeningAnother) {
 TEST(QrScannerTest, RearPreferenceKeepsBorrowedCamerasLast) {
   EXPECT_EQ(OrderCameraCandidates({{1, true, false}, {2, false, true}, {3, false, false}}, false),
             (std::vector<uint32_t>{3, 1, 2}));
+}
+TEST(QrScannerTest, DetectedUnreadableDistantCodeRequestsZoomThenReadsPayload) {
+  FakeState state;
+  state.zoom_required = true;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start();
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); }));
+  EXPECT_GT(state.zoom.load(), 1.f);
+  EXPECT_LE(state.zoom.load(), 3.f);
+  EXPECT_EQ(result.text, "old payload");
+}
+
+TEST(QrDecodeTest, DenseContactPayloadRetainsIdentityAndDetectedBounds) {
+  const std::string payload = "pp-browser-contact-v1:" + std::string(700, 'A');
+  const auto detected = InspectQr(QrFrame(payload.c_str()));
+  ASSERT_EQ(detected.text, payload);
+  ASSERT_TRUE(detected.region);
+  EXPECT_NEAR(detected.region->center_x, .5f, .03f);
+  EXPECT_NEAR(detected.region->center_y, .5f, .03f);
 }
 } // namespace
 } // namespace pbr
