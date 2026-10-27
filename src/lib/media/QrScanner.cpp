@@ -72,6 +72,7 @@ struct QrScanner::State {
     transform.front_facing = geometry.front_facing;
     const int rotate = CameraPreviewRotateCw(transform);
     auto last_frame = std::chrono::steady_clock::now();
+    auto next_decode = last_frame;
     while (Current(epoch)) {
       if (auto error = lease->CaptureError(); !error.empty()) {
         Publish(epoch, Update{{}, {}, std::move(error)}, true);
@@ -80,7 +81,11 @@ struct QrScanner::State {
       if (auto frame = lease->NextFrame()) {
         last_frame = std::chrono::steady_clock::now();
         auto preview = Upright(std::move(*frame), rotate);
-        auto text = DecodeQr(preview);
+        std::optional<std::string> text;
+        if (last_frame >= next_decode) {
+          text = DecodeQr(preview);
+          next_decode = last_frame + std::chrono::milliseconds(200);
+        }
         const bool complete = text.has_value();
         Publish(epoch, Update{std::move(preview), std::move(text), {}}, complete);
         if (complete) {
@@ -91,7 +96,7 @@ struct QrScanner::State {
         return;
       }
       std::unique_lock lock(mutex);
-      cv.wait_for(lock, std::chrono::milliseconds(90), [&] {
+      cv.wait_for(lock, std::chrono::milliseconds(10), [&] {
         return closing || !scanning || generation != epoch;
       });
     }

@@ -9,6 +9,12 @@ Home header account button; in expanded layout it is a rail tab. Remove the old 
 menu entry. Keep the scan result's explicit contact confirmation. Check the shared scanner and
 own-contact QR code on Mac, iPhone and Android; distinguish builds from physical-device scans.
 
+Device feedback (2026-10-27): the own QR appears too dark, and the scan camera preview stutters.
+The global SVG icon tint also affects the embedded QR image; override its tint to white. The
+scanner's fixed 90 ms wait after every captured frame caps preview updates below camera FPS;
+poll frames sooner and decode less often than preview delivery. Verify the resulting QR contrast
+and live preview on device, separately from automated scan tests.
+
 ## Delivery
 
 | Step | Acceptance | Status |

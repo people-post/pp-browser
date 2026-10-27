@@ -3330,6 +3330,8 @@ input.checkbox {
 .me-invite-qr-code {
   width: 200dp;
   height: 200dp;
+  /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
+  image-color: #ffffff;
 }
 
 .me-profile-avatar-row {
