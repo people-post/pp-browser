@@ -34,6 +34,13 @@ Verification completed:
   installed and launched; its Home screenshot shows Scan beside Me. The rear camera opened and
   the scan status advanced after a preview frame. An Android device rejected the wireless install
   permission, so the new APK was not installed there.
+- Device feedback found a dark own-QR background and choppy scan preview. The global SVG icon tint
+  also tinted the QR's white quiet zone; the QR class now preserves white. The scanner's fixed
+  90 ms wait after every frame was replaced by a 10 ms capture poll and QR recognition at most
+  every 200 ms, while preview frames continue to publish. Mac, iPhone-device and Android-arm64
+  builds passed after these fixes; 8 scanner and 2 QR SVG tests passed. The fixed iPhone app was
+  installed and launched, and the fixed Mac app was installed and restarted. Visual contrast,
+  preview smoothness and actual recognition await device confirmation.
 
 Actual QR recognition, iPhone live preview appearance, and Mac/Android camera behavior remain
 unverified. No distribution package or production deployment was performed.

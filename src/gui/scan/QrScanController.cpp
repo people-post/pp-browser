@@ -134,7 +134,7 @@ void QrScanController::Tick() {
 
 void QrScanController::NotifyFrameEnd() {
   if (IsOpen() && context_) {
-    context_->RequestNextUpdate(.05);
+    context_->RequestNextUpdate(1.0 / 60.0);
   }
 }
 

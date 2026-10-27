@@ -3,6 +3,8 @@
 #include "lib/media/QrDecode.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/VideoYuv.h"
+#include "common/Metrics.h"
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -55,7 +57,7 @@ struct QrScanner::State {
     CameraLeaseRequest request;
     request.holder = "qr-scanner";
     request.format.display_rotation_deg = display_rotation;
-    request.format.fps = 15;
+    request.format.fps = 30;
     request.format.prefer_front_facing = false;
     if (!Current(epoch)) {
       return;
@@ -73,6 +75,9 @@ struct QrScanner::State {
     const int rotate = CameraPreviewRotateCw(transform);
     auto last_frame = std::chrono::steady_clock::now();
     auto next_decode = last_frame;
+    auto report_at = last_frame;
+    int frames = 0;
+    int64_t decode_max_ms = 0;
     while (Current(epoch)) {
       if (auto error = lease->CaptureError(); !error.empty()) {
         Publish(epoch, Update{{}, {}, std::move(error)}, true);
@@ -83,8 +88,21 @@ struct QrScanner::State {
         auto preview = Upright(std::move(*frame), rotate);
         std::optional<std::string> text;
         if (last_frame >= next_decode) {
+          const auto decode_started = std::chrono::steady_clock::now();
           text = DecodeQr(preview);
+          decode_max_ms = std::max(decode_max_ms, static_cast<int64_t>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - decode_started).count()));
           next_decode = last_frame + std::chrono::milliseconds(200);
+        }
+        ++frames;
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(last_frame - report_at).count();
+        if (elapsed_ms >= 1000) {
+          MetricsLine("scan.capture").Add("frames", frames).Add("elapsed_ms", static_cast<int64_t>(elapsed_ms))
+              .Add("decode_max_ms", decode_max_ms).Emit();
+          report_at = last_frame;
+          frames = 0;
+          decode_max_ms = 0;
         }
         const bool complete = text.has_value();
         Publish(epoch, Update{std::move(preview), std::move(text), {}}, complete);
@@ -96,7 +114,7 @@ struct QrScanner::State {
         return;
       }
       std::unique_lock lock(mutex);
-      cv.wait_for(lock, std::chrono::milliseconds(10), [&] {
+      cv.wait_for(lock, std::chrono::milliseconds(5), [&] {
         return closing || !scanning || generation != epoch;
       });
     }

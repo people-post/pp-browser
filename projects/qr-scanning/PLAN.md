@@ -15,6 +15,10 @@ scanner's fixed 90 ms wait after every captured frame caps preview updates below
 poll frames sooner and decode less often than preview delivery. Verify the resulting QR contrast
 and live preview on device, separately from automated scan tests.
 
+The first cadence change did not resolve device feedback. Follow-up: request 30 FPS instead of
+15, wake the scan surface at 60 Hz instead of 20, install an optimized Release iPhone build,
+and log capture FPS / maximum decode time to distinguish remaining capture and decode stalls.
+
 ## Delivery
 
 | Step | Acceptance | Status |
@@ -26,6 +30,7 @@ and live preview on device, separately from automated scan tests.
 | Validation and review | Synthetic QR decode; fake camera lifecycle; UI/flow regressions; app build; independent review | 13 scanner-specific cases passed; integrated macOS app build and 70 focused tests passed; review fixes verified |
 | Primary entry follow-up | Scan button beside Me in compact Home header and expanded rail; same contact confirmation; remove Contacts + menu entry | Implemented; Mac/iPhone/Android builds passed, iPhone Home entry seen; tap-to-scan on revised entry pending device check |
 | Cross-platform follow-up | Confirm own QR generation and in-app scanner are present in shared code, then check packages and device behavior separately | Shared code confirmed; iPhone app installed/launched and rear camera delivered a frame; Android arm64 APK built but device refused install; actual scans and Mac/Android camera checks pending |
+| Device feedback fixes | Keep own QR white/black under theme tint; publish previews at camera cadence and decode at a lower rate | Implemented; Mac/iPhone/Android builds and 10 scanner/QR tests passed; fixed Mac/iPhone apps installed; visual/device acceptance pending |
 
 The decoder is quirc (portable C, ISC, no nonstandard dependencies), pinned and vendored with its license.
 Upstream API/reference: https://github.com/dlbeer/quirc/blob/master/README.md.
