@@ -10,6 +10,35 @@
 #include <cmath>
 
 namespace pbr {
+namespace {
+ui::Mesh ViewfinderMesh(ui::Vector2f box) {
+  ui::Mesh mesh;
+  const float side = std::min(box.x, box.y) * .68f;
+  const ui::Vector2f corner((box.x - side) * .5f, (box.y - side) * .5f);
+  const ui::ColourbPremultiplied shade(0, 0, 0, 140);
+  const ui::ColourbPremultiplied white(255, 255, 255, 255);
+  auto quad = [&](ui::Vector2f at, ui::Vector2f size, ui::ColourbPremultiplied color) {
+    ui::MeshUtilities::GenerateQuad(mesh, at, size, color);
+  };
+  quad({0, 0}, {box.x, corner.y}, shade);
+  quad({0, corner.y + side}, {box.x, corner.y}, shade);
+  quad({0, corner.y}, {corner.x, side}, shade);
+  quad({corner.x + side, corner.y}, {corner.x, side}, shade);
+  for (int y = 0; y < 2; ++y) {
+    for (int x = 0; x < 2; ++x) {
+      const ui::Vector2f at(corner.x + x * (side - 3.f), corner.y + y * (side - 3.f));
+      quad({corner.x + x * (side - 18.f), at.y}, {18.f, 3.f}, white);
+      quad({at.x, corner.y + y * (side - 18.f)}, {3.f, 18.f}, white);
+    }
+  }
+  const double seconds = std::chrono::duration<double>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  const float phase = static_cast<float>(std::abs(std::fmod(seconds, 2.4) / 1.2 - 1.0));
+  quad({corner.x + 6.f, corner.y + 6.f + (side - 14.f) * phase},
+       {side - 12.f, 2.f}, ui::ColourbPremultiplied(74, 108, 247, 255));
+  return mesh;
+}
+} // namespace
 
 ElementScanPreview::ElementScanPreview(const ui::String& tag) : ui::Element(tag) {}
 
@@ -39,23 +68,15 @@ void ElementScanPreview::OnRender() {
   if (box.x <= 0 || box.y <= 0) {
     return;
   }
-  const float scale = std::min(box.x / width_, box.y / height_);
+  const float scale = std::max(box.x / width_, box.y / height_);
   const ui::Vector2f size(width_ * scale, height_ * scale);
   const ui::Vector2f inset((box.x - size.x) * .5f, (box.y - size.y) * .5f);
   ui::Mesh mesh;
   ui::MeshUtilities::GenerateQuad(mesh, inset, size, ui::ColourbPremultiplied(255, 255, 255, 255));
   geometry_ = manager->MakeGeometry(std::move(mesh));
   geometry_.Render(GetAbsoluteOffset(ui::BoxArea::Content), texture_);
-  // A local viewfinder cue; recognition still runs on the full captured frame.
-  const double seconds = std::chrono::duration<double>(
-      std::chrono::steady_clock::now().time_since_epoch()).count();
-  const float phase = static_cast<float>(std::abs(std::fmod(seconds, 2.4) / 1.2 - 1.0));
-  ui::Mesh line;
-  ui::MeshUtilities::GenerateQuad(line,
-      {inset.x + 8.f, inset.y + 8.f + std::max(0.f, size.y - 18.f) * phase},
-      {std::max(0.f, size.x - 16.f), 2.f}, ui::ColourbPremultiplied(74, 108, 247, 255));
-  scan_line_ = manager->MakeGeometry(std::move(line));
-  scan_line_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
+  viewfinder_ = manager->MakeGeometry(ViewfinderMesh(box));
+  viewfinder_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
 }
 
 void RegisterScanPreviewElement() {

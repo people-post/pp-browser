@@ -7,6 +7,10 @@ QR code; after one successful scan the scanner closes and the existing contact-i
 confirmation shows the person's name and Account ID. Only confirmation saves the contact.
 Other QR contents, including ordinary URLs, produce an unsupported-contact notice.
 
+The camera fills the preview, with a centered square guide, a darkened surrounding area,
+corner marks and an animated scan line. This guide is local UI; recognition sees the captured
+frame. Scanning requests a modest capture size independently of call video settings.
+
 The camera opens only for an active scan. Cancel, back/scrim dismissal, mobile background,
 window minimize/hide, profile reset and application shutdown stop the scan. A camera in use
 by a call is refused through the existing exclusive camera policy; scanning never takes it

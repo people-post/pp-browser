@@ -24,6 +24,11 @@ decode took 2–3 ms and the first frame took ~2.5 seconds. Add capture polling/
 to isolate native delivery versus conversion. Request a scan-only 480×360 capture, use a compact
 300 dp-high viewfinder, and draw a local moving scan line. Full-frame QR recognition stays active.
 
+User clarified the desired UI with a scanner screenshot: retain a full camera view, darken the
+outside of a centered square, draw corner marks and a moving scan line. This supersedes the
+compact preview layout. Native size now matches the request after the CoreMedia configuration
+fix, but delivery remains ~1 FPS; inspect the native frame durations before calling it resolved.
+
 ## Delivery
 
 | Step | Acceptance | Status |
