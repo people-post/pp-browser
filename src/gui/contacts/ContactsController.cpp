@@ -20,6 +20,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
+#include "common/Metrics.h"
 #include "gui/ChatSessionPorts.h"
 #include "lib/people/ContactReachability.h"
 #include "feature/conversations/MessagingContactsPorts.h"
@@ -894,7 +895,9 @@ void ContactsController::OnScanQr() {
     return;
   }
   scan_ports_.scan_qr([this](std::string text) {
-    if (!FindContactLocator(text)) {
+    const bool valid = FindContactLocator(text).has_value();
+    MetricsLine("scan.contact").Add("valid_locator", valid).Emit();
+    if (!valid) {
       ShowToast(Tr("scan.not_contact"), ToastDuration::Long);
       return;
     }
