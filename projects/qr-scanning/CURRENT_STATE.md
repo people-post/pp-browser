@@ -8,6 +8,9 @@ OS deep-link dispatch, pasted-invite addition and explicit confirmation for open
 
 This delivery adds in-app camera scanning, routes friend's locators to the existing confirmation,
 and exposes raw QR text through caller-owned scan ports for future uses.
+The primary Scan action now sits beside Me in the compact Home header and expanded navigation
+rail; Contacts + keeps its add/find actions. The own-contact QR code remains under Me → Profile
+and uses shared Mac/iOS/Android code.
 
 Verification completed:
 
@@ -26,6 +29,11 @@ Verification completed:
 - After integration, the macOS `pp-browser` application and five relevant test targets built
   successfully. All 70 focused tests passed across AI planning, people results, media, GUI and
   messaging tool registration. Combination review found no conflict with the video-call changes.
+- The promoted entry built in the integrated macOS app, iPhone device app and Android arm64 debug
+  APK. Eight focused GUI scan/flow tests passed after the entry change. The iPhone app was signed,
+  installed and launched; its Home screenshot shows Scan beside Me. The rear camera opened and
+  the scan status advanced after a preview frame. An Android device rejected the wireless install
+  permission, so the new APK was not installed there.
 
-Physical Mac/iPhone/Android camera permission, GPU preview, mobile background and driver behavior
-remain unverified. No package build or installation was performed.
+Actual QR recognition, iPhone live preview appearance, and Mac/Android camera behavior remain
+unverified. No distribution package or production deployment was performed.

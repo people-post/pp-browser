@@ -14,12 +14,12 @@ own-contact QR code on Mac, iPhone and Android; distinguish builds from physical
 | Step | Acceptance | Status |
 |------|------------|--------|
 | Capture and decode | Shared camera arbiter; prefer rear camera; bounded QR decoding off UI; cancellation/restart isolation | Implemented; 8 automated cases passed |
-| Scan surface | Primary Scan QR code action beside Me; preview, status, retry and cancel/back; release camera on result/close/background/shutdown | Follow-up entry in implementation; fake lifecycle and CPU-render checks passed; device scan pending |
+| Scan surface | Primary Scan QR code action beside Me; preview, status, retry and cancel/back; release camera on result/close/background/shutdown | Entry implemented and seen on iPhone; fake lifecycle and CPU-render checks passed; device QR recognition pending |
 | Friend action | PP locator → existing explicit Add contact confirmation; other codes explain unsupported friend QR; never follow URLs automatically | Implemented; confirmation/rejection cases passed |
 | Extension seam | Scan ports return raw decoded text to their caller; scanner knows no contact/payment/URL actions | Implemented; app-bound ScanPorts |
 | Validation and review | Synthetic QR decode; fake camera lifecycle; UI/flow regressions; app build; independent review | 13 scanner-specific cases passed; integrated macOS app build and 70 focused tests passed; review fixes verified |
-| Primary entry follow-up | Scan button beside Me in compact Home header and expanded rail; same contact confirmation; remove Contacts + menu entry | In progress; verify UI mount/action and Mac/iPhone/Android builds |
-| Cross-platform follow-up | Confirm own QR generation and in-app scanner are present in shared code, then check packages and device behavior separately | iPhone device app built/installed/launched; camera opened and delivered a preview frame; actual scan and Mac/Android device checks pending |
+| Primary entry follow-up | Scan button beside Me in compact Home header and expanded rail; same contact confirmation; remove Contacts + menu entry | Implemented; Mac/iPhone/Android builds passed, iPhone Home entry seen; tap-to-scan on revised entry pending device check |
+| Cross-platform follow-up | Confirm own QR generation and in-app scanner are present in shared code, then check packages and device behavior separately | Shared code confirmed; iPhone app installed/launched and rear camera delivered a frame; Android arm64 APK built but device refused install; actual scans and Mac/Android camera checks pending |
 
 The decoder is quirc (portable C, ISC, no nonstandard dependencies), pinned and vendored with its license.
 Upstream API/reference: https://github.com/dlbeer/quirc/blob/master/README.md.
