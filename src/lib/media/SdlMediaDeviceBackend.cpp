@@ -223,10 +223,13 @@ public:
 
   CameraZoomState ZoomState() const override {
     const auto props = SDL_GetCameraProperties(camera_);
-    return {SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false),
-            SDL_GetFloatProperty(props, "SDL.camera.coremedia.zoom_current", 1.f),
-            SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f),
-            SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_ramping", false)};
+    if (!SDL_LockProperties(props)) { return {}; }
+    const CameraZoomState state{SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false),
+                                SDL_GetFloatProperty(props, "SDL.camera.coremedia.zoom_current", 1.f),
+                                SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f),
+                                SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_ramping", false)};
+    SDL_UnlockProperties(props);
+    return state;
   }
 
   std::optional<VideoFrameRgba> NextFrame() override {

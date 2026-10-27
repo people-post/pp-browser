@@ -43,6 +43,7 @@ struct FakeState {
   int candidate_offset_x = 0;
   std::atomic<float> zoom{1.f};
   bool slow_zoom = false;
+  bool native_zoom_supported = true;
   std::atomic<int> zoom_requests{0};
   std::chrono::steady_clock::time_point zoom_started{};
 };
@@ -76,14 +77,14 @@ public:
     return state_.no_frames ? std::nullopt : std::optional<VideoFrameRgba>(frame_);
   }
   bool SetZoom(float factor) override {
-    if (!state_.zoom_required) { return false; }
+    if (!state_.zoom_required || !state_.native_zoom_supported) { return false; }
     if (state_.zoom_requests++ == 0) { state_.zoom_started = std::chrono::steady_clock::now(); }
     state_.zoom = factor;
     return true;
   }
   CameraZoomState ZoomState() const override {
     const bool pending = ZoomPending();
-    return {state_.zoom_required, pending ? 1.f : state_.zoom.load(), 3.f, pending};
+    return {state_.zoom_required && state_.native_zoom_supported, pending ? 1.f : state_.zoom.load(), 3.f, pending};
   }
 private:
   bool ZoomPending() const {
@@ -267,6 +268,23 @@ TEST(QrScannerTest, PendingNativeRampDoesNotCompoundZoomFromOldFrames) {
   ASSERT_TRUE(WaitFor([&] { return scanner.Poll().text.has_value(); }));
   EXPECT_EQ(state.zoom_requests, 1);
   EXPECT_LT(state.zoom.load(), 1.7f);
+}
+
+TEST(QrScannerTest, CameraWithoutNativeZoomUsesBoundedSoftwarePreview) {
+  FakeState state;
+  state.zoom_required = true;
+  state.native_zoom_supported = false;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start();
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.preview.has_value(); }));
+  EXPECT_LT(result.preview->width, 640);
+  EXPECT_LT(result.preview->height, 480);
+  EXPECT_EQ(state.zoom_requests, 0);
+  EXPECT_FALSE(result.text);
+  scanner.Stop();
+  EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
 }
 } // namespace
 } // namespace pbr
