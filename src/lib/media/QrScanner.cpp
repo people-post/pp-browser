@@ -76,7 +76,11 @@ public:
         const float fraction = std::max(region.width, region.height);
         if (!text && fraction > .02f && fraction < .45f &&
             std::abs(region.center_x - .5f) < .25f && std::abs(region.center_y - .5f) < .25f) {
-          SetZoom(std::clamp(zoom * .5f / fraction, zoom, 3.f));
+          // Native zoom is centered: retain the whole candidate and its quiet-zone margin.
+          const float extent = std::max(std::abs(region.center_x - .5f) + region.width * .7f,
+                                        std::abs(region.center_y - .5f) + region.height * .7f);
+          const float target = std::min(zoom * .5f / fraction, zoom * .5f / extent);
+          SetZoom(std::clamp(target, zoom, 3.f));
         }
       } else if (zoom > 1.f && now - last_region_ > std::chrono::seconds(2)) {
         SetZoom(1.f);

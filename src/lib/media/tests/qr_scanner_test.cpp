@@ -40,6 +40,7 @@ struct FakeState {
   std::string error;
   bool no_frames = false;
   bool zoom_required = false;
+  int candidate_offset_x = 0;
   std::atomic<float> zoom{1.f};
 };
 class FakeCamera final : public ICameraEndpoint {
@@ -63,7 +64,7 @@ public:
       distant.rgba.assign(640 * 480 * 4, 255);
       for (int y = 0; y < damaged.height; ++y) {
         const size_t at = static_cast<size_t>((y + (480 - damaged.height) / 2) * 640 +
-                                            (640 - damaged.width) / 2) * 4;
+                                            (640 - damaged.width) / 2 + state_.candidate_offset_x) * 4;
         std::copy_n(damaged.rgba.data() + static_cast<size_t>(y * damaged.width) * 4,
                     static_cast<size_t>(damaged.width) * 4, distant.rgba.data() + at);
       }
@@ -229,6 +230,18 @@ TEST(QrDecodeTest, DenseContactPayloadRetainsIdentityAndDetectedBounds) {
   ASSERT_TRUE(detected.region);
   EXPECT_NEAR(detected.region->center_x, .5f, .03f);
   EXPECT_NEAR(detected.region->center_y, .5f, .03f);
+}
+
+TEST(QrScannerTest, OffCenterCandidateLimitsZoomToKeepTheCodeVisible) {
+  FakeState state;
+  state.zoom_required = true;
+  state.candidate_offset_x = -128;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start();
+  ASSERT_TRUE(WaitFor([&] { return scanner.Poll().text.has_value(); }));
+  EXPECT_GT(state.zoom.load(), 1.f);
+  EXPECT_LT(state.zoom.load(), 1.7f);
 }
 } // namespace
 } // namespace pbr
