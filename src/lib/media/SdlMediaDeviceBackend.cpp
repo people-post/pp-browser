@@ -337,6 +337,10 @@ public:
                                 ? got.framerate_numerator / got.framerate_denominator
                                 : -1)
             .Add("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "?")
+            .Add("native_min_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
+                SDL_GetCameraProperties(camera), "SDL.camera.coremedia.min_frame_ns", 0)))
+            .Add("native_max_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
+                SDL_GetCameraProperties(camera), "SDL.camera.coremedia.max_frame_ns", 0)))
             .Add("encode_w", geometry.encode_width)
             .Add("encode_h", geometry.encode_height)
             .Emit();
