@@ -1,7 +1,7 @@
 # Current state — QR scanning
 
-2026-10-27: implementation complete in the feature worktree per [PLAN.md](PLAN.md);
-packaged-device acceptance remains pending.
+2026-10-27: implementation complete per [PLAN.md](PLAN.md) and integrated into the local
+main checkout alongside the separate video-call changes; packaged-device acceptance remains pending.
 
 Already present before this work: own-contact QR generation, compact PP contact locator,
 OS deep-link dispatch, pasted-invite addition and explicit confirmation for opened links.
@@ -23,7 +23,9 @@ Verification completed:
   Two whitespace-only lines in the pinned quirc source are retained exactly as upstream.
 - Independent review found and verified fixes for iOS motion-sensor activation and shutdown
   watchdog ordering; no confirmed issue remained after review.
+- After integration, the macOS `pp-browser` application and five relevant test targets built
+  successfully. All 70 focused tests passed across AI planning, people results, media, GUI and
+  messaging tool registration. Combination review found no conflict with the video-call changes.
 
 Physical Mac/iPhone/Android camera permission, GPU preview, mobile background and driver behavior
-remain unverified. No full app/package build or installation was performed.
-No merge into the main checkout or packaging is authorized at this stage.
+remain unverified. No package build or installation was performed.

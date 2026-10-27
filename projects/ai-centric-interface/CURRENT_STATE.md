@@ -85,8 +85,10 @@ PeerId mutation for this delivery; raw mesh PeerId lookup/addition remains defer
 - Reused: exact Account ID / Relay ID lookup, nickname/name search, identity-first result rows,
   existing-contact actions, empty results, and selected-hit addition via `ContactActionDispatcher`.
 - Validation: 32 focused automated cases passed (classifier/plan/prompt, list rendering, native tool catalog);
-  changed production units compiled. Independent review's contact-analysis regression was fixed and covered.
-  Live directory / real model / packaged Mac validation pending; no app installation was performed.
+  changed production units compiled. After local main integration, the macOS app built and 70
+  focused AI/people/media/GUI/tool tests passed. Independent review's contact-analysis regression
+  was fixed and covered. Live directory / real model / packaged Mac validation pending; no app
+  installation was performed.
 - Delivery plan: [PEOPLE_SEARCH_PLAN.md](PEOPLE_SEARCH_PLAN.md).
 
 ### Deferred: raw mesh PeerId add-contact

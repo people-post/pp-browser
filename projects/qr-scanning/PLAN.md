@@ -12,11 +12,12 @@ Existing C5 locator sharing and OS-camera deep links are in `projects/e2e-messag
 | Scan surface | Contacts → + → Scan QR code; preview, status, retry and cancel/back; release camera on result/close/background/shutdown | Implemented; fake lifecycle and CPU-render checks passed; device pending |
 | Friend action | PP locator → existing explicit Add contact confirmation; other codes explain unsupported friend QR; never follow URLs automatically | Implemented; confirmation/rejection cases passed |
 | Extension seam | Scan ports return raw decoded text to their caller; scanner knows no contact/payment/URL actions | Implemented; app-bound ScanPorts |
-| Validation and review | Synthetic QR decode; fake camera lifecycle; UI/flow regressions; changed-unit compile; independent review | 13 cases passed; CMake configure and dependency build passed; review fixes verified |
+| Validation and review | Synthetic QR decode; fake camera lifecycle; UI/flow regressions; app build; independent review | 13 scanner-specific cases passed; integrated macOS app build and 70 focused tests passed; review fixes verified |
 
 The decoder is quirc (portable C, ISC, no nonstandard dependencies), pinned and vendored with its license.
 Upstream API/reference: https://github.com/dlbeer/quirc/blob/master/README.md.
 No new camera stack: `MediaDeviceArbiter` still owns devices, with its existing exclusive-camera policy.
 
-Packaging and merging into the main checkout remain on hold per the user. Physical camera and
-mobile permission validation must be reported separately from automated checks.
+Integrated into the local main checkout while retaining the separate video-call work. Packaging
+remains pending. Physical camera and mobile permission validation must be reported separately
+from automated checks.
