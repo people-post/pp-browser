@@ -1,46 +1,45 @@
 # Current state — QR scanning
 
-2026-10-27: implementation complete per [PLAN.md](PLAN.md) and integrated into the local
-main checkout alongside the separate video-call changes; packaged-device acceptance remains pending.
+2026-10-28: implementation is integrated into the local main checkout alongside the separate
+video-call work. Final real-QR / automatic-zoom acceptance is pending.
 
-Already present before this work: own-contact QR generation, compact PP contact locator,
-OS deep-link dispatch, pasted-invite addition and explicit confirmation for opened links.
+## Current behavior
 
-This delivery adds in-app camera scanning, routes friend's locators to the existing confirmation,
-and exposes raw QR text through caller-owned scan ports for future uses.
-The primary Scan action now sits beside Me in the compact Home header and expanded navigation
-rail; Contacts + keeps its add/find actions. The own-contact QR code remains under Me → Profile
-and uses shared Mac/iOS/Android code.
+- Scan is beside Me: compact Home header and expanded navigation rail. Contacts + keeps add/find.
+- The preview has a centered square, dark surrounding mask, corner marks and a moving scan line.
+- A PP locator leads to the existing confirmation showing nickname and Account ID; saving requires
+  user confirmation. Unsupported payloads do not navigate or execute actions.
+- Capture requests 1280x720 at 30 FPS for dense QR detail; the preview is bounded to 640 pixels.
+  A centered detected but unreadable QR can trigger up to 3x zoom. iOS rear cameras use native
+  zoom with actual progress feedback; other cameras use a software viewport. Pending native
+  ramps cannot compound magnification, and off-center bounds limit the target to retain the QR.
+- Own-contact QR generation remains Me → Profile on all three platforms, with the SVG icon tint
+  overridden to preserve the QR's white background.
+- Raw scan ports remain available to future callers; camera lifecycle uses the shared arbiter.
 
-Verification completed:
+## Verification
 
-- 8 synthetic-QR/fake-camera cases passed: decode including rotation, rear preference,
-  one result then release, blocked-old-open cancellation/restart, permission/no-device errors,
-  no-frame timeout, completed-result cancellation and camera already held by a call.
-- 5 GUI/flow cases passed: cancel/back, background cancellation, explicit friend confirmation,
-  rejection of URL/malformed contact payloads, actual scan RML mount and preview texture release
-  through a CPU-only render mock.
-- Changed GUI/app/media units compiled with project Release warning flags. Full desktop CMake
-  configure succeeded in an isolated build directory; the quirc target built there.
-- Locale JSON, Apple permission plists, vendor-script syntax and first-party diff whitespace checks passed.
-  Two whitespace-only lines in the pinned quirc source are retained exactly as upstream.
-- Independent review found and verified fixes for iOS motion-sensor activation and shutdown
-  watchdog ordering; no confirmed issue remained after review.
-- After integration, the macOS `pp-browser` application and five relevant test targets built
-  successfully. All 70 focused tests passed across AI planning, people results, media, GUI and
-  messaging tool registration. Combination review found no conflict with the video-call changes.
-- The promoted entry built in the integrated macOS app, iPhone device app and Android arm64 debug
-  APK. Eight focused GUI scan/flow tests passed after the entry change. The iPhone app was signed,
-  installed and launched; its Home screenshot shows Scan beside Me. The rear camera opened and
-  the scan status advanced after a preview frame. An Android device rejected the wireless install
-  permission, so the new APK was not installed there.
-- Device feedback found a dark own-QR background and choppy scan preview. The global SVG icon tint
-  also tinted the QR's white quiet zone; the QR class now preserves white. The scanner's fixed
-  90 ms wait after every frame was replaced by a 10 ms capture poll and QR recognition at most
-  every 200 ms, while preview frames continue to publish. Mac, iPhone-device and Android-arm64
-  builds passed after these fixes; 8 scanner and 2 QR SVG tests passed. The fixed iPhone app was
-  installed and launched, and the fixed Mac app was installed and restarted. Visual contrast,
-  preview smoothness and actual recognition await device confirmation.
+- Earlier integrated AI/friend/scanner checks: 70 focused tests passed.
+- Final zoom/capture regression: 27 media tests and 8 GUI tests passed. Coverage includes a dense
+  700-byte payload, candidate→zoom→payload, off-center limits, a delayed native ramp, software
+  fallback, cancellation/restart, timeout, exclusive camera ownership and identity confirmation.
+- macOS app, iPhone device Release app and Android arm64 Release APK built successfully.
+  The latest iPhone app was signed, installed and launched. Android wireless install was rejected
+  by the phone; the new APK was not installed there.
+- iPhone 11 native camera diagnosis found SDL advertising only continuous-range endpoints and
+  selecting 1 FPS for a 30 FPS request, plus a quality preset replacing the requested size.
+  After the pp-cpp-ui fix, native min/max frame duration was 33,333,333 ns and actual delivery
+  about 30 FPS; the user confirmed smoothness. This measurement preceded the latest auto-zoom build.
+- Independent reviews found off-center/ramp over-zoom and stale camera property-ID issues;
+  both were corrected and reviewed. First-party diff whitespace checks pass. The pinned quirc
+  source retains two upstream whitespace-only lines.
 
-Actual QR recognition, iPhone live preview appearance, and Mac/Android camera behavior remain
-unverified. No distribution package or production deployment was performed.
+## Remaining acceptance / dependency
+
+- Real dense/far PP QR recognition, native zoom, cancel/reopen zoom reset and final preview FPS
+  still need device confirmation. Actual Mac/Android camera and call-camera behavior remain pending.
+- Local builds consume pp-cpp-ui `d97b86e7` via the sibling checkout. The native fixes are in
+  [pp-cpp-ui PR #22](https://github.com/people-post/pp-cpp-ui/pull/22). The browser default pin
+  remains `v0.5.1`; merge/release that dependency and bump the pin before distributing the fix.
+- Browser delivery: [PR #392](https://github.com/people-post/pp-browser/pull/392).
+  No production deployment was performed.

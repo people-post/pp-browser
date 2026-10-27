@@ -11,6 +11,12 @@ The camera fills the preview, with a centered square guide, a darkened surroundi
 corner marks and an animated scan line. This guide is local UI; recognition sees the captured
 frame. Scanning requests a modest capture size independently of call video settings.
 
+A detected but unreadable centered code can trigger automatic magnification up to 3x. Native
+iOS rear-camera zoom waits for actual ramp progress before increasing again; unsupported
+cameras use a software viewport. The target retains the code and its quiet-zone margin, and
+losing the candidate for two seconds restores 1x. Recognition uses detailed capture frames
+while the displayed preview is downsampled, so preview texture uploads stay bounded.
+
 The camera opens only for an active scan. Cancel, back/scrim dismissal, mobile background,
 window minimize/hide, profile reset and application shutdown stop the scan. A camera in use
 by a call is refused through the existing exclusive camera policy; scanning never takes it

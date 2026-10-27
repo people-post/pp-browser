@@ -76,6 +76,7 @@ Edit files under **pp-cpp-ui** `include/` / `src/` (separate repo commits). Prod
 |---------|-------------------------|--------|
 | Text selection in static content | `include/ui/dom/SelectionController.h`, `SelectionTypes.h` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
 | User-agent baseline styles | `src/dom/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
+| Apple camera format/rate negotiation and rear zoom | `third_party/sdl3/src/camera/coremedia/SDL_camera_coremedia.m`, `docs/COREMEDIA_CAMERA.md` | `MediaDeviceArbiter` capture and scanner zoom properties; native controls remain on the capture queue |
 
 **Workaround marker locations** (search `FORK_WORKAROUND` in pp-cpp-ui):
 
@@ -83,4 +84,4 @@ Edit files under **pp-cpp-ui** `include/` / `src/` (separate repo commits). Prod
 
 ## Release pin
 
-FetchContent pins `PP_CPP_UI_GIT_TAG` (currently `v0.3.1`). A sibling `../pp-cpp-ui` checkout still overrides the pin for local develop work.
+FetchContent pins `PP_CPP_UI_GIT_TAG` (currently `v0.5.1`). A sibling `../pp-cpp-ui` checkout still overrides the pin for local develop work.
