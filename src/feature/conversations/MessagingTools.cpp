@@ -83,7 +83,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     offset.set("description", "Skip this many ranked results (paging); the client renders from here");
     properties.set("offset", offset);
     tools.push_back(MakeTool(
-      ToolDefinition{"search_people", "Search the public directory for people by name or nickname; a full account id (account:…) or relay id (relay:…) is looked up exactly.", ObjectSchema(std::move(properties), {"query"})},
+      ToolDefinition{"search_people", "Find people to view or add as contacts. Search by name or nickname; a full account id (account:…) or relay id (relay:…) is looked up exactly. Show matching people so the user can choose Add contact.", ObjectSchema(std::move(properties), {"query"})},
       Meta("people", "read", false),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string query = arguments.getString("query").value_or("");
@@ -116,27 +116,8 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
                      }));
   }
 
-  {
-    Object properties;
-    Object directory_hit;
-    directory_hit.set("type", "object");
-    properties.set("directory_hit", directory_hit);
-    tools.push_back(MakeTool(
-      ToolDefinition{"add_contact", "Add a directory search hit to local contacts.", ObjectSchema(std::move(properties), {"directory_hit"})},
-      Meta("people", "write", true),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-           const Object* directory_hit = arguments.getObject("directory_hit");
-           if (!directory_hit) {
-             return Error("directory_hit required");
-           }
-           const mesh::DirectoryHit hit = DirectoryHitFromJson(*directory_hit);
-           auto contact = messaging.AddContactFromDirectoryHit(hit);
-           if (!contact) {
-             return contact.error();
-           }
-           return DumpJson(ContactForModel(*contact));
-         }));
-  }
+  // Adding a person is the selected search row's action (ContactActionDispatcher),
+  // so a natural-language request always lets the user choose the matching identity.
 
   tools.push_back(MakeTool(
       ToolDefinition{"list_conversations", "List inbox threads (AI and person-to-person).", ObjectSchema(Object{})},

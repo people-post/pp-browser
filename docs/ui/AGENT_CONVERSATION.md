@@ -90,7 +90,7 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 
 **Payload fast path** — [`PayloadTurnPlanBuilder`](../../src/lib/ai/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
 
-**NL path** — [`TurnPlanner`](../../src/base/ai/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
+**NL path** — [`TurnPlanner`](../../src/lib/ai/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
 
 [`AgentSession`](../../src/feature/ai/AgentSession.cpp) runs plan → execute → synthesize → validate. The synthesis LLM may request additional tools (refinement loop) when planned results are insufficient. Per-turn metrics are logged via [`TurnTrace`](../../src/base/ai/TurnTrace.h).
 
@@ -102,6 +102,15 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 | `headlines` | Planner (NL) | `list` of real headlines |
 | `people_discovery` | Planner or people chip payloads | `long_list` in working set (identity-first rows; Add/Message by contact state) |
 | `general` | Fallback | Blocks that best serve the ask |
+
+**Finding or adding a friend:** a request containing a person's ID, name, or nickname uses
+`search_people` and shows the existing people list. Full `account:…` / `relay:…` IDs use exact
+directory lookup; names and nicknames use directory search. People-only discovery plans (including
+those with a default `general` goal) render as `people_list`; explicit question/summary plans keep
+their synthesis. A real result offers **Add contact**; an existing contact offers **Message/View**;
+an empty result says no people were found. The user selects the row's Add action to save the person
+through `ContactActionDispatcher`; the native AI tool catalog does not expose `add_contact`.
+Questions specifically about saved contacts use `list_contacts`. Raw mesh PeerId addition is deferred.
 
 ## Dual-channel user messages (`user_payload`)
 

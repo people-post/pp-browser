@@ -2,7 +2,7 @@
 
 Inventory of what exists today relative to [DESIGN.md](DESIGN.md). Update when landing phase work.
 
-**As of:** 2026-08-09
+**People search/add updated:** 2026-10-27. Other inventory below retains its earlier scope.
 
 ## Release posture
 
@@ -12,7 +12,7 @@ Inventory of what exists today relative to [DESIGN.md](DESIGN.md). Update when l
 | Planner tool awareness | Live catalog injected into planner prompt (`SummaryForPrompt` + domain/risk tags) | Keep catalog; add act field on `TurnPlan` |
 | Tool registration | `IToolProvider` + providers: messaging / web_search / MCP / **settings (Govern)** | Domain metadata + policy on every provider |
 | Tool permissions | In-chat park + `tool_permissions` prefs (I005); Me → Security reset | Optional per-tool Settings editor; planner `commitment` field |
-| Mutations from NL | Gated Ask for write tools; PeerId Operate path still weak | Operate tools + confirm payloads |
+| Mutations from NL | Gated Ask for write tools; friend add requests search first and save only on result selection | Other Operate tools + confirm payloads |
 | Every act covered | No — Monitor/Decide/Repair/Govern thin or absent in planner | Thin path for all 10 |
 
 ## Turn pipeline (exists)
@@ -26,7 +26,7 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 | Piece | Location | Notes |
 |-------|----------|-------|
 | `TurnPlan` | `src/lib/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
-| `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
+| `TurnPlanner` | `src/lib/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
 | `IToolProvider` / `ToolRegistry` | `src/lib/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
 | `PayloadTurnPlanBuilder` | `src/lib/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
 | `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; permission gate; `people_list` shortcut |
@@ -58,7 +58,7 @@ Registered via `IToolProvider` → `ToolRegistry::RegisterProvider`:
 | `web_search` | Inquire, Discover (Knowledge) |
 | `search_people` | Discover (People) |
 | `list_contacts` | Discover / Monitor one-shot (People) |
-| `add_contact` | Operate (People) — **directory_hit only** |
+| `add_contact` (UI action only) | Selected directory result → local contact; not a native AI tool |
 | `list_conversations` | Discover / Navigate (Communications) |
 | `open_conversation` | Navigate (Communications) |
 | `start_conversation` | Operate / Navigate (Communications) |
@@ -74,7 +74,22 @@ Non-goals for settings tools: PIN change, profile wipe, MCP/LLM secret writes, s
 
 UI payloads (not always planner tools): `add_contact`, `start_conversation`, `secure_message`, `show_contact`, `open_conversation`, form/article chips — see `ContactActionDispatcher`, `PeopleDiscoveryBlocks`.
 
-## Known failure: PeerId add-contact
+## People search and add (2026-10-27)
+
+User requirement: “find this friend” and “add this friend” by user ID or nickname both show
+directory results, then the user clicks Add contact. This supersedes v1b's proposed automatic
+PeerId mutation for this delivery; raw mesh PeerId lookup/addition remains deferred.
+
+- Implemented: planner search-first guidance, on-device add-intent routing to the search capability,
+  people-only discovery plans normalized to list rendering, and removal of native `add_contact` tool exposure.
+- Reused: exact Account ID / Relay ID lookup, nickname/name search, identity-first result rows,
+  existing-contact actions, empty results, and selected-hit addition via `ContactActionDispatcher`.
+- Validation: 32 focused automated cases passed (classifier/plan/prompt, list rendering, native tool catalog);
+  changed production units compiled. Independent review's contact-analysis regression was fixed and covered.
+  Live directory / real model / packaged Mac validation pending; no app installation was performed.
+- Delivery plan: [PEOPLE_SEARCH_PLAN.md](PEOPLE_SEARCH_PLAN.md).
+
+### Deferred: raw mesh PeerId add-contact
 
 | Step | What happens |
 |------|----------------|
@@ -84,7 +99,7 @@ UI payloads (not always planner tools): `add_contact`, `start_conversation`, `se
 | Missing | Operate tool args for raw `peer_id` |
 | Store | `ContactsStore::AddFromDirectoryHit` only convenience path |
 
-Root cause: **Discover-shaped planning + Operate API that only accepts directory hits.**
+This remains outside the user-ID/nickname search-and-select flow. A mesh PeerId is not a directory Account ID.
 
 ## Gaps vs DESIGN taxonomy
 
@@ -120,7 +135,8 @@ No per-act corpus yet.
 ## Next agent — start here
 
 1. Finish d0: record I001+ in [DECISIONS.md](DECISIONS.md); confirm v1 matrix in DESIGN.
-2. Implement v1 per [PHASES.md](PHASES.md) — start with planner catalog + act field + PeerId Operate path.
+2. Device-validate the scoped friend-search flow in [PEOPLE_SEARCH_PLAN.md](PEOPLE_SEARCH_PLAN.md).
+   Broader intent fields and raw mesh PeerId work remain per [PHASES.md](PHASES.md).
 
 ## Working set panel — follow-ups (from docs/ui/WORKING_SET_PANEL.md)
 

@@ -72,6 +72,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Structured AI replies | `src/lib/ai/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/lib/ai/TurnPlan.*`, `src/lib/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
+| AI friend search / selected-result add | `src/feature/conversations/PeopleSearch.cpp`, `MessagingTools.cpp`, `ContactActionDispatcher.cpp`, `src/common/chat/PeopleDiscoveryBlocks.*`; planner rules in `src/lib/ai/PromptBuilder.cpp` |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Chat storage / SQLite | `src/lib/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | Mesh channel framing / hangs | [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), pp-cpp-amp `docs/STACK.md` (channels, sessions), pp-cpp-mesh (`host/`, `l4/`) |
