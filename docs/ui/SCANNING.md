@@ -1,6 +1,8 @@
 # QR scanning
 
-Contacts → **+ → Scan QR code** opens an in-app camera preview. Point it at a friend's PP
+The **Scan QR code** action beside Me opens an in-app camera preview: in compact layout it is
+beside the Home header's Me button; in expanded layout it is beside Me in the navigation rail.
+Point it at a friend's PP
 QR code; after one successful scan the scanner closes and the existing contact-invite
 confirmation shows the person's name and Account ID. Only confirmation saves the contact.
 Other QR contents, including ordinary URLs, produce an unsupported-contact notice.

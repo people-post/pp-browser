@@ -864,6 +864,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   contacts_->BindScanPorts(ScanPorts{
       .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
   });
+  shell.BindScanAction([this]() { contacts_->OnScanQr(); });
   contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));
   contacts_->BindSurfaceNotify(ContactsSurfaceNotifyPorts{
       .push_surface = [this](const ContactsSurfaceSnapshot& snap) {
@@ -1717,6 +1718,7 @@ void Application::Shutdown() {
     qr_scan_->BindFlowCoordinator({});
   }
   contacts_->BindScanPorts({});
+  shell_->BindScanAction({});
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
   {

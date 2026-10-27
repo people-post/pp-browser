@@ -872,8 +872,6 @@ void ContactsController::OnAddContactMenu(ui::Event& ev) {
   const ui::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
-  actions.push_back({"scan_qr", Tr("scan.title"), nullptr,
-                     [this]() { OnScanQr(); }, "../icons/qr-scan.svg"});
   actions.push_back({
       "add_contact",
       Tr("contacts.add"),
