@@ -895,7 +895,7 @@ void ContactsController::OnScanQr() {
     return;
   }
   scan_ports_.scan_qr([this](std::string text) {
-    const bool valid = FindContactLocator(text).has_value();
+    const bool valid = static_cast<bool>(FindContactLocator(text));
     MetricsLine("scan.contact").Add("valid_locator", valid).Emit();
     if (!valid) {
       ShowToast(Tr("scan.not_contact"), ToastDuration::Long);
