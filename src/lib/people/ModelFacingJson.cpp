@@ -7,7 +7,6 @@ namespace pbr {
 
 Object ContactForModel(const Contact& contact) {
   Object local;
-  local.set("display_name", contact.local.display_name);
   local.set("trust", TrustLevelToString(contact.local.trust));
   Object remote;
   remote.set("nickname", contact.remote.nickname);

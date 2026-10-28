@@ -1,10 +1,12 @@
 #include "lib/ai/AppActionClassifier.h"
 
+#include "lib/ai/AppActionText.h"
 #include "lib/ai/AppActionWords.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <utility>
 #include <initializer_list>
 
 namespace pbr {
@@ -14,6 +16,9 @@ constexpr size_t kZhMaxChars = 80;      // code points, after whitespace is stri
 constexpr size_t kZhMaxDistance = 12;   // verb/object distance, in code points
 constexpr size_t kZhPrepMaxTail = 2;    // after a preposition-style starter (给/和/跟) at most "吧" / "一下" may follow
 constexpr size_t kZhBareMaxChars = 10;  // a bare settings-read phrase
+constexpr size_t kZhReaderMaxChars = 14; // "看一下设置" style: reading verb first, nothing else
+constexpr size_t kZhSearchMaxTail = 10;  // a name after 找一下
+constexpr size_t kEnBareCommandMaxWords = 3; // "dark mode"
 constexpr size_t kEnMaxChars = 160;
 constexpr size_t kEnMaxDistance = 5;    // words from the verb to the object
 constexpr size_t kEnBareMaxWords = 5;   // a bare settings-read phrase
@@ -22,27 +27,8 @@ constexpr size_t kEnSearchMaxTail = 3;  // words after "people"/"user"/…: a na
 using Text = std::u32string;
 using View = std::u32string_view;
 
-Text Decode(std::string_view in) {
-  Text out;
-  for (size_t i = 0; i < in.size();) {
-    const auto b = static_cast<unsigned char>(in[i]);
-    const size_t n = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 0;
-    char32_t cp = 0xFFFD;
-    if (n > 0 && i + n <= in.size()) {
-      cp = n == 1 ? b : b & (0xFFu >> (n + 1));
-      for (size_t k = 1; k < n; ++k) {
-        const auto c = static_cast<unsigned char>(in[i + k]);
-        if ((c & 0xC0) != 0x80) {
-          cp = 0xFFFD;
-          break;
-        }
-        cp = (cp << 6) | (c & 0x3F);
-      }
-    }
-    out.push_back(cp);
-    i += n > 0 ? n : 1;
-  }
-  return out;
+Text Decode(std::string_view in, std::vector<size_t>* offsets = nullptr) {
+  return app_action_text::DecodeUtf8(in, offsets);
 }
 
 bool IsCjk(const char32_t c) {
@@ -69,6 +55,8 @@ bool Contains(const View s, const View p) { return s.find(p) != View::npos; }
 struct ZhEntry {
   std::string_view tool;
   bool settings_read = false;
+  bool bare_command = false;
+  bool bare_object = false;
   std::vector<Text> verbs, objects, phrases;
 };
 
@@ -92,7 +80,7 @@ const std::vector<ZhEntry>& ZhTable() {
     };
     std::vector<ZhEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(ZhEntry{w.tool, w.settings_read, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
+      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
     }
     return t;
   }();
@@ -180,39 +168,49 @@ bool AnyIn(const std::vector<Text>& list, const View needle) {
   return std::any_of(list.begin(), list.end(), [&](const Text& w) { return View(w) == needle; });
 }
 
-bool AnyContained(const std::vector<Text>& list, const View msg) {
-  return std::any_of(list.begin(), list.end(), [&](const Text& w) { return Contains(msg, w); });
-}
-
 bool AnyPrefix(const std::vector<Text>& list, const View s) {
   return std::any_of(list.begin(), list.end(), [&](const Text& w) { return StartsWith(s, w); });
 }
 
 enum class Hit { None, Phrase, VerbObject };
 
-Hit ZhHitKind(const ZhEntry& e, const View msg) {
-  if (AnyContained(e.phrases, msg)) {
-    return Hit::Phrase;
+// Spans are [begin, end) in units of the matcher (code points of the normalised message / words), ordered by begin.
+using SpanList = std::vector<std::pair<size_t, size_t>>;
+
+struct HitResult {
+  Hit kind = Hit::None;
+  SpanList spans;
+};
+
+void SortSpans(SpanList& spans) { std::sort(spans.begin(), spans.end()); }
+
+HitResult ZhHitKind(const ZhEntry& e, const View msg) {
+  for (const Text& w : e.phrases) {
+    if (const size_t p = msg.find(w); p != View::npos) {
+      return {Hit::Phrase, {{p, p + w.size()}}};
+    }
   }
-  std::vector<size_t> verb_pos, obj_pos;
+  std::vector<std::pair<size_t, size_t>> verbs, objs; // position, length
   for (const Text& v : e.verbs) {
     if (const size_t p = msg.find(v); p != View::npos) {
-      verb_pos.push_back(p);
+      verbs.emplace_back(p, v.size());
     }
   }
   for (const Text& o : e.objects) {
     if (const size_t p = msg.find(o); p != View::npos) {
-      obj_pos.push_back(p);
+      objs.emplace_back(p, o.size());
     }
   }
-  for (const size_t vp : verb_pos) {
-    for (const size_t op : obj_pos) {
+  for (const auto& [vp, vl] : verbs) {
+    for (const auto& [op, ol] : objs) {
       if ((vp > op ? vp - op : op - vp) <= kZhMaxDistance) {
-        return Hit::VerbObject;
+        HitResult r{Hit::VerbObject, {{vp, vp + vl}, {op, op + ol}}};
+        SortSpans(r.spans);
+        return r;
       }
     }
   }
-  return Hit::None;
+  return {};
 }
 
 size_t RFindEnd(const View msg, const View w) { return msg.rfind(w) + w.size(); }
@@ -261,18 +259,61 @@ bool ZhFormOk(const View msg, const ZhEntry& e, const Hit hit) {
     if (e.settings_read && msg.size() <= kZhBareMaxChars && AnyPrefix(e.phrases, msg)) {
       return true;
     }
+    // "深色模式" is a command, "深色模式对眼睛好吗" is not: at most "吧" / "一下" may follow the phrase.
+    if (e.bare_command && std::any_of(e.phrases.begin(), e.phrases.end(), [&](const Text& p) {
+          return StartsWith(msg, p) && msg.size() <= p.size() + kZhPrepMaxTail;
+        })) {
+      return true;
+    }
     if (AnyPrefix(e.verbs, msg)) {
       return true;
     }
   }
+  // "看一下设置": a short reader sentence that opens with a reading verb needs no "我" or starter.
+  if (e.settings_read && msg.size() <= kZhReaderMaxChars && AnyPrefix(e.verbs, msg)) {
+    return true;
+  }
   return false;
 }
 
-std::optional<std::string> ClassifyChinese(const Text& decoded, const std::vector<std::string>& declared) {
+// "找一下 Alice" is a directory search, "找一下伊朗核谈判的最新新闻" is not: after a bare 找一下 / 搜一下 at most a name follows.
+bool ZhSearchTailOk(const View msg, const HitResult& hit) {
+  if (hit.kind != Hit::Phrase) {
+    return true;
+  }
+  const View phrase = msg.substr(hit.spans[0].first, hit.spans[0].second - hit.spans[0].first);
+  if (phrase != W("找一下") && phrase != W("搜一下")) {
+    return true;
+  }
+  const View tail = msg.substr(hit.spans[0].second);
+  return tail.size() <= kZhSearchMaxTail && tail.find(W("的")[0]) == View::npos;
+}
+
+// "通知呢" / "通知？": the object word alone, with at most a question particle behind it. "通知我一下" is a request to
+// notify someone, not the setting.
+bool IsZhParticle(const char32_t c) {
+  return c == W("呢")[0] || c == W("吗")[0] || c == W("吧")[0] || c == W("啊")[0] || c == W("？")[0] || c == '?' ||
+         c == W("！")[0] || c == '!';
+}
+
+std::optional<size_t> ZhBareObject(const ZhEntry& e, const View msg) {
+  size_t end = msg.size();
+  while (end > 0 && IsZhParticle(msg[end - 1])) {
+    --end;
+  }
+  const View body = msg.substr(0, end);
+  return !body.empty() && AnyIn(e.objects, body) ? std::optional<size_t>(end) : std::nullopt;
+}
+
+std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::vector<size_t>& offsets,
+                                              const size_t total_bytes, const std::vector<std::string>& declared) {
   Text msg;
-  for (const char32_t c : decoded) {
-    if (!IsSpace(c)) {
-      msg.push_back(Lower(c));
+  std::vector<size_t> begin, end; // byte range of every code point of `msg` in the original message
+  for (size_t i = 0; i < decoded.size(); ++i) {
+    if (!IsSpace(decoded[i])) {
+      msg.push_back(Lower(decoded[i]));
+      begin.push_back(offsets[i]);
+      end.push_back(i + 1 < offsets.size() ? offsets[i + 1] : total_bytes);
     }
   }
   if (msg.empty() || msg.size() > kZhMaxChars) {
@@ -287,11 +328,22 @@ std::optional<std::string> ClassifyChinese(const Text& decoded, const std::vecto
       }
     }
   }
+  for (const ZhEntry* e : entries) {
+    if (e->bare_object) {
+      if (const auto stop = ZhBareObject(*e, msg)) {
+        return AppActionMatch{std::string(e->tool), {{begin[0], end[*stop - 1]}}};
+      }
+    }
+  }
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
     for (const ZhEntry* e : entries) {
-      const Hit kind = ZhHitKind(*e, msg);
-      if (kind == want && ZhFormOk(msg, *e, kind)) {
-        return std::string(e->tool);
+      const HitResult hit = ZhHitKind(*e, msg);
+      if (hit.kind == want && ZhFormOk(msg, *e, hit.kind) && (e->tool != "search_people" || ZhSearchTailOk(msg, hit))) {
+        AppActionMatch match{std::string(e->tool), {}};
+        for (const auto& [a, b] : hit.spans) {
+          match.matched_spans.push_back({begin[a], end[b - 1]});
+        }
+        return match;
       }
     }
   }
@@ -304,30 +356,26 @@ std::optional<std::string> ClassifyChinese(const Text& decoded, const std::vecto
 
 using Words = std::vector<std::string>;
 
-Words Split(std::string_view s) {
+// `spans`, when given, receives the byte range [begin, end) of every word in `s` (shared tokenizer, so the
+// planner reads the same words at the same offsets).
+Words SplitSpans(std::string_view s, SpanList* spans) {
   Words out;
-  std::string cur;
-  const auto flush = [&] {
-    if (!cur.empty()) {
-      out.push_back(std::move(cur));
-      cur.clear();
+  for (app_action_text::WordToken& token : app_action_text::TokenizeWords(s)) {
+    if (spans) {
+      spans->emplace_back(token.begin, token.end);
     }
-  };
-  for (const char ch : s) {
-    const char c = ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch + 32) : ch;
-    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'') {
-      cur.push_back(c);
-    } else {
-      flush();
-    }
+    out.push_back(std::move(token.word));
   }
-  flush();
   return out;
 }
+
+Words Split(std::string_view s) { return SplitSpans(s, nullptr); }
 
 struct EnEntry {
   std::string_view tool;
   bool settings_read = false;
+  bool bare_command = false;
+  bool bare_object = false;
   std::vector<Words> verbs, objects, phrases;
 };
 
@@ -342,7 +390,7 @@ const std::vector<EnEntry>& EnTable() {
     };
     std::vector<EnEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(EnEntry{w.tool, w.settings_read, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
+      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
     }
     return t;
   }();
@@ -363,15 +411,15 @@ size_t WordsFind(const Words& msg, const Words& p) {
   return std::string::npos;
 }
 
-bool WordsContain(const Words& msg, const Words& p) { return WordsFind(msg, p) != std::string::npos; }
-
 bool WordsPrefix(const Words& msg, const size_t from, const std::vector<Words>& list) {
   return std::any_of(list.begin(), list.end(), [&](const Words& p) { return WordsAt(msg, from, p); });
 }
 
-Hit EnHitKind(const EnEntry& e, const Words& msg) {
-  if (std::any_of(e.phrases.begin(), e.phrases.end(), [&](const Words& p) { return WordsContain(msg, p); })) {
-    return Hit::Phrase;
+HitResult EnHitKind(const EnEntry& e, const Words& msg) {
+  for (const Words& p : e.phrases) {
+    if (const size_t at = WordsFind(msg, p); at != std::string::npos) {
+      return {Hit::Phrase, {{at, at + p.size()}}};
+    }
   }
   for (const Words& v : e.verbs) {
     const size_t vp = WordsFind(msg, v);
@@ -381,11 +429,19 @@ Hit EnHitKind(const EnEntry& e, const Words& msg) {
     for (const Words& o : e.objects) {
       const size_t op = WordsFind(msg, o);
       if (op != std::string::npos && op >= vp && op - vp <= kEnMaxDistance) {
-        return Hit::VerbObject;
+        HitResult r{Hit::VerbObject, {{vp, vp + v.size()}, {op, op + o.size()}}};
+        SortSpans(r.spans);
+        return r;
       }
     }
   }
-  return Hit::None;
+  // "look up Ken": with no person word, the verb alone is the hit (the name comes after it).
+  if (e.tool == "search_people") {
+    if (const size_t at = WordsFind(msg, Words{"look", "up"}); at != std::string::npos) {
+      return {Hit::Phrase, {{at, at + 2}}};
+    }
+  }
+  return {};
 }
 
 // Strips leading starters ("please", "can you", ...) and returns the index of the first word after them.
@@ -450,7 +506,10 @@ bool EnFormOk(const Words& msg, const EnEntry& e, const Hit hit) {
   }
 
   // A bare settings-read phrase ("supported languages") is a question about the app.
-  return hit == Hit::Phrase && e.settings_read && msg.size() <= kEnBareMaxWords && WordsPrefix(msg, 0, e.phrases);
+  if (hit != Hit::Phrase || !WordsPrefix(msg, 0, e.phrases)) {
+    return false;
+  }
+  return (e.settings_read && msg.size() <= kEnBareMaxWords) || (e.bare_command && msg.size() <= kEnBareCommandMaxWords);
 }
 
 // "Find people who survived the Titanic" asks about the world, not the directory: after the person word a
@@ -463,16 +522,16 @@ bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
       }
     }
   }
+  // "look up Ken": the verb itself is the anchor when no person word is there.
+  if (const size_t at = WordsFind(msg, Words{"look", "up"}); at != std::string::npos) {
+    return msg.size() - (at + 2) <= kEnSearchMaxTail;
+  }
   return true;
 }
 
-std::optional<std::string> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
-  std::string text(message);
-  // Curly apostrophes would otherwise split "i'd" in two.
-  for (size_t p; (p = text.find("\xE2\x80\x99")) != std::string::npos;) {
-    text.replace(p, 3, "'");
-  }
-  const Words msg = Split(text);
+std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
+  SpanList word_bytes;
+  const Words msg = SplitSpans(message, &word_bytes);
   if (msg.empty() || message.size() > kEnMaxChars) {
     return std::nullopt;
   }
@@ -485,11 +544,21 @@ std::optional<std::string> ClassifyEnglish(std::string_view message, const std::
       }
     }
   }
+  for (const EnEntry* e : entries) {
+    // "Notifications?": the object word alone (the tokenizer already dropped the mark).
+    if (e->bare_object && std::any_of(e->objects.begin(), e->objects.end(), [&](const Words& o) { return o == msg; })) {
+      return AppActionMatch{std::string(e->tool), {{word_bytes.front().first, word_bytes.back().second}}};
+    }
+  }
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
     for (const EnEntry* e : entries) {
-      const Hit kind = EnHitKind(*e, msg);
-      if (kind == want && EnFormOk(msg, *e, kind) && (e->tool != "search_people" || EnSearchTailOk(msg, *e))) {
-        return std::string(e->tool);
+      const HitResult hit = EnHitKind(*e, msg);
+      if (hit.kind == want && EnFormOk(msg, *e, hit.kind) && (e->tool != "search_people" || EnSearchTailOk(msg, *e))) {
+        AppActionMatch match{std::string(e->tool), {}};
+        for (const auto& [a, b] : hit.spans) {
+          match.matched_spans.push_back({word_bytes[a].first, word_bytes[b - 1].second});
+        }
+        return match;
       }
     }
   }
@@ -498,7 +567,8 @@ std::optional<std::string> ClassifyEnglish(std::string_view message, const std::
 
 } // namespace
 
-std::optional<std::string> ClassifyAppAction(const std::string_view message, const std::vector<std::string>& declared_tools) {
+std::optional<AppActionMatch> ClassifyAppActionMatch(const std::string_view message,
+                                                     const std::vector<std::string>& declared_tools) {
   if (declared_tools.empty()) {
     return std::nullopt;
   }
@@ -511,14 +581,39 @@ std::optional<std::string> ClassifyAppAction(const std::string_view message, con
   if (search_before_add) {
     capabilities.push_back("add_contact");
   }
-  const Text decoded = Decode(message);
-  auto tool = std::any_of(decoded.begin(), decoded.end(), IsCjk)
-                  ? ClassifyChinese(decoded, capabilities)
-                  : ClassifyEnglish(message, capabilities);
-  if (search_before_add && tool == "add_contact") {
-    return "search_people";
+  std::vector<size_t> offsets;
+  const Text decoded = Decode(message, &offsets);
+  auto match = std::any_of(decoded.begin(), decoded.end(), IsCjk)
+                   ? ClassifyChinese(decoded, offsets, message.size(), capabilities)
+                   : ClassifyEnglish(message, capabilities);
+  if (match && search_before_add && match->tool == "add_contact") {
+    match->tool = "search_people";
   }
-  return tool;
+  return match;
+}
+
+std::optional<std::string> ClassifyAppAction(const std::string_view message, const std::vector<std::string>& declared_tools) {
+  if (auto match = ClassifyAppActionMatch(message, declared_tools)) {
+    return std::move(match->tool);
+  }
+  return std::nullopt;
+}
+
+bool ContainsAppActionHit(const std::string_view text) {
+  const Text decoded = Decode(text);
+  if (std::any_of(decoded.begin(), decoded.end(), IsCjk)) {
+    Text msg;
+    for (const char32_t c : decoded) {
+      if (!IsSpace(c)) {
+        msg.push_back(Lower(c));
+      }
+    }
+    return std::any_of(ZhTable().begin(), ZhTable().end(),
+                       [&](const ZhEntry& e) { return ZhHitKind(e, msg).kind != Hit::None; });
+  }
+  const Words msg = Split(text);
+  return std::any_of(EnTable().begin(), EnTable().end(),
+                     [&](const EnEntry& e) { return EnHitKind(e, msg).kind != Hit::None; });
 }
 
 } // namespace pbr

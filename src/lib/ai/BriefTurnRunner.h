@@ -20,7 +20,8 @@ struct BriefTurnSinks {
   std::function<void(const std::string& tool, const std::string& phase, const std::string& query)> on_status;
   std::function<void(const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources)>
       on_done;
-  std::function<void()> on_handoff;
+  /** `capability`: the tool brief_AI handed the turn back for (empty when the server sent none). */
+  std::function<void(const std::string& capability)> on_handoff;
   std::function<void(const std::string& message, bool retryable, const std::string& partial_text)> on_error;
   std::function<void(const std::string& partial_text)> on_cancelled;
 };

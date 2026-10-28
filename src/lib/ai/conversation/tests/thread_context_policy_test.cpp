@@ -79,6 +79,34 @@ TEST(ThreadContextPolicyTest, TranscriptUsesRoleLabelsNotContactIds) {
   EXPECT_EQ(all.find(kLocalSelfContactId), std::string::npos) << all;
 }
 
+// An on-device app action may carry the user's remarks for contacts: its entries are shown, never model context.
+TEST(ThreadContextPolicyTest, AppActionEntriesStayOutOfTheTranscript) {
+  ThreadContextPolicy policy;
+  ThreadMessage asked;
+  asked.id = "m1";
+  asked.sender_contact_id = kLocalSelfContactId;
+  asked.text = "打开和 欠钱的老王 的聊天";
+  asked.generation = kLocalActionGeneration;
+  ThreadMessage answered;
+  answered.id = "m2";
+  answered.sender_contact_id = kAiAssistantContactId;
+  answered.text = "已打开和 欠钱的老王 的聊天。";
+  answered.generation = kLocalActionGeneration;
+  ThreadMessage plain;
+  plain.id = "m3";
+  plain.sender_contact_id = kLocalSelfContactId;
+  plain.text = "what is new";
+
+  const ContextBuildResult built = policy.Build({asked, answered, plain}, "system prompt", "follow up");
+  std::string all;
+  for (const ChatMessage& message : built.messages) {
+    all += message.content + "\n";
+  }
+  EXPECT_EQ(all.find("欠钱的老王"), std::string::npos) << all;
+  EXPECT_NE(all.find("user: what is new"), std::string::npos) << all;
+  EXPECT_EQ(built.provenance.included_entry_ids, std::vector<std::string>{"m3"});
+}
+
 // PB-017: a peer's message is data. It stays on one line (no forged "user:" / "assistant:" line) and
 // the transcript header says so. The user's own lines are untouched.
 TEST(ThreadContextPolicyTest, PeerTextCannotForgeATranscriptLine) {

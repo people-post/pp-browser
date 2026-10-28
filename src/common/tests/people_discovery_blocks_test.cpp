@@ -75,6 +75,31 @@ TEST(PeopleDiscoveryBlocksTest, AlreadyContactPrefersMessageAndMeta) {
   EXPECT_EQ(blocks.find("Add contact"), std::string::npos);
 }
 
+TEST(PeopleDiscoveryBlocksTest, ContactRowShowsRemarkWithNicknameSmallOrJustTheNickname) {
+  PeopleDiscoveryContactView remarked;
+  remarked.id = "c1";
+  remarked.display_name = "Alice-work";
+  remarked.server_nickname = "Alice";
+  remarked.ids = {{mesh::ContactIdKind::Account, "account:alice1", true}};
+  PeopleDiscoveryContactView plain = remarked;
+  plain.id = "c2";
+  plain.display_name = "";
+
+  auto first_item = [](const std::string& blocks_json) {
+    auto root = TryParseObject(blocks_json);
+    const Array* blocks = root->getArray("blocks");
+    const Object* list = asObject(blocks->elements.back());
+    return *asObject(list->getArray("items")->elements[0]);
+  };
+  const Object with_remark = first_item(BuildPeopleDiscoveryBlocksJson({}, {remarked}));
+  EXPECT_EQ(with_remark.getString("title").value_or(""), "Alice-work");
+  EXPECT_NE(with_remark.getString("subtitle").value_or("").find("~Alice"), std::string::npos);
+
+  const Object without = first_item(BuildPeopleDiscoveryBlocksJson({}, {plain}));
+  EXPECT_EQ(without.getString("title").value_or(""), "Alice");
+  EXPECT_EQ(without.getString("subtitle").value_or("").find("~Alice"), std::string::npos);
+}
+
 TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
   std::vector<mesh::DirectoryHit> hits;
   for (int i = 0; i < 15; ++i) {

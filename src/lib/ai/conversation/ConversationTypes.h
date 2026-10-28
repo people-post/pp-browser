@@ -18,6 +18,8 @@ struct TranscriptEntry {
   std::optional<std::string> assistant_raw;
   std::optional<std::string> assistant_rml;
   std::vector<TranscriptChatAction> chat_actions;
+  /** An on-device app-action turn: shown, never sent to a model as history. */
+  bool local_action = false;
 };
 
 struct ContextProvenance {

@@ -64,7 +64,8 @@ TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysDevicesAndRoute) {
   const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
   ASSERT_TRUE(contact) << contact.error().message;
-  EXPECT_EQ(contact->local.display_name, "Bob from work");
+  EXPECT_TRUE(contact->local.display_name.empty()) << "a sharer's label is never a remark";
+  EXPECT_EQ(ContactEffectiveTitle(*contact), "bob");
   EXPECT_EQ(contact->remote.nickname, "bob");
   ASSERT_EQ(contact->remote.endpoints.size(), 1u);
   EXPECT_EQ(contact->remote.endpoints[0].peer_id, test::PeerIdOf("QmBobPhone"));
@@ -108,7 +109,7 @@ TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard)
   ASSERT_TRUE(contact);
   auto shared = exchange_->CardFor(contact->id);
   ASSERT_TRUE(shared) << shared.error().message;
-  EXPECT_EQ(shared->display_name, "Bob from work");
+  EXPECT_EQ(shared->display_name, "bob") << "a card carries their nickname, never our remark";
   EXPECT_EQ(shared->relay_user_id, "relay:bob");
   auto passed_on = AccountCardFromJson(*TryParseObject(shared->card_json));
   ASSERT_TRUE(passed_on) << "the signed card, passed on as received";

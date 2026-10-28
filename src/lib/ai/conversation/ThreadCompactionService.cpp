@@ -18,6 +18,9 @@ std::string BuildCompactionPrompt(const std::vector<ThreadMessage>& messages,
                                   const std::optional<ConversationSummary>& existing) {
   std::ostringstream transcript;
   for (const ThreadMessage& message : messages) {
+    if (IsLocalActionMessage(message)) {
+      continue; // on-device app action: never sent to a model
+    }
     transcript << message.sender_contact_id << ": " << message.text << "\n";
   }
 

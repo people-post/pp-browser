@@ -209,7 +209,7 @@ reach.
 - **Contacts tab** header **`+`** opens a menu:
   - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / relay / peer / multiaddrs as meta text; **Sync from directory…** when a relay id is present, refreshes remote only)
   - Directory add merges by `relay_user` id (`AddFromDirectoryHit` updates remote, preserves local annotations)
-  - `contacts.json` shape: `{ schema_version: 1, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
+  - `contacts.json` shape: `{ schema_version: 2, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
   - **Find someone** — same as Sessions find flow
 - Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
 - **Peer link status** (direct threads) — chat header shows live link state (`Connecting…` / `Direct` / `Via relay` / backoff countdown). Soft banner + **Retry connection** on dial backoff; toast when a send falls back to relay after a direct attempt.

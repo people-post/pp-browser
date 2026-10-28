@@ -46,6 +46,9 @@ std::vector<HistoryMessage> TakeRecentTurnPairs(const std::vector<TranscriptEntr
   std::vector<HistoryMessage> flattened;
   flattened.reserve(completed.size() * 2);
   for (const TranscriptEntry& entry : completed) {
+    if (entry.local_action) {
+      continue; // on-device app action: may carry contact remarks, never model history
+    }
     flattened.push_back(
         HistoryMessage{.entry_id = entry.id, .role = "user", .content = FormatUserContentForLlm(entry)});
     if (entry.assistant_raw) {

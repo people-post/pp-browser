@@ -9,14 +9,16 @@
 TEST(ModelFacingJsonTest, ContactKeepsNamesAndIdOnly) {
   pbr::Contact contact;
   contact.id = "contact:1";
-  contact.local.display_name = "Ada";
+  contact.local.display_name = "Owes-me Ada";  // remark
   contact.local.trust = pbr::TrustLevel::Friendly;
   contact.remote.nickname = "ada";
   contact.remote.multiaddrs = {"/ip4/203.0.113.9/tcp/4001/p2p/QmPeer"};
   contact.remote.fetched_at = 42;
   const std::string json = pbr::DumpJson(pbr::ContactForModel(contact));
   EXPECT_NE(json.find("\"id\":\"contact:1\""), std::string::npos) << json;
-  EXPECT_NE(json.find("\"display_name\":\"Ada\""), std::string::npos) << json;
+  // The remark is the user's private note: it never reaches a model, only the person's own nickname does.
+  EXPECT_EQ(json.find("display_name"), std::string::npos) << json;
+  EXPECT_EQ(json.find("Owes-me"), std::string::npos) << json;
   EXPECT_NE(json.find("\"nickname\":\"ada\""), std::string::npos) << json;
   EXPECT_NE(json.find("\"trust\""), std::string::npos) << json;
   for (const char* forbidden : {"multiaddrs", "endpoints", "\"ids\"", "icon", "fetched_at", "203.0.113.9", "QmPeer"}) {
