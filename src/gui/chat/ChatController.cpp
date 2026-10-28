@@ -10,6 +10,7 @@
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
+#include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
@@ -1267,6 +1268,23 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       if (!resumed) {
         ShowToast(resumed.error().message);
       }
+      return;
+    }
+    if (action_type && *action_type == "local_action") {
+      // A button of the on-device app-action flow. "Add a remark" opens the contact's page here; the rest runs
+      // in the agent (MessageRouter hands it over, also in a person-to-person chat).
+      if (action_json->getString("tool").value_or("") == "edit_remark") {
+        const std::string contact_id = action_json->getString("contact_id").value_or("");
+        if (!contact_id.empty() && contacts_notify_.select_contact) {
+          contacts_notify_.select_contact(contact_id);
+        }
+        return;
+      }
+      if (!MessageRouter::IsAgentLocalActionPayload(payload)) {
+        log().warning << "Local action with an unknown tool ignored";
+        return;
+      }
+      SendUserText(message, payload);
       return;
     }
     if (action_type && *action_type == "open_url") {

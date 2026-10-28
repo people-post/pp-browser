@@ -2,6 +2,7 @@
 
 #include "lib/messaging/AtAiParser.h"
 #include "lib/ai/BriefAiClient.h"
+#include "lib/ai/LocalActionPlanner.h"
 #include "lib/ai/ToolRegistry.h"
 #include "lib/ai/TurnPlan.h"
 #include "lib/ai/TurnTrace.h"
@@ -29,6 +30,8 @@ class IThreadStore;
 
 using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
 using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs&)>;
+/** The local contacts, flattened for the on-device app-action planner (called on a worker thread). */
+using LocalContactsFn = std::function<std::vector<LocalPlanContact>()>;
 
 enum class AgentEventType {
   LoadingChanged,
@@ -94,6 +97,26 @@ public:
    * `poll` (default 10 s / 500 ms; tests shorten it).
    */
   void SetMissingToolWait(std::chrono::milliseconds total, std::chrono::milliseconds poll);
+  /**
+   * Where the on-device app-action planner reads contacts from (names are matched against remark and nickname
+   * on the device; nothing of it is sent anywhere). Unset: no contacts.
+   */
+  void SetLocalContactsSource(LocalContactsFn source);
+  /** How long a question the app asked back waits for its answer (default 2 min; tests shorten it). */
+  void SetLocalAskTtl(std::chrono::milliseconds ttl);
+  /**
+   * A button the on-device flow rendered ({"type":"local_action",...}): runs `tool` with `args` on the device —
+   * no classification, no model. Only open_conversation, start_conversation and search_people; anything else is
+   * ignored with a warning. `user_text` is the button's label (stored as the user's turn in an AI thread).
+   * `in_peer_chat`: the button sits in a person-to-person chat; the answer stays on this device there, like "@ai".
+   */
+  void SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
+                         Object args, bool in_peer_chat = false);
+  /**
+   * Brief preset only: does `text` ask to operate the app (the wordlist hits a declared tool)? A shared "@ai+" /
+   * "@ai++" with such a request is answered on the device and never relayed. Safe from the UI thread.
+   */
+  bool IsAppActionRequest(const std::string& text) const;
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   /**
    * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
@@ -134,7 +157,14 @@ private:
   /** Submit worker: true to start the turn now; false when ConfigureOnIO will start it, or (configure failed) it ended. */
   static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
+  /** Model pipeline (planner + synthesis). Never for the brief preset: its gateway has no completions route (B99). */
   static void RunTurnPipeline(const std::shared_ptr<Impl>& state);
+  /** A turn that does not stream: the brief preset runs its payload plan only, other presets the model pipeline. */
+  static void RunNonStreamTurn(const std::shared_ptr<Impl>& state);
+  /** Brief preset, payload turn: the payload's plan on the device, no planner and no synthesis. */
+  static void RunBriefPayloadTurn(const std::shared_ptr<Impl>& state);
+  /** Runs a resolved plan through permissions and execution, then ContinueAfterExecution. */
+  static void ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan);
   static bool UseBriefStream(const std::shared_ptr<Impl>& state);
   /** The brief preset with its stream wired and no tool payload on this turn. */
   static bool BriefStreamAvailable(const std::shared_ptr<Impl>& state);
@@ -142,12 +172,32 @@ private:
   static std::vector<std::string> AppActionCapabilities(const std::shared_ptr<Impl>& state);
   /** Judges the pending text on the device; on a hit runs the local pipeline and returns true. */
   static bool TryLocalAppAction(const std::shared_ptr<Impl>& state);
+  /** The answer to a question the app asked back (same thread, not expired): true when handled here. */
+  static bool TryPendingLocalAnswer(const std::shared_ptr<Impl>& state);
+  /** brief_AI handed the turn back for `capability`: answered on the device, never streamed again. */
+  static void HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability);
+  /** Acts on a local plan: execute, ask back, list candidates or say it cannot. `outcome` is the metric for a plan. */
+  static void HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan plan, const std::string& tool,
+                              const char* outcome, bool asked_twice = false);
+  static void RunDirectAction(const std::shared_ptr<Impl>& state, const std::string& tool, const Object& args);
+  static LocalPlanContext BuildLocalPlanContext(const std::shared_ptr<Impl>& state, const std::string& tool);
+  /** Ends the turn with a host-built answer; `keep_out_of_history`: an app-action turn (never sent to a model). */
+  static void FinishLocalAnswer(const std::shared_ptr<Impl>& state, const std::string& text, RenderMode mode,
+                                bool keep_out_of_history = true);
+  /** Template rendering of the executed plan's result (or `failure`, a tool error message). */
+  static void FinishLocalResult(const std::shared_ptr<Impl>& state, const std::optional<std::string>& failure = {});
+  static void MarkUserEntryLocal(const std::shared_ptr<Impl>& state);
   static void StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vector<BriefAiHistoryTurn> history,
                               std::string summary);
   static void EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
                                  const std::string& finish_reason, const std::vector<BriefAiSource>& sources);
-  /** `cancelled` is set when the turn was stopped while resolving; the error then carries nothing to show. */
-  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled);
+  /**
+   * `cancelled` is set when the turn was stopped while resolving; the error then carries nothing to show.
+   * `allow_model` false (brief preset): a turn without a payload plan sets `unplanned` instead of asking the
+   * model planner.
+   */
+  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled, bool allow_model,
+                                       bool& unplanned);
   enum class FeedRelist { Listed, Unavailable, Cancelled };
   /**
    * A feed turn whose planned tool is not registered: re-lists the promoted MCP server (when there is one) until

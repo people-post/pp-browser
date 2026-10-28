@@ -152,6 +152,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     raw_results.push_back(*tool_result);
     result.tools_executed.push_back(call.name);
   }
+  result.raw_results = raw_results;
 
   if (executed_calls.empty()) {
     return result;

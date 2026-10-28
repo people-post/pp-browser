@@ -1,4 +1,6 @@
 #include "app/Application.h"
+#include "common/ValueJson.h"
+#include <map>
 #include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
@@ -1210,7 +1212,57 @@ void Application::WireAgentAndConfig() {
         agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
       }
     };
+    // Buttons of the on-device app-action flow ({"type":"local_action",...}) run in the session, no model.
+    inbound.submit_local_action = [this](const std::string& thread_id, const std::string& text,
+                                         const std::string& payload, const bool in_peer_chat) {
+      const auto doc = TryParseObject(payload);
+      if (!agent_session_ || !doc) {
+        return;
+      }
+      Object args;
+      for (const auto& [key, value] : doc->fields()) {
+        if (key != "type" && key != "tool") {
+          args.set(key, value);
+        }
+      }
+      agent_session_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""), std::move(args),
+                                        in_peer_chat);
+    };
+    inbound.is_app_action_request = [this](const std::string& text) {
+      return agent_session_ && agent_session_->IsAppActionRequest(text);
+    };
     messaging_facade_->BindAgentInbound(std::move(inbound));
+
+    // The planner matches names against the user's remark and the other side's nickname, on the device only.
+    // Called on a worker (like the messaging tools): the contacts store and the thread store lock themselves.
+    agent_session_->SetLocalContactsSource([this]() {
+      std::vector<LocalPlanContact> out;
+      if (!messaging_facade_) {
+        return out;
+      }
+      auto contacts = messaging_facade_->SearchLocalContacts("");
+      if (!contacts) {
+        return out;
+      }
+      std::map<std::string, std::pair<std::string, int64_t>> direct_threads; // contact id -> (thread id, updated)
+      if (auto threads = messaging_facade_->ListThreads()) {
+        for (const Thread& thread : *threads) {
+          if (thread.kind == ThreadKind::Direct && thread.participant_contact_ids.size() == 1) {
+            direct_threads[thread.participant_contact_ids.front()] = {thread.id, thread.updated_at};
+          }
+        }
+      }
+      out.reserve(contacts->size());
+      for (const Contact& contact : *contacts) {
+        LocalPlanContact flat{.id = contact.id, .remark = contact.local.display_name, .nickname = contact.remote.nickname};
+        if (const auto it = direct_threads.find(contact.id); it != direct_threads.end()) {
+          flat.thread_id = it->second.first;
+          flat.last_contact_ms = it->second.second;
+        }
+        out.push_back(std::move(flat));
+      }
+      return out;
+    });
   }
   if (agent_session_) {
     agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);

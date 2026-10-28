@@ -44,6 +44,22 @@ bool MessageRouter::IsAgentToolPayload(const ThreadKind kind, const std::optiona
   return doc && !doc->getString("type") && doc->getString("tool").value_or("") != "";
 }
 
+std::optional<std::string> MessageRouter::LocalActionTool(const std::optional<std::string>& user_payload) {
+  if (!user_payload || user_payload->empty()) {
+    return std::nullopt;
+  }
+  const auto doc = TryParseObject(*user_payload);
+  if (!doc || doc->getString("type").value_or("") != "local_action") {
+    return std::nullopt;
+  }
+  return doc->getString("tool").value_or("");
+}
+
+bool MessageRouter::IsAgentLocalActionPayload(const std::optional<std::string>& user_payload) {
+  const auto tool = LocalActionTool(user_payload);
+  return tool && (*tool == "open_conversation" || *tool == "start_conversation" || *tool == "search_people");
+}
+
 Roe<void> MessageRouter::ValidateUserPayload(const std::optional<std::string>& user_payload) {
   if (user_payload && user_payload->size() > kMaxUserPayloadBytes) {
     return Error("User payload exceeds limit of " + std::to_string(kMaxUserPayloadBytes) + " bytes");
@@ -104,6 +120,26 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     return Error("Thread not found");
   }
 
+  // A button of the on-device app-action flow, in an AI thread or (after "@ai") a person-to-person chat: never
+  // relayed to a peer. "Add a remark" opens the contact page; the rest runs on the device.
+  if (const auto local_tool = LocalActionTool(user_payload)) {
+    if (*local_tool == "edit_remark") {
+      if (on_local_action_) {
+        on_local_action_(text, user_payload);
+      }
+      return {};
+    }
+    if (!IsAgentLocalActionPayload(user_payload)) {
+      log().warning << "local action payload with an unknown tool ignored: " << *local_tool;
+      return {};
+    }
+    if (!agent_.submit_local_action) {
+      return Error("Agent not bound");
+    }
+    agent_.submit_local_action(thread_id, text, *user_payload, HandlesAtAi((*thread)->kind));
+    return {};
+  }
+
   if (user_payload && !user_payload->empty() && on_local_action_ &&
       !IsAgentToolPayload((*thread)->kind, user_payload)) {
     on_local_action_(text, user_payload);
@@ -114,6 +150,12 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   // A group used to send "@ai++ …" as plain text while the chat already showed "thinking" (B111).
   if (HandlesAtAi((*thread)->kind) && at_ai.is_ai_invoke) {
     if (at_ai.mode == AtAiMode::SharedReply || at_ai.mode == AtAiMode::SharedFull) {
+      if (agent_.is_app_action_request && agent_.submit_scoped_assist && agent_.is_app_action_request(at_ai.prompt)) {
+        // "@ai++ 搜索用户 ken": an app action is not shared. Nothing goes to the peer (no prompt, no confirm); the
+        // agent says so on this device.
+        agent_.submit_scoped_assist(thread_id, at_ai.prompt, {}, at_ai.mode);
+        return {};
+      }
       if (NeedsSharedAiConfirm(thread_id) && shared_ai_confirm_) {
         shared_ai_confirm_(thread_id, at_ai.mode, at_ai.prompt,
                            [this, thread_id, mode = at_ai.mode, prompt = at_ai.prompt](
@@ -181,6 +223,9 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
     return false;
   }
   auto thread = store_.GetThread(thread_id);
+  if (IsAgentLocalActionPayload(user_payload)) {
+    return true;
+  }
   if (user_payload && !user_payload->empty()) {
     return thread && *thread && IsAgentToolPayload((*thread)->kind, user_payload);
   }

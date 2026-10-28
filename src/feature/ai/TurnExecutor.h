@@ -19,6 +19,8 @@ namespace pbr {
 struct TurnExecutionResult {
   std::vector<ChatMessage> scratch_append;
   std::vector<std::string> tools_executed;
+  /** Each executed tool's raw result, in order (local plans render from these). */
+  std::vector<std::string> raw_results;
   /** Deterministic blocks JSON (people list, or the article feed of a payload turn): the turn ends without a model call. */
   std::optional<std::string> people_list_blocks;
   bool ok = true;

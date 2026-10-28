@@ -19,6 +19,8 @@ public:
   TranscriptEntry& AppendUser(const std::string& user_text,
                               std::optional<std::string> user_payload = std::nullopt);
   bool CompleteTurn(const std::string& entry_id, const std::string& assistant_raw);
+  /** Keeps the entry out of model history (an on-device app-action turn). */
+  bool MarkLocalAction(const std::string& entry_id);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                            std::vector<TranscriptChatAction> chat_actions);
 

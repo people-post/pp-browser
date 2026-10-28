@@ -89,4 +89,15 @@ struct ThreadMessage {
   std::optional<uint32_t> session_epoch;
 };
 
+/**
+ * `ThreadMessage::generation` of a message that belongs to an on-device app action (the user's command, the
+ * question asked back, the template answer, the list to pick from). Shown in the chat, but never part of the
+ * history or context sent to a model: it may carry contact remarks (DEV/PLAN-local-app-actions.md).
+ */
+inline constexpr const char* kLocalActionGeneration = "local_action";
+
+inline bool IsLocalActionMessage(const ThreadMessage& message) {
+  return message.generation && *message.generation == kLocalActionGeneration;
+}
+
 } // namespace pbr

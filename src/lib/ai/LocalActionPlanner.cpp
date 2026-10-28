@@ -823,7 +823,7 @@ LocalPlan ResolveContact(const std::string& tool, const std::string& name, const
     }
   }
   if (hits.empty()) {
-    return LocalAmbiguous{tool, {}, false};
+    return LocalAmbiguous{tool, {}, false, name};
   }
   if (hits.size() == 1) {
     const LocalPlanContact& c = hits.front();
@@ -833,7 +833,7 @@ LocalPlan ResolveContact(const std::string& tool, const std::string& name, const
     // A contact without a chat yet: starting one opens it.
     return MakeTextPlan("start_conversation", "contact_id", c.id, text, only_first);
   }
-  LocalAmbiguous out{tool, hits, false};
+  LocalAmbiguous out{tool, hits, false, name};
   for (size_t i = 0; i < hits.size() && !out.identical_rows; ++i) {
     for (size_t j = i + 1; j < hits.size(); ++j) {
       if (DisplayText(hits[i]) == DisplayText(hits[j])) {

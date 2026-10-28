@@ -51,6 +51,8 @@ struct LocalAmbiguous {
   std::string tool;
   std::vector<LocalPlanContact> candidates;
   bool identical_rows = false;
+  /** The name that was looked up (for the "search the directory" row when nothing fits). */
+  std::string query;
 };
 
 /** The tool is in the wordlist but cannot be run locally (add_contact has no tool; unknown names). */

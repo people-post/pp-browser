@@ -42,7 +42,7 @@ struct Recorder {
   std::vector<std::string> deltas;
   std::vector<std::string> statuses;
   int done = 0, handoff = 0, error = 0, cancelled = 0;
-  std::string response, finish, error_message, partial;
+  std::string response, finish, error_message, partial, capability;
   size_t sources = 0;
   bool retryable = false;
 
@@ -60,7 +60,10 @@ struct Recorder {
       finish = f;
       sources = s.size();
     };
-    sinks.on_handoff = [this]() { ++handoff; };
+    sinks.on_handoff = [this](const std::string& c) {
+      ++handoff;
+      capability = c;
+    };
     sinks.on_error = [this](const std::string& m, bool r, const std::string& p) {
       ++error;
       error_message = m;
@@ -115,9 +118,11 @@ TEST(BriefTurnRunnerTest, HandoffFiresOnlyHandoff) {
   Recorder rec;
   BriefAiEvent handoff;
   handoff.type = BriefAiEvent::Type::Handoff;
+  handoff.capability = "search_people";
   RunScript(Script({handoff}, BriefAiOutcome::Handoff), rec);
   EXPECT_TRUE(rec.deltas.empty());
   EXPECT_EQ(rec.handoff, 1);
+  EXPECT_EQ(rec.capability, "search_people"); // the tool travels to the sink
   EXPECT_EQ(rec.Terminals(), 1);
 }
 
