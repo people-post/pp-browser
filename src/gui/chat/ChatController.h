@@ -14,6 +14,7 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -120,6 +121,9 @@ public:
   /** Escape after the shell closed nothing (desktop). Not in the composer: NotInComposer. */
   enum class ComposerEscape { NotInComposer, Handled, Idle };
   ComposerEscape OnComposerEscape();
+  /** The composer shows the unsent text of the conversation now open (Home has its own). App-wired to every
+   * nav-tab change, and called after every display sync. */
+  void SyncDraftOwner();
 
 private:
   using ChatState = ChatScreenState;
@@ -219,6 +223,11 @@ private:
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
+  void PutBackDraft(const std::string& thread_id, const std::string& text) override;
+  /** Text that did not go out goes back to `key`'s composer (a thread id, or ThreadDrafts::kHome). */
+  void PutTextBack(const std::string& key, const std::string& text, bool prepend);
+  /** The draft key of what the composer shows now: Home, or the open thread ("" = none shown). */
+  std::string CurrentDraftKey() const;
   /** An AI send while another thread's turn runs: confirm "@ai+" sharing first, then queue it (B112). */
   void QueueAgentSend(const std::string& thread_id, const std::string& text, std::optional<std::string> payload,
                       bool thread_created_for_this, bool already_confirmed = false);
@@ -316,6 +325,11 @@ private:
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
+  ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
+  std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
+  void StashComposerExtras(const std::string& key);
+  void RestoreComposerExtras(const std::string& key);
+  void ForgetComposerExtras(const std::string& key);
 };
 
 } // namespace pbr

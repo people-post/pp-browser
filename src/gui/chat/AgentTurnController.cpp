@@ -379,6 +379,61 @@ void AgentTurnController::DiscardPendingAiImage() {
   DirtyChatHeader();
 }
 
+void AgentTurnController::StashPendingImage(const std::string& key) {
+  if (chat_.image_preparing) {
+    DiscardPendingAiImage(); // still being prepared: nothing to keep yet
+    return;
+  }
+  if (!pending_image_) {
+    return;
+  }
+  ForgetPendingImage(key); // at most one kept per conversation
+  stashed_images_.emplace(key, std::move(*pending_image_));
+  pending_image_.reset();
+  chat_.image_chip = false;
+  chat_.image_thumb_ready = false;
+  chat_.image_thumb_src = "";
+  chat_.image_draft_name = "";
+  host_.SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void AgentTurnController::RestorePendingImage(const std::string& key) {
+  auto it = stashed_images_.find(key);
+  if (it == stashed_images_.end()) {
+    return;
+  }
+  DiscardPendingAiImage();
+  pending_image_ = std::move(it->second);
+  stashed_images_.erase(it);
+  chat_.image_chip = true;
+  chat_.image_preparing = false;
+  chat_.image_thumb_ready = !pending_image_->file_path.empty();
+  chat_.image_thumb_src = pending_image_->file_path.c_str();
+  chat_.image_draft_name = pending_image_->name.c_str();
+  host_.SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void AgentTurnController::ForgetPendingImage(const std::string& key) {
+  auto it = stashed_images_.find(key);
+  if (it == stashed_images_.end()) {
+    return;
+  }
+  RemoveSessionFile(it->second.file_path);
+  stashed_images_.erase(it);
+}
+
+void AgentTurnController::ForgetAllPendingImages() {
+  for (auto& [key, image] : stashed_images_) {
+    RemoveSessionFile(image.file_path);
+  }
+  stashed_images_.clear();
+  DiscardPendingAiImage();
+}
+
 bool AgentTurnController::SendImageQuestion(const std::string& text) {
   if (!host_.MessagingIsReady() || !host_.Facade() || !pending_image_ || !agent_ports_.submit_image_to_thread) {
     return false;
@@ -564,13 +619,15 @@ void AgentTurnController::MarkAgentIdle() {
 
 void AgentTurnController::RefreshBusyForActiveThread() {
   const std::string& thread_id = host_.ActiveThreadId();
-  const bool here = busy_.BusyIn(thread_id);
+  // "Thinking" only in the conversation whose turn runs; if that is unknown, nowhere (AI sends still queue).
+  const bool here = busy_.busy && !busy_.thread_id.empty() && busy_.thread_id == thread_id;
   chat_.loading = here;
   if (!here) {
     chat_.status = "";
   }
   const QueuedAgentSend* queued = queue_.Find(thread_id);
   chat_.has_queued = queued != nullptr;
+  chat_.busy_elsewhere = busy_.BusyElsewhere(thread_id);
   chat_.queued_text = queued ? queued->text.c_str() : "";
   host_.ShellSetActivity(here, here ? chat_.status : ui::String{});
   DirtyChatChrome();
@@ -996,6 +1053,11 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     }
   }
 
+  // An answer that arrived in a chat the user is not looking at shows as unread in the chat list (Kenneth
+  // 2026-10-28: "在那个对话框列表那显示……一或者是二这样的一个提醒"). The open chat is never counted.
+  if (!thread_id.empty() && host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id)) {
+    host_.Facade()->IncrementUnread(thread_id);
+  }
   host_.SyncDisplayFromThread();
   host_.SyncShellSessions();
   chat_.status = "";
@@ -1258,10 +1320,8 @@ void AgentTurnController::FlushHeldAgentSend() {
     host_.SendUserText(send.text, std::move(send.payload), send.from_home_chip);
     return;
   case HeldSendFate::BackToDraft: {
-    log().info << "Held send put back in the composer: another thread is open, or a reply is loading";
-    const std::string draft = chat_.draft.c_str();
-    chat_.draft = (draft.empty() ? send.text : send.text + "\n" + draft).c_str();
-    DataModelHost::Instance().Dirty("chat", "draft");
+    log().info << "Held send put back in its own composer: another thread is open, or a reply is loading";
+    host_.PutBackDraft(send.thread_id, send.text);
     return;
   }
   case HeldSendFate::Drop:

@@ -152,6 +152,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (tab == NavTab::Sessions) {
       chat.OnSessionsTabActivated();
     }
+    chat.SyncDraftOwner(); // every tab change: the composer shows that place's own unsent text
     if (tab == NavTab::Contacts) {
       contacts.OnNavTabActivated();
     }

@@ -104,7 +104,6 @@ void ShellStatusbar::Dirty() {
   DataModelHost::Instance().Dirty("window", "statusbar_label");
   DataModelHost::Instance().Dirty("window", "statusbar_label_warn");
   DataModelHost::Instance().Dirty("window", "statusbar_label_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_activity");
   DataModelHost::Instance().Dirty("window", "statusbar_brief_title");
   DataModelHost::Instance().Dirty("window", "statusbar_direct_title");
   DataModelHost::Instance().Dirty("window", "statusbar_help_title");

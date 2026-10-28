@@ -28,13 +28,17 @@
         <span class="prompt-attachment-chip-status">{{i18n:chat.attachment.uploading}}</span>
       </div>
       <div class="prompt-attachment-chip" data-if="image_chip">
-        <img class="prompt-attachment-chip-thumb" data-if="image_thumb_ready" data-attr-src="image_thumb_src"/>
+        <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on
+             any picture (Kenneth 2026-10-28). -->
+        <div class="prompt-image-thumb-wrap">
+          <img class="prompt-image-thumb" data-if="image_thumb_ready" data-attr-src="image_thumb_src"/>
+          <div class="prompt-image-thumb-placeholder" data-if="!image_thumb_ready"></div>
+          <div class="prompt-image-remove-badge" data-event-click="remove_image()" title="{{i18n:chat.image.remove}}">
+            <svg src="../icons/close.svg" width="8" height="8" crop-to-content="true"></svg>
+          </div>
+        </div>
         <span class="prompt-attachment-chip-name" data-value="image_draft_name"></span>
         <span class="prompt-attachment-chip-status" data-if="image_preparing">{{i18n:chat.image.preparing}}</span>
-        <button class="prompt-attachment-chip-remove" type="button" data-event-click="remove_image()"
-                title="{{i18n:chat.image.remove}}">
-          <svg src="../icons/close.svg" width="10" height="10" crop-to-content="true"></svg>
-        </button>
       </div>
     </div>
     <button class="prompt-send-btn" type="button" data-if="loading" data-event-click="stop_turn()"

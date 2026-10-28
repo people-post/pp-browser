@@ -62,6 +62,8 @@ public:
                                  const std::string& entry_id) = 0;
   /** Send a queued AI question into its own thread (which need not be the open one) now that the AI is free. */
   virtual QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) = 0;
+  /** Unsent text goes back to the composer of the conversation it was typed in (not the open one, if different). */
+  virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
 };
 
 /**
@@ -173,6 +175,13 @@ public:
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
   void DiscardPendingAiImage();
+  /** Leaving a conversation: its ready image is kept for it (a still-preparing one is dropped); the chip clears. */
+  void StashPendingImage(const std::string& key);
+  /** Back in a conversation: the image kept for it is in the composer again. */
+  void RestorePendingImage(const std::string& key);
+  /** The conversation is gone (closed / cleared): its kept image and thumbnail file go too. */
+  void ForgetPendingImage(const std::string& key);
+  void ForgetAllPendingImages();
   bool HasPendingImage() const { return pending_image_.has_value(); }
   /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
   bool SendImageQuestion(const std::string& text);
@@ -231,6 +240,7 @@ private:
     int height = 0;
   };
   std::optional<PendingAiImage> pending_image_;
+  std::map<std::string, PendingAiImage> stashed_images_; // per conversation, while another one is shown
   uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
 
   /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */

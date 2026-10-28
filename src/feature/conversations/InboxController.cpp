@@ -362,8 +362,8 @@ void InboxController::MarkThreadRead(const std::string& thread_id) {
   (void)store_.UpsertThread(updated);
 }
 
-void InboxController::IncrementUnread(const std::string& thread_id, const int delta) {
-  if (delta <= 0 || thread_id.empty() || thread_id == active_thread_id_) {
+void InboxController::IncrementUnread(const std::string& thread_id, const int delta, const bool even_if_active) {
+  if (delta <= 0 || thread_id.empty() || (thread_id == active_thread_id_ && !even_if_active)) {
     return;
   }
   auto thread = store_.GetThread(thread_id);

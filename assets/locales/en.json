@@ -496,6 +496,7 @@
     "chat.permission.stale": "That permission prompt is no longer active. Ask again if you still want this.",
     "chat.permission.stale_reason": "That permission prompt is no longer active ({reason}). Ask again if you still want this.",
     "chat.permission.not_ready": "Assistant is not ready for permission decisions.",
+    "chat.ai_busy_elsewhere": "The assistant is answering another chat…",
     "chat.ai_queue.pending": "Queued · waits for the answer in another chat",
     "chat.ai_queue.cancel": "Cancel",
     "chat.ai_queue.already": "This chat already has a question waiting.",

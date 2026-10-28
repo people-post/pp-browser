@@ -661,12 +661,51 @@ select selectbox option {
   opacity: 0.72;
 }
 
-.prompt-attachment-chip-thumb {
+/* The AI picture in the composer: a small thumbnail with a remove badge overlapping its top-right corner
+   (a dark disc with a white ring and a white cross: visible on any picture and on both themes). */
+.prompt-image-thumb-wrap {
   flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 8dp;
+}
+
+.prompt-image-thumb {
   display: block;
-  max-width: 28dp;
-  max-height: 28dp;
-  border-radius: 4dp;
+  height: 32dp;
+  width: auto;
+  max-width: 56dp;
+  border-radius: 6dp;
+}
+
+.prompt-image-thumb-placeholder {
+  width: 32dp;
+  height: 32dp;
+  border-radius: 6dp;
+  background-color: rgba(128, 128, 128, 0.35);
+}
+
+.prompt-image-remove-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20dp;
+  height: 20dp;
+  margin-left: -10dp;
+  margin-top: -8dp;
+  border-width: 2dp;
+  border-color: #ffffff;
+  border-radius: 12dp; /* 20dp box + 2dp border each side: a round badge */
+  background-color: #111827;
+  cursor: pointer;
+}
+
+.prompt-image-remove-badge svg {
+  flex-shrink: 0;
+  width: 8dp;
+  height: 8dp;
+  image-color: #ffffff;
 }
 
 .prompt-attachment-chip-remove {
@@ -1340,8 +1379,7 @@ select selectbox option {
 }
 
 .shell-statusbar-label,
-.shell-statusbar-load,
-.shell-statusbar-activity {
+.shell-statusbar-load {
   margin-top: 0;
   margin-bottom: 0;
   white-space: nowrap;
@@ -1354,12 +1392,6 @@ select selectbox option {
 
 .shell-statusbar-load {
   flex-shrink: 0;
-}
-
-.shell-statusbar-activity {
-  text-align: right;
-  flex-shrink: 1;
-  min-width: 0;
 }
 
 .shell-statusbar-popover-scrim {

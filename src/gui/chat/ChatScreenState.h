@@ -76,6 +76,7 @@ struct ChatScreenState {
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;
   bool has_queued = false;  // this thread has an AI send waiting for another thread's turn
+  bool busy_elsewhere = false; // the AI is answering another conversation (shown above the composer)
   ui::String queued_text;   // its text, shown as a dimmed "me" bubble with "queued" and a cancel link
 };
 

@@ -84,7 +84,8 @@ public:
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
-  void IncrementUnread(const std::string& thread_id, int delta = 1);
+  /** `even_if_active`: count it although it is the active thread (the user left its page, e.g. back to the list). */
+  void IncrementUnread(const std::string& thread_id, int delta = 1, bool even_if_active = false);
   void OnInboundMessagePersisted(const std::string& thread_id,
                                  const std::optional<std::string>& preview = std::nullopt);
   int SumUnread() const;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gui/shell/ShellNavigationPorts.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -80,6 +82,21 @@ enum class QueuedSendOutcome {
   NotStarted, // nothing to run (thread gone, route failed, not an AI send): go on with the next one
   Busy,       // the AI turned busy first: put it back at the head and wait
 };
+
+/**
+ * The user is looking at `thread_id`'s messages now: it is the open thread and its page is on screen (compact:
+ * the chat page is open over the list; expanded: the Sessions tab with the chat pane).
+ */
+inline bool ChatPageShows(const ShellChromeSnapshot& chrome, const std::string& active_thread,
+                          const std::string& thread_id) {
+  if (thread_id.empty() || thread_id != active_thread || chrome.nav_tab == NavTab::Home) {
+    return false;
+  }
+  if (chrome.layout_mode == LayoutMode::Compact) {
+    return chrome.compact_chat_open;
+  }
+  return chrome.nav_tab == NavTab::Sessions && chrome.primary_pane_key == "chat";
+}
 
 /** One queued AI send. Shown as a dimmed "me" bubble at the end of its thread; stored and sent only when it runs. */
 struct QueuedAgentSend {

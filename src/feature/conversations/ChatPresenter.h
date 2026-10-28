@@ -179,6 +179,7 @@ public:
   void StartQuoteReply(const std::string& quoted);
   void CancelQuoteReply() { quote_source_.clear(); }
   bool QuotingReply() const { return !quote_source_.empty(); }
+  const std::string& QuoteSource() const { return quote_source_; }
   /** The quote bar's one line: the quoted text, newlines flattened, cut at 120 characters with "…". */
   std::string QuotePreview() const;
   /** A draft that can be sent (not too long); the error's message is an i18n key. */

@@ -378,7 +378,6 @@ struct ShellState {
   ui::String statusbar_label;
   bool statusbar_label_warn = false;
   bool statusbar_label_error = false;
-  ui::String statusbar_activity;
   /** Accessible names for icon-only slots (data-attr-title). */
   ui::String statusbar_brief_title;
   ui::String statusbar_direct_title;

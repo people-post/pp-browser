@@ -620,6 +620,7 @@ void ChatController::OnHomeTabActivated() {
   presenter_.ShowHome();
   working_set_.ClearAll();
   ShellSetPrimaryPane("home");
+  SyncDraftOwner();
   RefreshFromMessaging();
   ShellSyncLayout();
   NotifySurfaceChanged();
@@ -650,6 +651,7 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     return;
   }
   (void)agent_.TakeQueued(thread_id); // a question queued for a closed chat has nowhere to go
+  ForgetComposerExtras(thread_id);
   if (was_open) {
     chat_.draft = "";
     chat_.status = "";
@@ -786,6 +788,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
 }
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
+  ForgetComposerExtras(thread_id);
   // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
   if (thread_id == ActiveThreadId()) {
     chat_.draft = "";
@@ -847,6 +850,11 @@ void ChatController::OnProfileDataReset() {
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
+  drafts_ = ThreadDrafts{}; // unsent text of the old profile must not reach the new one
+  quotes_.clear();
+  agent_.ForgetAllPendingImages();
+  chat_.draft = "";
+  DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1152,6 +1160,7 @@ void ChatController::SyncDisplayFromThread() {
   if (!facade_ || !facade_->GetActiveThread()) {
     chrome_.ResetPanelState();
     agent_.RefreshBusyForActiveThread();
+    SyncDraftOwner();
     return;
   }
   const auto sync_started = std::chrono::steady_clock::now();
@@ -1166,10 +1175,6 @@ void ChatController::SyncDisplayFromThread() {
     facade_->EnsureThreadAttachments(thread_id);
     backfill_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
   }
-  if (thread_changed) {
-    agent_.DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
-    CancelQuoteReply();      // so does a pending reply
-  }
 
   const std::string prev_tail_id =
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
@@ -1183,6 +1188,7 @@ void ChatController::SyncDisplayFromThread() {
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
   agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
+  SyncDraftOwner();                    // so does the unsent text
 
   // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
   const auto sync_ms =
@@ -1481,8 +1487,19 @@ void ChatController::OnNewChat() {
     return;
   }
 
+  // The place the user leaves (Home or a chat) keeps its unsent text; the new chat starts empty, even when it is
+  // opened from Home (nav may still say Home here, e.g. "find someone").
+  const std::string leaving = chat_.draft.c_str();
   (void)facade_->CreateNewAiThread();
-  chat_.draft = "";
+  const std::string new_thread = ActiveThreadId();
+  if (!new_thread.empty()) {
+    if (drafts_.Owner() && *drafts_.Owner() != new_thread) {
+      StashComposerExtras(*drafts_.Owner()); // the quote / picked image stay where they were made
+    }
+    const std::string next = drafts_.SwitchTo(new_thread, leaving);
+    chat_.draft = next.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+  }
   chat_.status = "";
   chat_.compose_disabled = false;
   // A turn running in another thread keeps running: its answer lands in its own thread (B112).
@@ -2019,12 +2036,84 @@ void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const A
                           });
 }
 
+void ChatController::StashComposerExtras(const std::string& key) {
+  if (presenter_.QuotingReply()) {
+    quotes_[key] = presenter_.QuoteSource();
+  } else {
+    quotes_.erase(key);
+  }
+  CancelQuoteReply();
+  agent_.StashPendingImage(key);
+}
+
+void ChatController::RestoreComposerExtras(const std::string& key) {
+  if (auto it = quotes_.find(key); it != quotes_.end()) {
+    presenter_.StartQuoteReply(it->second);
+    chat_.quote_reply = true;
+    chat_.quote_reply_text = StructuredTextParser::EscapeText(presenter_.QuotePreview()).c_str();
+    DataModelHost::Instance().Dirty("chat", "quote_reply");
+    DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+    quotes_.erase(it);
+  }
+  agent_.RestorePendingImage(key);
+}
+
+void ChatController::ForgetComposerExtras(const std::string& key) {
+  drafts_.Forget(key);
+  quotes_.erase(key);
+  agent_.ForgetPendingImage(key);
+}
+
 void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {
-  if (thread_id != ActiveThreadId() || !std::string(chat_.draft.c_str()).empty()) {
+  PutTextBack(thread_id, text, /*prepend=*/false);
+}
+
+void ChatController::PutBackDraft(const std::string& thread_id, const std::string& text) {
+  PutTextBack(thread_id, text, /*prepend=*/true);
+}
+
+std::string ChatController::CurrentDraftKey() const {
+  return ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
+}
+
+void ChatController::PutTextBack(const std::string& key, const std::string& text, const bool prepend) {
+  SyncDraftOwner(); // so "shown" below is what the user sees now
+  if (key.empty() || key != CurrentDraftKey()) {
+    // Not the conversation on screen: its own composer gets the text, never the one shown.
+    if (prepend) {
+      drafts_.Prepend(key, text);
+    } else if (drafts_.Peek(key).empty()) {
+      drafts_.Put(key, text);
+    }
     return;
   }
-  chat_.draft = text.c_str();
+  const std::string draft = chat_.draft.c_str();
+  if (!prepend && !draft.empty()) {
+    return;
+  }
+  chat_.draft = (draft.empty() ? text : text + "\n" + draft).c_str();
   DataModelHost::Instance().Dirty("chat", "draft");
+}
+
+void ChatController::SyncDraftOwner() {
+  const std::string key = CurrentDraftKey();
+  if (key.empty()) {
+    return; // no conversation shown: the text stays with the one it was typed in
+  }
+  if (drafts_.Owner() && *drafts_.Owner() == key) {
+    return;
+  }
+  // The quote and the picked image stay with the conversation they were made in, like the text.
+  if (drafts_.Owner()) {
+    StashComposerExtras(*drafts_.Owner());
+  }
+  RestoreComposerExtras(key);
+  const std::string current = chat_.draft.c_str();
+  const std::string next = drafts_.SwitchTo(key, current);
+  if (next != current) {
+    chat_.draft = next.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+  }
 }
 
 QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item) {
@@ -2078,12 +2167,12 @@ void ChatController::CancelQueuedHere() {
       if (!open || open->kind != ThreadKind::Ai) {
         ShellSelectNavTab(NavTab::Home);
       }
+      // The question was asked on Home: it goes back to Home's composer, not to whichever chat opened now.
+      PutTextBack(ThreadDrafts::kHome, item->text, /*prepend=*/false);
+      return;
     }
   }
-  if (std::string(chat_.draft.c_str()).empty()) {
-    chat_.draft = item->text.c_str();
-    DataModelHost::Instance().Dirty("chat", "draft");
-  }
+  PutTextBack(thread_id, item->text, /*prepend=*/false);
 }
 
 ChatController::ComposerEscape ChatController::OnComposerEscape() {
