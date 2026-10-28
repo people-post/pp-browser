@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "gui/chat/ApprovalCard.h"
 
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
@@ -1268,7 +1269,8 @@ void ChatController::RestoreWorkingSetsFromActiveThread() {
   }
 }
 
-void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
+void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
+                                       const std::string& entry_id) {
   if (payload && !payload->empty()) {
     auto action_json = TryParseObject(*payload);
     auto action_type = action_json ? action_json->getString("type") : std::nullopt;
@@ -1281,7 +1283,17 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       }
       auto resumed = agent_.Ports().resume_tool_permission(approval_id, decision, message);
       if (!resumed) {
-        ShowToast(resumed.error().message);
+        switch (ReactionToResumeError(resumed.error().message)) {
+        case ApprovalTapReaction::Silent:
+          break;
+        case ApprovalTapReaction::BusyElsewhere:
+          ShowToast(Tr("chat.permission.busy_elsewhere"));
+          break;
+        case ApprovalTapReaction::StaleRewrite:
+          ShowToast(Tr("chat.permission.stale"));
+          agent_.CloseApprovalCard(ActiveThreadId(), entry_id, ApprovalOutcome::Stale);
+          break;
+        }
       }
       return;
     }
@@ -2021,7 +2033,7 @@ void ChatController::WireMessagingBindings() {
   if (facade_ && facade_->HasRouter()) {
     facade_->SetOnLocalAction(
         [this](const std::string& message, const std::optional<std::string>& payload) {
-          HandleLocalAction(message, payload);
+          HandleLocalAction(message, payload, {});
         });
     facade_->SetSharedAiConfirmCallback(
         [this](const std::string& thread_id, const AtAiMode mode, const std::string& prompt,

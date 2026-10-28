@@ -18,6 +18,7 @@
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
+#include "gui/chat/ApprovalCard.h"
 #include "gui/chat/ChatAnswer.h"
 #include "feature/conversations/SessionListText.h"
 #include "feature/conversations/SessionMenu.h"
@@ -632,11 +633,11 @@ void AgentTurnController::SendChatAction(const std::string& entry_id, int action
   const std::string action_message = resolved->message;
   const std::optional<std::string> action_payload = resolved->payload;
   const bool close_working_set = working_set_.ShouldCloseForAction(action_payload);
-  AppRuntime::PostUI([this, action_message, action_payload, close_working_set]() {
+  AppRuntime::PostUI([this, action_message, action_payload, close_working_set, entry_id]() {
     if (close_working_set) {
       working_set_.Clear();
     }
-    host_.HandleLocalAction(action_message, action_payload);
+    host_.HandleLocalAction(action_message, action_payload, entry_id);
   });
 }
 
@@ -692,6 +693,23 @@ void AgentTurnController::ShowMoreRows(const std::string& entry_id, const size_t
 
   working_set_.ApplyFromParse(entry_id, candidates, std::move(chat_actions));
   host_.SyncDisplayFromThread();
+  DirtyChat();
+}
+
+void AgentTurnController::CloseApprovalCard(const std::string& thread_id, const std::string& entry_id,
+                                            const ApprovalOutcome outcome) {
+  if (entry_id.empty() || !host_.MessagingIsReady()) {
+    return;
+  }
+  const std::string target_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
+  if (!CloseApprovalCardInStore(*host_.Facade(), target_thread, entry_id, outcome)) {
+    log().warning << "Permission card not rewritten: entry=" << entry_id;
+    return;
+  }
+  working_set_.ApplyFromParse(entry_id, {}, {}); // the old buttons must not resolve any more
+  if (target_thread == host_.ActiveThreadId()) {
+    host_.SyncDisplayFromThread();
+  }
   DirtyChat();
 }
 
@@ -915,6 +933,9 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     FinishAssistantReply(event.entry_id, event.text, event.from_model,
                          event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
                          event.shared_ai_mode, event.sources);
+    break;
+  case AgentEventType::ApprovalClosed:
+    CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;

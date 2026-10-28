@@ -213,7 +213,8 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   void UpdateSidebarPreview(const std::string& preview_text) override;
-  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) override;
+  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
+                         const std::string& entry_id) override;
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();

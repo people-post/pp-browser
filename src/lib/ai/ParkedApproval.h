@@ -23,6 +23,8 @@ struct ParkedApproval {
   std::string id;
   std::string thread_id;
   std::string entry_id;
+  /** Id of the stored assistant message that carries the permission card (empty until it is persisted). */
+  std::string card_entry_id;
   TurnPlan plan;
   size_t next_tool_index = 0;
   std::vector<ChatMessage> scratch_so_far;
@@ -31,6 +33,14 @@ struct ParkedApproval {
   ParkedApprovalState state = ParkedApprovalState::Pending;
   int64_t created_at_ms = 0;
   AgentTurnMode turn_mode = AgentTurnMode::Conversation;
+};
+
+/** How a permission card ended; the GUI rewrites the stored card message to match. */
+enum class ApprovalOutcome {
+  Stale, // cancelled, superseded or expired: the card cannot be answered any more
+  AllowOnce,
+  AllowAlways,
+  Deny,
 };
 
 enum class ApprovalResumeError {

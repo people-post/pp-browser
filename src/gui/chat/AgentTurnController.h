@@ -56,8 +56,9 @@ public:
   virtual void ShowAttachChoice(std::function<void()> photo, std::function<void()> file) = 0;
   virtual void RegisterMessagingTools(ToolRegistry& tools) = 0;
   virtual SessionStore& Store() = 0;
-  /** A local action a reply's button asked for (tool permission, open a URL, …). */
-  virtual void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) = 0;
+  /** A local action a reply's button asked for (tool permission, open a URL, …); `entry_id` = the tapped message ("" = unknown). */
+  virtual void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
+                                 const std::string& entry_id) = 0;
 };
 
 /**
@@ -135,6 +136,11 @@ public:
   void OnStopTurn();
   /** Stop a turn in flight (pause, a new chat). */
   void Cancel();
+  /**
+   * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
+   * id so its buttons are gone. `thread_id` empty = the open thread.
+   */
+  void CloseApprovalCard(const std::string& thread_id, const std::string& entry_id, ApprovalOutcome outcome);
   /** A send made while the agent was still (re)configuring: sent once it is, or given up. */
   void HoldSend(HeldAgentSend::Send send) { held_agent_send_.Hold(std::move(send), std::chrono::steady_clock::now()); }
   void SendChatAction(const std::string& entry_id, int action_index);
