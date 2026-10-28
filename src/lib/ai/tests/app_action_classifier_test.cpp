@@ -426,3 +426,34 @@ TEST(AppActionClassifierTest, EverydayPhrasings) {
     EXPECT_FALSE(ClassifyAppActionMatch(text, AllTools()).has_value()) << text;
   }
 }
+
+// Simulator run 2026-10-28: a bare setting name is a hit (the planner asks on or off); a sentence that merely
+// contains the word is not.
+TEST(AppActionClassifierTest, BareBooleanSettingNames) {
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"通知呢", "set_notifications"},
+      {"通知", "set_notifications"},
+      {"通知？", "set_notifications"},
+      {"Notifications?", "set_notifications"},
+      {"notifications", "set_notifications"},
+      {"节点呢", "set_node_enabled"},
+      {"透明度呢", "set_reduce_transparency"},
+      {"毛玻璃", "set_reduce_transparency"},
+      {"自动续期呢", "set_auto_renew_registration"},
+      {"通话诊断吗", "set_call_diagnostics"},
+      {"call diagnostics?", "set_call_diagnostics"},
+      {"node mode", "set_node_enabled"},
+      {"blur?", "set_reduce_transparency"},
+  };
+  for (const auto& [text, tool] : cases) {
+    const auto match = ClassifyAppActionMatch(text, AllTools());
+    ASSERT_TRUE(match.has_value()) << text;
+    EXPECT_EQ(match->tool, tool) << text;
+    ASSERT_FALSE(match->matched_spans.empty()) << text;
+    EXPECT_LT(match->matched_spans[0].begin, match->matched_spans[0].end) << text;
+    EXPECT_LE(match->matched_spans[0].end, text.size()) << text;
+  }
+  for (const char* text : {"通知我一下", "通知他明天开会", "notification sounds are annoying", "blur the background", "节点在哪"}) {
+    EXPECT_FALSE(ClassifyAppActionMatch(text, AllTools()).has_value()) << text;
+  }
+}

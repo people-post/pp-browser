@@ -19,6 +19,8 @@ struct AppActionWords {
   std::vector<std::string_view> en_verbs, en_objects, en_phrases;
   /** A phrase on its own ("深色模式", "switch to english" minus the verb) is already a command. */
   bool bare_command = false;
+  /** The object word on its own ("通知呢", "Notifications?") hits the tool; the planner then asks on or off. */
+  bool bare_object = false;
 };
 
 inline const std::vector<AppActionWords>& AppActionTable() {
@@ -142,15 +144,15 @@ inline const std::vector<AppActionWords>& AppActionTable() {
       {"set_notifications", false,
        {"关掉", "关闭", "关", "打开", "开启", "开", "静音"}, {"通知", "提醒", "推送"},
        {"关掉通知", "关闭通知", "打开通知", "开启通知", "别再通知", "通知关了", "关通知", "开通知"},
-       {"turn", "disable", "enable", "mute"}, {"notifications", "alerts"},
+       {"turn", "disable", "enable", "mute"}, {"notifications", "notification", "alerts"},
        {"turn off notifications", "turn on notifications", "disable notifications", "enable notifications",
-        "mute notifications", "stop notifications"}},
+        "mute notifications", "stop notifications"}, false, true},
       {"set_reduce_transparency", false,
        {"关掉", "关闭", "关", "打开", "开启", "开", "减少"}, {"毛玻璃", "透明效果", "透明度", "半透明"},
        {"关掉毛玻璃", "毛玻璃效果", "减少透明", "透明效果", "关掉透明"},
        {"turn", "disable", "enable", "reduce"}, {"transparency", "blur", "frosted glass"},
        {"reduce transparency", "turn off transparency", "disable transparency", "turn off the blur", "disable blur",
-        "reduce the blur", "turn off frosted glass", "disable frosted glass"}},
+        "reduce the blur", "turn off frosted glass", "disable frosted glass"}, false, true},
       {"set_group_invite_policy", false,
        {"不让", "别让", "禁止", "允许", "只让", "设置"}, {"拉我进群", "拉进群", "群邀请", "邀请我"},
        {"不让陌生人拉我进群", "拉我进群", "群邀请", "谁可以拉我", "陌生人拉我", "进群邀请"},
@@ -164,17 +166,17 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"自动续期", "打开续期", "关掉续期", "自动续约"},
        {"turn", "enable", "disable"}, {"auto renew", "auto renewal", "automatic renewal"},
        {"auto renew my registration", "auto renew registration", "renew my registration automatically",
-        "registration auto renew"}},
+        "registration auto renew"}, false, true},
       {"set_call_diagnostics", false,
        {"打开", "开启", "关掉", "关闭", "显示", "开", "关"}, {"通话诊断", "诊断信息"},
        {"通话诊断", "诊断信息", "打开诊断", "关掉诊断"},
        {"turn", "enable", "disable", "show", "hide"}, {"call diagnostics"},
-       {"call diagnostics", "turn on call diagnostics", "turn off call diagnostics"}},
+       {"call diagnostics", "turn on call diagnostics", "turn off call diagnostics"}, false, true},
       {"set_node_enabled", false,
        {"打开", "开启", "关掉", "关闭", "开", "关", "当"}, {"节点模式", "节点", "中继节点"},
        {"节点模式", "打开节点", "关掉节点", "当节点", "作为节点"},
        {"turn", "enable", "disable", "become"}, {"node mode", "relay node"},
-       {"node mode", "enable node mode", "become a node", "run as a node", "act as a node"}},
+       {"node mode", "enable node mode", "become a node", "run as a node", "act as a node"}, false, true},
       {"set_mesh_capabilities", false,
        {"打开", "开启", "关掉", "关闭", "开", "关"}, {"中继", "dht", "mesh", "网络能力"},
        {"打开中继", "关掉中继", "打开dht", "关掉dht", "中继功能", "dht功能", "开中继", "关中继"},

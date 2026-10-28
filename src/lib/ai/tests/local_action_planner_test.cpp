@@ -567,3 +567,19 @@ TEST(LocalActionPlannerTest, DeviceCheckSentences) {
   ExpectText(PlanFor("搜索用户 ken"), "search_people", "query", "ken", "搜索用户 ken");
   ExpectText(PlanFor("look up Ken"), "search_people", "query", "Ken", "look up Ken");
 }
+
+// Simulator run 2026-10-28: a bare setting name asks on or off, and the next word answers.
+TEST(LocalActionPlannerTest, ABareSettingNameAsksOnOrOff) {
+  for (const char* text : {"通知呢", "Notifications?"}) {
+    const LocalPlan p = PlanFor(text);
+    ExpectAsk(p, "settings.ask.on_or_off", text);
+    const auto* ask = std::get_if<LocalAsk>(&p);
+    ASSERT_NE(ask, nullptr) << text;
+    EXPECT_EQ(ask->tool, "set_notifications") << text;
+    EXPECT_EQ(ask->missing, "enabled") << text;
+    ExpectBool(ResolvePendingAnswer(*ask, std::string(text) == "通知呢" ? "关" : "off", {}), "set_notifications", "enabled",
+               false, text);
+  }
+  ExpectAsk(PlanFor("透明度呢"), "settings.ask.on_or_off", "透明度呢");
+  EXPECT_EQ(std::get<LocalAsk>(PlanFor("透明度呢")).tool, "set_reduce_transparency");
+}

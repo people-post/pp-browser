@@ -56,6 +56,7 @@ struct ZhEntry {
   std::string_view tool;
   bool settings_read = false;
   bool bare_command = false;
+  bool bare_object = false;
   std::vector<Text> verbs, objects, phrases;
 };
 
@@ -79,7 +80,7 @@ const std::vector<ZhEntry>& ZhTable() {
     };
     std::vector<ZhEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
+      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
     }
     return t;
   }();
@@ -288,6 +289,22 @@ bool ZhSearchTailOk(const View msg, const HitResult& hit) {
   return tail.size() <= kZhSearchMaxTail && tail.find(W("的")[0]) == View::npos;
 }
 
+// "通知呢" / "通知？": the object word alone, with at most a question particle behind it. "通知我一下" is a request to
+// notify someone, not the setting.
+bool IsZhParticle(const char32_t c) {
+  return c == W("呢")[0] || c == W("吗")[0] || c == W("吧")[0] || c == W("啊")[0] || c == W("？")[0] || c == '?' ||
+         c == W("！")[0] || c == '!';
+}
+
+std::optional<size_t> ZhBareObject(const ZhEntry& e, const View msg) {
+  size_t end = msg.size();
+  while (end > 0 && IsZhParticle(msg[end - 1])) {
+    --end;
+  }
+  const View body = msg.substr(0, end);
+  return !body.empty() && AnyIn(e.objects, body) ? std::optional<size_t>(end) : std::nullopt;
+}
+
 std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::vector<size_t>& offsets,
                                               const size_t total_bytes, const std::vector<std::string>& declared) {
   Text msg;
@@ -308,6 +325,13 @@ std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::ve
       if (e.tool == name) {
         entries.push_back(&e);
         break;
+      }
+    }
+  }
+  for (const ZhEntry* e : entries) {
+    if (e->bare_object) {
+      if (const auto stop = ZhBareObject(*e, msg)) {
+        return AppActionMatch{std::string(e->tool), {{begin[0], end[*stop - 1]}}};
       }
     }
   }
@@ -351,6 +375,7 @@ struct EnEntry {
   std::string_view tool;
   bool settings_read = false;
   bool bare_command = false;
+  bool bare_object = false;
   std::vector<Words> verbs, objects, phrases;
 };
 
@@ -365,7 +390,7 @@ const std::vector<EnEntry>& EnTable() {
     };
     std::vector<EnEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
+      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
     }
     return t;
   }();
@@ -517,6 +542,12 @@ std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const st
         entries.push_back(&e);
         break;
       }
+    }
+  }
+  for (const EnEntry* e : entries) {
+    // "Notifications?": the object word alone (the tokenizer already dropped the mark).
+    if (e->bare_object && std::any_of(e->objects.begin(), e->objects.end(), [&](const Words& o) { return o == msg; })) {
+      return AppActionMatch{std::string(e->tool), {{word_bytes.front().first, word_bytes.back().second}}};
     }
   }
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
