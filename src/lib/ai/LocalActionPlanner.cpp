@@ -455,7 +455,7 @@ Direction ScanDirection(const std::string& region, const std::vector<std::string
     for (const std::string_view w : words) {
       const U32 u = ToU32(w);
       for (const size_t p : FindAll(r, u)) {
-        std::fill(v.begin() + static_cast<std::ptrdiff_t>(p), v.begin() + static_cast<std::ptrdiff_t>(p + u.size()), 1);
+        std::fill(v.begin() + static_cast<std::ptrdiff_t>(p), v.begin() + static_cast<std::ptrdiff_t>(p + u.size()), char{1});
       }
     }
   };

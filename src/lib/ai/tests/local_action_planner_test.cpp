@@ -171,11 +171,13 @@ TEST(LocalActionPlannerTest, ListContactsTakesAQueryOnlyAfterASearchVerb) {
 }
 
 TEST(LocalActionPlannerTest, PeopleToolsRenderAsAPeopleList) {
-  const TurnPlan* p = AsPlan(PlanFor("搜索用户 ken"));
+  const LocalPlan people = PlanFor("搜索用户 ken");
+  const TurnPlan* p = AsPlan(people);
   ASSERT_NE(p, nullptr);
   EXPECT_EQ(p->render_mode, RenderMode::PeopleList);
   EXPECT_EQ(p->response_goal, ResponseGoal::PeopleDiscovery);
-  const TurnPlan* q = AsPlan(PlanFor("关掉通知"));
+  const LocalPlan setting = PlanFor("关掉通知");
+  const TurnPlan* q = AsPlan(setting);
   ASSERT_NE(q, nullptr);
   EXPECT_EQ(q->render_mode, RenderMode::Blocks);
 }
