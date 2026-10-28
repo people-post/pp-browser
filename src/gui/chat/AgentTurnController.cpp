@@ -379,6 +379,61 @@ void AgentTurnController::DiscardPendingAiImage() {
   DirtyChatHeader();
 }
 
+void AgentTurnController::StashPendingImage(const std::string& key) {
+  if (chat_.image_preparing) {
+    DiscardPendingAiImage(); // still being prepared: nothing to keep yet
+    return;
+  }
+  if (!pending_image_) {
+    return;
+  }
+  ForgetPendingImage(key); // at most one kept per conversation
+  stashed_images_.emplace(key, std::move(*pending_image_));
+  pending_image_.reset();
+  chat_.image_chip = false;
+  chat_.image_thumb_ready = false;
+  chat_.image_thumb_src = "";
+  chat_.image_draft_name = "";
+  host_.SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void AgentTurnController::RestorePendingImage(const std::string& key) {
+  auto it = stashed_images_.find(key);
+  if (it == stashed_images_.end()) {
+    return;
+  }
+  DiscardPendingAiImage();
+  pending_image_ = std::move(it->second);
+  stashed_images_.erase(it);
+  chat_.image_chip = true;
+  chat_.image_preparing = false;
+  chat_.image_thumb_ready = !pending_image_->file_path.empty();
+  chat_.image_thumb_src = pending_image_->file_path.c_str();
+  chat_.image_draft_name = pending_image_->name.c_str();
+  host_.SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void AgentTurnController::ForgetPendingImage(const std::string& key) {
+  auto it = stashed_images_.find(key);
+  if (it == stashed_images_.end()) {
+    return;
+  }
+  RemoveSessionFile(it->second.file_path);
+  stashed_images_.erase(it);
+}
+
+void AgentTurnController::ForgetAllPendingImages() {
+  for (auto& [key, image] : stashed_images_) {
+    RemoveSessionFile(image.file_path);
+  }
+  stashed_images_.clear();
+  DiscardPendingAiImage();
+}
+
 bool AgentTurnController::SendImageQuestion(const std::string& text) {
   if (!host_.MessagingIsReady() || !host_.Facade() || !pending_image_ || !agent_ports_.submit_image_to_thread) {
     return false;
@@ -564,7 +619,8 @@ void AgentTurnController::MarkAgentIdle() {
 
 void AgentTurnController::RefreshBusyForActiveThread() {
   const std::string& thread_id = host_.ActiveThreadId();
-  const bool here = busy_.BusyIn(thread_id);
+  // "Thinking" only in the conversation whose turn runs; if that is unknown, nowhere (AI sends still queue).
+  const bool here = busy_.busy && !busy_.thread_id.empty() && busy_.thread_id == thread_id;
   chat_.loading = here;
   if (!here) {
     chat_.status = "";

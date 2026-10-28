@@ -651,7 +651,7 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     return;
   }
   (void)agent_.TakeQueued(thread_id); // a question queued for a closed chat has nowhere to go
-  drafts_.Forget(thread_id);
+  ForgetComposerExtras(thread_id);
   if (was_open) {
     chat_.draft = "";
     chat_.status = "";
@@ -788,7 +788,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
 }
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
-  drafts_.Forget(thread_id);
+  ForgetComposerExtras(thread_id);
   // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
   if (thread_id == ActiveThreadId()) {
     chat_.draft = "";
@@ -851,6 +851,8 @@ void ChatController::OnProfileDataReset() {
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
   drafts_ = ThreadDrafts{}; // unsent text of the old profile must not reach the new one
+  quotes_.clear();
+  agent_.ForgetAllPendingImages();
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
@@ -1173,10 +1175,6 @@ void ChatController::SyncDisplayFromThread() {
     facade_->EnsureThreadAttachments(thread_id);
     backfill_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
   }
-  if (thread_changed) {
-    agent_.DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
-    CancelQuoteReply();      // so does a pending reply
-  }
 
   const std::string prev_tail_id =
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
@@ -1495,6 +1493,9 @@ void ChatController::OnNewChat() {
   (void)facade_->CreateNewAiThread();
   const std::string new_thread = ActiveThreadId();
   if (!new_thread.empty()) {
+    if (drafts_.Owner() && *drafts_.Owner() != new_thread) {
+      StashComposerExtras(*drafts_.Owner()); // the quote / picked image stay where they were made
+    }
     const std::string next = drafts_.SwitchTo(new_thread, leaving);
     chat_.draft = next.c_str();
     DataModelHost::Instance().Dirty("chat", "draft");
@@ -2035,6 +2036,34 @@ void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const A
                           });
 }
 
+void ChatController::StashComposerExtras(const std::string& key) {
+  if (presenter_.QuotingReply()) {
+    quotes_[key] = presenter_.QuoteSource();
+  } else {
+    quotes_.erase(key);
+  }
+  CancelQuoteReply();
+  agent_.StashPendingImage(key);
+}
+
+void ChatController::RestoreComposerExtras(const std::string& key) {
+  if (auto it = quotes_.find(key); it != quotes_.end()) {
+    presenter_.StartQuoteReply(it->second);
+    chat_.quote_reply = true;
+    chat_.quote_reply_text = StructuredTextParser::EscapeText(presenter_.QuotePreview()).c_str();
+    DataModelHost::Instance().Dirty("chat", "quote_reply");
+    DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+    quotes_.erase(it);
+  }
+  agent_.RestorePendingImage(key);
+}
+
+void ChatController::ForgetComposerExtras(const std::string& key) {
+  drafts_.Forget(key);
+  quotes_.erase(key);
+  agent_.ForgetPendingImage(key);
+}
+
 void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {
   PutTextBack(thread_id, text, /*prepend=*/false);
 }
@@ -2071,6 +2100,14 @@ void ChatController::SyncDraftOwner() {
   if (key.empty()) {
     return; // no conversation shown: the text stays with the one it was typed in
   }
+  if (drafts_.Owner() && *drafts_.Owner() == key) {
+    return;
+  }
+  // The quote and the picked image stay with the conversation they were made in, like the text.
+  if (drafts_.Owner()) {
+    StashComposerExtras(*drafts_.Owner());
+  }
+  RestoreComposerExtras(key);
   const std::string current = chat_.draft.c_str();
   const std::string next = drafts_.SwitchTo(key, current);
   if (next != current) {

@@ -147,11 +147,14 @@ TEST_F(AgentTurnBusyTest, StatusBarActivityFollowsTheOpenThread) {
   EXPECT_FALSE(host_.activity.back());
 }
 
-TEST_F(AgentTurnBusyTest, UnknownThreadMeansEveryThreadIsBusy) {
+TEST_F(AgentTurnBusyTest, UnknownThreadShowsThinkingNowhereButAiSendsStillQueue) {
+  // Kenneth 2026-10-28: "thinking" belongs to the conversation that is answering; when that is unknown it is shown
+  // nowhere, while every AI send still queues (DecideSend treats an unknown thread as busy).
   controller_.MarkAgentBusy("");
   for (const char* thread : {"A", "B", "C"}) {
     Open(thread);
-    EXPECT_TRUE(chat_.loading) << thread;
+    EXPECT_FALSE(chat_.loading) << thread;
+    EXPECT_EQ(DecideSend(true, controller_.Busy(), thread, false), SendDecision::Queue) << thread;
   }
   controller_.MarkAgentIdle();
   EXPECT_FALSE(chat_.loading);

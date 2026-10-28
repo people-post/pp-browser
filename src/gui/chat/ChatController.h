@@ -326,6 +326,10 @@ private:
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
   ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
+  std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
+  void StashComposerExtras(const std::string& key);
+  void RestoreComposerExtras(const std::string& key);
+  void ForgetComposerExtras(const std::string& key);
 };
 
 } // namespace pbr
