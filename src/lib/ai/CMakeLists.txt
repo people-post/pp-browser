@@ -6,6 +6,7 @@ pp_browser_add_lib_library(pp_lib_ai
     BriefTurnRunner.cpp
     LlmClient.cpp
     LocalActionPlanner.cpp
+    LocalActionRender.cpp
     MarkdownToRml.cpp
     PromptBuilder.cpp
     PayloadTurnPlanBuilder.cpp

@@ -403,6 +403,10 @@ bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit,
   return false;
 }
 
+void SetPersonAvatarFields(Object& item, const std::string& display_name, const std::string& stable_id) {
+  SetAvatarFields(item, display_name, stable_id);
+}
+
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>& directory_hits,
                                            const std::vector<PeopleDiscoveryContactView>& contacts,
                                            const PeopleDiscoveryBuildOptions& options) {

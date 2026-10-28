@@ -3,6 +3,7 @@
 #include "mesh/types/DirectoryTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/MeshAlias.h"
+#include "common/Value.h"
 
 #include <cstddef>
 #include <string>
@@ -70,6 +71,9 @@ std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity&
 /** True when hit account/ids intersect `identities`. */
 bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit,
                                    const std::unordered_set<std::string>& identities);
+
+/** avatar_letter / avatar_tone of a person row, same as the rows of the builders below. */
+void SetPersonAvatarFields(pp::common::Object& item, const std::string& display_name, const std::string& stable_id);
 
 // Builds structured blocks JSON ({"blocks":[...]}) for people-discovery tool results.
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>& directory_hits,

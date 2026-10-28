@@ -199,7 +199,7 @@ std::string NormalizePolicyToken(std::string value) {
   for (char ch : value) {
     if (std::isalnum(static_cast<unsigned char>(ch))) {
       out.push_back(ch);
-    } else if (ch == '-' || ch == ' ' || ch == '/') {
+    } else if (ch == '-' || ch == '_' || ch == ' ' || ch == '/') {
       if (!out.empty() && out.back() != '_') {
         out.push_back('_');
       }
