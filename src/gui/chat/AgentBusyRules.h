@@ -48,7 +48,12 @@ inline SendDecision DecideSend(const bool is_ai_send, const AgentBusyState& busy
   return busy.thread_id == target_thread ? SendDecision::BlockedHere : SendDecision::Queue;
 }
 
-enum class EscapeAction { None, CancelQueued, StopTurn };
+enum class EscapeAction {
+  None,         // nothing for the composer: Escape dismisses / goes back as usual
+  CancelQueued, // this chat's queued AI question is cancelled
+  Armed,        // a turn runs here: the first press only arms the stop (and is used up, so it does not navigate away)
+  StopTurn,     // the second press within the window stops it
+};
 
 inline constexpr int64_t kDoubleEscapeWindowMs = 500;
 
@@ -66,7 +71,7 @@ inline EscapeAction DecideEscape(const int64_t now_ms, const std::optional<int64
   if (has_queued_here) {
     return EscapeAction::CancelQueued;
   }
-  return EscapeAction::None;
+  return busy_here ? EscapeAction::Armed : EscapeAction::None;
 }
 
 /** What happened when a queued send was handed over. */

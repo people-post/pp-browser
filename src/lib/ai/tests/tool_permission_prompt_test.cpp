@@ -66,12 +66,23 @@ TEST_P(ToolPermissionPromptTest, ValuesUseTheOptionLabelsAndLongTextIsCut) {
   EXPECT_EQ(nickname.find(std::string(41, 'x')), std::string::npos);
 }
 
-TEST_P(ToolPermissionPromptTest, UnknownToolReadsGenericAndIsListedOnce) {
-  const std::string generic = IsEnglish() ? "make a change in the app" : "在 App 里做一项修改";
-  EXPECT_EQ(DescribeToolCalls({Call("some_mcp_tool", "path", "/etc/passwd")}), generic);
-  EXPECT_EQ(DescribeToolCalls({Call("some_mcp_tool"), Call("other_mcp_tool")}), generic);
-  const std::string two = DescribeToolCalls({Call("register_user"), Call("start_conversation")});
-  EXPECT_NE(two.find(IsEnglish() ? ", " : "、"), std::string::npos);
+TEST_P(ToolPermissionPromptTest, UnknownToolShowsWhatWillRun) {
+  // PB-015: the card always says what will run. A tool without plain words is shown as it is, arguments included,
+  // and two different calls are two entries.
+  const std::string one = DescribeToolCalls({Call("some_mcp_tool", "path", "/etc/passwd")});
+  EXPECT_NE(one.find("some_mcp_tool"), std::string::npos) << one;
+  EXPECT_NE(one.find("/etc/passwd"), std::string::npos) << one;
+  const std::string two = DescribeToolCalls({Call("some_mcp_tool"), Call("other_mcp_tool")});
+  EXPECT_NE(two.find("some_mcp_tool"), std::string::npos) << two;
+  EXPECT_NE(two.find("other_mcp_tool"), std::string::npos) << two;
+  const std::string known = DescribeToolCalls({Call("register_user"), Call("start_conversation")});
+  EXPECT_NE(known.find(IsEnglish() ? ", " : "、"), std::string::npos);
+}
+
+TEST_P(ToolPermissionPromptTest, AKnownPhraseWithoutAValueSlotStillShowsTheArguments) {
+  const std::string described = DescribeToolCalls({Call("start_conversation", "contact_id", "c_bob")});
+  EXPECT_NE(described.find("c_bob"), std::string::npos) << described;
+  EXPECT_EQ(described.find("start_conversation"), std::string::npos) << described;
 }
 
 TEST_P(ToolPermissionPromptTest, CardRewriteRemovesTheButtons) {

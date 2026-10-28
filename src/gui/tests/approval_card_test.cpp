@@ -108,6 +108,21 @@ TEST_P(ApprovalCardTest, EachEndingTakesTheButtonsAway) {
   EXPECT_EQ(Rml(*stale).find(Tr("chat.permission.intro")), std::string::npos);
 }
 
+TEST_P(ApprovalCardTest, ACardWithoutAKnownIdIsFoundByItsRequest) {
+  // An "@ai+" card is stored by the UI, so the session only knows the request id.
+  ASSERT_TRUE(store_->AppendMessage(CardMessage("card-1")));
+  ThreadMessage after;
+  after.id = "after";
+  after.thread_id = "ai-thread";
+  after.sender_contact_id = "ai";
+  after.text = "an answer";
+  after.timestamp = util::NowUnixMs() + 1;
+  ASSERT_TRUE(store_->AppendMessage(after));
+  EXPECT_EQ(FindApprovalCardEntry(*store_, "ai-thread", "apr-1"), "card-1");
+  EXPECT_EQ(FindApprovalCardEntry(*store_, "ai-thread", "apr-other"), "");
+  EXPECT_EQ(FindApprovalCardEntry(*store_, "other-thread", "apr-1"), "");
+}
+
 TEST_P(ApprovalCardTest, TheCardIsFoundByIdWithFiftyMessagesAfterIt) {
   ASSERT_TRUE(store_->AppendMessage(CardMessage("card-1")));
   for (int i = 0; i < 50; ++i) {

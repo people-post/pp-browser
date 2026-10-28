@@ -167,6 +167,29 @@ void AgentTurnController::Tick() {
       HandleAgentEvent(event);
     }
   }
+  RecoverMissedTurnEnd();
+}
+
+void AgentTurnController::RecoverMissedTurnEnd() {
+  // Every session path that ends a turn should say so (LoadingChanged false); if one ever does not, the open thread
+  // would show "thinking" forever and every other AI send would queue for nothing. A safety net, logged.
+  constexpr auto kBusyRecoveryDelay = std::chrono::seconds(2);
+  if (!busy_.busy || !use_llm_ || !agent_ports_.is_busy || agent_ports_.is_busy()) {
+    busy_without_session_since_.reset();
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (!busy_without_session_since_) {
+    busy_without_session_since_ = now;
+    return;
+  }
+  if (now - *busy_without_session_since_ < kBusyRecoveryDelay) {
+    return;
+  }
+  log().warning << "AI busy without a running turn for 2 s: the turn's end was not heard; recovering";
+  busy_without_session_since_.reset();
+  MarkAgentIdle();
+  DrainQueue();
 }
 
 void AgentTurnController::Cancel() {
@@ -554,12 +577,14 @@ void AgentTurnController::RefreshBusyForActiveThread() {
 }
 
 bool AgentTurnController::QueueSend(QueuedAgentSend item) {
-  const std::string thread_id = item.thread_id;
   if (!queue_.Enqueue(std::move(item))) {
     return false;
   }
   log().info << "AI send queued: another thread's turn runs (" << queue_.Size() << " waiting)";
   RefreshBusyForActiveThread();
+  if (!busy_.busy) {
+    DrainQueue(); // the turn ended while a dialog was open (e.g. the "@ai+" confirm): nothing else would start it
+  }
   return true;
 }
 
@@ -778,12 +803,19 @@ void AgentTurnController::ShowMoreRows(const std::string& entry_id, const size_t
   DirtyChat();
 }
 
-void AgentTurnController::CloseApprovalCard(const std::string& thread_id, const std::string& entry_id,
-                                            const ApprovalOutcome outcome) {
-  if (entry_id.empty() || !host_.MessagingIsReady()) {
+void AgentTurnController::CloseApprovalCard(const std::string& thread_id, const std::string& given_entry_id,
+                                            const ApprovalOutcome outcome, const std::string& approval_id) {
+  if (!host_.MessagingIsReady()) {
     return;
   }
   const std::string target_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
+  // A shared "@ai+" card was stored by the UI, so the session does not know its id: find it by its request.
+  const std::string entry_id =
+      !given_entry_id.empty() ? given_entry_id : FindApprovalCardEntry(*host_.Facade(), target_thread, approval_id);
+  if (entry_id.empty()) {
+    log().info << "Permission card not found to rewrite (thread has no card for that request)";
+    return;
+  }
   if (!CloseApprovalCardInStore(*host_.Facade(), target_thread, entry_id, outcome)) {
     log().warning << "Permission card not rewritten: entry=" << entry_id;
     return;
@@ -983,6 +1015,12 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
   const std::string error_message = image_error_key ? Tr(image_error_key) : event.message;
   switch (event.type) {
   case AgentEventType::LoadingChanged:
+    if (!event.loading && busy_.busy && !busy_.thread_id.empty() && !event.thread_id.empty() &&
+        event.thread_id != busy_.thread_id) {
+      // A late "ended" of an older turn: the queued turn that started after it is still running.
+      log().debug << "Turn-end ignored: it belongs to an earlier turn";
+      break;
+    }
     if (!event.loading) {
       if (streaming_) { // turn ended without a persisted answer
         ClearStreamingRow();
@@ -1023,7 +1061,7 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
                          event.shared_ai_mode, event.sources);
     break;
   case AgentEventType::ApprovalClosed:
-    CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome);
+    CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome, event.approval_id);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
@@ -1040,8 +1078,9 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
       DirtyChatTurns();
     }
     chat_.status = "";
-    MarkAgentIdle();
-    DrainQueue(); // a refused send is put back if the session has not finished the turn yet
+    // "Busy" ends with the turn's LoadingChanged(false), which follows; ending it here could mark the next queued
+    // turn idle when that late event arrives.
+    RefreshBusyForActiveThread();
     DirtyChatChrome();
     break;
   }

@@ -216,11 +216,12 @@ void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent even
   });
 }
 
-void AgentSession::PushLoading(const std::shared_ptr<Impl>& state, const bool loading) {
-  // The thread lets the UI show "thinking" (and the stop key) in that conversation only (B112).
+void AgentSession::PushLoading(const std::shared_ptr<Impl>& state, const bool loading, const std::string& thread_id) {
+  // The thread lets the UI show "thinking" (and the stop key) in that conversation only, and lets it tell a late
+  // "ended" of an older turn from the end of the one that runs now (B112).
   PushEvent(state, AgentEvent{.type = AgentEventType::LoadingChanged,
                               .loading = loading,
-                              .thread_id = loading ? state->pending_thread_id : std::string()});
+                              .thread_id = thread_id.empty() && loading ? state->pending_thread_id : thread_id});
 }
 
 bool AgentSession::IsBusy() const {
@@ -269,6 +270,7 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
+  const std::string ended_thread = state->pending_thread_id; // cleared below; the UI matches its "ended" to the turn
   state->pending_image.reset(); // up to ~1.5 MB; not needed once the turn is over
   state->turn_trace.Log();
   if (state->handoff_turn) {
@@ -299,7 +301,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->pending_thread_id.clear();
   state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
-  PushLoading(state, false);
+  PushLoading(state, false, ended_thread);
 }
 
 void AgentSession::CancelParkedApproval(const std::shared_ptr<Impl>& state, const ParkedApprovalState reason,
@@ -609,7 +611,11 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
 // ParkForPermission stores the request before its card is persisted; the card's own message id is only known here.
 void AgentSession::RecordParkedCardEntry(const std::shared_ptr<Impl>& state, const std::string& entry_id) {
   std::lock_guard lock(state->park_mutex);
-  if (state->parked_approval && state->parked_approval->state == ParkedApprovalState::Pending &&
+  // Only the card's own turn records it: a shared "@ai+" card is stored by the UI (no id here), and a later answer
+  // in another thread must not be taken for it.
+  if (!entry_id.empty() && state->parked_approval &&
+      state->parked_approval->state == ParkedApprovalState::Pending &&
+      state->parked_approval->thread_id == state->pending_thread_id &&
       state->parked_approval->card_entry_id.empty()) {
     state->parked_approval->card_entry_id = entry_id;
   }
@@ -1963,8 +1969,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   if (!state->cancelled) {
     StartTurn(state);
   } else {
-    // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
+    // A Cancel raced configure; do not leave busy stuck from Submit, and tell the UI the turn is over (it shows
+    // "thinking" in that thread until it hears so).
     state->busy = false;
+    PushLoading(state, false, state->pending_thread_id);
   }
 }
 
@@ -2230,7 +2238,8 @@ void AgentSession::Cancel() {
   }
   impl_->busy = false;
   impl_->tool_registration_hook = nullptr;
-  CancelParkedApproval(impl_, ParkedApprovalState::Cancelled);
+  // A permission card waiting in some thread is left alone: stopping a turn (or pausing the app) is not an answer to
+  // it, and a parked request belongs to a turn that already ended. It goes stale with a new turn in its own thread.
 }
 
 void AgentSession::WaitForConfigureIdle() {

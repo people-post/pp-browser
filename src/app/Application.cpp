@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "foundation/platform/ui/PlatformNavigation.h"
 #include "common/ValueJson.h"
 #include <map>
 #include "foundation/platform/IncomingLink.h"
@@ -1532,7 +1533,8 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
       emoji_picker_->Close();
     }
   });
-  shell_->SetOnComposerEscape([this]() {
+  // Escape (not the system Back) in the composer: cancel this chat's queued AI question / stop its turn (B112).
+  PlatformNavigation::SetEscapeKeyHandler([this]() {
     switch (chat_->OnComposerEscape()) {
     case ChatController::ComposerEscape::Handled:
       return 1;

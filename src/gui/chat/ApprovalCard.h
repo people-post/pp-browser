@@ -75,4 +75,27 @@ bool CloseApprovalCardInStore(Store& store, const std::string& thread_id, const 
   return static_cast<bool>(updated);
 }
 
+/**
+ * The card of `approval_id` among the thread's last `window` messages, for a card whose own id the session never
+ * learned (an "@ai+" card is stored by the UI). Empty when not found.
+ */
+template <typename Store>
+std::string FindApprovalCardEntry(Store& store, const std::string& thread_id, const std::string& approval_id,
+                                  const size_t window = 50) {
+  if (thread_id.empty() || approval_id.empty()) {
+    return {};
+  }
+  auto page = store.GetMessagesPage(thread_id, std::nullopt, window);
+  if (!page) {
+    return {};
+  }
+  const std::string needle = "\"approval_id\":\"" + approval_id + "\"";
+  for (auto it = page->rbegin(); it != page->rend(); ++it) {
+    if (it->text.find(needle) != std::string::npos) {
+      return it->id;
+    }
+  }
+  return {};
+}
+
 } // namespace pbr

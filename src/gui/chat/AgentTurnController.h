@@ -159,7 +159,8 @@ public:
    * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
    * id so its buttons are gone. `thread_id` empty = the open thread.
    */
-  void CloseApprovalCard(const std::string& thread_id, const std::string& entry_id, ApprovalOutcome outcome);
+  void CloseApprovalCard(const std::string& thread_id, const std::string& entry_id, ApprovalOutcome outcome,
+                         const std::string& approval_id = {});
   /** A send made while the agent was still (re)configuring: sent once it is, or given up. */
   void HoldSend(HeldAgentSend::Send send) { held_agent_send_.Hold(std::move(send), std::chrono::steady_clock::now()); }
   void SendChatAction(const std::string& entry_id, int action_index);
@@ -217,6 +218,9 @@ private:
   AgentBusyState busy_;           // the one running turn and its thread (B112)
   AgentSendQueue queue_;          // AI sends of other threads, waiting for it
   bool draining_ = false;
+  /** When the UI was busy but the session not: after kBusyRecoveryDelay the UI stops waiting for an end it missed. */
+  std::optional<std::chrono::steady_clock::time_point> busy_without_session_since_;
+  void RecoverMissedTurnEnd();
 
   /** The prepared image waiting in the composer for its question. */
   struct PendingAiImage {

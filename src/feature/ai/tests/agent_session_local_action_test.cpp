@@ -753,7 +753,7 @@ TEST_F(AgentSessionLocalActionTest, ANewCardInAnotherThreadTakesTheSlotAndStales
   EXPECT_EQ(denied.thread_id, "t2");
 }
 
-TEST_F(AgentSessionLocalActionTest, AllowAlwaysAndStopAlsoCloseTheCard) {
+TEST_F(AgentSessionLocalActionTest, AllowAlwaysClosesTheCardAndStopLeavesAWaitingCardAlone) {
   StartLocal();
   session_->SubmitToThread("t1", "关掉通知");
   const AgentEvent card = Ready(WaitForTurn());
@@ -761,7 +761,8 @@ TEST_F(AgentSessionLocalActionTest, AllowAlwaysAndStopAlsoCloseTheCard) {
   ASSERT_TRUE(session_->ResumeToolPermission(approval, "allow_always"));
   EXPECT_EQ(ClosedOf(WaitForTurn(), approval).approval_outcome, ApprovalOutcome::AllowAlways);
 
-  // Stop (Cancel) while a card waits: the card is dead, so it is closed as stale.
+  // Stop (Cancel) — the stop key of another chat, or the app pausing — is not an answer to a card waiting in t1:
+  // the card stays usable (B112: stopping one chat must not touch another).
   ToolPermissionsPrefs ask;
   session_->SetToolPermissions(ask);
   session_->SubmitToThread("t1", "打开通知");
@@ -772,9 +773,11 @@ TEST_F(AgentSessionLocalActionTest, AllowAlwaysAndStopAlsoCloseTheCard) {
   AppRuntime::RunUITasks();
   std::vector<AgentEvent> events;
   session_->PollEvents(events);
-  const AgentEvent closed = ClosedOf(events, next);
-  EXPECT_EQ(closed.approval_outcome, ApprovalOutcome::Stale);
-  EXPECT_EQ(closed.entry_id, again.entry_id);
+  for (const AgentEvent& event : events) {
+    EXPECT_FALSE(event.type == AgentEventType::ApprovalClosed && event.approval_id == next) << "Cancel closed the card";
+  }
+  EXPECT_TRUE(session_->ResumeToolPermission(next, "allow_once"));
+  EXPECT_EQ(ClosedOf(WaitForTurn(), next).approval_outcome, ApprovalOutcome::AllowOnce);
 }
 
 } // namespace

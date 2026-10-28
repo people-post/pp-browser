@@ -224,6 +224,9 @@ private:
                       bool thread_created_for_this, bool already_confirmed = false);
   /** The "share with the AI?" dialog for an "@ai+" / "@ai++" send; "don't ask again" is remembered. */
   void ConfirmShareWithAi(const std::string& thread_id, const std::string& text, std::function<void(bool ok)> then);
+  /** The dialog itself (also the router's confirm hook): the one copy of its wording. */
+  void ShowShareWithAiDialog(const std::string& thread_id, AtAiMode mode,
+                             std::function<void(bool ok, bool dont_ask)> done);
   /** A send that did not go out: its text back in the composer, if that thread is open and the composer empty. */
   void RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text);
   /** The open thread's queued send is cancelled: its text goes back to the composer. */

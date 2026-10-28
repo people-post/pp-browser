@@ -165,7 +165,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
         agent_.submit_scoped_assist(thread_id, at_ai.prompt, {}, at_ai.mode);
         return {};
       }
-      if (NeedsSharedAiConfirm(thread_id) && shared_ai_confirm_) {
+      if (NeedsSharedAiConfirmFor(thread_id, text)) { // the one rule the UI also asks before it sends
         shared_ai_confirm_(thread_id, at_ai.mode, at_ai.prompt,
                            [this, thread_id, mode = at_ai.mode, prompt = at_ai.prompt](
                                const bool confirmed, const bool dont_ask_again) {
@@ -175,7 +175,9 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
                              if (dont_ask_again) {
                                MarkSharedAiConfirmed(thread_id);
                              }
-                             RouteSharedAi(thread_id, prompt, mode);
+                             if (auto routed = RouteSharedAi(thread_id, prompt, mode); !routed) {
+                               log().warning << "Confirmed shared AI send failed: " << routed.error().message;
+                             }
                            });
         return {};
       }

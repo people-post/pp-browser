@@ -60,8 +60,9 @@ TEST(AgentBusyStateTest, BusyInAndBusyElsewhere) {
 TEST(DecideEscapeTest, SinglePressCancelsQueuedOrDoesNothing) {
   EXPECT_EQ(DecideEscape(1000, std::nullopt, true, false), EscapeAction::CancelQueued);
   EXPECT_EQ(DecideEscape(1000, std::nullopt, false, false), EscapeAction::None);
-  // A turn running here is not stopped by a single press.
-  EXPECT_EQ(DecideEscape(1000, std::nullopt, false, true), EscapeAction::None);
+  // A turn running here is not stopped by a single press: the press only arms the stop (and is used up, so it does
+  // not leave the chat, which would make the second press impossible).
+  EXPECT_EQ(DecideEscape(1000, std::nullopt, false, true), EscapeAction::Armed);
 }
 
 TEST(DecideEscapeTest, SecondPressInsideTheWindowStopsTheTurnHere) {
@@ -73,7 +74,7 @@ TEST(DecideEscapeTest, SecondPressInsideTheWindowStopsTheTurnHere) {
 }
 
 TEST(DecideEscapeTest, SecondPressAfterTheWindowIsASinglePress) {
-  EXPECT_EQ(DecideEscape(1000 + kDoubleEscapeWindowMs + 1, 1000, false, true), EscapeAction::None);
+  EXPECT_EQ(DecideEscape(1000 + kDoubleEscapeWindowMs + 1, 1000, false, true), EscapeAction::Armed);
   EXPECT_EQ(DecideEscape(1501, 1000, true, true), EscapeAction::CancelQueued);
 }
 
@@ -83,7 +84,7 @@ TEST(DecideEscapeTest, SecondPressWithoutATurnHereFallsBack) {
 }
 
 TEST(DecideEscapeTest, ClockGoingBackwardsIsNotADoublePress) {
-  EXPECT_EQ(DecideEscape(900, 1000, false, true), EscapeAction::None);
+  EXPECT_EQ(DecideEscape(900, 1000, false, true), EscapeAction::Armed);
   EXPECT_EQ(DecideEscape(900, 1000, true, true), EscapeAction::CancelQueued);
 }
 

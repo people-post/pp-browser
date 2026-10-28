@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <sstream>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -105,12 +106,75 @@ const std::vector<SwitchTool> kSwitchTools = {
     {"set_node_enabled", {"enabled", "node_enabled"}},
 };
 
-/** The call in plain words (chat.permission.tool.*); never the raw tool name or its argument names. */
+/** Any argument value as text (strings cut like DescribeArgument), for calls shown as they are. */
+std::string DescribeValue(const Value& value) {
+  if (const auto* text = std::get_if<std::string>(&value)) {
+    if (text->size() <= kMaxArgumentChars) {
+      return *text;
+    }
+    size_t cut = kMaxArgumentChars;
+    while (cut > 0 && (static_cast<unsigned char>((*text)[cut]) & 0xC0) == 0x80) {
+      --cut; // do not cut a UTF-8 character in half
+    }
+    return text->substr(0, cut) + "\xE2\x80\xA6";
+  }
+  if (const auto* i = std::get_if<int64_t>(&value)) {
+    return std::to_string(*i);
+  }
+  if (const auto* u = std::get_if<uint64_t>(&value)) {
+    return std::to_string(*u);
+  }
+  if (const auto* b = std::get_if<bool>(&value)) {
+    return *b ? "true" : "false";
+  }
+  if (const auto* d = std::get_if<double>(&value)) {
+    std::ostringstream out;
+    out << *d;
+    return out.str();
+  }
+  if (asObject(value)) {
+    return "{\xE2\x80\xA6}";
+  }
+  if (asArray(value)) {
+    return "[\xE2\x80\xA6]";
+  }
+  return "null";
+}
+
+/** "name(key=value, …)": what will run, for a call the plain-words table does not cover (PB-015). */
+std::string RawCallDescription(const PlannedToolCall& call) {
+  std::string out = call.name;
+  if (call.arguments.fields().size() == 0) {
+    return out;
+  }
+  out += "(";
+  bool first = true;
+  for (const auto& [arg, value] : call.arguments.fields()) {
+    out += (first ? "" : ", ") + arg + "=" + DescribeValue(value);
+    first = false;
+  }
+  return out + ")";
+}
+
+/** The arguments alone, "key=value, …" (empty when there are none). */
+std::string RawArguments(const PlannedToolCall& call) {
+  std::string out;
+  for (const auto& [arg, value] : call.arguments.fields()) {
+    out += (out.empty() ? "" : ", ") + arg + "=" + DescribeValue(value);
+  }
+  return out;
+}
+
+/**
+ * The call as the user should see it before allowing it (PB-015: the card always says what will run, arguments
+ * included). Known tools read in plain words with their value; any other tool, or arguments the plain words do not
+ * carry, are shown as they are.
+ */
 std::string DescribeToolCall(const PlannedToolCall& call) {
   const std::string key = "chat.permission.tool." + call.name;
   const std::string base = TrOrDefault(key, std::string());
   if (base.empty()) {
-    return Tr("chat.permission.tool.generic");
+    return RawCallDescription(call);
   }
   for (const ValueTool& tool : kValueTools) {
     if (call.name != tool.tool) {
@@ -134,7 +198,9 @@ std::string DescribeToolCall(const PlannedToolCall& call) {
     const auto enabled = FirstBool(call.arguments, tool.keys);
     return enabled ? Tr(key + (*enabled ? ".on" : ".off")) : base;
   }
-  return base;
+  // A plain phrase without a value slot (start_conversation, set_mesh_capabilities, …): its arguments follow it.
+  const std::string args = RawArguments(call);
+  return args.empty() ? base : base + " (" + args + ")";
 }
 
 } // namespace

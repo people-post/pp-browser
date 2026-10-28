@@ -239,7 +239,8 @@ private:
                                                   const std::string& approval_id, bool busy);
 
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
-  static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);
+  /** `thread_id`: the turn's thread (an ended turn passes it explicitly: pending_thread_id is cleared by then). */
+  static void PushLoading(const std::shared_ptr<Impl>& state, bool loading, const std::string& thread_id = {});
   static ToolMeta MetaForTool(const std::shared_ptr<Impl>& state, const std::string& name);
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                const std::string& status);

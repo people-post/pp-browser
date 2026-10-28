@@ -250,7 +250,7 @@ TEST_F(AgentTurnBusyTest, TwoIdleEventsInARowHandOverOnlyOnce) {
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
 }
 
-TEST_F(AgentTurnBusyTest, AnErrorEndsBusyAndDrainsTheQueue) {
+TEST_F(AgentTurnBusyTest, AnErrorWaitsForTheTurnsEndBeforeDraining) {
   Open("A");
   controller_.MarkAgentBusy("A");
   controller_.QueueSend(Queued("B"));
@@ -259,10 +259,36 @@ TEST_F(AgentTurnBusyTest, AnErrorEndsBusyAndDrainsTheQueue) {
   error.type = AgentEventType::Error;
   error.message = "boom";
   controller_.HandleAgentEvent(error);
+  EXPECT_TRUE(controller_.Busy().busy) << "the turn's own LoadingChanged(false) ends it";
+  EXPECT_TRUE(host_.handed_over.empty());
 
-  EXPECT_FALSE(controller_.Busy().busy);
+  AgentEvent ended;
+  ended.type = AgentEventType::LoadingChanged;
+  ended.loading = false;
+  ended.thread_id = "A";
+  controller_.HandleAgentEvent(ended);
   EXPECT_FALSE(chat_.loading);
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
+}
+
+TEST_F(AgentTurnBusyTest, ALateEndOfAnOlderTurnDoesNotEndTheQueuedOne) {
+  Open("B");
+  controller_.MarkAgentBusy("B"); // the queued turn that started after A's end
+  AgentEvent late;
+  late.type = AgentEventType::LoadingChanged;
+  late.loading = false;
+  late.thread_id = "A";
+  controller_.HandleAgentEvent(late);
+  EXPECT_TRUE(controller_.Busy().BusyIn("B"));
+  EXPECT_TRUE(chat_.loading);
+}
+
+TEST_F(AgentTurnBusyTest, QueuingWhileIdleSendsAtOnce) {
+  // The AI went idle while the "@ai+" confirm was open: the queued send must not wait for another turn's end.
+  host_.outcomes.push_back(QueuedSendOutcome::Started);
+  controller_.QueueSend(Queued("B"));
+  EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
+  EXPECT_EQ(controller_.QueuedCount(), 0u);
 }
 
 TEST_F(AgentTurnBusyTest, NothingIsHandedOverWhileStillBusy) {

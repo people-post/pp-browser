@@ -2002,15 +2002,20 @@ void ChatController::QueueAgentSend(const std::string& thread_id, const std::str
 
 void ChatController::ConfirmShareWithAi(const std::string& thread_id, const std::string& text,
                                         std::function<void(bool ok)> then) {
-  const AtAiParseResult at_ai = ParseAtAiPrefix(text);
+  ShowShareWithAiDialog(thread_id, ParseAtAiPrefix(text).mode,
+                        [then = std::move(then)](const bool ok, bool /*dont_ask*/) { then(ok); });
+}
+
+void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const AtAiMode mode,
+                                           std::function<void(bool ok, bool dont_ask)> done) {
   ShowConfirmWithCheckbox(Tr("chat.share_ai.title"),
-                          Tr(at_ai.mode == AtAiMode::SharedFull ? "chat.share_ai.body_full" : "chat.share_ai.body_reply"),
+                          Tr(mode == AtAiMode::SharedFull ? "chat.share_ai.body_full" : "chat.share_ai.body_reply"),
                           Tr("chat.share_ai.dont_ask"), false,
-                          [this, thread_id, then = std::move(then)](const bool ok, const bool dont_ask) {
+                          [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
                             if (ok && dont_ask && facade_) {
                               facade_->MarkSharedAiConfirmed(thread_id);
                             }
-                            then(ok);
+                            done(ok, dont_ask);
                           });
 }
 
@@ -2067,6 +2072,12 @@ void ChatController::CancelQueuedHere() {
     auto first = facade_->GetMessagesPage(thread_id, std::nullopt, 1);
     if (first && first->empty()) {
       CloseChatWith(thread_id, [this, thread_id]() { return presenter_.CloseThread(thread_id); });
+      // Closing opens another thread, maybe a chat with a person: the AI question goes back to Home's composer,
+      // never into theirs (one Enter would send it to them).
+      auto open = facade_->GetActiveThread();
+      if (!open || open->kind != ThreadKind::Ai) {
+        ShellSelectNavTab(NavTab::Home);
+      }
     }
   }
   if (std::string(chat_.draft.c_str()).empty()) {
@@ -2096,6 +2107,8 @@ ChatController::ComposerEscape ChatController::OnComposerEscape() {
     last_escape_ms_.reset();
     agent_.OnStopTurn();
     return ComposerEscape::Handled;
+  case EscapeAction::Armed:
+    return ComposerEscape::Handled; // a second press stops; leaving the chat now would make that impossible
   case EscapeAction::None:
     break;
   }
@@ -2239,17 +2252,9 @@ void ChatController::WireMessagingBindings() {
           HandleLocalAction(message, payload, {});
         });
     facade_->SetSharedAiConfirmCallback(
-        [this](const std::string& thread_id, const AtAiMode mode, const std::string& prompt,
+        [this](const std::string& thread_id, const AtAiMode mode, const std::string& /*prompt*/,
                std::function<void(bool confirmed, bool dont_ask_again)> done) {
-          ShowConfirmWithCheckbox(Tr("chat.share_ai.title"),
-              Tr(mode == AtAiMode::SharedFull ? "chat.share_ai.body_full" : "chat.share_ai.body_reply"),
-              Tr("chat.share_ai.dont_ask"), false,
-              [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
-                if (ok && dont_ask) {
-                  facade_->MarkSharedAiConfirmed(thread_id);
-                }
-                done(ok, dont_ask);
-              });
+          ShowShareWithAiDialog(thread_id, mode, std::move(done));
         });
   }
   facade_->SetOnActionMessage([this](const std::string& message) {
