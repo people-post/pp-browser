@@ -544,14 +544,47 @@ TEST_F(AgentSessionBriefStreamTest, LocalAtAiInAChatStreamsTheQuestionOnly) {
   EXPECT_FALSE(store.messages[0].relay_visible);
 }
 
-// A shared "@ai+" reply is rendered and relayed by the chat UI: it keeps the local pipeline.
-TEST_F(AgentSessionBriefStreamTest, SharedAtAiKeepsTheLocalPipeline) {
+// A shared "@ai+" / "@ai++" streams through brief_AI like "@ai" (the brief gateway has no completions
+// route: B99). Only the question goes out; the answer is not persisted here (the chat UI renders and
+// relays it) and the ready event carries the mode so the UI knows to relay.
+TEST_F(AgentSessionBriefStreamTest, SharedReplyAtAiStreamsThroughBriefAndLeavesRelayToTheUi) {
   Start();
   MemoryThreadStore store;
   session_->SetThreadStore(&store);
-  session_->SubmitScopedAssist("t1", "Is this true?", std::nullopt, AtAiMode::SharedReply);
-  WaitForTurn();
-  EXPECT_TRUE(Requests().empty());
+  Script({Meta(), Token("A joke"), Done("A joke")}, BriefAiOutcome::Done);
+  session_->SubmitScopedAssist("t1", "Tell a joke", std::nullopt, AtAiMode::SharedReply);
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].message, "Tell a joke");
+  EXPECT_TRUE(requests[0].history.empty());
+  EXPECT_TRUE(requests[0].capabilities.empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].text, "A joke");
+  EXPECT_EQ(ready[0].shared_ai_mode, AtAiMode::SharedReply);
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_TRUE(store.messages.empty()) << "the chat UI persists a shared reply after rendering";
+}
+
+TEST_F(AgentSessionBriefStreamTest, SharedFullAtAiStreamsThroughBriefAndLeavesRelayToTheUi) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("A joke"), Done("A joke")}, BriefAiOutcome::Done);
+  session_->SubmitScopedAssist("t1", "Tell a joke", std::nullopt, AtAiMode::SharedFull);
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].message, "Tell a joke");
+  EXPECT_TRUE(requests[0].history.empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].shared_ai_mode, AtAiMode::SharedFull);
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_TRUE(store.messages.empty());
 }
 
 TEST_F(AgentSessionBriefStreamTest, ImageTurnCancelKeepsPartial) {

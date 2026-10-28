@@ -1212,10 +1212,13 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->turn_scratch.front().content =
           PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     }
-    // With the brief preset a local "@ai" is a brief_AI question like any other, so it gets the current
-    // date, retrieval and sources (the bare model answered from its training data: wrong year, wrong
-    // language). No history is sent. A shared reply keeps the local path: the chat UI renders and relays it.
-    if (state->assist_mode == AtAiMode::Local && BriefStreamAvailable(state)) {
+    // With the brief preset an "@ai" in a chat is a brief_AI question like any other, so it gets the
+    // current date, retrieval and sources (the bare model answered from its training data: wrong year,
+    // wrong language). Only the question goes out, in every mode: "@ai+" / "@ai++" differ from "@ai" in
+    // what the chat UI relays to the other side after rendering, not in what the AI receives. The local
+    // pipeline (OpenAI-style completions) is only for other presets: the brief gateway has no completions
+    // route any more (B99), so a shared reply that kept the local path answered with HTTP 404.
+    if (BriefStreamAvailable(state)) {
       StreamBriefTurn(state, {}, std::string());
       return;
     }
