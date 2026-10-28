@@ -81,7 +81,7 @@ bool CloseApprovalCardInStore(Store& store, const std::string& thread_id, const 
  */
 template <typename Store>
 std::string FindApprovalCardEntry(Store& store, const std::string& thread_id, const std::string& approval_id,
-                                  const size_t window = 50) {
+                                  const int window = 50) {
   if (thread_id.empty() || approval_id.empty()) {
     return {};
   }
