@@ -20,7 +20,7 @@ namespace pbr {
  */
 inline constexpr std::string_view kDiagnosticsChannels[] = {
     "Metrics", "Crash", "CallMediaBridge", "CallHopMigrateWorkflow", "CallTopologyController",
-    "CallSessionWorkflow", "CallMediaLeg", "CallSessionManager", "Application", "ConversationsHub",
+    "CallSessionWorkflow", "CallMediaLeg", "CallSessionManager", "Application", "Diagnostics", "ConversationsHub",
     "MeshDeliveryOrchestrator", "CallMediaSeat", "RelayReceivePipeline", "McpClient", "SettingsController",
     "LocalNotifier", "CallMediaConnect", "LiveCall", "CallMediaKeyExchange", "CallReachSignals", "pp-node",
     "CallController", "CallPresenter", "Broadcaster", "Runtime.Lifecycle", "DeferredStartup", "RmlMount",

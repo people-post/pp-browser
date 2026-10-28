@@ -14,7 +14,6 @@ namespace {
 
 constexpr std::uintmax_t kMaxReadBytes = 8u * 1024u * 1024u;
 constexpr std::string_view kCutMarker = " \xE2\x80\xA6[cut]";  // " …[cut]"
-constexpr std::size_t kCutKeepBytes = 2040;
 
 bool IsDigit(char c) { return c >= '0' && c <= '9'; }
 
@@ -32,7 +31,7 @@ bool HasAllowedPrefix(std::string_view line) {
   const std::size_t level_end = line.find(']', pos);
   if (level_end == std::string_view::npos) return false;
   const std::string_view level = line.substr(pos, level_end - pos);
-  if (level != "INFO" && level != "WARNING" && level != "ERROR") return false;
+  if (level != "INFO" && level != "WARNING" && level != "ERROR" && level != "CRITICAL") return false;
   pos = level_end + 1;
   if (line.compare(pos, 2, " [") != 0) return false;
   pos += 2;
@@ -73,7 +72,7 @@ std::string SanitizeUtf8(std::string_view in) {
 
 std::string CutLong(std::string line) {
   if (line.size() <= kDiagnosticsMaxLineBytes) return line;
-  std::size_t keep = kCutKeepBytes;
+  std::size_t keep = kDiagnosticsMaxLineBytes - kCutMarker.size();
   while (keep > 0 && (static_cast<unsigned char>(line[keep]) & 0xC0) == 0x80) --keep;  // not mid-character
   line.resize(keep);
   line.append(kCutMarker);
@@ -221,8 +220,13 @@ Roe<DiagnosticsBundle> BuildDiagnosticsBundle(const DiagnosticsBundleInput& inpu
   }
   // Budget: fixed part (header + empty file entries) plus the escaped size of each kept line; the dump below
   // is re-measured and trimmed further if the estimate was a few bytes short.
-  std::vector<Section> empty_shape = sections;
-  for (Section& s : empty_shape) s.first = s.lines.size();
+  std::vector<Section> empty_shape;
+  empty_shape.reserve(sections.size());
+  for (const Section& s : sections) {
+    Section header;
+    header.name = s.name;
+    empty_shape.push_back(std::move(header));
+  }
   std::size_t bytes = Serialize(input, empty_shape).size();
   for (const Section& s : sections) {
     for (std::size_t i = s.first; i < s.lines.size(); ++i) bytes += LineCost(s.lines[i]);

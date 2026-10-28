@@ -1813,7 +1813,9 @@ void ChatController::PrefillDraft(const std::string& text) {
     return;
   }
   focus_draft_after_sync_ = true;
-  chat_.draft = text.c_str();
+  if (util::Trim(chat_.draft.c_str()).empty()) {  // never overwrite what the user has typed
+    chat_.draft = text.c_str();
+  }
   DirtyChatChrome();
 }
 

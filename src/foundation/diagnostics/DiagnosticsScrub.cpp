@@ -257,7 +257,7 @@ std::size_t MatchPeerId(std::string_view s, std::size_t i, ScrubState& st, std::
   std::size_t e = i;
   while (e < n && IsAlnum(s[e])) ++e;
   const std::size_t len = e - i;
-  if (len < 32 || len > 50) return 0;
+  if (len < 32 || len > 60) return 0;
   for (std::size_t k = i; k < e; ++k) {
     if (!IsBase58(s[k])) return 0;
   }
@@ -416,15 +416,23 @@ std::optional<std::string> SelfCheck(std::string_view text, const std::vector<st
     bodies.push_back(BodyOf(text.substr(pos, nl - pos)));
     pos = nl + 1;
   }
+  // Most specific first: a known id is also a long token.
+  for (const std::string& raw : known) {
+    std::string_view id = raw;
+    for (const std::string_view scheme : {"account:", "relay:", "peer:", "call:"}) {
+      if (id.substr(0, scheme.size()) == scheme) {
+        id.remove_prefix(scheme.size());
+        break;
+      }
+    }
+    if (id.size() < 8) continue;  // too short to match without false positives
+    // Any prefix of 8+ chars is a prefix of the first 8, so searching those 8 covers the id and its prefixes.
+    if (text.find(id.substr(0, 8)) != std::string_view::npos) return std::string("known_identifier");
+  }
   for (auto b : bodies) if (HasHexRun(b)) return std::string("hex_run");
   for (auto b : bodies) if (HasLongToken(b)) return std::string("long_token");
   for (auto b : bodies) if (HasEmail(b)) return std::string("email");
   for (auto b : bodies) if (HasAbsPath(b)) return std::string("abs_path");
-  for (const std::string& id : known) {
-    if (id.empty()) continue;
-    const std::string_view needle = std::string_view(id).substr(0, std::min<std::size_t>(id.size(), 8));
-    if (text.find(needle) != std::string_view::npos) return std::string("known_identifier");
-  }
   return std::nullopt;
 }
 

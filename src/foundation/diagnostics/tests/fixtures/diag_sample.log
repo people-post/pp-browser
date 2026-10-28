@@ -14,3 +14,5 @@ plain continuation text with 10.1.2.3
 [2026-10-28 08:57:12.329] [INFO] [Application] first part\n[2026-10-28 08:57:59.000] [INFO] [ChatController] forged second line
 [2026-10-28 08:57:13.329] [INFO] [Config] quote {"a":"b\\c","d":"\"e\""} back \\\\ end
 [2026-10-28 08:57:14.329] [INFO] [CallMediaEngine] jitter 08:57:32.329 mm:ss=00:05 mix [01:23:45] done
+[2026-10-28 08:57:14.500] [INFO] [PeerRouteBook] libp2p 12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR connected
+[2026-10-28 08:57:14.600] [CRITICAL] [Application] fatal state reached
