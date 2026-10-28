@@ -252,10 +252,14 @@ void AgentTurnController::SendSharedAssistantRelay(const std::string& thread_id,
   opts.sender_contact_id = kAiAssistantContactId;
   opts.generation = "ai_on_behalf";
   opts.ai_invoke_mode = mode == AtAiMode::SharedFull ? "shared_full" : "shared_reply";
+  opts.update_preview = true;
+  if ((*thread)->kind == ThreadKind::Group) {
+    (void)host_.Facade()->SendGroupMessage(thread_id, plain_text, opts);
+    return;
+  }
   if (!(*thread)->participant_contact_ids.empty()) {
     opts.seq_owner_contact_id = (*thread)->participant_contact_ids.front();
   }
-  opts.update_preview = true;
   (void)host_.Facade()->SendUserMessage(thread_id, plain_text, opts);
 }
 

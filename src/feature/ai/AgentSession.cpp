@@ -1218,7 +1218,10 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     // what the chat UI relays to the other side after rendering, not in what the AI receives. The local
     // pipeline (OpenAI-style completions) is only for other presets: the brief gateway has no completions
     // route any more (B99), so a shared reply that kept the local path answered with HTTP 404.
-    if (BriefStreamAvailable(state)) {
+    const bool stream = BriefStreamAvailable(state);
+    state->Log().info << "scoped assist path=" << (stream ? "brief_stream" : "pipeline")
+                      << " preset=" << ResolvePreset(state->config) << " key=" << (state->config.llm.api_key.empty() ? "none" : "set");
+    if (stream) {
       StreamBriefTurn(state, {}, std::string());
       return;
     }
@@ -1548,9 +1551,16 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
 
 void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
                                       std::optional<std::string> user_payload, const AtAiMode mode) {
-  if (prompt.empty() || impl_->busy.exchange(true)) {
+  if (prompt.empty()) {
     return;
   }
+  if (impl_->busy.exchange(true)) {
+    // The chat already shows "thinking" for this send; say why nothing follows.
+    impl_->Log().warning << "scoped assist dropped: a turn is still running (mode=" << static_cast<int>(mode) << ")";
+    return;
+  }
+  impl_->Log().info << "scoped assist mode=" << static_cast<int>(mode) << " prompt_chars=" << prompt.size()
+                    << " configured=" << (impl_->configured ? 1 : 0);
 
   impl_->cancelled = false;
   BeginStreamTurn();
