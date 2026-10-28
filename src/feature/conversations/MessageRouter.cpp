@@ -71,8 +71,12 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
     SendRelayOptions user_opts;
     user_opts.generation = "user";
     user_opts.ai_invoke_mode = "shared_full";
-    user_opts.seq_owner_contact_id = seq_owner;
-    auto sent = mesh_messaging_.SendUserMessage(thread_id, prompt, user_opts);
+    const bool group = (*thread)->kind == ThreadKind::Group;
+    if (!group) {
+      user_opts.seq_owner_contact_id = seq_owner;
+    }
+    auto sent = group ? mesh_messaging_.SendGroupMessage(thread_id, prompt, user_opts)
+                      : mesh_messaging_.SendUserMessage(thread_id, prompt, user_opts);
     if (!sent) {
       return sent.error();
     }
@@ -107,7 +111,8 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   }
 
   const AtAiParseResult at_ai = ParseAtAiPrefix(text);
-  if ((*thread)->kind == ThreadKind::Direct && at_ai.is_ai_invoke) {
+  // A group used to send "@ai++ …" as plain text while the chat already showed "thinking" (B111).
+  if (HandlesAtAi((*thread)->kind) && at_ai.is_ai_invoke) {
     if (at_ai.mode == AtAiMode::SharedReply || at_ai.mode == AtAiMode::SharedFull) {
       if (NeedsSharedAiConfirm(thread_id) && shared_ai_confirm_) {
         shared_ai_confirm_(thread_id, at_ai.mode, at_ai.prompt,
@@ -166,6 +171,10 @@ std::string MessageRouter::TextForAgent(const ThreadKind kind, const std::string
   return at_ai.is_ai_invoke ? at_ai.prompt : text;
 }
 
+bool MessageRouter::HandlesAtAi(const ThreadKind kind) {
+  return kind == ThreadKind::Direct || kind == ThreadKind::Group;
+}
+
 bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
                                      const std::optional<std::string>& user_payload) const {
   if (text.empty()) {
@@ -179,10 +188,7 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
     return true;
   }
 
-  if ((*thread)->kind == ThreadKind::Direct) {
-    return ParseAtAiPrefix(text).is_ai_invoke;
-  }
-  if ((*thread)->kind == ThreadKind::Group) {
+  if (HandlesAtAi((*thread)->kind)) {
     return ParseAtAiPrefix(text).is_ai_invoke;
   }
   return true;

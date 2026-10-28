@@ -41,3 +41,11 @@ TEST(MessageRouterTest, OnlyTypelessToolPayloadsInAiThreadsGoToTheAgent) {
   EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::string("not json")));
   EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::nullopt));
 }
+
+TEST(MessageRouterTest, AtAiIsUnderstoodInDirectAndGroupThreadsOnly) {
+  using pbr::MessageRouter;
+  using pbr::ThreadKind;
+  EXPECT_TRUE(MessageRouter::HandlesAtAi(ThreadKind::Direct));
+  EXPECT_TRUE(MessageRouter::HandlesAtAi(ThreadKind::Group));
+  EXPECT_FALSE(MessageRouter::HandlesAtAi(ThreadKind::Ai));
+}

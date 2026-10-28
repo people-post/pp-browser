@@ -250,6 +250,11 @@ Roe<ThreadMessage> ConversationsFacade::SendUserMessage(const std::string& threa
   return hub_.MeshMessaging().SendUserMessage(thread_id, text, opts);
 }
 
+Roe<ThreadMessage> ConversationsFacade::SendGroupMessage(const std::string& thread_id, const std::string& text,
+                                                         SendRelayOptions opts) {
+  return hub_.MeshMessaging().SendGroupMessage(thread_id, text, opts);
+}
+
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
   return hub_.ShareContact(thread_id, contact_id);
 }

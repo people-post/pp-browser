@@ -33,6 +33,8 @@ public:
   static Roe<void> ValidateUserPayload(const std::optional<std::string>& user_payload);
   /** What the agent receives for a message typed in a thread: in an AI thread an "@ai…" prefix is dropped. */
   static std::string TextForAgent(ThreadKind kind, const std::string& text);
+  /** "@ai" / "@ai+" / "@ai++" are understood in the person-to-person threads: direct and group. */
+  static bool HandlesAtAi(ThreadKind kind);
 
   bool ExpectsAgentWork(const std::string& thread_id, const std::string& text,
                         const std::optional<std::string>& user_payload = std::nullopt) const;
