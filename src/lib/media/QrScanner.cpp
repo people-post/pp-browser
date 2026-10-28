@@ -56,7 +56,11 @@ VideoFrameRgba ScanPreview(VideoFrameRgba frame, float zoom, int max_edge = 640)
 class ScanFrameProcessor {
 public:
   ScanFrameProcessor(CameraDeviceLease& camera, int rotation) : camera_(camera), rotation_(rotation) {}
-  QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now) {
+  bool DecodeDue(ScanClock::time_point now) const { return now >= next_decode_; }
+  // `zoom_state` must be sampled before `frame` was fetched: a frame captured mid-ramp judged
+  // against the settled state would compound a second zoom on top of the first (Windows CI).
+  QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now,
+                            const CameraZoomState& zoom_state) {
     frame = Upright(std::move(frame), rotation_);
     width = frame.width;
     height = frame.height;
@@ -76,7 +80,7 @@ public:
         const float fraction = std::max(region.width, region.height);
         if (!text && fraction > .02f && fraction < .45f &&
             std::abs(region.center_x - .5f) < .25f && std::abs(region.center_y - .5f) < .25f) {
-          const auto state = camera_.ZoomState();
+          const auto& state = zoom_state;
           // Native zoom is centered: retain the whole candidate and its quiet-zone margin.
           const float extent = std::max(std::abs(region.center_x - .5f) + region.width * .7f,
                                         std::abs(region.center_y - .5f) + region.height * .7f);
@@ -200,11 +204,12 @@ struct QrScanner::State {
         Publish(epoch, Update{{}, {}, std::move(error)}, true);
         return;
       }
+      const auto zoom_state = processor.DecodeDue(capture_started) ? lease->ZoomState() : CameraZoomState{};
       auto frame = lease->NextFrame();
       stats.Poll(capture_started);
       if (frame) {
-        last_frame = std::chrono::steady_clock::now();
-        auto next = processor.Process(std::move(*frame), last_frame);
+        last_frame = capture_started;
+        auto next = processor.Process(std::move(*frame), last_frame, zoom_state);
         stats.Frame(last_frame, processor);
         const bool complete = next.text.has_value();
         Publish(epoch, std::move(next), complete);

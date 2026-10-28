@@ -46,6 +46,7 @@ struct FakeState {
   bool native_zoom_supported = true;
   std::atomic<int> zoom_requests{0};
   std::chrono::steady_clock::time_point zoom_started{};
+  std::atomic<bool> zoom_settled{false};
 };
 class FakeCamera final : public ICameraEndpoint {
 public:
@@ -83,13 +84,18 @@ public:
     return true;
   }
   CameraZoomState ZoomState() const override {
+    // A slow ramp settles only when the scanner asks after 600 ms, so a frame fetched before this
+    // query is still mid-ramp: judging such a frame against the settled state is the regression.
+    if (state_.slow_zoom && state_.zoom_requests > 0 &&
+        std::chrono::steady_clock::now() - state_.zoom_started >= std::chrono::milliseconds(600)) {
+      state_.zoom_settled = true;
+    }
     const bool pending = ZoomPending();
     return {state_.zoom_required && state_.native_zoom_supported, pending ? 1.f : state_.zoom.load(), 3.f, pending};
   }
 private:
   bool ZoomPending() const {
-    return state_.slow_zoom && state_.zoom_requests > 0 &&
-        std::chrono::steady_clock::now() - state_.zoom_started < std::chrono::milliseconds(600);
+    return state_.slow_zoom && state_.zoom_requests > 0 && !state_.zoom_settled;
   }
   FakeState& state_;
   VideoFrameRgba frame_;
