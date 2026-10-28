@@ -51,6 +51,9 @@ std::string RenderLocalHowTo(const std::string& tool);
 /** Does `tool` have an `ai.howto.<tool>` text? */
 bool HasLocalHowTo(const std::string& tool);
 
+/** The "what can you do" answer: an intro, one bullet per area the device handles, the permission note (Markdown). */
+std::string RenderLocalOverview();
+
 std::string RenderLocalCancelled();
 std::string RenderLocalGaveUp();
 std::string RenderLocalUnsupported();

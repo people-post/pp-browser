@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -146,6 +147,8 @@ const std::vector<std::pair<std::string, std::string>> kEnPositives = {
     {"What languages are available?", "list_locales"},
     {"Switch to dark mode", "set_appearance"},
     {"Turn on dark mode please", "set_appearance"},
+    {"follow the system", "set_appearance"},
+    {"match the system", "set_appearance"},
     {"Change the language to Chinese", "set_language"},
     {"Switch the interface to English", "set_language"},
     {"Turn off notifications", "set_notifications"},
@@ -242,6 +245,35 @@ TEST(AppActionClassifierTest, EnglishPositives) {
 TEST(AppActionClassifierTest, EnglishNegatives) {
   for (const std::string& message : kEnNegatives) {
     EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::nullopt) << Describe(message);
+  }
+}
+
+TEST(AppActionClassifierTest, ABareEnglishFindNameAsksTheDirectory) {
+  for (const char* message : {"find Ken", "Find Ken Lee", "look for Ken", "please find Ken", "can you find Ken"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  for (const char* message : {"find ken"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  for (const char* message : {"find cheap flights", "find pizza places", "find Tokyo weather", "search for restaurants",
+                              "find news about Iran", "find out", "find something to eat", "find the best pizza place",
+                              "Find people who survived the Titanic"}) {
+    EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  // Without the tool declared the rule is off.
+  EXPECT_EQ(ClassifyAppAction("find Ken", {"get_preferences"}), std::nullopt);
+}
+
+TEST(AppActionClassifierTest, OverviewQuestions) {
+  for (const char* q : {"你能做什么？", "你会做什么", "你能干什么?", "你会什么", "你能帮我做什么", "你有什么功能。", "能做什么", " 你能做什么 ",
+                        "What can you do?", "what do you do", "What can you help with?", "What are you able to do?",
+                        "what can you help me with", "你能做什么呢", "那你都能做什么呀？", "请问你会干什么吗", "你好，你能帮我干什么",
+                        "你可以做什么啊", "你有哪些功能", "会做什么", "Hi, what can you do for me?", "hey what else can you do",
+                        "so what all can you do", "What things can you do?", "hello what do you do"}) {
+    EXPECT_TRUE(IsAppOverviewQuestion(q)) << q;
+  }
+  for (const char* q : {"what can you do about the weather", "你能做什么菜", "今天有什么新闻", "", "can you do it", "你能做什么菜呢", "你好吗"}) {
+    EXPECT_FALSE(IsAppOverviewQuestion(q)) << q;
   }
 }
 

@@ -529,6 +529,45 @@ bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
   return true;
 }
 
+// "find Ken" / "look for Ken": the verb with a name of one word, or two capitalised words, after it, none of them a filler or an
+// object word that makes it a different request. The span is the verb, so the planner reads the name after it.
+std::optional<AppActionSpan> EnBareFindName(const std::string_view message, const Words& msg, const SpanList& word_bytes) {
+  static const std::vector<Words> verbs = {Split("find"), Split("look for")};
+  static const std::vector<std::string> stop = {"the",   "a",         "an",       "my",     "me",       "out",   "news",
+                                                "about", "it",        "this",     "that",   "some",     "what",  "who",
+                                                "where", "how",       "something", "anything", "someone", "people", "person",
+                                                "user",  "users",     "info",     "information", "chat", "chats", "conversation"};
+  bool had_starter = false;
+  const size_t pos = SkipStarters(msg, had_starter);
+  for (const Words& v : verbs) {
+    if (!WordsAt(msg, pos, v)) {
+      continue;
+    }
+    const size_t from = pos + v.size();
+    const size_t count = msg.size() - from;
+    if (count < 1 || count > 2) {
+      return std::nullopt;
+    }
+    for (size_t i = from; i < msg.size(); ++i) {
+      if (std::find(stop.begin(), stop.end(), msg[i]) != stop.end()) {
+        return std::nullopt;
+      }
+    }
+    // One word may be any name ("find ken"); two must both be capitalised in the original text, so that
+    // "find cheap flights" / "find pizza places" stay questions for the model.
+    if (count == 2) {
+      for (size_t i = from; i < msg.size(); ++i) {
+        const char c = message[word_bytes[i].first];
+        if (c < 'A' || c > 'Z') {
+          return std::nullopt;
+        }
+      }
+    }
+    return AppActionSpan{word_bytes[pos].first, word_bytes[from - 1].second};
+  }
+  return std::nullopt;
+}
+
 std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
   SpanList word_bytes;
   const Words msg = SplitSpans(message, &word_bytes);
@@ -562,10 +601,72 @@ std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const st
       }
     }
   }
+  if (std::any_of(entries.begin(), entries.end(), [](const EnEntry* e) { return e->tool == "search_people"; })) {
+    if (const auto span = EnBareFindName(message, msg, word_bytes)) {
+      return AppActionMatch{"search_people", {*span}};
+    }
+  }
   return std::nullopt;
 }
 
 } // namespace
+
+bool IsAppOverviewQuestion(const std::string& text) {
+  Text decoded = Decode(text);
+  decoded.erase(std::remove_if(decoded.begin(), decoded.end(), IsSpace), decoded.end());
+  while (!decoded.empty() && (decoded.back() == U'?' || decoded.back() == U'!' || decoded.back() == U'.' ||
+                              decoded.back() == U'\uFF1F' || decoded.back() == U'\uFF01' || decoded.back() == U'\u3002')) {
+    decoded.pop_back();
+  }
+  if (std::any_of(decoded.begin(), decoded.end(), IsCjk)) {
+    const auto strip_tail = [&] {
+      for (bool again = true; again;) {
+        again = false;
+        while (!decoded.empty() && std::u32string_view(U"\u5440\u5462\u554A\u5417\u5427\u561B\u54E6").find(decoded.back()) != std::u32string_view::npos) {
+          decoded.pop_back();
+          again = true;
+        }
+      }
+    };
+    strip_tail();
+    for (const char* lead : {"请问", "那么", "那", "嗨", "你好", "哈喽"}) {
+      const Text l = W(lead);
+      if (decoded.compare(0, l.size(), l) == 0) {
+        decoded.erase(0, l.size());
+        while (!decoded.empty() && (decoded.front() == U',' || decoded.front() == U'\uFF0C')) {
+          decoded.erase(0, 1);
+        }
+        break;
+      }
+    }
+    for (const char* q : {"你能做什么", "你都能做什么", "你会做什么", "你都会做什么", "你能干什么", "你会干什么", "你可以做什么",
+                          "你可以干什么", "你会什么", "你能帮我做什么", "你能帮我干什么", "你可以帮我做什么", "你有什么功能",
+                          "你有哪些功能", "能做什么", "会做什么"}) {
+      if (decoded == W(q)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  Words words = Split(text);
+  for (const char* lead : {"hi", "hello", "hey"}) {
+    if (!words.empty() && words.front() == lead) {
+      words.erase(words.begin());
+      break;
+    }
+  }
+  if (!words.empty() && words.front() == "so") {
+    words.erase(words.begin());
+  }
+  for (const char* q : {"what can you do", "what can you do for me", "what else can you do", "what all can you do",
+                        "what do you do", "what can you help with", "what can you help me with", "what are you able to do",
+                        "what things can you do"}) {
+    if (words == Split(q)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 std::optional<AppActionMatch> ClassifyAppActionMatch(const std::string_view message,
                                                      const std::vector<std::string>& declared_tools) {

@@ -101,6 +101,16 @@ TEST_P(LocalActionRenderTest, FixedTextsExist) {
   EXPECT_EQ(RenderLocalCancelled(), GetParam() == std::string("en") ? "OK, leaving it as is." : "好，先不动。");
 }
 
+TEST_P(LocalActionRenderTest, OverviewListsEveryAreaWithoutRawKeys) {
+  const std::string text = RenderLocalOverview();
+  EXPECT_EQ(text.find("ai.overview"), std::string::npos) << text;
+  EXPECT_NE(text.find(Tr("ai.overview.intro")), std::string::npos);
+  EXPECT_NE(text.find(Tr("ai.overview.permission")), std::string::npos);
+  for (const char* area : {"people", "contacts", "profile", "appearance", "notifications", "settings", "howto"}) {
+    EXPECT_NE(text.find("- " + Tr(std::string("ai.overview.") + area)), std::string::npos) << area;
+  }
+}
+
 TEST_P(LocalActionRenderTest, WriterSentencesCarryTheirValues) {
   LocalRenderContext ctx;
   auto render = [&](const std::string& tool, const std::string& json) { return RenderLocalResult(tool, Parse(json), ctx); };

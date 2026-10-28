@@ -365,6 +365,15 @@ std::string RenderLocalHowTo(const std::string& tool) {
   return HasLocalHowTo(tool) ? Tr("ai.howto." + tool) : Tr("ai.cannot_do_that_yet");
 }
 
+std::string RenderLocalOverview() {
+  std::string out = Tr("ai.overview.intro") + "\n\n";
+  for (const char* area : {"people", "contacts", "profile", "appearance", "notifications", "settings", "howto"}) {
+    out += "- " + Tr(std::string("ai.overview.") + area) + "\n";
+  }
+  out += "\n" + Tr("ai.overview.news") + "\n\n" + Tr("ai.overview.permission");
+  return out;
+}
+
 std::string RenderLocalUnsupported() { return Tr("ai.cannot_do_that_yet"); }
 std::string RenderLocalNotShareable() { return Tr("ai.action_not_shareable"); }
 std::string RenderLocalContactGone() { return Tr("ai.contact.gone"); }
