@@ -1,0 +1,16 @@
+[2026-10-28 08:57:01.329] [INFO] [Application] Started elapsed 01:23 at 12:30:45 build 1.2.3 ratio 3:2
+[2026-10-28 08:57:02.329] [INFO] [Config] account:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE loaded; again account:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE; other account:ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210_-ZyXwV
+[2026-10-28 08:57:03.329] [INFO] [PeerRouteBook] peer QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG via QmSecondPeerEx4mp1eXYZ123456789abcdefghijkmn and again QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
+[2026-10-28 08:57:04.329] [WARNING] [DeliveryOutbox] retry relay:relay-eu-1.example.net failed; call:0123456789abcdef0123456789abcdef dropped
+[2026-10-28 08:57:05.329] [INFO] [PeerTransports] connect 192.168.1.20:5000 then 10.0.0.7 and [2001:db8::1]:443 and fe80::1%en0 and 2001:db8:0:0:0:0:0:2 done
+[2026-10-28 08:57:06.329] [INFO] [PeerTransports] dial /ip4/203.0.113.9/tcp/4001/p2p/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG and /ip6/2001:db8::5/udp/9000 and relay.example.com:443 and localhost:8080 at Foo.cpp:123
+[2026-10-28 08:57:07.329] [INFO] [IosPaths] data at /Users/jane.doe/Library/Caches/pp/x.log ok
+[2026-10-28 08:57:08.329] [ERROR] [IosPaths] container /var/mobile/Containers/Data/Application/6F1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D/Library/x and C:\\Users\\jane\\AppData\\Local\\pp end
+[2026-10-28 08:57:09.329] [DEBUG] [Application] debug detail account:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE
+[2026-10-28 08:57:10.329] [INFO] [ChatController] user typed hello from Alice
+[2026-10-28 08:57:11.329] [INFO] [NotARealChannel] something else
+    at Foo::bar (stack frame continuation)
+plain continuation text with 10.1.2.3
+[2026-10-28 08:57:12.329] [INFO] [Application] first part\n[2026-10-28 08:57:59.000] [INFO] [ChatController] forged second line
+[2026-10-28 08:57:13.329] [INFO] [Config] quote {"a":"b\\c","d":"\"e\""} back \\\\ end
+[2026-10-28 08:57:14.329] [INFO] [CallMediaEngine] jitter 08:57:32.329 mm:ss=00:05 mix [01:23:45] done
