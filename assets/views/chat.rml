@@ -98,6 +98,16 @@
        data-event-scroll="messages_scroll()">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
       <p class="text muted">{{i18n:chat.empty_body}}</p>
+      <div class="suggestion-row" data-if="thread_is_ai">
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.1_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:chat.example.1}}</button>
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.2_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:chat.example.2}}</button>
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.3_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:chat.example.3}}</button>
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.4_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:chat.example.4}}</button>
+      </div>
     </div>
     <div data-if="use_messages_layout">
       <div data-for="row : messages" class="message-row"

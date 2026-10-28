@@ -511,6 +511,23 @@ TEST_F(AgentSessionLocalActionTest, AHowToQuestionOnAClassifiedToolIsAnsweredOnT
   ExpectNoModel();
 }
 
+// "What can you do?" is answered by the device with the overview: no stream request, no model.
+TEST_F(AgentSessionLocalActionTest, WhatCanYouDoIsAnsweredWithTheOverviewOnTheDevice) {
+  StartLocal();
+  for (const char* question : {"What can you do?", "你能做什么？"}) {
+    SCOPED_TRACE(question);
+    session_->SubmitToThread("t1", question);
+    EXPECT_EQ(Ready(WaitForTurn()).text, RenderLocalOverview());
+  }
+  ASSERT_EQ(store_.messages.size(), 4u);
+  for (const auto& m : store_.messages) {
+    EXPECT_TRUE(IsLocalActionMessage(m));
+  }
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Calls().empty());
+  ExpectNoModel();
+}
+
 // A question about a tool the wordlist does not read: the stream hands the turn back for search_people; the
 // original sentence is a question, so the answer is the how-to, never "要搜谁？" (one stream request in all).
 TEST_F(AgentSessionLocalActionTest, AQuestionHandedBackGetsTheHowToNotTheAsk) {

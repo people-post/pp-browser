@@ -22,6 +22,12 @@ namespace pbr {
  */
 std::optional<std::string> ClassifyAppAction(std::string_view message, const std::vector<std::string>& declared_tools);
 
+/**
+ * "What can you do?" in either language: the whole message (ignoring spaces and trailing punctuation) asks for
+ * an overview of the assistant. Answered on the device with RenderLocalOverview.
+ */
+bool IsAppOverviewQuestion(const std::string& text);
+
 /** Byte range [begin, end) in the original message. */
 struct AppActionSpan {
   size_t begin = 0;

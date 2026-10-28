@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -242,6 +243,17 @@ TEST(AppActionClassifierTest, EnglishPositives) {
 TEST(AppActionClassifierTest, EnglishNegatives) {
   for (const std::string& message : kEnNegatives) {
     EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::nullopt) << Describe(message);
+  }
+}
+
+TEST(AppActionClassifierTest, OverviewQuestions) {
+  for (const char* q : {"你能做什么？", "你会做什么", "你能干什么?", "你会什么", "你能帮我做什么", "你有什么功能。", "能做什么", " 你能做什么 ",
+                        "What can you do?", "what do you do", "What can you help with?", "What are you able to do?",
+                        "what can you help me with"}) {
+    EXPECT_TRUE(IsAppOverviewQuestion(q)) << q;
+  }
+  for (const char* q : {"what can you do about the weather", "你能做什么菜", "今天有什么新闻", "", "can you do it"}) {
+    EXPECT_FALSE(IsAppOverviewQuestion(q)) << q;
   }
 }
 

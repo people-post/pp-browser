@@ -2150,6 +2150,10 @@ bool ChatController::Setup(ui::Context* context) {
           // A Home chip continues its own thread instead of opening a new one on every tap.
           SendUserText(text, std::nullopt, /*from_home_chip=*/true);
         }));
+        ctor.BindEventCallback("send_example", DataEvent<std::string>([this](const std::string& text) {
+          // Inside an open thread: send there, never re-target to a chip's own thread.
+          SendUserText(text, std::nullopt, /*from_home_chip=*/false);
+        }));
         ctor.BindEventCallback("send_suggestion_action", DataEvent<std::string>(
             [this](const std::string& id) { SendSuggestionAction(id); }));
         ctor.BindEventCallback("open_chat_link", DataEvent<std::string, int>(

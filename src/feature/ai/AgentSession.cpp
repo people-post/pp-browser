@@ -1114,6 +1114,15 @@ bool AgentSession::TryLocalAppAction(const std::shared_ptr<Impl>& state) {
   if (state->pending_image) {
     return false;
   }
+  if (IsAppOverviewQuestion(state->pending_user_text)) {
+    // "What can you do?": the device lists its own commands; the cloud model does not know them.
+    EmitLocalActionMetric(state->Log(), "overview", "question", false);
+    state->handoff_turn = true;
+    state->handoff_local = true;
+    state->local_turn = true;
+    FinishLocalAnswer(state, RenderLocalOverview(), RenderMode::Markdown);
+    return true;
+  }
   const auto match = ClassifyAppActionMatch(state->pending_user_text, AppActionCapabilities(state));
   if (!match) {
     return false;

@@ -567,6 +567,31 @@ std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const st
 
 } // namespace
 
+bool IsAppOverviewQuestion(const std::string& text) {
+  Text decoded = Decode(text);
+  decoded.erase(std::remove_if(decoded.begin(), decoded.end(), IsSpace), decoded.end());
+  while (!decoded.empty() && (decoded.back() == U'?' || decoded.back() == U'!' || decoded.back() == U'.' ||
+                              decoded.back() == U'\uFF1F' || decoded.back() == U'\uFF01' || decoded.back() == U'\u3002')) {
+    decoded.pop_back();
+  }
+  if (std::any_of(decoded.begin(), decoded.end(), IsCjk)) {
+    for (const char* q : {"你能做什么", "你会做什么", "你能干什么", "你会什么", "你能帮我做什么", "你有什么功能", "能做什么"}) {
+      if (decoded == W(q)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  const Words words = Split(text);
+  for (const char* q : {"what can you do", "what do you do", "what can you help with", "what are you able to do",
+                        "what can you help me with"}) {
+    if (words == Split(q)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::optional<AppActionMatch> ClassifyAppActionMatch(const std::string_view message,
                                                      const std::vector<std::string>& declared_tools) {
   if (declared_tools.empty()) {
