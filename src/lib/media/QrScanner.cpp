@@ -88,10 +88,15 @@ public:
             const float base = native_zoom_ ? state.factor : zoom;
             const float target = std::min(base * .5f / fraction, base * .5f / extent);
             SetZoom(std::clamp(target, base, 3.f));
+            candidate_zoom_ = zoom > 1.f;
           }
         }
-      } else if (zoom > 1.f && now - last_region_ > std::chrono::seconds(2)) {
+      } else if (candidate_zoom_ && now - last_region_ > std::chrono::seconds(2)) {
         SetZoom(1.f);
+        candidate_zoom_ = false;
+        hunt_settled_ = {};
+      } else if (!candidate_zoom_) {
+        Hunt(now, zoom_state);
       }
       next_decode_ = now + std::chrono::milliseconds(200);
     }
@@ -105,7 +110,25 @@ public:
   bool detected = false;
   float zoom = 1.f;
 private:
-  void SetZoom(float target) {
+  // A code too far away yields no candidate at all (a capstone needs about three pixels per
+  // module), so nothing would ever trigger the candidate zoom. Once the zoom has settled with
+  // nothing in view for a while, step 1x -> 2x -> 3x -> 1x; a candidate then takes over.
+  void Hunt(ScanClock::time_point now, const CameraZoomState& state) {
+    const bool settled = !state.supported || !native_zoom_ ||
+        (!state.ramping && std::abs(state.factor - zoom) < .05f);
+    if (!settled) {
+      hunt_settled_ = {};
+      return;
+    }
+    if (hunt_settled_ == ScanClock::time_point{}) {
+      hunt_settled_ = now;
+      return;
+    }
+    if (now - hunt_settled_ < std::chrono::milliseconds(1500)) { return; }
+    SetZoom(zoom < 1.5f ? 2.f : zoom < 2.5f ? 3.f : 1.f, true);
+    hunt_settled_ = {};
+  }
+  void SetZoom(float target, bool hunt = false) {
     const auto state = camera_.ZoomState();
     if (state.supported) { target = std::clamp(target, 1.f, state.maximum); }
     if (std::abs(target - zoom) < .1f) { return; }
@@ -113,14 +136,16 @@ private:
     native_zoom_ = native;
     software_zoom_ = native ? 1.f : target;
     zoom = target;
-    MetricsLine("scan.zoom").Add("factor", static_cast<double>(zoom)).Add("native", native).Emit();
+    MetricsLine("scan.zoom").Add("factor", static_cast<double>(zoom)).Add("native", native).Add("hunt", hunt).Emit();
   }
   CameraDeviceLease& camera_;
   int rotation_;
   float software_zoom_ = 1.f;
   bool native_zoom_ = false;
+  bool candidate_zoom_ = false;
   ScanClock::time_point next_decode_{};
   ScanClock::time_point last_region_{};
+  ScanClock::time_point hunt_settled_{};
 };
 
 struct ScanCaptureStats {

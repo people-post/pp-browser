@@ -40,6 +40,7 @@ struct FakeState {
   std::string error;
   bool no_frames = false;
   bool zoom_required = false;
+  float blank_until_zoom = 0.f;  // frames show nothing at all below this magnification
   int candidate_offset_x = 0;
   std::atomic<float> zoom{1.f};
   bool slow_zoom = false;
@@ -55,6 +56,13 @@ public:
   CameraGeometry Geometry() const override { return {}; }
   std::string CaptureError() const override { return state_.error; }
   std::optional<VideoFrameRgba> NextFrame() override {
+    if (state_.blank_until_zoom > 0.f && state_.zoom < state_.blank_until_zoom) {
+      VideoFrameRgba blank;
+      blank.width = 640;
+      blank.height = 480;
+      blank.rgba.assign(640 * 480 * 4, 255);
+      return blank;
+    }
     if (state_.zoom_required && (state_.zoom == 1.f || ZoomPending())) {
       auto damaged = frame_;
       for (int y = damaged.height * 38 / 100; y < damaged.height * 80 / 100; ++y) {
@@ -274,6 +282,20 @@ TEST(QrScannerTest, PendingNativeRampDoesNotCompoundZoomFromOldFrames) {
   ASSERT_TRUE(WaitFor([&] { return scanner.Poll().text.has_value(); }));
   EXPECT_EQ(state.zoom_requests, 1);
   EXPECT_LT(state.zoom.load(), 1.7f);
+}
+
+TEST(QrScannerTest, NothingInViewHuntsThroughZoomLevelsUntilTheCodeAppears) {
+  FakeState state;
+  state.zoom_required = true;
+  state.blank_until_zoom = 2.f;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start();
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); }, std::chrono::seconds(8)));
+  EXPECT_EQ(result.text, "old payload");
+  EXPECT_GE(state.zoom.load(), 2.f);
+  EXPECT_LE(state.zoom.load(), 3.f);
 }
 
 TEST(QrScannerTest, CameraWithoutNativeZoomUsesBoundedSoftwarePreview) {
