@@ -471,7 +471,7 @@ Direction ScanDirection(const std::string& region, const std::vector<std::string
                         covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()), [](const char c) { return c != 0; })) {
           continue;
         }
-        std::fill(covered.begin() + static_cast<std::ptrdiff_t>(p), covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()), 1);
+        std::fill(covered.begin() + static_cast<std::ptrdiff_t>(p), covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()), char{1});
         found.emplace_back(p, on);
       }
     }
