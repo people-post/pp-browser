@@ -354,6 +354,17 @@ void SetLocalRenderStrictForTests(const bool strict) { g_strict_cards.store(stri
 
 std::string RenderLocalCancelled() { return Tr("ai.cancelled"); }
 std::string RenderLocalGaveUp() { return Tr("ai.gave_up"); }
+bool HasLocalHowTo(const std::string& tool) {
+  static constexpr std::string_view kTools[] = {"search_people",   "open_conversation", "update_profile_nickname",
+                                                "set_appearance",  "set_notifications", "set_language",
+                                                "get_preferences", "get_network_settings", "get_reachability"};
+  return std::find(std::begin(kTools), std::end(kTools), tool) != std::end(kTools);
+}
+
+std::string RenderLocalHowTo(const std::string& tool) {
+  return HasLocalHowTo(tool) ? Tr("ai.howto." + tool) : Tr("ai.cannot_do_that_yet");
+}
+
 std::string RenderLocalUnsupported() { return Tr("ai.cannot_do_that_yet"); }
 std::string RenderLocalNotShareable() { return Tr("ai.action_not_shareable"); }
 std::string RenderLocalContactGone() { return Tr("ai.contact.gone"); }

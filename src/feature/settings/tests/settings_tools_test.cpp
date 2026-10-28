@@ -125,6 +125,29 @@ TEST_F(SettingsToolsTest, GetAndSetAppearance) {
   EXPECT_EQ(store_.Snapshot().profile_prefs.appearance, "dark");
 }
 
+// Device check 2026-10-28: a "success" must reach the running UI. Appearance goes through the apply port (the same
+// one the Settings page calls); language and transparency reach the UI through the SessionStore listeners that
+// ConfigApplyBridge installs, so the tools must fire those too.
+TEST_F(SettingsToolsTest, SuccessfulWritesReachTheRunningUi) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+  std::string language_seen;
+  bool material_seen = false;
+  store_.AddLanguageListener([&](const std::string& language) { language_seen = language; });
+  store_.AddChromeMaterialListener([&](bool reduce, bool) { material_seen = reduce; });
+
+  auto bad = registry.Execute("set_appearance", [&]() { pbr::Object args; args.set("appearance", "purple"); return args; }());
+  EXPECT_FALSE(bad);
+  EXPECT_TRUE(last_appearance_.empty()) << "a rejected value must not be applied";
+
+  ASSERT_TRUE(registry.Execute("set_appearance", [&]() { pbr::Object args; args.set("appearance", "light"); return args; }()));
+  EXPECT_EQ(last_appearance_, "light");
+  ASSERT_TRUE(registry.Execute("set_language", [&]() { pbr::Object args; args.set("language", "zh-Hans"); return args; }()));
+  EXPECT_EQ(language_seen, "zh-Hans");
+  ASSERT_TRUE(registry.Execute("set_reduce_transparency", [&]() { pbr::Object args; args.set("enabled", true); return args; }()));
+  EXPECT_TRUE(material_seen);
+}
+
 TEST_F(SettingsToolsTest, SetAppearanceAcceptsThemeAliasAndCase) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());

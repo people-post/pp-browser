@@ -16,6 +16,9 @@ constexpr size_t kZhMaxChars = 80;      // code points, after whitespace is stri
 constexpr size_t kZhMaxDistance = 12;   // verb/object distance, in code points
 constexpr size_t kZhPrepMaxTail = 2;    // after a preposition-style starter (给/和/跟) at most "吧" / "一下" may follow
 constexpr size_t kZhBareMaxChars = 10;  // a bare settings-read phrase
+constexpr size_t kZhReaderMaxChars = 14; // "看一下设置" style: reading verb first, nothing else
+constexpr size_t kZhSearchMaxTail = 10;  // a name after 找一下
+constexpr size_t kEnBareCommandMaxWords = 3; // "dark mode"
 constexpr size_t kEnMaxChars = 160;
 constexpr size_t kEnMaxDistance = 5;    // words from the verb to the object
 constexpr size_t kEnBareMaxWords = 5;   // a bare settings-read phrase
@@ -52,6 +55,7 @@ bool Contains(const View s, const View p) { return s.find(p) != View::npos; }
 struct ZhEntry {
   std::string_view tool;
   bool settings_read = false;
+  bool bare_command = false;
   std::vector<Text> verbs, objects, phrases;
 };
 
@@ -75,7 +79,7 @@ const std::vector<ZhEntry>& ZhTable() {
     };
     std::vector<ZhEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(ZhEntry{w.tool, w.settings_read, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
+      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
     }
     return t;
   }();
@@ -254,11 +258,34 @@ bool ZhFormOk(const View msg, const ZhEntry& e, const Hit hit) {
     if (e.settings_read && msg.size() <= kZhBareMaxChars && AnyPrefix(e.phrases, msg)) {
       return true;
     }
+    // "深色模式" is a command, "深色模式对眼睛好吗" is not: at most "吧" / "一下" may follow the phrase.
+    if (e.bare_command && std::any_of(e.phrases.begin(), e.phrases.end(), [&](const Text& p) {
+          return StartsWith(msg, p) && msg.size() <= p.size() + kZhPrepMaxTail;
+        })) {
+      return true;
+    }
     if (AnyPrefix(e.verbs, msg)) {
       return true;
     }
   }
+  // "看一下设置": a short reader sentence that opens with a reading verb needs no "我" or starter.
+  if (e.settings_read && msg.size() <= kZhReaderMaxChars && AnyPrefix(e.verbs, msg)) {
+    return true;
+  }
   return false;
+}
+
+// "找一下 Alice" is a directory search, "找一下伊朗核谈判的最新新闻" is not: after a bare 找一下 / 搜一下 at most a name follows.
+bool ZhSearchTailOk(const View msg, const HitResult& hit) {
+  if (hit.kind != Hit::Phrase) {
+    return true;
+  }
+  const View phrase = msg.substr(hit.spans[0].first, hit.spans[0].second - hit.spans[0].first);
+  if (phrase != W("找一下") && phrase != W("搜一下")) {
+    return true;
+  }
+  const View tail = msg.substr(hit.spans[0].second);
+  return tail.size() <= kZhSearchMaxTail && tail.find(W("的")[0]) == View::npos;
 }
 
 std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::vector<size_t>& offsets,
@@ -287,7 +314,7 @@ std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::ve
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
     for (const ZhEntry* e : entries) {
       const HitResult hit = ZhHitKind(*e, msg);
-      if (hit.kind == want && ZhFormOk(msg, *e, hit.kind)) {
+      if (hit.kind == want && ZhFormOk(msg, *e, hit.kind) && (e->tool != "search_people" || ZhSearchTailOk(msg, hit))) {
         AppActionMatch match{std::string(e->tool), {}};
         for (const auto& [a, b] : hit.spans) {
           match.matched_spans.push_back({begin[a], end[b - 1]});
@@ -323,6 +350,7 @@ Words Split(std::string_view s) { return SplitSpans(s, nullptr); }
 struct EnEntry {
   std::string_view tool;
   bool settings_read = false;
+  bool bare_command = false;
   std::vector<Words> verbs, objects, phrases;
 };
 
@@ -337,7 +365,7 @@ const std::vector<EnEntry>& EnTable() {
     };
     std::vector<EnEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(EnEntry{w.tool, w.settings_read, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
+      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
     }
     return t;
   }();
@@ -380,6 +408,12 @@ HitResult EnHitKind(const EnEntry& e, const Words& msg) {
         SortSpans(r.spans);
         return r;
       }
+    }
+  }
+  // "look up Ken": with no person word, the verb alone is the hit (the name comes after it).
+  if (e.tool == "search_people") {
+    if (const size_t at = WordsFind(msg, Words{"look", "up"}); at != std::string::npos) {
+      return {Hit::Phrase, {{at, at + 2}}};
     }
   }
   return {};
@@ -447,7 +481,10 @@ bool EnFormOk(const Words& msg, const EnEntry& e, const Hit hit) {
   }
 
   // A bare settings-read phrase ("supported languages") is a question about the app.
-  return hit == Hit::Phrase && e.settings_read && msg.size() <= kEnBareMaxWords && WordsPrefix(msg, 0, e.phrases);
+  if (hit != Hit::Phrase || !WordsPrefix(msg, 0, e.phrases)) {
+    return false;
+  }
+  return (e.settings_read && msg.size() <= kEnBareMaxWords) || (e.bare_command && msg.size() <= kEnBareCommandMaxWords);
 }
 
 // "Find people who survived the Titanic" asks about the world, not the directory: after the person word a
@@ -459,6 +496,10 @@ bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
         return msg.size() - (i + object.size()) <= kEnSearchMaxTail;
       }
     }
+  }
+  // "look up Ken": the verb itself is the anchor when no person word is there.
+  if (const size_t at = WordsFind(msg, Words{"look", "up"}); at != std::string::npos) {
+    return msg.size() - (at + 2) <= kEnSearchMaxTail;
   }
   return true;
 }

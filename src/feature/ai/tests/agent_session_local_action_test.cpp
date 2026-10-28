@@ -496,13 +496,28 @@ TEST_F(AgentSessionLocalActionTest, HandoffForAnUnknownCapabilityCannotBeDone) {
   ExpectNoModel();
 }
 
-// "怎么搜索用户 ken？" is a question, so it streams; handed back for search_people, it is asked (no parameter is
-// taken from a question) and never streamed again: one stream request in all.
-TEST_F(AgentSessionLocalActionTest, AQuestionHandedBackIsAskedWithOneStreamRequest) {
+// "怎么搜索用户 ken？" is a how-to question about a tool the wordlist reads: answered on the device with the how-to,
+// no stream request, no "要搜谁？".
+TEST_F(AgentSessionLocalActionTest, AHowToQuestionOnAClassifiedToolIsAnsweredOnTheDevice) {
+  StartLocal();
+  for (const char* question : {"怎么搜索用户？", "怎么搜索用户 ken？"}) {
+    SCOPED_TRACE(question);
+    session_->SubmitToThread("t1", question);
+    EXPECT_EQ(Ready(WaitForTurn()).text, RenderLocalHowTo("search_people"));
+  }
+  EXPECT_NE(RenderLocalHowTo("search_people"), Tr("contacts.ask.who"));
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Calls().empty());
+  ExpectNoModel();
+}
+
+// A question about a tool the wordlist does not read: the stream hands the turn back for search_people; the
+// original sentence is a question, so the answer is the how-to, never "要搜谁？" (one stream request in all).
+TEST_F(AgentSessionLocalActionTest, AQuestionHandedBackGetsTheHowToNotTheAsk) {
   StartLocal();
   Script({Meta(), Handoff("search_people")}, BriefAiOutcome::Handoff);
-  session_->SubmitToThread("t1", "怎么搜索用户 ken？");
-  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("contacts.ask.who"));
+  session_->SubmitToThread("t1", "怎么找人？");
+  EXPECT_EQ(Ready(WaitForTurn()).text, RenderLocalHowTo("search_people"));
   EXPECT_EQ(Requests().size(), 1u);
   EXPECT_TRUE(Calls().empty());
   ExpectNoModel();
@@ -517,12 +532,11 @@ TEST_F(AgentSessionLocalActionTest, HandoffForAContactToolWithoutANameAsksWhichC
   ExpectNoModel();
 }
 
-// A typed hit never reaches the stream unless it reads as a question; handed back for the same tool, a reader needs
-// no parameter and runs at once.
-TEST_F(AgentSessionLocalActionTest, AQuestionHandedBackForTheToolItNamesRunsAReader) {
+// Handed back for a reader with a sentence that is not a question, the reader runs at once.
+TEST_F(AgentSessionLocalActionTest, HandedBackForTheToolItNamesRunsAReader) {
   StartLocal();
   Script({Meta(), Handoff("get_preferences")}, BriefAiOutcome::Handoff);
-  session_->SubmitToThread("t1", "怎么查看我的偏好设置？");
+  session_->SubmitToThread("t1", "ken 在吗");
   const auto events = WaitForTurn();
   Object result;
   result.set("appearance", "dark");

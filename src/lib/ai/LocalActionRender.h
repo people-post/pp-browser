@@ -46,6 +46,11 @@ void SetLocalRenderStrictForTests(bool strict);
  */
 std::string RenderLocalAmbiguous(const LocalAmbiguous& ambiguous, const std::string& query = {});
 
+/** A short "how do I ask for this" answer for a how/why question about `tool`; ai.cannot_do_that_yet without a key. */
+std::string RenderLocalHowTo(const std::string& tool);
+/** Does `tool` have an `ai.howto.<tool>` text? */
+bool HasLocalHowTo(const std::string& tool);
+
 std::string RenderLocalCancelled();
 std::string RenderLocalGaveUp();
 std::string RenderLocalUnsupported();

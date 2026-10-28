@@ -387,3 +387,42 @@ TEST(AppActionClassifierTest, ContainsAppActionHitIgnoresTheRequestForm) {
   EXPECT_FALSE(ContainsAppActionHit("小成"));
   EXPECT_FALSE(ContainsAppActionHit(""));
 }
+
+// Device check 2026-10-28: the everyday phrasings that went to brief_AI instead of the device.
+TEST(AppActionClassifierTest, EverydayPhrasings) {
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"搜索用户 ken", "search_people"},
+      {"找一下 Alice", "search_people"},
+      {"搜一下 Alice", "search_people"},
+      {"look up Ken", "search_people"},
+      {"看一下我的设置", "get_preferences"},
+      {"我的设置", "get_preferences"},
+      {"帮我看一下设置", "get_preferences"},
+      {"看一下设置", "get_preferences"},
+      {"my settings", "get_preferences"},
+      {"我的网络状态", "get_reachability"},
+      {"看看网络状态", "get_reachability"},
+      {"网络状态", "get_reachability"},
+      {"network status", "get_reachability"},
+      {"我的安全状态", "get_security_status"},
+      {"深色模式", "set_appearance"},
+      {"浅色模式", "set_appearance"},
+      {"夜间模式", "set_appearance"},
+      {"跟随系统", "set_appearance"},
+      {"切换到深色模式", "set_appearance"},
+      {"换到浅色模式", "set_appearance"},
+      {"改到夜间模式", "set_appearance"},
+      {"dark mode", "set_appearance"},
+      {"切换到中文", "set_language"},
+      {"switch to English", "set_language"},
+  };
+  for (const auto& [text, tool] : cases) {
+    const auto match = ClassifyAppActionMatch(text, AllTools());
+    ASSERT_TRUE(match.has_value()) << text;
+    EXPECT_EQ(match->tool, tool) << text;
+  }
+  for (const char* text : {"今天天气怎么样", "帮我写首诗", "我的朋友很多", "设置一个闹钟", "找", "find", "look up the capital of France",
+                           "dark mode is overrated in my opinion"}) {
+    EXPECT_FALSE(ClassifyAppActionMatch(text, AllTools()).has_value()) << text;
+  }
+}

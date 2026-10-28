@@ -2,6 +2,7 @@
 #include "foundation/platform/Platform.h"
 
 #include "lib/ai/AppActionClassifier.h"
+#include "lib/ai/AppActionWords.h"
 #include "lib/ai/LocalActionRender.h"
 #include "lib/ai/LocalizedLabels.h"
 #include "lib/ai/PayloadTurnPlanBuilder.h"
@@ -1085,6 +1086,20 @@ bool AgentSession::BriefStreamAvailable(const std::shared_ptr<Impl>& state) {
   return ResolvePreset(state->config) == "brief";
 }
 
+namespace {
+
+/** A settings-read tool: "我的设置是什么" is a request for it, not a how-to question. */
+bool ToolIsSettingsRead(const std::string& tool) {
+  for (const AppActionWords& words : AppActionTable()) {
+    if (words.tool == tool) {
+      return words.settings_read;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
 std::vector<std::string> AgentSession::AppActionCapabilities(const std::shared_ptr<Impl>& state) {
   std::vector<std::string> names;
   for (const ToolDescriptor& tool : state->tools.Tools()) {
@@ -1105,9 +1120,16 @@ bool AgentSession::TryLocalAppAction(const std::shared_ptr<Impl>& state) {
   }
   LocalPlan plan = BuildLocalTurnPlan(*match, state->pending_user_text, BuildLocalPlanContext(state, match->tool));
   if (std::holds_alternative<LocalQuestion>(plan)) {
-    // "怎么搜索用户？" asks about the app: brief_AI answers it.
     EmitLocalActionMetric(state->Log(), match->tool, "question", false);
-    return false;
+    if (HasLocalHowTo(match->tool)) {
+      // "怎么搜索用户？" asks how to use the app: a short how-to from the device, no stream, no model.
+      state->handoff_turn = true;
+      state->handoff_local = true;
+      state->local_turn = true;
+      FinishLocalAnswer(state, RenderLocalHowTo(match->tool), RenderMode::Markdown);
+      return true;
+    }
+    return false; // other questions about the app: brief_AI answers them
   }
   state->Log().info << "Turn judged an app action on the device (" << match->tool << "); answering on the device";
   state->handoff_turn = true;
@@ -1186,6 +1208,13 @@ void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::
     }
   } else {
     plan = AskForTool(capability, state->pending_user_text);
+  }
+  if (!std::holds_alternative<TurnPlan>(plan) && IsLocalActionQuestion(state->pending_user_text, ToolIsSettingsRead(capability))) {
+    // "怎么搜索用户？": a how-to question, not a request; "要搜谁？" would be a silly answer.
+    state->local_turn = true;
+    EmitLocalActionMetric(state->Log(), capability, "question", false);
+    FinishLocalAnswer(state, RenderLocalHowTo(capability), RenderMode::Markdown);
+    return;
   }
   HandleLocalPlan(state, std::move(plan), capability, "executed");
 }

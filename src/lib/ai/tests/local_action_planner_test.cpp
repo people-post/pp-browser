@@ -556,3 +556,14 @@ TEST(LocalActionPlannerTest, WordTablesAreLowercaseAndNonEmpty) {
   check(kCancelWords, "kCancelWords");
   check(kPolicyBlockWords, "kPolicyBlockWords");
 }
+
+// Device check 2026-10-28: the sentences that went to brief_AI, through the real classifier.
+TEST(LocalActionPlannerTest, DeviceCheckSentences) {
+  ExpectPlan(PlanFor("看一下我的设置"), "get_preferences", "看一下我的设置");
+  ExpectPlan(PlanFor("我的网络状态"), "get_reachability", "我的网络状态");
+  ExpectText(PlanFor("深色模式"), "set_appearance", "appearance", "dark", "深色模式");
+  ExpectText(PlanFor("切换到中文"), "set_language", "language", "zh-Hans", "切换到中文");
+  ExpectText(PlanFor("找一下 Alice"), "search_people", "query", "Alice", "找一下 Alice");
+  ExpectText(PlanFor("搜索用户 ken"), "search_people", "query", "ken", "搜索用户 ken");
+  ExpectText(PlanFor("look up Ken"), "search_people", "query", "Ken", "look up Ken");
+}
