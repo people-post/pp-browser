@@ -156,6 +156,15 @@ Roe<TurnPlan> ValidateTurnPlan(TurnPlan plan, const std::vector<std::string>& al
     }
   }
 
+  const bool people_only = !plan.tools.empty() &&
+      std::all_of(plan.tools.begin(), plan.tools.end(), [](const PlannedToolCall& call) {
+        return call.name == "search_people" || call.name == "list_contacts";
+      });
+  if (people_only && (plan.response_goal == ResponseGoal::General ||
+                      plan.response_goal == ResponseGoal::PeopleDiscovery)) {
+    plan.render_mode = RenderMode::PeopleList;
+  }
+
   if (plan.render_mode == RenderMode::PeopleList && plan.response_goal != ResponseGoal::PeopleDiscovery) {
     plan.response_goal = ResponseGoal::PeopleDiscovery;
   }

@@ -97,6 +97,8 @@ void ShellHost::BindCallActions(CallActionsPorts ports) {
   call_actions_ = std::move(ports);
 }
 
+void ShellHost::BindScanAction(std::function<void()> action) { scan_action_ = std::move(action); }
+
 bool ShellHost::RegisterWindowModel(ui::Context* context) {
   return DataModelHost::Instance().Register(context, "window", [this](ui::DataModelConstructor& ctor) {
     ShellHost& host = *this;
@@ -237,6 +239,11 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("select_nav_tab", DataEvent<std::string>([this](const std::string& tab) { OnNavTabClicked(tab); }));
     ctor.BindEventCallback("compact_chat_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay); }));
     ctor.BindEventCallback("open_account_sheet", DataEvent<>([this]() { OpenAccountSheet(); }));
+    ctor.BindEventCallback("open_scan_qr", DataEvent<>([this]() {
+      if (scan_action_) {
+        scan_action_();
+      }
+    }));
     // × always closes the sheet, even when a nested settings detail is open.
     ctor.BindEventCallback("close_account_sheet", DataEvent<>([this]() { CloseAccountSheet(); }));
     ctor.BindEventCallback("transient_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::Transient); }));

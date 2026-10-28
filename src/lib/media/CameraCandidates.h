@@ -14,16 +14,17 @@ struct CameraCandidate {
 };
 
 /**
- * The order to try cameras in: this device's own cameras first (front-facing before the rest, OS
+ * The order to try cameras in: this device's own cameras first (preferred facing before the rest, OS
  * order otherwise), borrowed ones last. A Mac calling its owner's iPhone must not take that
  * iPhone's camera: the phone switched to "connected as camera", lost its own camera and audio
  * session, and the call never recovered (device test 2026-09-30).
  */
-inline std::vector<uint32_t> OrderCameraCandidates(const std::vector<CameraCandidate>& cameras) {
+inline std::vector<uint32_t> OrderCameraCandidates(const std::vector<CameraCandidate>& cameras,
+                                                   bool prefer_front_facing = true) {
   std::vector<uint32_t> out;
   out.reserve(cameras.size());
   for (const bool borrowed : {false, true}) {
-    for (const bool front : {true, false}) {
+    for (const bool front : {prefer_front_facing, !prefer_front_facing}) {
       for (const CameraCandidate& c : cameras) {
         if (c.borrowed == borrowed && c.front_facing == front) {
           out.push_back(c.id);

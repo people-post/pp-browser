@@ -27,7 +27,7 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>PP uses the microphone for voice and video calls.</string>
   <key>NSCameraUsageDescription</key>
-  <string>PP uses the camera for video calls.</string>
+  <string>PP uses the camera for video calls and scanning QR codes.</string>
   <!-- macOS 15+: without this key, LAN UDP (ICE host candidates) is denied silently
        and PP never appears under System Settings → Privacy → Local Network.
        That breaks Android↔Mac on the same Wi‑Fi while Linux↔Mac can still succeed via

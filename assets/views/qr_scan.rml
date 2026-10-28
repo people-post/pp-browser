@@ -1,0 +1,11 @@
+<div class="qr-scan stack" data-model="qr_scan">
+  <h2 class="heading-2">{{i18n:scan.title}}</h2>
+  <div class="qr-scan-camera">
+    <scan-preview id="qr-scan-preview" class="qr-scan-preview"></scan-preview>
+  </div>
+  <p class="text muted" role="status">{{status}}</p>
+  <div class="row qr-scan-actions">
+    <button class="btn btn-secondary" type="button" data-event-click="cancel_scan()">{{i18n:common.cancel}}</button>
+    <button class="btn btn-primary" type="button" data-if="failed" data-event-click="retry_scan()">{{i18n:scan.retry}}</button>
+  </div>
+</div>

@@ -100,6 +100,11 @@ add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
 add_subdirectory("${PP_THIRD_PARTY_DIR}/qrcodegen"
                  "${CMAKE_BINARY_DIR}/third_party/qrcodegen" EXCLUDE_FROM_ALL)
 
+# QR camera decoder (ISC; pinned vendored C sources).
+pp_require_vendored(quirc)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/quirc"
+                 "${CMAKE_BINARY_DIR}/third_party/quirc" EXCLUDE_FROM_ALL)
+
 # Opus (p2p-av-calls a2 voice)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)

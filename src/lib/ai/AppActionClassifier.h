@@ -10,7 +10,8 @@ namespace pbr {
 /**
  * On-device judgement "is this sentence a request to operate the app?" (no model, no I/O). Returns the PP tool
  * that fits, or nullopt, in which case the sentence goes to brief_AI as before. Only tools in `declared_tools`
- * can be returned; the first declared tool wins, phrase hits before verb+object hits.
+ * can be returned; the first declared tool wins, phrase hits before verb+object hits. If search_people
+ * is offered without add_contact, add-contact requests route to search_people for user selection.
  *
  * Two conditions, both required: the wordlist (AppActionWords.h) hits the tool, and the sentence has the form of
  * a request (imperative, about the user's own app/data, or a how-to). That form check is what keeps news and

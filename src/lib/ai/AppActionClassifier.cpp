@@ -502,11 +502,23 @@ std::optional<std::string> ClassifyAppAction(const std::string_view message, con
   if (declared_tools.empty()) {
     return std::nullopt;
   }
-  const Text decoded = Decode(message);
-  if (std::any_of(decoded.begin(), decoded.end(), IsCjk)) {
-    return ClassifyChinese(decoded, declared_tools);
+  // The add-contact intent still uses the shared wordlist, but this client offers search
+  // and a user-selected Add action instead of a mutating AI tool.
+  auto capabilities = declared_tools;
+  const bool search_before_add =
+      std::find(capabilities.begin(), capabilities.end(), "search_people") != capabilities.end() &&
+      std::find(capabilities.begin(), capabilities.end(), "add_contact") == capabilities.end();
+  if (search_before_add) {
+    capabilities.push_back("add_contact");
   }
-  return ClassifyEnglish(message, declared_tools);
+  const Text decoded = Decode(message);
+  auto tool = std::any_of(decoded.begin(), decoded.end(), IsCjk)
+                  ? ClassifyChinese(decoded, capabilities)
+                  : ClassifyEnglish(message, capabilities);
+  if (search_before_add && tool == "add_contact") {
+    return "search_people";
+  }
+  return tool;
 }
 
 } // namespace pbr

@@ -68,6 +68,11 @@ struct CameraRequestFormat {
   /** Display rotation read on the requester's UI thread (`CameraDisplayRotationDegrees`). */
   int display_rotation_deg = 0;
   int fps = 20;
+  /** Optional capture size; zero keeps the call-oriented platform default. */
+  int capture_width = 0;
+  int capture_height = 0;
+  /** Calls prefer front cameras; QR scanning prefers rear cameras. */
+  bool prefer_front_facing = true;
 };
 
 /** How to turn the opened camera's frames upright and what size to encode. */
@@ -79,11 +84,23 @@ struct CameraGeometry {
   bool front_facing = false;
 };
 
+struct CameraZoomState {
+  bool supported = false;
+  float factor = 1.f;
+  float maximum = 1.f;
+  bool ramping = false;
+};
+
 /** One opened camera. NextFrame may run on any thread (one reader at a time). */
 class ICameraEndpoint {
 public:
   virtual ~ICameraEndpoint() = default;
   virtual CameraGeometry Geometry() const = 0;
+  /** Empty while healthy or permission is pending; otherwise a user-visible capture failure. */
+  virtual std::string CaptureError() const { return {}; }
+  /** Requests bounded native zoom when supported; false lets the caller use a software viewport. */
+  virtual bool SetZoom(float factor) { (void)factor; return false; }
+  virtual CameraZoomState ZoomState() const { return {}; }
   /** Latest sensor frame as RGBA (not yet rotated / cropped); nullopt when none is ready. */
   virtual std::optional<VideoFrameRgba> NextFrame() = 0;
 };
@@ -189,6 +206,9 @@ public:
 
   const std::string& Holder() const;
   CameraGeometry Geometry() const;
+  std::string CaptureError() const;
+  bool SetZoom(float factor);
+  CameraZoomState ZoomState() const;
   std::optional<VideoFrameRgba> NextFrame();
 
   struct State;

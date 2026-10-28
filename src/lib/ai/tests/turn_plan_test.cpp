@@ -63,3 +63,40 @@ TEST(TurnPlanTest, HandlesNullSynthesisHints) {
   EXPECT_EQ(plan->tools[0].name, "list_conversations");
   EXPECT_TRUE(plan->synthesis_hints.empty());
 }
+
+TEST(TurnPlanTest, PeopleSearchShowsSelectableResultsEvenWhenPlannerOmitsListMode) {
+  for (const std::string query : {"小明", "account:abc_DEF-123", "relay:abc123"}) {
+    pbr::TurnPlan plan;
+    plan.user_request = "帮我加 " + query + " 为好友";
+    pbr::Object arguments;
+    arguments.set("query", query);
+    plan.tools.push_back({.name = "search_people", .arguments = arguments});
+    auto validated = pbr::ValidateTurnPlan(plan, {"search_people", "list_contacts"});
+    ASSERT_TRUE(validated);
+    EXPECT_EQ(validated->render_mode, pbr::RenderMode::PeopleList);
+    EXPECT_EQ(validated->response_goal, pbr::ResponseGoal::PeopleDiscovery);
+    ASSERT_EQ(validated->tools.size(), 1u);
+    EXPECT_EQ(validated->tools[0].arguments.getString("query"), query);
+  }
+}
+
+TEST(TurnPlanTest, MixedDomainRequestsKeepTheirReplyMode) {
+  pbr::TurnPlan plan;
+  plan.tools = {{.name = "search_people"}, {.name = "web_search"}};
+  auto validated = pbr::ValidateTurnPlan(plan, {"search_people", "web_search"});
+  ASSERT_TRUE(validated);
+  EXPECT_EQ(validated->render_mode, pbr::RenderMode::Blocks);
+}
+
+TEST(TurnPlanTest, QuestionsAboutContactsKeepSynthesisForTheirAnswer) {
+  for (const auto goal : {pbr::ResponseGoal::AnswerQuestion, pbr::ResponseGoal::Summarize}) {
+    pbr::TurnPlan plan;
+    plan.response_goal = goal;
+    plan.user_request = "Compare Alice and Bob's saved nicknames";
+    plan.tools = {{.name = "list_contacts"}};
+    auto validated = pbr::ValidateTurnPlan(plan, {"list_contacts"});
+    ASSERT_TRUE(validated);
+    EXPECT_EQ(validated->render_mode, pbr::RenderMode::Blocks);
+    EXPECT_EQ(validated->response_goal, goal);
+  }
+}

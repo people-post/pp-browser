@@ -259,6 +259,18 @@ TEST(AppActionClassifierTest, OnlyDeclaredToolsCount) {
   EXPECT_EQ(ClassifyAppAction("Add Tom as a friend", {"unknown_cap", "add_contact"}), "add_contact");
 }
 
+TEST(AppActionClassifierTest, AddFriendRequestsReachSearchWhenAdditionRequiresSelectingAResult) {
+  const std::vector<std::string> tools = {"search_people", "list_contacts"};
+  for (const std::string message : {
+           "帮我加小明为好友", "帮我添加昵称小明为好友", "加 account:abc_DEF-123 为好友",
+           "Add Tom as a friend", "Please add relay:abc123 as a contact"}) {
+    EXPECT_EQ(ClassifyAppAction(message, tools), "search_people") << message;
+  }
+  EXPECT_EQ(ClassifyAppAction("帮我搜索昵称小明", tools), "search_people");
+  EXPECT_EQ(ClassifyAppAction("通讯录里有没有张三", tools), "list_contacts");
+  EXPECT_EQ(ClassifyAppAction("加张三为好友", {"list_contacts"}), std::nullopt);
+}
+
 TEST(AppActionClassifierTest, TooLongMessagesAreNotJudged) {
   EXPECT_EQ(ClassifyAppAction(Repeat("联系人", 40), AllTools()), std::nullopt);
   EXPECT_EQ(ClassifyAppAction("Show my contacts " + Repeat("and more ", 30), AllTools()), std::nullopt);

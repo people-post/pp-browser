@@ -5,6 +5,8 @@ pp_browser_add_lib_library(pp_lib_media
     CallRingtone.cpp
     MediaDeviceArbiter.cpp
     NoiseSuppressor.cpp
+    QrDecode.cpp
+    QrScanner.cpp
     Ringback.cpp
     SdlMediaDeviceBackend.cpp
     VideoCodecFactory.cpp
@@ -14,7 +16,8 @@ pp_browser_add_lib_library(pp_lib_media
     pp_foundation_error
     pp_foundation_platform
     ${PP_BROWSER_SDL3_TARGET}
-    Opus::opus)
+    Opus::opus
+  PRIVATE_LIBS quirc)
 
 # Domain OS backends — source-select; do not compile MediaCodec TUs on Linux, etc.
 if(WIN32)

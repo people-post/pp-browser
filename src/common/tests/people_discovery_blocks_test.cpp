@@ -9,6 +9,12 @@ namespace {
 
 using namespace pbr;
 
+TEST(PeopleDiscoveryBlocksTest, NoMatchesExplainsTheMissWithoutOfferingToAddAnyone) {
+  const std::string blocks = BuildPeopleDiscoveryBlocksJson({}, {});
+  EXPECT_NE(blocks.find("No people found"), std::string::npos);
+  EXPECT_EQ(blocks.find("\"type\":\"add_contact\""), std::string::npos);
+}
+
 TEST(PeopleDiscoveryBlocksTest, DirectoryHitUsesIdentityAndPrimaryAdd) {
   mesh::DirectoryHit hit;
   hit.hit_id = "hit_alice";

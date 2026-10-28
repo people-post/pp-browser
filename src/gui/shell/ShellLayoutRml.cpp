@@ -363,7 +363,9 @@ std::string ShellLayoutRml::ShellRoot() const {
   }
   out << TransientLayer();
   out << Overlays();
-  out << Dialog();
+  // The dialog lives only in its mount below: SyncLayout fills the mount right after this root is
+  // built, so an inline copy here would leave a second dialog that dialog_close never removes
+  // (scan -> confirm: cancel left a dead OK button and a scrim over the whole app, 2026-10-28).
   // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
   out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";

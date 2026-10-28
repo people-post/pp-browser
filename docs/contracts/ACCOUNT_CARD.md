@@ -120,13 +120,16 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
   added at once under the locator's nickname; the card is fetched from the listed devices (each reached
   through the mesh if no link is up), then the directory. With neither answering the contact stays and
   the user is told they can write once a device is reachable; keys are then resolved as below.
-- **QR code:** *Me → Profile → QR code* shows the locator as a QR code (`lib/ui/QrSvg`, vendored
-  qrcodegen; dark on white whatever the theme).
+- **QR code:** *Me → Profile → QR code* shows the locator as a QR code on Mac, iOS and Android
+  (`lib/ui/QrSvg`, vendored qrcodegen; dark on white whatever the theme).
 - **Link:** the locator is itself a URI, and the app registers its scheme `pp-browser-contact-v1` (iOS /
   macOS `CFBundleURLTypes`, an Android `VIEW` intent filter; a desktop launcher passes it as an argument).
   So a phone's camera scanning the QR code, or a tap on the line in another app, opens the app with it
   (`IncomingLink`): once unlocked it asks *Add {name} to your contacts?* and then adds them as a pasted
-  invite. A link never adds anyone unasked. Scanning inside the app is not needed for this and not built.
+  invite. A link never adds anyone unasked.
+- **In-app scan:** *Scan QR code* beside Me reads the same locator and offers the same explicit
+  confirmation before adding. The scanning surface returns decoded text through caller-owned ports;
+  it does not execute arbitrary QR contents. See [SCANNING.md](../ui/SCANNING.md).
 
 ## Where cards travel
 

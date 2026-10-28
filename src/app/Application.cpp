@@ -59,6 +59,8 @@
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
 #include "gui/contacts/ContactsController.h"
+#include "gui/scan/QrScanController.h"
+#include "gui/scan/ElementScanPreview.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
@@ -245,6 +247,7 @@ Application::Application() {
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
   contacts_ = std::make_unique<ContactsController>();
+  qr_scan_ = std::make_unique<QrScanController>(MediaDeviceArbiter::Default());
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
   chat_shell_bridge_ = std::make_unique<ChatShellBridge>();
@@ -424,6 +427,7 @@ Roe<void> Application::ResetChatData() {
 }
 
 Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  qr_scan_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
   }
@@ -498,6 +502,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
     return false;
   }
   RegisterCallVideoTileElement();
+  RegisterScanPreviewElement();
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
   ui::Debugger::Initialise(ui::CreateContext("debugger", ui::Vector2i(0, 0)));
@@ -855,6 +860,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
+  qr_scan_->BindShellNavigation(shell_navigation);
+  contacts_->BindScanPorts(ScanPorts{
+      .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
+  });
+  shell.BindScanAction([this]() { contacts_->OnScanQr(); });
   contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));
   contacts_->BindSurfaceNotify(ContactsSurfaceNotifyPorts{
       .push_surface = [this](const ContactsSurfaceSnapshot& snap) {
@@ -1181,6 +1191,7 @@ void Application::WireUnlockPinAndFlow() {
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);
+    qr_scan_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
 }
@@ -1234,6 +1245,11 @@ bool Application::MountPresenters(ui::Context* context) {
 
   if (!contacts_->RegisterModel(context)) {
     log().error << "ContactsController RegisterModel failed";
+    return false;
+  }
+
+  if (!qr_scan_->RegisterModel(context)) {
+    log().error << "QrScanController RegisterModel failed";
     return false;
   }
 
@@ -1622,6 +1638,7 @@ void Application::Run() {
       contacts_->Tick();
     }
     call_->Tick();
+    qr_scan_->Tick();
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
@@ -1630,6 +1647,7 @@ void Application::Run() {
     chat_->AfterLayout();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
+    qr_scan_->NotifyFrameEnd();
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
     if (Backend::CanRender()) {
       const auto draw_started = std::chrono::steady_clock::now(); // after AfterLayout / NotifyFrameEnd
@@ -1693,6 +1711,14 @@ void Application::Shutdown() {
   // Shutdown is invoked without going through RequestExit (failed Initialize, tests).
   Backend::HideWindow();
   StartupMark("shutdown_window_hidden");
+  // Arm the product's exit deadline before joining an OS camera open (which may be in a driver).
+  if (qr_scan_) {
+    qr_scan_->Shutdown();
+    qr_scan_->BindShellNavigation({});
+    qr_scan_->BindFlowCoordinator({});
+  }
+  contacts_->BindScanPorts({});
+  shell_->BindScanAction({});
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
   {

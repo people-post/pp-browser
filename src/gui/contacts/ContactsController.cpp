@@ -20,6 +20,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
+#include "common/Metrics.h"
 #include "gui/ChatSessionPorts.h"
 #include "lib/people/ContactReachability.h"
 #include "feature/conversations/MessagingContactsPorts.h"
@@ -369,6 +370,10 @@ void ContactsController::BindShellFeedback(ShellFeedbackPorts ports) {
 
 void ContactsController::BindSurfaceNotify(ContactsSurfaceNotifyPorts ports) {
   surface_notify_ = std::move(ports);
+}
+
+void ContactsController::BindScanPorts(ScanPorts ports) {
+  scan_ports_ = std::move(ports);
 }
 
 ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
@@ -883,6 +888,21 @@ void ContactsController::OnAddContactMenu(ui::Event& ev) {
       "../icons/sparkle.svg",
   });
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ContactsController::OnScanQr() {
+  if (!scan_ports_.scan_qr) {
+    return;
+  }
+  scan_ports_.scan_qr([this](std::string text) {
+    const bool valid = static_cast<bool>(FindContactLocator(text));
+    MetricsLine("scan.contact").Add("valid_locator", valid).Emit();
+    if (!valid) {
+      ShowToast(Tr("scan.not_contact"), ToastDuration::Long);
+      return;
+    }
+    OfferInvite(text);
+  });
 }
 
 // "Add contact" asks the directory first: an account id or nickname is looked up and the person is

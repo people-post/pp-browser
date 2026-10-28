@@ -82,6 +82,7 @@ public:
   void BindPinGateActions(PinGateActionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
+  void BindScanAction(std::function<void()> action);
 
   void Initialize(ui::Context* context);
   void SyncLayout();
@@ -356,6 +357,7 @@ private:
   PinGateActionPorts pin_gate_actions_;
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
+  std::function<void()> scan_action_;
 
 };
 

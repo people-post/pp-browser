@@ -99,7 +99,7 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>PP uses the microphone for voice and video calls.</string>
   <key>NSCameraUsageDescription</key>
-  <string>PP uses the camera for video calls.</string>
+  <string>PP uses the camera for video calls and scanning QR codes.</string>
   <key>UIBackgroundModes</key>
   <array>
     <string>fetch</string>
