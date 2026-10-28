@@ -41,7 +41,9 @@ protected:
   void SetUp() override {
     ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(AssetsRoot()));
     LocalizationService::Instance().SetPreferredLanguage(GetParam());
+    SetLocalRenderStrictForTests(true); // an unlabelled card key fails these tests instead of vanishing
   }
+  void TearDown() override { SetLocalRenderStrictForTests(false); }
 };
 
 INSTANTIATE_TEST_SUITE_P(Locales, LocalActionRenderTest, ::testing::Values("en", "zh-Hans"));
@@ -138,10 +140,19 @@ TEST_P(LocalActionRenderTest, WriterSentencesCarryTheirValues) {
   }
 }
 
-TEST_P(LocalActionRenderTest, FailureShowsTheToolMessage) {
+TEST_P(LocalActionRenderTest, FailureNeverShowsTheRawMessage) {
   const std::string text = RenderLocalResult(
       "set_appearance", Parse(R"({"success":false,"message":"appearance must be system, light, or dark"})"), {});
-  EXPECT_EQ(text, "appearance must be system, light, or dark");
+  EXPECT_EQ(text, Tr("ai.action_failed"));
+  EXPECT_EQ(text.find("appearance must"), std::string::npos);
+
+  const std::string blocked = RenderLocalResult(
+      "set_notifications",
+      Parse(R"({"success":false,"blocked":true,"message":"Tool 'set_notifications' is blocked by your tool permission settings."})"),
+      {});
+  EXPECT_EQ(blocked, Tr("ai.blocked_by_permissions"));
+  EXPECT_EQ(blocked.find("Tool '"), std::string::npos);
+  EXPECT_FALSE(HasUnfilled(blocked));
 }
 
 TEST_P(LocalActionRenderTest, CardLabelsEveryKeyAndFlagsMissingOnes) {
@@ -155,6 +166,15 @@ TEST_P(LocalActionRenderTest, CardLabelsEveryKeyAndFlagsMissingOnes) {
 
   const std::string flagged = RenderLocalResult("get_preferences", Parse(R"({"brand_new_key":1})"), {});
   EXPECT_EQ(flagged, "??brand_new_key??");
+
+  // At runtime an unlabelled key is left out, never shown raw.
+  SetLocalRenderStrictForTests(false);
+  const std::string lenient =
+      RenderLocalResult("get_preferences", Parse(R"({"appearance":"dark","brand_new_key":1})"), {});
+  EXPECT_EQ(lenient.find("brand_new_key"), std::string::npos) << lenient;
+  EXPECT_EQ(lenient.find("??"), std::string::npos) << lenient;
+  EXPECT_EQ(lenient.find('\n'), std::string::npos) << "one line, no blank one: " << lenient;
+  EXPECT_FALSE(lenient.empty());
 }
 
 TEST_P(LocalActionRenderTest, CardShowsListsAndEmptyValues) {

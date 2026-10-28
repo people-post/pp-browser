@@ -35,7 +35,7 @@ inline constexpr auto kWhatIsWordsEn = std::to_array<std::string_view>({"what is
 
 /** Where the parameter text ends: the next action starts here. */
 inline constexpr auto kStopWordsZh = std::to_array<std::string_view>(
-    {"然后", "并且", "顺便", "还有", "再", "并", "，", "。", "；"});
+    {"然后", "并且", "顺便", "还有", "，", "。", "；"});
 inline constexpr auto kStopWordsEn = std::to_array<std::string_view>({"and", "then", "also"});
 inline constexpr auto kStopChars = std::to_array<std::string_view>({",", ";"});
 
@@ -129,11 +129,23 @@ inline constexpr auto kCapDhtWords = std::to_array<std::string_view>({"dht"});
 inline constexpr auto kCapPreferContactsWords = std::to_array<std::string_view>({"优先联系人", "prefer contacts"});
 inline constexpr auto kCapDirectWords = std::to_array<std::string_view>({"直连", "direct"});
 
+/** direct_connections takes an audience: everyone, contacts, friendly or nobody (nobody first: 谁都不 ⊃ 谁都). */
+inline constexpr auto kAudienceNobodyWords = std::to_array<std::string_view>(
+    {"没有人", "没人", "谁都不", "nobody", "no one", "none"});
+inline constexpr auto kAudienceFriendlyWords = std::to_array<std::string_view>(
+    {"好友", "朋友", "熟人", "friendly", "friends", "friend"});
+inline constexpr auto kAudienceContactsWords = std::to_array<std::string_view>({"联系人", "通讯录", "contacts", "contact"});
+inline constexpr auto kAudienceEveryoneWords = std::to_array<std::string_view>(
+    {"任何人", "所有人", "谁都", "大家", "everyone", "anyone", "anybody", "everybody"});
+
 inline constexpr std::string_view kUpnpWord = "upnp";
 
 // --- Follow-up answers --------------------------------------------------------------------------------------
 
 inline constexpr auto kCancelWords = std::to_array<std::string_view>(
     {"算了", "取消", "不用了", "不改了", "别了", "never mind", "nevermind", "cancel", "forget it"});
+/** What may stand next to a cancel word in a cancellation; anything else is a value ("不用了，叫Tom"). */
+inline constexpr auto kCancelParticles = std::to_array<std::string_view>({"吧", "了", "呢", "啊"});
+inline constexpr auto kCancelFillerWordsEn = std::to_array<std::string_view>({"it", "that", "please", "ok", "okay", "thanks"});
 
 } // namespace pbr

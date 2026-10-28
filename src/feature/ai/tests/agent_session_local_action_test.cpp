@@ -70,7 +70,7 @@ protected:
   }
 
   void RegisterFakes(ToolRegistry& registry) {
-    const auto add = [&](const std::string& name, ToolMeta meta, std::function<std::string(const Object&)> result) {
+    const auto add = [&](const std::string& name, ToolMeta meta, std::function<Roe<std::string>(const Object&)> result) {
       registry.Register(MakeTool(ToolDefinition{name, name, Object{}}, std::move(meta),
                                  [this, name, result](const Object& args) -> Roe<std::string> {
                                    {
@@ -81,23 +81,28 @@ protected:
                                  }));
     };
     add("get_preferences", ToolMeta{.provider = "settings", .domain = "settings", .risk = "read"},
-        [](const Object&) { return std::string(R"({"appearance":"dark"})"); });
+        [](const Object&) -> Roe<std::string> { return std::string(R"({"appearance":"dark"})"); });
     add("search_people", ToolMeta{.provider = "messaging", .domain = "people", .risk = "read"},
-        [](const Object&) { return std::string("[]"); });
+        [](const Object&) -> Roe<std::string> { return std::string("[]"); });
     add("open_conversation", ToolMeta{.provider = "messaging", .domain = "communications", .risk = "read"},
-        [](const Object& args) { return R"({"id":")" + args.getString("thread_id").value_or("") + R"("})"; });
+        [](const Object& args) -> Roe<std::string> {
+          return R"({"id":")" + args.getString("thread_id").value_or("") + R"("})";
+        });
     add("start_conversation",
         ToolMeta{.provider = "messaging", .domain = "communications", .risk = "write", .mutating = true},
-        [](const Object&) { return std::string(R"({"id":"new"})"); });
+        [](const Object&) -> Roe<std::string> { return std::string(R"({"id":"new"})"); });
     add("update_profile_nickname",
         ToolMeta{.provider = "settings", .domain = "identity", .risk = "write", .mutating = true},
-        [](const Object& args) {
+        [](const Object& args) -> Roe<std::string> {
+          if (args.getString("nickname").value_or("") == "boom") {
+            return Error("identity store: SQLITE_BUSY at row 7"); // internal detail, never shown
+          }
           Object out;
           out.set("nickname", args.getString("nickname").value_or(""));
           return DumpJson(out);
         });
     add("set_notifications", ToolMeta{.provider = "settings", .domain = "settings", .risk = "write", .mutating = true},
-        [](const Object& args) {
+        [](const Object& args) -> Roe<std::string> {
           Object out;
           out.set("show_notifications", args.getIf<bool>("enabled").value_or(false));
           return DumpJson(out);
@@ -353,6 +358,49 @@ TEST_F(AgentSessionLocalActionTest, AMessageInAnotherThreadLeavesTheQuestionOpen
   ExpectNoModel();
 }
 
+// A full command (verb + object) is not a nickname: the question is dropped and the command runs.
+TEST_F(AgentSessionLocalActionTest, AFullCommandInsteadOfANicknameRunsTheCommand) {
+  StartLocal(Allow("set_notifications"));
+  session_->SubmitToThread("t1", "改昵称");
+  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("profile.ask.nickname"));
+  session_->SubmitToThread("t1", "关掉通知");
+  const AgentEvent ready = Ready(WaitForTurn());
+  EXPECT_EQ(ready.text.find("tool_permission"), std::string::npos) << "not a nickname prompt: " << ready.text;
+  EXPECT_EQ(Calls(), std::vector<std::string>{R"(set_notifications {"enabled":false})"});
+  EXPECT_TRUE(Requests().empty());
+  ExpectNoModel();
+}
+
+// --- Failures are worded by the templates, never the tool's text ---
+
+TEST_F(AgentSessionLocalActionTest, AToolTheUserTurnedOffSaysWhereToTurnItOn) {
+  ToolPermissionsPrefs prefs;
+  prefs.by_tool["set_notifications"] = ToolPermissionEntry{.decision = "deny"};
+  StartLocal(prefs);
+  session_->SubmitToThread("t1", "关掉通知");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(Ready(events).text, Tr("ai.blocked_by_permissions"));
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_TRUE(Calls().empty());
+  ExpectNoModel();
+}
+
+TEST_F(AgentSessionLocalActionTest, AFailedToolNeverShowsItsError) {
+  StartLocal();
+  session_->SubmitToThread("t1", "改昵称为 boom");
+  const std::string prompt = Ready(WaitForTurn()).text;
+  ASSERT_TRUE(session_->ResumeToolPermission(ApprovalId(prompt), "allow_once"));
+  const auto events = WaitForTurn();
+  const std::string text = Ready(events).text;
+  EXPECT_EQ(text, Tr("ai.action_failed"));
+  EXPECT_EQ(text.find("SQLITE"), std::string::npos) << text;
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  for (const ThreadMessage& message : store_.messages) {
+    EXPECT_EQ(message.text.find("SQLITE"), std::string::npos) << message.text;
+  }
+  ExpectNoModel();
+}
+
 // --- Contacts: a list to pick from, direct actions ---
 
 TEST_F(AgentSessionLocalActionTest, SameNameListsThePeopleAndAPickOpensTheChat) {
@@ -502,6 +550,39 @@ TEST_F(AgentSessionLocalActionTest, SharedAtAiWithAnAppActionIsNotSharedAndAsksN
   }
   EXPECT_TRUE(session_->IsAppActionRequest("@ai++ 搜索用户 ken") || session_->IsAppActionRequest("搜索用户 ken"));
   EXPECT_FALSE(session_->IsAppActionRequest("今天有什么新闻？"));
+}
+
+// The not-shareable decision comes before the stream check: with the stream unavailable (a payload rides along)
+// an app action is still answered on the device and nothing is relayed or run.
+TEST_F(AgentSessionLocalActionTest, SharedAtAiWithAnAppActionIsNotSharedEvenWithoutTheStream) {
+  StartLocal();
+  session_->SubmitScopedAssist("p1", "搜索用户 ken", std::string(R"({"some":"payload"})"), AtAiMode::SharedFull);
+  const AgentEvent ready = Ready(WaitForTurn());
+  EXPECT_EQ(ready.text, RenderLocalNotShareable());
+  EXPECT_EQ(ready.shared_ai_mode, AtAiMode::Local);
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Calls().empty());
+  ExpectNoModel();
+}
+
+// Contacts are read only for the tools that resolve a name.
+TEST_F(AgentSessionLocalActionTest, ContactsAreReadOnlyForContactTools) {
+  std::atomic<int> reads{0};
+  StartLocal(Allow("set_notifications"));
+  session_->SetLocalContactsSource([&reads, this]() {
+    ++reads;
+    std::lock_guard lock(contacts_mu_);
+    return contacts_;
+  });
+  session_->SubmitToThread("t1", "关掉通知");
+  WaitForTurn();
+  EXPECT_EQ(reads.load(), 0);
+  session_->SubmitToThread("t1", "打开和 Tom 的聊天");
+  WaitForTurn();
+  EXPECT_EQ(reads.load(), 1); // the plan and its answer share one read
+  session_->SubmitLocalAction("t1", "打开聊天", "open_conversation", Args({{"thread_id", "d3"}, {"contact_id", "c3"}}));
+  WaitForTurn();
+  EXPECT_EQ(reads.load(), 2);
 }
 
 TEST_F(AgentSessionLocalActionTest, LocalAtAiWithAnAppActionRunsOnTheDevice) {

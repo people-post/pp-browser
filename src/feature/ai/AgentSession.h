@@ -184,8 +184,8 @@ private:
   /** Ends the turn with a host-built answer; `keep_out_of_history`: an app-action turn (never sent to a model). */
   static void FinishLocalAnswer(const std::shared_ptr<Impl>& state, const std::string& text, RenderMode mode,
                                 bool keep_out_of_history = true);
-  /** Template rendering of the executed plan's result (or `failure`, a tool error message). */
-  static void FinishLocalResult(const std::shared_ptr<Impl>& state, const std::optional<std::string>& failure = {});
+  /** Template rendering of the executed plan's result; `failed`: the tool failed (`blocked`: by the user's permissions). */
+  static void FinishLocalResult(const std::shared_ptr<Impl>& state, bool failed = false, bool blocked = false);
   static void MarkUserEntryLocal(const std::shared_ptr<Impl>& state);
   static void StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vector<BriefAiHistoryTurn> history,
                               std::string summary);

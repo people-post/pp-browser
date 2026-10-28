@@ -5,11 +5,15 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ai/LocalActionWords.h"
 #include "lib/ai/LocalizedLabels.h"
+#include "common/Logger.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <ctime>
 #include <map>
+#include <mutex>
+#include <set>
 #include <string_view>
 #include <variant>
 
@@ -140,17 +144,30 @@ std::string ValueText(const std::string& key, const Value& value) {
   return ScalarText(key, value);
 }
 
+std::atomic<bool> g_strict_cards{false};
+
 std::string RenderCard(const std::string& tool, const Object& result) {
   std::string out;
   for (const auto& [key, value] : result.fields()) {
     const std::string label_key = "ai.card." + tool + "." + key;
     const std::string label = Tr(label_key);
+    if (label == label_key) {
+      if (g_strict_cards.load()) {
+        out += (out.empty() ? "" : "\n") + ("??" + key + "??"); // the registry-driven render tests fail on this
+        continue;
+      }
+      // A key nobody labelled yet (a tool grew a field): left out of the card rather than shown raw.
+      static std::mutex logged_mutex;
+      static std::set<std::string> logged;
+      std::lock_guard lock(logged_mutex);
+      if (logged.insert(label_key).second) {
+        static logging::Logger log = logging::getLogger("LocalActionRender");
+        log.debug << "card key without a label skipped: " << label_key;
+      }
+      continue;
+    }
     if (!out.empty()) {
       out += "\n";
-    }
-    if (label == label_key) {
-      out += "??" + key + "??"; // a result key nobody labelled: the render test fails on this
-      continue;
     }
     out += Tr("ai.card.line", Args{{"label", label}, {"value", ValueText(key, value)}});
   }
@@ -288,10 +305,8 @@ std::string RenderLocalAsk(const LocalAsk& ask) {
 std::string RenderLocalResult(const std::string& tool, const Object& result_json, const LocalRenderContext& ctx) {
   std::string text;
   if (result_json.getIf<bool>("success") == std::optional<bool>(false)) {
-    text = result_json.getString("message").value_or("");
-    if (text.empty()) {
-      text = Tr("ai.gave_up");
-    }
+    // Never the tool's own message: it is internal English ("appearance must be …") or an error detail.
+    text = Tr(result_json.getIf<bool>("blocked").value_or(false) ? "ai.blocked_by_permissions" : "ai.action_failed");
   } else if (IsReader(tool)) {
     text = RenderCard(tool, result_json);
   } else if (tool == "list_conversations" || tool == "list_contacts" || tool == "search_people") {
@@ -334,6 +349,8 @@ std::string RenderLocalAmbiguous(const LocalAmbiguous& ambiguous, const std::str
   root.set("blocks", ArrayValue(std::move(blocks)));
   return DumpJson(root);
 }
+
+void SetLocalRenderStrictForTests(const bool strict) { g_strict_cards.store(strict); }
 
 std::string RenderLocalCancelled() { return Tr("ai.cancelled"); }
 std::string RenderLocalGaveUp() { return Tr("ai.gave_up"); }

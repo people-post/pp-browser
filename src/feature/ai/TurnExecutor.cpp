@@ -9,6 +9,8 @@
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
+#include <unordered_map>
+
 namespace pbr {
 
 namespace {
@@ -126,6 +128,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
         on_activity(call.name, "error");
       }
       result.ok = false;
+      result.blocked = true;
       result.error = "Tool '" + call.name + "' is blocked by your tool permission settings.";
       return result;
     }
@@ -194,6 +197,21 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
       if (local) {
         std::vector<mesh::DirectoryHit> ignored_hits;
         ParsePeopleToolJson(*local, ignored_hits, contacts);
+      }
+    }
+    if (!contacts.empty() && options.local_contacts) {
+      std::unordered_map<std::string, LocalPlanContact> local;
+      for (LocalPlanContact& c : options.local_contacts()) {
+        local.emplace(c.id, std::move(c));
+      }
+      for (Contact& contact : contacts) {
+        if (const auto it = local.find(contact.id); it != local.end()) {
+          contact.local.display_name = it->second.remark; // the row shows ContactEffectiveTitle: remark first
+          if (!it->second.nickname.empty()) {
+            contact.remote.nickname = it->second.nickname;
+          }
+          SyncContactMirrors(contact);
+        }
       }
     }
     for (const Contact& contact : contacts) {

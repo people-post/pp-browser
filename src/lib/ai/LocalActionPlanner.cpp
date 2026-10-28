@@ -1,5 +1,6 @@
 #include "lib/ai/LocalActionPlanner.h"
 
+#include "lib/ai/AppActionText.h"
 #include "lib/ai/AppActionWords.h"
 #include "lib/ai/LocalActionWords.h"
 
@@ -31,20 +32,7 @@ bool IsWordChar(const char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c 
 
 bool IsAsciiPhrase(const std::string_view w) { return !w.empty() && static_cast<unsigned char>(w.front()) < 0x80; }
 
-U32 ToU32(const std::string_view in) {
-  U32 out;
-  for (size_t i = 0; i < in.size();) {
-    const auto b = static_cast<unsigned char>(in[i]);
-    const size_t n = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 1;
-    char32_t cp = n == 1 ? b : b & (0xFFu >> (n + 1));
-    for (size_t k = 1; k < n && i + k < in.size(); ++k) {
-      cp = (cp << 6) | (static_cast<unsigned char>(in[i + k]) & 0x3F);
-    }
-    out.push_back(b < 0x80 || n > 1 ? cp : 0xFFFD);
-    i += n;
-  }
-  return out;
-}
+U32 ToU32(const std::string_view in) { return app_action_text::DecodeUtf8(in); }
 
 size_t CodePoints(const std::string_view s) { return ToU32(s).size(); }
 
@@ -171,43 +159,10 @@ std::string StripTail(std::string s, const std::span<const std::string_view> fil
 
 // --- word search --------------------------------------------------------------------------------------------
 
-struct Token {
-  std::string word;
-  size_t begin = 0;
-  size_t end = 0;
-};
+using Token = app_action_text::WordToken;
 
-/** ASCII words (letters, digits, apostrophes) of an already lowercased text. */
-std::vector<Token> Tokenize(const std::string& lower) {
-  std::vector<Token> out;
-  Token cur;
-  const auto flush = [&](const size_t at) {
-    if (!cur.word.empty()) {
-      cur.end = at;
-      out.push_back(std::move(cur));
-      cur = Token{};
-    }
-  };
-  for (size_t i = 0; i < lower.size();) {
-    char c = lower[i];
-    size_t n = 1;
-    if (lower.compare(i, 3, "\xE2\x80\x99") == 0) {
-      c = '\'';
-      n = 3;
-    }
-    if (IsWordChar(c) || c == '\'') {
-      if (cur.word.empty()) {
-        cur.begin = i;
-      }
-      cur.word.push_back(c);
-    } else {
-      flush(i);
-    }
-    i += n;
-  }
-  flush(lower.size());
-  return out;
-}
+/** ASCII words (letters, digits, apostrophes): the classifier's tokenizer, so offsets agree. */
+std::vector<Token> Tokenize(const std::string& lower) { return app_action_text::TokenizeWords(lower); }
 
 std::vector<std::string> PhraseWords(const std::string_view phrase) {
   std::vector<std::string> out;
@@ -298,12 +253,51 @@ bool IsQuestion(const std::string& text, const bool settings_read) {
   return !settings_read && (h.HasAny(kWhatIsWordsZh) || h.HasAny(kWhatIsWordsEn));
 }
 
+/** Erases every whole-word / substring occurrence of `w` from `s` (a space in its place); true if any. */
+bool EraseWord(std::string& s, const std::string_view w) {
+  bool erased = false;
+  for (size_t p = s.find(w); p != kNpos; p = s.find(w, p + 1)) {
+    if (IsAsciiPhrase(w)) {
+      const size_t e = p + w.size();
+      if ((p > 0 && IsWordChar(s[p - 1])) || (e < s.size() && IsWordChar(s[e]))) {
+        continue;
+      }
+    }
+    s.replace(p, w.size(), " ");
+    erased = true;
+  }
+  return erased;
+}
+
+/**
+ * A cancellation is a short answer that is nothing but cancel words, particles (吧 / 了 / 呢 / 啊) and
+ * punctuation: "算了，不改了吧" cancels, "不用了，叫Tom" and "cancel it, use Tom" carry a value and do not.
+ */
 bool IsCancel(const std::string& answer) {
   const std::string trimmed = StripEdges(answer);
   if (trimmed.empty() || CodePoints(trimmed) > kMaxCancelChars) {
     return false;
   }
-  return Haystack(trimmed).HasAny(kCancelWords);
+  std::string rest = LowerAscii(trimmed);
+  bool hit = false;
+  for (const std::string_view w : kCancelWords) {
+    hit = EraseWord(rest, w) || hit;
+  }
+  if (!hit) {
+    return false;
+  }
+  for (const std::string_view w : kCancelParticles) {
+    EraseWord(rest, w);
+  }
+  for (const std::string_view w : kEdgeStrings) { // punctuation, wherever it is, becomes a space
+    for (size_t p = rest.find(w); p != kNpos && w != " "; p = rest.find(w, p + 1)) {
+      rest.replace(p, w.size(), " ");
+    }
+  }
+  for (const std::string_view w : kCancelFillerWordsEn) {
+    EraseWord(rest, w);
+  }
+  return std::all_of(rest.begin(), rest.end(), [](const char c) { return c == ' '; });
 }
 
 const AppActionWords* WordsFor(const std::string& tool) {
@@ -737,13 +731,35 @@ std::vector<std::string> FindCapabilities(const std::string& region) {
   return caps;
 }
 
-LocalPlan MeshPlan(const std::string& cap, const bool enabled, const std::string& text, const bool only_first) {
+/** The audience of direct_connections named in `region`, or "". */
+std::string ParseAudience(const std::string& region) {
+  const Haystack h(region);
+  if (h.HasAny(kAudienceNobodyWords)) {
+    return "nobody";
+  }
+  if (h.HasAny(kAudienceFriendlyWords)) {
+    return "friendly";
+  }
+  if (h.HasAny(kAudienceContactsWords)) {
+    return "contacts";
+  }
+  if (h.HasAny(kAudienceEveryoneWords)) {
+    return "everyone";
+  }
+  return {};
+}
+
+LocalPlan MeshPlan(const std::string& cap, const bool enabled, const std::string& text, const bool only_first,
+                   const std::string& region = {}) {
   if (cap == "direct_connections") {
-    // The tool takes an audience, not a flag: "off" is unambiguous (always relay), "on" is not.
-    if (enabled) {
-      return Ask("set_mesh_capabilities", "capability", "settings.ask.mesh_capability", "true");
+    // The tool takes an audience, not a flag: "off" is unambiguous (always relay); "on" needs to know for whom.
+    if (!enabled) {
+      return MakeTextPlan("set_mesh_capabilities", "direct_connections", "nobody", text, only_first);
     }
-    return MakeTextPlan("set_mesh_capabilities", "direct_connections", "nobody", text, only_first);
+    if (const std::string audience = ParseAudience(region); !audience.empty() && audience != "nobody") {
+      return MakeTextPlan("set_mesh_capabilities", "direct_connections", audience, text, only_first);
+    }
+    return Ask("set_mesh_capabilities", "audience", "settings.ask.direct_audience");
   }
   return MakeBoolPlan("set_mesh_capabilities", cap.c_str(), enabled, text, only_first);
 }
@@ -759,7 +775,7 @@ LocalPlan ParseMesh(const std::string& region, const std::string& text, const bo
     dir = carry_dir == "true" ? Tri::True : Tri::False;
   }
   if (caps.size() == 1 && dir != Tri::Unclear) {
-    return MeshPlan(caps.front(), dir == Tri::True, text, only_first);
+    return MeshPlan(caps.front(), dir == Tri::True, text, only_first, region);
   }
   if (caps.size() == 1) {
     return Ask("set_mesh_capabilities", "enabled", "settings.ask.on_or_off", caps.front());
@@ -1071,6 +1087,10 @@ LocalPlan ResolvePendingAnswer(const LocalAsk& ask, const std::string& answer, c
     parsed = ParseMesh(trimmed, answer, true, ask.carry, {}, false);
   } else if (ask.missing == "capability") {
     parsed = ParseMesh(trimmed, answer, true, {}, ask.carry, false);
+  } else if (ask.missing == "audience") {
+    if (const std::string v = ParseAudience(trimmed); !v.empty()) {
+      parsed = MakeTextPlan(tool, "direct_connections", v, answer, false);
+    }
   } else if (ask.missing == "enabled") {
     const Tri v = ParseBool(tool, trimmed, true);
     if (v != Tri::Unclear) {

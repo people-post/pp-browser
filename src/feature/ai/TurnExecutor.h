@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/ai/LlmClient.h"
+#include "lib/ai/LocalActionPlanner.h"
 #include "lib/ai/TurnPlan.h"
 #include "lib/ai/ToolPermissionPolicy.h"
 #include "lib/ai/ToolRegistry.h"
@@ -25,6 +26,8 @@ struct TurnExecutionResult {
   std::optional<std::string> people_list_blocks;
   bool ok = true;
   std::string error;
+  /** !ok because the user's tool permissions block the tool ("Never"), not because it failed. */
+  bool blocked = false;
   /** Stopped before a mutating tool that needs user permission. */
   bool needs_permission = false;
   size_t next_tool_index = 0;
@@ -37,6 +40,11 @@ struct TurnExecutionOptions {
   std::unordered_set<std::string> session_grants;
   /** When true, Ask is treated as Deny with a tool error (refinement loop). */
   bool deny_on_ask = false;
+  /**
+   * The local contacts with the user's remarks. The tools' JSON carries no remark (it is model-facing); people-list
+   * rows of known contacts take remark + nickname from here, so the remark is shown but never leaves the device.
+   */
+  std::function<std::vector<LocalPlanContact>()> local_contacts;
 };
 
 class TurnExecutor {

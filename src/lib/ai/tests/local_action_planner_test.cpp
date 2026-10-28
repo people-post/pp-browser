@@ -119,6 +119,15 @@ TEST(LocalActionPlannerTest, ParameterEndsAtTheStopWordAndTheRestIsNotTaken) {
   EXPECT_EQ(Hints(PlanFor("搜索用户 ken")), "");
 }
 
+// 再 / 并 are not stop words: they occur inside names.
+TEST(LocalActionPlannerTest, SingleCharacterConnectivesStayInTheName) {
+  ExpectText(PlanFor("搜索用户 再见青春"), "search_people", "query", "再见青春", "再见青春");
+  ExpectText(PlanFor("改昵称为 李并"), "update_profile_nickname", "nickname", "李并", "李并");
+  LocalPlanContext ctx;
+  ctx.contacts = {Contact("c1", "", "王再明", 0, "thread-1")};
+  ExpectText(PlanFor("打开和 王再明 的聊天", ctx), "open_conversation", "thread_id", "thread-1", "王再明");
+}
+
 TEST(LocalActionPlannerTest, NamesAreTakenAsTheyAre) {
   ExpectText(PlanFor("改昵称为 Bob"), "update_profile_nickname", "nickname", "Bob", "改昵称为 Bob");
   ExpectText(PlanFor("change my nickname to Bob"), "update_profile_nickname", "nickname", "Bob", "change to Bob");
@@ -287,7 +296,7 @@ TEST(LocalActionPlannerTest, MeshCapabilities) {
   ExpectBool(PlanAs("set_mesh_capabilities", "打开优先联系人", "打开"), "set_mesh_capabilities", "prefer_contacts_for_routing", true,
              "prefer contacts");
   ExpectText(PlanAs("set_mesh_capabilities", "关掉直连", "关掉"), "set_mesh_capabilities", "direct_connections", "nobody", "direct off");
-  ExpectAsk(PlanAs("set_mesh_capabilities", "打开直连", "打开"), "settings.ask.mesh_capability", "direct on is not a flag");
+  ExpectAsk(PlanAs("set_mesh_capabilities", "打开直连", "打开"), "settings.ask.direct_audience", "direct on is not a flag");
   const LocalPlan both = PlanAs("set_mesh_capabilities", "同时开中继和 DHT", "中继");
   ExpectAsk(both, "settings.ask.mesh_capability", "two capabilities");
   EXPECT_EQ(std::get<LocalAsk>(both).missing, "capability");
@@ -426,6 +435,25 @@ TEST(LocalActionPlannerTest, NoNameOrAPronounIsAsked) {
   ExpectAsk(PlanAs("open_conversation", "打开聊天", "打开聊天", ctx), "contacts.ask.which_contact", "no name");
 }
 
+// "直连 开": direct_connections takes an audience, so it is asked for and the answer is the value (no loop back to
+// "which capability").
+TEST(LocalActionPlannerTest, DirectConnectionsOnAsksForTheAudience) {
+  const LocalPlan asked = PlanAs("set_mesh_capabilities", "直连 开", "直连");
+  ExpectAsk(asked, "settings.ask.direct_audience", "直连 开");
+  const LocalAsk ask = std::get<LocalAsk>(asked);
+  EXPECT_EQ(ask.missing, "audience");
+  for (const auto& [answer, audience] : std::vector<std::pair<std::string, std::string>>{
+           {"任何人", "everyone"}, {"联系人", "contacts"}, {"好友", "friendly"}, {"没有人", "nobody"},
+           {"everyone", "everyone"}, {"contacts", "contacts"}, {"friendly", "friendly"}, {"nobody", "nobody"},
+           {"只让好友吧", "friendly"}}) {
+    ExpectText(ResolvePendingAnswer(ask, answer, {}), "set_mesh_capabilities", "direct_connections", audience, answer);
+  }
+  ExpectAsk(ResolvePendingAnswer(ask, "开", {}), "settings.ask.direct_audience", "still no audience");
+  // Named in the sentence: no question.
+  ExpectText(PlanAs("set_mesh_capabilities", "打开直连 只对好友", "打开"), "set_mesh_capabilities", "direct_connections",
+             "friendly", "audience in the sentence");
+}
+
 // --- follow-up answers --------------------------------------------------------------------------------------
 
 TEST(LocalActionPlannerTest, CancelWordsInAShortAnswer) {
@@ -433,6 +461,13 @@ TEST(LocalActionPlannerTest, CancelWordsInAShortAnswer) {
   for (const char* answer : {"算了", "取消吧", "算了，不改了吧", "不用了", "别了", "never mind", "Cancel", "forget it"}) {
     EXPECT_TRUE(std::holds_alternative<LocalCancelled>(ResolvePendingAnswer(ask, answer, {}))) << answer;
   }
+  // A cancel word with a value next to it is an answer, not a cancellation.
+  ExpectText(ResolvePendingAnswer(ask, "不用了，叫Tom", {}), "update_profile_nickname", "nickname", "不用了，叫Tom",
+             "不用了，叫Tom");
+  ExpectText(ResolvePendingAnswer(ask, "cancel it, use Tom", {}), "update_profile_nickname", "nickname",
+             "cancel it, use Tom", "cancel it, use Tom");
+  EXPECT_TRUE(std::holds_alternative<LocalCancelled>(ResolvePendingAnswer(ask, "cancel it", {})));
+  EXPECT_TRUE(std::holds_alternative<LocalCancelled>(ResolvePendingAnswer(ask, "算了吧！", {})));
   // Longer than the limit: it is a name that happens to contain a cancel word.
   const std::string long_answer = "取消的那个世界的另一个我的名字叫什么好呢";
   ExpectText(ResolvePendingAnswer(ask, long_answer, {}), "update_profile_nickname", "nickname", long_answer, "long answer");

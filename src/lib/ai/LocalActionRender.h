@@ -26,12 +26,17 @@ struct LocalRenderContext {
 std::string RenderLocalAsk(const LocalAsk& ask);
 
 /**
- * `result_json` is the tool's JSON result. A tool that failed (Roe error) is passed as
- * {"success": false, "message": <error message>}. Readers (get_* / list_locales) become a "label: value" card, one
- * line per key; a key without an `ai.card.<tool>.<key>` label renders as "??key??" so tests catch it. Writers become
- * one sentence. list_* / search_people results are not handled here (people-list blocks): returns "".
+ * `result_json` is the tool's JSON result. A failure ({"success": false, …}; a Roe error is passed that way) never
+ * shows the tool's own text: {"blocked": true} (the user's tool permissions) → ai.blocked_by_permissions, anything
+ * else → ai.action_failed. Readers (get_* / list_locales) become a "label: value" card, one line per key; a key
+ * without an `ai.card.<tool>.<key>` label is left out (logged once), or shown as "??key??" under
+ * SetLocalRenderStrictForTests(true) so the registry-driven tests catch it. Writers become one sentence.
+ * list_* / search_people results are not handled here (people-list blocks): returns "".
  */
 std::string RenderLocalResult(const std::string& tool, const Object& result_json, const LocalRenderContext& ctx);
+
+/** Tests: an unlabelled card key renders as "??key??" instead of being skipped. */
+void SetLocalRenderStrictForTests(bool strict);
 
 /**
  * People-list blocks JSON for contacts the user must choose from. Rows carry {"type":"local_action",...} payloads:

@@ -29,6 +29,7 @@ protected:
   void SetUp() override {
     ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
     pbr::LocalizationService::Instance().SetPreferredLanguage(GetParam());
+    pbr::SetLocalRenderStrictForTests(true); // a new unlabelled key of a real tool fails here
 
     config_path_ = UniquePath("pp_local_render_config_") + ".json";
     profile_dir_ = UniquePath("pp_local_render_profile_");
@@ -51,6 +52,7 @@ protected:
   }
 
   void TearDown() override {
+    pbr::SetLocalRenderStrictForTests(false);
     std::filesystem::remove(config_path_);
     std::filesystem::remove_all(profile_dir_);
     std::filesystem::remove_all(data_dir_);
@@ -199,10 +201,10 @@ TEST_P(LocalActionRenderSettingsTest, MeshCapabilitiesRenders) {
   EXPECT_TRUE(Clean(pbr::RenderLocalResult("set_mesh_capabilities", result, {})));
 }
 
-TEST_P(LocalActionRenderSettingsTest, ToolFailureShowsItsOwnMessage) {
+TEST_P(LocalActionRenderSettingsTest, ToolFailureIsWordedByTheTemplate) {
   const pbr::Object failure = Run("set_appearance", Args("appearance", "plaid"));
   ASSERT_EQ(failure.getIf<bool>("success"), std::optional<bool>(false));
   const std::string text = pbr::RenderLocalResult("set_appearance", failure, {});
-  EXPECT_EQ(text, failure.getString("message").value());
-  EXPECT_NE(text.find("appearance"), std::string::npos);
+  EXPECT_EQ(text, pbr::Tr("ai.action_failed"));
+  EXPECT_NE(text, failure.getString("message").value()); // the tool's own (English, internal) text is not shown
 }

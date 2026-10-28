@@ -37,7 +37,7 @@ struct LocalPlanContext {
 /** A parameter is missing or unclear: ask `question_key` (a locale key), the user's next sentence answers it. */
 struct LocalAsk {
   std::string tool;
-  std::string missing; // query | nickname | enabled | appearance | language | policy | capability | contact
+  std::string missing; // query | nickname | enabled | appearance | language | policy | capability | audience | contact
   std::string question_key;
   /**
    * set_mesh_capabilities only, what the sentence already said: the capability name when missing == "enabled",

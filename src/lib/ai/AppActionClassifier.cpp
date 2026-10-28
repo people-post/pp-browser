@@ -1,5 +1,6 @@
 #include "lib/ai/AppActionClassifier.h"
 
+#include "lib/ai/AppActionText.h"
 #include "lib/ai/AppActionWords.h"
 
 #include <algorithm>
@@ -23,31 +24,8 @@ constexpr size_t kEnSearchMaxTail = 3;  // words after "people"/"user"/…: a na
 using Text = std::u32string;
 using View = std::u32string_view;
 
-// `offsets`, when given, receives the byte offset of every code point in `in`.
 Text Decode(std::string_view in, std::vector<size_t>* offsets = nullptr) {
-  Text out;
-  for (size_t i = 0; i < in.size();) {
-    if (offsets) {
-      offsets->push_back(i);
-    }
-    const auto b = static_cast<unsigned char>(in[i]);
-    const size_t n = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 0;
-    char32_t cp = 0xFFFD;
-    if (n > 0 && i + n <= in.size()) {
-      cp = n == 1 ? b : b & (0xFFu >> (n + 1));
-      for (size_t k = 1; k < n; ++k) {
-        const auto c = static_cast<unsigned char>(in[i + k]);
-        if ((c & 0xC0) != 0x80) {
-          cp = 0xFFFD;
-          break;
-        }
-        cp = (cp << 6) | (c & 0x3F);
-      }
-    }
-    out.push_back(cp);
-    i += n > 0 ? n : 1;
-  }
-  return out;
+  return app_action_text::DecodeUtf8(in, offsets);
 }
 
 bool IsCjk(const char32_t c) {
@@ -327,41 +305,16 @@ std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::ve
 
 using Words = std::vector<std::string>;
 
-// `spans`, when given, receives the byte range [begin, end) of every word in `s`. A curly apostrophe
-// (U+2019) counts as "'", so "Iâd" is one word.
+// `spans`, when given, receives the byte range [begin, end) of every word in `s` (shared tokenizer, so the
+// planner reads the same words at the same offsets).
 Words SplitSpans(std::string_view s, SpanList* spans) {
   Words out;
-  std::string cur;
-  size_t cur_begin = 0;
-  const auto flush = [&](const size_t at) {
-    if (!cur.empty()) {
-      out.push_back(std::move(cur));
-      cur.clear();
-      if (spans) {
-        spans->emplace_back(cur_begin, at);
-      }
+  for (app_action_text::WordToken& token : app_action_text::TokenizeWords(s)) {
+    if (spans) {
+      spans->emplace_back(token.begin, token.end);
     }
-  };
-  for (size_t i = 0; i < s.size();) {
-    char c = s[i];
-    size_t n = 1;
-    if (s.compare(i, 3, "\xE2\x80\x99") == 0) {
-      c = '\'';
-      n = 3;
-    } else if (c >= 'A' && c <= 'Z') {
-      c = static_cast<char>(c + 32);
-    }
-    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'') {
-      if (cur.empty()) {
-        cur_begin = i;
-      }
-      cur.push_back(c);
-    } else {
-      flush(i);
-    }
-    i += n;
+    out.push_back(std::move(token.word));
   }
-  flush(s.size());
   return out;
 }
 

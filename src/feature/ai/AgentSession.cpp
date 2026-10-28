@@ -190,6 +190,8 @@ struct AgentSession::Impl : public Module {
   bool local_turn = false;
   /** Raw results of the executed local plan, for the template. */
   std::vector<std::string> local_raw_results;
+  /** The planner context of this turn (contacts loaded only for contact tools), reused for the answer. */
+  std::optional<LocalPlanContext> local_ctx;
   /** For IsAppActionRequest on the UI thread: the preset and the declared tools as of the last configure. */
   mutable std::mutex app_action_mutex;
   bool app_action_brief = false;
@@ -274,6 +276,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->people_list_blocks.reset();
   state->local_turn = false;
   state->local_raw_results.clear();
+  state->local_ctx.reset();
   state->pending_direct_action.reset();
   state->pending_entry_id.clear();
   state->pending_thread_id.clear();
@@ -469,6 +472,10 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   TurnExecutionOptions options;
   options.start_index = park.next_tool_index;
   options.permissions = state->tool_permissions;
+  if (state->turn_plan.local) {
+    // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
+    options.local_contacts = state->local_contacts;
+  }
   options.session_grants = std::move(session_grants);
 
   TurnExecutionResult execution = TurnExecutor::Execute(park.plan, state->tools, on_activity, options);
@@ -479,7 +486,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
 
   if (!execution.ok) {
     if (state->turn_plan.local) {
-      FinishLocalResult(state, execution.error); // a tool failure is part of the answer, worded by the template
+      // A tool failure is part of the answer, worded by the template; the detail only goes to the log.
+      state->Log().warning << "local action failed: " << execution.error;
+      FinishLocalResult(state, /*failed=*/true, execution.blocked);
       return;
     }
     PushError(state, execution.error);
@@ -1020,6 +1029,10 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   TurnExecutionOptions options;
   options.permissions = state->tool_permissions;
   if (state->turn_plan.local) {
+    // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
+    options.local_contacts = state->local_contacts;
+  }
+  if (state->turn_plan.local) {
     for (const PlannedToolCall& call : state->turn_plan.tools) {
       if (!AlwaysAsksInLocalPlan(call.name)) {
         continue;
@@ -1035,7 +1048,9 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity, options);
   if (!execution.ok) {
     if (state->turn_plan.local) {
-      FinishLocalResult(state, execution.error); // a tool failure is part of the answer, worded by the template
+      // A tool failure is part of the answer, worded by the template; the detail only goes to the log.
+      state->Log().warning << "local action failed: " << execution.error;
+      FinishLocalResult(state, /*failed=*/true, execution.blocked);
       return;
     }
     PushError(state, execution.error);
@@ -1118,6 +1133,15 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
   }
 
   const std::string& text = state->pending_user_text;
+  if (taken.ask.missing == "query" || taken.ask.missing == "nickname") {
+    // Any sentence can be a name ("搜索达人": a verb alone does not classify), but a full command — verb and
+    // object, or a whole phrase of the wordlist, like "关掉通知" — is not an answer: the question is dropped and
+    // the sentence routed like any other.
+    if (ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
+      state->Log().info << "local action question dropped for a new command (" << taken.ask.tool << ")";
+      return false;
+    }
+  }
   LocalPlan plan = ResolvePendingAnswer(taken.ask, text, BuildLocalPlanContext(state, taken.ask.tool));
   if (std::holds_alternative<LocalQuestion>(plan)) {
     EmitLocalActionMetric(state->Log(), taken.ask.tool, "question", false);
@@ -1245,8 +1269,13 @@ void AgentSession::RunDirectAction(const std::shared_ptr<Impl>& state, const std
 }
 
 LocalPlanContext AgentSession::BuildLocalPlanContext(const std::shared_ptr<Impl>& state, const std::string& tool) {
+  const bool contact_tool = tool == "open_conversation" || tool == "start_conversation";
+  if (contact_tool && state->local_ctx) {
+    return *state->local_ctx; // loaded once per turn: the plan and its answer read the same contacts
+  }
   LocalPlanContext ctx;
-  if (state->local_contacts) {
+  if (contact_tool && state->local_contacts) {
+    // Contacts (and their threads) are read only for the tools that resolve a name.
     ctx.contacts = state->local_contacts();
   }
   if (tool == "set_language") {
@@ -1262,6 +1291,9 @@ LocalPlanContext AgentSession::BuildLocalPlanContext(const std::shared_ptr<Impl>
         }
       }
     }
+  }
+  if (contact_tool) {
+    state->local_ctx = ctx;
   }
   return ctx;
 }
@@ -1301,17 +1333,17 @@ void AgentSession::FinishLocalAnswer(const std::shared_ptr<Impl>& state, const s
   FinishAssistantOutput(state, text, "stop", /*from_model=*/false);
 }
 
-void AgentSession::FinishLocalResult(const std::shared_ptr<Impl>& state, const std::optional<std::string>& failure) {
+void AgentSession::FinishLocalResult(const std::shared_ptr<Impl>& state, const bool failed, const bool blocked) {
   const bool keep_out = state->turn_plan.local;
   const PlannedToolCall call = state->turn_plan.tools.empty() ? PlannedToolCall{} : state->turn_plan.tools.back();
-  if (!failure && state->people_list_blocks) {
+  if (!failed && state->people_list_blocks) {
     FinishLocalAnswer(state, *state->people_list_blocks, RenderMode::PeopleList, keep_out);
     return;
   }
   Object result;
-  if (failure) {
+  if (failed) {
     result.set("success", false);
-    result.set("message", *failure);
+    result.set("blocked", blocked);
   } else if (!state->local_raw_results.empty()) {
     if (const auto doc = TryParseObject(state->local_raw_results.back())) {
       result = *doc;
@@ -1674,18 +1706,19 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     const bool stream = BriefStreamAvailable(state);
     state->Log().info << "scoped assist path=" << (stream ? "brief_stream" : "pipeline")
                       << " preset=" << ResolvePreset(state->config) << " key=" << (state->config.llm.api_key.empty() ? "none" : "set");
-    if (stream) {
-      if (state->assist_mode == AtAiMode::Local) {
-        // "@ai 搜索用户 ken" in a chat runs on the device like in an AI thread; the answer stays in this chat.
-        if (TryPendingLocalAnswer(state) || TryLocalAppAction(state)) {
-          return;
-        }
-      } else if (const auto match = ClassifyAppActionMatch(state->pending_user_text, AppActionCapabilities(state))) {
-        // "@ai++ 搜索用户 ken": an app action is not shared with the other side. Nothing is executed, asked or
-        // relayed; the answer stays on this device.
+    if (state->assist_mode != AtAiMode::Local && ResolvePreset(state->config) == "brief") {
+      // "@ai++ 搜索用户 ken": an app action is not shared with the other side. Decided before anything else
+      // (stream available or not): nothing is executed, asked or relayed; the answer stays on this device.
+      if (const auto match = ClassifyAppActionMatch(state->pending_user_text, AppActionCapabilities(state))) {
         EmitLocalActionMetric(state->Log(), match->tool, "not_shareable", false);
         state->assist_mode = AtAiMode::Local;
         FinishLocalAnswer(state, RenderLocalNotShareable(), RenderMode::Markdown);
+        return;
+      }
+    }
+    if (stream) {
+      // "@ai 搜索用户 ken" in a chat runs on the device like in an AI thread; the answer stays in this chat.
+      if (state->assist_mode == AtAiMode::Local && (TryPendingLocalAnswer(state) || TryLocalAppAction(state))) {
         return;
       }
       StreamBriefTurn(state, {}, std::string());
