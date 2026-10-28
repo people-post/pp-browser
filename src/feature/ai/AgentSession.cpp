@@ -1117,10 +1117,8 @@ bool AgentSession::TryLocalAppAction(const std::shared_ptr<Impl>& state) {
   if (IsAppOverviewQuestion(state->pending_user_text)) {
     // "What can you do?": the device lists its own commands; the cloud model does not know them.
     EmitLocalActionMetric(state->Log(), "overview", "question", false);
-    state->handoff_turn = true;
-    state->handoff_local = true;
-    state->local_turn = true;
-    FinishLocalAnswer(state, RenderLocalOverview(), RenderMode::Markdown);
+    // Static text without user data: it stays in the history, so a follow-up can refer to it. Not a handoff.
+    FinishLocalAnswer(state, RenderLocalOverview(), RenderMode::Markdown, /*keep_out_of_history=*/false);
     return true;
   }
   const auto match = ClassifyAppActionMatch(state->pending_user_text, AppActionCapabilities(state));
@@ -1132,10 +1130,7 @@ bool AgentSession::TryLocalAppAction(const std::shared_ptr<Impl>& state) {
     EmitLocalActionMetric(state->Log(), match->tool, "question", false);
     if (HasLocalHowTo(match->tool)) {
       // "怎么搜索用户？" asks how to use the app: a short how-to from the device, no stream, no model.
-      state->handoff_turn = true;
-      state->handoff_local = true;
-      state->local_turn = true;
-      FinishLocalAnswer(state, RenderLocalHowTo(match->tool), RenderMode::Markdown);
+      FinishLocalAnswer(state, RenderLocalHowTo(match->tool), RenderMode::Markdown, /*keep_out_of_history=*/false);
       return true;
     }
     return false; // other questions about the app: brief_AI answers them
@@ -1168,7 +1163,7 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
     // Any sentence can be a name ("搜索达人": a verb alone does not classify), but a full command — verb and
     // object, or a whole phrase of the wordlist, like "关掉通知" — is not an answer: the question is dropped and
     // the sentence routed like any other.
-    if (ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
+    if (IsAppOverviewQuestion(text) || ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
       state->Log().info << "local action question dropped for a new command (" << taken.ask.tool << ")";
       return false;
     }
@@ -1179,7 +1174,7 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
     return false;
   }
   if (std::holds_alternative<LocalAsk>(plan)) {
-    if (ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
+    if (IsAppOverviewQuestion(text) || ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
       // Not an answer but a new command: the question is dropped and the message routed like any other.
       state->Log().info << "local action question dropped for a new command (" << taken.ask.tool << ")";
       return false;

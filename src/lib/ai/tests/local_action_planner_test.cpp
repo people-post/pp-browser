@@ -113,6 +113,7 @@ TEST(LocalActionPlannerTest, ABareFindTakesTheName) {
   ExpectText(PlanFor("look for Ken"), "search_people", "query", "Ken", "look for Ken");
   ExpectText(PlanFor("please find Ken"), "search_people", "query", "Ken", "please find Ken");
   ExpectText(PlanFor("can you find Ken"), "search_people", "query", "Ken", "can you find Ken");
+  ExpectText(PlanFor("find ken"), "search_people", "query", "ken", "find ken");
 }
 
 TEST(LocalActionPlannerTest, ParameterEndsAtTheStopWordAndTheRestIsNotTaken) {
@@ -268,6 +269,7 @@ TEST(LocalActionPlannerTest, Appearance) {
   ExpectText(PlanAs("set_appearance", "切换到浅色模式", "切换"), "set_appearance", "appearance", "light", "浅色");
   ExpectText(PlanFor("switch to dark mode"), "set_appearance", "appearance", "dark", "dark mode");
   ExpectText(PlanAs("set_appearance", "跟随系统外观", "跟随系统外观"), "set_appearance", "appearance", "system", "跟随系统");
+  ExpectText(PlanFor("follow the system"), "set_appearance", "appearance", "system", "follow the system");
   ExpectText(PlanFor("turn off dark mode"), "set_appearance", "appearance", "light", "off dark = light");
   ExpectAsk(PlanAs("set_appearance", "改外观", "改外观"), "settings.ask.appearance", "no value");
   ExpectAsk(PlanAs("set_appearance", "深色还是浅色模式", "模式"), "settings.ask.appearance", "both");

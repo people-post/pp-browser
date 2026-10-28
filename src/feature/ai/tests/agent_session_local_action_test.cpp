@@ -519,10 +519,23 @@ TEST_F(AgentSessionLocalActionTest, WhatCanYouDoIsAnsweredWithTheOverviewOnTheDe
     session_->SubmitToThread("t1", question);
     EXPECT_EQ(Ready(WaitForTurn()).text, RenderLocalOverview());
   }
+  // Static text with no user data: it stays in the history a later turn sends.
   ASSERT_EQ(store_.messages.size(), 4u);
   for (const auto& m : store_.messages) {
-    EXPECT_TRUE(IsLocalActionMessage(m));
+    EXPECT_FALSE(IsLocalActionMessage(m));
   }
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Calls().empty());
+  ExpectNoModel();
+}
+
+// "What can you do?" typed while the device is asking who to search for drops the ask and shows the overview.
+TEST_F(AgentSessionLocalActionTest, TheOverviewQuestionDropsAPendingAsk) {
+  StartLocal();
+  session_->SubmitToThread("t1", "搜索用户");
+  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("contacts.ask.who"));
+  session_->SubmitToThread("t1", "你能做什么");
+  EXPECT_EQ(Ready(WaitForTurn()).text, RenderLocalOverview());
   EXPECT_TRUE(Requests().empty());
   EXPECT_TRUE(Calls().empty());
   ExpectNoModel();
