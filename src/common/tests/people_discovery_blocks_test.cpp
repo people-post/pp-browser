@@ -325,3 +325,37 @@ TEST(PeopleDiscoveryBlocksTest, SeventeenKeyedHitsFitTheStoredMessage) {
   EXPECT_EQ(json.find("signing_public_key_b64"), std::string::npos);
   EXPECT_EQ(json.find("directory_hit"), std::string::npos);
 }
+
+// A result set over the list cap is cut and says so (a refine action), never past kMaxComposeTextBytes.
+TEST(PeopleDiscoveryBlocksTest, ThreeHundredKeyedHitsStayUnderTheStoreLimitAndOfferRefine) {
+  std::vector<mesh::DirectoryHit> hits;
+  for (int i = 0; i < 300; ++i) {
+    mesh::DirectoryHit hit;
+    hit.hit_id = "hit_" + std::to_string(i);
+    hit.display_name = "Person " + std::to_string(i);
+    hit.nickname = "person" + std::to_string(i);
+    hit.account_id = "account:" + std::string(43, 'A' + (i % 26));
+    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true},
+               {mesh::ContactIdKind::RelayUser, "relay:" + std::string(16, 'r'), false}};
+    hit.signing_public_key_b64 = std::string(2604, 'S');
+    hit.kem_public_key_b64 = std::string(1580, 'K');
+    hit.kem_binding_signature_b64 = std::string(4412, 'B');
+    hits.push_back(hit);
+  }
+  const pbr::PeopleDiscoveryBuildOptions options;
+  const std::string json = pbr::BuildPeopleDiscoveryBlocksJson(hits, {}, options);
+  EXPECT_LE(json.size(), pbr::kMaxComposeTextBytes) << "list json bytes=" << json.size();
+  EXPECT_NE(json.find(options.labels.refine_label), std::string::npos);
+  EXPECT_NE(json.find("Show more (90 left)"), std::string::npos);
+  EXPECT_EQ(json.find("hit_100\""), std::string::npos);
+
+  // Revealing every cut-off-free row leaves the refine action, drops show-more.
+  std::string current = json;
+  for (int i = 0; i < 9; ++i) {
+    auto next = pbr::RevealMoreRowsInBlocksJson(current, 1, 10, options.labels);
+    ASSERT_TRUE(next.has_value());
+    current = *next;
+  }
+  EXPECT_EQ(current.find("show_more_rows"), std::string::npos);
+  EXPECT_NE(current.find(options.labels.refine_label), std::string::npos);
+}

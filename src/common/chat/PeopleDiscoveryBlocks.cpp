@@ -17,6 +17,8 @@ namespace pbr {
 namespace {
 
 constexpr size_t kDefaultMaxVisible = 10;
+// The list is stored with the message (capped at kMaxComposeTextBytes); a row is ~0.5 KB, so this keeps it well under.
+constexpr size_t kMaxListedHits = 100;
 
 std::string Fill(std::string templ, const std::string& name, const std::string& value) {
   const std::string token = "{" + name + "}";
@@ -459,7 +461,12 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
   }
 
   if (!filtered_hits.empty()) {
-    // Every hit goes into the list; the first `visible` show, "show more" reveals the rest in place.
+    // Up to kMaxListedHits go into the list; the first `visible` show, "show more" reveals the rest in place.
+    // Past the cap the list says how many it holds and offers "Refine search" instead of a silent cut.
+    const bool truncated = filtered_hits.size() > kMaxListedHits;
+    if (truncated) {
+      filtered_hits.resize(kMaxListedHits);
+    }
     const size_t total = filtered_hits.size();
     const size_t visible = std::min(total, max_visible);
 
@@ -482,9 +489,16 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
       items.push_back(ObjectValue(std::move(item)));
     }
 
-    Value footer;
+    std::vector<Value> footer_actions;
     if (visible < total) {
-      footer = ShowMoreFooter(labels, blocks.size(), max_visible, total - visible);
+      footer_actions = asArray(ShowMoreFooter(labels, blocks.size(), max_visible, total - visible))->elements;
+    }
+    if (truncated) {
+      footer_actions.push_back(asArray(RefineSearchFooter(labels))->elements.front());
+    }
+    Value footer;
+    if (!footer_actions.empty()) {
+      footer = ArrayValue(std::move(footer_actions));
     }
     Object list = BuildLongListBlock(labels.results_title, ArrayValue(std::move(items)), std::move(footer));
     list.set("visible", static_cast<int64_t>(visible));
@@ -545,7 +559,20 @@ bool RevealMoreRows(Object& block, const size_t step, const PeopleDiscoveryLabel
   const size_t shown = std::min(rows, visible + step);
   block.set("visible", static_cast<int64_t>(shown));
   if (shown == rows) {
-    block.erase("footer_actions");
+    // Nothing left to reveal; a "refine search" action (list cut at the cap) stays.
+    std::vector<Value> rest;
+    if (const Array* footer = block.getArray("footer_actions")) {
+      for (const Value& action : footer->elements) {
+        if (!IsShowMoreRowsAction(action)) {
+          rest.push_back(action);
+        }
+      }
+    }
+    if (rest.empty()) {
+      block.erase("footer_actions");
+    } else {
+      block.set("footer_actions", ArrayValue(std::move(rest)));
+    }
     return true;
   }
   // The action stays (its payload names this block); only the remainder in its label changes.

@@ -95,7 +95,7 @@ void ContactActionDispatcher::DispatchAsync(const std::string& payload_json,
   const auto payload = TryParseObject(payload_json);
   const auto account_id = payload ? AccountToLookUp(*payload) : std::nullopt;
   if (!account_id) {
-    done(Dispatch(payload_json));
+    done(payload ? Run(*payload, std::nullopt) : DispatchResult(std::optional<std::string>{}));
     return;
   }
   // The directory is an HTTP call: off the UI thread. The contact and the thread are made back on it.
@@ -116,9 +116,8 @@ void ContactActionDispatcher::DispatchAsync(const std::string& payload_json,
 }
 
 ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
-    const Object& payload_object, const std::optional<mesh::DirectoryHit>& looked_up) {
-  const Object* const payload = &payload_object;
-  auto type = payload->getString("type");
+    const Object& payload, const std::optional<mesh::DirectoryHit>& looked_up) {
+  auto type = payload.getString("type");
   if (!type) {
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -126,7 +125,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   if (*type == "start_conversation") {
     std::string contact_id;
     ThreadChannel channel = ThreadChannel::E2ePublic;
-    if (auto cid = payload->getString("contact_id")) {
+    if (auto cid = payload.getString("contact_id")) {
       contact_id = *cid;
     } else if (looked_up) {
       RegisterKeysFromHit(mesh_messaging_, *looked_up);
@@ -159,7 +158,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "secure_message") {
-    auto contact_id = payload->getString("contact_id");
+    auto contact_id = payload.getString("contact_id");
     if (!contact_id) {
       return Error("Missing contact_id");
     }
@@ -200,7 +199,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "show_contact") {
-    auto contact_id = payload->getString("contact_id");
+    auto contact_id = payload.getString("contact_id");
     if (!contact_id) {
       return Error("Missing contact_id");
     }
@@ -212,7 +211,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "open_conversation") {
-    auto thread_id = payload->getString("thread_id");
+    auto thread_id = payload.getString("thread_id");
     if (!thread_id) {
       return Error("Missing thread_id");
     }
@@ -246,7 +245,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "accept_group_invite") {
-    auto invite_nonce = payload->getString("invite_nonce");
+    auto invite_nonce = payload.getString("invite_nonce");
     if (!invite_nonce) {
       return Error("Missing invite_nonce");
     }
@@ -265,7 +264,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "decline_group_invite") {
-    auto invite_nonce = payload->getString("invite_nonce");
+    auto invite_nonce = payload.getString("invite_nonce");
     if (!invite_nonce) {
       return Error("Missing invite_nonce");
     }
@@ -282,7 +281,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "block_group_inviter") {
-    auto inviter_identity = payload->getString("inviter_identity");
+    auto inviter_identity = payload.getString("inviter_identity");
     if (!inviter_identity) {
       return Error("Missing inviter_identity");
     }
@@ -303,7 +302,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
         }
       }
     }
-    if (auto invite_nonce = payload->getString("invite_nonce"); invite_nonce && groups_) {
+    if (auto invite_nonce = payload.getString("invite_nonce"); invite_nonce && groups_) {
       (void)groups_->DeclineInvite(*invite_nonce);
       (void)groups_->ResolveInviteCard(*inviter_identity, *invite_nonce, InviteStatus::Blocked,
                                        "You blocked the inviter");
@@ -315,12 +314,12 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "create_group") {
-    auto title = payload->getString("title");
+    auto title = payload.getString("title");
     if (!title) {
       return Error("Missing title");
     }
     std::vector<std::string> member_contact_ids;
-    if (const Array* members = payload->getArray("member_contact_ids")) {
+    if (const Array* members = payload.getArray("member_contact_ids")) {
       for (const Value& entry : members->elements) {
         if (auto s = asString(entry)) {
           member_contact_ids.push_back(*s);
@@ -338,7 +337,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "fork_group") {
-    auto group_id = payload->getString("group_id");
+    auto group_id = payload.getString("group_id");
     if (!group_id) {
       return Error("Missing group_id");
     }
@@ -381,7 +380,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "message_group_owner") {
-    auto owner_identity = payload->getString("owner_identity");
+    auto owner_identity = payload.getString("owner_identity");
     if (!owner_identity) {
       return Error("Missing owner_identity");
     }
@@ -400,7 +399,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
   }
 
   if (*type == "dismiss_owner_advisory") {
-    auto group_id = payload->getString("group_id");
+    auto group_id = payload.getString("group_id");
     if (!group_id) {
       return Error("Missing group_id");
     }

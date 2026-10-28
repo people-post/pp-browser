@@ -129,7 +129,8 @@ std::string LocalActionFailureText(const Error& error) {
   case PeopleLookupFailure::Other:
     break;
   }
-  return error.message.empty() ? Tr("contacts.err.add") : error.message;
+  // Transport / HTTP detail goes to the log at the call sites, never to the user.
+  return Tr("contacts.err.add");
 }
 
 
@@ -1347,7 +1348,14 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       return;
     }
     // Add / Message on a directory row look the person up first (HTTP, on a worker): the result may come later.
-    facade_->DispatchActionAsync(*payload, [this, message](Roe<std::optional<std::string>> result) {
+    if (local_action_in_flight_) {
+      log().debug << "Local action ignored: a directory lookup is still pending";
+      return;
+    }
+    local_action_in_flight_ = true;
+    const std::string origin_thread_id = ActiveThreadId();
+    facade_->DispatchActionAsync(*payload, [this, message, origin_thread_id](Roe<std::optional<std::string>> result) {
+      local_action_in_flight_ = false;
       if (!result) {
         // Never re-route the same action payload through MessageRouter — that loops
         // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
@@ -1357,6 +1365,11 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
         return;
       }
       if (*result) {
+        // The text belongs to the thread the row was tapped in; sending it elsewhere would put it in the wrong chat.
+        if (ActiveThreadId() != origin_thread_id) {
+          log().info << "Local action result dropped: the active thread changed while the lookup was pending";
+          return;
+        }
         SendUserText(message, *result);
         return;
       }

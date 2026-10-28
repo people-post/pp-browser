@@ -1037,17 +1037,12 @@ void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool
 
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
   if (!hits) {
-    switch (ClassifyPeopleLookupError(hits.error())) {
-    case PeopleLookupFailure::NotFound:
-      UserFeedback::Fail(Tr("contacts.err.user_not_found"));
-      break;
-    case PeopleLookupFailure::DirectoryUnreachable:
+    // Not-found never arrives as an error: SearchDirectoryPeople turns it into an empty hit list.
+    if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
       UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
-      break;
-    case PeopleLookupFailure::Other:
+    } else {
       log().warning << "People lookup failed: " << AppError::Log(hits.error());
       UserFeedback::Fail(Tr("contacts.err.add"));
-      break;
     }
     return;
   }
@@ -1061,7 +1056,7 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
     // A relay-only hit has no account id: show its relay id in the dialog and skip the known-contact check.
     const std::string shown_id = !account.empty() ? account : PrimaryRelayIdFromHit(hit).value_or("");
     std::optional<Contact> known = account.empty() ? std::nullopt : FindContactByAccount(account);
-    switch (DecideAddFromSearch(NormalizeExactPeopleId(query).has_value(), known.has_value())) {
+    switch (DecideAddFromSearch(HitMatchesExactPeopleId(hit, query), known.has_value())) {
     case AddFromSearchDecision::AlreadyContact:
       ShowAlreadyContact(*known);
       return;

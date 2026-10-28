@@ -88,3 +88,26 @@ TEST(NormalizeExactPeopleIdTest, WrongLengthOrCharsRejected) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+
+TEST(HitMatchesExactPeopleIdTest, OnlyTheHitCarryingTheTypedIdMatches) {
+  const std::string token = std::string(43, 'a');
+  mesh::DirectoryHit account_hit;
+  account_hit.account_id = "account:" + token;
+  mesh::DirectoryHit nickname_hit;  // found by name: a nickname of the same shape, a different account
+  nickname_hit.nickname = token;
+  nickname_hit.account_id = "account:" + std::string(43, 'b');
+  EXPECT_TRUE(HitMatchesExactPeopleId(account_hit, token));
+  EXPECT_TRUE(HitMatchesExactPeopleId(account_hit, " account:" + token));
+  EXPECT_FALSE(HitMatchesExactPeopleId(nickname_hit, token));
+  EXPECT_FALSE(HitMatchesExactPeopleId(account_hit, "ken-dev-1"));
+}
+
+TEST(HasExactIdPrefixTest, TypedPrefixOnly) {
+  EXPECT_TRUE(HasExactIdPrefix("  account:abc"));
+  EXPECT_TRUE(HasExactIdPrefix("relay:u1"));
+  EXPECT_FALSE(HasExactIdPrefix(std::string(43, 'a')));
+}
+
+} // namespace pbr

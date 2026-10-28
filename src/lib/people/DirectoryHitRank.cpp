@@ -64,4 +64,25 @@ std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
   return "account:" + q;
 }
 
+bool HasExactIdPrefix(std::string_view query) {
+  const std::string q = util::Trim(std::string(query));
+  return q.rfind("account:", 0) == 0 || q.rfind("relay:", 0) == 0;
+}
+
+bool HitMatchesExactPeopleId(const mesh::DirectoryHit& hit, std::string_view query) {
+  const std::optional<std::string> exact = NormalizeExactPeopleId(query);
+  if (!exact) {
+    return false;
+  }
+  if (hit.account_id && *hit.account_id == *exact) {
+    return true;
+  }
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.value == *exact) {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace pbr

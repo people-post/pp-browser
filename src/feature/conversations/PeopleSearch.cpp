@@ -27,9 +27,7 @@ Roe<std::vector<mesh::DirectoryHit>> SearchDirectoryPeople(ConversationsHub& hub
     } else {
       // A bare 43-char token that is not an account may be a nickname of that shape: fall through to search.
       // A prefixed id ("account:" / "relay:") that is not found stays empty.
-      const size_t start = query.find_first_not_of(" \t\r\n");
-      const std::string_view trimmed = start == std::string::npos ? std::string_view() : std::string_view(query).substr(start);
-      searched_exact = trimmed.rfind("account:", 0) == 0 || trimmed.rfind("relay:", 0) == 0;
+      searched_exact = HasExactIdPrefix(query);
     }
   }
   if (!searched_exact && hits.empty()) {

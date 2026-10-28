@@ -24,4 +24,13 @@ void RankDirectoryHits(std::vector<mesh::DirectoryHit>& hits, const std::string&
  */
 std::optional<std::string> NormalizeExactPeopleId(std::string_view query);
 
+/** True when the trimmed query starts with "account:" / "relay:" (typed by the user, not a synthesized bare token). */
+bool HasExactIdPrefix(std::string_view query);
+
+/**
+ * True when `query` is an exact id and `hit` carries that id (account_id or any of its ids). A bare token
+ * that fell through to a name search and matched a nickname is not an exact match.
+ */
+bool HitMatchesExactPeopleId(const mesh::DirectoryHit& hit, std::string_view query);
+
 } // namespace pbr
