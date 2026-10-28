@@ -103,7 +103,10 @@ void QrScanController::Tick() {
 #endif
   auto update = scanner_.Poll();
   if (!update.error.empty()) {
-    status_ = Tr("scan.camera_error");
+    // Hint from the diagnosed cause, never a blanket "check permissions".
+    const bool denied = update.error.find("permission denied") != std::string::npos;
+    const bool held = update.error.find("held by") != std::string::npos;
+    status_ = Tr(denied ? "scan.camera_denied" : held ? "scan.camera_busy" : "scan.camera_error");
     failed_ = true;
     Dirty();
   }
