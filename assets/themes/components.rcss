@@ -374,6 +374,22 @@ select selectbox option {
   focus: none;
 }
 
+/* An AI question waiting for another chat's answer (B112): dimmed until it is sent. */
+.bubble-queued {
+  opacity: 0.55;
+  white-space: pre-wrap;
+}
+
+.queued-note {
+  margin-top: 4dp;
+  font-size: 12dp;
+}
+
+.queued-cancel {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .bubble-text {
   margin-top: 0;
   margin-bottom: 0;

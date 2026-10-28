@@ -117,6 +117,9 @@ public:
   void OnMeshReady();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
+  /** Escape after the shell closed nothing (desktop). Not in the composer: NotInComposer. */
+  enum class ComposerEscape { NotInComposer, Handled, Idle };
+  ComposerEscape OnComposerEscape();
 
 private:
   using ChatState = ChatScreenState;
@@ -213,7 +216,23 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   void UpdateSidebarPreview(const std::string& preview_text) override;
-  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) override;
+  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
+                         const std::string& entry_id) override;
+  QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
+  /** An AI send while another thread's turn runs: confirm "@ai+" sharing first, then queue it (B112). */
+  void QueueAgentSend(const std::string& thread_id, const std::string& text, std::optional<std::string> payload,
+                      bool thread_created_for_this, bool already_confirmed = false);
+  /** The "share with the AI?" dialog for an "@ai+" / "@ai++" send; "don't ask again" is remembered. */
+  void ConfirmShareWithAi(const std::string& thread_id, const std::string& text, std::function<void(bool ok)> then);
+  /** The dialog itself (also the router's confirm hook): the one copy of its wording. */
+  void ShowShareWithAiDialog(const std::string& thread_id, AtAiMode mode,
+                             std::function<void(bool ok, bool dont_ask)> done);
+  /** A send that did not go out: its text back in the composer, if that thread is open and the composer empty. */
+  void RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text);
+  /** The open thread's queued send is cancelled: its text goes back to the composer. */
+  void CancelQueuedHere();
+  /** Same decision SendUserText makes, before the composer is cleared: false = keep the draft. */
+  bool ComposerSendAllowed(const std::string& text);
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
@@ -296,6 +315,7 @@ private:
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
+  std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
 };
 
 } // namespace pbr

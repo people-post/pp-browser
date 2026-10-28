@@ -45,6 +45,8 @@ struct AgentUiPorts {
   /** One question with one prepared image to an AI thread (brief preset only). */
   std::function<void(const std::string& thread_id, const std::string& text, AgentImageTurn image)> submit_image_to_thread;
   std::function<void()> cancel;
+  /** A turn is running in the session (any thread). The UI uses it to recover a "busy" it never heard end (B112). */
+  std::function<bool()> is_busy;
   std::function<void(std::vector<AgentEvent>& out)> poll_events;
   std::function<void()> wait_for_configure_idle;
   std::function<bool()> has_conversation_entries;

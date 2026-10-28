@@ -671,4 +671,113 @@ TEST_F(AgentSessionLocalActionTest, ARemarkStaysOutOfTheHomeComposerHistoryToo) 
   ExpectNoModel();
 }
 
+// --- Permission cards close themselves (B114) ---
+
+namespace {
+
+AgentEvent ClosedOf(const std::vector<AgentEvent>& events, const std::string& approval_id) {
+  AgentEvent found;
+  size_t count = 0;
+  for (const AgentEvent& event : events) {
+    if (event.type == AgentEventType::ApprovalClosed && event.approval_id == approval_id) {
+      found = event;
+      ++count;
+    }
+  }
+  EXPECT_EQ(count, 1u) << "exactly one ApprovalClosed for " << approval_id;
+  return found;
+}
+
+} // namespace
+
+TEST_F(AgentSessionLocalActionTest, ANewTurnInTheSameThreadClosesTheCardAsStale) {
+  StartLocal();
+  session_->SubmitToThread("t1", "关掉通知");
+  const AgentEvent card = Ready(WaitForTurn());
+  const std::string approval = ApprovalId(card.text);
+  ASSERT_FALSE(approval.empty());
+  ASSERT_FALSE(card.entry_id.empty());
+  EXPECT_EQ(card.entry_id, store_.messages.back().id) << "the card's own message, not the user's";
+
+  session_->SubmitToThread("t1", "show my settings");
+  const AgentEvent closed = ClosedOf(WaitForTurn(), approval);
+  EXPECT_EQ(closed.approval_outcome, ApprovalOutcome::Stale);
+  EXPECT_EQ(closed.thread_id, "t1");
+  EXPECT_EQ(closed.entry_id, card.entry_id);
+  EXPECT_FALSE(session_->ResumeToolPermission(approval, "allow_once")) << "the request is gone";
+}
+
+TEST_F(AgentSessionLocalActionTest, AnotherThreadsTurnLeavesTheCardAlive) {
+  StartLocal();
+  session_->SubmitToThread("t1", "关掉通知");
+  const AgentEvent card = Ready(WaitForTurn());
+  const std::string approval = ApprovalId(card.text);
+
+  session_->SubmitToThread("t2", "今天有什么新闻？"); // an ordinary question in another thread
+  const auto other = WaitForTurn();
+  for (const AgentEvent& event : other) {
+    EXPECT_NE(event.type, AgentEventType::ApprovalClosed) << "the other thread's turn must not cancel the card";
+  }
+
+  ASSERT_TRUE(session_->ResumeToolPermission(approval, "allow_once"));
+  const auto resumed = WaitForTurn();
+  const AgentEvent closed = ClosedOf(resumed, approval);
+  EXPECT_EQ(closed.approval_outcome, ApprovalOutcome::AllowOnce);
+  EXPECT_EQ(closed.thread_id, "t1");
+  EXPECT_EQ(closed.entry_id, card.entry_id);
+  EXPECT_EQ(Calls(), std::vector<std::string>{R"(set_notifications {"enabled":false})"});
+}
+
+TEST_F(AgentSessionLocalActionTest, ANewCardInAnotherThreadTakesTheSlotAndStalesTheOldOne) {
+  StartLocal();
+  session_->SubmitToThread("t1", "关掉通知");
+  const AgentEvent first = Ready(WaitForTurn());
+  const std::string first_approval = ApprovalId(first.text);
+
+  session_->SubmitToThread("t2", "关掉通知");
+  const auto second_events = WaitForTurn();
+  const AgentEvent second = Ready(second_events);
+  const std::string second_approval = ApprovalId(second.text);
+  ASSERT_FALSE(second_approval.empty());
+  ASSERT_NE(first_approval, second_approval);
+
+  const AgentEvent closed = ClosedOf(second_events, first_approval);
+  EXPECT_EQ(closed.approval_outcome, ApprovalOutcome::Stale);
+  EXPECT_EQ(closed.thread_id, "t1");
+  EXPECT_EQ(closed.entry_id, first.entry_id);
+  EXPECT_FALSE(session_->ResumeToolPermission(first_approval, "allow_once"));
+  EXPECT_TRUE(session_->ResumeToolPermission(second_approval, "deny"));
+  const AgentEvent denied = ClosedOf(WaitForTurn(), second_approval);
+  EXPECT_EQ(denied.approval_outcome, ApprovalOutcome::Deny);
+  EXPECT_EQ(denied.entry_id, second.entry_id);
+  EXPECT_EQ(denied.thread_id, "t2");
+}
+
+TEST_F(AgentSessionLocalActionTest, AllowAlwaysClosesTheCardAndStopLeavesAWaitingCardAlone) {
+  StartLocal();
+  session_->SubmitToThread("t1", "关掉通知");
+  const AgentEvent card = Ready(WaitForTurn());
+  const std::string approval = ApprovalId(card.text);
+  ASSERT_TRUE(session_->ResumeToolPermission(approval, "allow_always"));
+  EXPECT_EQ(ClosedOf(WaitForTurn(), approval).approval_outcome, ApprovalOutcome::AllowAlways);
+
+  // Stop (Cancel) — the stop key of another chat, or the app pausing — is not an answer to a card waiting in t1:
+  // the card stays usable (B112: stopping one chat must not touch another).
+  ToolPermissionsPrefs ask;
+  session_->SetToolPermissions(ask);
+  session_->SubmitToThread("t1", "打开通知");
+  const AgentEvent again = Ready(WaitForTurn());
+  const std::string next = ApprovalId(again.text);
+  ASSERT_FALSE(next.empty());
+  session_->Cancel();
+  AppRuntime::RunUITasks();
+  std::vector<AgentEvent> events;
+  session_->PollEvents(events);
+  for (const AgentEvent& event : events) {
+    EXPECT_FALSE(event.type == AgentEventType::ApprovalClosed && event.approval_id == next) << "Cancel closed the card";
+  }
+  EXPECT_TRUE(session_->ResumeToolPermission(next, "allow_once"));
+  EXPECT_EQ(ClosedOf(WaitForTurn(), next).approval_outcome, ApprovalOutcome::AllowOnce);
+}
+
 } // namespace

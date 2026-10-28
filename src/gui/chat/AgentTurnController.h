@@ -4,6 +4,7 @@
 #include "feature/ai/AgentUiPorts.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/data/Config.h"
+#include "gui/chat/AgentBusyRules.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
@@ -56,8 +57,11 @@ public:
   virtual void ShowAttachChoice(std::function<void()> photo, std::function<void()> file) = 0;
   virtual void RegisterMessagingTools(ToolRegistry& tools) = 0;
   virtual SessionStore& Store() = 0;
-  /** A local action a reply's button asked for (tool permission, open a URL, …). */
-  virtual void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) = 0;
+  /** A local action a reply's button asked for (tool permission, open a URL, …); `entry_id` = the tapped message ("" = unknown). */
+  virtual void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
+                                 const std::string& entry_id) = 0;
+  /** Send a queued AI question into its own thread (which need not be the open one) now that the AI is free. */
+  virtual QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) = 0;
 };
 
 /**
@@ -132,9 +136,31 @@ public:
                             ResponseGoal response_goal = ResponseGoal::General,
                             RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None,
                             const std::vector<BriefAiSource>& sources = {});
+  /** The stop key / a double Escape: stops the turn only if it runs in the open thread. */
   void OnStopTurn();
+
+  // --- one turn at a time, "busy" per thread, a queue for the others (B112) -----------------------
+  const AgentBusyState& Busy() const { return busy_; }
+  /** A send was handed to the AI for `thread_id`: busy now, before LoadingChanged comes back. */
+  void MarkAgentBusy(const std::string& thread_id);
+  void MarkAgentIdle();
+  /** Recompute what the open thread shows: thinking + stop key, the queued bubble, the status bar activity. */
+  void RefreshBusyForActiveThread();
+  bool HasQueued(const std::string& thread_id) const { return queue_.Has(thread_id); }
+  bool QueueSend(QueuedAgentSend item);
+  std::optional<QueuedAgentSend> TakeQueued(const std::string& thread_id);
+  /** The AI is free: hand over queued sends until one starts a turn (one that does not is skipped). */
+  void DrainQueue();
+  size_t QueuedCount() const { return queue_.Size(); }
+
   /** Stop a turn in flight (pause, a new chat). */
   void Cancel();
+  /**
+   * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
+   * id so its buttons are gone. `thread_id` empty = the open thread.
+   */
+  void CloseApprovalCard(const std::string& thread_id, const std::string& entry_id, ApprovalOutcome outcome,
+                         const std::string& approval_id = {});
   /** A send made while the agent was still (re)configuring: sent once it is, or given up. */
   void HoldSend(HeldAgentSend::Send send) { held_agent_send_.Hold(std::move(send), std::chrono::steady_clock::now()); }
   void SendChatAction(const std::string& entry_id, int action_index);
@@ -189,6 +215,12 @@ private:
   std::string brief_guest_mint_user_hint_;
   std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   HeldAgentSend held_agent_send_; // a send made while the agent was still (re)configuring
+  AgentBusyState busy_;           // the one running turn and its thread (B112)
+  AgentSendQueue queue_;          // AI sends of other threads, waiting for it
+  bool draining_ = false;
+  /** When the UI was busy but the session not: after kBusyRecoveryDelay the UI stops waiting for an end it missed. */
+  std::optional<std::chrono::steady_clock::time_point> busy_without_session_since_;
+  void RecoverMissedTurnEnd();
 
   /** The prepared image waiting in the composer for its question. */
   struct PendingAiImage {

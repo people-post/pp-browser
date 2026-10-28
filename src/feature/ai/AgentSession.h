@@ -39,6 +39,8 @@ enum class AgentEventType {
   AssistantDelta, // text = accumulated streamed text so far
   AssistantReady,
   Error,
+  /** A permission card ended: `entry_id` = the stored card message, `approval_id`, `thread_id`, `approval_outcome`. */
+  ApprovalClosed,
 };
 
 struct AgentEvent {
@@ -61,6 +63,8 @@ struct AgentEvent {
   bool retryable = false;             // Error
   /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
   std::string error_kind;
+  std::string approval_id;                                   // ApprovalClosed
+  ApprovalOutcome approval_outcome = ApprovalOutcome::Stale; // ApprovalClosed
 };
 
 /** Prefix of a stored user message that carried an image; later history sends it as plain text. */
@@ -136,6 +140,8 @@ public:
                                  const std::string& decision_label = {});
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
+  /** A turn is running (any thread). The UI checks it before routing an AI send so nothing is dropped (B112). */
+  bool IsBusy() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
   void StartNewConversation();
@@ -220,7 +226,12 @@ private:
   static void InjectSynthesisPolicy(const std::shared_ptr<Impl>& state);
   static void PopulateTurnTraceFromPlan(const std::shared_ptr<Impl>& state);
   static std::vector<std::string> AllowedToolNames(const std::shared_ptr<Impl>& state);
-  static void CancelParkedApproval(const std::shared_ptr<Impl>& state, ParkedApprovalState reason);
+  /** `only_thread`: cancel only when the parked request belongs to that thread (a turn elsewhere leaves it alone). */
+  static void CancelParkedApproval(const std::shared_ptr<Impl>& state, ParkedApprovalState reason,
+                                   const std::optional<std::string>& only_thread = std::nullopt);
+  static void PushApprovalClosed(const std::shared_ptr<Impl>& state, const ParkedApproval& park,
+                                 ApprovalOutcome outcome);
+  static void RecordParkedCardEntry(const std::shared_ptr<Impl>& state, const std::string& entry_id);
   static void ParkForPermission(const std::shared_ptr<Impl>& state, TurnExecutionResult execution);
   static void ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& state, std::string approval_id,
                                            std::string decision, std::string decision_label);
@@ -228,7 +239,8 @@ private:
                                                   const std::string& approval_id, bool busy);
 
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
-  static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);
+  /** `thread_id`: the turn's thread (an ended turn passes it explicitly: pending_thread_id is cleared by then). */
+  static void PushLoading(const std::shared_ptr<Impl>& state, bool loading, const std::string& thread_id = {});
   static ToolMeta MetaForTool(const std::shared_ptr<Impl>& state, const std::string& name);
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                const std::string& status);

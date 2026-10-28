@@ -133,6 +133,13 @@
         </div>
       </div>
     </div>
+    <!-- An AI question waiting for another chat's answer (B112): shown, not stored, until it is sent. -->
+    <div class="message-row message-row-user message-row-queued" data-if="has_queued">
+      <div class="bubble bubble-user bubble-queued">{{queued_text}}</div>
+      <p class="queued-note muted">
+        <span>{{i18n:chat.ai_queue.pending}}</span> · <span class="queued-cancel" data-event-click="cancel_queued()">{{i18n:chat.ai_queue.cancel}}</span>
+      </p>
+    </div>
     <p class="text muted thinking" data-if="loading && status == ''">{{i18n:chat.thinking}}</p>
     <p class="text muted thinking" data-if="loading && status != ''">{{status}}</p>
   </div>

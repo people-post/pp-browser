@@ -22,8 +22,15 @@ public:
   /** The agent's entry points (empty: none — a send that needs the agent fails "Agent not bound"). */
   void SetAgent(AgentInboundPorts agent) { agent_ = std::move(agent); }
 
+  /** Error message of a send that needs the agent while a turn runs: nothing was stored or sent; queue and retry. */
+  static constexpr const char* kAgentBusyError = "agent_busy";
+
   Roe<void> Route(const std::string& thread_id, const std::string& text,
                   std::optional<std::string> user_payload = std::nullopt);
+  /** "@ai+ …" / "@ai++ …" the user already confirmed (before it was queued): shared without asking again. */
+  Roe<void> RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text);
+  /** Routing `text` in `thread_id` would ask the user to confirm sharing with the AI first. */
+  bool NeedsSharedAiConfirmFor(const std::string& thread_id, const std::string& text) const;
 
   /**
    * True for a payload the agent runs as a tool call ({"tool":"…"} without a "type") instead of a local
@@ -56,6 +63,7 @@ public:
   void MarkSharedAiConfirmed(const std::string& thread_id);
 
 private:
+  bool AgentBusy() const { return agent_.is_busy && agent_.is_busy(); }
   Roe<void> RouteSharedAi(const std::string& thread_id, const std::string& prompt, AtAiMode mode);
   bool NeedsSharedAiConfirm(const std::string& thread_id) const;
 

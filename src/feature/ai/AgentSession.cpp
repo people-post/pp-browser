@@ -216,8 +216,25 @@ void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent even
   });
 }
 
-void AgentSession::PushLoading(const std::shared_ptr<Impl>& state, const bool loading) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::LoadingChanged, .loading = loading});
+void AgentSession::PushLoading(const std::shared_ptr<Impl>& state, const bool loading, const std::string& thread_id) {
+  // The thread lets the UI show "thinking" (and the stop key) in that conversation only, and lets it tell a late
+  // "ended" of an older turn from the end of the one that runs now (B112).
+  PushEvent(state, AgentEvent{.type = AgentEventType::LoadingChanged,
+                              .loading = loading,
+                              .thread_id = thread_id.empty() && loading ? state->pending_thread_id : thread_id});
+}
+
+bool AgentSession::IsBusy() const {
+  return impl_ && impl_->busy.load();
+}
+
+void AgentSession::PushApprovalClosed(const std::shared_ptr<Impl>& state, const ParkedApproval& park,
+                                      const ApprovalOutcome outcome) {
+  PushEvent(state, AgentEvent{.type = AgentEventType::ApprovalClosed,
+                              .entry_id = park.card_entry_id,
+                              .thread_id = park.thread_id,
+                              .approval_id = park.id,
+                              .approval_outcome = outcome});
 }
 
 void AgentSession::PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
@@ -253,6 +270,7 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
+  const std::string ended_thread = state->pending_thread_id; // cleared below; the UI matches its "ended" to the turn
   state->pending_image.reset(); // up to ~1.5 MB; not needed once the turn is over
   state->turn_trace.Log();
   if (state->handoff_turn) {
@@ -283,19 +301,28 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->pending_thread_id.clear();
   state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
-  PushLoading(state, false);
+  PushLoading(state, false, ended_thread);
 }
 
-void AgentSession::CancelParkedApproval(const std::shared_ptr<Impl>& state, const ParkedApprovalState reason) {
+void AgentSession::CancelParkedApproval(const std::shared_ptr<Impl>& state, const ParkedApprovalState reason,
+                                        const std::optional<std::string>& only_thread) {
   std::lock_guard lock(state->park_mutex);
   if (!state->parked_approval) {
     return;
   }
+  if (only_thread && state->parked_approval->thread_id != *only_thread) {
+    return;
+  }
+  // An Executing request was already closed (allowed / denied) when it was resumed; only a Pending one goes stale.
+  const bool was_pending = state->parked_approval->state == ParkedApprovalState::Pending;
   state->parked_approval->state = reason;
   state->Log().info << "Parked approval " << state->parked_approval->id << " -> "
                     << ApprovalResumeErrorCode(reason == ParkedApprovalState::Cancelled
                                                    ? ApprovalResumeError::Superseded
                                                    : ApprovalResumeError::AlreadyResolved);
+  if (was_pending) {
+    PushApprovalClosed(state, *state->parked_approval, ApprovalOutcome::Stale);
+  }
   state->parked_approval.reset();
 }
 
@@ -346,12 +373,15 @@ void AgentSession::ParkForPermission(const std::shared_ptr<Impl>& state, TurnExe
   }
   const std::string blocks = BuildToolPermissionChoiceBlocks(park.id, park.offered_tools, offer_allow_always);
 
+  // One slot: a card from another thread's turn that is still unanswered goes stale now (same-thread ones were
+  // cancelled when this turn started).
+  CancelParkedApproval(state, ParkedApprovalState::Cancelled);
   {
     std::lock_guard lock(state->park_mutex);
     state->parked_approval = std::move(park);
   }
 
-  ValidateAndFinishAssistant(state, blocks, "stop", false, false);
+  ValidateAndFinishAssistant(state, blocks, "stop", false, false); // FinishAssistantOutput records card_entry_id
 }
 
 void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& state, std::string approval_id,
@@ -425,6 +455,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
       std::lock_guard lock(state->park_mutex);
       state->parked_approval.reset();
     }
+    PushApprovalClosed(state, park, ApprovalOutcome::Deny);
     append_decision_user(decision_label.empty() ? Tr("chat.permission.deny") : decision_label);
     ValidateAndFinishAssistant(state, BuildToolPermissionDeniedBlocks(park.offered_tools), "stop", false, false);
     return;
@@ -442,6 +473,8 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
                          ApprovalResumeErrorCode(ApprovalResumeError::InvalidDecision));
     return;
   }
+
+  PushApprovalClosed(state, park, decision == "allow_always" ? ApprovalOutcome::AllowAlways : ApprovalOutcome::AllowOnce);
 
   if (decision == "allow_always") {
     for (const PlannedToolCall& tool : park.offered_tools) {
@@ -575,6 +608,19 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   }
 }
 
+// ParkForPermission stores the request before its card is persisted; the card's own message id is only known here.
+void AgentSession::RecordParkedCardEntry(const std::shared_ptr<Impl>& state, const std::string& entry_id) {
+  std::lock_guard lock(state->park_mutex);
+  // Only the card's own turn records it: a shared "@ai+" card is stored by the UI (no id here), and a later answer
+  // in another thread must not be taken for it.
+  if (!entry_id.empty() && state->parked_approval &&
+      state->parked_approval->state == ParkedApprovalState::Pending &&
+      state->parked_approval->thread_id == state->pending_thread_id &&
+      state->parked_approval->card_entry_id.empty()) {
+    state->parked_approval->card_entry_id = entry_id;
+  }
+}
+
 void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                          const std::string& finish_reason, const bool from_model) {
   if (state->turn_mode == AgentTurnMode::Conversation) {
@@ -582,6 +628,7 @@ void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, con
     if (state->local_turn) {
       state->conversation.MarkLocalAction(state->pending_entry_id);
     }
+    RecordParkedCardEntry(state, state->pending_entry_id);
     PushAssistantReady(state, state->pending_entry_id, assistant_raw, finish_reason, {}, from_model);
     FinishTurn(state);
     return;
@@ -590,6 +637,7 @@ void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, con
   std::string assistant_message_id;
   const std::string thread_id = state->pending_thread_id;
   PersistAssistantToThread(state, assistant_raw, &assistant_message_id);
+  RecordParkedCardEntry(state, assistant_message_id);
   PushAssistantReady(state, assistant_message_id, assistant_raw, finish_reason, {}, from_model);
   if (state->turn_mode == AgentTurnMode::Thread && state->compaction && !thread_id.empty()) {
     state->compaction->MaybeCompactAsync(thread_id);
@@ -1594,7 +1642,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     return;
   }
 
-  CancelParkedApproval(state, ParkedApprovalState::Cancelled);
+  // A request still waiting for the user is given up when the conversation moves on in the SAME thread; a turn in
+  // another thread (e.g. a queued question) leaves it alone.
+  CancelParkedApproval(state, ParkedApprovalState::Cancelled, state->pending_thread_id);
 
   state->iterations = 0;
   state->turn_scratch.clear();
@@ -1919,8 +1969,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   if (!state->cancelled) {
     StartTurn(state);
   } else {
-    // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
+    // A Cancel raced configure; do not leave busy stuck from Submit, and tell the UI the turn is over (it shows
+    // "thinking" in that thread until it hears so).
     state->busy = false;
+    PushLoading(state, false, state->pending_thread_id);
   }
 }
 
@@ -2087,7 +2139,12 @@ void AgentSession::BeginStreamTurn() {
 }
 
 void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
-  if (user_text.empty() || impl_->busy.exchange(true)) {
+  if (user_text.empty()) {
+    return;
+  }
+  if (impl_->busy.exchange(true)) {
+    // The UI queues AI sends while a turn runs (B112); reaching this means a send slipped past it.
+    impl_->Log().warning << "send dropped: a turn is still running";
     return;
   }
 
@@ -2110,7 +2167,12 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
 
 void AgentSession::SubmitToThread(const std::string& thread_id, const std::string& user_text,
                                   std::optional<std::string> user_payload, std::optional<AgentImageTurn> image) {
-  if (user_text.empty() || impl_->busy.exchange(true)) {
+  if (user_text.empty()) {
+    return;
+  }
+  if (impl_->busy.exchange(true)) {
+    // The UI queues AI sends while a turn runs (B112); reaching this means a send slipped past it.
+    impl_->Log().warning << "send dropped: a turn is still running";
     return;
   }
 
@@ -2176,7 +2238,8 @@ void AgentSession::Cancel() {
   }
   impl_->busy = false;
   impl_->tool_registration_hook = nullptr;
-  CancelParkedApproval(impl_, ParkedApprovalState::Cancelled);
+  // A permission card waiting in some thread is left alone: stopping a turn (or pausing the app) is not an answer to
+  // it, and a parked request belongs to a turn that already ended. It goes stale with a new turn in its own thread.
 }
 
 void AgentSession::WaitForConfigureIdle() {
