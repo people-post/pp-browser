@@ -849,10 +849,24 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (auto identity = facade.GetIdentity()) {
       deps.known_identifiers = {identity->account_id, identity->peer_id, identity->relay_user_id};
     }
+    // The self-check strips a leading scheme itself; the bare ids are passed too so either form is caught.
+    auto add_bare = [&deps](const std::string& id) {
+      for (const char* scheme : {"account:", "relay:", "peer:", "call:"}) {
+        const std::string prefix = scheme;
+        if (id.compare(0, prefix.size(), prefix) == 0 && id.size() > prefix.size()) {
+          deps.known_identifiers.push_back(id.substr(prefix.size()));
+          return;
+        }
+      }
+    };
+    for (const std::string& id : std::vector<std::string>(deps.known_identifiers)) {
+      add_bare(id);
+    }
     if (auto contacts = Conversations().Contacts().List()) {
       for (const Contact& contact : *contacts) {
         for (const auto& id : contact.ids) {
           deps.known_identifiers.push_back(id.value);
+          add_bare(id.value);
         }
       }
     }

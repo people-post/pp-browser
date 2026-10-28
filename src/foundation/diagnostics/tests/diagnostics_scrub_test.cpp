@@ -94,6 +94,15 @@ TEST(DiagnosticsScrubTest, SelfCheckDetectors) {
   EXPECT_EQ(pbr::SelfCheck("x /var/mobile/Containers y", {}), std::optional<std::string>("abs_path"));
 }
 
+TEST(DiagnosticsScrubTest, KnownIdentifierSchemeIsStrippedBeforeMatching) {
+  const std::string bare = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
+  const std::vector<std::string> known = {"account:" + bare, "peer:ab"};
+  EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] saw " + bare + " here", known),
+            std::optional<std::string>("known_identifier"));
+  EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] state account:none", known), std::nullopt);
+  EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] ab", known), std::nullopt);  // too short to be a needle
+}
+
 TEST(DiagnosticsScrubTest, SelfCheckKnownIdentifierPrefix) {
   const std::vector<std::string> known = {"relay-eu-1.example.net"};
   EXPECT_EQ(pbr::SelfCheck("seen relay-eu done", known), std::optional<std::string>("known_identifier"));

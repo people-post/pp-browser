@@ -27,8 +27,9 @@ std::string ScrubLine(std::string_view line, ScrubState& state);
 /**
  * Independent last check on text that was already scrubbed (one or more lines). Does NOT reuse the scrub
  * patterns. Returns the name of the first detector that fires ("hex_run", "long_token", "email",
- * "abs_path", "known_identifier"), or nullopt. Known identifiers (and their prefixes of 8+ chars; an entry
- * shorter than 8 is matched whole) are searched as plain substrings.
+ * "abs_path", "known_identifier"), or nullopt. Known identifiers are searched as plain substrings after
+ * dropping a leading scheme (account: relay: peer: call:); the bare id and its prefixes of 8+ chars match,
+ * an id shorter than 8 chars is ignored.
  */
 std::optional<std::string> SelfCheck(std::string_view scrubbed_text,
                                      const std::vector<std::string>& known_identifiers);

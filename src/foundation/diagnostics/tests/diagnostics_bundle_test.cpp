@@ -177,8 +177,7 @@ TEST(DiagnosticsBundleTest, LongLineIsCutAt2048) {
   const std::string text = Render(bundle->json);
   const std::string line = text.substr(text.find('\n') + 1);
   EXPECT_NE(line.find("[cut]"), std::string::npos);
-  EXPECT_LE(line.size(), 2049u + 1u);
-  EXPECT_LT(line.size(), 2100u);
+  EXPECT_LE(line.size(), pbr::kDiagnosticsMaxLineBytes + 1u);  // + the newline Render adds
 }
 
 TEST(DiagnosticsBundleTest, ScrubbedFixturePassesSelfCheck) {
