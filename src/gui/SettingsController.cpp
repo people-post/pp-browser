@@ -1119,6 +1119,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
+  security_actions_.RefreshDiagnostics();
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   const bool sheet = chrome.account_sheet_open || in_account_sheet_;
   if (sheet) {
@@ -1596,7 +1597,7 @@ void SettingsController::OnOpenSupportChat() {
     ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  if (auto opened = commands_.open_support_chat(); !opened) {
+  if (auto opened = commands_.open_support_chat({}); !opened) {
     ReportFailure(opened.error());
   }
 }

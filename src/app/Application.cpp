@@ -5,6 +5,9 @@
 #include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
+#include "app/DiagnosticsUpload.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "lib/net/BriefGuestLlmClient.h"
 
 #include "foundation/crypto/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
@@ -827,7 +830,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
-  settings_commands.open_support_chat = [this, &facade]() -> Roe<void> {
+  settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
     if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
       return Error(Tr("support.unavailable"));
     }
@@ -884,8 +887,48 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     if (chat_) {
       chat_->FinalizeThreadDisplay();
+      chat_->PrefillDraft(prefilled_text);
     }
     return {};
+  };
+  settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
+    DiagnosticsUploadDeps deps;
+    deps.data_dir = store_.Snapshot().data_dir;
+    // The scrub's self-check refuses to send when any of these survives into the bundle.
+    if (auto identity = facade.GetIdentity()) {
+      deps.known_identifiers = {identity->account_id, identity->peer_id, identity->relay_user_id};
+    }
+    if (auto contacts = Conversations().Contacts().List()) {
+      for (const Contact& contact : *contacts) {
+        for (const auto& id : contact.ids) {
+          deps.known_identifiers.push_back(id.value);
+        }
+      }
+    }
+    // The AI stream's key: registered, else guest, else mint a guest key now (same helpers as the chat).
+    deps.bearer = [&facade]() -> Roe<std::string> {
+      auto identity = facade.GetIdentity();
+      if (!identity) {
+        return Error("Messaging is not ready");
+      }
+      std::string key = ResolveBriefLlmApiKey(identity->brief_llm_api_key, identity->brief_llm_guest_api_key);
+      if (!key.empty()) {
+        return key;
+      }
+      auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
+      if (!minted) {
+        return minted.error();
+      }
+      LocalIdentity updated = *identity;
+      updated.brief_llm_guest_api_key = minted->llm_api_key;
+      (void)facade.UpdateLocalIdentity(updated);
+      return minted->llm_api_key;
+    };
+    SendDiagnostics(std::move(deps), std::move(on_done));
+  };
+  settings_commands.last_diagnostics_id = [this]() -> std::string {
+    const auto last = ReadLastUpload(store_.Snapshot().data_dir);
+    return last ? last->upload_id : std::string();
   };
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);

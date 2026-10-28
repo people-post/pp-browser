@@ -246,7 +246,7 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 |------|--------|
 | `--log-file PATH` | Write the log to `PATH` (rotation uses the same name pattern next to it) |
 | `--no-log-file` | Disable the file log (console only) |
-| `--debug` | DEBUG level for console and file (desktop default is WARNING) |
+| `--debug` | DEBUG level for console and file (default is INFO on every platform) |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
 Operational metrics (`common/Metrics.h`: `event=… k=v` lines with timings, rates and device load, never account ids, PeerIds or addresses) go to their own file next to it, `{data_dir}/logs/metrics.log`, rotated the same way. They are written at any log level; with `--debug` they also appear in the main log. A collector should read only this file.
@@ -262,6 +262,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_CONFIG` | Explicit config file path |
 | `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
+| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<brief origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |

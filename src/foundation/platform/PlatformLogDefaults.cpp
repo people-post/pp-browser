@@ -6,15 +6,10 @@
 namespace pbr {
 
 logging::Level DefaultRootLogLevel(bool debug_mode) {
-  if (Platform::Detect() == PlatformKind::IOS) {
-    return debug_mode ? logging::kLevelDebug : logging::Level::INFO;
-  }
-  // Android release uses INFO so call-site info passes the filter; DefaultEmitFloor
-  // then promotes emitted priority to WARNING for logcat :W dogfood.
-  if (Platform::Detect() == PlatformKind::Android) {
-    return debug_mode ? logging::kLevelDebug : logging::Level::INFO;
-  }
-  return debug_mode ? logging::kLevelDebug : logging::Level::WARNING;
+  // INFO everywhere: the log file (and the diagnostics a user can send from it) needs the INFO lines, and the
+  // root logger's level is the only gate in front of both the file and the console handler. Android release
+  // promotes emitted priority to WARNING via DefaultEmitFloor for logcat :W dogfood.
+  return debug_mode ? logging::kLevelDebug : logging::Level::INFO;
 }
 
 logging::Level DefaultEmitFloor(bool debug_mode) {

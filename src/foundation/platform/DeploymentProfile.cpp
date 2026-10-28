@@ -41,6 +41,13 @@ std::string BriefStreamUrlOverride() {
   return value ? std::string(value) : std::string();
 }
 
+std::string DiagnosticsUploadUrl() {
+  if (const char* value = std::getenv("PP_BROWSER_DIAGNOSTICS_URL"); value && *value) {
+    return value;
+  }
+  return std::string(BriefOrigin()) + "/api/support/diagnostics";
+}
+
 std::string BriefRelayBaseUrl() {
   return std::string(BriefOrigin()) + "/api/relay";
 }
