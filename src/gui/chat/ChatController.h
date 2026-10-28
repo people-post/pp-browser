@@ -14,6 +14,7 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -219,6 +220,9 @@ private:
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
+  void PutBackDraft(const std::string& thread_id, const std::string& text) override;
+  /** The composer shows the unsent text of the conversation now open (Home has its own). */
+  void SyncDraftOwner();
   /** An AI send while another thread's turn runs: confirm "@ai+" sharing first, then queue it (B112). */
   void QueueAgentSend(const std::string& thread_id, const std::string& text, std::optional<std::string> payload,
                       bool thread_created_for_this, bool already_confirmed = false);
@@ -316,6 +320,7 @@ private:
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
+  ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
 };
 
 } // namespace pbr

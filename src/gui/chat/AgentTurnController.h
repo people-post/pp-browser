@@ -62,6 +62,8 @@ public:
                                  const std::string& entry_id) = 0;
   /** Send a queued AI question into its own thread (which need not be the open one) now that the AI is free. */
   virtual QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) = 0;
+  /** Unsent text goes back to the composer of the conversation it was typed in (not the open one, if different). */
+  virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
 };
 
 /**

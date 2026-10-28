@@ -620,6 +620,7 @@ void ChatController::OnHomeTabActivated() {
   presenter_.ShowHome();
   working_set_.ClearAll();
   ShellSetPrimaryPane("home");
+  SyncDraftOwner();
   RefreshFromMessaging();
   ShellSyncLayout();
   NotifySurfaceChanged();
@@ -650,6 +651,7 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     return;
   }
   (void)agent_.TakeQueued(thread_id); // a question queued for a closed chat has nowhere to go
+  drafts_.Forget(thread_id);
   if (was_open) {
     chat_.draft = "";
     chat_.status = "";
@@ -786,6 +788,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
 }
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
+  drafts_.Forget(thread_id);
   // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
   if (thread_id == ActiveThreadId()) {
     chat_.draft = "";
@@ -1152,6 +1155,7 @@ void ChatController::SyncDisplayFromThread() {
   if (!facade_ || !facade_->GetActiveThread()) {
     chrome_.ResetPanelState();
     agent_.RefreshBusyForActiveThread();
+    SyncDraftOwner();
     return;
   }
   const auto sync_started = std::chrono::steady_clock::now();
@@ -1183,6 +1187,7 @@ void ChatController::SyncDisplayFromThread() {
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
   agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
+  SyncDraftOwner();                    // so does the unsent text
 
   // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
   const auto sync_ms =
@@ -1482,7 +1487,7 @@ void ChatController::OnNewChat() {
   }
 
   (void)facade_->CreateNewAiThread();
-  chat_.draft = "";
+  // The old conversation keeps its unsent text; the new one starts empty (SyncDraftOwner on display).
   chat_.status = "";
   chat_.compose_disabled = false;
   // A turn running in another thread keeps running: its answer lands in its own thread (B112).
@@ -2020,11 +2025,40 @@ void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const A
 }
 
 void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {
-  if (thread_id != ActiveThreadId() || !std::string(chat_.draft.c_str()).empty()) {
+  if (drafts_.Owner() && *drafts_.Owner() != thread_id) {
+    if (drafts_.Peek(thread_id).empty()) {
+      drafts_.Put(thread_id, text); // that conversation is not open: its own composer gets it back
+    }
+    return;
+  }
+  if (!std::string(chat_.draft.c_str()).empty()) {
     return;
   }
   chat_.draft = text.c_str();
   DataModelHost::Instance().Dirty("chat", "draft");
+}
+
+void ChatController::PutBackDraft(const std::string& thread_id, const std::string& text) {
+  if (drafts_.Owner() && *drafts_.Owner() != thread_id) {
+    drafts_.Prepend(thread_id, text);
+    return;
+  }
+  const std::string draft = chat_.draft.c_str();
+  chat_.draft = (draft.empty() ? text : text + "\n" + draft).c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+}
+
+void ChatController::SyncDraftOwner() {
+  const std::string key = ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
+  if (key.empty()) {
+    return; // no conversation shown: the text stays with the one it was typed in
+  }
+  const std::string current = chat_.draft.c_str();
+  const std::string next = drafts_.SwitchTo(key, current);
+  if (next != current) {
+    chat_.draft = next.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+  }
 }
 
 QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item) {
@@ -2078,6 +2112,7 @@ void ChatController::CancelQueuedHere() {
       if (!open || open->kind != ThreadKind::Ai) {
         ShellSelectNavTab(NavTab::Home);
       }
+      SyncDraftOwner(); // the text below belongs to whichever composer is shown now
     }
   }
   if (std::string(chat_.draft.c_str()).empty()) {

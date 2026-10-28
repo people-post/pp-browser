@@ -19,6 +19,7 @@ public:
   std::vector<bool> activity; // ShellSetActivity(visible, ...) calls, in order
   std::deque<QueuedSendOutcome> outcomes; // scripted; NotStarted when it runs dry
   std::vector<QueuedAgentSend> handed_over;
+  std::vector<std::pair<std::string, std::string>> put_back; // (thread, text) handed back to that thread's composer
   struct Sent {
     std::string text;
     bool from_home_chip = false;
@@ -46,6 +47,9 @@ public:
   void RegisterMessagingTools(ToolRegistry&) override {}
   SessionStore& Store() override { return store; }
   void HandleLocalAction(const std::string&, const std::optional<std::string>&, const std::string&) override {}
+  void PutBackDraft(const std::string& thread_id, const std::string& text) override {
+    put_back.push_back({thread_id, text});
+  }
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override {
     handed_over.push_back(item);
     if (outcomes.empty()) {
@@ -398,7 +402,8 @@ TEST_F(AgentTurnBusyTest, HeldSendGoesBackToTheDraftWhenItsOwnThreadIsBusy) {
   controller_.HoldSend(Held("B"));
   controller_.Tick();
   EXPECT_TRUE(host_.sent.empty());
-  EXPECT_STREQ(chat_.draft.c_str(), "held question");
+  ASSERT_EQ(host_.put_back.size(), 1u);
+  EXPECT_EQ(host_.put_back[0], (std::pair<std::string, std::string>{"B", "held question"}));
 }
 
 TEST_F(AgentTurnBusyTest, HeldChipIsDroppedWhenItsOwnThreadIsBusy) {
@@ -408,16 +413,34 @@ TEST_F(AgentTurnBusyTest, HeldChipIsDroppedWhenItsOwnThreadIsBusy) {
   controller_.HoldSend(Held("B", /*chip=*/true));
   controller_.Tick();
   EXPECT_TRUE(host_.sent.empty());
-  EXPECT_STREQ(chat_.draft.c_str(), "");
+  EXPECT_TRUE(host_.put_back.empty());
 }
 
-TEST_F(AgentTurnBusyTest, HeldSendOfAnotherThreadThanTheOpenOneGoesBackToTheDraft) {
+TEST_F(AgentTurnBusyTest, HeldSendOfAnotherThreadThanTheOpenOneGoesBackToItsOwnDraft) {
   BindSession();
   Open("A");
   controller_.HoldSend(Held("B"));
   controller_.Tick();
   EXPECT_TRUE(host_.sent.empty());
-  EXPECT_STREQ(chat_.draft.c_str(), "held question");
+  // Into B's composer, not into the open A's (one Enter would have sent B's text to A).
+  ASSERT_EQ(host_.put_back.size(), 1u);
+  EXPECT_EQ(host_.put_back[0].first, "B");
+  EXPECT_STREQ(chat_.draft.c_str(), "");
+}
+
+TEST_F(AgentTurnBusyTest, AnotherChatsTurnIsSaidAboveTheComposer) {
+  controller_.MarkAgentBusy("A");
+  Open("B");
+  controller_.RefreshBusyForActiveThread();
+  EXPECT_TRUE(chat_.busy_elsewhere);
+  EXPECT_FALSE(chat_.loading);
+  Open("A");
+  controller_.RefreshBusyForActiveThread();
+  EXPECT_FALSE(chat_.busy_elsewhere) << "in its own chat it is \"thinking\", not \"another chat\"";
+  controller_.MarkAgentIdle();
+  Open("B");
+  controller_.RefreshBusyForActiveThread();
+  EXPECT_FALSE(chat_.busy_elsewhere);
 }
 
 } // namespace

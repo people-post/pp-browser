@@ -496,6 +496,7 @@
     "chat.permission.stale": "这个权限确认已失效。如果还需要，请再说一次。",
     "chat.permission.stale_reason": "这个权限确认已失效（{reason}）。如果还需要，请再说一次。",
     "chat.permission.not_ready": "助手尚未准备好处理权限请求。",
+    "chat.ai_busy_elsewhere": "AI 正在回答另一个对话…",
     "chat.ai_queue.pending": "排队中 · 等另一个对话答完",
     "chat.ai_queue.cancel": "取消",
     "chat.ai_queue.already": "这个对话已经有一个问题在排队。",

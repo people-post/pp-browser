@@ -141,6 +141,7 @@
       </p>
     </div>
     <p class="text muted thinking" data-if="loading && status == ''">{{i18n:chat.thinking}}</p>
+    <p class="text muted thinking" data-if="busy_elsewhere && thread_is_ai && !has_queued">{{i18n:chat.ai_busy_elsewhere}}</p>
     <p class="text muted thinking" data-if="loading && status != ''">{{status}}</p>
   </div>
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"

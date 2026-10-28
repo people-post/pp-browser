@@ -107,7 +107,7 @@
            data-class-shell-statusbar-label--error="statusbar_label_error">{{statusbar_label}}</p>
       </div>
     </div>
-    <p class="shell-statusbar-activity text-xs muted">{{statusbar_activity}}</p>
+    <!-- Right side left empty on purpose (Kenneth 2026-10-28): what the AI is doing shows above the composer. -->
   </div>
   <div id="shell-statusbar-popover-scrim" class="shell-statusbar-popover-scrim"
        data-if="statusbar_popover_open"

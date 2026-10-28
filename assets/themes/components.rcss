@@ -1340,8 +1340,7 @@ select selectbox option {
 }
 
 .shell-statusbar-label,
-.shell-statusbar-load,
-.shell-statusbar-activity {
+.shell-statusbar-load {
   margin-top: 0;
   margin-bottom: 0;
   white-space: nowrap;
@@ -1354,12 +1353,6 @@ select selectbox option {
 
 .shell-statusbar-load {
   flex-shrink: 0;
-}
-
-.shell-statusbar-activity {
-  text-align: right;
-  flex-shrink: 1;
-  min-width: 0;
 }
 
 .shell-statusbar-popover-scrim {

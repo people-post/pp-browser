@@ -571,6 +571,7 @@ void AgentTurnController::RefreshBusyForActiveThread() {
   }
   const QueuedAgentSend* queued = queue_.Find(thread_id);
   chat_.has_queued = queued != nullptr;
+  chat_.busy_elsewhere = busy_.BusyElsewhere(thread_id);
   chat_.queued_text = queued ? queued->text.c_str() : "";
   host_.ShellSetActivity(here, here ? chat_.status : ui::String{});
   DirtyChatChrome();
@@ -1258,10 +1259,8 @@ void AgentTurnController::FlushHeldAgentSend() {
     host_.SendUserText(send.text, std::move(send.payload), send.from_home_chip);
     return;
   case HeldSendFate::BackToDraft: {
-    log().info << "Held send put back in the composer: another thread is open, or a reply is loading";
-    const std::string draft = chat_.draft.c_str();
-    chat_.draft = (draft.empty() ? send.text : send.text + "\n" + draft).c_str();
-    DataModelHost::Instance().Dirty("chat", "draft");
+    log().info << "Held send put back in its own composer: another thread is open, or a reply is loading";
+    host_.PutBackDraft(send.thread_id, send.text);
     return;
   }
   case HeldSendFate::Drop:
