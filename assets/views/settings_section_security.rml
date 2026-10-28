@@ -78,5 +78,18 @@
           </button>
         </div>
         <p class="text muted settings-help">{{i18n:settings.security.crash_reports.help}}</p>
+        <div class="settings-toggle-row row">
+          <button class="btn" type="button" data-attrif-disabled="diagnostics_sending"
+                  data-event-click="send_diagnostics()">
+            {{diagnostics_send_label}}
+          </button>
+          <button class="btn" type="button" data-help-key="troubleshooting/send-diagnostics"
+                  data-event-click="open_diagnostics_help()">?</button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.security.diagnostics.help}}</p>
+        <button class="btn" type="button" data-if="diagnostics_last_id != ''"
+                data-event-click="copy_diagnostics_id()">
+          {{diagnostics_last_label}}
+        </button>
       </div>
 

@@ -106,6 +106,8 @@ public:
   void Shutdown();
   void OnApplicationPause();
   void FinalizeThreadDisplay();
+  /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
+  void PrefillDraft(const std::string& text);
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
   void OnFindSomeone() override;

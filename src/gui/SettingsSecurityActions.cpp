@@ -1,6 +1,8 @@
 #include "gui/SettingsSecurityActions.h"
 
 #include "foundation/error/AppError.h"
+#include "gui/DiagnosticsFeedback.h"
+#include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "gui/UserFeedback.h"
@@ -27,6 +29,81 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { ResetToolPermissions(); }));
   ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { ResetProfile(); }));
   ctor.BindEventCallback("reset_chats", DataEvent<>([this]() { ResetChats(); }));
+  ctor.Bind("diagnostics_sending", &diagnostics_sending_);
+  ctor.Bind("diagnostics_send_label", &diagnostics_send_label_);
+  ctor.Bind("diagnostics_last_id", &diagnostics_last_id_);
+  ctor.Bind("diagnostics_last_label", &diagnostics_last_label_);
+  ctor.BindEventCallback("send_diagnostics", DataEvent<>([this]() { SendDiagnostics(); }));
+  ctor.BindEventCallback("copy_diagnostics_id", DataEvent<>([this]() { CopyDiagnosticsId(); }));
+  ctor.BindEventCallback("open_diagnostics_help", DataEvent<>([this]() { OpenDiagnosticsHelp(); }));
+}
+
+void SettingsSecurityActions::RefreshDiagnostics() {
+  const std::string last = commands_.last_diagnostics_id ? commands_.last_diagnostics_id() : std::string();
+  diagnostics_send_label_ =
+      Tr(diagnostics_sending_ ? "settings.security.diagnostics.sending" : "settings.security.diagnostics.send").c_str();
+  diagnostics_last_id_ = last.c_str();
+  diagnostics_last_label_ = last.empty() ? "" : Tr("settings.security.diagnostics.last_id", {{"id", last}}).c_str();
+  DataModelHost& model = DataModelHost::Instance();
+  model.Dirty("settings", "diagnostics_sending");
+  model.Dirty("settings", "diagnostics_send_label");
+  model.Dirty("settings", "diagnostics_last_id");
+  model.Dirty("settings", "diagnostics_last_label");
+}
+
+void SettingsSecurityActions::SendDiagnostics() {
+  if (diagnostics_sending_) {
+    return;
+  }
+  if (!commands_.send_diagnostics || !feedback_.show_confirm) {
+    host_.ReportFailure(Error("Diagnostics are not available")
+                            .WithUser(Tr("settings.security.diagnostics.unavailable")));
+    return;
+  }
+  feedback_.show_confirm(
+      Tr("settings.security.diagnostics.confirm_title"), Tr("settings.security.diagnostics.confirm_body"),
+      [this](const bool ok) {
+        if (!ok || diagnostics_sending_) {
+          return;
+        }
+        diagnostics_sending_ = true;
+        RefreshDiagnostics();
+        commands_.send_diagnostics([this](DiagnosticsUploadResult result) {
+          diagnostics_sending_ = false;
+          const std::string last = commands_.last_diagnostics_id ? commands_.last_diagnostics_id() : std::string();
+          // A fresh send has just written its own reference; QuotaKey names the one on file from before.
+          const std::string text = DiagnosticsResultText(result, last);
+          RefreshDiagnostics();
+          if (result.kind == DiagnosticsUploadKind::Sent) {
+            host_.ShowStatus("");
+            UserFeedback::Ok(text);
+          } else {
+            host_.ReportFailure(Error(text).WithUser(text));
+          }
+        });
+      },
+      Tr("settings.security.diagnostics.confirm_ok"));
+}
+
+void SettingsSecurityActions::CopyDiagnosticsId() {
+  const std::string id = diagnostics_last_id_.c_str();
+  if (id.empty()) {
+    return;
+  }
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->SetClipboardText(id.c_str());
+  }
+}
+
+void SettingsSecurityActions::OpenDiagnosticsHelp() {
+  // help_key "troubleshooting/send-diagnostics" is the support article; the question is prefilled, the user sends it.
+  if (!commands_.open_support_chat) {
+    host_.ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
+    return;
+  }
+  if (auto opened = commands_.open_support_chat(Tr("settings.security.diagnostics.help_question")); !opened) {
+    host_.ReportFailure(opened.error());
+  }
 }
 
 void SettingsSecurityActions::ClearPinFields() {

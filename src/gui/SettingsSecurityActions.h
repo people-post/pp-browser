@@ -30,6 +30,8 @@ public:
 
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
+  /** The Send diagnostics button's label and the last-sent line, read again (on opening the section). */
+  void RefreshDiagnostics();
 
 private:
   void ChangePin();
@@ -40,6 +42,9 @@ private:
   void PerformResetProfile();
   void ResetChats();
   void PerformResetChats();
+  void SendDiagnostics();
+  void CopyDiagnosticsId();
+  void OpenDiagnosticsHelp();
   /** Runs `then` once the vault is open (asks for the PIN when it is not); reports why not otherwise. */
   void EnsureUnlocked(const std::string& not_ready_message, std::function<void()> then);
   void ClearPinFields();
@@ -52,6 +57,11 @@ private:
   ui::String pin_change_old_;
   ui::String pin_change_new_;
   ui::String pin_change_confirm_;
+
+  bool diagnostics_sending_ = false;
+  ui::String diagnostics_send_label_;
+  ui::String diagnostics_last_id_;
+  ui::String diagnostics_last_label_;
 };
 
 } // namespace pbr

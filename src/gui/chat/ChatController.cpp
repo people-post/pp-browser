@@ -1654,6 +1654,15 @@ void ChatController::OnFindSomeone() {
   DirtyChatChrome();
 }
 
+void ChatController::PrefillDraft(const std::string& text) {
+  if (text.empty() || chat_.compose_disabled) {
+    return;
+  }
+  focus_draft_after_sync_ = true;
+  chat_.draft = text.c_str();
+  DirtyChatChrome();
+}
+
 void ChatController::OnShellLayoutSynced() {
   // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
   scroller_.OnShellRemounted();

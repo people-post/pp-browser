@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/diagnostics/DiagnosticsUploadResult.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "foundation/data/SessionStore.h"
@@ -83,8 +84,12 @@ struct SettingsCommands {
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
-  /** Ensure PP Support contact + open Direct e2e_public chat. */
-  std::function<Roe<void>()> open_support_chat;
+  /** Ensure PP Support contact + open Direct e2e_public chat; `prefilled_text` (may be empty) goes in the composer, unsent. */
+  std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
+  /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
+  std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
+  /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
+  std::function<std::string()> last_diagnostics_id;
 };
 
 } // namespace pbr
