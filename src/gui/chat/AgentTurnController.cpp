@@ -724,7 +724,10 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     // B81: a blank first line shows in assistant bubbles; log how the body starts to see what sits before the text.
     log().debug << "assistant bubble markup head: " << hydrated.substr(0, 160);
 
-    if (host_.MessagingIsReady()) {
+    // A shared answer ("@ai+" / "@ai++") is stored once, by the relay below, as the "AI · shared" message
+    // the peer also sees; a second local copy showed the same text twice (Kenneth 2026-10-28).
+    const bool shared = shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull;
+    if (host_.MessagingIsReady() && !shared) {
       if (message_exists) {
         auto messages = host_.Facade()->GetMessagesPage(active_thread, std::nullopt, 10000);
         if (messages) {
@@ -787,7 +790,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
     working_set_.ApplyFromParse(action_entry_id, working_set_candidates, chat_actions);
 
-    if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
+    if (shared) {
       // The peer gets prose, never the blocks document (fenced answers used to go out as raw JSON).
       SendSharedAssistantRelay(active_thread, shared_ai_mode, StructuredTextParser::PlainText(raw_output));
     }
