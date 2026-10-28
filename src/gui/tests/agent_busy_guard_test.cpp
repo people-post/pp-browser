@@ -12,11 +12,21 @@
 namespace pbr {
 namespace {
 
+/** The file with "\r\n" folded to "\n": a Windows checkout has CRLF line ends (core.autocrlf). */
 std::string ReadFile(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::string folded;
+  folded.reserve(text.size());
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
+      continue;
+    }
+    folded += text[i];
+  }
+  return folded;
 }
 
 /** The text of a function from its definition line (`signature` starts a line) to the closing brace at column 0. */
