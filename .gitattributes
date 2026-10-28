@@ -1,0 +1,2 @@
+# Diagnostics fixtures are byte-exact expected output: never convert line endings on checkout.
+src/foundation/diagnostics/tests/fixtures/* -text
