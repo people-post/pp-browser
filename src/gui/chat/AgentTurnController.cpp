@@ -1053,6 +1053,11 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     }
   }
 
+  // An answer that arrived in a chat the user is not looking at shows as unread in the chat list (Kenneth
+  // 2026-10-28: "在那个对话框列表那显示……一或者是二这样的一个提醒"). The open chat is never counted.
+  if (!thread_id.empty() && host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id)) {
+    host_.Facade()->IncrementUnread(thread_id);
+  }
   host_.SyncDisplayFromThread();
   host_.SyncShellSessions();
   chat_.status = "";

@@ -24,6 +24,8 @@ struct ShellChromeSnapshot {
   NavBadgeState nav_badges{};
   std::string banner_message;
   bool auxiliary_open = false;
+  /** Compact layout: the chat page is open over the list (false = the list or another page shows). */
+  bool compact_chat_open = false;
 };
 
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
@@ -41,6 +43,7 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.nav_badges = state.nav_badges;
   snap.banner_message = state.banner_message.c_str();
   snap.auxiliary_open = state.auxiliary_open;
+  snap.compact_chat_open = state.compact_chat_open;
   return snap;
 }
 

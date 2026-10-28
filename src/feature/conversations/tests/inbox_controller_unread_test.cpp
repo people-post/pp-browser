@@ -96,6 +96,27 @@ TEST(InboxControllerUnreadTest, ActiveThreadSkipsInboundUnread) {
   EXPECT_EQ(loaded->value().preview, "hello");
 }
 
+TEST(InboxControllerUnreadTest, AnAnswerToTheActiveThreadCountsWhenItsPageIsNotShown) {
+  // Compact layout: back on the list, the thread is still "active" but its page is closed; an AI answer that
+  // lands there must show as unread (even_if_active). Without the flag the active thread is skipped as before.
+  InboxTestEnv env("unread_even_if_active_test");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  Thread ai;
+  ai.id = "thread-ai-active";
+  ai.kind = ThreadKind::Ai;
+  ai.title = "AI";
+  ai.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(ai));
+  ASSERT_TRUE(env.inbox->OpenThread(ai.id));
+
+  env.inbox->IncrementUnread(ai.id);
+  EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 0);
+  env.inbox->IncrementUnread(ai.id, 1, /*even_if_active=*/true);
+  EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 1);
+  ASSERT_TRUE(env.inbox->OpenThread(ai.id)); // opening it again reads it
+  EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 0);
+}
+
 TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   InboxTestEnv env("unread_inbound_test");
   ASSERT_TRUE(env.inbox->ListThreads());

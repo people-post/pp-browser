@@ -102,6 +102,10 @@ const std::string& ConversationsFacade::ActiveThreadId() { return hub_.Inbox().A
 
 Roe<Thread> ConversationsFacade::GetActiveThread() { return hub_.Inbox().GetActiveThread(); }
 
+void ConversationsFacade::IncrementUnread(const std::string& thread_id) {
+  hub_.Inbox().IncrementUnread(thread_id, 1, /*even_if_active=*/true); // the caller checked it is not on screen
+}
+
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
 
 bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {

@@ -163,5 +163,28 @@ TEST(AgentSendQueueTest, PushFrontIsIgnoredWhenThatThreadAlreadyHasOne) {
   EXPECT_EQ(queue.PopFront()->thread_id, "B");
 }
 
+TEST(ChatPageShowsTest, OnlyTheOpenThreadWithItsPageOnScreen) {
+  ShellChromeSnapshot compact;
+  compact.layout_mode = LayoutMode::Compact;
+  compact.nav_tab = NavTab::Sessions;
+  compact.compact_chat_open = true;
+  EXPECT_TRUE(ChatPageShows(compact, "A", "A"));
+  EXPECT_FALSE(ChatPageShows(compact, "A", "B")) << "another chat";
+  compact.compact_chat_open = false; // back on the list
+  EXPECT_FALSE(ChatPageShows(compact, "A", "A"));
+
+  ShellChromeSnapshot wide;
+  wide.layout_mode = LayoutMode::Expanded;
+  wide.nav_tab = NavTab::Sessions;
+  wide.primary_pane_key = "chat";
+  EXPECT_TRUE(ChatPageShows(wide, "A", "A"));
+  wide.nav_tab = NavTab::Home;
+  EXPECT_FALSE(ChatPageShows(wide, "A", "A")) << "Home shows its own composer";
+  wide.nav_tab = NavTab::Contacts;
+  wide.primary_pane_key = "contacts";
+  EXPECT_FALSE(ChatPageShows(wide, "A", "A"));
+  EXPECT_FALSE(ChatPageShows(wide, "", ""));
+}
+
 } // namespace
 } // namespace pbr
