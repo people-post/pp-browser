@@ -96,8 +96,9 @@
   <div class="chat-messages-wrap">
   <div id="chat-messages" class="messages" data-mount-id="messages"
        data-event-scroll="messages_scroll()">
-    <div class="chat-empty stack" data-if="!has_turns && !loading">
-      <p class="text muted">{{i18n:chat.empty_body}}</p>
+    <div class="chat-empty stack" data-if="thread_is_ai || (!has_turns && !loading)">
+      <p class="text muted" data-if="!has_turns && !loading">{{i18n:chat.empty_body}}</p>
+      <!-- The example chips stay at the top of an AI thread so they can be scrolled back to and tapped again. -->
       <div class="suggestion-row" data-if="thread_is_ai">
         <button class="chat-suggestion" data-event-click="send_example('{{i18n:home.suggestion.capabilities_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.capabilities}}</button>

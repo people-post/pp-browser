@@ -506,7 +506,7 @@
     "chat.share_ai.body_full": "Your question and the AI reply will be sent on this encrypted thread. @ai sends only your question to the assistant, never this conversation.",
     "chat.share_ai.dont_ask": "Don't ask again for this conversation",
     "chat.empty_title": "Start a conversation",
-    "chat.empty_body": "Ask anything, or open Sessions to continue a thread.",
+    "chat.empty_body": "Ask anything, or open Sessions to continue an earlier conversation.",
     "chat.delete_conversation": "Delete conversation",
     "chat.delete_confirm_ai": "Delete this chat? Its messages will be removed.",
     "chat.delete_confirm": "Delete this chat? Its messages are removed from this device; the other person's are not affected.",

@@ -506,7 +506,7 @@
     "chat.share_ai.body_full": "你的问题和 AI 的回答会通过这个加密会话发给对方。@ai 只把你的问题发给 AI，不会发送这段聊天。",
     "chat.share_ai.dont_ask": "这个会话不再询问",
     "chat.empty_title": "开始对话",
-    "chat.empty_body": "随便问点什么，或打开“会话”继续已有线程。",
+    "chat.empty_body": "随便问点什么，或打开“会话”继续之前的对话。",
     "chat.delete_conversation": "删除对话",
     "chat.delete_confirm_ai": "删除此对话？消息记录会被移除。",
     "chat.delete_confirm": "删除此对话？这台设备上的消息记录会被移除，对方那边的不受影响。",
