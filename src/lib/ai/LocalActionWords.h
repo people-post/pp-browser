@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/ContactLimits.h"
+
 #include <array>
 #include <cstddef>
 #include <string_view>
@@ -12,7 +14,6 @@ namespace pbr {
  * lowercase; tests and the render step refer to these by name.
  */
 
-inline constexpr size_t kMaxNicknameChars = 32;        // code points
 inline constexpr size_t kMaxPrefixCandidates = 5;      // more prefix hits than this: ask for a longer name
 inline constexpr size_t kMaxCancelChars = 12;          // a cancel word counts only in a short answer
 inline constexpr size_t kNegationWindowChars = 4;      // Chinese: negation this close before a direction word

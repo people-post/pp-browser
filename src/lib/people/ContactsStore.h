@@ -17,8 +17,11 @@ namespace pbr {
 
 class ContactsStore : public Module, public IContactTrustAccess {
 public:
-  /** Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load. */
-  static constexpr int kSchemaVersion = 1;
+  /**
+   * Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load.
+   * v2: remarks that merely copied the nickname (seeded by older builds) are cleared once on load.
+   */
+  static constexpr int kSchemaVersion = 2;
 
   explicit ContactsStore(std::string data_dir);
 

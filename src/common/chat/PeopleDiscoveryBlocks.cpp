@@ -492,8 +492,9 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
     for (size_t i = 0; i < visible; ++i) {
       const PeopleDiscoveryContactView& contact = contacts[i];
       Object item;
-      FillPersonRowFields(item, contact.display_name, contact.server_nickname, PreferPersonId(contact),
-                          false, labels);
+      // Remark first (nickname in small print under it); without a remark the nickname is the title.
+      FillPersonRowFields(item, contact.display_name.empty() ? contact.server_nickname : contact.display_name,
+                          contact.server_nickname, PreferPersonId(contact), false, labels);
       item.set("actions", ContactItemActions(contact, labels));
       items.push_back(ObjectValue(std::move(item)));
     }

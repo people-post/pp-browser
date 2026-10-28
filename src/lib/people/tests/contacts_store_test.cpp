@@ -1,5 +1,7 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/ContactTypes.h"
+#include "lib/people/ContactJson.h"
+#include "lib/people/SupportContact.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
@@ -279,6 +281,117 @@ TEST_F(ContactsStoreTest, DirectoryNicknameFillsAContactAddedFromABareId) {
   EXPECT_EQ(filled->remote.nickname, "Ada");
   EXPECT_TRUE(filled->local.display_name.empty()) << "the remark is the user's; never filled from the directory";
   EXPECT_EQ(ContactEffectiveTitle(*filled), "Ada");
+}
+
+TEST_F(ContactsStoreTest, AddingAContactLeavesTheRemarkEmpty) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.hit_id = "account:ada";
+  hit.display_name = "Ada L.";
+  hit.nickname = "Ada";
+  hit.account_id = "account:ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+  EXPECT_TRUE(added->local.display_name.empty());
+  EXPECT_TRUE(added->display_name.empty());
+  EXPECT_EQ(ContactEffectiveTitle(*added), "Ada");
+
+  // A later nickname change shows through, because no remark pins the old one.
+  hit.nickname = "Ada Lovelace";
+  auto renamed = store.ApplyRemoteSnapshot(added->id, hit, 0);
+  ASSERT_TRUE(static_cast<bool>(renamed)) << renamed.error().message;
+  EXPECT_EQ(ContactEffectiveTitle(*renamed), "Ada Lovelace");
+}
+
+// Older builds copied the nickname into the remark when a contact was added. The first load of such a file
+// clears those copies once; remarks the user wrote are kept, including one written afterwards that happens
+// to equal the nickname.
+TEST_F(ContactsStoreTest, SeededRemarksAreClearedOnceOnLoad) {
+  std::filesystem::create_directories(data_dir_);
+  auto make = [](const std::string& id, const std::string& remark, const std::string& nickname) {
+    Contact c;
+    c.id = id;
+    c.local.display_name = remark;
+    c.remote.nickname = nickname;
+    c.remote.ids = {{mesh::ContactIdKind::Account, "account:" + id, true}};
+    SyncContactMirrors(c);
+    return ObjectValue(ContactToJson(c));
+  };
+  {
+    Object root;
+    root.set("schema_version", static_cast<int64_t>(1));
+    root.set("contacts", ArrayValue({make("seeded", "Ada", "Ada"), make("own", "Ada-work", "Ada"),
+                                     make("bare", "", "Bob")}));
+    std::ofstream out(data_dir_ / "contacts.json");
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << DumpJson(root, 2);
+  }
+
+  {
+    ContactsStore store(data_dir_.string());
+    auto seeded = store.Get("seeded");
+    ASSERT_TRUE(static_cast<bool>(seeded) && seeded->has_value());
+    EXPECT_TRUE((*seeded)->local.display_name.empty());
+    EXPECT_TRUE((*seeded)->display_name.empty());
+    EXPECT_EQ(ContactEffectiveTitle(**seeded), "Ada");
+    auto own = store.Get("own");
+    ASSERT_TRUE(own->has_value());
+    EXPECT_EQ((*own)->local.display_name, "Ada-work");
+    EXPECT_EQ(ContactEffectiveTitle(**own), "Ada-work");
+
+    // The user now writes a remark equal to the nickname: it must survive the next load.
+    Contact edited = **own;
+    edited.local.display_name = "Ada";
+    SyncContactMirrors(edited);
+    ASSERT_TRUE(static_cast<bool>(store.Upsert(edited)));
+    store.Flush();
+  }
+
+  ContactsStore reloaded(data_dir_.string());
+  auto again = reloaded.Get("own");
+  ASSERT_TRUE(static_cast<bool>(again) && again->has_value());
+  EXPECT_EQ((*again)->local.display_name, "Ada");
+  auto cleared = reloaded.Get("seeded");
+  ASSERT_TRUE(cleared->has_value());
+  EXPECT_TRUE((*cleared)->local.display_name.empty());
+
+  // The cleanup was written back with the new version, so it does not run again.
+  std::ifstream in(data_dir_ / "contacts.json");
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  auto root = TryParseObject(ss.str());
+  ASSERT_TRUE(static_cast<bool>(root));
+  EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)), ContactsStore::kSchemaVersion);
+}
+
+TEST(SupportContactTest, NewSupportContactHasNoRemarkAndIsNamedByNickname) {
+  const Contact contact = MakeSupportContact("c1", "account:support", "PP Support");
+  EXPECT_TRUE(contact.local.display_name.empty());
+  EXPECT_EQ(contact.remote.nickname, "PP Support");
+  EXPECT_EQ(contact.server_nickname, "PP Support");
+  EXPECT_EQ(ContactEffectiveTitle(contact), "PP Support");
+}
+
+TEST(SupportContactTest, OpeningTheEntryKeepsAUserRemarkAndRefreshesTheTitle) {
+  Contact contact = MakeSupportContact("c1", "account:support", "Old title");
+  contact.local.display_name = "My helper";
+  SyncContactMirrors(contact);
+  EXPECT_TRUE(ApplySupportTitle(contact, "PP Support"));
+  EXPECT_EQ(contact.local.display_name, "My helper");
+  EXPECT_EQ(contact.display_name, "My helper");
+  EXPECT_EQ(contact.remote.nickname, "PP Support");
+  EXPECT_EQ(ContactEffectiveTitle(contact), "My helper");
+  EXPECT_FALSE(ApplySupportTitle(contact, "PP Support"));
+}
+
+TEST(SupportContactTest, ACopyOfTheTitleLeftByOlderBuildsIsCleared) {
+  Contact contact = MakeSupportContact("c1", "account:support", "PP Support");
+  contact.local.display_name = "PP Support";
+  SyncContactMirrors(contact);
+  EXPECT_TRUE(ApplySupportTitle(contact, "PP Support"));
+  EXPECT_TRUE(contact.local.display_name.empty());
+  EXPECT_EQ(ContactEffectiveTitle(contact), "PP Support");
 }
 
 } // namespace

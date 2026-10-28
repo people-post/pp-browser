@@ -50,7 +50,8 @@ Roe<ChatContactCardFields> ContactCardExchange::CardFor(const std::string& conta
     kept = std::optional<PeerCardRecord>(std::move(resolved.value()));
   }
   ChatContactCardFields fields;
-  fields.display_name = contact.local.display_name.empty() ? contact.remote.nickname : contact.local.display_name;
+  // The remark is the user's private note about this person: a card carries their own nickname only.
+  fields.display_name = contact.remote.nickname;
   if (fields.display_name.empty()) {
     fields.display_name = account_id;
   }

@@ -89,6 +89,7 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UserFeedback.h"
 #include "lib/people/ContactTypes.h"
+#include "lib/people/SupportContact.h"
 #include "common/Utilities.h"
 #include "feature/conversations/MessagingCompatPorts.h"
 #include "feature/conversations/MessagingContactsPorts.h"
@@ -793,9 +794,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     std::string contact_id;
     if (found->has_value()) {
       Contact contact = **found;
-      if (contact.local.display_name != display_name) {
-        contact.local.display_name = display_name;
-        SyncContactMirrors(contact);
+      if (ApplySupportTitle(contact, display_name)) {
         auto saved = Conversations().Contacts().Upsert(contact);
         if (!saved) {
           return saved.error();
@@ -805,12 +804,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
         contact_id = (*found)->id;
       }
     } else {
-      Contact contact;
-      contact.id = util::GenerateUuid();
-      contact.local.display_name = display_name;
-      contact.local.trust = TrustLevel::Unknown;
-      contact.remote.ids.push_back({mesh::ContactIdKind::Account, account_id, true});
-      SyncContactMirrors(contact);
+      Contact contact = MakeSupportContact(util::GenerateUuid(), account_id, display_name);
       auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
         return saved.error();

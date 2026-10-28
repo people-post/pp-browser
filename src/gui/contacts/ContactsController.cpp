@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/contacts/ContactsController.h"
+#include "common/ContactLimits.h"
 
 #include "lib/messaging/ContactLocator.h"
 
@@ -185,6 +186,8 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
   return row;
 }
 
+} // namespace
+
 ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports) {
   ContactsController::ContactDetail detail;
   detail.id = contact.id.c_str();
@@ -192,8 +195,10 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   detail.title = title.empty() ? Tr("people_picker.unnamed").c_str() : title.c_str();
   detail.display_name = contact.local.display_name.c_str();
   detail.nickname = contact.remote.nickname.c_str();
-  detail.name_placeholder =
-      contact.remote.nickname.empty() ? Tr("contacts.name_placeholder").c_str() : contact.remote.nickname.c_str();
+  detail.name_placeholder = Tr("contacts.remark.placeholder").c_str();
+  if (!contact.remote.nickname.empty()) {
+    detail.their_nickname = Tr("contacts.remark.their_nickname", {{"nickname", contact.remote.nickname}}).c_str();
+  }
   detail.relay_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).c_str();
   detail.has_relay_id = !detail.relay_id.empty();
@@ -280,6 +285,8 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   return detail;
 }
 
+namespace {
+
 void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact,
                                const MessagingContactsPorts& ports) {
   detail.multiaddrs_text = MultiaddrsToText(contact.multiaddrs).c_str();
@@ -317,15 +324,15 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
   }
 }
 
+} // namespace
+
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail) {
   Contact contact = existing;
   // Only local annotations are editable from the detail form.
-  contact.local.display_name = detail.display_name.c_str();
+  contact.local.display_name = TruncateCodePoints(detail.display_name.c_str(), kMaxNicknameChars);
   SyncContactMirrors(contact);
   return contact;
 }
-
-} // namespace
 
 ContactsController* ContactsController::installed_instance_ = nullptr;
 
@@ -464,6 +471,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("subtitle", &ContactDetail::subtitle);
       detail_handle.RegisterMember("display_name", &ContactDetail::display_name);
       detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
+      detail_handle.RegisterMember("their_nickname", &ContactDetail::their_nickname);
       detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
       detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
       detail_handle.RegisterMember("multiaddrs_text", &ContactDetail::multiaddrs_text);

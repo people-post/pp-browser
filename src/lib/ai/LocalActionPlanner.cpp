@@ -48,19 +48,6 @@ U32 ToU32(const std::string_view in) {
 
 size_t CodePoints(const std::string_view s) { return ToU32(s).size(); }
 
-std::string TruncateCodePoints(const std::string& s, const size_t max_cp) {
-  size_t count = 0;
-  for (size_t i = 0; i < s.size(); ++i) {
-    if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80) {
-      if (count == max_cp) {
-        return s.substr(0, i);
-      }
-      ++count;
-    }
-  }
-  return s;
-}
-
 std::vector<size_t> FindAll(const U32& hay, const U32& needle) {
   std::vector<size_t> out;
   if (needle.empty()) {

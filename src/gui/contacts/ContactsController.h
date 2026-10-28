@@ -80,8 +80,10 @@ public:
     ui::String subtitle;
     ui::String display_name;
     ui::String nickname;
-    /** Placeholder of the remark field: the directory nickname, else the generic "Name". */
+    /** Placeholder of the remark field. */
     ui::String name_placeholder;
+    /** "Their nickname: X" under the remark field; empty when the contact has no nickname. */
+    ui::String their_nickname;
     ui::String relay_id;
     ui::String peer_id;
     ui::String multiaddrs_text;
@@ -194,5 +196,10 @@ private:
 
   static ContactsController* installed_instance_;
 };
+
+/** Detail form for a contact (title, remark, their nickname, ...). Exposed for tests. */
+ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports);
+/** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
+Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 
 } // namespace pbr
