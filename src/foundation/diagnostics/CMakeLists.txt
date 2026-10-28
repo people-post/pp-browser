@@ -3,6 +3,8 @@ pp_browser_add_foundation_library(pp_foundation_diagnostics
     CrashBreadcrumbs.cpp
     CrashDump.cpp
     CrashReportEnvelope.cpp
+    DiagnosticsBundle.cpp
+    DiagnosticsScrub.cpp
     LogFile.cpp
   PUBLIC_LIBS
     pp_foundation_runtime_core)
