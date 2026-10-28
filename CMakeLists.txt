@@ -74,6 +74,9 @@ if(MSVC)
   add_compile_definitions(NOMINMAX)
   # Target Windows 7+; avoids Boost/winapi defaulting _WIN32_WINNT at compile time.
   add_compile_definitions(_WIN32_WINNT=0x0601)
+  # Sources are UTF-8. Without this, MSVC on a non-English Windows (e.g. code page 936)
+  # reads them in the local code page: C4819, an error under warnings-as-errors.
+  add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>")
 endif()
 
 pp_browser_finalize_compiler_cache()
