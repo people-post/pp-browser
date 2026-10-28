@@ -209,7 +209,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     statusbar_.Bind(ctor);
-    ctor.Bind("statusbar_activity", &host.state_.statusbar_activity);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
@@ -931,15 +930,9 @@ void ShellHost::SetActivityVisible(bool visible) {
   SetActivity(visible);
 }
 
-void ShellHost::SetActivity(bool visible, const ui::String& message) {
+void ShellHost::SetActivity(bool visible, const ui::String& /*message*/) {
+  // The busy strip only; the status bar no longer repeats the AI's activity text (it shows above the composer).
   state_.activity_visible = visible;
-  if (!visible) {
-    state_.statusbar_activity.clear();
-  } else if (!message.empty()) {
-    state_.statusbar_activity = message;
-  } else {
-    state_.statusbar_activity = Tr("chat.thinking").c_str();
-  }
   statusbar_.Dirty();
 }
 

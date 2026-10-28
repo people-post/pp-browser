@@ -850,6 +850,9 @@ void ChatController::OnProfileDataReset() {
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
+  drafts_ = ThreadDrafts{}; // unsent text of the old profile must not reach the new one
+  chat_.draft = "";
+  DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1486,8 +1489,16 @@ void ChatController::OnNewChat() {
     return;
   }
 
+  // The place the user leaves (Home or a chat) keeps its unsent text; the new chat starts empty, even when it is
+  // opened from Home (nav may still say Home here, e.g. "find someone").
+  const std::string leaving = chat_.draft.c_str();
   (void)facade_->CreateNewAiThread();
-  // The old conversation keeps its unsent text; the new one starts empty (SyncDraftOwner on display).
+  const std::string new_thread = ActiveThreadId();
+  if (!new_thread.empty()) {
+    const std::string next = drafts_.SwitchTo(new_thread, leaving);
+    chat_.draft = next.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+  }
   chat_.status = "";
   chat_.compose_disabled = false;
   // A turn running in another thread keeps running: its answer lands in its own thread (B112).
@@ -2025,31 +2036,38 @@ void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const A
 }
 
 void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {
-  if (drafts_.Owner() && *drafts_.Owner() != thread_id) {
-    if (drafts_.Peek(thread_id).empty()) {
-      drafts_.Put(thread_id, text); // that conversation is not open: its own composer gets it back
-    }
-    return;
-  }
-  if (!std::string(chat_.draft.c_str()).empty()) {
-    return;
-  }
-  chat_.draft = text.c_str();
-  DataModelHost::Instance().Dirty("chat", "draft");
+  PutTextBack(thread_id, text, /*prepend=*/false);
 }
 
 void ChatController::PutBackDraft(const std::string& thread_id, const std::string& text) {
-  if (drafts_.Owner() && *drafts_.Owner() != thread_id) {
-    drafts_.Prepend(thread_id, text);
+  PutTextBack(thread_id, text, /*prepend=*/true);
+}
+
+std::string ChatController::CurrentDraftKey() const {
+  return ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
+}
+
+void ChatController::PutTextBack(const std::string& key, const std::string& text, const bool prepend) {
+  SyncDraftOwner(); // so "shown" below is what the user sees now
+  if (key.empty() || key != CurrentDraftKey()) {
+    // Not the conversation on screen: its own composer gets the text, never the one shown.
+    if (prepend) {
+      drafts_.Prepend(key, text);
+    } else if (drafts_.Peek(key).empty()) {
+      drafts_.Put(key, text);
+    }
     return;
   }
   const std::string draft = chat_.draft.c_str();
+  if (!prepend && !draft.empty()) {
+    return;
+  }
   chat_.draft = (draft.empty() ? text : text + "\n" + draft).c_str();
   DataModelHost::Instance().Dirty("chat", "draft");
 }
 
 void ChatController::SyncDraftOwner() {
-  const std::string key = ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
+  const std::string key = CurrentDraftKey();
   if (key.empty()) {
     return; // no conversation shown: the text stays with the one it was typed in
   }
@@ -2112,13 +2130,12 @@ void ChatController::CancelQueuedHere() {
       if (!open || open->kind != ThreadKind::Ai) {
         ShellSelectNavTab(NavTab::Home);
       }
-      SyncDraftOwner(); // the text below belongs to whichever composer is shown now
+      // The question was asked on Home: it goes back to Home's composer, not to whichever chat opened now.
+      PutTextBack(ThreadDrafts::kHome, item->text, /*prepend=*/false);
+      return;
     }
   }
-  if (std::string(chat_.draft.c_str()).empty()) {
-    chat_.draft = item->text.c_str();
-    DataModelHost::Instance().Dirty("chat", "draft");
-  }
+  PutTextBack(thread_id, item->text, /*prepend=*/false);
 }
 
 ChatController::ComposerEscape ChatController::OnComposerEscape() {
