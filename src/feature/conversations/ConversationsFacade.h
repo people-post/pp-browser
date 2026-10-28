@@ -235,6 +235,8 @@ public:
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
   void MarkSharedAiConfirmed(const std::string& thread_id);
+  Roe<void> RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text);
+  bool NeedsSharedAiConfirmFor(const std::string& thread_id, const std::string& text) const;
 
   // --- Settings / profile helpers (former Application hub peeks) -------------
   ProfileIdentityView LoadProfileIdentityView();

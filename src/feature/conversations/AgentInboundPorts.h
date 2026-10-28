@@ -28,6 +28,9 @@ struct AgentInboundPorts {
       submit_local_action;
   /** Brief preset: the text asks to operate the app (a shared "@ai+"/"@ai++" then shares nothing). Optional. */
   std::function<bool(const std::string& text)> is_app_action_request;
+  /** A turn is running. A send that needs the agent then fails with `MessageRouter::kAgentBusyError` before any
+   * side effect (nothing stored, nothing sent to a peer), so the UI can queue it (B112). Optional. */
+  std::function<bool()> is_busy;
 
   bool IsBound() const {
     return static_cast<bool>(submit_scoped_assist) && static_cast<bool>(submit_to_thread);

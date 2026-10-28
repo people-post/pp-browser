@@ -530,6 +530,17 @@ void ConversationsFacade::SetSharedAiConfirmCallback(MessageRouter::SharedAiConf
   hub_.Router().SetSharedAiConfirmCallback(std::move(callback));
 }
 
+Roe<void> ConversationsFacade::RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text) {
+  if (!hub_.HasRouter()) {
+    return Error("Router not ready");
+  }
+  return hub_.Router().RouteConfirmedSharedAi(thread_id, text);
+}
+
+bool ConversationsFacade::NeedsSharedAiConfirmFor(const std::string& thread_id, const std::string& text) const {
+  return hub_.HasRouter() && hub_.Router().NeedsSharedAiConfirmFor(thread_id, text);
+}
+
 void ConversationsFacade::MarkSharedAiConfirmed(const std::string& thread_id) {
   hub_.Router().MarkSharedAiConfirmed(thread_id);
 }

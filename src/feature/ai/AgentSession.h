@@ -140,6 +140,8 @@ public:
                                  const std::string& decision_label = {});
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
+  /** A turn is running (any thread). The UI checks it before routing an AI send so nothing is dropped (B112). */
+  bool IsBusy() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
   void StartNewConversation();

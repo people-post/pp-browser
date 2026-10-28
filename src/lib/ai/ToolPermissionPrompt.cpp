@@ -238,11 +238,18 @@ std::optional<std::string> RewriteToolPermissionCardBlocks(const std::string& bl
   if (!blocks) {
     return std::nullopt;
   }
-  // Keep the explanation; the buttons give way to one line saying what the user chose.
+  // Keep the explanation and the question (it names the action); the buttons give way to one line saying what
+  // the user chose.
   std::vector<Value> kept;
   for (const Value& block : blocks->elements) {
     const Object* object = asObject(block);
     if (object && object->getString("type").value_or("") == "choice") {
+      if (const auto prompt = object->getString("prompt"); prompt && !prompt->empty()) {
+        Object question;
+        question.set("type", "paragraph");
+        question.set("text", *prompt);
+        kept.push_back(ObjectValue(std::move(question)));
+      }
       continue;
     }
     kept.push_back(block);

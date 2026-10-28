@@ -72,6 +72,9 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
   if (!agent_.submit_scoped_assist) {
     return Error("Agent not bound");
   }
+  if (AgentBusy()) {
+    return Error(kAgentBusyError); // before the "@ai++" question goes to the peer
+  }
 
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
@@ -136,6 +139,9 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     if (!agent_.submit_local_action) {
       return Error("Agent not bound");
     }
+    if (AgentBusy()) {
+      return Error(kAgentBusyError);
+    }
     agent_.submit_local_action(thread_id, text, *user_payload, HandlesAtAi((*thread)->kind));
     return {};
   }
@@ -149,6 +155,9 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   const AtAiParseResult at_ai = ParseAtAiPrefix(text);
   // A group used to send "@ai++ …" as plain text while the chat already showed "thinking" (B111).
   if (HandlesAtAi((*thread)->kind) && at_ai.is_ai_invoke) {
+    if (AgentBusy()) {
+      return Error(kAgentBusyError); // nothing sent, no confirm asked: the UI queues it
+    }
     if (at_ai.mode == AtAiMode::SharedReply || at_ai.mode == AtAiMode::SharedFull) {
       if (agent_.is_app_action_request && agent_.submit_scoped_assist && agent_.is_app_action_request(at_ai.prompt)) {
         // "@ai++ 搜索用户 ken": an app action is not shared. Nothing goes to the peer (no prompt, no confirm); the
@@ -200,8 +209,38 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   if (!agent_.submit_to_thread) {
     return Error("Agent not bound");
   }
+  if (AgentBusy()) {
+    return Error(kAgentBusyError);
+  }
   agent_.submit_to_thread(thread_id, TextForAgent((*thread)->kind, text), std::move(user_payload));
   return {};
+}
+
+Roe<void> MessageRouter::RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text) {
+  const AtAiParseResult at_ai = ParseAtAiPrefix(text);
+  if (!at_ai.is_ai_invoke || (at_ai.mode != AtAiMode::SharedReply && at_ai.mode != AtAiMode::SharedFull)) {
+    return Route(thread_id, text);
+  }
+  return RouteSharedAi(thread_id, at_ai.prompt, at_ai.mode);
+}
+
+bool MessageRouter::NeedsSharedAiConfirmFor(const std::string& thread_id, const std::string& text) const {
+  if (!shared_ai_confirm_) {
+    return false;
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread || !HandlesAtAi((*thread)->kind)) {
+    return false;
+  }
+  const AtAiParseResult at_ai = ParseAtAiPrefix(text);
+  if (!at_ai.is_ai_invoke || (at_ai.mode != AtAiMode::SharedReply && at_ai.mode != AtAiMode::SharedFull)) {
+    return false;
+  }
+  // An app action ("@ai++ 搜索用户 ken") shares nothing and is never confirmed.
+  if (agent_.is_app_action_request && agent_.is_app_action_request(at_ai.prompt)) {
+    return false;
+  }
+  return NeedsSharedAiConfirm(thread_id);
 }
 
 std::string MessageRouter::TextForAgent(const ThreadKind kind, const std::string& text) {

@@ -217,7 +217,14 @@ void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent even
 }
 
 void AgentSession::PushLoading(const std::shared_ptr<Impl>& state, const bool loading) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::LoadingChanged, .loading = loading});
+  // The thread lets the UI show "thinking" (and the stop key) in that conversation only (B112).
+  PushEvent(state, AgentEvent{.type = AgentEventType::LoadingChanged,
+                              .loading = loading,
+                              .thread_id = loading ? state->pending_thread_id : std::string()});
+}
+
+bool AgentSession::IsBusy() const {
+  return impl_ && impl_->busy.load();
 }
 
 void AgentSession::PushApprovalClosed(const std::shared_ptr<Impl>& state, const ParkedApproval& park,
@@ -2124,7 +2131,12 @@ void AgentSession::BeginStreamTurn() {
 }
 
 void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
-  if (user_text.empty() || impl_->busy.exchange(true)) {
+  if (user_text.empty()) {
+    return;
+  }
+  if (impl_->busy.exchange(true)) {
+    // The UI queues AI sends while a turn runs (B112); reaching this means a send slipped past it.
+    impl_->Log().warning << "send dropped: a turn is still running";
     return;
   }
 
@@ -2147,7 +2159,12 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
 
 void AgentSession::SubmitToThread(const std::string& thread_id, const std::string& user_text,
                                   std::optional<std::string> user_payload, std::optional<AgentImageTurn> image) {
-  if (user_text.empty() || impl_->busy.exchange(true)) {
+  if (user_text.empty()) {
+    return;
+  }
+  if (impl_->busy.exchange(true)) {
+    // The UI queues AI sends while a turn runs (B112); reaching this means a send slipped past it.
+    impl_->Log().warning << "send dropped: a turn is still running";
     return;
   }
 

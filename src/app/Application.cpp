@@ -1206,6 +1206,7 @@ void Application::WireAgentAndConfig() {
         agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
       }
     };
+    inbound.is_busy = [this]() { return agent_session_ && agent_session_->IsBusy(); };
     inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
                                       std::optional<std::string> user_payload) {
       if (agent_session_) {
@@ -1530,6 +1531,17 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
     if (emoji_picker_) {
       emoji_picker_->Close();
     }
+  });
+  shell_->SetOnComposerEscape([this]() {
+    switch (chat_->OnComposerEscape()) {
+    case ChatController::ComposerEscape::Handled:
+      return 1;
+    case ChatController::ComposerEscape::Idle:
+      return 2;
+    case ChatController::ComposerEscape::NotInComposer:
+      break;
+    }
+    return 0;
   });
 
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).

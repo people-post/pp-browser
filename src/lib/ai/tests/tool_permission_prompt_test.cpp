@@ -92,6 +92,7 @@ TEST_P(ToolPermissionPromptTest, CardRewriteRemovesTheButtons) {
     EXPECT_EQ(rewritten->find("tool_permission"), std::string::npos) << "buttons must be gone";
     EXPECT_EQ(rewritten->find("choice"), std::string::npos);
     EXPECT_NE(rewritten->find(intro), std::string::npos) << "the explanation stays";
+    EXPECT_NE(rewritten->find(DescribeToolCalls(tools)), std::string::npos) << "the answered card still names the action";
     EXPECT_NE(rewritten->find(Tr(c.key)), std::string::npos);
   }
 

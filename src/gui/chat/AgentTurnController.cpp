@@ -364,6 +364,11 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
     RefreshLlmSetupBanner();
     return false;
   }
+  if (busy_.busy) {
+    // A picture is not queued (it lives in this composer only): the chip and the question stay for later.
+    UserFeedback::Fail(Tr("chat.ai_queue.image_busy"));
+    return false;
+  }
   // Taken out first: opening the AI thread from Home switches threads, which discards a pending image.
   PendingAiImage image = std::move(*pending_image_);
   pending_image_.reset();
@@ -381,8 +386,8 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
   const std::string message_id = util::GenerateUuid();
   widgets_.ExpireOpenForms();
   DirtyChatTurns();
-  chat_.loading = true;
   chat_.status = "";
+  MarkAgentBusy(thread_id);
   (void)host_.Facade()->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(question));
   host_.UpdateSidebarPreview(question);
   DirtyChatChrome();
@@ -509,9 +514,86 @@ void AgentTurnController::ClearStreamingRow() {
 }
 
 void AgentTurnController::OnStopTurn() {
+  // The stop key only shows in the thread whose turn runs; a stale tap from another thread stops nothing.
+  if (!busy_.BusyIn(host_.ActiveThreadId())) {
+    log().debug << "Stop ignored: no turn runs in the open thread";
+    return;
+  }
   if (AgentReady() && agent_ports_.cancel) {
     agent_ports_.cancel();
   }
+}
+
+void AgentTurnController::MarkAgentBusy(const std::string& thread_id) {
+  busy_.busy = true;
+  if (!thread_id.empty()) {
+    busy_.thread_id = thread_id;
+  } else if (busy_.thread_id.empty()) {
+    log().warning << "AI busy without a thread: every thread's AI sends queue until it ends";
+  }
+  RefreshBusyForActiveThread();
+}
+
+void AgentTurnController::MarkAgentIdle() {
+  busy_ = {};
+  RefreshBusyForActiveThread();
+}
+
+void AgentTurnController::RefreshBusyForActiveThread() {
+  const std::string& thread_id = host_.ActiveThreadId();
+  const bool here = busy_.BusyIn(thread_id);
+  chat_.loading = here;
+  if (!here) {
+    chat_.status = "";
+  }
+  const QueuedAgentSend* queued = queue_.Find(thread_id);
+  chat_.has_queued = queued != nullptr;
+  chat_.queued_text = queued ? queued->text.c_str() : "";
+  host_.ShellSetActivity(here, here ? chat_.status : ui::String{});
+  DirtyChatChrome();
+}
+
+bool AgentTurnController::QueueSend(QueuedAgentSend item) {
+  const std::string thread_id = item.thread_id;
+  if (!queue_.Enqueue(std::move(item))) {
+    return false;
+  }
+  log().info << "AI send queued: another thread's turn runs (" << queue_.Size() << " waiting)";
+  RefreshBusyForActiveThread();
+  return true;
+}
+
+std::optional<QueuedAgentSend> AgentTurnController::TakeQueued(const std::string& thread_id) {
+  auto item = queue_.Take(thread_id);
+  if (item) {
+    RefreshBusyForActiveThread();
+  }
+  return item;
+}
+
+void AgentTurnController::DrainQueue() {
+  if (draining_ || busy_.busy) {
+    return;
+  }
+  draining_ = true;
+  while (!busy_.busy) {
+    std::optional<QueuedAgentSend> item = queue_.PopFront();
+    if (!item) {
+      break;
+    }
+    const QueuedSendOutcome outcome = host_.RunQueuedAgentSend(*item);
+    if (outcome == QueuedSendOutcome::Started) {
+      break; // the next one waits for this turn to end
+    }
+    if (outcome == QueuedSendOutcome::Busy) {
+      log().info << "Queued AI send put back: the assistant is still busy";
+      queue_.PushFront(std::move(*item));
+      break;
+    }
+    log().info << "Queued AI send did not start a turn; going on with the next one";
+  }
+  draining_ = false;
+  RefreshBusyForActiveThread();
 }
 
 void AgentTurnController::SubmitForm(const std::string& entry_id, const std::string& form_id) {
@@ -884,9 +966,13 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
   host_.SyncDisplayFromThread();
   host_.SyncShellSessions();
-  chat_.loading = false;
   chat_.status = "";
-  host_.ShellSetActivity(false);
+  if (!use_llm_) {
+    MarkAgentIdle(); // the mock assistant has no session to say the turn ended
+    DrainQueue();
+  } else {
+    RefreshBusyForActiveThread(); // the session's LoadingChanged(false) ends "busy"
+  }
   DirtyChat();
   DirtyShell();
 }
@@ -897,7 +983,6 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
   const std::string error_message = image_error_key ? Tr(image_error_key) : event.message;
   switch (event.type) {
   case AgentEventType::LoadingChanged:
-    chat_.loading = event.loading;
     if (!event.loading) {
       if (streaming_) { // turn ended without a persisted answer
         ClearStreamingRow();
@@ -905,9 +990,10 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
         DirtyChatTurns();
       }
       chat_.status = "";
-      host_.ShellSetActivity(false);
+      MarkAgentIdle();
+      DrainQueue(); // the next thread's question, if one waits
     } else {
-      host_.ShellSetActivity(true);
+      MarkAgentBusy(event.thread_id);
       if (host_.MessagingIsReady()) {
         host_.SyncDisplayFromThread();
         DirtyChatTurns();
@@ -922,7 +1008,9 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
       break;
     }
     chat_.status = ui::String(ToolActivityLabel(event.tool_name, event.status).c_str());
-    host_.ShellSetActivity(true, chat_.status);
+    if (chat_.loading) { // the step label belongs to the thread whose turn runs
+      host_.ShellSetActivity(true, chat_.status);
+    }
     DirtyChatChrome();
     break;
   case AgentEventType::AssistantDelta:
@@ -951,9 +1039,9 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
       host_.SyncDisplayFromThread();
       DirtyChatTurns();
     }
-    chat_.loading = false;
     chat_.status = "";
-    host_.ShellSetActivity(false);
+    MarkAgentIdle();
+    DrainQueue(); // a refused send is put back if the session has not finished the turn yet
     DirtyChatChrome();
     break;
   }
@@ -1124,7 +1212,8 @@ void AgentTurnController::FlushHeldAgentSend() {
   if (host_.ChromeSnapshot().banner_message == Tr("chat.status.connecting") && shell_feedback_.dismiss_banner) {
     shell_feedback_.dismiss_banner();
   }
-  switch (HeldSendFateOf(send, host_.ActiveThreadId(), chat_.loading)) {
+  // Only a turn in the send's own thread holds it back; another thread's turn just queues it (SendUserText).
+  switch (HeldSendFateOf(send, host_.ActiveThreadId(), busy_.BusyIn(send.thread_id))) {
   case HeldSendFate::Send:
     log().info << "Sending the held message: the assistant is connected";
     host_.SendUserText(send.text, std::move(send.payload), send.from_home_chip);

@@ -649,10 +649,10 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     NotifySurfaceChanged();
     return;
   }
+  (void)agent_.TakeQueued(thread_id); // a question queued for a closed chat has nowhere to go
   if (was_open) {
     chat_.draft = "";
     chat_.status = "";
-    chat_.loading = false;
     pending_reply_.reset();
     working_set_.ClearAll();
     widgets_.ClearAll();
@@ -790,7 +790,6 @@ void ChatController::AfterHistoryCleared(const std::string& thread_id) {
   if (thread_id == ActiveThreadId()) {
     chat_.draft = "";
     chat_.status = "";
-    chat_.loading = false;
     pending_reply_.reset();
     widgets_.ClearAll();
   }
@@ -1152,6 +1151,7 @@ void ChatController::SyncDisplayFromThread() {
   }
   if (!facade_ || !facade_->GetActiveThread()) {
     chrome_.ResetPanelState();
+    agent_.RefreshBusyForActiveThread();
     return;
   }
   const auto sync_started = std::chrono::steady_clock::now();
@@ -1182,6 +1182,7 @@ void ChatController::SyncDisplayFromThread() {
   chat_.use_messages_layout = true;
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
+  agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
 
   // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
   const auto sync_ms =
@@ -1405,7 +1406,8 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
 void ChatController::OnSendMessage() {
   // Enter only checks focus: while an image is still being prepared the question must not go out
   // alone (the image would then attach itself to the next one).
-  if (chat_.loading || chat_.compose_disabled || chat_.image_preparing) {
+  // A turn running in another thread does not block this composer (B112): SendUserText queues an AI send.
+  if (chat_.compose_disabled || chat_.image_preparing) {
     return;
   }
 
@@ -1442,13 +1444,36 @@ void ChatController::OnSendMessage() {
     }
     return;
   }
+  const std::string out = presenter_.ComposeWithQuote(text);
+  if (!ComposerSendAllowed(out)) {
+    return; // the draft stays: an AI send in the thread whose turn runs, or one already queued here
+  }
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
   close_keyboard();
-  const std::string out = presenter_.ComposeWithQuote(text);
   CancelQuoteReply();
   SendUserText(out);
+}
+
+bool ChatController::ComposerSendAllowed(const std::string& text) {
+  if (!messaging_ready_ || !facade_ || !facade_->HasRouter() || ChromeSnapshot().nav_tab == NavTab::Home) {
+    return true; // a Home question opens its own thread; SendUserText decides there
+  }
+  const std::string thread_id = ActiveThreadId();
+  const bool is_ai_send = !agent_.UseLlm() || facade_->ExpectsAgentWork(thread_id, text, std::nullopt);
+  switch (DecideSend(is_ai_send, agent_.Busy(), thread_id, agent_.HasQueued(thread_id))) {
+  case SendDecision::BlockedHere:
+    log().info << "Send kept in the composer: a reply is still loading in this thread";
+    return false;
+  case SendDecision::AlreadyQueued:
+    ShowToast(Tr("chat.ai_queue.already"));
+    return false;
+  case SendDecision::Send:
+  case SendDecision::Queue:
+    break;
+  }
+  return true;
 }
 
 void ChatController::OnNewChat() {
@@ -1459,10 +1484,8 @@ void ChatController::OnNewChat() {
   (void)facade_->CreateNewAiThread();
   chat_.draft = "";
   chat_.status = "";
-  chat_.loading = false;
   chat_.compose_disabled = false;
-  pending_reply_.reset();
-  agent_.Cancel();
+  // A turn running in another thread keeps running: its answer lands in its own thread (B112).
   working_set_.ClearAll();
   widgets_.ClearAll();
   ShellSetPrimaryPane("chat");
@@ -1792,10 +1815,6 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     log().info << "Send ignored: empty text";
     return;
   }
-  if (chat_.loading) {
-    log().info << "Send ignored: a reply is still loading";
-    return;
-  }
   if (chat_.compose_disabled && messaging_ready_) {
     log().info << "Send ignored: the composer is disabled in this thread";
     return;
@@ -1816,11 +1835,14 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     }
   }
 
+  bool home_thread_was_empty = false;
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
     if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
       log().info << "Send ignored: could not open a thread from Home";
       return;
     }
+    auto first = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 1);
+    home_thread_was_empty = first && first->empty();
   }
 
   widgets_.ExpireOpenForms();
@@ -1833,6 +1855,22 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
         ActiveThreadId(), trimmed, user_payload);
   } else if (!expect_agent_work) {
     expect_agent_work = true;
+  }
+
+  // One turn at a time: an AI send for another thread waits in the queue; a plain message always goes (B112).
+  const std::string target_thread = ActiveThreadId();
+  switch (DecideSend(expect_agent_work, agent_.Busy(), target_thread, agent_.HasQueued(target_thread))) {
+  case SendDecision::Send:
+    break;
+  case SendDecision::BlockedHere:
+    log().info << "Send ignored: a reply is still loading in this thread";
+    return;
+  case SendDecision::AlreadyQueued:
+    ShowToast(Tr("chat.ai_queue.already"));
+    return;
+  case SendDecision::Queue:
+    QueueAgentSend(target_thread, trimmed, std::move(user_payload), home_thread_was_empty);
+    return;
   }
 
   // Peer relay send only needs messaging_ready; AI / Brief / mock turns need agent_cloud_ready.
@@ -1852,7 +1890,6 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   if (expect_agent_work) {
-    chat_.loading = true;
     chat_.status = "";
   }
   // A fresh AI thread is named after its first question, so the list is not all "New chat". Done before
@@ -1874,20 +1911,55 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     SyncDisplayFromThread();
     DirtyChatTurns();
     log().debug << "Using mock assistant response";
+    agent_.MarkAgentBusy(thread_id);
     pending_reply_ = PendingReply{.entry_id = user_message.id, .thread_id = thread_id,
                                   .output = MockAssistantRespond(trimmed), .from_llm = false};
     return;
   }
 
   if (messaging_ready_ && facade_ && facade_->HasRouter()) {
+    if (expect_agent_work && facade_->NeedsSharedAiConfirmFor(target_thread, trimmed)) {
+      // Confirm "@ai+" sharing here (not inside the router) so a cancel keeps the text and "busy" stays right.
+      ConfirmShareWithAi(target_thread, trimmed, [this, target_thread, trimmed](const bool ok) {
+        if (!ok) {
+          RestoreDraftIfEmpty(target_thread, trimmed);
+          return;
+        }
+        if (agent_.Busy().busy) { // the AI started another thread's turn while the dialog was open
+          QueueAgentSend(target_thread, trimmed, std::nullopt, false, /*already_confirmed=*/true);
+          return;
+        }
+        auto routed = facade_->RouteConfirmedSharedAi(target_thread, trimmed);
+        if (!routed) {
+          if (routed.error().message == MessageRouter::kAgentBusyError) {
+            QueueAgentSend(target_thread, trimmed, std::nullopt, false, /*already_confirmed=*/true);
+          } else {
+            UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+          }
+          return;
+        }
+        agent_.MarkAgentBusy(target_thread);
+        SyncDisplayFromThread();
+      });
+      return;
+    }
     log().info << "Routing message via MessageRouter";
-    auto routed = facade_->RouteMessage(ActiveThreadId(), trimmed, std::move(user_payload));
+    std::optional<std::string> payload_copy = user_payload;
+    auto routed = facade_->RouteMessage(target_thread, trimmed, std::move(user_payload));
     if (!routed) {
-      chat_.loading = false;
+      if (routed.error().message == MessageRouter::kAgentBusyError) {
+        // The session took another turn the UI had not heard of yet: nothing was stored or sent, so queue it.
+        log().warning << "Send refused by a busy assistant: queued";
+        QueueAgentSend(target_thread, trimmed, std::move(payload_copy), home_thread_was_empty);
+        return;
+      }
       UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
       DirtyChatChrome();
       SyncDisplayFromThread();
       return;
+    }
+    if (expect_agent_work) {
+      agent_.MarkAgentBusy(target_thread); // same call stack as the submit: no window for another send
     }
     SyncDisplayFromThread();
     return;
@@ -1896,7 +1968,138 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   log().info << "Submitting message to agent session";
   if (agent_.Ports().submit) {
     agent_.Ports().submit(trimmed, std::move(user_payload));
+    agent_.MarkAgentBusy(target_thread);
   }
+}
+
+void ChatController::QueueAgentSend(const std::string& thread_id, const std::string& text,
+                                    std::optional<std::string> payload, const bool thread_created_for_this,
+                                    const bool already_confirmed) {
+  if (!already_confirmed && facade_ && facade_->NeedsSharedAiConfirmFor(thread_id, text)) {
+    // Asked now, in the chat the user is looking at, not when the queue reaches it.
+    ConfirmShareWithAi(thread_id, text, [this, thread_id, text, payload, thread_created_for_this](const bool ok) {
+      if (!ok) {
+        RestoreDraftIfEmpty(thread_id, text);
+        return;
+      }
+      QueueAgentSend(thread_id, text, payload, thread_created_for_this, /*already_confirmed=*/true);
+    });
+    return;
+  }
+  QueuedAgentSend item{.thread_id = thread_id,
+                       .text = text,
+                       .payload = std::move(payload),
+                       .shared_confirmed = already_confirmed,
+                       .thread_created_for_this = thread_created_for_this};
+  if (!agent_.QueueSend(std::move(item))) {
+    ShowToast(Tr("chat.ai_queue.already"));
+    RestoreDraftIfEmpty(thread_id, text);
+    return;
+  }
+  scroller_.RequestScrollToLatest();
+  SyncShellSessions();
+}
+
+void ChatController::ConfirmShareWithAi(const std::string& thread_id, const std::string& text,
+                                        std::function<void(bool ok)> then) {
+  const AtAiParseResult at_ai = ParseAtAiPrefix(text);
+  ShowConfirmWithCheckbox(Tr("chat.share_ai.title"),
+                          Tr(at_ai.mode == AtAiMode::SharedFull ? "chat.share_ai.body_full" : "chat.share_ai.body_reply"),
+                          Tr("chat.share_ai.dont_ask"), false,
+                          [this, thread_id, then = std::move(then)](const bool ok, const bool dont_ask) {
+                            if (ok && dont_ask && facade_) {
+                              facade_->MarkSharedAiConfirmed(thread_id);
+                            }
+                            then(ok);
+                          });
+}
+
+void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {
+  if (thread_id != ActiveThreadId() || !std::string(chat_.draft.c_str()).empty()) {
+    return;
+  }
+  chat_.draft = text.c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+}
+
+QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item) {
+  if (!messaging_ready_ || !facade_ || !facade_->HasRouter()) {
+    return QueuedSendOutcome::NotStarted;
+  }
+  if (!agent_.UseLlm()) {
+    log().info << "Queued AI send dropped: no assistant configured";
+    return QueuedSendOutcome::NotStarted;
+  }
+  const bool expects = item.shared_confirmed || facade_->ExpectsAgentWork(item.thread_id, item.text, item.payload);
+  auto routed = item.shared_confirmed ? facade_->RouteConfirmedSharedAi(item.thread_id, item.text)
+                                      : facade_->RouteMessage(item.thread_id, item.text, item.payload);
+  if (!routed) {
+    if (routed.error().message == MessageRouter::kAgentBusyError) {
+      return QueuedSendOutcome::Busy;
+    }
+    log().warning << "Queued AI send failed: " << routed.error().message;
+    if (item.thread_id == ActiveThreadId()) {
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+    }
+    return QueuedSendOutcome::NotStarted;
+  }
+  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, AiThreadTitleFromMessage(item.text));
+  if (!expects) {
+    return QueuedSendOutcome::NotStarted;
+  }
+  agent_.MarkAgentBusy(item.thread_id);
+  SyncShellSessions(); // the thread gets its preview / unread mark even if it is not the open one
+  if (item.thread_id == ActiveThreadId()) {
+    SyncDisplayFromThread();
+  }
+  return QueuedSendOutcome::Started;
+}
+
+void ChatController::CancelQueuedHere() {
+  const std::string thread_id = ActiveThreadId();
+  std::optional<QueuedAgentSend> item = agent_.TakeQueued(thread_id);
+  if (!item) {
+    return;
+  }
+  log().info << "Queued AI send cancelled";
+  if (item->thread_created_for_this && facade_) {
+    // A Home question opened this thread for nothing: do not leave an empty chat in the list.
+    auto first = facade_->GetMessagesPage(thread_id, std::nullopt, 1);
+    if (first && first->empty()) {
+      CloseChatWith(thread_id, [this, thread_id]() { return presenter_.CloseThread(thread_id); });
+    }
+  }
+  if (std::string(chat_.draft.c_str()).empty()) {
+    chat_.draft = item->text.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+  }
+}
+
+ChatController::ComposerEscape ChatController::OnComposerEscape() {
+  if (!context_) {
+    return ComposerEscape::NotInComposer;
+  }
+  ui::Element* focus = context_->GetFocusElement();
+  if (!focus || focus->GetId() != "draft-input") {
+    return ComposerEscape::NotInComposer;
+  }
+  const int64_t now = util::NowUnixMs();
+  const std::string thread_id = ActiveThreadId();
+  const EscapeAction action =
+      DecideEscape(now, last_escape_ms_, agent_.HasQueued(thread_id), agent_.Busy().BusyIn(thread_id));
+  last_escape_ms_ = now;
+  switch (action) {
+  case EscapeAction::CancelQueued:
+    CancelQueuedHere();
+    return ComposerEscape::Handled;
+  case EscapeAction::StopTurn:
+    last_escape_ms_.reset();
+    agent_.OnStopTurn();
+    return ComposerEscape::Handled;
+  case EscapeAction::None:
+    break;
+  }
+  return ComposerEscape::Idle;
 }
 
 
@@ -2171,6 +2374,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_chat_link", DataEvent<std::string, int>(
             [this](const std::string& entry_id, int link) { OpenChatLink(entry_id, link); }));
         ctor.BindEventCallback("stop_turn", DataEvent([this] { agent_.OnStopTurn(); }));
+        ctor.BindEventCallback("cancel_queued", DataEvent([this] { CancelQueuedHere(); }));
         ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
             [this](const std::string& message_id, const std::string& emoji) { ToggleReaction(message_id, emoji); }));
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(

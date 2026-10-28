@@ -176,6 +176,12 @@ public:
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
   void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
+  /**
+   * Escape that closed no overlay, asked before navigating back / quitting: 0 = focus not in the composer,
+   * 1 = the composer used it (cancel a queued AI send / stop the turn), 2 = composer focused, nothing to do.
+   * In the composer Escape never quits the app.
+   */
+  void SetOnComposerEscape(std::function<int()> callback) { on_composer_escape_ = std::move(callback); }
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
 
   /** Secondary-pane prefs from disk (width is clamped). Remounts when they differ from the current state. */
@@ -313,6 +319,7 @@ private:
   std::string bottom_chrome_rml_path_;
   bool remount_bottom_chrome_pending_ = false;
   std::function<void()> on_bottom_chrome_dismissed_;
+  std::function<int()> on_composer_escape_;
   LayoutMode last_synced_mode_ = LayoutMode::Expanded;
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;

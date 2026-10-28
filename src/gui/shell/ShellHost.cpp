@@ -721,7 +721,15 @@ bool ShellHost::HandleDismiss() {
     RequestSyncLayout();
     return true;
   }
-  return RequestDismiss(DismissStyle::Instant);
+  const int composer = on_composer_escape_ ? on_composer_escape_() : 0;
+  if (composer == 1) {
+    return true;
+  }
+  if (RequestDismiss(DismissStyle::Instant)) {
+    return true;
+  }
+  // Nothing to go back to: Escape quits the app, but never from the composer (it used to, with the draft in it).
+  return composer == 2;
 }
 
 void ShellHost::PushLocalBack(const std::string& id, std::function<void()> commit) {

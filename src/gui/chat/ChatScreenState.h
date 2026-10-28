@@ -73,8 +73,10 @@ struct ChatScreenState {
   std::vector<TranscriptDisplayRow> turns;
   std::vector<MessageDisplayRow> messages;
   bool use_messages_layout = true;
-  bool loading = false;
+  bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;
+  bool has_queued = false;  // this thread has an AI send waiting for another thread's turn
+  ui::String queued_text;   // its text, shown as a dimmed "me" bubble with "queued" and a cancel link
 };
 
 /** The shell's chat side of its data model ("shell"): the chats list and the working set panel. */
