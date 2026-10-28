@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -19,7 +21,10 @@ std::string ReadAll(const fs::path& p) {
   std::ifstream in(p, std::ios::binary);
   std::stringstream ss;
   ss << in.rdbuf();
-  return ss.str();
+  std::string text = ss.str();
+  // A Windows checkout may still deliver CRLF; the expected output is defined line by line.
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
 }
 
 pbr::DiagnosticsBundleInput FixtureInput() {
