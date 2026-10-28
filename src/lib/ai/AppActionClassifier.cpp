@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <utility>
 #include <initializer_list>
 
 namespace pbr {
@@ -22,9 +23,13 @@ constexpr size_t kEnSearchMaxTail = 3;  // words after "people"/"user"/…: a na
 using Text = std::u32string;
 using View = std::u32string_view;
 
-Text Decode(std::string_view in) {
+// `offsets`, when given, receives the byte offset of every code point in `in`.
+Text Decode(std::string_view in, std::vector<size_t>* offsets = nullptr) {
   Text out;
   for (size_t i = 0; i < in.size();) {
+    if (offsets) {
+      offsets->push_back(i);
+    }
     const auto b = static_cast<unsigned char>(in[i]);
     const size_t n = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 0;
     char32_t cp = 0xFFFD;
@@ -180,39 +185,49 @@ bool AnyIn(const std::vector<Text>& list, const View needle) {
   return std::any_of(list.begin(), list.end(), [&](const Text& w) { return View(w) == needle; });
 }
 
-bool AnyContained(const std::vector<Text>& list, const View msg) {
-  return std::any_of(list.begin(), list.end(), [&](const Text& w) { return Contains(msg, w); });
-}
-
 bool AnyPrefix(const std::vector<Text>& list, const View s) {
   return std::any_of(list.begin(), list.end(), [&](const Text& w) { return StartsWith(s, w); });
 }
 
 enum class Hit { None, Phrase, VerbObject };
 
-Hit ZhHitKind(const ZhEntry& e, const View msg) {
-  if (AnyContained(e.phrases, msg)) {
-    return Hit::Phrase;
+// Spans are [begin, end) in units of the matcher (code points of the normalised message / words), ordered by begin.
+using SpanList = std::vector<std::pair<size_t, size_t>>;
+
+struct HitResult {
+  Hit kind = Hit::None;
+  SpanList spans;
+};
+
+void SortSpans(SpanList& spans) { std::sort(spans.begin(), spans.end()); }
+
+HitResult ZhHitKind(const ZhEntry& e, const View msg) {
+  for (const Text& w : e.phrases) {
+    if (const size_t p = msg.find(w); p != View::npos) {
+      return {Hit::Phrase, {{p, p + w.size()}}};
+    }
   }
-  std::vector<size_t> verb_pos, obj_pos;
+  std::vector<std::pair<size_t, size_t>> verbs, objs; // position, length
   for (const Text& v : e.verbs) {
     if (const size_t p = msg.find(v); p != View::npos) {
-      verb_pos.push_back(p);
+      verbs.emplace_back(p, v.size());
     }
   }
   for (const Text& o : e.objects) {
     if (const size_t p = msg.find(o); p != View::npos) {
-      obj_pos.push_back(p);
+      objs.emplace_back(p, o.size());
     }
   }
-  for (const size_t vp : verb_pos) {
-    for (const size_t op : obj_pos) {
+  for (const auto& [vp, vl] : verbs) {
+    for (const auto& [op, ol] : objs) {
       if ((vp > op ? vp - op : op - vp) <= kZhMaxDistance) {
-        return Hit::VerbObject;
+        HitResult r{Hit::VerbObject, {{vp, vp + vl}, {op, op + ol}}};
+        SortSpans(r.spans);
+        return r;
       }
     }
   }
-  return Hit::None;
+  return {};
 }
 
 size_t RFindEnd(const View msg, const View w) { return msg.rfind(w) + w.size(); }
@@ -268,11 +283,15 @@ bool ZhFormOk(const View msg, const ZhEntry& e, const Hit hit) {
   return false;
 }
 
-std::optional<std::string> ClassifyChinese(const Text& decoded, const std::vector<std::string>& declared) {
+std::optional<AppActionMatch> ClassifyChinese(const Text& decoded, const std::vector<size_t>& offsets,
+                                              const size_t total_bytes, const std::vector<std::string>& declared) {
   Text msg;
-  for (const char32_t c : decoded) {
-    if (!IsSpace(c)) {
-      msg.push_back(Lower(c));
+  std::vector<size_t> begin, end; // byte range of every code point of `msg` in the original message
+  for (size_t i = 0; i < decoded.size(); ++i) {
+    if (!IsSpace(decoded[i])) {
+      msg.push_back(Lower(decoded[i]));
+      begin.push_back(offsets[i]);
+      end.push_back(i + 1 < offsets.size() ? offsets[i + 1] : total_bytes);
     }
   }
   if (msg.empty() || msg.size() > kZhMaxChars) {
@@ -289,9 +308,13 @@ std::optional<std::string> ClassifyChinese(const Text& decoded, const std::vecto
   }
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
     for (const ZhEntry* e : entries) {
-      const Hit kind = ZhHitKind(*e, msg);
-      if (kind == want && ZhFormOk(msg, *e, kind)) {
-        return std::string(e->tool);
+      const HitResult hit = ZhHitKind(*e, msg);
+      if (hit.kind == want && ZhFormOk(msg, *e, hit.kind)) {
+        AppActionMatch match{std::string(e->tool), {}};
+        for (const auto& [a, b] : hit.spans) {
+          match.matched_spans.push_back({begin[a], end[b - 1]});
+        }
+        return match;
       }
     }
   }
@@ -304,26 +327,45 @@ std::optional<std::string> ClassifyChinese(const Text& decoded, const std::vecto
 
 using Words = std::vector<std::string>;
 
-Words Split(std::string_view s) {
+// `spans`, when given, receives the byte range [begin, end) of every word in `s`. A curly apostrophe
+// (U+2019) counts as "'", so "Iâd" is one word.
+Words SplitSpans(std::string_view s, SpanList* spans) {
   Words out;
   std::string cur;
-  const auto flush = [&] {
+  size_t cur_begin = 0;
+  const auto flush = [&](const size_t at) {
     if (!cur.empty()) {
       out.push_back(std::move(cur));
       cur.clear();
+      if (spans) {
+        spans->emplace_back(cur_begin, at);
+      }
     }
   };
-  for (const char ch : s) {
-    const char c = ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch + 32) : ch;
+  for (size_t i = 0; i < s.size();) {
+    char c = s[i];
+    size_t n = 1;
+    if (s.compare(i, 3, "\xE2\x80\x99") == 0) {
+      c = '\'';
+      n = 3;
+    } else if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c + 32);
+    }
     if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'') {
+      if (cur.empty()) {
+        cur_begin = i;
+      }
       cur.push_back(c);
     } else {
-      flush();
+      flush(i);
     }
+    i += n;
   }
-  flush();
+  flush(s.size());
   return out;
 }
+
+Words Split(std::string_view s) { return SplitSpans(s, nullptr); }
 
 struct EnEntry {
   std::string_view tool;
@@ -363,15 +405,15 @@ size_t WordsFind(const Words& msg, const Words& p) {
   return std::string::npos;
 }
 
-bool WordsContain(const Words& msg, const Words& p) { return WordsFind(msg, p) != std::string::npos; }
-
 bool WordsPrefix(const Words& msg, const size_t from, const std::vector<Words>& list) {
   return std::any_of(list.begin(), list.end(), [&](const Words& p) { return WordsAt(msg, from, p); });
 }
 
-Hit EnHitKind(const EnEntry& e, const Words& msg) {
-  if (std::any_of(e.phrases.begin(), e.phrases.end(), [&](const Words& p) { return WordsContain(msg, p); })) {
-    return Hit::Phrase;
+HitResult EnHitKind(const EnEntry& e, const Words& msg) {
+  for (const Words& p : e.phrases) {
+    if (const size_t at = WordsFind(msg, p); at != std::string::npos) {
+      return {Hit::Phrase, {{at, at + p.size()}}};
+    }
   }
   for (const Words& v : e.verbs) {
     const size_t vp = WordsFind(msg, v);
@@ -381,11 +423,13 @@ Hit EnHitKind(const EnEntry& e, const Words& msg) {
     for (const Words& o : e.objects) {
       const size_t op = WordsFind(msg, o);
       if (op != std::string::npos && op >= vp && op - vp <= kEnMaxDistance) {
-        return Hit::VerbObject;
+        HitResult r{Hit::VerbObject, {{vp, vp + v.size()}, {op, op + o.size()}}};
+        SortSpans(r.spans);
+        return r;
       }
     }
   }
-  return Hit::None;
+  return {};
 }
 
 // Strips leading starters ("please", "can you", ...) and returns the index of the first word after them.
@@ -466,13 +510,9 @@ bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
   return true;
 }
 
-std::optional<std::string> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
-  std::string text(message);
-  // Curly apostrophes would otherwise split "i'd" in two.
-  for (size_t p; (p = text.find("\xE2\x80\x99")) != std::string::npos;) {
-    text.replace(p, 3, "'");
-  }
-  const Words msg = Split(text);
+std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
+  SpanList word_bytes;
+  const Words msg = SplitSpans(message, &word_bytes);
   if (msg.empty() || message.size() > kEnMaxChars) {
     return std::nullopt;
   }
@@ -487,9 +527,13 @@ std::optional<std::string> ClassifyEnglish(std::string_view message, const std::
   }
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
     for (const EnEntry* e : entries) {
-      const Hit kind = EnHitKind(*e, msg);
-      if (kind == want && EnFormOk(msg, *e, kind) && (e->tool != "search_people" || EnSearchTailOk(msg, *e))) {
-        return std::string(e->tool);
+      const HitResult hit = EnHitKind(*e, msg);
+      if (hit.kind == want && EnFormOk(msg, *e, hit.kind) && (e->tool != "search_people" || EnSearchTailOk(msg, *e))) {
+        AppActionMatch match{std::string(e->tool), {}};
+        for (const auto& [a, b] : hit.spans) {
+          match.matched_spans.push_back({word_bytes[a].first, word_bytes[b - 1].second});
+        }
+        return match;
       }
     }
   }
@@ -498,7 +542,8 @@ std::optional<std::string> ClassifyEnglish(std::string_view message, const std::
 
 } // namespace
 
-std::optional<std::string> ClassifyAppAction(const std::string_view message, const std::vector<std::string>& declared_tools) {
+std::optional<AppActionMatch> ClassifyAppActionMatch(const std::string_view message,
+                                                     const std::vector<std::string>& declared_tools) {
   if (declared_tools.empty()) {
     return std::nullopt;
   }
@@ -511,14 +556,39 @@ std::optional<std::string> ClassifyAppAction(const std::string_view message, con
   if (search_before_add) {
     capabilities.push_back("add_contact");
   }
-  const Text decoded = Decode(message);
-  auto tool = std::any_of(decoded.begin(), decoded.end(), IsCjk)
-                  ? ClassifyChinese(decoded, capabilities)
-                  : ClassifyEnglish(message, capabilities);
-  if (search_before_add && tool == "add_contact") {
-    return "search_people";
+  std::vector<size_t> offsets;
+  const Text decoded = Decode(message, &offsets);
+  auto match = std::any_of(decoded.begin(), decoded.end(), IsCjk)
+                   ? ClassifyChinese(decoded, offsets, message.size(), capabilities)
+                   : ClassifyEnglish(message, capabilities);
+  if (match && search_before_add && match->tool == "add_contact") {
+    match->tool = "search_people";
   }
-  return tool;
+  return match;
+}
+
+std::optional<std::string> ClassifyAppAction(const std::string_view message, const std::vector<std::string>& declared_tools) {
+  if (auto match = ClassifyAppActionMatch(message, declared_tools)) {
+    return std::move(match->tool);
+  }
+  return std::nullopt;
+}
+
+bool ContainsAppActionHit(const std::string_view text) {
+  const Text decoded = Decode(text);
+  if (std::any_of(decoded.begin(), decoded.end(), IsCjk)) {
+    Text msg;
+    for (const char32_t c : decoded) {
+      if (!IsSpace(c)) {
+        msg.push_back(Lower(c));
+      }
+    }
+    return std::any_of(ZhTable().begin(), ZhTable().end(),
+                       [&](const ZhEntry& e) { return ZhHitKind(e, msg).kind != Hit::None; });
+  }
+  const Words msg = Split(text);
+  return std::any_of(EnTable().begin(), EnTable().end(),
+                     [&](const EnEntry& e) { return EnHitKind(e, msg).kind != Hit::None; });
 }
 
 } // namespace pbr
