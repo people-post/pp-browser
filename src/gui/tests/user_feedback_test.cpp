@@ -10,6 +10,8 @@ class AppErrorTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
     ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    // The expected strings are English; a Chinese OS would otherwise pick zh-Hans.
+    pbr::LocalizationService::Instance().SetPreferredLanguage("en");
   }
 };
 
