@@ -18,6 +18,10 @@
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/people/ContactIdentity.h"
+#include "lib/people/DirectoryHitRank.h"
+#include "lib/people/PeopleLookupFailure.h"
+#include "gui/contacts/AddFromSearchDecision.h"
+#include "foundation/error/AppError.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
@@ -877,6 +881,32 @@ bool ContactsController::FlushSelectedContact() {
   return true;
 }
 
+// The contact already holding this account id, if any (scans the store's list; no separate index exists).
+std::optional<Contact> ContactsController::FindContactByAccount(const std::string& account_id) const {
+  if (account_id.empty() || !contacts_ports_.list_contacts) {
+    return std::nullopt;
+  }
+  auto all = contacts_ports_.list_contacts();
+  if (!all) {
+    return std::nullopt;
+  }
+  for (const Contact& contact : *all) {
+    if (ContactAccountId(contact) == account_id) {
+      return contact;
+    }
+  }
+  return std::nullopt;
+}
+
+// Already in the contacts: say so and show them; nothing is added or changed.
+void ContactsController::ShowAlreadyContact(const Contact& contact) {
+  SyncFromStore();
+  OnSelectContact(contact.id);
+  const std::string name = !contact.display_name.empty() ? contact.display_name : contact.server_nickname;
+  ShowToast(Tr("contacts.already_contact", {{"name", name}}));
+  NotifySurfaceChanged();
+}
+
 void ContactsController::OnAddContactMenu(ui::Event& ev) {
   const ui::Vector2i position = MenuPositionBelowEvent(ev);
 
@@ -934,6 +964,12 @@ void ContactsController::AddContactByQuery(const std::string& query) {
   }
   // A pasted invite names the person and their devices: no directory needed (ACCOUNT_CARD.md).
   if (query.find(kContactLocatorPrefix) != std::string::npos && contacts_ports_.add_from_locator) {
+    if (auto locator = FindContactLocator(query)) {
+      if (auto known = FindContactByAccount(locator->account_id)) {
+        ShowAlreadyContact(*known);
+        return;
+      }
+    }
     contacts_ports_.add_from_locator(query, [](Roe<std::pair<std::string, bool>> added) {
       AppRuntime::PostUI([added = std::move(added)]() { ContactsController::Instance().OnAddedFromInvite(added); });
     });
@@ -953,6 +989,13 @@ void ContactsController::AddContactByQuery(const std::string& query) {
 void ContactsController::OfferInvite(const std::string& link) {
   auto locator = FindContactLocator(link);
   if (!locator) {
+    return;
+  }
+  if (auto known = FindContactByAccount(locator->account_id)) {
+    if (shell_navigation_.select_nav_tab) {
+      shell_navigation_.select_nav_tab(NavTab::Contacts);
+    }
+    ShowAlreadyContact(*known);
     return;
   }
   const std::string name = locator->nickname.empty() ? locator->account_id : locator->nickname;
@@ -993,9 +1036,14 @@ void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool
 }
 
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
-  (void)query;
   if (!hits) {
-    UserFeedback::Fail(hits.error().message.empty() ? Tr("contacts.err.add") : hits.error().message);
+    // Not-found never arrives as an error: SearchDirectoryPeople turns it into an empty hit list.
+    if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
+      UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
+    } else {
+      log().warning << "People lookup failed: " << AppError::Log(hits.error());
+      UserFeedback::Fail(Tr("contacts.err.add"));
+    }
     return;
   }
   if (hits->empty()) {
@@ -1003,7 +1051,30 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
     return;
   }
   if (hits->size() == 1) {
-    AddContactFromHit(hits->front());
+    const mesh::DirectoryHit& hit = hits->front();
+    const std::string account = PrimaryAccountIdFromHit(hit).value_or("");
+    // A relay-only hit has no account id: show its relay id in the dialog and skip the known-contact check.
+    const std::string shown_id = !account.empty() ? account : PrimaryRelayIdFromHit(hit).value_or("");
+    std::optional<Contact> known = account.empty() ? std::nullopt : FindContactByAccount(account);
+    switch (DecideAddFromSearch(HitMatchesExactPeopleId(hit, query), known.has_value())) {
+    case AddFromSearchDecision::AlreadyContact:
+      ShowAlreadyContact(*known);
+      return;
+    case AddFromSearchDecision::ConfirmByName: {
+      const std::string name = !hit.display_name.empty() ? hit.display_name : hit.nickname;
+      ShowConfirm(Tr("contacts.confirm_add_title"),
+                  Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortRelayId(shown_id)}}),
+                  [hit](const bool ok) {
+                    if (ok) {
+                      ContactsController::Instance().AddContactFromHit(hit);
+                    }
+                  });
+      return;
+    }
+    case AddFromSearchDecision::AddDirect:
+      AddContactFromHit(hit);
+      return;
+    }
     return;
   }
   // Several people match: pick one (name · short id). The hits are ranked, exact matches first,
@@ -1018,7 +1089,16 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
     const std::string id = PrimaryAccountIdFromHit(hit).value_or(PrimaryRelayIdFromHit(hit).value_or(""));
     const std::string label = id.empty() ? name : name + " · " + ShortRelayId(id);
     actions.push_back({"add_hit_" + hit.hit_id, label, nullptr,
-                       [hit]() { ContactsController::Instance().AddContactFromHit(hit); }, "../icons/contacts.svg"});
+                       [hit]() {
+                         ContactsController& self = ContactsController::Instance();
+                         const std::string account = PrimaryAccountIdFromHit(hit).value_or("");
+                         if (std::optional<Contact> known = account.empty() ? std::nullopt : self.FindContactByAccount(account)) {
+                           self.ShowAlreadyContact(*known);
+                           return;
+                         }
+                         self.AddContactFromHit(hit);
+                       },
+                       "../icons/contacts.svg"});
   }
   actions.push_back({"add_cancel", Tr("common.cancel"), nullptr, []() {}});
   ContextMenuHost::Instance().ShowActions(ui::Vector2i(160, 120), std::move(actions));

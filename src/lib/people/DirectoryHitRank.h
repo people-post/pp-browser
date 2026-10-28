@@ -4,7 +4,9 @@
 #include "common/MeshAlias.h"
 #include "common/PbrCompat.h"
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pbr {
@@ -16,7 +18,19 @@ namespace pbr {
  */
 void RankDirectoryHits(std::vector<mesh::DirectoryHit>& hits, const std::string& query);
 
-/** "account:…" / "relay:…" — a full id the directory can look up exactly instead of searching. */
-bool LooksLikeExactPeopleId(const std::string& query);
+/**
+ * Canonical exact-lookup id for a query: trims whitespace; "account:…" / "relay:…" kept as is; a bare
+ * 43-char base64url token (an account id without its prefix) becomes "account:" + token; else nullopt.
+ */
+std::optional<std::string> NormalizeExactPeopleId(std::string_view query);
+
+/** True when the trimmed query starts with "account:" / "relay:" (typed by the user, not a synthesized bare token). */
+bool HasExactIdPrefix(std::string_view query);
+
+/**
+ * True when `query` is an exact id and `hit` carries that id (account_id or any of its ids). A bare token
+ * that fell through to a name search and matched a nickname is not an exact match.
+ */
+bool HitMatchesExactPeopleId(const mesh::DirectoryHit& hit, std::string_view query);
 
 } // namespace pbr

@@ -6,6 +6,7 @@
 #include "common/Value.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -37,12 +38,10 @@ struct PeopleDiscoveryLabels {
   std::string refine_label = "Refine search…";
   std::string refine_message = "Search for someone more specifically by nickname or account id";
   std::string found_one = "Found 1 person on the network:";
-  std::string found_many_paged = "Found {count} people — showing {from}–{to}:";
   std::string show_more_label = "Show more ({rest} left)";
   std::string show_more_message = "Show the next people";
   std::string found_many = "Found {count} people on the network:";
   std::string results_title = "Search results";
-  std::string results_title_partial = "Search results (partial)";
   std::string local_one = "1 local contact:";
   std::string local_many_partial = "{count} local contacts — showing the first {shown}.";
   std::string local_many = "Your local contacts ({count}):";
@@ -57,13 +56,18 @@ struct PeopleDiscoveryBuildOptions {
   std::unordered_set<std::string> known_local_identity_values;
   /** Local user identities — matching directory hits are omitted entirely. */
   std::unordered_set<std::string> self_identity_values;
-  /** Cap visible directory / contact rows; remainder noted in footer. */
+  /**
+   * Rows shown at first, and how many more each "show more" reveals. A directory list carries every hit
+   * and shows its first `visible`; a contacts list is cut here (remainder noted in its footer).
+   */
   size_t max_visible_items = 10;
-  /** Directory rows start here (a "show more" page); 0 = first page. */
-  size_t offset = 0;
-  /** The search the hits came from: "show more" re-runs it from the next offset. */
-  std::string query;
 };
+
+/**
+ * `type` of the local footer action that shows more rows of a long_list in place:
+ * `{"type":"show_more_rows","block":<index in blocks[]>,"step":<rows>}`. No turn, no network.
+ */
+inline constexpr const char* kShowMoreRowsActionType = "show_more_rows";
 
 /** account_id / relay_user_id / peer_id from local identity (non-empty only). */
 std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity& identity);
@@ -79,6 +83,16 @@ void SetPersonAvatarFields(pp::common::Object& item, const std::string& display_
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>& directory_hits,
                                            const std::vector<PeopleDiscoveryContactView>& contacts,
                                            const PeopleDiscoveryBuildOptions& options = {});
+
+/**
+ * Shows `step` more rows of a long_list block (its `visible` grows, capped at its rows). The "show more"
+ * footer then names the new remainder, or is dropped once every row shows. False when nothing was hidden.
+ */
+bool RevealMoreRows(::pp::common::Object& block, size_t step, const PeopleDiscoveryLabels& labels = {});
+
+/** RevealMoreRows on `blocks[block_index]` of a blocks JSON document: the updated document, or nullopt. */
+std::optional<std::string> RevealMoreRowsInBlocksJson(const std::string& blocks_json, size_t block_index,
+                                                      size_t step, const PeopleDiscoveryLabels& labels = {});
 
 // If raw text is a directory-hits or contacts JSON array, build blocks JSON; otherwise empty.
 std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,

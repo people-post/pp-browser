@@ -33,13 +33,56 @@ void RankDirectoryHits(std::vector<mesh::DirectoryHit>& hits, const std::string&
   std::stable_sort(hits.begin(), hits.end(), [&](const mesh::DirectoryHit& a, const mesh::DirectoryHit& b) {
     const int ra = std::min(MatchRank(a.nickname, query_lower), MatchRank(a.display_name, query_lower));
     const int rb = std::min(MatchRank(b.nickname, query_lower), MatchRank(b.display_name, query_lower));
-    return ra < rb;
+    if (ra != rb) {
+      return ra < rb;
+    }
+    // Final tie-break: account id ascending, hits without one last, so the order is deterministic.
+    const bool ha = a.account_id.has_value() && !a.account_id->empty();
+    const bool hb = b.account_id.has_value() && !b.account_id->empty();
+    if (ha != hb) {
+      return ha;
+    }
+    return ha && *a.account_id < *b.account_id;
   });
 }
 
-bool LooksLikeExactPeopleId(const std::string& query) {
-  const std::string q = util::Trim(query);
+std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
+  const std::string q = util::Trim(std::string(query));
+  if (q.rfind("account:", 0) == 0 || q.rfind("relay:", 0) == 0) {
+    return q;
+  }
+  if (q.size() != 43) {
+    return std::nullopt;
+  }
+  for (const char ch : q) {
+    const bool ok = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' ||
+                    ch == '-';
+    if (!ok) {
+      return std::nullopt;
+    }
+  }
+  return "account:" + q;
+}
+
+bool HasExactIdPrefix(std::string_view query) {
+  const std::string q = util::Trim(std::string(query));
   return q.rfind("account:", 0) == 0 || q.rfind("relay:", 0) == 0;
+}
+
+bool HitMatchesExactPeopleId(const mesh::DirectoryHit& hit, std::string_view query) {
+  const std::optional<std::string> exact = NormalizeExactPeopleId(query);
+  if (!exact) {
+    return false;
+  }
+  if (hit.account_id && *hit.account_id == *exact) {
+    return true;
+  }
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.value == *exact) {
+      return true;
+    }
+  }
+  return false;
 }
 
 } // namespace pbr

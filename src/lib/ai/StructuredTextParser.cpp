@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <regex>
+#include <span>
 #include <sstream>
 #include "common/PbrCompat.h"
 
@@ -571,6 +572,14 @@ ParseResult RenderLongListItem(ParseResult& parent, const Object& item) {
   return result;
 }
 
+// A long_list may carry more rows than it shows: only the first `visible` render (a "show more" footer
+// action raises it in place). Without `visible` every row shows.
+std::span<const Value> VisibleLongListItems(const Object& block) {
+  const std::vector<Value>& items = block.getArray("items")->elements;
+  const size_t visible = std::min<size_t>(block.getNonNegInt("visible").value_or(items.size()), items.size());
+  return std::span<const Value>(items.data(), visible);
+}
+
 ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
   if (!block.getArray("items")) {
     return BlockError("long_list block requires items array");
@@ -582,7 +591,7 @@ ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
     out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(*block.getString("title")) << "</p>";
   }
   out << "<div class=\"chat-long-list-scroll\">";
-  for (const Value& item_value : block.getArray("items")->elements) {
+  for (const Value& item_value : VisibleLongListItems(block)) {
     const Object* item = asObject(item_value);
     if (!item || !item->getString("title")) {
       return BlockError("long_list items require title");
@@ -624,7 +633,7 @@ ParseResult ParseLongListArtifact(const Object& block, ParseResult& parent) {
     out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(*block.getString("title")) << "</p>";
   }
   out << "<div class=\"working-set-long-list-body\">";
-  for (const Value& item_value : block.getArray("items")->elements) {
+  for (const Value& item_value : VisibleLongListItems(block)) {
     const Object* item = asObject(item_value);
     if (!item || !item->getString("title")) {
       return BlockError("long_list items require title");

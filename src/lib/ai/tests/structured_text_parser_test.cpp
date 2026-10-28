@@ -288,6 +288,25 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   ASSERT_TRUE(!long_list_missing_items_result.ok);
 }
 
+TEST(StructuredTextParserTest, LongListRendersOnlyItsVisibleRows) {
+  const std::string blocks = R"json({"blocks":[{"type":"long_list","title":"People","visible":2,"items":[
+    {"title":"Row A","actions":[{"label":"Add","message":"Add A"}]},
+    {"title":"Row B","actions":[{"label":"Add","message":"Add B"}]},
+    {"title":"Row C","actions":[{"label":"Add","message":"Add C"}]}],
+    "footer_actions":[{"label":"Show more (1 left)","message":"Show more",
+                       "payload":{"type":"show_more_rows","block":0,"step":10}}]}]})json";
+  const auto result = pbr::StructuredTextParser::ParseBlocksJson(blocks, pbr::ResponseGoal::PeopleDiscovery);
+  ASSERT_TRUE(result.ok) << result.error;
+  ASSERT_EQ(result.working_set_candidates.size(), 1u);
+  const std::string& panel = result.working_set_candidates[0].artifact_rml;
+  EXPECT_NE(panel.find("Row A"), std::string::npos);
+  EXPECT_NE(panel.find("Row B"), std::string::npos);
+  EXPECT_EQ(panel.find("Row C"), std::string::npos) << "hidden until show more";
+  EXPECT_NE(panel.find("Show more (1 left)"), std::string::npos);
+  ASSERT_EQ(result.chat_actions.size(), 3u) << "two visible rows + the footer action";
+  EXPECT_NE(result.chat_actions[2].payload.value_or("").find("show_more_rows"), std::string::npos);
+}
+
 TEST(StructuredTextParserTest, BoundsRenderedRmlAtConfiguredLimit) {
   const std::string empty_paragraph = R"({"blocks":[{"type":"paragraph","text":""}]})";
   const auto empty_result = pbr::StructuredTextParser::ParseBlocksJson(empty_paragraph);
@@ -399,7 +418,7 @@ TEST(StructuredTextParserTest, FormIdMustBeAPlainToken) {
 // peer's keys). From the model only `open_url` and tool payloads survive; locally built blocks keep theirs.
 TEST(StructuredTextParserTest, ModelOutputMayNotCarryPrivilegedPayloads) {
   const std::string blocks = R"({"blocks":[
-    {"type":"button","label":"Add","message":"add","payload":{"type":"add_contact","directory_hit":{"hit_id":"h","account_id":"account:x"}}},
+    {"type":"button","label":"Add","message":"add","payload":{"type":"add_contact","account_id":"account:x","hit_id":"h"}},
     {"type":"button","label":"Open","message":"open","payload":{"type":"open_url","url":"https://example.com/"}},
     {"type":"button","label":"More","message":"more","payload":{"tool":"blog_articles","args":{"page":2}}},
     {"type":"action_list","items":[{"title":"t","actions":[{"label":"Reg","message":"reg","payload":{"type":"register_user"}}]}]},

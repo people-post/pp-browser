@@ -294,6 +294,7 @@ private:
     }
   }
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
+  bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
 };
 

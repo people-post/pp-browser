@@ -1,6 +1,7 @@
 #include "common/chat/PeopleDiscoveryBlocks.h"
 
 #include <gtest/gtest.h>
+#include "common/chat/MessagingLimits.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -49,6 +50,46 @@ TEST(PeopleDiscoveryBlocksTest, DirectoryHitUsesIdentityAndPrimaryAdd) {
   EXPECT_EQ(item->getString("title").value_or(""), "Alice Example");
   EXPECT_EQ(item->getString("subtitle").value_or(""), "~alice · @account:alice123");
   EXPECT_FALSE(item->getString("meta").has_value());
+}
+
+TEST(PeopleDiscoveryBlocksTest, RowActionsNameThePersonOnly) {
+  mesh::DirectoryHit hit;
+  hit.hit_id = "hit_alice";
+  hit.display_name = "Alice Example";
+  hit.nickname = "alice";
+  hit.account_id = "account:alice123";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:alice123", true}};
+  hit.signing_public_key_b64 = "SIGNKEY";
+  hit.kem_public_key_b64 = "KEMKEY";
+  hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = "QmPeer"});
+
+  const Object list = [&] {
+    auto doc = TryParseObject(BuildPeopleDiscoveryBlocksJson({hit}, {}));
+    const Array* blocks = doc ? doc->getArray("blocks") : nullptr;
+    const Object* block = blocks && blocks->elements.size() > 1 ? asObject(blocks->elements[1]) : nullptr;
+    return block ? *block : Object{};
+  }();
+  const Array* items = list.getArray("items");
+  ASSERT_NE(items, nullptr);
+  ASSERT_EQ(items->elements.size(), 1u);
+  const Array* actions = asObject(items->elements[0])->getArray("actions");
+  ASSERT_NE(actions, nullptr);
+  ASSERT_EQ(actions->elements.size(), 2u);
+  const char* const types[] = {"add_contact", "start_conversation"};
+  for (size_t i = 0; i < 2; ++i) {
+    const Object* payload = asObject(actions->elements[i])->getObject("payload");
+    ASSERT_NE(payload, nullptr);
+    EXPECT_EQ(payload->getString("type").value_or(""), types[i]);
+    EXPECT_EQ(payload->getString("account_id").value_or(""), "account:alice123");
+    EXPECT_EQ(payload->getString("hit_id").value_or(""), "hit_alice");
+    EXPECT_EQ(payload->getString("nickname").value_or(""), "alice");
+    EXPECT_EQ(payload->getString("display_name").value_or(""), "Alice Example");
+    EXPECT_FALSE(payload->contains("directory_hit"));
+    const std::string dumped = DumpJson(*payload);
+    EXPECT_EQ(dumped.find("SIGNKEY"), std::string::npos) << dumped;
+    EXPECT_EQ(dumped.find("KEMKEY"), std::string::npos) << dumped;
+    EXPECT_EQ(dumped.find("QmPeer"), std::string::npos) << dumped;
+  }
 }
 
 TEST(PeopleDiscoveryBlocksTest, AlreadyContactPrefersMessageAndMeta) {
@@ -100,9 +141,9 @@ TEST(PeopleDiscoveryBlocksTest, ContactRowShowsRemarkWithNicknameSmallOrJustTheN
   EXPECT_EQ(without.getString("subtitle").value_or("").find("~Alice"), std::string::npos);
 }
 
-TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
+std::vector<mesh::DirectoryHit> NumberedHits(const int count) {
   std::vector<mesh::DirectoryHit> hits;
-  for (int i = 0; i < 15; ++i) {
+  for (int i = 0; i < count; ++i) {
     mesh::DirectoryHit hit;
     hit.hit_id = "hit_" + std::to_string(i);
     hit.display_name = "Person " + std::to_string(i);
@@ -110,48 +151,94 @@ TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
     hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:p" + std::to_string(i), true}};
     hits.push_back(std::move(hit));
   }
-
-  PeopleDiscoveryBuildOptions options;
-  options.max_visible_items = 10;
-  const std::string blocks = BuildPeopleDiscoveryBlocksJson(hits, {}, options);
-  EXPECT_NE(blocks.find("Found 15 people"), std::string::npos);
-  EXPECT_NE(blocks.find("Refine search"), std::string::npos);
-  EXPECT_NE(blocks.find("Show more (5 left)"), std::string::npos);
-  EXPECT_NE(blocks.find("Person 0"), std::string::npos);
-  EXPECT_NE(blocks.find("Person 9"), std::string::npos);
-  EXPECT_EQ(blocks.find("Person 10"), std::string::npos);
+  return hits;
 }
 
-TEST(PeopleDiscoveryBlocksTest, APageShowsItsRowsAndOffersTheNextPage) {
-  std::vector<mesh::DirectoryHit> hits;
-  for (int i = 0; i < 17; ++i) {
-    mesh::DirectoryHit hit;
-    hit.hit_id = "hit_" + std::to_string(i);
-    hit.display_name = "Person " + std::to_string(i);
-    hit.nickname = "p" + std::to_string(i);
-    hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:p" + std::to_string(i), true}};
-    hits.push_back(std::move(hit));
-  }
-  PeopleDiscoveryBuildOptions first;
-  first.max_visible_items = 10;
-  first.query = "person";
-  const std::string page1 = BuildPeopleDiscoveryBlocksJson(hits, {}, first);
-  EXPECT_NE(page1.find("Found 17 people — showing 1–10:"), std::string::npos) << page1;
-  EXPECT_NE(page1.find("Show more (7 left)"), std::string::npos) << page1;
-  EXPECT_NE(page1.find("\"tool\":\"search_people\""), std::string::npos) << page1;
-  EXPECT_NE(page1.find("\"offset\":10"), std::string::npos) << page1;
-  EXPECT_NE(page1.find("\"query\":\"person\""), std::string::npos) << page1;
-  EXPECT_EQ(page1.find("Person 10"), std::string::npos);
+Object ListBlock(const std::string& blocks_json) {
+  auto doc = TryParseObject(blocks_json);
+  EXPECT_TRUE(doc.has_value()) << blocks_json;
+  const Array* blocks = doc ? doc->getArray("blocks") : nullptr;
+  EXPECT_NE(blocks, nullptr);
+  EXPECT_EQ(blocks ? blocks->elements.size() : 0u, 2u);
+  const Object* list = blocks && blocks->elements.size() > 1 ? asObject(blocks->elements[1]) : nullptr;
+  EXPECT_NE(list, nullptr);
+  return list ? *list : Object{};
+}
 
-  PeopleDiscoveryBuildOptions second = first;
-  second.offset = 10;
-  const std::string page2 = BuildPeopleDiscoveryBlocksJson(hits, {}, second);
-  EXPECT_NE(page2.find("Found 17 people — showing 11–17:"), std::string::npos) << page2;
-  EXPECT_NE(page2.find("Person 10"), std::string::npos);
-  EXPECT_NE(page2.find("Person 16"), std::string::npos);
-  EXPECT_EQ(page2.find("Person 9\""), std::string::npos);
-  EXPECT_EQ(page2.find("Show more"), std::string::npos) << "last page";
-  EXPECT_EQ(page2.find("Refine search"), std::string::npos) << "last page";
+TEST(PeopleDiscoveryBlocksTest, LongResultsCarryEveryRowAndShowMoreInPlace) {
+  PeopleDiscoveryBuildOptions options;
+  options.max_visible_items = 10;
+  const std::string blocks = BuildPeopleDiscoveryBlocksJson(NumberedHits(17), {}, options);
+  EXPECT_NE(blocks.find("Found 17 people on the network:"), std::string::npos) << blocks;
+
+  const Object list = ListBlock(blocks);
+  EXPECT_EQ(list.getString("title").value_or(""), "Search results");
+  ASSERT_NE(list.getArray("items"), nullptr);
+  EXPECT_EQ(list.getArray("items")->elements.size(), 17u);
+  EXPECT_EQ(list.getNonNegInt("visible").value_or(0), 10u);
+
+  const Array* footer = list.getArray("footer_actions");
+  ASSERT_NE(footer, nullptr);
+  ASSERT_EQ(footer->elements.size(), 1u) << "show more only, no refine next to it";
+  const Object* more = asObject(footer->elements[0]);
+  ASSERT_NE(more, nullptr);
+  EXPECT_EQ(more->getString("label").value_or(""), "Show more (7 left)");
+  const Object* payload = more->getObject("payload");
+  ASSERT_NE(payload, nullptr);
+  EXPECT_EQ(payload->getString("type").value_or(""), kShowMoreRowsActionType);
+  EXPECT_EQ(payload->getNonNegInt("block").value_or(99), 1u);
+  EXPECT_EQ(payload->getNonNegInt("step").value_or(0), 10u);
+  EXPECT_FALSE(payload->contains("tool")) << "local action, not a new turn";
+  EXPECT_EQ(blocks.find("Refine search"), std::string::npos);
+}
+
+TEST(PeopleDiscoveryBlocksTest, RevealMoreRowsGrowsVisibleThenDropsTheFooter) {
+  PeopleDiscoveryBuildOptions options;
+  options.max_visible_items = 10;
+  const std::string blocks = BuildPeopleDiscoveryBlocksJson(NumberedHits(27), {}, options);
+
+  auto step1 = RevealMoreRowsInBlocksJson(blocks, 1, 10);
+  ASSERT_TRUE(step1.has_value());
+  Object list = ListBlock(*step1);
+  EXPECT_EQ(list.getNonNegInt("visible").value_or(0), 20u);
+  ASSERT_NE(list.getArray("footer_actions"), nullptr);
+  ASSERT_EQ(list.getArray("footer_actions")->elements.size(), 1u);
+  const Object* more = asObject(list.getArray("footer_actions")->elements[0]);
+  ASSERT_NE(more, nullptr);
+  EXPECT_EQ(more->getString("label").value_or(""), "Show more (7 left)");
+  ASSERT_NE(more->getObject("payload"), nullptr);
+  EXPECT_EQ(more->getObject("payload")->getNonNegInt("block").value_or(99), 1u);
+
+  auto step2 = RevealMoreRowsInBlocksJson(*step1, 1, 10);
+  ASSERT_TRUE(step2.has_value());
+  list = ListBlock(*step2);
+  EXPECT_EQ(list.getNonNegInt("visible").value_or(0), 27u);
+  EXPECT_FALSE(list.contains("footer_actions")) << "everything shows: no footer";
+
+  EXPECT_FALSE(RevealMoreRowsInBlocksJson(*step2, 1, 10).has_value()) << "nothing left to reveal";
+  EXPECT_FALSE(RevealMoreRowsInBlocksJson(blocks, 0, 10).has_value()) << "block 0 is the paragraph";
+  EXPECT_FALSE(RevealMoreRowsInBlocksJson(blocks, 5, 10).has_value()) << "no such block";
+}
+
+TEST(PeopleDiscoveryBlocksTest, RevealMoreRowsOnSeventeenHits) {
+  PeopleDiscoveryBuildOptions options;
+  options.max_visible_items = 10;
+  Object list = ListBlock(BuildPeopleDiscoveryBlocksJson(NumberedHits(17), {}, options));
+  EXPECT_TRUE(RevealMoreRows(list, 10));
+  EXPECT_EQ(list.getNonNegInt("visible").value_or(0), 17u);
+  EXPECT_FALSE(list.contains("footer_actions"));
+  EXPECT_FALSE(RevealMoreRows(list, 10));
+}
+
+TEST(PeopleDiscoveryBlocksTest, ShortResultsHaveNoFooter) {
+  const std::string blocks = BuildPeopleDiscoveryBlocksJson(NumberedHits(5), {});
+  const Object list = ListBlock(blocks);
+  ASSERT_NE(list.getArray("items"), nullptr);
+  EXPECT_EQ(list.getArray("items")->elements.size(), 5u);
+  EXPECT_EQ(list.getNonNegInt("visible").value_or(0), 5u);
+  EXPECT_FALSE(list.contains("footer_actions"));
+  EXPECT_EQ(blocks.find("Show more"), std::string::npos);
+  EXPECT_EQ(blocks.find("Refine search"), std::string::npos);
 }
 
 TEST(PeopleDiscoveryBlocksTest, DropsSelfIdentityHits) {
@@ -213,3 +300,62 @@ TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
 }
 
 } // namespace
+
+// Size probe (2026-10-24): a directory hit carries ML-DSA-65 / ML-KEM-768 keys and a binding signature; the
+// list stores every hit in the message text, which the thread store caps at kMaxComposeTextBytes. Row actions
+// therefore name the person only; the keys are looked up when Add / Message is used.
+TEST(PeopleDiscoveryBlocksTest, SeventeenKeyedHitsFitTheStoredMessage) {
+  std::vector<mesh::DirectoryHit> hits;
+  for (int i = 0; i < 17; ++i) {
+    mesh::DirectoryHit hit;
+    hit.hit_id = "hit_" + std::to_string(i);
+    hit.display_name = "Person " + std::to_string(i);
+    hit.nickname = "person" + std::to_string(i);
+    hit.account_id = "account:" + std::string(43, 'A' + (i % 26));
+    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true},
+               {mesh::ContactIdKind::RelayUser, "relay:" + std::string(16, 'r'), false}};
+    hit.signing_public_key_b64 = std::string(2604, 'S');  // ML-DSA-65 public key, base64
+    hit.kem_public_key_b64 = std::string(1580, 'K');      // ML-KEM-768 public key, base64
+    hit.kem_binding_signature_b64 = std::string(4412, 'B');
+    hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = "Qm" + std::string(44, 'p')});
+    hits.push_back(hit);
+  }
+  const std::string json = pbr::BuildPeopleDiscoveryBlocksJson(hits, {}, pbr::PeopleDiscoveryBuildOptions{});
+  EXPECT_LE(json.size(), pbr::kMaxComposeTextBytes) << "list json bytes=" << json.size();
+  EXPECT_EQ(json.find("signing_public_key_b64"), std::string::npos);
+  EXPECT_EQ(json.find("directory_hit"), std::string::npos);
+}
+
+// A result set over the list cap is cut and says so (a refine action), never past kMaxComposeTextBytes.
+TEST(PeopleDiscoveryBlocksTest, ThreeHundredKeyedHitsStayUnderTheStoreLimitAndOfferRefine) {
+  std::vector<mesh::DirectoryHit> hits;
+  for (int i = 0; i < 300; ++i) {
+    mesh::DirectoryHit hit;
+    hit.hit_id = "hit_" + std::to_string(i);
+    hit.display_name = "Person " + std::to_string(i);
+    hit.nickname = "person" + std::to_string(i);
+    hit.account_id = "account:" + std::string(43, 'A' + (i % 26));
+    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true},
+               {mesh::ContactIdKind::RelayUser, "relay:" + std::string(16, 'r'), false}};
+    hit.signing_public_key_b64 = std::string(2604, 'S');
+    hit.kem_public_key_b64 = std::string(1580, 'K');
+    hit.kem_binding_signature_b64 = std::string(4412, 'B');
+    hits.push_back(hit);
+  }
+  const pbr::PeopleDiscoveryBuildOptions options;
+  const std::string json = pbr::BuildPeopleDiscoveryBlocksJson(hits, {}, options);
+  EXPECT_LE(json.size(), pbr::kMaxComposeTextBytes) << "list json bytes=" << json.size();
+  EXPECT_NE(json.find(options.labels.refine_label), std::string::npos);
+  EXPECT_NE(json.find("Show more (90 left)"), std::string::npos);
+  EXPECT_EQ(json.find("hit_100\""), std::string::npos);
+
+  // Revealing every cut-off-free row leaves the refine action, drops show-more.
+  std::string current = json;
+  for (int i = 0; i < 9; ++i) {
+    auto next = pbr::RevealMoreRowsInBlocksJson(current, 1, 10, options.labels);
+    ASSERT_TRUE(next.has_value());
+    current = *next;
+  }
+  EXPECT_EQ(current.find("show_more_rows"), std::string::npos);
+  EXPECT_NE(current.find(options.labels.refine_label), std::string::npos);
+}

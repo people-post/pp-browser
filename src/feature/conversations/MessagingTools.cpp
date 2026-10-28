@@ -78,10 +78,6 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
   {
     Object properties;
     properties.set("query", StringProp("Search query"));
-    Object offset;
-    offset.set("type", "integer");
-    offset.set("description", "Skip this many ranked results (paging); the client renders from here");
-    properties.set("offset", offset);
     tools.push_back(MakeTool(
       ToolDefinition{"search_people", "Find people to view or add as contacts. Search by name or nickname; a full account id (account:…) or relay id (relay:…) is looked up exactly. Show matching people so the user can choose Add contact.", ObjectSchema(std::move(properties), {"query"})},
       Meta("people", "read", false),

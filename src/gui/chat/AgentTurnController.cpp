@@ -1,5 +1,8 @@
 #include "gui/chat/AgentTurnController.h"
 #include "lib/ai/WorkingSetPolicy.h"
+#include "lib/ai/LocalizedLabels.h"
+#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/ValueJson.h"
 
 #include <chrono>
 #include <thread>
@@ -613,6 +616,16 @@ void AgentTurnController::SendChatAction(const std::string& entry_id, int action
     return;
   }
 
+  // "Show more" of a people list reveals more rows of the same list in place: no new turn, no network.
+  // Deferred like the actions below: the re-render replaces the button that was clicked.
+  if (const auto payload = resolved->payload ? TryParseObject(*resolved->payload) : std::nullopt;
+      payload && payload->getString("type").value_or("") == kShowMoreRowsActionType) {
+    const size_t block_index = payload->getNonNegInt("block").value_or(0);
+    const size_t step = payload->getNonNegInt("step").value_or(0);
+    AppRuntime::PostUI([this, entry_id, block_index, step]() { ShowMoreRows(entry_id, block_index, step); });
+    return;
+  }
+
   // Copy by value: layout-mutating actions close the working set / remount panes. Doing that
   // synchronously destroys the click target and leaves RmlUi data views with dangling aliases
   // ("Variable address not found" → segfault). Defer like SettingsController section open.
@@ -625,6 +638,61 @@ void AgentTurnController::SendChatAction(const std::string& entry_id, int action
     }
     host_.HandleLocalAction(action_message, action_payload);
   });
+}
+
+void AgentTurnController::ShowMoreRows(const std::string& entry_id, const size_t block_index, const size_t step) {
+  if (chat_.loading || !host_.MessagingIsReady()) {
+    return;
+  }
+  const std::string thread_id = host_.ActiveThreadId();
+  auto found = host_.Facade()->GetMessage(thread_id, entry_id);
+  if (!found || !found->has_value()) {
+    return;
+  }
+  ThreadMessage message = **found;
+  auto expanded = RevealMoreRowsInBlocksJson(message.text, block_index, step, LocalizedPeopleDiscoveryLabels());
+  if (!expanded) {
+    log().warning << "Show more: no hidden rows in entry=" << entry_id << " block=" << block_index;
+    return;
+  }
+  if (expanded->size() > kMaxComposeTextBytes) {
+    log().warning << "Show more: expanded text too large for the store, entry=" << entry_id;
+    return;
+  }
+  const ParseResult parsed =
+      StructuredTextParser::ParseBlocksJson(*expanded, InferResponseGoalFromBlocksJson(*expanded));
+  if (!parsed.ok) {
+    log().warning << "Show more: re-render failed for entry=" << entry_id << ": " << parsed.error;
+    return;
+  }
+
+  // Re-render this message only, as FinishAssistantReply stored it (bubble, actions, panel snapshot); the
+  // stored document carries the new `visible`, so the expansion survives a restart. No turn, no preview.
+  std::vector<TranscriptChatAction> chat_actions;
+  chat_actions.reserve(parsed.chat_actions.size());
+  for (const ParsedChatAction& action : parsed.chat_actions) {
+    chat_actions.push_back({action.label, action.message, action.payload});
+  }
+  const std::vector<WorkingSetCandidate> candidates =
+      working_set_.HydrateCandidates(parsed.working_set_candidates, entry_id);
+  std::string hydrated = InjectEntryPlaceholders(parsed.rml, entry_id);
+  if (candidates.empty()) {
+    hydrated = HydrateChatActionButtons(hydrated, chat_actions);
+  }
+  message.text = std::move(*expanded);
+  message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", message.text) +
+                        R"( selectable="text">)" + hydrated + "</div>";
+  message.chat_actions = chat_actions;
+  message.working_set_json =
+      candidates.empty() ? std::nullopt : std::optional<std::string>(WorkingSetCandidatesToJson(candidates));
+  if (auto updated = host_.Facade()->UpdateMessage(message); !updated) {
+    log().warning << "Show more: could not store entry=" << entry_id << ": " << updated.error().message;
+    return;
+  }
+
+  working_set_.ApplyFromParse(entry_id, candidates, std::move(chat_actions));
+  host_.SyncDisplayFromThread();
+  DirtyChat();
 }
 
 void AgentTurnController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,

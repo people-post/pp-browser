@@ -166,6 +166,8 @@ public:
   void ClearFormState();
 
 private:
+  /** A people list's "show more": `step` more rows of `blocks[block_index]` of that stored reply, in place. */
+  void ShowMoreRows(const std::string& entry_id, size_t block_index, size_t step);
   void OnAssistantDelta(const AgentEvent& event);
   void FlushStreamingRow();
   void ClearStreamingRow();

@@ -1336,7 +1336,8 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
-                                                       group_membership_.get(), registration_, mesh_messaging_.get());
+                                                       group_membership_.get(), registration_, mesh_messaging_.get(),
+                                                       &directory_);
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
