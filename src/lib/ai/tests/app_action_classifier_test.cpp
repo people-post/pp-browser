@@ -246,6 +246,18 @@ TEST(AppActionClassifierTest, EnglishNegatives) {
   }
 }
 
+TEST(AppActionClassifierTest, ABareEnglishFindNameAsksTheDirectory) {
+  for (const char* message : {"find Ken", "Find Ken Lee", "look for Ken", "please find Ken", "can you find Ken", "search for Ken"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  for (const char* message : {"find news about Iran", "find out", "find something to eat", "find the best pizza place",
+                              "Find people who survived the Titanic"}) {
+    EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  // Without the tool declared the rule is off.
+  EXPECT_EQ(ClassifyAppAction("find Ken", {"get_preferences"}), std::nullopt);
+}
+
 TEST(AppActionClassifierTest, OverviewQuestions) {
   for (const char* q : {"你能做什么？", "你会做什么", "你能干什么?", "你会什么", "你能帮我做什么", "你有什么功能。", "能做什么", " 你能做什么 ",
                         "What can you do?", "what do you do", "What can you help with?", "What are you able to do?",

@@ -529,6 +529,35 @@ bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
   return true;
 }
 
+// "find Ken" / "look for Ken": the verb with a name of one or two words after it, none of them a filler or an
+// object word that makes it a different request. The span is the verb, so the planner reads the name after it.
+std::optional<AppActionSpan> EnBareFindName(const Words& msg, const SpanList& word_bytes) {
+  static const std::vector<Words> verbs = {Split("find"), Split("look for"), Split("search for")};
+  static const std::vector<std::string> stop = {"the",   "a",         "an",       "my",     "me",       "out",   "news",
+                                                "about", "it",        "this",     "that",   "some",     "what",  "who",
+                                                "where", "how",       "something", "anything", "someone", "people", "person",
+                                                "user",  "users",     "info",     "information", "chat", "chats", "conversation"};
+  bool had_starter = false;
+  const size_t pos = SkipStarters(msg, had_starter);
+  for (const Words& v : verbs) {
+    if (!WordsAt(msg, pos, v)) {
+      continue;
+    }
+    const size_t from = pos + v.size();
+    const size_t count = msg.size() - from;
+    if (count < 1 || count > 2) {
+      return std::nullopt;
+    }
+    for (size_t i = from; i < msg.size(); ++i) {
+      if (std::find(stop.begin(), stop.end(), msg[i]) != stop.end()) {
+        return std::nullopt;
+      }
+    }
+    return AppActionSpan{word_bytes[pos].first, word_bytes[from - 1].second};
+  }
+  return std::nullopt;
+}
+
 std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
   SpanList word_bytes;
   const Words msg = SplitSpans(message, &word_bytes);
@@ -560,6 +589,11 @@ std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const st
         }
         return match;
       }
+    }
+  }
+  if (std::any_of(entries.begin(), entries.end(), [](const EnEntry* e) { return e->tool == "search_people"; })) {
+    if (const auto span = EnBareFindName(msg, word_bytes)) {
+      return AppActionMatch{"search_people", {*span}};
     }
   }
   return std::nullopt;

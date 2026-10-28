@@ -107,6 +107,14 @@ TEST(LocalActionPlannerTest, SearchTakesTheTextAfterTheHit) {
   ExpectText(PlanFor("Can you look up a user called Tom?"), "search_people", "query", "Tom", "user called Tom");
 }
 
+TEST(LocalActionPlannerTest, ABareFindTakesTheName) {
+  ExpectText(PlanFor("find Ken"), "search_people", "query", "Ken", "find Ken");
+  ExpectText(PlanFor("Find Ken Lee"), "search_people", "query", "Ken Lee", "Find Ken Lee");
+  ExpectText(PlanFor("look for Ken"), "search_people", "query", "Ken", "look for Ken");
+  ExpectText(PlanFor("please find Ken"), "search_people", "query", "Ken", "please find Ken");
+  ExpectText(PlanFor("can you find Ken"), "search_people", "query", "Ken", "can you find Ken");
+}
+
 TEST(LocalActionPlannerTest, ParameterEndsAtTheStopWordAndTheRestIsNotTaken) {
   const LocalPlan p = PlanFor("搜索用户 ken，然后打开通知");
   ExpectText(p, "search_people", "query", "ken", "stop word");
