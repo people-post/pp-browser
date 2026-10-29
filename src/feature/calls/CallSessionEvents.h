@@ -76,8 +76,10 @@ struct ReleaseDirectAfterAttach {
   CallSfuAttachDetail fanout;
   bool self_hop = false;
 };
-/** The guest's re-attach backoff ended: try again. */
-struct GuestReattachRetry {};
+/** The guest's re-attach backoff ended: try again (`slow`: the steady pace past the quick attempts). */
+struct GuestReattachRetry {
+  bool slow = false;
+};
 /** A stored step's turn (a deferred step, or the circuit reach answered for a picked hop). */
 struct Continue {
   uint64_t id = 0;

@@ -988,7 +988,7 @@ void CallHopMigrateWorkflow::Handle(HopMigrateEvent& event) {
         } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectAfterAttach>) {
           ReleaseDirectSettled(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::GuestReattachRetry>) {
-          OnGuestSfuTransportLost();
+          OnGuestReattachRetry(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::Continue>) {
           steps_.Run(e.id);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::RelayAttached>) {
@@ -1089,29 +1089,67 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
   }
 }
 
-void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
+std::optional<std::string> CallHopMigrateWorkflow::GuestReattachCallId() const {
   if (!sfu_.attached || flight_.in_flight || guest_.reattach_in_flight) {
-    return;
+    return std::nullopt;
   }
   if (!relay_deps_->relay || relay_deps_->relay->IsLocalHopAttached()) {
-    return;
+    return std::nullopt;
   }
   if (!guest_.active_attach || guest_.active_call_id.empty()) {
-    return;
+    return std::nullopt;
   }
-  const std::string call_id = guest_.active_call_id;
-  if (!media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
+  if (!media_.IsSfuMode() || media_.ActiveCallId() != guest_.active_call_id) {
+    return std::nullopt;
+  }
+  return guest_.active_call_id;
+}
+
+void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
+  const std::optional<std::string> call_id = GuestReattachCallId();
+  if (!call_id) {
     return;
   }
   if (guest_.reattach_attempts >= kMaxGuestSfuReattachAttempts) {
-    log().warning << "Guest SFU reattach exhausted attempts=" << guest_.reattach_attempts
-                  << " call_id=" << call_id;
-    // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
-    // The call still reads Reconnecting (not Connected: nothing flows) until the device's network
-    // comes back or moves (OnLocalNetworkMoved tries again) or the user leaves.
-    host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+    ScheduleSlowGuestReattach(*call_id);
     return;
   }
+  StartGuestReattachAttempt(*call_id);
+}
+
+void CallHopMigrateWorkflow::ScheduleSlowGuestReattach(const std::string& call_id) {
+  if (guest_.slow_retry_pending) {
+    return;
+  }
+  log().warning << "Guest SFU reattach quick attempts spent=" << guest_.reattach_attempts << ", again every "
+                << kGuestSfuSlowRetry.count() << " ms call_id=" << call_id;
+  // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
+  // The call reads Reconnecting (not Connected: nothing flows) while the guest keeps trying at a
+  // steady pace: a phone out of coverage comes back without its network moving, and waiting for
+  // a move (OnLocalNetworkMoved) left it out of the call for good (lab: group_call_on_the_road).
+  host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+  guest_.slow_retry_pending =
+      outbox_.After(kGuestSfuSlowRetry, hop_migrate_event::GuestReattachRetry{.slow = true}) != 0;
+}
+
+void CallHopMigrateWorkflow::OnGuestReattachRetry(const hop_migrate_event::GuestReattachRetry& retry) {
+  if (retry.slow) {
+    guest_.slow_retry_pending = false;
+  }
+  // Another attach brought the transport back meanwhile: nothing to retry.
+  if (relay_deps_->relay && relay_deps_->relay->IsAttached()) {
+    return;
+  }
+  if (!retry.slow) {
+    OnGuestSfuTransportLost();
+    return;
+  }
+  if (const std::optional<std::string> call_id = GuestReattachCallId()) {
+    StartGuestReattachAttempt(*call_id);
+  }
+}
+
+void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_id) {
   ++guest_.reattach_attempts;
   guest_.reattach_in_flight = true;
   const CallSfuAttachDetail attach = *guest_.active_attach;
@@ -1148,7 +1186,7 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
     }
     log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message
                   << " call_id=" << call_id;
-    const int backoff_ms = 400 * attempt;
+    const int backoff_ms = 400 * std::min(attempt, kMaxGuestSfuReattachAttempts);
     outbox_.After(std::chrono::milliseconds(backoff_ms), hop_migrate_event::GuestReattachRetry{});
   });
 }
