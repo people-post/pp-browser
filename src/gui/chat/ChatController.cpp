@@ -2062,6 +2062,9 @@ void ChatController::ForgetComposerExtras(const std::string& key) {
   drafts_.Forget(key);
   quotes_.erase(key);
   agent_.ForgetPendingImage(key);
+  if (agent_.Ports().forget_thread) {
+    agent_.Ports().forget_thread(key); // the AI session's memory of which role answered last
+  }
 }
 
 void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {

@@ -327,6 +327,25 @@ TEST_F(AgentSessionBriefStreamTest, LocalAtAiInAChatStreamsTheQuestionOnly) {
 // A shared "@ai+" / "@ai++" streams through brief_AI like "@ai" (the brief gateway has no completions
 // route: B99). Only the question goes out; the answer is not persisted here (the chat UI renders and
 // relays it) and the ready event carries the mode so the UI knows to relay.
+TEST_F(AgentSessionBriefStreamTest, AtAiInAChatSendsThatChatsPreviousRole) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitScopedAssist("p1", "What happened in Iran?", std::nullopt, AtAiMode::Local);
+  WaitForTurn();
+  session_->SubmitScopedAssist("p1", "And their reaction?", std::nullopt, AtAiMode::Local);
+  WaitForTurn();
+  session_->SubmitScopedAssist("p2", "Weather tomorrow?", std::nullopt, AtAiMode::Local);
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 3u);
+  EXPECT_TRUE(requests[0].last_role.empty());
+  EXPECT_EQ(requests[1].last_role, "pp_news_analyst"); // same chat
+  EXPECT_TRUE(requests[2].last_role.empty()); // another chat
+}
+
 TEST_F(AgentSessionBriefStreamTest, SharedReplyAtAiStreamsThroughBriefAndLeavesRelayToTheUi) {
   Start();
   MemoryThreadStore store;
@@ -465,6 +484,108 @@ TEST_F(AgentSessionBriefStreamTest, ImageTurnHttpStatusIsMarkedForTheGui) {
   errors = Of(WaitForTurn(), AgentEventType::Error);
   ASSERT_EQ(errors.size(), 1u);
   EXPECT_TRUE(errors[0].error_kind.empty());
+}
+
+// --- The role that answered the previous turn travels back (context.last_role) ---
+
+TEST_F(AgentSessionBriefStreamTest, NextTurnInTheSameThreadSendsThePreviousRole) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "first");
+  WaitForTurn();
+  Script({Meta(), Token("b"), Done("B", "pp_assistant")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "second");
+  WaitForTurn();
+  session_->SubmitToThread("t1", "third");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 3u);
+  EXPECT_TRUE(requests[0].last_role.empty());
+  EXPECT_EQ(requests[1].last_role, "pp_news_analyst");
+  EXPECT_EQ(requests[2].last_role, "pp_assistant"); // the newest answer wins
+}
+
+TEST_F(AgentSessionBriefStreamTest, AnotherThreadDoesNotGetThePreviousRole) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "first");
+  WaitForTurn();
+  session_->SubmitToThread("t2", "elsewhere");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 2u);
+  EXPECT_TRUE(requests[1].last_role.empty());
+}
+
+TEST_F(AgentSessionBriefStreamTest, ForgettingTheThreadDropsItsRole) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "first");
+  WaitForTurn();
+  session_->ForgetThread("t1");
+  session_->SubmitToThread("t1", "after clear");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 2u);
+  EXPECT_TRUE(requests[1].last_role.empty());
+}
+
+TEST_F(AgentSessionBriefStreamTest, ErrorAndHandoffKeepThePreviousRole) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "first");
+  WaitForTurn();
+
+  Script({Meta(), ErrorEvent("boom", true)}, BriefAiOutcome::Error);
+  session_->SubmitToThread("t1", "fails");
+  WaitForTurn();
+
+  BriefAiEvent handoff;
+  handoff.type = BriefAiEvent::Type::Handoff;
+  handoff.capability = "not_declared";
+  Script({Meta(), handoff}, BriefAiOutcome::Handoff);
+  session_->SubmitToThread("t1", "handed back");
+  WaitForTurn();
+
+  Script({Meta(), Token("c"), Done("C")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "fourth");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 4u);
+  EXPECT_EQ(requests[1].last_role, "pp_news_analyst");
+  EXPECT_EQ(requests[2].last_role, "pp_news_analyst");
+  EXPECT_EQ(requests[3].last_role, "pp_news_analyst");
+}
+
+TEST_F(AgentSessionBriefStreamTest, DoneWithoutRoleClearsTheRemembered) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "first");
+  WaitForTurn();
+  Script({Meta(), Token("b"), Done("B")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "second");
+  WaitForTurn();
+  session_->SubmitToThread("t1", "third");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 3u);
+  EXPECT_EQ(requests[1].last_role, "pp_news_analyst");
+  EXPECT_TRUE(requests[2].last_role.empty());
 }
 
 TEST_F(AgentSessionBriefStreamTest, FollowUpHistoryHasMarkerAndNoImage) {

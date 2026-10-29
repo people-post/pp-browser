@@ -145,6 +145,8 @@ public:
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
   void StartNewConversation();
+  /** The thread was cleared or deleted: forget the brief_AI role that answered its last turn. Any thread. */
+  void ForgetThread(const std::string& thread_id);
 
   bool IsConfigured() const;
   const Conversation& conversation() const;

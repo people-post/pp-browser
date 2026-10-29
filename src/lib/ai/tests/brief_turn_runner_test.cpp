@@ -42,7 +42,7 @@ struct Recorder {
   std::vector<std::string> deltas;
   std::vector<std::string> statuses;
   int done = 0, handoff = 0, error = 0, cancelled = 0;
-  std::string response, finish, error_message, partial, capability;
+  std::string response, finish, role, error_message, partial, capability;
   size_t sources = 0;
   bool retryable = false;
 
@@ -54,10 +54,12 @@ struct Recorder {
     sinks.on_status = [this](const std::string& tool, const std::string& phase, const std::string&) {
       statuses.push_back(tool + ":" + phase);
     };
-    sinks.on_done = [this](const std::string& r, const std::string& f, const std::vector<pbr::BriefAiSource>& s) {
+    sinks.on_done = [this](const std::string& r, const std::string& f, const std::vector<pbr::BriefAiSource>& s,
+                           const std::string& ro) {
       ++done;
       response = r;
       finish = f;
+      role = ro;
       sources = s.size();
     };
     sinks.on_handoff = [this](const std::string& c) {
@@ -105,6 +107,14 @@ TEST(BriefTurnRunnerTest, NormalAnswerAccumulatesDeltasAndFiresDone) {
   EXPECT_EQ(rec.finish, "stop");
   EXPECT_EQ(rec.sources, 1u);
   EXPECT_EQ(rec.Terminals(), 1);
+}
+
+TEST(BriefTurnRunnerTest, DoneRoleReachesTheSink) {
+  Recorder rec;
+  BriefAiEvent done = Done("Hello");
+  done.role = "pp_assistant";
+  RunScript(Script({Token("Hello"), done}, BriefAiOutcome::Done), rec);
+  EXPECT_EQ(rec.role, "pp_assistant");
 }
 
 TEST(BriefTurnRunnerTest, EmptyDoneResponseUsesAccumulatedText) {

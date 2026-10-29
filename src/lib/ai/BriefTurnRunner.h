@@ -18,7 +18,9 @@ struct BriefTurnSinks {
   std::function<void(const std::string& route)> on_meta; // optional
   std::function<void(const std::string& text_so_far)> on_delta; // accumulated text after each token
   std::function<void(const std::string& tool, const std::string& phase, const std::string& query)> on_status;
-  std::function<void(const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources)>
+  /** `role`: the role id that answered (empty when the server sent none). */
+  std::function<void(const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources,
+                     const std::string& role)>
       on_done;
   /** `capability`: the tool brief_AI handed the turn back for (empty when the server sent none). */
   std::function<void(const std::string& capability)> on_handoff;
