@@ -214,7 +214,8 @@ TEST(BriefAiClientTest, RequestJsonLastRoleOnlyWhenSet) {
 
   // Set earlier, empty now: absent.
   request.last_role.clear();
-  context = ParsedRequest(request).getObject("context");
+  json = ParsedRequest(request); // keep the object alive: getObject points into it
+  context = json.getObject("context");
   ASSERT_NE(context, nullptr);
   EXPECT_FALSE(context->contains("last_role"));
 }
