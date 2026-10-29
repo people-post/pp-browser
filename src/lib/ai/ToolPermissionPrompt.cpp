@@ -239,9 +239,35 @@ Object DecisionPayload(const std::string& approval_id, const std::string& decisi
 }
 
 
+bool IsOpenSupportCard(const std::vector<PlannedToolCall>& offered_tools) {
+  return offered_tools.size() == 1 && offered_tools.front().name == "open_support";
+}
+
+/**
+ * open_support changes no data, it takes the user to the PP Support chat: the card is the plain question with OK /
+ * Cancel.
+ */
+std::string BuildOpenSupportChoiceBlocks(const std::string& approval_id) {
+  const std::string ok = Tr("common.ok");
+  const std::string cancel = Tr("common.cancel");
+  Object choice;
+  choice.set("type", "choice");
+  choice.set("prompt", Tr("ai.open_support.ask"));
+  std::vector<Value> options;
+  options.push_back(ObjectValue(Option(ok, ok, DecisionPayload(approval_id, "allow_once"))));
+  options.push_back(ObjectValue(Option(cancel, cancel, DecisionPayload(approval_id, "deny"))));
+  choice.set("options", ArrayValue(std::move(options)));
+  Object root;
+  root.set("blocks", ArrayValue({ObjectValue(std::move(choice))}));
+  return DumpJson(root);
+}
+
 std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
                                             const std::vector<PlannedToolCall>& offered_tools,
                                             const bool offer_allow_always) {
+  if (IsOpenSupportCard(offered_tools)) {
+    return BuildOpenSupportChoiceBlocks(approval_id);
+  }
   const std::string names = DescribeToolCalls(offered_tools);
   // Each catalog owns its punctuation around the tool names (CJK uses full-width brackets).
   const std::string base = offered_tools.size() == 1 ? "chat.permission.prompt_one" : "chat.permission.prompt_many";
@@ -272,8 +298,11 @@ std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
 
 std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& offered_tools) {
   const std::string names = DescribeToolCalls(offered_tools);
+  // Cancel on the PP Support offer: the chat simply goes on.
   const std::string text =
-      Tr("chat.permission.denied", {{"names", names.empty() ? Tr("chat.permission.those_actions") : names}});
+      IsOpenSupportCard(offered_tools)
+          ? Tr("ai.open_support.cancelled")
+          : Tr("chat.permission.denied", {{"names", names.empty() ? Tr("chat.permission.those_actions") : names}});
   Object paragraph;
   paragraph.set("type", "paragraph");
   paragraph.set("text", text);

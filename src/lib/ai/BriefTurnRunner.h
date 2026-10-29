@@ -22,8 +22,11 @@ struct BriefTurnSinks {
   std::function<void(const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources,
                      const std::string& role)>
       on_done;
-  /** `capability`: the tool brief_AI handed the turn back for (empty when the server sent none). */
-  std::function<void(const std::string& capability)> on_handoff;
+  /**
+   * `capability`: the tool brief_AI handed the turn back for (empty when the server sent none). `reason`: why
+   * ("app_action", "user_confirmed"; empty when absent).
+   */
+  std::function<void(const std::string& capability, const std::string& reason)> on_handoff;
   std::function<void(const std::string& message, bool retryable, const std::string& partial_text)> on_error;
   std::function<void(const std::string& partial_text)> on_cancelled;
 };

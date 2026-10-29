@@ -16,10 +16,11 @@ using namespace pbr::agent_test;
 
 constexpr const char* kRemark = "欠钱的老王";
 
-BriefAiEvent Handoff(const std::string& capability) {
+BriefAiEvent Handoff(const std::string& capability, const std::string& reason = "app_action") {
   BriefAiEvent event;
   event.type = BriefAiEvent::Type::Handoff;
   event.capability = capability;
+  event.reason = reason;
   return event;
 }
 
@@ -107,6 +108,13 @@ protected:
           out.set("show_notifications", args.getIf<bool>("enabled").value_or(false));
           return DumpJson(out);
         });
+    add("open_support", ToolMeta{.provider = "settings", .domain = "support", .risk = "write", .mutating = true},
+        [this](const Object&) -> Roe<std::string> {
+          if (support_off_) {
+            return Error("support discovery disabled"); // internal detail, never shown
+          }
+          return std::string(R"({"opened":true})");
+        });
   }
 
   std::vector<std::string> Calls() {
@@ -151,6 +159,7 @@ protected:
   }
 
   MemoryThreadStore store_;
+  std::atomic<bool> support_off_{false};
   std::vector<std::string> calls_;
   std::mutex contacts_mu_;
   std::vector<LocalPlanContact> contacts_;
@@ -781,3 +790,113 @@ TEST_F(AgentSessionLocalActionTest, AllowAlwaysClosesTheCardAndStopLeavesAWaitin
 }
 
 } // namespace
+
+// --- PP Support: asked on the device, opened only after OK ---
+
+namespace {
+
+std::vector<std::string> OpenSupportRuns(const std::vector<std::string>& calls) {
+  std::vector<std::string> runs;
+  for (const std::string& call : calls) {
+    if (call.rfind("open_support", 0) == 0) {
+      runs.push_back(call);
+    }
+  }
+  return runs;
+}
+
+} // namespace
+
+TEST_F(AgentSessionLocalActionTest, CustomerServiceAsksThenOkOpensPpSupportOnce) {
+  StartLocal(Allow("open_support")); // a remembered "allow" does not skip the question
+  session_->SubmitToThread("t1", "我要找客服");
+  const std::string card = Ready(WaitForTurn()).text;
+  EXPECT_NE(card.find(Tr("ai.open_support.ask")), std::string::npos) << card;
+  EXPECT_NE(card.find("tool_permission"), std::string::npos) << card;
+  EXPECT_EQ(card.find("allow_always"), std::string::npos) << "PP Support is asked for every time: " << card;
+  EXPECT_NE(card.find(Tr("common.ok")), std::string::npos) << card;
+  EXPECT_NE(card.find(Tr("common.cancel")), std::string::npos) << card;
+  EXPECT_TRUE(Calls().empty());
+
+  ASSERT_TRUE(session_->ResumeToolPermission(ApprovalId(card), "allow_once"));
+  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("ai.done.open_support"));
+  EXPECT_EQ(Calls(), std::vector<std::string>{"open_support {}"});
+  EXPECT_TRUE(Requests().empty());
+  ExpectNoModel();
+}
+
+TEST_F(AgentSessionLocalActionTest, CustomerServiceCancelDoesNotOpenAndTheChatGoesOn) {
+  StartLocal();
+  session_->SubmitToThread("t1", "contact support");
+  const std::string card = Ready(WaitForTurn()).text;
+  ASSERT_FALSE(ApprovalId(card).empty()) << card;
+
+  ASSERT_TRUE(session_->ResumeToolPermission(ApprovalId(card), "deny"));
+  const auto events = WaitForTurn();
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_NE(Ready(events).text.find(Tr("ai.open_support.cancelled")), std::string::npos) << Ready(events).text;
+  EXPECT_TRUE(Calls().empty());
+
+  session_->SubmitToThread("t1", "今天有什么新闻"); // an ordinary message streams as before
+  WaitForTurn();
+  EXPECT_EQ(Requests().size(), 1u);
+  EXPECT_TRUE(Calls().empty());
+  ExpectNoModel();
+}
+
+TEST_F(AgentSessionLocalActionTest, PpSupportUnavailableIsSaidPlainly) {
+  StartLocal();
+  support_off_ = true;
+  session_->SubmitToThread("t1", "转人工");
+  const std::string card = Ready(WaitForTurn()).text;
+  ASSERT_TRUE(session_->ResumeToolPermission(ApprovalId(card), "allow_once"));
+  const auto events = WaitForTurn();
+  EXPECT_EQ(Ready(events).text, Tr("ai.open_support.unavailable"));
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Ready(events).text.find("discovery"), std::string::npos);
+  ExpectNoModel();
+}
+
+TEST_F(AgentSessionLocalActionTest, SupportOfAnotherSiteGoesToTheStream) {
+  StartLocal();
+  session_->SubmitToThread("t1", "这个网站的客服电话是多少");
+  const std::string answer = Ready(WaitForTurn()).text;
+  EXPECT_EQ(Requests().size(), 1u);
+  EXPECT_EQ(answer.find("tool_permission"), std::string::npos) << answer;
+  EXPECT_TRUE(Calls().empty());
+}
+
+TEST_F(AgentSessionLocalActionTest, HandoffForOpenSupportAsksOnTheDevice) {
+  StartLocal();
+  Script({Meta(), Handoff("open_support")}, BriefAiOutcome::Handoff);
+  session_->SubmitToThread("t1", "能不能让人工帮我看看");
+  const std::string card = Ready(WaitForTurn()).text;
+  EXPECT_EQ(Requests().size(), 1u);
+  EXPECT_NE(card.find(Tr("ai.open_support.ask")), std::string::npos) << card;
+  EXPECT_TRUE(Calls().empty());
+
+  ASSERT_TRUE(session_->ResumeToolPermission(ApprovalId(card), "allow_once"));
+  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("ai.done.open_support"));
+  EXPECT_EQ(OpenSupportRuns(Calls()).size(), 1u);
+  EXPECT_EQ(Requests().size(), 1u); // the stream is not asked again
+  ExpectNoModel();
+}
+
+TEST_F(AgentSessionLocalActionTest, UserConfirmedHandoffOpensPpSupportWithoutACard) {
+  StartLocal();
+  // brief_AI asked "要不要我帮你转到 PP 客服？" itself and the user said yes.
+  Script({Meta(), Handoff("open_support", "user_confirmed")}, BriefAiOutcome::Handoff);
+  session_->SubmitToThread("t1", "好");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(Ready(events).text, Tr("ai.done.open_support"));
+  EXPECT_EQ(Ready(events).text.find("tool_permission"), std::string::npos);
+  EXPECT_EQ(Calls(), std::vector<std::string>{"open_support {}"});
+  EXPECT_EQ(Requests().size(), 1u);
+
+  // The grant was for that turn only: the next ask for customer service shows the card again.
+  session_->SubmitToThread("t1", "我要找客服");
+  const std::string card = Ready(WaitForTurn()).text;
+  EXPECT_NE(card.find(Tr("ai.open_support.ask")), std::string::npos) << card;
+  EXPECT_EQ(OpenSupportRuns(Calls()).size(), 1u);
+  ExpectNoModel();
+}

@@ -11,7 +11,10 @@
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "foundation/platform/PlatformShare.h"
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
@@ -212,6 +215,39 @@ void ApplyUiDocumentLanguage(ui::Context* context) {
     return;
   }
   document->SetAttribute("lang", LocalizationService::Instance().ResolvedLanguage().c_str());
+}
+
+/**
+ * Runs `task` on the UI thread and waits for its result: assistant tools run on the worker pool, while shell
+ * navigation and support_discovery_ are UI-thread state. A UI thread that does not get to it in time (busy,
+ * shutting down) reads as "unavailable".
+ */
+Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
+  if (!task) {
+    return Error("unavailable");
+  }
+  if (AppRuntime::CurrentlyOnUI()) {
+    return task();
+  }
+  struct Slot {
+    std::mutex mu;
+    std::condition_variable cv;
+    std::optional<Roe<void>> result;
+  };
+  auto slot = std::make_shared<Slot>();
+  AppRuntime::PostUI([slot, task]() {
+    Roe<void> result = task();
+    {
+      std::lock_guard lock(slot->mu);
+      slot->result.emplace(std::move(result));
+    }
+    slot->cv.notify_all();
+  });
+  std::unique_lock lock(slot->mu);
+  if (!slot->cv.wait_for(lock, std::chrono::seconds(5), [&]() { return slot->result.has_value(); })) {
+    return Error("UI thread did not run the task in time");
+  }
+  return std::move(*slot->result);
 }
 
 } // namespace
@@ -837,7 +873,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return {};
   };
   // Copy ports before BindCommands moves the command bag.
-  const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
+  SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
+  settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() { return RunOnUiAndWait(open); };
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.

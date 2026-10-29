@@ -196,6 +196,19 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"reset", "clear", "revoke"}, {"tool permissions", "ai permissions", "assistant permissions", "always allow"},
        {"reset ai permissions", "reset tool permissions", "clear ai permissions", "clear tool permissions",
         "reset assistant permissions"}},
+      // Narrower than brief_AI's list on purpose: a bare 客服 object (or 找客服 / 联系客服) also reads "帮我联系淘宝客服"
+      // as PP Support, so the device only takes sentences that ask for support themselves ("我要找客服", "转人工") or
+      // name PP's ("联系 PP 客服"). Anything looser stays with brief_AI, which can still hand it back.
+      {"open_support", false,
+       {"找", "联系", "转", "转到", "接通"}, {"pp客服"},
+       {"我要找客服", "我想找客服", "帮我找客服", "我要联系客服", "我想联系客服", "帮我联系客服", "我要客服", "转人工",
+        "转人工客服", "我要人工客服", "找人工客服", "帮我转客服", "转客服", "转到客服", "接通客服", "联系pp客服", "找pp客服",
+        "转到pp客服", "接通pp客服", "打开pp客服", "联系pp支持", "找pp支持", "打开pp支持"},
+       {"contact", "open", "talk to", "speak to"}, {"pp support"},
+       {"contact support", "contact customer service", "contact customer support", "contact pp support",
+        "customer service", "customer support", "talk to support", "talk to customer service", "talk to a human",
+        "speak to a human", "open pp support"},
+       true},
   };
   return table;
 }

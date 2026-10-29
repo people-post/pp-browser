@@ -155,6 +155,7 @@ std::optional<BriefAiEvent> BriefAiClient::ParseEvent(const std::string& data) {
   } else if (type == "handoff") {
     event.type = BriefAiEvent::Type::Handoff;
     event.capability = StringOrEmpty(*json, "capability");
+    event.reason = StringOrEmpty(*json, "reason");
   } else if (type == "error") {
     event.type = BriefAiEvent::Type::Error;
     event.code = StringOrEmpty(*json, "code");

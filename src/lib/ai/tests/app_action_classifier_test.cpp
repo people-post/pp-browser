@@ -70,6 +70,7 @@ const std::vector<std::pair<std::string, std::string>> kZhPositives = {
     {"打开中继", "set_mesh_capabilities"},
     {"重新检测一下网络", "probe_reachability"},
     {"重置 AI 的权限", "reset_tool_permissions"},
+    {"我要找客服", "open_support"},
 };
 
 const std::vector<std::string> kZhNegatives = {
@@ -169,6 +170,7 @@ const std::vector<std::pair<std::string, std::string>> kEnPositives = {
     {"Check network connectivity again", "probe_reachability"},
     {"Reset AI permissions", "reset_tool_permissions"},
     {"Reset the tool permissions", "reset_tool_permissions"},
+    {"Contact support", "open_support"},
 };
 
 const std::vector<std::string> kEnNegatives = {
@@ -212,7 +214,7 @@ std::string Describe(const std::string& message) { return "message: " + message.
 } // namespace
 
 TEST(AppActionClassifierTest, EveryToolHasAChineseAndAnEnglishPositive) {
-  ASSERT_EQ(AllTools().size(), 27u);
+  ASSERT_EQ(AllTools().size(), 28u);
   for (const auto& cases : {kZhPositives, kEnPositives}) {
     std::vector<std::string> covered;
     for (const auto& c : cases) {
@@ -487,5 +489,22 @@ TEST(AppActionClassifierTest, BareBooleanSettingNames) {
   }
   for (const char* text : {"通知我一下", "通知他明天开会", "notification sounds are annoying", "blur the background", "节点在哪"}) {
     EXPECT_FALSE(ClassifyAppActionMatch(text, AllTools()).has_value()) << text;
+  }
+}
+
+// Customer service: only sentences that ask for support themselves, or name PP's, open the PP Support offer. Support
+// of another site, and PP in any other sense, stay with brief_AI.
+TEST(AppActionClassifierTest, OpenSupportOnlyForAnAskForCustomerService) {
+  for (const char* message : {"我要找客服", "转人工", "联系 PP 客服", "找 PP 支持", "帮我转人工", "我想联系客服", "转人工客服",
+                              "接通 PP 客服", "我要人工客服", "contact support", "Customer service", "Contact PP support",
+                              "I want to talk to customer service", "Can you contact customer support?",
+                              "talk to a human please"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("open_support")) << Describe(message);
+  }
+  for (const char* message : {"PP塑料是什么", "这个网站的客服电话是多少", "帮我联系淘宝客服", "我在淘宝要找客服", "怎么联系客服",
+                              "PP 支持视频通话吗", "PP 支持哪些语言", "电话怎么转人工", "淘宝的人工客服怎么找",
+                              "What is good customer service?", "Customer service at Amazon is slow today",
+                              "Does PP support video calls?", "How was the support for the bill?"}) {
+    EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("open_support")) << Describe(message);
   }
 }

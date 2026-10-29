@@ -393,7 +393,8 @@ enum class ToolClass { NoArg, Probe, Query, Nickname, Bool, Appearance, Language
 ToolClass ClassOf(const std::string& tool) {
   static constexpr auto kNoArg = std::to_array<std::string_view>(
       {"get_profile_identity", "get_preferences", "get_security_status", "get_network_settings", "get_reachability",
-       "get_llm_settings", "get_integrations", "list_locales", "list_conversations", "reset_tool_permissions"});
+       "get_llm_settings", "get_integrations", "list_locales", "list_conversations", "reset_tool_permissions",
+       "open_support"});
   static constexpr auto kBool = std::to_array<std::string_view>(
       {"set_notifications", "set_reduce_transparency", "set_auto_renew_registration", "set_call_diagnostics",
        "set_node_enabled"});

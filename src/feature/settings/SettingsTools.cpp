@@ -830,6 +830,24 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          return DumpJson(OkJson(std::move(ok)));
        }));
 
+  // Domain "support": the permission card asks every time (ToolPermissionPolicy::AllowAlwaysEligible).
+  tools.push_back(MakeTool(
+      ToolDefinition{"open_support", "Open the PP Support chat (customer service) so the user can talk to PP Support. "
+                                     "Use only when the user asks for customer service or PP Support.",
+                     MustSchema(R"json({"type":"object","properties":{}})json")},
+      Meta("support", "write", true),
+      [ports](const Object&) -> Roe<std::string> {
+         if (!ports.open_support_chat) {
+           return Error("PP Support unavailable");
+         }
+         if (auto opened = ports.open_support_chat(); !opened) {
+           return opened.error();
+         }
+         Object ok;
+         ok.set("opened", true);
+         return DumpJson(OkJson(std::move(ok)));
+       }));
+
   return tools;
 }
 

@@ -23,6 +23,7 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
   std::optional<BriefAiEvent> done;
   std::optional<BriefAiEvent> error;
   std::string capability;
+  std::string reason;
 
   const auto on_event = [&](const BriefAiEvent& event) {
     switch (event.type) {
@@ -44,6 +45,7 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
       break;
     case BriefAiEvent::Type::Handoff:
       capability = event.capability;
+      reason = event.reason;
       break;
     case BriefAiEvent::Type::Error:
       error = event;
@@ -67,7 +69,7 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
     return;
   }
   case BriefAiOutcome::Handoff:
-    Call(sinks.on_handoff, capability);
+    Call(sinks.on_handoff, capability, reason);
     return;
   case BriefAiOutcome::Error:
     if (error) {
