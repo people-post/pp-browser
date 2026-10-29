@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import queue
+import random
 import shutil
 import subprocess
 import sys
@@ -991,10 +992,14 @@ def net(u, script):
     """Run `script` as root in the user's container (its network namespace is the app's)."""
     if not u.container:
         raise ProbeError("%s: network changes need --nat (a container per user)" % u.name)
-    r = subprocess.run(["docker", "exec", "--user", "0", u.container, "sh", "-c", script],
+    return root_in(u.container, script, u.name)
+
+
+def root_in(container, script, who):
+    r = subprocess.run(["docker", "exec", "--user", "0", container, "sh", "-c", script],
                        capture_output=True, text=True)
     if r.returncode != 0:
-        raise ProbeError("%s: %s: %s" % (u.name, script, r.stderr.strip()))
+        raise ProbeError("%s: %s: %s" % (who, script, r.stderr.strip()))
     return r.stdout.strip()
 
 
@@ -1040,6 +1045,99 @@ def change_address(u):
     net(u, "ip addr del %s dev eth0 && ip addr add %s/%s dev eth0 && ip route replace default via %s src %s"
         % (old, new, prefix, gw, new))
     return new
+
+
+# A phone's link (--nat): delay and jitter (ms) and loss (%) each way, upload / download in kbit/s.
+# On the road a cell link is lossy and jittery and its upload thin; a weak one more so.
+PHONE_ROAD = {"delay": 60, "jitter": 40, "loss": 3, "up": 600, "down": 2000}
+PHONE_WEAK = {"delay": 120, "jitter": 60, "loss": 6, "up": 200, "down": 800}
+
+
+def gw_net(u, script):
+    """Run `script` as root on the user's NAT gateway (user-x's is gw-x)."""
+    if not u.container:
+        raise ProbeError("%s: network changes need --nat (a container per user)" % u.name)
+    return root_in(u.container.replace("user-", "gw-", 1), script, u.name + "'s gateway")
+
+
+def gw_inner_dev(u):
+    return gw_net(u, "ip -o -4 addr show | awk '/ 10\\.119\\./{print $2; exit}'")
+
+
+def phone_link(u, profile):
+    """The user's link behaves like a phone's: netem on its upload (its eth0) and on its download
+    (its gateway's side of the NAT, which carries only this user)."""
+    netem = "netem delay %dms %dms distribution normal loss %s%%" % (profile["delay"], profile["jitter"],
+                                                                       profile["loss"])
+    net(u, "tc qdisc replace dev eth0 root %s rate %dkbit" % (netem, profile["up"]))
+    gw_net(u, "tc qdisc replace dev %s root %s rate %dkbit" % (gw_inner_dev(u), netem, profile["down"]))
+
+
+def clear_link(u):
+    net(u, "tc qdisc del dev eth0 root 2>/dev/null; true")
+    gw_net(u, "tc qdisc del dev %s root 2>/dev/null; true" % gw_inner_dev(u))
+
+
+def handover(u, outage=1.5):
+    """A phone changes cell (or Wi-Fi to cellular): its link is gone for `outage` s and comes back on
+    a new address, so its NAT maps it anew."""
+    gw = net(u, "ip route show default | awk '{print $3; exit}'")
+    net(u, "ip link set eth0 down")
+    time.sleep(outage)
+    net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
+    change_address(u)
+
+
+class Road:
+    """Phones on the road (--nat), as a context: `users`' links behave like `profile`, and with
+    `handover_s=(lo, hi)` each one hands over every lo..hi s on its own random schedule. `park()`
+    stops the handovers (the links stay as they are); leaving clears the links. The schedule's seed
+    is printed — PP_APP_LAB_ROAD_SEED replays it."""
+
+    def __init__(self, users, profile, handover_s=None):
+        self.users, self.profile, self.handover_s = list(users), profile, handover_s
+        self.seed = int(os.environ.get("PP_APP_LAB_ROAD_SEED") or random.randrange(1 << 30))
+        self.handovers = {u.name: 0 for u in self.users}
+        self._stop = threading.Event()
+        self._threads = []
+        self._errors = []
+
+    def __enter__(self):
+        print("road seed=%d (%s)" % (self.seed, ", ".join(u.name for u in self.users)), flush=True)
+        for u in self.users:
+            clear_link(u)
+            phone_link(u, self.profile)
+        if self.handover_s:
+            for i, u in enumerate(self.users):
+                t = threading.Thread(target=self._drive, args=(u, random.Random(self.seed + i)), daemon=True)
+                t.start()
+                self._threads.append(t)
+        return self
+
+    def _drive(self, u, rng):
+        lo, hi = self.handover_s
+        while not self._stop.wait(rng.uniform(lo, hi)):
+            try:
+                handover(u)
+                self.handovers[u.name] += 1
+            except ProbeError as e:
+                self._errors.append(str(e))
+                return
+
+    def park(self):
+        self._stop.set()
+        for t in self._threads:
+            t.join()
+        if self._errors:
+            raise ProbeError("road: " + "; ".join(self._errors))
+
+    def __exit__(self, *exc):
+        try:
+            self.park()
+        finally:
+            for u in self.users:
+                clear_link(u)
+        return False
 
 
 def still_in_call(users, call_id, timeout):
@@ -2034,6 +2132,53 @@ def scenario_group_two_join_through_drops(lab):
     leave_all(users)
 
 
+
+# Phone networks (--nat, a NAT per user). Dogfood: four in a call, a phone on the highway heard two
+# of three, the others saw three of four; that phone and the one it could not hear both retried to
+# get connected, and had not added each other both ways.
+def scenario_group_call_on_the_road(lab):
+    """The dogfood call: Carol (a phone on the highway) and Bob (also on the road) hand over every
+    10-25 s on lossy, jittery links; Bob added Carol, Carol never added Bob. Alice (owner) calls;
+    everyone answers while the phones hand over, and the call goes on for 90 s. Then the handovers
+    stop (the links stay lossy): everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4, contacts=("bob>carol",))
+    a, b, c, d = users
+    with Road((b, c), PHONE_ROAD, handover_s=(10, 25)) as road:
+        call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+        for u in (b, c, d):
+            u.wait_surface("ringing", 60, call_id=call_id)
+        for u in (b, c, d):
+            u.cmd("accept_voice")
+        for u in users:
+            u.wait_surface("in_call", 120, call_id=call_id)
+        time.sleep(90)
+        road.park()
+        for u in users:
+            u.wait_surface("in_call", 60, call_id=call_id)
+        assert_everyone_in_call(users, call_id, timeout=60)
+        handovers = dict(road.handovers)
+    leave_all(users)
+    return {"road_seed": road.seed, "handovers": handovers}
+
+
+def scenario_group_call_weak_upload(lab):
+    """Carol's phone has a thin, lossy upload (200 kbit/s, 6 % loss) for the whole call of four:
+    her own media fills her link while she joins and subscribes. Everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4, contacts=("bob>carol",))
+    a, b, c, d = users
+    with Road((c,), PHONE_WEAK):
+        call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+        for u in (b, c, d):
+            u.wait_surface("ringing", 60, call_id=call_id)
+        for u in (b, c, d):
+            u.cmd("accept_voice")
+        for u in users:
+            u.wait_surface("in_call", 90, call_id=call_id)
+        time.sleep(20)
+        assert_everyone_in_call(users, call_id, timeout=60)
+    leave_all(users)
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("chat_list_settings", scenario_chat_list_settings),
@@ -2088,6 +2233,8 @@ SCENARIOS = [
     ("group_one_way_joins_late", scenario_group_one_way_joins_late),
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),
     ("group_two_join_through_drops", scenario_group_two_join_through_drops),
+    ("group_call_on_the_road", scenario_group_call_on_the_road),
+    ("group_call_weak_upload", scenario_group_call_weak_upload),
 ]
 
 # Scenarios run only when named (--only).
@@ -2098,7 +2245,8 @@ OPT_IN = set()
 NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
-             "group_one_way_network_drops", "group_two_join_through_drops",
+             "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
+             "group_call_weak_upload",
              "bystander_is_no_relay"}
 
 
@@ -2114,7 +2262,8 @@ def main():
     ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
     ap.add_argument("--nat", action="store_true",
                     help="each user in its own container behind its own NAT (docker-compose.app-lab-nat.yml)")
-    ap.add_argument("--nat-containers", default="pp-app-lab-user-a-1,pp-app-lab-user-b-1,pp-app-lab-user-c-1")
+    ap.add_argument("--nat-containers",
+                    default="pp-app-lab-user-a-1,pp-app-lab-user-b-1,pp-app-lab-user-c-1,pp-app-lab-user-d-1")
     ap.add_argument("--nat-relay", default="http://198.51.100.20:9097/api/relay",
                     help="the relay as users behind the NATs reach it")
     ap.add_argument("--nat-share", default=os.environ.get("PP_APP_LAB_NAT_SHARE", "/tmp/pp-app-lab-nat"),

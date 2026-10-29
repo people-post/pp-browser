@@ -59,11 +59,12 @@ services:
     build:
       context: ${PP_WEB2_ROOT:-../../../../web2}/messenger
       # messenger's package.json pins no pnpm, so its own Dockerfile gets corepack's latest pnpm, which
-      # rejects `--quiet`. Pin the one www uses.
+      # rejects `--quiet`. Pin the one www uses. Node 25+ ships no corepack: install it ($$ keeps
+      # compose from putting the host's PATH in the image).
       dockerfile_inline: |
         FROM node:lts-alpine
-        ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
-        RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
+        ENV PNPM_HOME=/pnpm PATH=/pnpm:$$PATH
+        RUN npm install -g --force corepack && corepack enable && corepack prepare pnpm@11.22.0 --activate
         WORKDIR /app
         COPY app/package.json app/pnpm-lock.yaml app/pnpm-workspace.yaml ./
         RUN pnpm install --frozen-lockfile --ignore-scripts
@@ -83,6 +84,19 @@ services:
   www:
     build:
       context: ${PP_WEB2_ROOT:-../../../../web2}/www
+      # www's own Dockerfile runs `corepack enable`, which Node 25+ (node:lts-alpine) no longer ships.
+      # The same build with corepack installed (one stage: the lab runs what it built).
+      dockerfile_inline: |
+        FROM node:lts-alpine
+        ENV PNPM_HOME=/pnpm PATH=/pnpm:$$PATH
+        RUN npm install -g --force corepack && corepack enable
+        WORKDIR /app
+        COPY app/package.json app/pnpm-lock.yaml app/pnpm-workspace.yaml ./
+        RUN pnpm install --frozen-lockfile --ignore-scripts --quiet
+        COPY app/src ./src
+        COPY app/tsconfig.json ./
+        RUN pnpm run build
+        CMD ["node", "obj/index.js"]
     environment:
       BRF_WWW_HOST: "::"
       BRF_WWW_PORT: 9097
