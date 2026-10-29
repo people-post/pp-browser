@@ -63,9 +63,10 @@ bool IsDirectActionTool(const std::string& tool) {
   return tool == "open_conversation" || tool == "start_conversation" || tool == "search_people";
 }
 
-/** Identity writers of a local plan ask every time, whatever "always allow" says (plan section A). */
+/** Identity writers (and open_support) of a local plan ask every time, whatever "always allow" says (plan section A). */
 bool AlwaysAsksInLocalPlan(const std::string& tool) {
-  return tool == "update_profile_nickname" || tool == "register_user";
+  // open_support takes the user to another chat: asked every time too.
+  return tool == "update_profile_nickname" || tool == "register_user" || tool == "open_support";
 }
 
 const LocalPlanContact* FindLocalContact(const LocalPlanContext& ctx, const std::string& contact_id,
@@ -188,6 +189,8 @@ struct AgentSession::Impl : public Module {
   LocalContactsFn local_contacts;
   /** A button's direct action for the turn SubmitLocalAction started: tool + arguments. */
   std::optional<std::pair<std::string, Object>> pending_direct_action;
+  /** A tool the user already agreed to in brief_AI's own question (handoff "user_confirmed"): no card for it. */
+  std::string pre_approved_tool;
   /** This turn's entries belong to an app action: stored with kLocalActionGeneration, never model history. */
   bool local_turn = false;
   /** Raw results of the executed local plan, for the template. */
@@ -1065,6 +1068,8 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
 }
 
 void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan) {
+  // Set by HandleHandoff for this plan only; never carried into a later turn.
+  const std::string pre_approved = std::exchange(state->pre_approved_tool, std::string());
   state->turn_plan = std::move(plan);
   if (state->turn_plan.user_request.empty()) {
     state->turn_plan.user_request = state->pending_user_text;
@@ -1084,6 +1089,9 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
+  }
+  if (state->turn_plan.local && !pre_approved.empty()) {
+    options.session_grants.insert(pre_approved);
   }
   if (state->turn_plan.local) {
     for (const PlannedToolCall& call : state->turn_plan.tools) {
@@ -1245,7 +1253,8 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
   return true;
 }
 
-void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability) {
+void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability,
+                                 const std::string& reason) {
   const std::vector<std::string> declared = AppActionCapabilities(state);
   if (capability.empty() || std::find(declared.begin(), declared.end(), capability) == declared.end()) {
     state->Log().info << "brief_AI handed the turn back for an unknown capability; answered on the device";
@@ -1271,6 +1280,10 @@ void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::
     EmitLocalActionMetric(state->Log(), capability, "question", false);
     FinishLocalAnswer(state, RenderLocalHowTo(capability), RenderMode::Markdown);
     return;
+  }
+  if (capability == "open_support" && reason == "user_confirmed" && std::holds_alternative<TurnPlan>(plan)) {
+    // The AI itself offered PP Support and the user said yes: it opens without a second card.
+    state->pre_approved_tool = capability;
   }
   HandleLocalPlan(state, std::move(plan), capability, "executed");
 }
@@ -1596,7 +1609,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
   };
-  sinks.on_handoff = [state, current, emit_turn, has_image](const std::string& capability) {
+  sinks.on_handoff = [state, current, emit_turn, has_image](const std::string& capability, const std::string& reason) {
     emit_turn("handoff");
     if (!current()) {
       return;
@@ -1612,7 +1625,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
                       << "); answering on the device";
     state->handoff_turn = true;
     state->handoff_local = false;
-    HandleHandoff(state, capability);
+    HandleHandoff(state, capability, reason);
   };
   sinks.on_error = [state, current, emit_turn, image_error_kind](const std::string& message, const bool retryable,
                                                                  const std::string& partial) {

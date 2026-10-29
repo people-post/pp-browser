@@ -182,8 +182,13 @@ private:
   static bool TryLocalAppAction(const std::shared_ptr<Impl>& state);
   /** The answer to a question the app asked back (same thread, not expired): true when handled here. */
   static bool TryPendingLocalAnswer(const std::shared_ptr<Impl>& state);
-  /** brief_AI handed the turn back for `capability`: answered on the device, never streamed again. */
-  static void HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability);
+  /**
+   * brief_AI handed the turn back for `capability`: answered on the device, never streamed again. `reason` is the
+   * server's ("app_action", "user_confirmed"); "user_confirmed" on open_support (the AI offered PP Support, the user
+   * said yes) opens it without a card.
+   */
+  static void HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability,
+                            const std::string& reason);
   /** Acts on a local plan: execute, ask back, list candidates or say it cannot. `outcome` is the metric for a plan. */
   static void HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan plan, const std::string& tool,
                               const char* outcome, bool asked_twice = false);

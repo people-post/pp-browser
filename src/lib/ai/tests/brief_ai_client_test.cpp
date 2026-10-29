@@ -294,10 +294,18 @@ TEST(BriefAiClientTest, ParseHandoff) {
   ASSERT_TRUE(e.has_value());
   EXPECT_EQ(e->type, BriefAiEvent::Type::Handoff);
   EXPECT_EQ(e->capability, "add_contact");
+  EXPECT_EQ(e->reason, "app_action");
   e = pbr::BriefAiClient::ParseEvent(R"({"type":"handoff","reason":"app_action","capability":null})");
   ASSERT_TRUE(e.has_value());
   EXPECT_EQ(e->type, BriefAiEvent::Type::Handoff);
   EXPECT_TRUE(e->capability.empty());
+  e = pbr::BriefAiClient::ParseEvent(R"({"type":"handoff","reason":"user_confirmed","capability":"open_support"})");
+  ASSERT_TRUE(e.has_value());
+  EXPECT_EQ(e->capability, "open_support");
+  EXPECT_EQ(e->reason, "user_confirmed");
+  e = pbr::BriefAiClient::ParseEvent(R"({"type":"handoff","capability":"open_support"})");
+  ASSERT_TRUE(e.has_value());
+  EXPECT_TRUE(e->reason.empty()); // absent: empty
 }
 
 TEST(BriefAiClientTest, ParseError) {

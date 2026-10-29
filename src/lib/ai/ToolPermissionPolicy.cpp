@@ -74,7 +74,8 @@ bool ToolPermissionPolicy::AllowAlwaysEligible(const ToolMeta& meta) {
   if (EffectiveRisk(meta) != "write") {
     return false;
   }
-  return meta.domain != "security" && meta.domain != "identity";
+  // "support": open_support takes the user to another chat, so it asks every time.
+  return meta.domain != "security" && meta.domain != "identity" && meta.domain != "support";
 }
 
 void ToolPermissionPolicy::SetToolDecision(ToolPermissionsPrefs& prefs, const std::string& tool_name,

@@ -204,7 +204,8 @@ std::string RenderSentence(const std::string& tool, const Object& result, const 
       return Tr("ai.done." + tool + (on ? ".on" : ".off"));
     }
   }
-  if (tool == "register_user" || tool == "set_mesh_capabilities" || tool == "reset_tool_permissions") {
+  if (tool == "register_user" || tool == "set_mesh_capabilities" || tool == "reset_tool_permissions" ||
+      tool == "open_support") {
     return Tr("ai.done." + tool);
   }
   return Tr("ai.done.generic");
@@ -306,7 +307,11 @@ std::string RenderLocalResult(const std::string& tool, const Object& result_json
   std::string text;
   if (result_json.getIf<bool>("success") == std::optional<bool>(false)) {
     // Never the tool's own message: it is internal English ("appearance must be …") or an error detail.
-    text = Tr(result_json.getIf<bool>("blocked").value_or(false) ? "ai.blocked_by_permissions" : "ai.action_failed");
+    const bool blocked = result_json.getIf<bool>("blocked").value_or(false);
+    // PP Support off or not reachable: a plain sentence, the reason stays in the log.
+    text = Tr(blocked                     ? "ai.blocked_by_permissions"
+              : tool == "open_support" ? "ai.open_support.unavailable"
+                                       : "ai.action_failed");
   } else if (IsReader(tool)) {
     text = RenderCard(tool, result_json);
   } else if (tool == "list_conversations" || tool == "list_contacts" || tool == "search_people") {

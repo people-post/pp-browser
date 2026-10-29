@@ -50,6 +50,7 @@ struct BriefAiEvent {
   std::string role; // Done (empty when absent)
   std::vector<BriefAiSource> sources; // Done
   std::string capability; // Handoff (empty when the server sent null)
+  std::string reason; // Handoff: "app_action", "user_confirmed", ... (empty when absent)
   std::string code, message; // Error
   bool retryable = false; // Error
 };
