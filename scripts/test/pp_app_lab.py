@@ -1711,40 +1711,36 @@ def stream_id(account):
     return h or 1
 
 
-def heard_by(u, others, timeout):
-    """Which of `others` `u` hears: their stream keeps receiving, within `timeout`."""
-    want = {o.name: stream_id(o.account) for o in others}
-    heard = set()
-    first = live_streams(u)
-    deadline = time.time() + timeout
-    while len(heard) < len(want) and time.time() < deadline:
-        time.sleep(1.0)
-        now = live_streams(u)
-        heard |= {name for name, sid in want.items() if now.get(sid, 0) > first.get(sid, 0)}
-        first = now
-    return heard
-
-
 def assert_everyone_in_call(users, call_id, timeout=40):
-    """Each of `users` is in `call_id`, sees all of them in it and hears every other one. Checks
-    everyone before failing, so the error names who misses whom."""
-    misses = []
+    """Each of `users` is in `call_id`, sees all of them in it and hears every other one (that one's
+    stream keeps receiving). Watches everyone at once and stops early — once all hear and see each
+    other, or once someone is out of the call — then names who misses whom."""
+    want = {u.name: {o.name: stream_id(o.account) for o in users if o is not u} for u in users}
+    heard = {u.name: set() for u in users}
+    last = {u.name: live_streams(u) for u in users}
+    deadline = time.time() + timeout
+    while True:
+        time.sleep(1.0)
+        states = {u.name: u.state() for u in users}
+        for u in users:
+            now = {row["stream_id"]: row["rx_frames"] for row in states[u.name].get("streams", [])}
+            heard[u.name] |= {n for n, sid in want[u.name].items() if now.get(sid, 0) > last[u.name].get(sid, 0)}
+            last[u.name] = now
+        out = [u for u in users if states[u.name].get("call_id") != call_id]
+        done = all(len(heard[n]) == len(w) for n, w in want.items()) and all(
+            len(st.get("participants", [])) == len(users) for st in states.values())
+        if done or out or time.time() > deadline:
+            break
+    misses = ["%s: not in the call (%s)" % (u.name, states[u.name]) for u in out]
     for u in users:
-        others = [o for o in users if o is not u]
-        heard = heard_by(u, others, timeout)
-        if len(heard) < len(others):
-            missed = [o.name for o in others if o.name not in heard]
-            misses.append("%s hears %s, not %s" % (u.name, ", ".join(sorted(heard)) or "nobody", ", ".join(missed)))
-    for u in users:
-        try:
-            wait_for(lambda: len(u.state().get("participants", [])) == len(users) or None, 20, "")
-        except ProbeError:
-            seen = u.state().get("participants", [])
-            missed = [o.name for o in users if o.account not in seen]
-            misses.append("%s sees %d of %d in the call (not %s)" % (u.name, len(seen), len(users),
-                                                                   ", ".join(missed) or "?"))
-        if u.state().get("call_id") != call_id:
-            misses.append("%s: not in the call (%s)" % (u.name, u.surface))
+        missed = [n for n in want[u.name] if n not in heard[u.name]]
+        if missed and u not in out:
+            misses.append("%s hears %s, not %s" % (u.name, ", ".join(sorted(heard[u.name])) or "nobody",
+                                                   ", ".join(missed)))
+        seen = states[u.name].get("participants", [])
+        if len(seen) != len(users) and u not in out:
+            misses.append("%s sees %d of %d in the call (not %s)" % (
+                u.name, len(seen), len(users), ", ".join(o.name for o in users if o.account not in seen) or "?"))
     if misses:
         raise ProbeError("; ".join(misses))
 
