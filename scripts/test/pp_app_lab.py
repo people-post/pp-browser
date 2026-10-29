@@ -1009,6 +1009,16 @@ def net_drop(u, seconds, during=None):
     net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
 
 
+def net_drop_together(users, seconds):
+    """Several users' links go down at the same moment (each behind its own NAT) and come back together."""
+    gws = [(u, net(u, "ip route show default | awk '{print $3; exit}'")) for u in users]
+    for u, _ in gws:
+        net(u, "ip link set eth0 down")
+    time.sleep(seconds)
+    for u, gw in gws:
+        net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
+
+
 def not_connected_while_down(u):
     """With its network down, the user's call must not read Connected (nothing flows)."""
     def check():
@@ -1137,8 +1147,23 @@ def scenario_seed_dies_in_use(lab):
 # onto the planned hop (media_relay). Hostless: whoever placed it may leave and the rest go on.
 
 
-def open_group(lab, n=3, title="lab group"):
-    """n people; the first creates a group with the others, who accept its invites."""
+def add_contacts(users, links):
+    """Who has added whom: "bob>dave" — Bob added Dave, Dave never added Bob; "bob=carol" — both
+    added each other. Adding is the app's Add contact by a directory search (`open_chat`)."""
+    by_name = {u.name.rsplit("-", 1)[0]: u for u in users}  # the lab suffixes each name
+    for link in links:
+        sep = "=" if "=" in link else ">"
+        adder, _, added = link.partition(sep)
+        if adder not in by_name or added not in by_name:
+            raise ValueError("contact link %r: want 'a>b' or 'a=b' between users of the scenario" % link)
+        for x, y in ([(adder, added), (added, adder)] if sep == "=" else [(adder, added)]):
+            by_name[x].cmd("open_chat", account=by_name[y].account)
+
+
+def open_group(lab, n=3, title="lab group", contacts=()):
+    """n people; the first creates a group with the others, who accept its invites. The owner and
+    each member have added each other (an invite comes from a contact); members have added nobody
+    else unless `contacts` says so (see `add_contacts`) — linked before the group, as friends are."""
     names = ["alice", "bob", "carol", "dave", "erin"][:n]
     users = [lab.user(name) for name in names]
     for u in users:
@@ -1147,6 +1172,7 @@ def open_group(lab, n=3, title="lab group"):
     for m in members:
         owner.cmd("open_chat", account=m.account)
         m.cmd("open_chat", account=owner.account)
+    add_contacts(users, contacts)
     created = owner.cmd("create_group", title=title, accounts=[m.account for m in members])
     group_id = created["group_id"]
     threads = {owner.name: created["thread"]}
@@ -1579,6 +1605,58 @@ def assert_hears(u, speakers, timeout=30):
         first = now
 
 
+def stream_id(account):
+    """The media_relay stream an account publishes on in a call (PublisherStreamIdForIdentity)."""
+    h = 2166136261
+    for c in account.encode():
+        h = ((h ^ c) * 16777619) & 0xFFFFFFFF
+    return h or 1
+
+
+def heard_by(u, others, timeout):
+    """Which of `others` `u` hears: their stream keeps receiving, within `timeout`."""
+    want = {o.name: stream_id(o.account) for o in others}
+    heard = set()
+    first = live_streams(u)
+    deadline = time.time() + timeout
+    while len(heard) < len(want) and time.time() < deadline:
+        time.sleep(1.0)
+        now = live_streams(u)
+        heard |= {name for name, sid in want.items() if now.get(sid, 0) > first.get(sid, 0)}
+        first = now
+    return heard
+
+
+def assert_everyone_in_call(users, call_id, timeout=40):
+    """Each of `users` is in `call_id`, sees all of them in it and hears every other one. Checks
+    everyone before failing, so the error names who misses whom."""
+    misses = []
+    for u in users:
+        others = [o for o in users if o is not u]
+        heard = heard_by(u, others, timeout)
+        if len(heard) < len(others):
+            missed = [o.name for o in others if o.name not in heard]
+            misses.append("%s hears %s, not %s" % (u.name, ", ".join(sorted(heard)) or "nobody", ", ".join(missed)))
+    for u in users:
+        try:
+            wait_for(lambda: len(u.state().get("participants", [])) == len(users) or None, 20, "")
+        except ProbeError:
+            seen = u.state().get("participants", [])
+            missed = [o.name for o in users if o.account not in seen]
+            misses.append("%s sees %d of %d in the call (not %s)" % (u.name, len(seen), len(users),
+                                                                   ", ".join(missed) or "?"))
+        if u.state().get("call_id") != call_id:
+            misses.append("%s: not in the call (%s)" % (u.name, u.surface))
+    if misses:
+        raise ProbeError("; ".join(misses))
+
+
+def leave_all(users):
+    for u in users:
+        u.cmd("leave", check=False)
+    assert_idle(*users)
+
+
 def group_call(caller, thread, answerers, timeout=40, **call_args):
     """`caller` calls the group; each of `answerers` answers in turn. Returns the call id."""
     call_id = caller.cmd("call", thread=thread, **call_args)["call_id"]
@@ -1879,6 +1957,83 @@ def scenario_group_calling_at_once(lab):
     return {"two_calls_placed": ids[0] != ids[1]}
 
 
+# Group calls across who has added whom: members' contact links are a dimension of their own
+# (TEST_STRATEGY.md, "Group calls and contacts"). The other group_* scenarios have no links.
+def scenario_group_call_one_way_contact(lab):
+    """Four in a call where one member pair is linked, one way (dogfood: a phone heard two of three,
+    the others saw three of four): Bob added Dave, Dave never added Bob, Carol has neither. Alice
+    (everyone's contact) calls: everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4, contacts=("bob>dave",))
+    a, b, c, d = users
+    call_id = group_call(a, threads[a.name], [b, c, d])
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+def scenario_group_call_placed_by_stranger(lab):
+    """Dave, whom no other member has added (Bob and Carol added each other), calls the group of
+    four: his ring and his call reach members who do not know him."""
+    users, threads = open_group(lab, 4, contacts=("bob=carol",))
+    a, b, c, d = users
+    call_id = group_call(d, threads[d.name], [a, b, c])
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+def scenario_group_one_way_joins_late(lab):
+    """The other way round, joining late: Dave added Bob, Bob never added Dave. Bob calls the group
+    of four; Dave declines, then joins from the group's call button."""
+    users, threads = open_group(lab, 4, contacts=("dave>bob",))
+    a, b, c, d = users
+    call_id = b.cmd("call", thread=threads[b.name])["call_id"]
+    for u in (a, c, d):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    d.cmd("decline")
+    for u in (a, c):
+        u.cmd("accept_voice")
+    assert_everyone_in_call([a, b, c], call_id)
+    d.wait_surface("none", 20)
+    join(d, threads[d.name], call_id)
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+def scenario_group_one_way_network_drops(lab):
+    """Three in a call where Bob added Carol and Carol never added Bob; Carol's network drops for 6 s
+    and comes back (a phone on the road reattaches to the hop): everyone hears and sees everyone
+    again, in the same call."""
+    users, threads = open_group(lab, 3, contacts=("bob>carol",))
+    a, b, c = users
+    call_id = group_call(a, threads[a.name], [b, c])
+    assert_everyone_in_call(users, call_id)
+    net_drop(c, 6, during=not_connected_while_down(c))
+    still_in_call(users, call_id, 60)
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+
+def scenario_group_two_join_through_drops(lab):
+    """Two people connect through retries at once (dogfood: the one who heard two of three and the
+    one they could not hear both retried to get connected): Bob added Carol, Carol never added Bob.
+    Alice calls; Bob and Carol answer and both their links drop twice while they connect. Once the
+    network holds, everyone hears and sees everyone."""
+    users, threads = open_group(lab, 3, contacts=("bob>carol",))
+    a, b, c = users
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    for u in (b, c):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    for u in (b, c):
+        u.cmd("accept_voice")
+    net_drop_together((b, c), 6)
+    time.sleep(3)
+    net_drop_together((b, c), 6)
+    for u in users:
+        u.wait_surface("in_call", 90, call_id=call_id)
+    assert_everyone_in_call(users, call_id, timeout=60)
+    leave_all(users)
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("chat_list_settings", scenario_chat_list_settings),
@@ -1928,6 +2083,11 @@ SCENARIOS = [
     ("group_member_removed", scenario_group_member_removed),
     ("group_owner_hands_over", scenario_group_owner_hands_over),
     ("group_calling_at_once", scenario_group_calling_at_once),
+    ("group_call_one_way_contact", scenario_group_call_one_way_contact),
+    ("group_call_placed_by_stranger", scenario_group_call_placed_by_stranger),
+    ("group_one_way_joins_late", scenario_group_one_way_joins_late),
+    ("group_one_way_network_drops", scenario_group_one_way_network_drops),
+    ("group_two_join_through_drops", scenario_group_two_join_through_drops),
 ]
 
 # Scenarios run only when named (--only).
@@ -1938,6 +2098,7 @@ OPT_IN = set()
 NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
+             "group_one_way_network_drops", "group_two_join_through_drops",
              "bystander_is_no_relay"}
 
 
