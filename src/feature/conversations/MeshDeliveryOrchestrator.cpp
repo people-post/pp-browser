@@ -1136,7 +1136,10 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         continue;
       }
       RelayCopy sealed_copy = DeviceCopy(device.peer_id, std::move(*copy));
-      if (!LinkedTo(device.peer_id)) {
+      const bool linked = LinkedTo(device.peer_id);
+      log().info << "chat copy message_id=" << appended->id << " device=" << device.peer_id
+                 << (linked ? " over its link" : " by relay");
+      if (!linked) {
         relay_copies.push_back(std::move(sealed_copy));
         continue;
       }

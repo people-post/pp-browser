@@ -1495,6 +1495,9 @@ def scenario_devices_hand_over_their_cards(lab):
              "bob: alice's device, from her card")
     wait_for(lambda: b_peer in a.cmd("kept_card", account=b.account)["devices"], 40,
              "alice: bob's device, from his card")
+    # The call screen reads In call while its media still connects; behind NATs the call's link (a circuit
+    # carrier) comes up after that. Its media flowing both ways is the live link the message must take.
+    assert_media_flows(a, b)
     sent = a.cmd("send", thread=a_thread, text="over the call's link")["message_id"]
     row = wait_for(lambda: transcript_row(b, b_thread, sent), 20, "bob: alice's message")
     if row.get("transport") != "direct":
