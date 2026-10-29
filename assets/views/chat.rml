@@ -118,7 +118,7 @@
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
            data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
-          <span>{{row.sender_label}}</span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span>{{row.transport_badge}}</span></span>
+          <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>
         </p>
         <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
       </div>

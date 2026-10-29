@@ -182,7 +182,7 @@ TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip
   EXPECT_EQ(std::string(rows[0].row_class.c_str()), "message-row-ai");
   EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("Peer called"), std::string::npos);
   EXPECT_TRUE(rows[1].sender_label.empty());
-  EXPECT_TRUE(rows[1].transport_badge.empty());
+  EXPECT_TRUE(rows[1].time_label.empty());
 }
 
 } // namespace

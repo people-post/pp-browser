@@ -2,6 +2,8 @@
 
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
+#include "gui/chat/MessageTimeLabel.h"
+#include "common/Utilities.h"
 #include "common/ValueJson.h"
 
 #include "lib/ai/StructuredTextParser.h"
@@ -476,10 +478,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.content_rml = content.c_str();
     row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
                              : RowClass(message.sender_contact_id).c_str();
-    // Local is expected for AI/system-local rows — skip it to keep meta quiet.
-    if (!entry.control && message.transport && *message.transport != MessageTransport::Local) {
-      row.transport_badge =
-          Tr(*message.transport == MessageTransport::Direct ? "chat.transport.direct" : "chat.transport.relay").c_str();
+    if (!entry.control) {
+      row.time_label = MessageTimeLabel(message.timestamp, util::NowUnixMs()).c_str();
     }
     row.has_content = true;
     rows.push_back(std::move(row));
