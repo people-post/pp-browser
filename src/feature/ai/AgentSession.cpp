@@ -1489,8 +1489,10 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   request.message = state->pending_user_text;
   request.history = std::move(history); // the client keeps the last 6
   request.summary = std::move(summary);
-  // The role that answered this thread's previous turn (AI threads only: "@ai" in a chat sends the question alone).
-  const std::string role_thread_id = state->turn_mode == AgentTurnMode::Thread ? state->pending_thread_id : std::string();
+  // The role that answered this chat's previous AI turn: an AI thread, or "@ai" in a person chat (keyed by that chat;
+  // brief_AI routes "@ai" questions by content like any other). The home composer has no chat to remember it for.
+  const std::string role_thread_id =
+      state->turn_mode == AgentTurnMode::Conversation ? std::string() : state->pending_thread_id;
   if (!role_thread_id.empty()) {
     std::lock_guard lock(state->last_role_mutex);
     if (const auto it = state->last_role_by_thread.find(role_thread_id); it != state->last_role_by_thread.end()) {

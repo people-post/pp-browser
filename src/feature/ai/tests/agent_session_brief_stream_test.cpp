@@ -327,6 +327,25 @@ TEST_F(AgentSessionBriefStreamTest, LocalAtAiInAChatStreamsTheQuestionOnly) {
 // A shared "@ai+" / "@ai++" streams through brief_AI like "@ai" (the brief gateway has no completions
 // route: B99). Only the question goes out; the answer is not persisted here (the chat UI renders and
 // relays it) and the ready event carries the mode so the UI knows to relay.
+TEST_F(AgentSessionBriefStreamTest, AtAiInAChatSendsThatChatsPreviousRole) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A", "pp_news_analyst")}, BriefAiOutcome::Done);
+  session_->SubmitScopedAssist("p1", "What happened in Iran?", std::nullopt, AtAiMode::Local);
+  WaitForTurn();
+  session_->SubmitScopedAssist("p1", "And their reaction?", std::nullopt, AtAiMode::Local);
+  WaitForTurn();
+  session_->SubmitScopedAssist("p2", "Weather tomorrow?", std::nullopt, AtAiMode::Local);
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 3u);
+  EXPECT_TRUE(requests[0].last_role.empty());
+  EXPECT_EQ(requests[1].last_role, "pp_news_analyst"); // same chat
+  EXPECT_TRUE(requests[2].last_role.empty()); // another chat
+}
+
 TEST_F(AgentSessionBriefStreamTest, SharedReplyAtAiStreamsThroughBriefAndLeavesRelayToTheUi) {
   Start();
   MemoryThreadStore store;
