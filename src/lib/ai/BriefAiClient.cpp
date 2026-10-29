@@ -69,7 +69,7 @@ std::string BriefAiClient::BuildRequestJson(const BriefAiRequest& request) {
     body.set("image", Null{});
   }
 
-  if (!request.history.empty() || !request.summary.empty()) {
+  if (!request.history.empty() || !request.summary.empty() || !request.last_role.empty()) {
     Object context;
     if (!request.history.empty()) {
       const size_t first = request.history.size() > kMaxHistoryTurns ? request.history.size() - kMaxHistoryTurns : 0;
@@ -84,6 +84,9 @@ std::string BriefAiClient::BuildRequestJson(const BriefAiRequest& request) {
     }
     if (!request.summary.empty()) {
       context.set("summary", request.summary);
+    }
+    if (!request.last_role.empty()) {
+      context.set("last_role", request.last_role);
     }
     body.set("context", context);
   }
@@ -134,6 +137,7 @@ std::optional<BriefAiEvent> BriefAiClient::ParseEvent(const std::string& data) {
     event.response = StringOrEmpty(*json, "response");
     event.route = StringOrEmpty(*json, "route");
     event.finish = StringOrEmpty(*json, "finish");
+    event.role = StringOrEmpty(*json, "role");
     if (const Array* sources = json->getArray("sources")) {
       for (const Value& value : sources->elements) {
         const Object* entry = asObject(value);

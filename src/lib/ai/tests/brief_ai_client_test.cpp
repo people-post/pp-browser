@@ -189,6 +189,36 @@ TEST(BriefAiClientTest, RequestJsonContextOnlyWhenNeeded) {
   EXPECT_TRUE(context->contains("history"));
 }
 
+TEST(BriefAiClientTest, RequestJsonLastRoleOnlyWhenSet) {
+  pbr::BriefAiRequest request;
+  request.message = "m";
+  // No history, no summary: the context object exists only to carry the role.
+  EXPECT_EQ(ParsedRequest(request).getObject("context"), nullptr);
+  request.last_role = "pp_assistant";
+  pbr::Object json = ParsedRequest(request);
+  const pbr::Object* context = json.getObject("context");
+  ASSERT_NE(context, nullptr);
+  EXPECT_EQ(context->getString("last_role").value_or(""), "pp_assistant");
+  EXPECT_FALSE(context->contains("history"));
+  EXPECT_FALSE(context->contains("summary"));
+
+  // Alongside history and summary.
+  request.history = {{"user", "q"}};
+  request.summary = "s";
+  json = ParsedRequest(request);
+  context = json.getObject("context");
+  ASSERT_NE(context, nullptr);
+  EXPECT_EQ(context->getString("last_role").value_or(""), "pp_assistant");
+  EXPECT_TRUE(context->contains("history"));
+  EXPECT_TRUE(context->contains("summary"));
+
+  // Set earlier, empty now: absent.
+  request.last_role.clear();
+  context = ParsedRequest(request).getObject("context");
+  ASSERT_NE(context, nullptr);
+  EXPECT_FALSE(context->contains("last_role"));
+}
+
 TEST(BriefAiClientTest, RequestJsonKeepsLastSixHistoryTurnsInOrder) {
   pbr::BriefAiRequest request;
   request.message = "m";
@@ -244,6 +274,18 @@ TEST(BriefAiClientTest, ParseDone) {
   EXPECT_EQ(e->sources[0].title, "White House bars CNN reporters");
   EXPECT_EQ(e->sources[0].url, "https://example.com/a");
   EXPECT_EQ(e->sources[0].kind, "web");
+}
+
+TEST(BriefAiClientTest, ParseDoneRole) {
+  auto e = pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r","role":"pp_news_analyst"})");
+  ASSERT_TRUE(e.has_value());
+  EXPECT_EQ(e->role, "pp_news_analyst");
+}
+
+TEST(BriefAiClientTest, ParseDoneWithoutRoleIsEmpty) {
+  auto e = pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r","route":"web"})");
+  ASSERT_TRUE(e.has_value());
+  EXPECT_TRUE(e->role.empty());
 }
 
 TEST(BriefAiClientTest, ParseHandoff) {

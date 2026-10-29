@@ -53,10 +53,11 @@ inline BriefAiEvent Token(const std::string& delta) {
   return event;
 }
 
-inline BriefAiEvent Done(const std::string& response) {
+inline BriefAiEvent Done(const std::string& response, const std::string& role = {}) {
   BriefAiEvent event;
   event.type = BriefAiEvent::Type::Done;
   event.response = response;
+  event.role = role;
   event.finish = "stop";
   event.sources.push_back(BriefAiSource{.title = "T", .url = "https://example.com/a", .kind = "web"});
   return event;

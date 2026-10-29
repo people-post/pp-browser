@@ -63,7 +63,7 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
   case BriefAiOutcome::Done: {
     const BriefAiEvent empty;
     const BriefAiEvent& event = done ? *done : empty;
-    Call(sinks.on_done, event.response.empty() ? text : event.response, event.finish, event.sources);
+    Call(sinks.on_done, event.response.empty() ? text : event.response, event.finish, event.sources, event.role);
     return;
   }
   case BriefAiOutcome::Handoff:

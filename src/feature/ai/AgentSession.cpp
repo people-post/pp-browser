@@ -44,6 +44,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 #include <thread>
 #include <utility>
 #include "common/ValueJson.h"
@@ -193,6 +194,9 @@ struct AgentSession::Impl : public Module {
   std::vector<std::string> local_raw_results;
   /** The planner context of this turn (contacts loaded only for contact tools), reused for the answer. */
   std::optional<LocalPlanContext> local_ctx;
+  /** brief_AI role that answered the last completed turn of each AI thread; memory only. Guarded by `last_role_mutex`. */
+  std::mutex last_role_mutex;
+  std::unordered_map<std::string, std::string> last_role_by_thread;
   /** For IsAppActionRequest on the UI thread: the preset and the declared tools as of the last configure. */
   mutable std::mutex app_action_mutex;
   bool app_action_brief = false;
@@ -1485,6 +1489,14 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   request.message = state->pending_user_text;
   request.history = std::move(history); // the client keeps the last 6
   request.summary = std::move(summary);
+  // The role that answered this thread's previous turn (AI threads only: "@ai" in a chat sends the question alone).
+  const std::string role_thread_id = state->turn_mode == AgentTurnMode::Thread ? state->pending_thread_id : std::string();
+  if (!role_thread_id.empty()) {
+    std::lock_guard lock(state->last_role_mutex);
+    if (const auto it = state->last_role_by_thread.find(role_thread_id); it != state->last_role_by_thread.end()) {
+      request.last_role = it->second;
+    }
+  }
   request.app_version = AppVersionString();
   if (state->pending_image) {
     request.image = state->pending_image->image;
@@ -1563,12 +1575,21 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     }
   };
   sinks.on_meta = [stats](const std::string& route) { stats->route = route; };
-  sinks.on_done = [state, current, emit_turn](const std::string& response, const std::string& finish,
-                                              const std::vector<BriefAiSource>& sources) {
+  sinks.on_done = [state, current, emit_turn, role_thread_id](const std::string& response, const std::string& finish,
+                                                              const std::vector<BriefAiSource>& sources,
+                                                              const std::string& role) {
     emit_turn(finish == "length" ? "done_truncated" : "done");
     if (!current()) {
       state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
       return;
+    }
+    if (!role_thread_id.empty()) {
+      std::lock_guard lock(state->last_role_mutex);
+      if (role.empty()) {
+        state->last_role_by_thread.erase(role_thread_id); // the last answer named no role: nothing to hand back
+      } else {
+        state->last_role_by_thread[role_thread_id] = role;
+      }
     }
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
@@ -2245,6 +2266,11 @@ void AgentSession::Cancel() {
 void AgentSession::WaitForConfigureIdle() {
   std::unique_lock lock(impl_->configure_mutex);
   impl_->configure_cv.wait(lock, [&] { return impl_->configure_inflight == 0; });
+}
+
+void AgentSession::ForgetThread(const std::string& thread_id) {
+  std::lock_guard lock(impl_->last_role_mutex);
+  impl_->last_role_by_thread.erase(thread_id);
 }
 
 void AgentSession::StartNewConversation() {
