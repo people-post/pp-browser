@@ -1338,6 +1338,69 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   AppRuntime::ShutdownUI();
 }
 
+// Lab group_fourth_answers_late: on a remote hop, someone who answers after the SoftMigrate fan-out must
+// be told the hop — by the call's owner, once — or they wait out the attach wait and leave.
+class LateJoinerOnRemoteHopTest : public CallTopologyControllerTest {
+protected:
+  /** The local device (`local`) attached to a remote hop in a call of A, B, C; then D's accept arrives. */
+  size_t SfuAttachFanoutsAfterLateAccept(const std::string& local) {
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::InitializeUI();
+    const std::string call_id = "call:late-joiner";
+    SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+    host_->local_identity = local;
+    relay_->started = true;
+    relay_->local_peer_id = "12D3KooWLocalGuest";
+    dial_->endpoints[kHop] = "/ip4/1.2.3.4/tcp/443/p2p/" + kHop;
+    CallTopologyController::MediaRelayDeps deps;
+    deps.relay = relay_.get();
+    deps.dial = dial_.get();
+    deps.prefer_local_as_hop = false;
+    topo_->SetMediaRelayDeps(std::move(deps));
+    CallSfuAttachDetail attach;
+    attach.call_id = call_id;
+    attach.hop_peer_id = kHop;
+    attach.hop_multiaddr = dial_->endpoints[kHop];
+    EXPECT_TRUE(AttachToHop(call_id, attach));
+    AppRuntime::RunUIAndOwnerTasks();
+    host_->fanouts.clear();
+
+    CallParticipant late;
+    late.call_id = call_id;
+    late.identity = "account:D";
+    late.state = CallParticipantState::Joined;
+    late.joined_at = 5000;
+    EXPECT_TRUE(sessions_->UpsertParticipant(late));
+    EXPECT_TRUE(topo_->OnRemoteAcceptJoined(call_id, 4, "account:D"));
+    AppRuntime::RunUIAndOwnerTasks();
+    size_t told = 0;
+    for (const auto& f : host_->fanouts) {
+      if (f.type != CallControlType::CallSfuAttach) {
+        continue;
+      }
+      auto decoded = CallControlCodec::DecodeSfuAttach(f.detail_json);
+      EXPECT_TRUE(decoded);
+      if (decoded && decoded->hop_peer_id == kHop) {
+        ++told;
+      }
+    }
+    AppRuntime::Shutdown();
+    AppRuntime::ShutdownUI();
+    return told;
+  }
+
+  const std::string kHop = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+};
+
+TEST_F(LateJoinerOnRemoteHopTest, OwnerTellsTheLateJoinerTheHop) {
+  EXPECT_GE(SfuAttachFanoutsAfterLateAccept("account:A"), 1u)
+      << "the owner (earliest joined) must re-announce the remote hop to a late joiner";
+}
+
+TEST_F(LateJoinerOnRemoteHopTest, OtherMembersDoNotAlsoAnnounce) {
+  EXPECT_EQ(SfuAttachFanoutsAfterLateAccept("account:B"), 0u) << "one sender per late join: the owner";
+}
+
 // Lab group_call_on_the_road: a phone spent its quick reattach attempts in a dead zone and, its
 // network coming back without moving (no OnLocalNetworkMoved), never tried again — out of the call
 // for good. A guest keeps trying at a steady pace while the call is on the hop.

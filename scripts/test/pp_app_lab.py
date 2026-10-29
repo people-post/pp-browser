@@ -1047,10 +1047,13 @@ def change_address(u):
     return new
 
 
-# A phone's link (--nat): delay and jitter (ms) and loss (%) each way, upload / download in kbit/s.
-# On the road a cell link is lossy and jittery and its upload thin; a weak one more so.
+# A phone's link (--nat): delay and jitter (ms) and loss (%, `loss_corr` % burstiness) each way,
+# upload / download in kbit/s, `limit` packets queued (netem's default 1000 holds seconds at a phone's rate).
+# On the road a cell link is lossy and jittery and its upload thin. A weak one is a phone at the edge of
+# coverage: slow and lossy in bursts, about a second of queue — not reordering (cells rarely reorder; wide
+# netem jitter does) and not 6 % independent loss each way, which no call app survives.
 PHONE_ROAD = {"delay": 60, "jitter": 40, "loss": 3, "up": 600, "down": 2000}
-PHONE_WEAK = {"delay": 120, "jitter": 60, "loss": 6, "up": 200, "down": 800}
+PHONE_WEAK = {"delay": 150, "jitter": 20, "loss": 2, "loss_corr": 25, "up": 256, "down": 1000, "limit": 200}
 
 
 def gw_net(u, script):
@@ -1067,8 +1070,9 @@ def gw_inner_dev(u):
 def phone_link(u, profile):
     """The user's link behaves like a phone's: netem on its upload (its eth0) and on its download
     (its gateway's side of the NAT, which carries only this user)."""
-    netem = "netem delay %dms %dms distribution normal loss %s%%" % (profile["delay"], profile["jitter"],
-                                                                       profile["loss"])
+    jitter = " %dms distribution normal" % profile["jitter"] if profile.get("jitter") else ""
+    netem = "netem limit %d delay %dms%s loss %s%% %s%%" % (
+        profile.get("limit", 1000), profile["delay"], jitter, profile["loss"], profile.get("loss_corr", 0))
     net(u, "tc qdisc replace dev eth0 root %s rate %dkbit" % (netem, profile["up"]))
     gw_net(u, "tc qdisc replace dev %s root %s rate %dkbit" % (gw_inner_dev(u), netem, profile["down"]))
 
@@ -1491,13 +1495,13 @@ def scenario_devices_hand_over_their_cards(lab):
     b.cmd("accept_voice")
     for u in (a, b):
         u.wait_surface("in_call", 40, call_id=call_id)
+    # The call screen reads In call while its media still connects; behind NATs the call's link (a circuit
+    # carrier) comes up after that. Its media flowing both ways is the live link the message must take.
+    assert_media_flows(a, b)
     wait_for(lambda: a_peer in b.cmd("kept_card", account=a.account)["devices"], 40,
              "bob: alice's device, from her card")
     wait_for(lambda: b_peer in a.cmd("kept_card", account=b.account)["devices"], 40,
              "alice: bob's device, from his card")
-    # The call screen reads In call while its media still connects; behind NATs the call's link (a circuit
-    # carrier) comes up after that. Its media flowing both ways is the live link the message must take.
-    assert_media_flows(a, b)
     sent = a.cmd("send", thread=a_thread, text="over the call's link")["message_id"]
     row = wait_for(lambda: transcript_row(b, b_thread, sent), 20, "bob: alice's message")
     if row.get("transport") != "direct":
@@ -2132,6 +2136,25 @@ def scenario_group_two_join_through_drops(lab):
 
 
 
+def scenario_group_fourth_answers_late(lab):
+    """Real people answer at different times: Bob and Dave answer at once (the third join moves the
+    call onto the hop), Carol 10 s later. Her accept reaches Alice after the hop was announced: she
+    must still be told the hop, and everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    for u in (b, c, d):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    for u in (b, d):
+        u.cmd("accept_voice")
+    assert_everyone_in_call([a, b, d], call_id)
+    time.sleep(10)
+    c.cmd("accept_voice")
+    c.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call(users, call_id, timeout=60)
+    leave_all(users)
+
+
 # Phone networks (--nat, a NAT per user). Dogfood: four in a call, a phone on the highway heard two
 # of three, the others saw three of four; that phone and the one it could not hear both retried to
 # get connected, and had not added each other both ways.
@@ -2161,8 +2184,9 @@ def scenario_group_call_on_the_road(lab):
 
 
 def scenario_group_call_weak_upload(lab):
-    """Carol's phone has a thin, lossy upload (200 kbit/s, 6 % loss) for the whole call of four:
-    her own media fills her link while she joins and subscribes. Everyone hears and sees everyone."""
+    """Carol's phone is at the edge of coverage for the whole call of four (PHONE_WEAK: 256 kbit/s up,
+    150 ms, 2 % loss in bursts): she joins and subscribes on it, and her accept reaches the others late.
+    Everyone hears and sees everyone."""
     users, threads = open_group(lab, 4, contacts=("bob>carol",))
     a, b, c, d = users
     with Road((c,), PHONE_WEAK):
@@ -2228,6 +2252,7 @@ SCENARIOS = [
     ("group_owner_hands_over", scenario_group_owner_hands_over),
     ("group_calling_at_once", scenario_group_calling_at_once),
     ("group_call_one_way_contact", scenario_group_call_one_way_contact),
+    ("group_fourth_answers_late", scenario_group_fourth_answers_late),
     ("group_call_placed_by_stranger", scenario_group_call_placed_by_stranger),
     ("group_one_way_joins_late", scenario_group_one_way_joins_late),
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),

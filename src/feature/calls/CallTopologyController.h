@@ -256,7 +256,8 @@ private:
   void FinishJoinSoftMigrate(const std::string& call_id, uint64_t gen, const Roe<void>& mig, bool attached_when_done);
   void StayDirectAfterAccept(const std::string& call_id, size_t n_joined);
   // Remote accept steps.
-  void RefanOutLocalHopForJoiner(const std::string& call_id, const std::string& joiner_identity);
+  /** A joiner that missed the SoftMigrate fan-out is told the hop (the hop itself, or the call's owner). */
+  void RefanOutHopForJoiner(const std::string& call_id, const std::string& joiner_identity);
   void FinishRemoteAcceptMigrate(const std::string& call_id, const std::string& joiner_identity, uint64_t gen,
                                  const Roe<void>& mig);
   // Hop hint (guest could not reach our hop) steps.
