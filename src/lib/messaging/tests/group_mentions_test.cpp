@@ -1,4 +1,5 @@
 #include "lib/messaging/GroupMentions.h"
+#include "lib/messaging/ChatPayloadCodec.h"
 
 #include <gtest/gtest.h>
 
@@ -30,6 +31,14 @@ std::string Json(const std::vector<MentionRange>& mentions, const std::optional<
 
 const std::vector<GroupRosterMember> kRoster{Member("owner", MemberRole::Owner), Member("bob"), Member("carol"),
                                              Member("dave")};
+
+TEST(GroupMentionsTest, AnEveryoneOnlyPayloadStillEncodesAsMentions) {
+  ThreadMessage message;
+  message.content_type = ChatContentType::Text;
+  message.text = "@所有人 开会";
+  message.payload_json = R"({"text":"@所有人 开会","all":{"s":0,"e":10}})";
+  EXPECT_TRUE(ChatPayloadCodec::HasMentions(message));
+}
 
 } // namespace
 

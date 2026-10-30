@@ -225,7 +225,10 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeTextMentions(const std::string
 }
 
 bool ChatPayloadCodec::HasMentions(const ThreadMessage& message) {
-  return message.content_type == ChatContentType::Text && !message.payload_json.empty() && message.payload_json.find("\"mentions\"") != std::string::npos &&
+  // Cheap pre-check before parsing; `all` alone (only @everyone) counts too.
+  return message.content_type == ChatContentType::Text && !message.payload_json.empty() &&
+         (message.payload_json.find("\"mentions\"") != std::string::npos ||
+          message.payload_json.find("\"all\"") != std::string::npos) &&
          !ParseMentionsPayload(message.payload_json).Empty();
 }
 
