@@ -19,10 +19,10 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 ## Next
 
 1. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
-2. **s1–s2** — recovery phrase and locker format (client only; can start now).
+2. **s1–s2** — recovery seed with its two tiers (easy: synced keychain, the default; private: the phrase) and the locker format (client only; can start now).
 3. **s3** — relay locker API (relay change first), then pp-node provider.
 4. **d4** master device, **s4** change log, **s5** restore / link from the locker, **s6** lab + promotion.
 
 ## Stated limits in force
 
-M021's limits (new devices have no history, revoke is eventual, …) and M023's (losing the phrase and every device loses the account; providers see locker size and timing).
+M021's limits (new devices have no history, revoke is eventual, …) and M023's (private tier: losing the phrase and every device loses the account; easy tier: the Apple / Google account is a way in; providers see locker size and timing).

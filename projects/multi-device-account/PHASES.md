@@ -170,7 +170,9 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 
 - [ ] 256-bit seed ↔ 24 words (a standard word list); account ML-DSA and ML-KEM keys derived from it deterministically (seed-based keygen in pp-cpp-crypto), and locker id / encryption key / signing key under separate labels
 - [ ] Decide existing accounts (random keys): new accounts only (pre-release wipe) or another path — record in M023 *Open*
-- [ ] Me → Security: show the phrase once on creation and on demand (PIN first); en + zh-Hans copy
+- [ ] Recovery tiers (M023 §3): **easy** (default, "Just continue") keeps the seed in the synced keychain — iOS `kSecAttrSynchronizable` (today's `OsSecureBlob_Ios.mm` is device-only: add a synced item), Android Block Store; **private** shows the phrase to write down; the easy tier's caveat in plain words
+- [ ] Me → Security: show the phrase on demand (PIN first); "Remove from iCloud / Google" (private, after the phrase was shown); private → easy in one tap; en + zh-Hans copy
+- [ ] Desktop (no synced keychain): the phrase, or link from a phone
 - [ ] Unit tests: phrase → the same Account ID every time; labels never collide
 
 ### s2 — Locker format
@@ -195,10 +197,11 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 
 - [ ] Restore: phrase → keys → locker → state; a new device signing a fresh list as master (d4); card floors before the first poll; announce to contacts
 - [ ] Link: the new device reads the locker / change log (no contacts in the bundle)
-- [ ] Retire `LocalAccountBackup`, the probe's `--backup-store` / `--restore-backup`, and the lab's file-store restore; the Keychain code goes with the A011 cleanup (`kRetiredKeychainBackupRemoveAt`)
+- [ ] Restore finds the seed in the synced keychain first (easy tier), else asks for the phrase
+- [ ] Retire `LocalAccountBackup`, the probe's `--backup-store` / `--restore-backup`, and the lab's file-store restore. The Keychain store stays (easy tier); only the retired item's cleanup goes at 1.1.0 (`kRetiredKeychainBackupRemoveAt`)
 
 ### s6 — Proof and promotion
 
-- [ ] Lab: lose every device, restore from the phrase, contacts / groups / floors back, contacts' next messages arrive; a provider serving an old snapshot is overruled by a newer one
+- [ ] Lab: lose every device, restore from the phrase (and, with a file standing in for the synced keychain, the easy tier), contacts / groups / floors back, contacts' next messages arrive; a provider serving an old snapshot is overruled by a newer one
 - [ ] Promote the locker format and API into `docs/contracts/`; mark M023 implemented
 
