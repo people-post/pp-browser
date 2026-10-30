@@ -38,8 +38,8 @@ enum class SummaryWrite { Final, Leave };
 /**
  * What a group call's record becomes when `next` is written over `existing` (the record already in the
  * thread, if any); nullopt = leave it as it is. A Final write never replaces a record (it was written
- * when this device left; a restart cleanup would also wipe its talk time). A Leave write adds this
- * segment's talk time to the earlier segments' (leave, rejoin, leave).
+ * when this device left; a restart cleanup would also wipe its talk time). A Leave write replaces it: the
+ * talk time runs from this device's first join to its last leave (leave, rejoin, leave).
  */
 std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSummaryDetail>& existing,
                                                    const CallSummaryDetail& next, SummaryWrite mode);

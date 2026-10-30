@@ -309,21 +309,13 @@ Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant
       "VALUES (?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, identity) DO UPDATE SET state=excluded.state, audio_muted=excluded.audio_muted, "
       "video_enabled=excluded.video_enabled, "
-      // Sticky SoftMigrate initiator: keep the earliest non-null joined_at within a stay. Coming back
-      // after leaving starts a new stay (B102: the old stamp won over the new join, so a roster
-      // carrying it looked stale and those who stayed never saw the one who came back), and a stamp
-      // from before the last leave is a stale one. left_at is the last leave and stays.
+      // Sticky SoftMigrate initiator: keep the earliest non-null joined_at.
       "joined_at=CASE "
-      "WHEN call_participants.state = 'left' AND excluded.state IN ('joined', 'invited', 'ringing') THEN "
-      "CASE WHEN excluded.joined_at IS NOT NULL AND call_participants.left_at IS NOT NULL "
-      "AND excluded.joined_at <= call_participants.left_at THEN NULL ELSE excluded.joined_at END "
       "WHEN excluded.joined_at IS NULL THEN call_participants.joined_at "
-      "WHEN call_participants.left_at IS NOT NULL AND excluded.joined_at <= call_participants.left_at "
-      "THEN call_participants.joined_at "
       "WHEN call_participants.joined_at IS NULL THEN excluded.joined_at "
       "WHEN excluded.joined_at < call_participants.joined_at THEN excluded.joined_at "
       "ELSE call_participants.joined_at END, "
-      "left_at=COALESCE(excluded.left_at, call_participants.left_at);";
+      "left_at=excluded.left_at;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare call participant upsert");

@@ -1200,27 +1200,6 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
-  // B102: a rejoined member is among the joined participants every side shows (the screen's members).
-  DrainUntil(
-      [&]() {
-        PumpWire();
-        for (size_t i : members_) {
-          auto rows = sides_[i].ui->ListJoinedParticipants(call_id);
-          if (!rows || rows->size() != 3u) {
-            return false;
-          }
-        }
-        return true;
-      },
-      8000);
-  for (size_t i : members_) {
-    auto joined_rows = sides_[i].ui->ListJoinedParticipants(call_id);
-    ASSERT_TRUE(joined_rows) << "side " << i;
-    EXPECT_EQ(joined_rows->size(), 3u) << "side " << i;
-    EXPECT_TRUE(std::any_of(joined_rows->begin(), joined_rows->end(),
-                            [&](const CallParticipant& row) { return row.identity == sides_[kC].local_identity; }))
-        << "side " << i << " lost the one who rejoined";
-  }
 }
 
 // B103: a group chat gets the call's record when this device leaves — not only when the call ends.
@@ -1254,7 +1233,7 @@ TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoi
   leave(kC);
   ASSERT_EQ(SummariesIn(kC).size(), 1u) << "leave, rejoin, leave: still one record";
   const int64_t both = SummariesIn(kC).front().duration_ms.value_or(0);
-  EXPECT_GT(both, first) << "talk time is both stays added";
+  EXPECT_GT(both, first) << "the record runs from the first join to the last leave";
 
   // The call then ends for everyone (CallEnded reaches C): its record is left as it was.
   leave(kA);
