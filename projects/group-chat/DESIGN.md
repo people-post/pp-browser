@@ -326,7 +326,7 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 ## Restore and roster sync (proposed, 2026-10-25)
 
-Status: accepted 2026-10-25 — G010–G013 with amendments (G014 separate); implementing on this branch. The restore section below is the design being built; docs/ gets the shipped rule. Found on devices 2026-10-25: a device restored from the local account backup, or a member who lost the group and is re-invited, restarts its own group `sender_seq` at 1 in its old epoch (AcceptInvite seeds `group_targets` with 1, 1), so peers silently drop its first messages. Same mechanism as the 1:1 bug fixed in 3cf0a14c8, which covers Direct threads only. The client team (Kenneth) is adding groups to the local backup (backup v3: per-group metadata, roster as identities, own `session_epoch`; no seq, no history) and a group members screen where the owner can add, remove and re-invite. The pieces below need the protocol owner.
+Status: G010–G013 implemented (2026-10-29; G014 separate); the shipped wire is in [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md) and the backup in [DATA_LAYOUT § Local account backup](../../docs/contracts/DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir); the sketches below are the proposal as accepted. The restore section below is the design being built; docs/ gets the shipped rule. Found on devices 2026-10-25: a device restored from the local account backup, or a member who lost the group and is re-invited, restarts its own group `sender_seq` at 1 in its old epoch (AcceptInvite seeds `group_targets` with 1, 1), so peers silently drop its first messages. Same mechanism as the 1:1 bug fixed in 3cf0a14c8, which covers Direct threads only. The client team (Kenneth) is adding groups to the local backup (backup v3: per-group metadata, roster as identities, own `session_epoch`; no seq, no history) and a group members screen where the owner can add, remove and re-invite. The pieces below need the protocol owner.
 
 ### Numbering per pair (G010, G011)
 
@@ -352,7 +352,7 @@ Sent with every roster event (`member_joined`, `member_left`, `member_removed`, 
 { "control_type": "group_roster_reply",   "detail": { "group_id": "…", "request_id": "uuid", "roster_statement": { … }, "removed": false } }
 ```
 
-Request goes to the owner and all members in the backup roster. Reply: any member may send its stored statement; `removed=true` (with the latest statement, if any) when the replier knows we are no longer a member.
+Request goes to the owner and all members in the backup roster. Reply: any member may send its stored statement; `removed=true` (with the latest statement, if any) when the replier knows we are no longer a member. Both ride the control lane ([WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md)): bookkeeping between two devices, never stored, and an account copy carrying the sender's card, which a restored asker no longer keeps.
 
 ### group_invite_refused (G014)
 

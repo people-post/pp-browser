@@ -145,10 +145,11 @@ class User:
         self.start()
         self.wait_ready()
 
-    def restore_account(self):
+    def restore_account(self, groups=None):
         """A reinstall restored from the account backup: the same account, contacts and public sessions,
         but no chats — threads and message numbering start over, so each pair starts its next epoch with
-        the first send (D014, issue #378)."""
+        the first send (D014, issue #378). `groups`: what `backup_groups` returned when the backup was
+        written; they come back checking their members (group-chat G013)."""
         bundle = self.cmd("backup_sessions")["bundle"]
         self.quit()
         shutil.rmtree(os.path.join(self.dir, "profiles", "default", "threads"), ignore_errors=True)
@@ -156,6 +157,8 @@ class User:
         self.start()
         self.wait_ready()
         self.cmd("restore_sessions", bundle=bundle)
+        if groups is not None:
+            self.cmd("restore_groups", groups=groups)
 
     def log_text(self):
         """Everything this user's app has logged, every run."""
@@ -2155,6 +2158,97 @@ def scenario_group_fourth_answers_late(lab):
     leave_all(users)
 
 
+def group_thread_of(u, group_id):
+    """`u`'s chat for the group, or None."""
+    for t in u.cmd("threads")["threads"]:
+        if t.get("group_id") == group_id:
+            return t["id"]
+    return None
+
+
+def said_in(u, thread, text):
+    return next((r for r in u.cmd("transcript", thread=thread)["rows"] if r.get("text") == text), None)
+
+
+def checked_roster(u, group_id, state, timeout=60):
+    """`u`'s roster of the group once its member check ended in `state` (group-chat G013)."""
+    def settled():
+        roster = u.cmd("group_roster", group_id=group_id)
+        return roster if roster.get("sync_state") == state else None
+    return wait_for(settled, timeout, "%s: group check ends %s" % (u.name, state))
+
+
+def backup_with_group(u, group_id):
+    groups = u.cmd("backup_groups")["groups"]
+    if not any(g["group_id"] == group_id for g in groups):
+        raise ProbeError("%s: the group is not in its backup (%s)" % (u.name, groups))
+    return groups
+
+
+def remove_and_wait(owner, owner_thread, group_id, member, watchers):
+    owner.cmd("remove_member", thread=owner_thread, account=member.account)
+    for u in watchers:
+        wait_for(lambda u=u: member.account not in u.cmd("group_roster", group_id=group_id)["members"] or None, 40,
+                 "%s: %s out" % (u.name, member.name))
+
+
+def scenario_group_restore_checks_members(lab):
+    """Carol's backup knows Alice (owner), Bob, Carol and Dave. Alice removes Dave; Carol then reinstalls
+    from that backup: her group comes back checking its members, takes the owner's newer roster (no Dave
+    — her stale one would have kept writing to him), and her next message reaches Alice and Bob."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+    backup = backup_with_group(c, group_id)
+    remove_and_wait(a, threads[a.name], group_id, d, (b, c))
+    c.restore_account(groups=backup)
+    c.wait_mesh()
+    roster = checked_roster(c, group_id, "active")
+    if d.account in roster["members"] or sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
+        raise ProbeError("carol: restored roster %s (Dave was removed after her backup)" % roster["members"])
+    thread = group_thread_of(c, group_id)
+    if not thread:
+        raise ProbeError("carol: no group chat after the restore")
+    c.cmd("show_chat", thread=thread)
+    c.cmd("compose_send", text="back from a reinstall")
+    for u in (a, b):
+        wait_for(lambda u=u: said_in(u, threads[u.name], "back from a reinstall"), 40, "%s: Carol's message" % u.name)
+
+
+def scenario_group_removed_member_restores(lab):
+    """Dave's backup still has him in the group; Alice removed him after it. When he reinstalls, his
+    group's member check ends removed: read-only, nothing sent."""
+    users, threads = open_group(lab, 3)
+    a, b, d = users
+    group_id = lab_group_id(a, threads)
+    backup = backup_with_group(d, group_id)
+    remove_and_wait(a, threads[a.name], group_id, d, (b,))
+    d.restore_account(groups=backup)
+    d.wait_mesh()
+    checked_roster(d, group_id, "removed")
+
+
+def scenario_group_restored_owner_takes_newer_roster(lab):
+    """The owner checks too: Alice's backup is from before she removed Dave. Restored, she asks her
+    members; their newer statement — her own signature — wins over her backup, so Dave stays out, and
+    her next message reaches Bob and Carol."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+    backup = backup_with_group(a, group_id)
+    remove_and_wait(a, threads[a.name], group_id, d, (b, c))
+    a.restore_account(groups=backup)
+    a.wait_mesh()
+    roster = checked_roster(a, group_id, "active")
+    if d.account in roster["members"]:
+        raise ProbeError("alice: her restored roster put Dave back (%s)" % roster["members"])
+    thread = group_thread_of(a, group_id)
+    a.cmd("show_chat", thread=thread)
+    a.cmd("compose_send", text="the owner is back")
+    for u in (b, c):
+        wait_for(lambda u=u: said_in(u, threads[u.name], "the owner is back"), 40, "%s: Alice's message" % u.name)
+
+
 # Phone networks (--nat, a NAT per user). Dogfood: four in a call, a phone on the highway heard two
 # of three, the others saw three of four; that phone and the one it could not hear both retried to
 # get connected, and had not added each other both ways.
@@ -2253,6 +2347,9 @@ SCENARIOS = [
     ("group_calling_at_once", scenario_group_calling_at_once),
     ("group_call_one_way_contact", scenario_group_call_one_way_contact),
     ("group_fourth_answers_late", scenario_group_fourth_answers_late),
+    ("group_restore_checks_members", scenario_group_restore_checks_members),
+    ("group_removed_member_restores", scenario_group_removed_member_restores),
+    ("group_restored_owner_takes_newer_roster", scenario_group_restored_owner_takes_newer_roster),
     ("group_call_placed_by_stranger", scenario_group_call_placed_by_stranger),
     ("group_one_way_joins_late", scenario_group_one_way_joins_late),
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),

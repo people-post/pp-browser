@@ -140,7 +140,8 @@ phone is not enough. Restore on a fresh install first tries the default PIN in t
 one come back without a question — for them, holding the unlocked phone still suffices, by design); otherwise it asks for the PIN the account used (enter, not create). A wrong PIN
 fails before anything is written and keeps the page up; Back returns to the fresh-install choices. The right PIN
 unwraps the copied vault, opens the sealed contents, imports the bundle exactly like a pasted transfer code
-(`LinkDeviceCoordinator::Import`) under that **same** PIN, then upserts the contacts. A PIN change rewrites the item; `DataKeyVault::ChangePin` only re-wraps and never clears the live DEK, so a backup
+(`LinkDeviceCoordinator::Import`) under that **same** PIN, then upserts the contacts. Its groups come back once
+messaging is up, each checking its members before it sends (group-chat G013). A PIN change rewrites the item; `DataKeyVault::ChangePin` only re-wraps and never clears the live DEK, so a backup
 write running on a worker at the same time cannot observe a zeroed key.
 Known gap: like `vault.bin` itself, the copied vault can be attacked offline by guessing PINs, and the restore page
 does not limit attempts.
