@@ -11,6 +11,7 @@
 #include "feature/conversations/PeopleSearch.h"
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "lib/people/LocalAccountBackup.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ContactCardExchange.h"
@@ -49,6 +50,41 @@ Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_
 
 Roe<void> ConversationsFacade::SyncPushDevices() {
   return PushDeviceCoordinator::Register(hub_);
+}
+
+Roe<std::optional<std::string>> ConversationsFacade::RecoveryPhrase(const std::string& pin) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  // Holding the unlocked app is not enough: the phrase is the whole account. The PIN must open the vault again.
+  DataKeyVault& vault = *hub_.Secrets()->Vault();
+  auto vault_bytes = vault.ReadVaultFile();
+  if (!vault_bytes) {
+    return vault_bytes.error();
+  }
+  if (auto opened = DataKeyVault::UnwrapDekFromVaultBytes(*vault_bytes, vault.ProfileId(), pin); !opened) {
+    return opened.error();
+  }
+  auto seed = hub_.Identity().RecoverySeed();
+  if (!seed) {
+    return seed.error();
+  }
+  if (!*seed) {
+    return std::optional<std::string>{};
+  }
+  auto phrase = EncodeRecoveryPhrase(**seed);
+  if (!phrase) {
+    return phrase.error();
+  }
+  return std::optional<std::string>(std::move(*phrase));
+}
+
+bool ConversationsFacade::HasRecoveryPhrase() {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || !hub_.Secrets()->IsUnlocked()) {
+    return false;
+  }
+  auto seed = hub_.Identity().RecoverySeed();
+  return seed && seed->has_value();
 }
 
 Roe<std::string> ConversationsFacade::ExportLinkDevice() {

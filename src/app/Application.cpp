@@ -809,6 +809,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  settings_commands.recovery_phrase = [&facade](const std::string& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };

@@ -172,7 +172,8 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] New accounts mint from a recovery seed kept in `identity.enc` (`IdentityStore::RecoverySeed`); a link bundle carries it, refused unless it derives the bundle's keys (`LinkDeviceCodec`)
 - [x] Existing accounts (random keys): **new accounts only** — they show no phrase (pre-release; COMPATIBILITY allows a wipe). Recorded in M023 *Open*
 - [ ] Recovery tiers (M023 §3): **easy** (default, "Just continue") keeps the seed in the synced keychain — iOS `kSecAttrSynchronizable` (today's `OsSecureBlob_Ios.mm` is device-only: add a synced item), Android Block Store; **private** shows the phrase to write down; the easy tier's caveat in plain words
-- [ ] Me → Security: show the phrase on demand (PIN first); "Remove from iCloud / Google" (private, after the phrase was shown); private → easy in one tap; en + zh-Hans copy
+- [x] Me → Security → **Show recovery phrase…**: the PIN must open the vault again (the app default PIN: not asked, as for everything on that tier), shown for two minutes then hidden; en + zh-Hans (`SettingsSecurityActions`, `ConversationsFacade::RecoveryPhrase`); lab `recovery_phrase_needs_the_pin` (wrong PIN refused, stable words, a linked device shows the same)
+- [ ] Tier switch: "Remove from iCloud / Google" (private, only after the phrase was shown); private → easy in one tap — needs the synced keychain first
 - [ ] Desktop (no synced keychain): the phrase, or link from a phone
 - [x] Unit tests: BIP vectors, typed / mistyped phrases, phrase → the same Account ID, labels never collide, link bundle seed check
 

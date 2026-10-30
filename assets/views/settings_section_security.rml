@@ -37,6 +37,26 @@
             {{i18n:settings.security.link_device.export}}
           </button>
         </div>
+        <div class="stack settings-actions" data-if="security_has_recovery_phrase">
+          <p class="text">{{i18n:settings.security.recovery}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.recovery.help}}</p>
+          <div class="stack" data-if="recovery_phrase == ''">
+            <label class="settings-field" data-if="!pin_protection_is_default">
+              <span class="settings-label">{{i18n:settings.security.recovery.pin_label}}</span>
+              <input class="field" type="password" data-value="recovery_phrase_pin" placeholder="{{i18n:settings.security.recovery.pin_placeholder}}"/>
+            </label>
+            <button class="btn" type="button" data-event-click="show_recovery_phrase()">
+              {{i18n:settings.security.recovery.show}}
+            </button>
+          </div>
+          <div class="stack" data-if="recovery_phrase != ''">
+            <p class="text" selectable="text">{{recovery_phrase}}</p>
+            <p class="text muted settings-help">{{i18n:settings.security.recovery.shown_hint}}</p>
+            <button class="btn" type="button" data-event-click="hide_recovery_phrase()">
+              {{i18n:settings.security.recovery.hide}}
+            </button>
+          </div>
+        </div>
         <button class="settings-toggle-row settings-choice-row row" type="button"
                 data-event-click="on_choose_group_invite_policy()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.security.group_invites}}</span>

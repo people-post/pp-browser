@@ -1690,6 +1690,24 @@ def scenario_restored_device_hears_first(lab):
     wait_for(heard, 30, "bob: alice's message on his restored phone")
 
 
+def scenario_recovery_phrase_needs_the_pin(lab):
+    """Me → Security → Show recovery phrase (multi-device M023): the PIN must open the vault again — a wrong one
+    shows nothing — and the 24 words are the same each time; a device linked to the account shows the same
+    phrase (the seed travels with the account keys)."""
+    a = lab.user("alice")
+    wrong = a.cmd("recovery_phrase", pin=PIN + "0", check=False)
+    if wrong.get("ok"):
+        raise ProbeError("alice: a wrong PIN showed the recovery phrase")
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    if len(phrase.split()) != 24:
+        raise ProbeError("alice: recovery phrase %r is not 24 words" % phrase)
+    if a.cmd("recovery_phrase", pin=PIN)["phrase"] != phrase:
+        raise ProbeError("alice: the recovery phrase changed")
+    laptop = lab.linked_device(a, "alice-laptop")
+    if laptop.cmd("recovery_phrase", pin=PIN)["phrase"] != phrase:
+        raise ProbeError("alice's laptop: another recovery phrase than her phone's")
+
+
 def scenario_linked_devices_both_send(lab):
     """Alice's phone and her newly linked laptop are two devices of one account (M021). The laptop's first
     message brings Bob its device list; from then on Bob's answers reach both devices, and both keep writing
@@ -2352,6 +2370,7 @@ SCENARIOS = [
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
     ("restored_device_hears_first", scenario_restored_device_hears_first),
+    ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),

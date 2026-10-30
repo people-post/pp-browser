@@ -168,6 +168,7 @@ private:
     bool pin_protection_not_setup = false;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
+    bool security_has_recovery_phrase = false;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
     ui::String call_invite_policy = "everyone";

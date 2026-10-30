@@ -63,6 +63,13 @@ public:
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   Roe<void> SyncPushDevices();
   Roe<std::string> ExportLinkDevice();
+  /**
+   * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the
+   * account has no recovery seed (minted before M023). A wrong PIN is a Pin-category error.
+   */
+  Roe<std::optional<std::string>> RecoveryPhrase(const std::string& pin);
+  /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
+  bool HasRecoveryPhrase();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
   /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
   Roe<std::optional<std::string>> LocalBackupNickname();

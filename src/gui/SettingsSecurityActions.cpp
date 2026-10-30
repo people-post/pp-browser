@@ -1,5 +1,6 @@
 #include "gui/SettingsSecurityActions.h"
 
+#include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -9,6 +10,7 @@
 #include <ui/base/SystemInterface.h>
 #include <ui/data/DataModelHandle.h>
 
+#include <chrono>
 #include <utility>
 
 namespace pbr {
@@ -23,6 +25,10 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("pin_change_confirm", &pin_change_confirm_);
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  ctor.Bind("recovery_phrase", &recovery_phrase_);
+  ctor.Bind("recovery_phrase_pin", &recovery_phrase_pin_);
+  ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
+  ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
   ctor.BindEventCallback("clear_undelivered_older_than", DataEvent<>([this]() { ClearUndeliveredOlderThan(); }));
   ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { ResetToolPermissions(); }));
   ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { ResetProfile(); }));
@@ -132,6 +138,55 @@ void SettingsSecurityActions::ExportLinkDevice() {
         },
         {});
   });
+}
+
+void SettingsSecurityActions::ShowRecoveryPhrase() {
+  if (!commands_.recovery_phrase) {
+    host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.recovery.not_ready")));
+    return;
+  }
+  // A profile on the app default PIN gets its phrase as it gets everything else (by design: the unlocked app is
+  // enough there); a chosen PIN is asked for again.
+  const bool default_pin = host_.Store().Snapshot().profile_prefs.pin_is_default;
+  const std::string pin = default_pin ? std::string(kDefaultProfilePin) : std::string(recovery_phrase_pin_.c_str());
+  if (pin.empty()) {
+    host_.ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.recovery.pin_required")));
+    return;
+  }
+  recovery_phrase_pin_ = "";
+  AppRuntime::PostWorkerNormal([this, pin]() {
+    auto phrase = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
+                                            : Roe<std::optional<std::string>>(Error("Messaging is not ready"));
+    AppRuntime::PostUI([this, phrase = std::move(phrase)]() mutable {
+      if (!phrase) {
+        host_.ReportFailure(phrase.error());
+        host_.PushToView(false);
+        return;
+      }
+      if (!*phrase) {
+        host_.ReportFailure(Error("No recovery phrase").WithUser(Tr("settings.security.recovery.none")));
+        return;
+      }
+      recovery_phrase_ = phrase->value().c_str();
+      host_.PushToView(false);
+      // Not left on screen: it hides by itself.
+      const uint64_t shown = ++recovery_shown_count_;
+      AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRecoveryPhraseShownMs), [this, shown]() {
+        AppRuntime::PostUI([this, shown]() {
+          if (shown == recovery_shown_count_) {
+            HideRecoveryPhrase();
+          }
+        });
+      });
+    });
+  });
+}
+
+void SettingsSecurityActions::HideRecoveryPhrase() {
+  recovery_phrase_ = "";
+  recovery_phrase_pin_ = "";
+  ++recovery_shown_count_;
+  host_.PushToView(false);
 }
 
 void SettingsSecurityActions::ClearUndeliveredOlderThan() {

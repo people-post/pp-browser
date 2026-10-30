@@ -111,6 +111,8 @@ struct SettingsUiState {
   bool security_can_change_pin = false;
   /** Registered + unlocked — copy a link-device payload. */
   bool security_can_export_link = false;
+  /** The account has a recovery phrase to show (M023; accounts minted before have none). */
+  bool security_has_recovery_phrase = false;
   /** G007 — everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */

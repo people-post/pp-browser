@@ -29,6 +29,7 @@
 //   remove_member {thread, account}     the owner removes a member from the group
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
+//   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
@@ -399,6 +400,19 @@ public:
             }
             Object out = Reply(id, true);
             out.set("bundle", *bundle);
+            Emit(out);
+          });
+    } else if (cmd == "recovery_phrase") {
+      const std::string pin = request->getString("pin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<std::string>>>(
+          WorkerLane::Normal, [this, pin]() { return facade_->RecoveryPhrase(pin); },
+          [id](Roe<std::optional<std::string>> phrase) {
+            if (!phrase) {
+              ReplyError(id, phrase.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("phrase", phrase->value_or(""));
             Emit(out);
           });
     } else if (cmd == "link_import") {

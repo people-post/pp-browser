@@ -7,6 +7,7 @@
 
 #include <ui/base/Types.h>
 
+#include <cstdint>
 #include <functional>
 #include "common/PbrCompat.h"
 
@@ -34,6 +35,9 @@ public:
 private:
   void ChangePin();
   void ExportLinkDevice();
+  /** Me → Security → Show recovery phrase: the PIN again (unless the app default), then the 24 words for a while. */
+  void ShowRecoveryPhrase();
+  void HideRecoveryPhrase();
   void ClearUndeliveredOlderThan();
   void ResetToolPermissions();
   void ResetProfile();
@@ -52,6 +56,13 @@ private:
   ui::String pin_change_old_;
   ui::String pin_change_new_;
   ui::String pin_change_confirm_;
+  /** The phrase while it is shown (empty otherwise) and the PIN typed to show it. */
+  ui::String recovery_phrase_;
+  ui::String recovery_phrase_pin_;
+  /** Bumped on every show and hide: a pending auto-hide only acts on the showing it was set for. */
+  uint64_t recovery_shown_count_ = 0;
+  /** How long the phrase stays on screen. */
+  static constexpr int64_t kRecoveryPhraseShownMs = 2 * 60 * 1000;
 };
 
 } // namespace pbr
