@@ -212,6 +212,7 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `contact_card` | `3` |
 | `crypto_tx` | `4` |
 | `attachment` | `5` |
+| `text_mentions` | `6` |
 
 **Rules:** unknown `content_type` after successful decrypt → **soft-skip** placeholder (R018 / [COMPATIBILITY.md](COMPATIBILITY.md)); reject malformed tails for known types. Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
 
@@ -255,6 +256,29 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `key_init_hash` | string | BLAKE2b-256 of raw `key_init` bytes, lowercase hex |
 
 AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b64`.
+
+**`content_type = text_mentions`** (a group message that mentions members; group-chat [G015](../../projects/group-chat/DECISIONS.md)). A message with no mention is still sent as `text` (`0`). Integers are big-endian (the archive's `u8` / `u16` / `u32` / `u64` — see the encoding table above); **LenUtf8** is `u64` BE count + bytes:
+
+| Field | Encoding | Notes |
+|-------|----------|-------|
+| `sub_version` | `u8` = **`1`** | |
+| `count` | `u16` | at most **50** (the group size limit, G014) |
+| mention × `count` | `account_id` **LenUtf8**, `start` `u32`, `end` `u32` | `[start, end)` is a **UTF-8 byte** range of `text` covering `@name` (the `@` included) |
+| `flags` | `u8` | bit0 = `@everyone`; every other bit must be `0` |
+| `all_start`, `all_end` | `u32`, `u32` | present only when `flags` bit0 is set: the byte range of the inserted `@everyone` text (in the sender's UI language), checked like a mention |
+
+Full layout: `payload_version(1) | 6 | LenUtf8 text | sub_version(1) | u16 count | count × { LenUtf8 account_id, u32 start, u32 end } | u8 flags | [u32 all_start, u32 all_end when flags bit0]`.
+
+**Receive checks, two levels:**
+
+1. **Structure** (reject the whole message, like any known type): a length past the end, bytes left after the tail (`ExactEnd`), `count` above 50, an unknown `flags` bit, unknown `sub_version`.
+2. **Ranges** (drop only the offending mention, or only `all`; the text is shown as normal and one log line is written without account id or text): a range outside `text`, `start >= end`, overlapping another range, an end that is not on a UTF-8 character boundary, or `text[start..end)` not starting with `@`.
+
+**Eligibility is not checked at decode.** Mentions that pass both levels are stored as they came. Whether `account_id` is a member of the group, and whether an `all` came from the group **owner**, is checked against the local roster when the message is **displayed** and when the **notification decision** is made; one that fails counts as not there (no highlight, not "mentioned"). A device whose roster arrives late shows the highlight once the roster is complete; the notification decision is made once, on arrival, and is not revisited (stated limit, G015).
+
+**Local form:** a decoded `text_mentions` is stored as `ChatContentType::Text`; `payload_json` is `{ "text", "mentions": [{ "id", "s", "e" }], "all": { "s", "e" }? }`. Re-encoding a stored message (history answer, resend, forward) writes `6` when it has `mentions` or `all`, else `0`.
+
+Example (logical): `text = "Hi @Li Wei, all set"`, one mention `{ account_id: "acc-li", start: 3, end: 10 }` (`@Li Wei` is 7 bytes), `flags = 0` → `01 06 | LenUtf8 text | 01 | 0001 | LenUtf8 "acc-li", 00000003, 0000000a | 00`. An app before `text_mentions` shows an "update to view" placeholder (R018); all devices of a group are expected on one build (unreleased, no backward compatibility).
 
 **`content_type = contact_card`** (someone's contact, shared in a chat — [ACCOUNT_CARD.md](ACCOUNT_CARD.md)):
 

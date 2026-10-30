@@ -141,3 +141,25 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Decision:** Limit 50, counting the active roster only (not pending invites). The owner refuses create/invite beyond 50. An invite sent while not full but accepted when full: the owner refuses the accept and sends `group_invite_refused` `{ group_id, invite_nonce, reason: "group_full" }`, so the invitee does not believe it joined. Kenneth decided 50.  
 **Rationale:** Send cost is N pairwise ciphertexts per message (G008) and the `member_joined` snapshot carries every member's card; both grow with size. Without a refusal message the invitee, who creates its local group on accept, would show a group the owner never added.  
 **Alternatives:** No limit; count pending invites against the limit (blocks invites that may never be accepted).
+
+---
+
+## G015 — Mentions in group messages
+
+**Date:** 2026-10-30  
+**Status:** Proposed  
+**Decision:**
+
+| Part | Rule |
+|---|---|
+| Wire | New `ChatPayload` content type **6 `text_mentions`**: text, then `count` × { `account_id`, UTF-8 byte `start`, `end` } and an `@everyone` flag with its own range. Layout: [WIRE_SCHEMAS § ChatPayload](../../docs/contracts/WIRE_SCHEMAS.md). A message with no mention stays type 0. Mentions name **account ids**, never nicknames. |
+| Local | Stored as `ChatContentType::Text`; `mentions` / `all` ride in `payload_json`. |
+| `@everyone` | Only the group owner may use it; the receiver checks the sender against its roster. |
+| Receive | Structure errors reject the message. A bad range drops only that mention (text shown normally). Membership of `account_id` and the owner check on `all` are made against the local roster **when displayed or when notifying**, not at decode. |
+| Notify | Not muted: notify as for any group message. Muted group and mentioned: notify **at most once per group per 60 s**. Not muted and not mentioned: unchanged. Messages from history sync never mark or notify. |
+| Marker | Per-thread `unread_mention` flag in `profile.db` ([DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md)), set by a live mention, cleared on opening the thread. |
+| Limits | At most 50 mentions per message (G014). All devices on the same build: unreleased, no backward compatibility; an older build shows "update to view". |
+
+**Rationale:** A mention bypasses mute, so it must not rest on a nickname the receiver guesses (duplicate names, renames, a member who picks another's name). Account ids plus byte ranges let the receiver highlight exactly what the sender inserted. A new content type keeps type 0 unchanged and fails soft on old builds. Eligibility is not decided at decode because the roster can arrive after the message (a restored device, G013; a new member; a fresh owner transfer): a late roster then restores the highlights. **Stated limit:** the notification decision is made once on arrival, so a message that arrives before the roster does not notify retroactively. The 60 s rate limit stops one member from using mentions to flood a muted group; history sync is excluded so a backlog cannot raise old alerts.  
+**Alternatives:** Match `@nickname` in the text at the receiver (misattribution, bypasses mute on a guess); put mentions in a JSON tail (JSON is forbidden in signed/hashed bytes, WIRE_SCHEMAS); check membership at decode (drops highlights when the roster is late); let any member use `@everyone` (spam of a whole group); no limit on notifying in a muted group (flooding).  
+**Cross-link:** [WIRE_SCHEMAS § text_mentions](../../docs/contracts/WIRE_SCHEMAS.md), [DATA_LAYOUT § profile.db](../../docs/contracts/DATA_LAYOUT.md), G008 (per-member ciphertexts), G013 (roster sync), G014 (size limit 50).
