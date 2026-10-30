@@ -61,3 +61,17 @@ TEST(PeoplePickerLogicTest, AddMemberCandidatesLeaveOutTheRosterAndSelf) {
   const std::vector<std::string> ids = pbr::AddMemberCandidateIds(contacts, roster, "acct:me");
   EXPECT_EQ(ids, (std::vector<std::string>{"c1", "c5"}));
 }
+
+TEST(PeoplePickerLogicTest, InviteNeedsContactHintShowsWhenTheButtonCreatesOrInvites) {
+  using pbr::ShowInviteNeedsContactHint;
+  EXPECT_TRUE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::FromDm, 1)));
+  EXPECT_TRUE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::Free, 2)));
+  EXPECT_TRUE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::GroupAddMember, 1)));
+  EXPECT_TRUE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::GroupAddMember, 1, true)));
+  // One person picked in Free mode is a plain chat; calls and the read-only list invite no one to a group.
+  EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::Free, 1)));
+  EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::Free, 0)));
+  EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::FromDm, 0)));
+  EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::GroupCall, 2)));
+  EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::GroupMembers, 2)));
+}

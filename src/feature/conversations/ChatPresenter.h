@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -89,6 +90,10 @@ struct GroupMemberRow {
   std::string contact_id;
   bool is_owner = false;
   bool unreachable = false;
+  /** Invited by this device, not on the roster yet (not a member; not counted in "N members"). */
+  bool invited = false;
+  /** Invited more than a day ago and still not joined. */
+  bool invited_stale = false;
 
   bool IsContact() const { return !contact_id.empty(); }
   bool operator==(const GroupMemberRow&) const = default;
@@ -100,6 +105,18 @@ struct GroupMemberRow {
  */
 GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
                                    bool unreachable, const std::string& card_nickname = {});
+/** An invite waiting longer than this shows the "not joined yet" hint. */
+inline constexpr int64_t kInviteStaleAfterMs = 24LL * 60 * 60 * 1000;
+
+/**
+ * The row for someone this device invited who has not joined: nothing when they are already on the
+ * roster (`roster_identities`), else a row marked `invited`, `invited_stale` after a day. `contact` and
+ * `card_nickname` name them as for a member.
+ */
+std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
+                                              const std::unordered_set<std::string>& roster_identities,
+                                              const std::optional<Contact>& contact, int64_t now_ms,
+                                              const std::string& card_nickname = {});
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 

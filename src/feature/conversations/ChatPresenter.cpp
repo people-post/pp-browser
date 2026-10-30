@@ -51,6 +51,21 @@ GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::o
   return row;
 }
 
+std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
+                                              const std::unordered_set<std::string>& roster_identities,
+                                              const std::optional<Contact>& contact, const int64_t now_ms,
+                                              const std::string& card_nickname) {
+  if (roster_identities.count(invite.invitee_identity) > 0) {
+    return std::nullopt;
+  }
+  GroupRosterMember as_member;
+  as_member.member_identity = invite.invitee_identity;
+  GroupMemberRow row = BuildGroupMemberRow(as_member, contact, false, card_nickname);
+  row.invited = true;
+  row.invited_stale = now_ms - invite.created_at > kInviteStaleAfterMs;
+  return row;
+}
+
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
   std::stable_sort(rows.begin(), rows.end(), [](const GroupMemberRow& a, const GroupMemberRow& b) {
     if (a.unreachable != b.unreachable) {

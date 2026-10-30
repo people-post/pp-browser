@@ -504,4 +504,33 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
 }
 
 } // namespace
+TEST_F(GroupRosterInviteApplyTest, ListOutboundPendingInvitesKeepsLiveOutboundOnesOncePerInvitee) {
+  const int64_t now = util::NowUnixMs();
+  auto make = [&](const std::string& nonce, const std::string& invitee, const int64_t created,
+                  const InviteStatus status, const int64_t expires, const bool outbound, const std::string& group) {
+    PendingGroupInvite invite = MakePending();
+    invite.invite_nonce = nonce;
+    invite.group_id = group;
+    invite.invitee_identity = invitee;
+    invite.created_at = created;
+    invite.status = status;
+    invite.expires_at = expires;
+    invite.outbound = outbound;
+    ASSERT_TRUE(roster_->UpsertPendingInvite(invite));
+  };
+  make("old", "relay:bob", now - 5000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("new", "relay:bob", now - 1000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("carol", "relay:carol", now - 3000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("expired", "relay:dan", now - 9000, InviteStatus::Pending, now - 1, true, "group:hike");
+  make("done", "relay:eve", now - 9000, InviteStatus::Accepted, now + 100000, true, "group:hike");
+  make("inbound", "relay:fay", now - 9000, InviteStatus::Pending, now + 100000, false, "group:hike");
+  make("other", "relay:gus", now - 9000, InviteStatus::Pending, now + 100000, true, "group:other");
+  auto listed = roster_->ListOutboundPendingInvites("group:hike", now);
+  ASSERT_TRUE(listed);
+  ASSERT_EQ(listed->size(), 2u);
+  EXPECT_EQ((*listed)[0].invite_nonce, "new");
+  EXPECT_EQ((*listed)[0].invitee_identity, "relay:bob");
+  EXPECT_EQ((*listed)[1].invitee_identity, "relay:carol");
+}
+
 } // namespace pbr

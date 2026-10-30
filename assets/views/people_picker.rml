@@ -30,6 +30,7 @@
       <p class="text muted" data-if="rows.size == 0 && search_query == ''">{{empty_hint}}</p>
       <p class="text muted" data-if="rows.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
       <p class="text muted" data-if="full_hint != ''">{{full_hint}}</p>
+      <p class="text muted" data-if="invite_hint != ''">{{invite_hint}}</p>
     </div>
 
     <div class="people-picker-footer stack">

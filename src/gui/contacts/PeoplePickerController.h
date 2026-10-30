@@ -160,6 +160,7 @@ private:
   bool show_cta_ = true;
   bool show_add_members_ = false;
   ui::String full_hint_;
+  ui::String invite_hint_;
   MessagingContactsPorts contacts_ports_;
   MessagingPeoplePickerPorts picker_ports_;
   UnlockEnsurePorts unlock_ensure_;

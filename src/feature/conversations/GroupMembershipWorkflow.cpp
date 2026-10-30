@@ -731,6 +731,11 @@ std::vector<std::string> GroupMembershipWorkflow::ListUnreachable(const std::str
   return out;
 }
 
+std::vector<PendingGroupInvite> GroupMembershipWorkflow::ListInvitedWaiting(const std::string& group_id) const {
+  auto invites = roster_.ListOutboundPendingInvites(group_id, util::NowUnixMs());
+  return invites ? std::move(*invites) : std::vector<PendingGroupInvite>{};
+}
+
 bool GroupMembershipWorkflow::IsOwnerUnreachable(const std::string& group_id) const {
   auto metadata = roster_.LoadMetadata(group_id);
   if (!metadata || !*metadata) {
