@@ -55,4 +55,27 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
   return plan;
 }
 
+std::string GroupCallSummaryMessageId(const std::string& call_id) {
+  return "call-summary:" + call_id;
+}
+
+std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSummaryDetail>& existing,
+                                                   const CallSummaryDetail& next, const SummaryWrite mode) {
+  if (!existing) {
+    return next;
+  }
+  if (mode == SummaryWrite::Final) {
+    return std::nullopt;
+  }
+  if (!existing->duration_ms) {
+    return next;
+  }
+  if (!next.duration_ms) {
+    return std::nullopt;  // this segment had no talk time: the earlier record says more
+  }
+  CallSummaryDetail merged = next;
+  merged.duration_ms = *existing->duration_ms + *next.duration_ms;
+  return merged;
+}
+
 } // namespace pbr

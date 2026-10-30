@@ -112,7 +112,7 @@ void CallPresenter::Changed() {
   }
 }
 
-void CallPresenter::TakeStackNotices(CallUiBackend& backend) {
+bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
   if (!backend.LastError().empty()) {
     FailText(backend.LastError());
     backend.ClearLastError();
@@ -133,7 +133,9 @@ void CallPresenter::TakeStackNotices(CallUiBackend& backend) {
       notice.identity = **peer;
     }
     Notify(notice);
+    return true;
   }
+  return false;
 }
 
 void CallPresenter::Refresh() {
@@ -146,7 +148,7 @@ void CallPresenter::Refresh() {
   if (!backend || !backend->Available()) {
     return;
   }
-  TakeStackNotices(*backend);
+  const bool remote_ended = TakeStackNotices(*backend);
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
@@ -223,6 +225,12 @@ void CallPresenter::Refresh() {
     ringing_call_id_.clear();
     ring_shown_ = false;
   }
+  if (EndedWithoutConnecting(screen_, next, remote_ended)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::Error;
+    notice.key = "call.status.ended_couldnt_connect";
+    Notify(notice);
+  }
   screen_ = std::move(next);
   Changed();
 }
@@ -281,6 +289,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   }
   s.status = decided.status;
   s.media_connected = decided.media_connected;
+  s.was_connected = signals.was_connected;
   s.show_retry = decided.show_retry;
   s.show_invite = decided.show_invite;
   s.hint = decided.hint;
@@ -291,7 +300,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   } else if (decided.status == CallScreen::Status::Raw) {
     s.raw_state = signals.connection_state;
   }
-  if (decided.show_elapsed) {
+  if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms;  // the call's, not the current path's
   }
 }

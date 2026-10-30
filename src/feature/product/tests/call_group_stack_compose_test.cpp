@@ -9,6 +9,7 @@
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "lib/calls/CallSessionStore.h"
+#include "lib/calls/CallSummaryLogic.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -22,6 +23,7 @@
 #include <set>
 #include <shared_mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1198,6 +1200,99 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
+  // B102: a rejoined member is among the joined participants every side shows (the screen's members).
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        for (size_t i : members_) {
+          auto rows = sides_[i].ui->ListJoinedParticipants(call_id);
+          if (!rows || rows->size() != 3u) {
+            return false;
+          }
+        }
+        return true;
+      },
+      8000);
+  for (size_t i : members_) {
+    auto joined_rows = sides_[i].ui->ListJoinedParticipants(call_id);
+    ASSERT_TRUE(joined_rows) << "side " << i;
+    EXPECT_EQ(joined_rows->size(), 3u) << "side " << i;
+    EXPECT_TRUE(std::any_of(joined_rows->begin(), joined_rows->end(),
+                            [&](const CallParticipant& row) { return row.identity == sides_[kC].local_identity; }))
+        << "side " << i << " lost the one who rejoined";
+  }
+}
+
+// B103: a group chat gets the call's record when this device leaves — not only when the call ends.
+TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoiningRewritesIt) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  auto leave = [&](size_t side) {
+    sides_[side].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+    DrainUntil([&]() {
+      PumpWire();
+      return sides_[side].ui->Phase() == CallPhase::Idle && !relays_[side]->IsAttached();
+    });
+  };
+  leave(kC);
+  ASSERT_EQ(SummariesIn(kC).size(), 1u) << "C left first: its record is there while the call goes on";
+  EXPECT_TRUE(SummariesIn(kA).empty());
+  const int64_t first = SummariesIn(kC).front().duration_ms.value_or(0);
+  EXPECT_GT(first, 0);
+
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  ASSERT_TRUE(GroupLive(call_id)) << Describe(call_id);
+  DrainUntil([]() { return false; }, 300);  // some talk time in the second stay
+  leave(kC);
+  ASSERT_EQ(SummariesIn(kC).size(), 1u) << "leave, rejoin, leave: still one record";
+  const int64_t both = SummariesIn(kC).front().duration_ms.value_or(0);
+  EXPECT_GT(both, first) << "talk time is both stays added";
+
+  // The call then ends for everyone (CallEnded reaches C): its record is left as it was.
+  leave(kA);
+  leave(kB);
+  DrainUntil([&]() {
+    PumpWire();
+    return false;
+  }, 1500);
+  ASSERT_EQ(SummariesIn(kC).size(), 1u);
+  EXPECT_EQ(SummariesIn(kC).front().duration_ms.value_or(0), both);
+  EXPECT_EQ(SummariesIn(kA).size(), 1u);
+  EXPECT_EQ(SummariesIn(kB).size(), 1u);
+}
+
+// Two writers of the same record (the leave, the call's end, a restart cleanup) leave one row.
+TEST_F(CallGroupStackComposeTest, TwoWritesOfOneGroupRecordMakeOneRow) {
+  ThreadMessage record;
+  record.id = GroupCallSummaryMessageId("call:twice");
+  record.thread_id = "thread-group-call";
+  record.sender_contact_id = "me";
+  record.content_type = ChatContentType::System;
+  record.text = "Voice call";
+  record.timestamp = 1;
+  record.delivery = MessageDelivery::Local;
+  record.relay_visible = false;
+  auto& store = *sides_[kA].store;
+  const size_t before = store.GetMessages(record.thread_id)->size();
+  std::vector<std::thread> writers;
+  for (int i = 0; i < 4; ++i) {
+    writers.emplace_back([&store, record, i]() mutable {
+      record.text = "write " + std::to_string(i);
+      EXPECT_TRUE(store.UpsertMessage(record));
+    });
+  }
+  for (auto& writer : writers) {
+    writer.join();
+  }
+  EXPECT_EQ(store.GetMessages(record.thread_id)->size(), before + 1);
 }
 
 // V053: the owner removes C from the group mid-call. A and B learn of it; C's device has not (it

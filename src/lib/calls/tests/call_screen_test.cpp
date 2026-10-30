@@ -152,5 +152,67 @@ TEST(CallScreenTest, TheEngineStateWhenNothingElseSays) {
   EXPECT_FALSE(Decide(reattaching).media_connected);
 }
 
+CallScreen GroupScreen(Status status, bool media_connected, bool was_connected) {
+  CallScreen screen;
+  screen.kind = CallScreen::Kind::InCall;
+  screen.call_id = "call:g";
+  screen.group = true;
+  screen.members.resize(3);
+  screen.status = status;
+  screen.media_connected = media_connected;
+  screen.was_connected = was_connected;
+  return screen;
+}
+
+TEST(CallScreenTest, AGroupKeepsItsParticipantCountWhileItSetsItselfUpAgain) {
+  // B102: someone rejoined — the media path moves (setting up / waiting for the hop) and the count stayed hidden.
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::Connected, true, true)));
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::SettingUpGroup, false, true)));
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::WaitingForMediaPath, false, true)));
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::Connecting, false, true)));
+}
+
+TEST(CallScreenTest, TheCountGivesWayToWhatTheUserMustRead) {
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::Activity, true, true)));
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::Reconnecting, false, true)));
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::CouldntConnect, false, true)));
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::SettingUpGroup, false, false))) << "never live yet";
+  CallScreen alone = GroupScreen(Status::Connected, true, true);
+  alone.members.clear();
+  EXPECT_FALSE(ShowsParticipantCount(alone));
+  CallScreen one_to_one = GroupScreen(Status::Connected, true, true);
+  one_to_one.group = false;
+  EXPECT_FALSE(ShowsParticipantCount(one_to_one));
+}
+
+TEST(CallScreenTest, ACouldntConnectCallThatMigratesAgainReadsConnecting) {
+  InCallSignals s;
+  s.p2p_connect_failed = true;
+  s.media_active = true;
+  s.group_context = true;
+  EXPECT_EQ(Decide(s).status, Status::CouldntConnect);
+  s.media_status = CallMediaStatus::HopAttaching;
+  EXPECT_EQ(Decide(s).status, Status::Connecting);
+  EXPECT_FALSE(Decide(s).show_retry);
+  s.media_status = CallMediaStatus::HopWaiting;
+  EXPECT_EQ(Decide(s).status, Status::WaitingForMediaPath);
+  s.media_status = CallMediaStatus::Migrating;
+  EXPECT_EQ(Decide(s).status, Status::SettingUpGroup);
+  s.media_status = CallMediaStatus::None;
+  EXPECT_EQ(Decide(s).status, Status::CouldntConnect) << "when it stops moving, the latch is still there";
+}
+
+TEST(CallScreenTest, ACallThatHungUpByItselfBeforeConnectingIsReported) {
+  const CallScreen stuck = GroupScreen(Status::WaitingForMediaPath, false, false);
+  const CallScreen gone;
+  EXPECT_TRUE(EndedWithoutConnecting(stuck, gone, false));
+  EXPECT_TRUE(EndedWithoutConnecting(GroupScreen(Status::CouldntConnect, false, false), gone, false));
+  EXPECT_FALSE(EndedWithoutConnecting(stuck, gone, true)) << "the others ended it";
+  EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Connected, true, true), gone, false)) << "it was live";
+  EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Calling, false, false), gone, false)) << "unanswered, not stuck";
+  EXPECT_FALSE(EndedWithoutConnecting(stuck, stuck, false)) << "still on screen";
+  EXPECT_FALSE(EndedWithoutConnecting(CallScreen{}, gone, false));
+}
+
 } // namespace
 } // namespace pbr

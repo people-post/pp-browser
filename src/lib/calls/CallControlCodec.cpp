@@ -640,9 +640,10 @@ Roe<CallPunchDetail> CallControlCodec::DecodePunch(const std::string& detail_jso
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,
-                                                        const std::string& sender_contact_id) {
+                                                        const std::string& sender_contact_id,
+                                                        const std::string& message_id) {
   ThreadMessage message;
-  message.id = util::GenerateUuid();
+  message.id = message_id.empty() ? util::GenerateUuid() : message_id;
   message.thread_id = thread_id;
   message.sender_contact_id = sender_contact_id;
   message.content_type = ChatContentType::System;

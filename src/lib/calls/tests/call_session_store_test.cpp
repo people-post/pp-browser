@@ -131,6 +131,39 @@ TEST_F(CallSessionStoreTest, UpsertPreservesFirstJoinedAt) {
   EXPECT_EQ(*parts->front().joined_at, 1000);
 }
 
+TEST_F(CallSessionStoreTest, JoiningAgainAfterLeavingStartsANewStay) {
+  // B102: the sticky first stamp made the rejoin look stale to everyone who stayed.
+  CallSession session;
+  session.call_id = "call:rejoin-stamp";
+  session.origin_thread_id = "thread-1";
+  session.media_mode = CallMediaMode::Voice;
+  session.state = CallSessionState::Active;
+  session.created_at = 1000;
+  session.media_epoch = 1;
+  session.media_key_id = "mk:1";
+  ASSERT_TRUE(calls_->UpsertSession(session));
+
+  CallParticipant guest;
+  guest.call_id = session.call_id;
+  guest.identity = "account:guest";
+  guest.state = CallParticipantState::Joined;
+  guest.joined_at = 1000;
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+  guest.state = CallParticipantState::Left;
+  guest.joined_at.reset();
+  guest.left_at = 2000;
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+  guest.state = CallParticipantState::Joined;
+  guest.joined_at = 3000;
+  guest.left_at.reset();
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+
+  auto parts = calls_->ListParticipants(session.call_id);
+  ASSERT_TRUE(parts && parts->size() == 1u);
+  EXPECT_EQ(parts->front().joined_at, std::optional<int64_t>(3000));
+  EXPECT_EQ(parts->front().left_at, std::optional<int64_t>(2000)) << "the last leave is kept";
+}
+
 TEST_F(CallSessionStoreTest, UpsertTakesEarlierJoinedAtFromRoster) {
   CallSession session;
   session.call_id = "call:earlier-stamp";

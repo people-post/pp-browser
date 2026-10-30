@@ -152,8 +152,9 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
                                             const std::string& skip) {
     return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
-  ports.send_summary = [this](const std::string& thread_id, const CallSummaryDetail& summary, bool local_only) {
-    return control_.SendSummary(thread_id, summary, local_only);
+  ports.send_summary = [this](const std::string& thread_id, const CallSummaryDetail& summary, bool local_only,
+                              SummaryWrite write) {
+    return control_.SendSummary(thread_id, summary, local_only, write);
   };
   ports.resolve_call_thread = [this](const std::string& inviter,
                                      const std::optional<std::string>& group_id) -> std::optional<std::string> {

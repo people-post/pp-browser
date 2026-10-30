@@ -767,7 +767,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     in_call.subtitle = screen.raw_state.c_str();
     break;
   }
-  if (in_call.show_roster && joined_count > 0 && screen.media_connected && screen.status != Status::Activity) {
+  if (in_call.show_roster && ShowsParticipantCount(screen)) {
     in_call.subtitle = Tr("call.participants_elapsed",
                           {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
                            .c_str();

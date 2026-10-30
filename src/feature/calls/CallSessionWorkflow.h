@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -49,7 +50,8 @@ public:
      * The call's history line: a summary into its thread (the starter's side writes it); `local_only`
      * keeps it on this device (the app is going down: no sends).
      */
-    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only)>
+    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only,
+                            SummaryWrite write)>
         send_summary;
     /**
      * This device's thread for an inbound call: the group's (`group_id`), else the DM with `inviter`.
@@ -265,7 +267,7 @@ private:
                       const std::string& local_identity);
   /** "Call started" in the origin thread's history. */
   /** The starter's summary of a call that just ended (no-op on an invitee's side). */
-  void SendSummary(const CallSession& session, LiveCallEndReason reason);
+  void SendSummary(const CallSession& session, LiveCallEndReason reason, SummaryWrite write = SummaryWrite::Final);
   /** Invite every invitee (control thread warmed first), then prefetch their reach. */
   Roe<void> InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);
