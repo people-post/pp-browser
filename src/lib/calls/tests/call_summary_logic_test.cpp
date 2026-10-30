@@ -61,35 +61,65 @@ TEST(CallSummaryLogicTest, AGroupRecordHasOneFixedIdPerCall) {
   EXPECT_EQ(GroupCallSummaryMessageId("call:s"), "call-summary:call:s");
 }
 
-TEST(CallSummaryLogicTest, ALaterLeaveAddsItsStay) {
-  CallSummaryDetail first;
-  first.group = true;
-  first.duration_ms = 4'000;
-  CallSummaryDetail second = first;
-  second.duration_ms = 5'000;  // the second stay alone (a rejoin has its own joined_at)
+namespace {
+CallSummaryDetail Stay(int64_t started_at, int64_t duration_ms) {
+  CallSummaryDetail stay;
+  stay.group = true;
+  stay.talk_started_at = started_at;
+  stay.duration_ms = duration_ms;
+  return stay;
+}
+} // namespace
+
+TEST(CallSummaryLogicTest, ALaterLeaveRunsFromTheFirstJoinToTheLastLeave) {
+  const CallSummaryDetail first = Stay(1'000, 4'000);   // 1s to 5s
+  const CallSummaryDetail second = Stay(8'000, 2'000);  // 8s to 10s, its own stamp
   EXPECT_EQ(MergeGroupSummary(std::nullopt, first, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(4'000));
-  EXPECT_EQ(MergeGroupSummary(first, second, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(9'000));
+  const auto merged = MergeGroupSummary(first, second, SummaryWrite::Leave);
+  ASSERT_TRUE(merged);
+  EXPECT_EQ(merged->duration_ms, std::optional<int64_t>(9'000));
+  EXPECT_EQ(merged->talk_started_at, std::optional<int64_t>(1'000));
   CallSummaryDetail none;
   EXPECT_FALSE(MergeGroupSummary(first, none, SummaryWrite::Leave)) << "a segment without talk time changes nothing";
 }
 
+TEST(CallSummaryLogicTest, WritingOneStayTwiceDoesNotGrowTheRecord) {
+  const CallSummaryDetail first = Stay(1'000, 4'000);
+  const CallSummaryDetail second = Stay(8'000, 2'000);
+  const auto once = MergeGroupSummary(first, second, SummaryWrite::Leave);
+  const auto twice = MergeGroupSummary(once, second, SummaryWrite::EndWhileIn);
+  EXPECT_EQ(twice->duration_ms, once->duration_ms);
+}
+
+// A roster from before the rejoin put the first stay's stamp back: still first join to last leave.
+TEST(CallSummaryLogicTest, AStaleStampDoesNotCountTheFirstStayTwice) {
+  const CallSummaryDetail first = Stay(1'000, 4'000);
+  const CallSummaryDetail stale = Stay(1'000, 9'000);
+  EXPECT_EQ(MergeGroupSummary(first, stale, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(9'000));
+}
+
+TEST(CallSummaryLogicTest, ARecordWithoutTalkTimeTakesTheLaterWrite) {
+  CallSummaryDetail missed;
+  missed.group = true;
+  missed.outcome = CallOutcome::Missed;
+  CallSummaryDetail joined_alone;
+  joined_alone.group = true;
+  joined_alone.outcome = CallOutcome::Completed;
+  EXPECT_EQ(MergeGroupSummary(missed, joined_alone, SummaryWrite::Leave)->outcome, CallOutcome::Completed);
+}
+
 TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceLeftNeverReplacesItsRecord) {
-  CallSummaryDetail left;
-  left.group = true;
-  left.duration_ms = 4'000;
+  const CallSummaryDetail left = Stay(1'000, 4'000);
   CallSummaryDetail ended = left;
   ended.duration_ms = 9'000;  // counted to the call's end, after this device left
   EXPECT_FALSE(MergeGroupSummary(left, ended, SummaryWrite::Final));
   EXPECT_TRUE(MergeGroupSummary(std::nullopt, ended, SummaryWrite::Final)) << "a call never left writes at its end";
 }
 
-TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceWasBackInAddsTheLastStay) {
-  CallSummaryDetail left;
-  left.group = true;
-  left.duration_ms = 4'000;
-  CallSummaryDetail ended = left;
-  ended.duration_ms = 3'000;  // back in after the leave, and in it when the call ended
-  EXPECT_EQ(MergeGroupSummary(left, ended, SummaryWrite::EndWhileIn)->duration_ms, std::optional<int64_t>(7'000));
+TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceWasBackInRunsToTheEnd) {
+  const CallSummaryDetail left = Stay(1'000, 4'000);
+  const CallSummaryDetail ended = Stay(8'000, 3'000);  // back in after the leave, and in it when the call ended
+  EXPECT_EQ(MergeGroupSummary(left, ended, SummaryWrite::EndWhileIn)->duration_ms, std::optional<int64_t>(10'000));
   CallSummaryDetail no_talk = left;
   no_talk.duration_ms.reset();
   EXPECT_FALSE(MergeGroupSummary(left, no_talk, SummaryWrite::EndWhileIn));

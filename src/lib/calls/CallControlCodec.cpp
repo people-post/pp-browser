@@ -379,6 +379,9 @@ Roe<std::string> CallControlCodec::EncodeSummary(const CallSummaryDetail& detail
   if (detail.duration_ms) {
     json.set("duration_ms", *detail.duration_ms);
   }
+  if (detail.talk_started_at) {
+    json.set("talk_started_at", *detail.talk_started_at);
+  }
   if (detail.group) {
     json.set("group", true);
   }
@@ -399,6 +402,7 @@ Roe<CallSummaryDetail> CallControlCodec::DecodeSummary(const std::string& detail
   detail.media_mode = CallMediaModeFromString(json->getString("media_mode").value_or("voice"));
   detail.outcome = CallOutcomeFromString(json->getString("outcome").value_or("failed"));
   detail.duration_ms = json->getIf<int64_t>("duration_ms");
+  detail.talk_started_at = json->getIf<int64_t>("talk_started_at");
   detail.group = json->getIf<bool>("group").value_or(false);
   detail.started = json->getIf<bool>("started").value_or(false);
   return detail;

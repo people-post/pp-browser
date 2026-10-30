@@ -50,6 +50,9 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
   }
   if (answered_at) {
     summary.duration_ms = std::max<int64_t>(0, session.ended_at.value_or(now_ms) - *answered_at);
+    if (group) {
+      summary.talk_started_at = answered_at;
+    }
   }
   plan.local_only = group || reason == LiveCallEndReason::Shutdown;
   return plan;
@@ -67,12 +70,19 @@ std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSumma
   if (mode == SummaryWrite::Final) {
     return std::nullopt;  // it was written when this device left (a restart cleanup would also wipe its talk time)
   }
-  // Leave or EndWhileIn after an earlier leave: this stay's talk time is added to the record.
-  if (!next.duration_ms) {
+  if (!existing->duration_ms) {
+    return next;  // nothing said about talk time yet (missed, declined): the later write knows more
+  }
+  if (!next.duration_ms || !next.talk_started_at) {
     return std::nullopt;  // this stay had no talk time: the record stands
   }
+  // From the first join to the last leave. Worked out from the times, so writing a stay twice changes nothing.
+  const int64_t next_end = *next.talk_started_at + *next.duration_ms;
+  const int64_t start = std::min(existing->talk_started_at.value_or(*next.talk_started_at), *next.talk_started_at);
+  const int64_t end = std::max(existing->talk_started_at.value_or(start) + *existing->duration_ms, next_end);
   CallSummaryDetail merged = next;
-  merged.duration_ms = existing->duration_ms.value_or(0) + *next.duration_ms;
+  merged.talk_started_at = start;
+  merged.duration_ms = end - start;
   return merged;
 }
 

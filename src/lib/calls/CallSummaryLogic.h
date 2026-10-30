@@ -42,8 +42,8 @@ enum class SummaryWrite { Final, EndWhileIn, Leave };
 /**
  * What a group call's record becomes when `next` is written over `existing` (the record already in the
  * thread, if any); nullopt = leave it as it is. A Final write never replaces a record. An EndWhileIn write
- * adds the last stay (back in the call after a leave, in it at the end). A Leave write adds this stay
- * (leave, rejoin, leave): each rejoin is a new stay with its own joined_at, so the stays add up.
+ * or a Leave write (leave, rejoin, leave) makes the talk time run from this device's first join to its last
+ * leave, the gap included. A repeated write of one stay changes nothing.
  */
 std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSummaryDetail>& existing,
                                                    const CallSummaryDetail& next, SummaryWrite mode);

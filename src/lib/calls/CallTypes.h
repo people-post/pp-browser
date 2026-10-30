@@ -319,6 +319,8 @@ struct CallSummaryDetail {
   CallMediaMode media_mode = CallMediaMode::Voice;
   CallOutcome outcome = CallOutcome::Completed;
   std::optional<int64_t> duration_ms;
+  /** Group: when this device's talk time began; later writes of the record keep the earliest. */
+  std::optional<int64_t> talk_started_at;
   /** A group call (the summary is in the group's thread, kept on the device that wrote it). */
   bool group = false;
   /** Group: the writer started the call (a 1:1 summary is always its starter's). */

@@ -476,9 +476,10 @@ not), written when the call ends (`CallSessionWorkflow::SendSummary`), worded fr
   (the call usually goes on for the others), under the fixed message id `call-summary:<call_id>`
   (`GroupCallSummaryMessageId`), through the thread store's one-statement `UpsertMessage` so the
   leave, the call's end and a restart cleanup cannot make two rows. A later leave (leave, rejoin,
-  leave) rewrites it with the stays added (each rejoin is a new stay with its own `joined_at`, #410); the
-  call's end while back in adds that last stay; the call's end after this device left (`CallEnded`) and a
-  restart (`Orphaned`) never replace a record that exists (`MergeGroupSummary`).
+  leave) rewrites it: talk time runs from the first join to the last leave, the gap included (the record
+  keeps `talk_started_at`, because a rejoin's `joined_at` is that stay's, #410); the call's end while back in
+  counts the same way; the call's end after this device left (`CallEnded`) and a restart (`Orphaned`) never
+  replace a record that exists (`MergeGroupSummary`).
 
 **The call's thread** is local to each device: the starter's is the thread it called from; an
 invitee resolves its own (`resolve_call_thread`: the group's thread for a group call, else its DM
