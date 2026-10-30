@@ -106,11 +106,11 @@ private:
   void RefreshGroupAddLimit();
   std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
   void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
-  void ReinviteMember(const std::string& contact_id);
+  void ReinviteMember(const GroupMemberRow& row);
   void RemoveMember(const GroupMemberRow& row);
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
-  void OnInviteFinished(const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
+  void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
                         const GroupInviteBatchResult& result);
   void UpdateCta();
   void DirtyAll();
@@ -181,6 +181,8 @@ private:
   /** This account, on the member list (its own row is not tappable). */
   std::string local_identity_;
   bool group_sending_ = false;
+  /** The latest invite batch; an older one finishing does not end the current send. */
+  uint64_t invite_batch_ = 0;
   int group_roster_count_ = 0;
   std::unordered_map<std::string, GroupMemberRow> member_rows_;
 

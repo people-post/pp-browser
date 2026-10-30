@@ -9,13 +9,6 @@ namespace pbr {
 /** A group holds at most this many members (the owner's device checks it; G014 may add a hard stop). */
 inline constexpr int kGroupMemberLimit = 50;
 
-/**
- * "Re-invite" on the member list, for a member who lost the group (left it, or cleared it) and is still on the
- * roster: ReInvitedMemberTest. A reinstall without restore is a new account (added as a new member); a restore
- * is a new device whose pairs restart (G010/G011).
- */
-inline constexpr bool kGroupReinviteEnabled = true;
-
 enum class PeoplePickerMode {
   Free,
   FromDm,

@@ -1,5 +1,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 
+#include <algorithm>
+
 #include "foundation/data/PricingTypes.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -475,8 +477,21 @@ Roe<void> ConversationsFacade::InviteMember(const std::string& group_id, const s
   if (!roster) {
     return roster.error();
   }
-  if (auto room = CheckGroupHasRoom(roster->size()); !room) {
-    return room.error();
+  // A re-invite (already on the roster) takes no new seat.
+  std::vector<std::string> contact_keys{contact_id};
+  if (auto contact = GetContact(contact_id); contact && *contact) {
+    for (const mesh::ContactId& id : (*contact)->ids) {
+      contact_keys.push_back(id.value);
+    }
+  }
+  const bool on_roster = std::any_of(roster->begin(), roster->end(), [&](const GroupRosterMember& member) {
+    return std::find(contact_keys.begin(), contact_keys.end(), member.contact_id) != contact_keys.end() ||
+           std::find(contact_keys.begin(), contact_keys.end(), member.member_identity) != contact_keys.end();
+  });
+  if (!on_roster) {
+    if (auto room = CheckGroupHasRoom(roster->size()); !room) {
+      return room.error();
+    }
   }
   return hub_.Groups().InviteMember(group_id, contact_id);
 }
@@ -486,7 +501,13 @@ void ConversationsFacade::InviteMembersAsync(const std::string& group_id, std::v
   AppRuntime::PostWorkerAndReplyOnUI<GroupInviteBatchResult>(
       WorkerLane::Normal,
       [this, group_id, contact_ids = std::move(contact_ids)]() {
-        return InviteEach(contact_ids, [&](const std::string& contact_id) { return InviteMember(group_id, contact_id); });
+        return InviteEach(contact_ids, [&](const std::string& contact_id) -> Roe<void> {
+          // Locked or quitting while the batch runs: the rest are not sent.
+          if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+            return Error("Messaging not ready");
+          }
+          return InviteMember(group_id, contact_id);
+        });
       },
       [done = std::move(done)](GroupInviteBatchResult result) {
         if (done) {
