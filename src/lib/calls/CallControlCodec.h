@@ -68,7 +68,8 @@ public:
 
   static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, CallControlType type,
                                                const std::string& display_text, const std::string& detail_json,
-                                               const std::string& sender_contact_id);
+                                               const std::string& sender_contact_id,
+                                               const std::string& message_id = {});
 
   static std::optional<CallControlType> ControlTypeFromMessage(const ThreadMessage& message);
   static bool IsCallControlMessage(const ThreadMessage& message);

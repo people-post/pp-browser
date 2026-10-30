@@ -44,6 +44,31 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
   return "?";
 }
 
+bool ShowsParticipantCount(const CallScreen& screen) {
+  using Status = CallScreen::Status;
+  if (!screen.group || screen.members.empty() || screen.status == Status::Activity) {
+    return false;
+  }
+  if (screen.media_connected) {
+    return true;
+  }
+  const bool regrouping = screen.status == Status::SettingUpGroup || screen.status == Status::WaitingForMediaPath ||
+                          screen.status == Status::Connecting;
+  return screen.was_connected && regrouping;
+}
+
+bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, const bool remote_ended) {
+  using Status = CallScreen::Status;
+  if (remote_ended || before.kind != CallScreen::Kind::InCall || before.was_connected || before.call_id.empty()) {
+    return false;
+  }
+  if (after.kind == CallScreen::Kind::InCall && after.call_id == before.call_id) {
+    return false;
+  }
+  return before.status == Status::CouldntConnect || before.status == Status::Connecting ||
+         before.status == Status::SettingUpGroup || before.status == Status::WaitingForMediaPath;
+}
+
 InCallStatus DecideInCallStatus(const InCallSignals& s) {
   using Status = CallScreen::Status;
   InCallStatus out;
@@ -62,12 +87,20 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     activity = false;
   }
   const bool failed = s.media_status == CallMediaStatus::Failed;
+  // "Couldn't connect" is a latch: the state machine moving the call onto another path (migrating,
+  // attaching to a hop, waiting for one) makes it "connecting" again.
+  const bool path_moving = s.media_status == CallMediaStatus::Migrating ||
+                           s.media_status == CallMediaStatus::HopAttaching ||
+                           s.media_status == CallMediaStatus::HopWaiting;
+  if (path_moving) {
+    out.show_retry = false;
+  }
   if (s.was_connected && !out.media_connected && (s.p2p_connect_failed || failed)) {
     // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
     out.status = Status::Disconnected;
     out.show_retry = false;
     out.show_invite = false;
-  } else if (s.p2p_connect_failed) {
+  } else if (s.p2p_connect_failed && !path_moving) {
     out.status = Status::CouldntConnect;
     out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::P2pConnect;
     out.show_invite = false;

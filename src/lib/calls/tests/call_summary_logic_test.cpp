@@ -57,5 +57,31 @@ TEST(CallSummaryLogicTest, AGroupNotesTheCallAsItWentHere) {
   EXPECT_EQ(declined->detail.outcome, CallOutcome::Declined);
 }
 
+TEST(CallSummaryLogicTest, AGroupRecordHasOneFixedIdPerCall) {
+  EXPECT_EQ(GroupCallSummaryMessageId("call:s"), "call-summary:call:s");
+}
+
+TEST(CallSummaryLogicTest, ALeaveAddsItsTalkTimeToTheEarlierSegments) {
+  CallSummaryDetail first;
+  first.group = true;
+  first.duration_ms = 4'000;
+  CallSummaryDetail second = first;
+  second.duration_ms = 3'000;
+  EXPECT_EQ(MergeGroupSummary(std::nullopt, first, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(4'000));
+  EXPECT_EQ(MergeGroupSummary(first, second, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(7'000));
+  CallSummaryDetail none;
+  EXPECT_FALSE(MergeGroupSummary(first, none, SummaryWrite::Leave)) << "a segment without talk time changes nothing";
+}
+
+TEST(CallSummaryLogicTest, TheEndOfTheCallNeverReplacesTheRecordOfTheLeave) {
+  CallSummaryDetail left;
+  left.group = true;
+  left.duration_ms = 4'000;
+  CallSummaryDetail ended = left;
+  ended.duration_ms = 9'000;
+  EXPECT_FALSE(MergeGroupSummary(left, ended, SummaryWrite::Final));
+  EXPECT_TRUE(MergeGroupSummary(std::nullopt, ended, SummaryWrite::Final)) << "a call never left writes at its end";
+}
+
 } // namespace
 } // namespace pbr

@@ -125,7 +125,8 @@ private:
   void FailText(const std::string& text);
   void Notify(CallNotice notice);
   void Changed();
-  void TakeStackNotices(CallUiBackend& backend);
+  /** True when the peer's end of a call was announced. */
+  bool TakeStackNotices(CallUiBackend& backend);
   void FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, bool video, bool group_call);
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   bool MessagingInitialized() const;

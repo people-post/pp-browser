@@ -800,6 +800,7 @@
     "chat.psk.rotated_body": "The new safety code is on your clipboard. Send it to your contact securely.",
     "chat.psk.rotated": "Safety code changed. Send it to your contact.",
     "call.status.couldnt_connect": "Couldn't connect",
+    "call.status.ended_couldnt_connect": "Couldn't connect to the call, hung up automatically",
     "call.status.disconnected": "Call disconnected",
     "call.status.ended_by_peer": "{{name}} ended the call",
     "call.status.ended_by_peer_unknown": "The other side ended the call",

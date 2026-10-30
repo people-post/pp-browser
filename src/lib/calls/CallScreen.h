@@ -73,6 +73,8 @@ struct CallScreen {
   bool show_retry = false;
   bool show_invite = false;
   bool media_connected = false;
+  /** Media was live at some point in this call. */
+  bool was_connected = false;
   Status status = Status::Calling;
   std::string activity;
   std::string raw_state;
@@ -87,6 +89,23 @@ struct CallScreen {
 
 const char* CallScreenKindName(CallScreen::Kind kind);
 const char* CallScreenStatusName(CallScreen::Status status);
+
+/**
+ * The status line gives way to "N participants · elapsed": a group's screen with someone in it, while its
+ * media is live — and while the group sets itself up again after having been live (someone joining
+ * or rejoining moves the media path: SettingUpGroup / WaitingForMediaPath / Connecting), so the one
+ * who just came in is not hidden behind "setting up". Lines the user needs to read keep the line:
+ * an activity, reconnecting, sending only, couldn't connect, disconnected, or a call not yet live.
+ */
+bool ShowsParticipantCount(const CallScreen& screen);
+
+/**
+ * The call this device was answering or in went away by itself (not by the user's End — that clears
+ * the screen first — and not because someone else ended it) while it had never been live and still
+ * read as connecting or couldn't connect: the stack gave up and hung up (the attach-wait ran out).
+ * The user is told once ("couldn't connect, hung up automatically").
+ */
+bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, bool remote_ended);
 
 /** What the in-call status decision reads. */
 struct InCallSignals {

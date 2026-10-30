@@ -472,7 +472,12 @@ not), written when the call ends (`CallSessionWorkflow::SendSummary`), worded fr
   from the answer. "Outgoing voice call · 3:21", "Missed voice call"; quiet unless it is a call we missed.
 - **Group:** a group has no one view of a call, so each device keeps its own summary of its user's
   part (not sent): "Group voice call · 12:03" from when it was in the call with someone else,
-  "Missed group voice call", "Declined group voice call".
+  "Missed group voice call", "Declined group voice call". It is written when this device **leaves**
+  (the call usually goes on for the others), under the fixed message id `call-summary:<call_id>`
+  (`GroupCallSummaryMessageId`), through the thread store's one-statement `UpsertMessage` so the
+  leave, the call's end and a restart cleanup cannot make two rows. A later leave (leave, rejoin,
+  leave) adds its talk time to the record; the call's end (`CallEnded`) and a restart (`Orphaned`)
+  never replace a record that exists (`MergeGroupSummary`).
 
 **The call's thread** is local to each device: the starter's is the thread it called from; an
 invitee resolves its own (`resolve_call_thread`: the group's thread for a group call, else its DM

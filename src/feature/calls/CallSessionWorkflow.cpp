@@ -903,7 +903,8 @@ void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identi
   }
 }
 
-void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
+void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason,
+                                      const SummaryWrite write) {
   if (!session.origin_thread_id || !host_.wire.send_summary) {
     return;
   }
@@ -917,7 +918,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
   if (!plan) {
     return;
   }
-  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only); !sent) {
+  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only, write); !sent) {
     log().warning << "call summary not written call_id=" << session.call_id << " err=" << sent.error().message;
   }
 }
@@ -976,6 +977,12 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   self.left_at = now;
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     return saved.error();
+  }
+
+  if (IsGroupCall(**session)) {
+    // A group call goes on for the others: this device's history line is written now, not when (if ever)
+    // it ends. A restart cleanup (Orphaned) never rewrites a line that exists.
+    SendSummary(**session, reason, reason == LiveCallEndReason::Orphaned ? SummaryWrite::Final : SummaryWrite::Leave);
   }
 
   CallLeaveDetail leave;

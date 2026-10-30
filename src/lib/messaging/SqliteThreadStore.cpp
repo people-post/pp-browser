@@ -737,6 +737,14 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAft
 }
 
 Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message) {
+  return AppendMessageImpl(message, false);
+}
+
+Roe<ThreadMessage> SqliteThreadStore::UpsertMessage(const ThreadMessage& message) {
+  return AppendMessageImpl(message, true);
+}
+
+Roe<ThreadMessage> SqliteThreadStore::AppendMessageImpl(const ThreadMessage& message, const bool upsert) {
   if (message.text.size() > kMaxComposeTextBytes) {
     return Error("Message text exceeds compose limit");
   }
@@ -763,12 +771,25 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   }
 
   sqlite3_stmt* stmt = nullptr;
-  const char* sql =
-      "INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, control_type, "
-      "timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, target_message_id, generation, "
-      "seq_owner_contact_id, ai_invoke_mode, sender_device) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
-  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  // Upsert: one statement, so two writers of the same id cannot both insert (the row keeps its place;
+  // a tombstone stays final).
+  const std::string sql =
+      std::string("INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, "
+                  "control_type, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, "
+                  "target_message_id, generation, seq_owner_contact_id, ai_invoke_mode, sender_device) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)") +
+      (upsert ? " ON CONFLICT(id) DO UPDATE SET sender_contact_id = excluded.sender_contact_id, "
+                "content_enc = excluded.content_enc, content_type = excluded.content_type, "
+                "control_type = excluded.control_type, timestamp = excluded.timestamp, "
+                "relay_visible = excluded.relay_visible, delivery = excluded.delivery, "
+                "transport = excluded.transport, sender_seq = excluded.sender_seq, "
+                "session_epoch = excluded.session_epoch, target_message_id = excluded.target_message_id, "
+                "generation = excluded.generation, seq_owner_contact_id = excluded.seq_owner_contact_id, "
+                "ai_invoke_mode = excluded.ai_invoke_mode, sender_device = excluded.sender_device "
+                "WHERE messages.content_type != 'deleted'"
+              : "") +
+      ";";
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
   if (auto bound = BindMessageInsert(stmt, message.thread_id, stored, *content_enc); !bound) {
