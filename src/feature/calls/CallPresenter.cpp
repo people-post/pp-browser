@@ -7,7 +7,9 @@
 #include "feature/calls/CallUiBackend.h"
 #include "foundation/data/PricingTypes.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "common/Utilities.h"
 
+#include <algorithm>
 #include <utility>
 #include "common/PbrCompat.h"
 
@@ -112,7 +114,7 @@ void CallPresenter::Changed() {
   }
 }
 
-void CallPresenter::TakeStackNotices(CallUiBackend& backend) {
+bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
   if (!backend.LastError().empty()) {
     FailText(backend.LastError());
     backend.ClearLastError();
@@ -133,7 +135,9 @@ void CallPresenter::TakeStackNotices(CallUiBackend& backend) {
       notice.identity = **peer;
     }
     Notify(notice);
+    return true;
   }
+  return false;
 }
 
 void CallPresenter::Refresh() {
@@ -146,7 +150,7 @@ void CallPresenter::Refresh() {
   if (!backend || !backend->Available()) {
     return;
   }
-  TakeStackNotices(*backend);
+  const bool remote_ended = TakeStackNotices(*backend);
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
@@ -223,6 +227,23 @@ void CallPresenter::Refresh() {
     ringing_call_id_.clear();
     ring_shown_ = false;
   }
+  const int64_t now = util::NowUnixMs();
+  // The screen's call went away by itself only when nothing replaced it and the stack is not still in it
+  // (a ring over it, a declined ring, a merged call keep or replace it).
+  const bool went_away = next.kind == CallScreen::Kind::None &&
+                         (!surface.active || surface.active->call_id != screen_.call_id);
+  if (went_away && EndedWithoutConnecting(screen_, next, remote_ended)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::Error;
+    notice.key = "call.status.ended_couldnt_connect";
+    Notify(notice);
+  } else if (went_away && EndedAlone(screen_, next, now)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::Error;
+    notice.key = "call.status.ended_alone";
+    Notify(notice);
+  }
+  WatchForNoMedia(*backend, next, now);
   screen_ = std::move(next);
   Changed();
 }
@@ -281,6 +302,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   }
   s.status = decided.status;
   s.media_connected = decided.media_connected;
+  s.was_connected = signals.was_connected;
   s.show_retry = decided.show_retry;
   s.show_invite = decided.show_invite;
   s.hint = decided.hint;
@@ -291,9 +313,52 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   } else if (decided.status == CallScreen::Status::Raw) {
     s.raw_state = signals.connection_state;
   }
-  if (decided.show_elapsed) {
+  if (const int64_t alone_until = backend.AloneUntilMs(); s.group && alone_until > 0) {
+    // V053: everyone else left; the line counts down to this device leaving by itself.
+    s.status = CallScreen::Status::WaitingForOthers;
+    s.alone_until_ms = alone_until;
+  }
+  if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms;  // the call's, not the current path's
   }
+}
+
+void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, const int64_t now) {
+  // Once a second is plenty (the health snapshot takes the engine's lock), and only a group call counts.
+  if (now - no_media_checked_ms_ < 1'000) {
+    return;
+  }
+  no_media_checked_ms_ = now;
+  NoMediaSample sample;
+  if (s.kind == CallScreen::Kind::InCall && s.group) {
+    const CallMediaEngineHealth health = backend.Media().HealthSnapshot();
+    sample.call_id = s.call_id;
+    sample.group = s.group;
+    // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
+    sample.media_live = s.media_connected && backend.Recovery() == CallRecovery::None &&
+                        s.status != CallScreen::Status::Reconnecting;
+    sample.others_joined = static_cast<size_t>(
+        std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
+    sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
+    sample.now_ms = now;
+  }
+  if (!StepNoMediaWatch(no_media_watch_, sample)) {
+    return;
+  }
+  // B97: live, others in the call, and nothing from any of them for 30 s — the call is gone in all but name.
+  log().warning << "Nothing heard from anyone in the group call for " << kGroupNoMediaEndMs / 1000
+                << " s — leaving call_id=" << s.call_id;
+  no_media_watch_ = {};
+  CallNotice notice;
+  notice.kind = CallNotice::Kind::Error;
+  notice.key = "call.status.ended_no_media";
+  Notify(notice);
+  // Not from inside this refresh: leaving refreshes the screen again.
+  AppRuntime::PostUI(WhileAlive([this, call_id = s.call_id]() {
+    if (active_call_id_ == call_id) {
+      (void)Leave();
+    }
+  }));
 }
 
 void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s) {

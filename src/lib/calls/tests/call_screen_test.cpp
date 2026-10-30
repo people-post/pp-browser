@@ -152,5 +152,191 @@ TEST(CallScreenTest, TheEngineStateWhenNothingElseSays) {
   EXPECT_FALSE(Decide(reattaching).media_connected);
 }
 
+CallScreen GroupScreen(Status status, bool media_connected, bool was_connected) {
+  CallScreen screen;
+  screen.kind = CallScreen::Kind::InCall;
+  screen.call_id = "call:g";
+  screen.group = true;
+  screen.members.resize(3);
+  screen.status = status;
+  screen.media_connected = media_connected;
+  screen.was_connected = was_connected;
+  return screen;
+}
+
+TEST(CallScreenTest, AGroupKeepsItsParticipantCountWhileItSetsItselfUpAgain) {
+  // B102: someone rejoined — the media path moves (setting up / waiting for the hop) and the count stayed hidden.
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::Connected, true, true)));
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::SettingUpGroup, false, true)));
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::WaitingForMediaPath, false, true)));
+  EXPECT_TRUE(ShowsParticipantCount(GroupScreen(Status::Connecting, false, true)));
+}
+
+TEST(CallScreenTest, TheCountGivesWayToWhatTheUserMustRead) {
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::Activity, true, true)));
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::Reconnecting, false, true)));
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::CouldntConnect, false, true)));
+  EXPECT_FALSE(ShowsParticipantCount(GroupScreen(Status::SettingUpGroup, false, false))) << "never live yet";
+  CallScreen alone = GroupScreen(Status::Connected, true, true);
+  alone.members.clear();
+  EXPECT_FALSE(ShowsParticipantCount(alone));
+  CallScreen one_to_one = GroupScreen(Status::Connected, true, true);
+  one_to_one.group = false;
+  EXPECT_FALSE(ShowsParticipantCount(one_to_one));
+}
+
+TEST(CallScreenTest, ACouldntConnectCallThatMigratesAgainReadsConnecting) {
+  InCallSignals s;
+  s.p2p_connect_failed = true;
+  s.media_active = true;
+  s.group_context = true;
+  EXPECT_EQ(Decide(s).status, Status::CouldntConnect);
+  s.media_status = CallMediaStatus::HopAttaching;
+  EXPECT_EQ(Decide(s).status, Status::Connecting);
+  EXPECT_FALSE(Decide(s).show_retry);
+  s.media_status = CallMediaStatus::HopWaiting;
+  EXPECT_EQ(Decide(s).status, Status::WaitingForMediaPath);
+  s.media_status = CallMediaStatus::Migrating;
+  EXPECT_EQ(Decide(s).status, Status::SettingUpGroup);
+  s.media_status = CallMediaStatus::None;
+  EXPECT_EQ(Decide(s).status, Status::CouldntConnect) << "when it stops moving, the latch is still there";
+}
+
+TEST(CallScreenTest, ACallThatHungUpByItselfBeforeConnectingIsReported) {
+  const CallScreen stuck = GroupScreen(Status::WaitingForMediaPath, false, false);
+  const CallScreen gone;
+  EXPECT_TRUE(EndedWithoutConnecting(stuck, gone, false));
+  EXPECT_TRUE(EndedWithoutConnecting(GroupScreen(Status::CouldntConnect, false, false), gone, false));
+  EXPECT_FALSE(EndedWithoutConnecting(stuck, gone, true)) << "the others ended it";
+  EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Connected, true, true), gone, false)) << "it was live";
+  EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Calling, false, false), gone, false)) << "unanswered, not stuck";
+  EXPECT_FALSE(EndedWithoutConnecting(stuck, stuck, false)) << "still on screen";
+  EXPECT_FALSE(EndedWithoutConnecting(CallScreen{}, gone, false));
+}
+
+TEST(CallScreenTest, ACallThatWasLiveIsNotLostForGoodWhileItsPathMoves) {
+  for (const CallMediaStatus moving :
+       {CallMediaStatus::Migrating, CallMediaStatus::HopAttaching, CallMediaStatus::HopWaiting}) {
+    InCallSignals s;
+    s.was_connected = true;
+    s.p2p_connect_failed = true;  // latched from the 1:1 path
+    s.media_status = moving;      // a third person joined: the call moves onto a hop
+    EXPECT_NE(Decide(s).status, Status::Disconnected) << static_cast<int>(moving);
+    EXPECT_NE(Decide(s).status, Status::CouldntConnect) << static_cast<int>(moving);
+  }
+}
+
+// --- B97: a live group call where nothing arrives from anyone ends after 30 s --------------------
+
+NoMediaSample LiveGroup(const int64_t now, const int64_t last_rx) {
+  NoMediaSample sample;
+  sample.call_id = "call:g";
+  sample.group = true;
+  sample.media_live = true;
+  sample.others_joined = 2;
+  sample.last_rx_ms = last_rx;
+  sample.now_ms = now;
+  return sample;
+}
+
+/** Steps once a second from `from` to `to` (inclusive); true as soon as a step says end. */
+bool StepEverySecond(NoMediaWatch& watch, int64_t from, const int64_t to, NoMediaSample sample) {
+  for (; from <= to; from += 1'000) {
+    sample.now_ms = from;
+    if (StepNoMediaWatch(watch, sample)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+TEST(NoMediaWatchTest, NothingFromAnyoneForThirtySecondsEnds) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 39'000, LiveGroup(0, 5'000)));
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(40'000, 5'000)));
+}
+
+TEST(NoMediaWatchTest, MutedPeersStillSendSoTheCallGoesOn) {
+  NoMediaWatch watch;
+  for (int64_t now = 10'000; now <= 120'000; now += 1'000) {
+    EXPECT_FALSE(StepNoMediaWatch(watch, LiveGroup(now, now - 20))) << "silent frames keep arriving";
+  }
+}
+
+TEST(NoMediaWatchTest, SomethingArrivingStartsTheCountOver) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 35'000, LiveGroup(0, 9'000)));
+  EXPECT_FALSE(StepNoMediaWatch(watch, LiveGroup(36'000, 35'500)));
+  EXPECT_FALSE(StepEverySecond(watch, 37'000, 66'000, LiveGroup(0, 35'500)));
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(68'000, 35'500)));
+}
+
+TEST(NoMediaWatchTest, MovingOrReconnectingPausesTheCount) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 30'000, LiveGroup(0, 9'000)));
+  NoMediaSample moving = LiveGroup(0, 9'000);
+  moving.media_live = false;
+  EXPECT_FALSE(StepEverySecond(watch, 31'000, 90'000, moving));
+  EXPECT_FALSE(StepEverySecond(watch, 91'000, 120'000, LiveGroup(0, 9'000))) << "counted from 0 again";
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(121'000, 9'000)));
+}
+
+TEST(NoMediaWatchTest, TheAppAsleepDoesNotCount) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 20'000, LiveGroup(0, 9'000)));
+  // Backgrounded for 40 s: no refresh ran. Back in front, the count starts from 0.
+  EXPECT_FALSE(StepNoMediaWatch(watch, LiveGroup(60'000, 9'000)));
+  EXPECT_FALSE(StepEverySecond(watch, 61'000, 89'000, LiveGroup(0, 9'000)));
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(91'000, 9'000)));
+}
+
+TEST(NoMediaWatchTest, OnlyAGroupCallWithOthersInItCounts) {
+  NoMediaWatch watch;
+  NoMediaSample one_to_one = LiveGroup(0, 9'000);
+  one_to_one.group = false;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 100'000, one_to_one));
+  NoMediaSample alone = LiveGroup(0, 9'000);
+  alone.others_joined = 0;  // waiting alone: V053's own wait applies
+  EXPECT_FALSE(StepEverySecond(watch, 101'000, 200'000, alone));
+}
+
+TEST(NoMediaWatchTest, AnotherCallStartsAFreshCount) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 35'000, LiveGroup(0, 9'000)));
+  NoMediaSample other = LiveGroup(36'000, 9'000);
+  other.call_id = "call:h";
+  EXPECT_FALSE(StepEverySecond(watch, 36'000, 65'000, other));
+  other.now_ms = 66'000;
+  EXPECT_TRUE(StepNoMediaWatch(watch, other));
+}
+
+// --- V053: waiting alone in a group call ------------------------------------------------------------
+
+CallScreen WaitingAlone(const int64_t until) {
+  CallScreen s;
+  s.kind = CallScreen::Kind::InCall;
+  s.call_id = "call:g";
+  s.group = true;
+  s.media_connected = true;
+  s.members = {{"me", true}};
+  s.status = Status::WaitingForOthers;
+  s.alone_until_ms = until;
+  return s;
+}
+
+TEST(WaitingAloneTest, TheWaitLineIsNotHiddenByTheParticipantCount) {
+  EXPECT_FALSE(ShowsParticipantCount(WaitingAlone(120'000)));
+}
+
+TEST(WaitingAloneTest, TheCallGoingAwayAtTheEndOfTheWaitIsToldOnce) {
+  const CallScreen gone;
+  EXPECT_TRUE(EndedAlone(WaitingAlone(120'000), gone, 120'400));
+  EXPECT_FALSE(EndedAlone(WaitingAlone(120'000), gone, 60'000)) << "the user's own End, early";
+  EXPECT_FALSE(EndedAlone(WaitingAlone(120'000), WaitingAlone(120'000), 121'000)) << "still in it";
+  CallScreen live = WaitingAlone(0);
+  live.status = Status::Connected;
+  EXPECT_FALSE(EndedAlone(live, gone, 200'000)) << "was not waiting";
+}
+
 } // namespace
 } // namespace pbr

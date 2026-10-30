@@ -97,3 +97,20 @@ TEST(CallHopAttachLogicTest, HopHintOwnerSkipsFailedHopEvenIfPreferred) {
   EXPECT_EQ(d.action, HopHintOwnerAction::RePick);
   EXPECT_EQ(d.preferred_hop_peer_id, "y");
 }
+
+// AttachWaitExpired (45 s) with nobody ever connected: PollPendingSfuAttach gets TimeoutLeave and the
+// topology controller hangs up (host_.leave_call), so the call does end for the user.
+TEST(CallHopAttachLogicTest, WaitExpiredWithNobodyConnectedLeavesTheCall) {
+  SfuAttachWaitPollInput group;
+  group.wait_active = true;
+  group.now_ms = kSfuAttachWaitDefaultMs + 1;
+  group.deadline_ms = kSfuAttachWaitDefaultMs;
+  group.joined_count = 3;
+  group.media_active_mesh_for_call = false;
+  EXPECT_EQ(PollSfuAttachWait(group), SfuAttachWaitPollResult::TimeoutLeave);
+  SfuAttachWaitPollInput pair = group;
+  pair.joined_count = 2;  // 1:1 whose mesh never came up
+  EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::TimeoutLeave);
+  pair.media_active_mesh_for_call = true;  // a 1:1 still connecting is not cut off
+  EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::ClearAsP2p);
+}

@@ -29,4 +29,23 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
                                                const std::string& local_identity, LiveCallEndReason reason,
                                                int64_t now_ms);
 
+/** The id of a group call's record in the thread: one per call on this device, rewritten as it goes. */
+std::string GroupCallSummaryMessageId(const std::string& call_id);
+
+/** Why a summary is written: the call ended for this device (Final), or this device left a live call (Leave). */
+/**
+ * Final: the call ended (or a restart cleaned it up) after this device had left it. EndWhileIn: it ended
+ * while this device was in it. Leave: this device left a call that goes on for the others.
+ */
+enum class SummaryWrite { Final, EndWhileIn, Leave };
+
+/**
+ * What a group call's record becomes when `next` is written over `existing` (the record already in the
+ * thread, if any); nullopt = leave it as it is. A Final write never replaces a record. An EndWhileIn write
+ * or a Leave write (leave, rejoin, leave) makes the talk time run from this device's first join to its last
+ * leave, the gap included. A repeated write of one stay changes nothing.
+ */
+std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSummaryDetail>& existing,
+                                                   const CallSummaryDetail& next, SummaryWrite mode);
+
 } // namespace pbr

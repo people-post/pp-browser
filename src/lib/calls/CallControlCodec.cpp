@@ -379,6 +379,9 @@ Roe<std::string> CallControlCodec::EncodeSummary(const CallSummaryDetail& detail
   if (detail.duration_ms) {
     json.set("duration_ms", *detail.duration_ms);
   }
+  if (detail.talk_started_at) {
+    json.set("talk_started_at", *detail.talk_started_at);
+  }
   if (detail.group) {
     json.set("group", true);
   }
@@ -399,6 +402,7 @@ Roe<CallSummaryDetail> CallControlCodec::DecodeSummary(const std::string& detail
   detail.media_mode = CallMediaModeFromString(json->getString("media_mode").value_or("voice"));
   detail.outcome = CallOutcomeFromString(json->getString("outcome").value_or("failed"));
   detail.duration_ms = json->getIf<int64_t>("duration_ms");
+  detail.talk_started_at = json->getIf<int64_t>("talk_started_at");
   detail.group = json->getIf<bool>("group").value_or(false);
   detail.started = json->getIf<bool>("started").value_or(false);
   return detail;
@@ -640,9 +644,10 @@ Roe<CallPunchDetail> CallControlCodec::DecodePunch(const std::string& detail_jso
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,
-                                                        const std::string& sender_contact_id) {
+                                                        const std::string& sender_contact_id,
+                                                        const std::string& message_id) {
   ThreadMessage message;
-  message.id = util::GenerateUuid();
+  message.id = message_id.empty() ? util::GenerateUuid() : message_id;
   message.thread_id = thread_id;
   message.sender_contact_id = sender_contact_id;
   message.content_type = ChatContentType::System;

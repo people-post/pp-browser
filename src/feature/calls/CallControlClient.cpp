@@ -62,8 +62,33 @@ Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const 
   return {};
 }
 
-Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const CallSummaryDetail& summary,
-                                         const bool local_only) {
+Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const CallSummaryDetail& summary_in,
+                                         const bool local_only, const SummaryWrite write) {
+  CallSummaryDetail summary = summary_in;
+  // A group call's record is one fixed-id row this device rewrites (left, rejoined, call ended).
+  std::string message_id;
+  if (summary.group && local_only) {
+    message_id = GroupCallSummaryMessageId(summary.call_id);
+    std::optional<CallSummaryDetail> existing;
+    auto row = store_.GetMessage(thread_id, message_id);
+    if (!row) {
+      return row.error();  // could not read it: do not write over a record that may be there
+    }
+    if (row->has_value()) {
+      auto payload = TryParseObject((*row)->payload_json);
+      auto decoded = payload ? CallControlCodec::DecodeSummary(payload->getString("detail").value_or(""))
+                             : Roe<CallSummaryDetail>(Error("call record unreadable"));
+      if (!decoded) {
+        return decoded.error();
+      }
+      existing = *decoded;
+    }
+    auto merged = MergeGroupSummary(existing, summary, write);
+    if (!merged) {
+      return {};
+    }
+    summary = *merged;
+  }
   auto detail = CallControlCodec::EncodeSummary(summary);
   if (!detail) {
     return detail.error();
@@ -88,12 +113,15 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
   if (!local) {
     return local.error();
   }
-  auto message = CallControlCodec::BuildSystemMessage(thread_id, CallControlType::CallSummary, text, *detail, *local);
+  auto message =
+      CallControlCodec::BuildSystemMessage(thread_id, CallControlType::CallSummary, text, *detail, *local, message_id);
   if (!message) {
     return message.error();
   }
   message->sender_contact_id = kLocalSelfContactId;
-  if (auto appended = store_.AppendMessage(*message); !appended) {
+  // Upsert, not get-then-write: the leave, the call's end and a restart cleanup may write at once.
+  if (auto appended = message_id.empty() ? store_.AppendMessage(*message) : store_.UpsertMessage(*message);
+      !appended) {
     return appended.error();
   }
   return {};
