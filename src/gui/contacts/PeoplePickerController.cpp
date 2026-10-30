@@ -1293,7 +1293,8 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
                        [this, row]() { AddMemberAsContact(row); }, "../icons/contacts.svg"});
   }
   if (group_is_owner_) {
-    if (row.IsContact()) {
+    // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
+    if (row.IsContact() && (row.invited || row.unreachable)) {
       actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
                          [this, row]() { ReinviteMember(row); },
                          "../icons/group.svg"});
@@ -1426,37 +1427,25 @@ void PeoplePickerController::FinishOpenThread() {
 }
 
 void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
-  if (!unlock_ensure_.ensure_unlocked) {
+  // The everyday chat, same as "Message" on the contact page (not the safety-code chat).
+  auto contact = contacts_ports_.get_contact
+                     ? contacts_ports_.get_contact(contact_id)
+                     : Roe<std::optional<Contact>>::error(Error("contacts port unavailable"));
+  if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(**contact);
+  }
+  auto thread = contacts_ports_.find_or_create_direct_thread
+                    ? contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2ePublic)
+                    : Roe<Thread>::error(Error("contacts port unavailable"));
+  if (!thread) {
+    UserFeedback::Fail(thread.error().message);
+    NotifySurfaceChanged();
     return;
   }
-  unlock_ensure_.ensure_unlocked([this, contact_id](const bool unlocked) {
-    if (!unlocked) {
-      ShowToast(Tr("people_picker.pin_required"));
-      NotifySurfaceChanged();
-      return;
-    }
-    auto contact = contacts_ports_.get_contact
-                       ? contacts_ports_.get_contact(contact_id)
-                       : Roe<std::optional<Contact>>::error(Error("contacts port unavailable"));
-    if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
-      contacts_ports_.register_contact_direct_endpoints(**contact);
-    }
-    auto thread = contacts_ports_.find_or_create_direct_thread
-                      ? contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2e)
-                      : Roe<Thread>::error(Error("contacts port unavailable"));
-    if (!thread) {
-      UserFeedback::Fail(thread.error().message);
-      NotifySurfaceChanged();
-      return;
-    }
-    if (contacts_ports_.ensure_psk_generated) {
-      (void)contacts_ports_.ensure_psk_generated(thread->id);
-    }
-    if (contacts_ports_.warm_peer_for_thread) {
-      contacts_ports_.warm_peer_for_thread(thread->id);
-    }
-    FinishOpenThread();
-  });
+  if (contacts_ports_.warm_peer_for_thread) {
+    contacts_ports_.warm_peer_for_thread(thread->id);
+  }
+  FinishOpenThread();
 }
 
 void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>& member_contact_ids,
