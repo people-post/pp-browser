@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include "gui/contacts/PeoplePickerController.h"
 
+#include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/CallTypes.h"
@@ -10,6 +11,9 @@
 #include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
+#include "lib/people/PeopleLookupFailure.h"
+#include "lib/ui/ContextMenuHost.h"
+#include "common/ValueJson.h"
 #include "lib/ui/ShellTypes.h"
 #include "lib/people/ContactReachability.h"
 #include "gui/CallActionsPorts.h"
@@ -202,6 +206,7 @@ bool PeoplePickerController::RegisterModel(ui::Context* context) {
       row_handle.RegisterMember("subtitle", &PickerRow::subtitle);
       row_handle.RegisterMember("selected", &PickerRow::selected);
       row_handle.RegisterMember("locked", &PickerRow::locked);
+      row_handle.RegisterMember("disabled", &PickerRow::disabled);
     }
     if (auto member_handle = ctor.RegisterStruct<MemberSummaryRow>()) {
       member_handle.RegisterMember("title", &MemberSummaryRow::title);
@@ -218,6 +223,10 @@ bool PeoplePickerController::RegisterModel(ui::Context* context) {
     ctor.Bind("cta_label", &controller.cta_label_);
     ctor.Bind("cta_enabled", &controller.cta_enabled_);
     ctor.Bind("empty_hint", &controller.empty_hint_);
+    ctor.Bind("full_hint", &controller.full_hint_);
+    ctor.Bind("show_checks", &controller.show_checks_);
+    ctor.Bind("show_cta", &controller.show_cta_);
+    ctor.Bind("show_add_members", &controller.show_add_members_);
     ctor.Bind("show_call_video_option", &controller.show_call_video_option_);
     ctor.Bind("call_video_allowed", &controller.call_video_allowed_);
     ctor.BindEventCallback("toggle_contact", &PeoplePickerController::ToggleContactCallback);
@@ -226,6 +235,7 @@ bool PeoplePickerController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("cancel_picker", &PeoplePickerController::CancelCallback);
     ctor.BindEventCallback("back_picker", &PeoplePickerController::BackCallback);
     ctor.BindEventCallback("create_group", &PeoplePickerController::CreateGroupCallback);
+    ctor.BindEventCallback("add_members", &PeoplePickerController::AddMembersCallback);
   });
 }
 
@@ -271,6 +281,65 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
     selected_ids_.insert(row.id.c_str());
     row.selected = true;
   }
+  UpdateCta();
+  DirtyAll();
+  PaneSpec spec;
+  spec.key = "people_picker";
+  layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
+  RegisterFlow();
+  NotifySurfaceChanged();
+}
+
+void PeoplePickerController::OpenForGroupMembers(const std::string& thread_id) {
+  if (!MessagingInitialized() || !picker_ports_.get_thread || !picker_ports_.list_group_roster) {
+    UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
+    return;
+  }
+  auto thread = picker_ports_.get_thread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    UserFeedback::Fail(Tr("people_picker.err.group_required"));
+    return;
+  }
+  Close();
+  mode_ = PeoplePickerMode::GroupMembers;
+  group_thread_id_ = thread_id;
+  group_id_ = *(*thread)->group_id;
+  group_sending_ = false;
+  show_checks_ = false;
+  show_cta_ = false;
+  show_call_video_option_ = false;
+  selected_ids_.clear();
+  search_query_ = "";
+  step_ = kStepSelect;
+  title_ = Tr("people_picker.title_group_members").c_str();
+  empty_hint_ = Tr("people_picker.empty_group_call").c_str();
+  SyncGroupMemberRows();
+  UpdateCta();
+  DirtyAll();
+  PaneSpec spec;
+  spec.key = "people_picker";
+  layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
+  RegisterFlow();
+  NotifySurfaceChanged();
+}
+
+void PeoplePickerController::OpenForGroupAddMember() {
+  const std::string group_id = group_id_;
+  const std::string thread_id = group_thread_id_;
+  Close();
+  mode_ = PeoplePickerMode::GroupAddMember;
+  group_id_ = group_id;
+  group_thread_id_ = thread_id;
+  group_sending_ = false;
+  show_checks_ = true;
+  show_cta_ = true;
+  show_call_video_option_ = false;
+  selected_ids_.clear();
+  search_query_ = "";
+  step_ = kStepSelect;
+  title_ = Tr("people_picker.add_members").c_str();
+  empty_hint_ = Tr("people_picker.empty_group_add").c_str();
+  SyncGroupAddRows();
   UpdateCta();
   DirtyAll();
   PaneSpec spec;
@@ -393,6 +462,16 @@ void PeoplePickerController::ResetState() {
   call_video_allowed_ = false;
   show_call_video_option_ = false;
   identity_for_contact_.clear();
+  group_id_.clear();
+  group_thread_id_.clear();
+  group_is_owner_ = false;
+  group_sending_ = false;
+  group_roster_count_ = 0;
+  member_rows_.clear();
+  show_checks_ = true;
+  show_cta_ = true;
+  show_add_members_ = false;
+  full_hint_ = "";
   search_query_ = "";
   step_ = kStepSelect;
   group_title_ = Tr("people_picker.default_group_title").c_str();
@@ -553,6 +632,154 @@ void PeoplePickerController::SyncGroupCallRows() {
   }
 }
 
+std::optional<Contact> PeoplePickerController::ContactForMember(const GroupRosterMember& member) const {
+  if (!member.contact_id.empty() && contacts_ports_.get_contact) {
+    if (auto loaded = contacts_ports_.get_contact(member.contact_id); loaded && *loaded) {
+      return **loaded;
+    }
+  }
+  if (picker_ports_.find_contact_by_identity) {
+    if (auto found = picker_ports_.find_contact_by_identity(member.member_identity, mesh::ContactIdKind::Account);
+        found && *found) {
+      return **found;
+    }
+  }
+  return std::nullopt;
+}
+
+void PeoplePickerController::SyncGroupMemberRows() {
+  rows_.clear();
+  member_rows_.clear();
+  show_add_members_ = false;
+  if (!MessagingInitialized() || group_id_.empty() || !picker_ports_.list_group_roster) {
+    return;
+  }
+  auto roster = picker_ports_.list_group_roster(group_id_);
+  if (!roster) {
+    return;
+  }
+  group_roster_count_ = static_cast<int>(roster->size());
+  std::string local_identity;
+  if (picker_ports_.local_relay_identity) {
+    if (auto identity = picker_ports_.local_relay_identity()) {
+      local_identity = *identity;
+    }
+  }
+  group_is_owner_ = std::any_of(roster->begin(), roster->end(), [&](const GroupRosterMember& member) {
+    return member.member_identity == local_identity && member.role == MemberRole::Owner;
+  });
+  show_add_members_ = group_is_owner_;
+  std::unordered_set<std::string> unreachable;
+  if (picker_ports_.list_unreachable_members) {
+    for (const std::string& identity : picker_ports_.list_unreachable_members(group_id_)) {
+      unreachable.insert(identity);
+    }
+  }
+  std::string query = search_query_.c_str();
+  std::transform(query.begin(), query.end(), query.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  std::vector<GroupMemberRow> members;
+  for (const GroupRosterMember& member : *roster) {
+    if (member.member_identity.empty() || member.member_identity == local_identity) {
+      continue;
+    }
+    GroupMemberRow row = BuildGroupMemberRow(member, ContactForMember(member), unreachable.count(member.member_identity) > 0);
+    if (!MatchesIdentityQuery(row.title, row.identity, query)) {
+      continue;
+    }
+    members.push_back(std::move(row));
+  }
+  SortGroupMemberRows(members);
+  rows_.reserve(members.size());
+  for (GroupMemberRow& member : members) {
+    PickerRow row;
+    row.id = member.identity.c_str();
+    row.title = member.title.c_str();
+    std::string subtitle;
+    if (member.is_owner) {
+      subtitle = Tr("people_picker.badge_owner");
+    }
+    if (member.unreachable) {
+      subtitle += (subtitle.empty() ? "" : " · ") + Tr("people_picker.badge_unreachable");
+    }
+    row.subtitle = subtitle.c_str();
+    rows_.push_back(std::move(row));
+    member_rows_[member.identity] = std::move(member);
+  }
+}
+
+void PeoplePickerController::SyncGroupAddRows() {
+  rows_.clear();
+  member_rows_.clear();
+  show_add_members_ = false;
+  if (!MessagingInitialized() || group_id_.empty() || !contacts_ports_.list_contacts ||
+      !picker_ports_.list_group_roster) {
+    return;
+  }
+  auto roster = picker_ports_.list_group_roster(group_id_);
+  auto stored = contacts_ports_.list_contacts();
+  if (!roster || !stored) {
+    return;
+  }
+  group_roster_count_ = static_cast<int>(roster->size());
+  std::string local_identity;
+  if (picker_ports_.local_relay_identity) {
+    if (auto identity = picker_ports_.local_relay_identity()) {
+      local_identity = *identity;
+    }
+  }
+  std::unordered_set<std::string> roster_identities;
+  for (const GroupRosterMember& member : *roster) {
+    roster_identities.insert(member.member_identity);
+  }
+  std::string query = search_query_.c_str();
+  std::transform(query.begin(), query.end(), query.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  std::vector<Contact> selectable;
+  std::vector<AddMemberCandidate> candidates;
+  for (const Contact& contact : *stored) {
+    if (!ContactIsSelectable(contact, MessagingReady() ? &contacts_ports_ : nullptr) || !MatchesQuery(contact, query)) {
+      continue;
+    }
+    candidates.push_back({contact.id, DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic).peer_identity_value});
+    selectable.push_back(contact);
+  }
+  const std::vector<std::string> ids = AddMemberCandidateIds(candidates, roster_identities, local_identity);
+  std::vector<Contact> shown;
+  for (const Contact& contact : selectable) {
+    if (std::find(ids.begin(), ids.end(), contact.id) != ids.end()) {
+      shown.push_back(contact);
+    }
+  }
+  std::sort(shown.begin(), shown.end(), [](const Contact& a, const Contact& b) {
+    return FormatContactTitle(a) < FormatContactTitle(b);
+  });
+  rows_.reserve(shown.size());
+  for (const Contact& contact : shown) {
+    PickerRow row;
+    row.id = contact.id.c_str();
+    row.title = FormatContactTitle(contact).c_str();
+    if (row.title.empty()) {
+      row.title = Tr("people_picker.unnamed").c_str();
+    }
+    row.subtitle = ContactSubtitle(contact).c_str();
+    row.selected = selected_ids_.count(contact.id) > 0;
+    rows_.push_back(std::move(row));
+  }
+}
+
+void PeoplePickerController::RefreshGroupAddLimit() {
+  const int selected = FreeSelectedCount();
+  for (PickerRow& row : rows_) {
+    row.disabled = GroupAddRowDisabled(group_roster_count_, selected, row.selected);
+  }
+  full_hint_ = GroupIsFull(group_roster_count_, selected)
+                   ? Tr("people_picker.group_full", {{"max", std::to_string(kGroupMemberLimit)}}).c_str()
+                   : "";
+}
+
 void PeoplePickerController::SyncCallAddGuestRows() {
   rows_.clear();
   identity_for_contact_.clear();
@@ -615,9 +842,18 @@ void PeoplePickerController::SyncCallAddGuestRows() {
 }
 
 void PeoplePickerController::UpdateCta() {
-  const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount());
-  cta_enabled_ = cta != PeoplePickerCta::Disabled;
+  const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount(), group_sending_);
+  cta_enabled_ = cta != PeoplePickerCta::Disabled && cta != PeoplePickerCta::Inviting;
+  if (mode_ == PeoplePickerMode::GroupAddMember) {
+    RefreshGroupAddLimit();
+  }
   switch (cta) {
+  case PeoplePickerCta::Invite:
+    cta_label_ = Tr("people_picker.cta_invite", {{"count", std::to_string(FreeSelectedCount())}}).c_str();
+    break;
+  case PeoplePickerCta::Inviting:
+    cta_label_ = Tr("people_picker.cta_inviting").c_str();
+    break;
   case PeoplePickerCta::Message:
     cta_label_ = Tr("people_picker.cta_message").c_str();
     break;
@@ -722,14 +958,29 @@ void PeoplePickerController::DirtyAll() {
   host.Dirty("people_picker", "cta_label");
   host.Dirty("people_picker", "cta_enabled");
   host.Dirty("people_picker", "empty_hint");
+  host.Dirty("people_picker", "full_hint");
+  host.Dirty("people_picker", "show_checks");
+  host.Dirty("people_picker", "show_cta");
+  host.Dirty("people_picker", "show_add_members");
 }
 
-void PeoplePickerController::ToggleContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void PeoplePickerController::ToggleContactCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                    const ui::VariantList& args) {
   if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnToggleContact(std::string(args[0].Get<ui::String>().c_str()));
+  PeoplePickerController& self = Instance();
+  const std::string id(args[0].Get<ui::String>().c_str());
+  if (self.mode_ == PeoplePickerMode::GroupMembers) {
+    self.OnMemberTapped(id, MenuPositionBelowEvent(ev));
+    return;
+  }
+  self.OnToggleContact(id);
+}
+
+void PeoplePickerController::AddMembersCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
+  Instance().OpenForGroupAddMember();
 }
 
 void PeoplePickerController::OnSearchChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -758,12 +1009,16 @@ void PeoplePickerController::CreateGroupCallback(ui::DataModelHandle /*model*/, 
 }
 
 void PeoplePickerController::OnToggleContact(const std::string& contact_id) {
-  if (contact_id.empty() || locked_ids_.count(contact_id) > 0) {
+  if (contact_id.empty() || locked_ids_.count(contact_id) > 0 || group_sending_) {
     return;
   }
   if (selected_ids_.count(contact_id) > 0) {
     selected_ids_.erase(contact_id);
   } else {
+    if (mode_ == PeoplePickerMode::GroupAddMember &&
+        GroupAddRowDisabled(group_roster_count_, FreeSelectedCount(), false)) {
+      return;
+    }
     selected_ids_.insert(contact_id);
   }
   for (PickerRow& row : rows_) {
@@ -781,6 +1036,10 @@ void PeoplePickerController::OnSearchChanged() {
     SyncGroupCallRows();
   } else if (mode_ == PeoplePickerMode::CallAddGuest) {
     SyncCallAddGuestRows();
+  } else if (mode_ == PeoplePickerMode::GroupMembers) {
+    SyncGroupMemberRows();
+  } else if (mode_ == PeoplePickerMode::GroupAddMember) {
+    SyncGroupAddRows();
   } else {
     SyncRows();
   }
@@ -804,7 +1063,11 @@ void PeoplePickerController::OnConfirm() {
   if (!cta_enabled_) {
     return;
   }
-  const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount());
+  const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount(), group_sending_);
+  if (cta == PeoplePickerCta::Invite) {
+    OnInviteMembers();
+    return;
+  }
   if (cta == PeoplePickerCta::StartCall) {
     OnStartCall();
     return;
@@ -870,6 +1133,169 @@ void PeoplePickerController::OnStartCall() {
       (void)call_actions_.start_with_invitees(call_thread_id, call_video_allowed, identities);
     }
   }
+}
+
+void PeoplePickerController::OnInviteMembers() {
+  if (group_sending_ || group_id_.empty() || !picker_ports_.invite_members_async) {
+    return;
+  }
+  std::vector<std::string> contact_ids;
+  std::unordered_map<std::string, std::string> names;
+  for (const PickerRow& row : rows_) {
+    if (selected_ids_.count(row.id.c_str()) > 0) {
+      contact_ids.push_back(row.id.c_str());
+      names[row.id.c_str()] = row.title.c_str();
+    }
+  }
+  if (contact_ids.empty()) {
+    return;
+  }
+  group_sending_ = true;
+  UpdateCta();
+  DirtyAll();
+  const std::string group_id = group_id_;
+  picker_ports_.invite_members_async(group_id, std::move(contact_ids),
+                                     [this, group_id, names](GroupInviteBatchResult result) {
+                                       OnInviteFinished(group_id, names, result);
+                                     });
+}
+
+void PeoplePickerController::OnInviteFinished(const std::string& group_id,
+                                              const std::unordered_map<std::string, std::string>& names,
+                                              const GroupInviteBatchResult& result) {
+  const bool still_here =
+      layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupAddMember && group_id_ == group_id;
+  if (still_here) {
+    group_sending_ = false;
+  }
+  if (result.failed.empty()) {
+    ShowToast(Tr("people_picker.invite_sent", {{"count", std::to_string(result.sent.size())}}));
+  } else {
+    std::string failed_names;
+    for (const auto& [contact_id, reason] : result.failed) {
+      if (!failed_names.empty()) {
+        failed_names += ", ";
+      }
+      auto it = names.find(contact_id);
+      failed_names += it != names.end() ? it->second : Tr("people_picker.unnamed");
+      log().warning << "Group invite not sent: " << reason;
+    }
+    ShowToast(Tr("people_picker.invite_partial",
+                 {{"ok", std::to_string(result.sent.size())},
+                  {"failed", std::to_string(result.failed.size())},
+                  {"names", failed_names}}),
+              ToastDuration::Long);
+  }
+  if (still_here) {
+    Close();
+  }
+  NotifySurfaceChanged();
+}
+
+void PeoplePickerController::OnMemberTapped(const std::string& identity, const ui::Vector2i menu_position) {
+  auto found = member_rows_.find(identity);
+  if (found == member_rows_.end()) {
+    return;
+  }
+  const GroupMemberRow row = found->second;
+  // A non-owner who taps a contact goes straight to the chat with them.
+  if (!group_is_owner_ && row.IsContact()) {
+    StartDirectMessage(row.contact_id);
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  if (row.IsContact()) {
+    actions.push_back({"member_message", Tr("people_picker.cta_message"), nullptr,
+                       [this, contact_id = row.contact_id]() { StartDirectMessage(contact_id); },
+                       "../icons/message.svg"});
+  } else {
+    actions.push_back({"member_add_contact", Tr("people_picker.add_as_contact"), nullptr,
+                       [this, row]() { AddMemberAsContact(row); }, "../icons/contacts.svg"});
+  }
+  if (group_is_owner_) {
+    if (kGroupReinviteEnabled && row.IsContact()) {
+      actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
+                         [this, contact_id = row.contact_id]() { ReinviteMember(contact_id); },
+                         "../icons/group.svg"});
+    }
+    actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
+                       [this, row]() { RemoveMember(row); }, "../icons/trash.svg", true});
+  }
+  ContextMenuHost::Instance().ShowActions(menu_position, std::move(actions));
+}
+
+void PeoplePickerController::ReinviteMember(const std::string& contact_id) {
+  if (group_sending_ || group_id_.empty() || !picker_ports_.invite_members_async) {
+    return;
+  }
+  group_sending_ = true;
+  picker_ports_.invite_members_async(group_id_, {contact_id}, [this](GroupInviteBatchResult result) {
+    group_sending_ = false;
+    if (!result.failed.empty()) {
+      log().warning << "Group re-invite not sent: " << result.failed.front().second;
+      UserFeedback::Fail(Tr("contacts.err.add"));
+      return;
+    }
+    ShowToast(Tr("people_picker.reinvite_sent"), ToastDuration::Long);
+  });
+}
+
+void PeoplePickerController::RemoveMember(const GroupMemberRow& row) {
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(
+      Tr("chat.group.remove_member_title"), Tr("chat.group.remove_member_confirm", {{"name", row.title}}),
+      [this, identity = row.identity](const bool ok) {
+        if (!ok || group_id_.empty() || !picker_ports_.remove_member_by_identity) {
+          return;
+        }
+        if (auto removed = picker_ports_.remove_member_by_identity(group_id_, identity); !removed) {
+          UserFeedback::Fail(removed.error().message);
+          return;
+        }
+        if (contacts_ports_.notify_thread_changed) {
+          contacts_ports_.notify_thread_changed();
+        }
+        SyncGroupMemberRows();
+        DirtyAll();
+        NotifySurfaceChanged();
+      },
+      {});
+}
+
+void PeoplePickerController::AddMemberAsContact(const GroupMemberRow& row) {
+  if (!picker_ports_.dispatch_action_async) {
+    return;
+  }
+  // Keys come from the client's own directory lookup for this account id, never from the group.
+  Object payload;
+  payload.set("type", "add_contact");
+  payload.set("account_id", row.identity);
+  picker_ports_.dispatch_action_async(
+      DumpJson(payload), [this, name = row.title](Roe<std::optional<std::string>> added) {
+        if (!added) {
+          switch (ClassifyPeopleLookupError(added.error())) {
+          case PeopleLookupFailure::NotFound:
+            UserFeedback::Fail(Tr("contacts.err.user_not_found"));
+            break;
+          case PeopleLookupFailure::DirectoryUnreachable:
+            UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
+            break;
+          case PeopleLookupFailure::Other:
+            log().warning << "Add member as contact failed: " << AppError::Log(added.error());
+            UserFeedback::Fail(Tr("contacts.err.add"));
+            break;
+          }
+          return;
+        }
+        ShowToast(Tr("contacts.added", {{"name", name}}));
+        if (layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupMembers) {
+          SyncGroupMemberRows();
+          DirtyAll();
+        }
+        NotifySurfaceChanged();
+      });
 }
 
 void PeoplePickerController::AdvanceToNameStep(const std::vector<std::string>& member_contact_ids) {

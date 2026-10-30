@@ -1,6 +1,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 
 #include "foundation/data/PricingTypes.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
@@ -467,6 +468,31 @@ Roe<void> ConversationsFacade::RemoveMemberByIdentity(const std::string& group_i
 
 std::vector<std::string> ConversationsFacade::ListUnreachableMembers(const std::string& group_id) {
   return hub_.Groups().ListUnreachable(group_id);
+}
+
+Roe<void> ConversationsFacade::InviteMember(const std::string& group_id, const std::string& contact_id) {
+  auto roster = hub_.Groups().ListRoster(group_id);
+  if (!roster) {
+    return roster.error();
+  }
+  if (auto room = CheckGroupHasRoom(roster->size()); !room) {
+    return room.error();
+  }
+  return hub_.Groups().InviteMember(group_id, contact_id);
+}
+
+void ConversationsFacade::InviteMembersAsync(const std::string& group_id, std::vector<std::string> contact_ids,
+                                             std::function<void(GroupInviteBatchResult)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<GroupInviteBatchResult>(
+      WorkerLane::Normal,
+      [this, group_id, contact_ids = std::move(contact_ids)]() {
+        return InviteEach(contact_ids, [&](const std::string& contact_id) { return InviteMember(group_id, contact_id); });
+      },
+      [done = std::move(done)](GroupInviteBatchResult result) {
+        if (done) {
+          done(std::move(result));
+        }
+      });
 }
 
 // --- Identity / contacts / directory ----------------------------------------

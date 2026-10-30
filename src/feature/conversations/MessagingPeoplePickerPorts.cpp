@@ -24,6 +24,14 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
   ports.create_group = [&hub](const std::string& title, const std::vector<std::string>& member_contact_ids) {
     return hub.Inbox().CreateGroup(title, member_contact_ids);
   };
+  ports.list_unreachable_members = [&hub](const std::string& group_id) { return hub.Groups().ListUnreachable(group_id); };
+  ports.remove_member_by_identity = [&hub](const std::string& group_id, const std::string& member_identity) {
+    return hub.Groups().RemoveMemberByIdentity(group_id, member_identity);
+  };
+  ports.dispatch_action_async = [&hub](const std::string& payload_json,
+                                       std::function<void(Roe<std::optional<std::string>>)> done) {
+    hub.Actions().DispatchAsync(payload_json, std::move(done));
+  };
   return ports;
 }
 
