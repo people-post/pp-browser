@@ -742,6 +742,15 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
     in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
     break;
+  case Status::WaitingForOthers: {
+    // V053: everyone else left; counts down to leaving by itself.
+    const int64_t left_s = std::max<int64_t>(0, (screen.alone_until_ms - util::NowUnixMs() + 999) / 1000);
+    char left[16];
+    std::snprintf(left, sizeof(left), "%lld:%02lld", static_cast<long long>(left_s / 60),
+                  static_cast<long long>(left_s % 60));
+    in_call.subtitle = Tr("call.status.waiting_for_others", {{"time", left}}).c_str();
+    break;
+  }
   case Status::Disconnected:
     in_call.subtitle = Tr("call.status.disconnected").c_str();
     break;

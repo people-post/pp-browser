@@ -40,6 +40,8 @@ struct CallUiState {
   CallHopHealth hop_health;
   std::string media_path_kind;
   CallLinkCounters media_link;
+  /** V053: the active group call this device waits alone in ends for it then (0: not waiting). */
+  int64_t alone_until_ms = 0;
 
   // Stack-level (hub / app reads from UI).
   bool available = false;              // sessions + lifecycle exist

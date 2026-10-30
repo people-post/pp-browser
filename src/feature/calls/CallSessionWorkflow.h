@@ -188,6 +188,8 @@ public:
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   /** No sweep, no writes (UI reads): expired invites are skipped instead. */
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
+  /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
+  int64_t AloneUntilMs(const std::string& call_id) const;
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each
@@ -362,6 +364,8 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** The last sweep: a long gap means the app slept, and the alone waits start over. */
+  int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */
   struct MediaKeyResend {
     uint32_t epoch = 0;

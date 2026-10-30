@@ -129,11 +129,14 @@ private:
   bool TakeStackNotices(CallUiBackend& backend);
   void FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, bool video, bool group_call);
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
+  /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
+  void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
   Callbacks callbacks_;
   CallScreen screen_;
+  NoMediaWatch no_media_watch_;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
