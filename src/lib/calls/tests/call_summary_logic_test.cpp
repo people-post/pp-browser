@@ -73,14 +73,29 @@ TEST(CallSummaryLogicTest, ALaterLeaveReplacesTheRecord) {
   EXPECT_FALSE(MergeGroupSummary(first, none, SummaryWrite::Leave)) << "a segment without talk time changes nothing";
 }
 
-TEST(CallSummaryLogicTest, TheEndOfTheCallNeverReplacesTheRecordOfTheLeave) {
+TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceLeftNeverReplacesItsRecord) {
   CallSummaryDetail left;
   left.group = true;
   left.duration_ms = 4'000;
   CallSummaryDetail ended = left;
-  ended.duration_ms = 9'000;
+  ended.duration_ms = 9'000;  // counted to the call's end, after this device left
   EXPECT_FALSE(MergeGroupSummary(left, ended, SummaryWrite::Final));
   EXPECT_TRUE(MergeGroupSummary(std::nullopt, ended, SummaryWrite::Final)) << "a call never left writes at its end";
+}
+
+TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceWasBackInTakesTheLongerStay) {
+  CallSummaryDetail left;
+  left.group = true;
+  left.duration_ms = 4'000;
+  CallSummaryDetail ended = left;
+  ended.duration_ms = 9'000;  // back in after the leave, and in it when the call ended
+  EXPECT_EQ(MergeGroupSummary(left, ended, SummaryWrite::EndWhileIn)->duration_ms, std::optional<int64_t>(9'000));
+  CallSummaryDetail shorter = left;
+  shorter.duration_ms = 3'000;
+  EXPECT_FALSE(MergeGroupSummary(left, shorter, SummaryWrite::EndWhileIn));
+  CallSummaryDetail no_talk = left;
+  no_talk.duration_ms.reset();
+  EXPECT_FALSE(MergeGroupSummary(left, no_talk, SummaryWrite::EndWhileIn));
 }
 
 } // namespace

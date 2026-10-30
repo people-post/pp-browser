@@ -137,6 +137,7 @@ private:
   Callbacks callbacks_;
   CallScreen screen_;
   NoMediaWatch no_media_watch_;
+  int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;

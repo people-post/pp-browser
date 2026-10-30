@@ -228,12 +228,16 @@ void CallPresenter::Refresh() {
     ring_shown_ = false;
   }
   const int64_t now = util::NowUnixMs();
-  if (EndedWithoutConnecting(screen_, next, remote_ended)) {
+  // The screen's call went away by itself only when nothing replaced it and the stack is not still in it
+  // (a ring over it, a declined ring, a merged call keep or replace it).
+  const bool went_away = next.kind == CallScreen::Kind::None &&
+                         (!surface.active || surface.active->call_id != screen_.call_id);
+  if (went_away && EndedWithoutConnecting(screen_, next, remote_ended)) {
     CallNotice notice;
     notice.kind = CallNotice::Kind::Error;
     notice.key = "call.status.ended_couldnt_connect";
     Notify(notice);
-  } else if (EndedAlone(screen_, next, now)) {
+  } else if (went_away && EndedAlone(screen_, next, now)) {
     CallNotice notice;
     notice.kind = CallNotice::Kind::Error;
     notice.key = "call.status.ended_alone";
@@ -320,12 +324,19 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
 }
 
 void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, const int64_t now) {
+  // Once a second is plenty (the health snapshot takes the engine's lock), and only a group call counts.
+  if (now - no_media_checked_ms_ < 1'000) {
+    return;
+  }
+  no_media_checked_ms_ = now;
   NoMediaSample sample;
-  if (s.kind == CallScreen::Kind::InCall) {
+  if (s.kind == CallScreen::Kind::InCall && s.group) {
     const CallMediaEngineHealth health = backend.Media().HealthSnapshot();
     sample.call_id = s.call_id;
     sample.group = s.group;
-    sample.media_live = s.media_connected;
+    // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
+    sample.media_live = s.media_connected && backend.Recovery() == CallRecovery::None &&
+                        s.status != CallScreen::Status::Reconnecting;
     sample.others_joined = static_cast<size_t>(
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
@@ -343,11 +354,11 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
   notice.key = "call.status.ended_no_media";
   Notify(notice);
   // Not from inside this refresh: leaving refreshes the screen again.
-  AppRuntime::PostUI([this, call_id = s.call_id]() {
+  AppRuntime::PostUI(WhileAlive([this, call_id = s.call_id]() {
     if (active_call_id_ == call_id) {
       (void)Leave();
     }
-  });
+  }));
 }
 
 void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s) {

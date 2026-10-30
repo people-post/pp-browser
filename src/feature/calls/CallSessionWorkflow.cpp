@@ -877,8 +877,6 @@ namespace {
 // After a rotation the key goes again at these times: CallMediaKey has no ack, and a member that missed
 // it would seal with the old epoch for the rest of the call (#381). Receiving it again is harmless.
 constexpr int64_t kMediaKeyResendAfterMs[] = {2'000, 6'000, 15'000};
-// Sweeps come with every UI refresh; a gap this long means the app was asleep.
-constexpr int64_t kAloneSweepSleepGapMs = 5'000;
 } // namespace
 
 void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identity, const int64_t now) {
@@ -934,11 +932,22 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
   if (auto saved = sessions_.UpsertSession(session); !saved) {
     return saved.error();
   }
-  SendSummary(session, reason);
+  SendSummary(session, reason, StillInCall(session.call_id) ? SummaryWrite::EndWhileIn : SummaryWrite::Final);
   if (host_.wire.notify_ring_changed) {
     host_.wire.notify_ring_changed();
   }
   return {};
+}
+
+bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
+  auto local = host_.wire.local_relay_identity();
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!local || !participants) {
+    return false;
+  }
+  return std::any_of(participants->begin(), participants->end(), [&](const CallParticipant& p) {
+    return p.identity == *local && p.state == CallParticipantState::Joined;
+  });
 }
 
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
@@ -981,8 +990,8 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
     return saved.error();
   }
 
-  if (IsGroupCall(**session)) {
-    // A group call goes on for the others: this device's history line is written now, not when (if ever)
+  if ((*session)->origin_group_id) {
+    // A group's call goes on for the others: this device's history line is written now, not when (if ever)
     // it ends. A restart cleanup (Orphaned) never rewrites a line that exists.
     SendSummary(**session, reason, reason == LiveCallEndReason::Orphaned ? SummaryWrite::Final : SummaryWrite::Leave);
   }
@@ -1960,7 +1969,7 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     it = join_requested_until_ms_.erase(it);
     host_.wire.notify_ring_changed();
   }
-  const bool slept = last_alone_sweep_ms_ > 0 && now - last_alone_sweep_ms_ > kAloneSweepSleepGapMs;
+  const bool slept = last_alone_sweep_ms_ > 0 && now - last_alone_sweep_ms_ > CallSessionLogic::kAppSleptGapMs;
   last_alone_sweep_ms_ = now;
   for (auto it = alone_since_ms_.begin(); it != alone_since_ms_.end();) {
     // Asleep (backgrounded): the wait starts over. (Someone ringing is not waited on: an offer nobody

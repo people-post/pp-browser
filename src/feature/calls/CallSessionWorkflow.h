@@ -190,6 +190,8 @@ public:
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
   /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
   int64_t AloneUntilMs(const std::string& call_id) const;
+  /** This device is Joined in the call (not left it). */
+  bool StillInCall(const std::string& call_id) const;
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each

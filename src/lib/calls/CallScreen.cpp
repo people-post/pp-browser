@@ -1,5 +1,7 @@
 #include "lib/calls/CallScreen.h"
 
+#include "lib/calls/CallSessionLogic.h"
+
 namespace pbr {
 
 const char* CallScreenKindName(const CallScreen::Kind kind) {
@@ -81,7 +83,7 @@ bool EndedAlone(const CallScreen& before, const CallScreen& after, const int64_t
     return false;
   }
   // The user's own End clears the screen first; this is the wait running out (a sweep may lag a little).
-  return now_ms >= before.alone_until_ms - kMediaArrivingWindowMs;
+  return now_ms >= before.alone_until_ms - kAloneEndLagMs;
 }
 
 bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
@@ -89,7 +91,7 @@ bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
     watch = {};
     watch.call_id = sample.call_id;
   }
-  const bool woke = watch.last_step_ms > 0 && sample.now_ms - watch.last_step_ms > kWatchSleepGapMs;
+  const bool woke = watch.last_step_ms > 0 && sample.now_ms - watch.last_step_ms > CallSessionLogic::kAppSleptGapMs;
   watch.last_step_ms = sample.now_ms;
   const bool arriving = sample.last_rx_ms > 0 && sample.now_ms - sample.last_rx_ms < kMediaArrivingWindowMs;
   if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live || woke ||
@@ -129,7 +131,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   if (path_moving) {
     out.show_retry = false;
   }
-  if (s.was_connected && !out.media_connected && (s.p2p_connect_failed || failed)) {
+  if (s.was_connected && !out.media_connected && ((s.p2p_connect_failed && !path_moving) || failed)) {
     // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
     out.status = Status::Disconnected;
     out.show_retry = false;

@@ -770,6 +770,17 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageImpl(const ThreadMessage& mes
     return content_enc.error();
   }
 
+  // An upsert over a row that exists rewrites it in place: the thread's preview and order stay as they are.
+  bool existed = false;
+  if (upsert) {
+    sqlite3_stmt* probe = nullptr;
+    if (sqlite3_prepare_v2(*thread_db, "SELECT 1 FROM messages WHERE id = ?;", -1, &probe, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(probe, 1, stored.id.c_str(), -1, SQLITE_TRANSIENT);
+      existed = sqlite3_step(probe) == SQLITE_ROW;
+    }
+    sqlite3_finalize(probe);
+  }
+
   sqlite3_stmt* stmt = nullptr;
   // Upsert: one statement, so two writers of the same id cannot both insert (the row keeps its place;
   // a tombstone stays final).
@@ -801,6 +812,9 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageImpl(const ThreadMessage& mes
     return Error("Failed to append message");
   }
   sqlite3_finalize(stmt);
+  if (existed) {
+    return stored;
+  }
 
   // Catalog is UX-only; never fail call-control / E2E sends on a busy/missing catalog row
   // (Samsung↔moto dogfood: FanOut roster / CallMediaKey aborted with catalog errors).
