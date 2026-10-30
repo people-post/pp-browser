@@ -287,6 +287,13 @@ public:
    */
   Roe<void> RestoreLocalBackup(const std::string& pin);
   Roe<void> DeleteLocalBackup();
+  /**
+   * Fresh install, before unlocking: the account back from its recovery phrase (multi-device M023 §8) — its locker
+   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), imported as a link bundle
+   * the phrase reconstructs (a fresh DEK under `pin`), the contacts put back; groups, card floors and the announce
+   * to contacts follow once messaging is up, as for any restore.
+   */
+  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin);
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
@@ -570,6 +577,12 @@ private:
   std::mutex restored_mutex_;
   PendingRestore restored_;
   bool RestorePending();
+  /** What a restore brought back beyond the account: applied now, or once messaging is up. */
+  void QueueRestoredState(AccountBackupExtras extras);
+  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
+  void PublishAccountLockerSoon();
+  static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
+  std::atomic<bool> locker_publish_queued_{false};
   /** Before anything is received: no card older than the newest the backup knew speaks for its account. */
   void ApplyRestoredCardFloors();
   /** Recreate the groups a restore brought back, then check the members of every group still checking. */

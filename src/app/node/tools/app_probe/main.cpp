@@ -45,6 +45,7 @@
 //
 // --backup-store DIR: the phone's secure store (the account backup) as files in DIR, outside the data dir.
 // --restore-backup: a fresh install restores the account from it before unlocking ("Restore my account").
+// --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
@@ -438,17 +439,18 @@ public:
           });
     } else if (cmd == "locker_fetch") {
       const std::string phrase = request->getString("phrase").value_or("");
-      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<AccountLockerState>>>(
+      using Fetched = std::optional<AccountLockerWorkflow::Fetched>;
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<Fetched>>(
           WorkerLane::Normal,
-          [this, phrase]() -> Roe<std::optional<AccountLockerState>> {
+          [this, phrase]() -> Roe<Fetched> {
             auto seed = DecodeRecoveryPhrase(phrase);
             if (!seed) {
               return seed.error();
             }
             AccountLockerWorkflow* locker = Hub().AccountLocker();
-            return locker ? locker->Fetch(*seed) : Roe<std::optional<AccountLockerState>>(Error("messaging not ready"));
+            return locker ? locker->Fetch(*seed) : Roe<Fetched>(Error("messaging not ready"));
           },
-          [id](Roe<std::optional<AccountLockerState>> state) {
+          [id](Roe<Fetched> state) {
             if (!state) {
               ReplyError(id, state.error().message);
               return;
@@ -456,7 +458,8 @@ public:
             Object out = Reply(id, true);
             out.set("found", state->has_value());
             if (*state) {
-              const AccountLockerState& s = **state;
+              out.setJsonUInt("version", (*state)->version);
+              const AccountLockerState& s = (*state)->state;
               out.set("relay_user_id", s.relay_user_id);
               out.set("nickname", s.nickname);
               std::vector<Value> contacts;
@@ -1172,6 +1175,7 @@ int main(int argc, char** argv) {
   std::string log_file;
   std::string backup_store;
   bool restore_backup = false;
+  std::string restore_phrase_file;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
@@ -1181,6 +1185,8 @@ int main(int argc, char** argv) {
       backup_store = argv[++i];
     } else if (std::strcmp(argv[i], "--restore-backup") == 0) {
       restore_backup = true;
+    } else if (std::strcmp(argv[i], "--restore-phrase-file") == 0 && i + 1 < argc) {
+      restore_phrase_file = argv[++i];
     }
   }
   if (pin.empty() || (restore_backup && backup_store.empty())) {
@@ -1220,6 +1226,10 @@ int main(int argc, char** argv) {
   options.argv = argv;
   options.pin = pin;
   options.restore_local_backup = restore_backup;
+  if (!restore_phrase_file.empty()) {
+    std::ifstream phrase_in(restore_phrase_file);
+    std::getline(phrase_in, options.restore_recovery_phrase);
+  }
   auto booted = pbr::Bootstrap::Run(options, probe->Hub(), probe->Secrets());
   if (!booted) {
     pbr::Object out;

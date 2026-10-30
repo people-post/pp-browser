@@ -8,6 +8,7 @@
 #include "common/ValueJson.h"
 
 #include <algorithm>
+#include <set>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -204,6 +205,57 @@ Roe<AccountLockerState> Open(const LockerSnapshot& snapshot, const LockerKeys& k
     return Error("account locker: a truncated snapshot");
   }
   return StateFromJson(std::string(padded->begin() + 4, padded->begin() + 4 + length));
+}
+
+namespace {
+
+std::string AccountOf(const Contact& contact) {
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
+      return id.value;
+    }
+  }
+  return {};
+}
+
+} // namespace
+
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
+  AccountLockerState merged = ours;
+  std::set<std::string> accounts;
+  for (const Contact& contact : ours.contacts) {
+    accounts.insert(AccountOf(contact));
+  }
+  for (const Contact& contact : stored.contacts) {
+    const std::string account = AccountOf(contact);
+    if (!account.empty() && accounts.insert(account).second) {
+      merged.contacts.push_back(contact);
+    }
+  }
+  for (const AccountBackupGroup& theirs : stored.extras.groups) {
+    auto mine = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
+                             [&](const AccountBackupGroup& g) { return g.group_id == theirs.group_id; });
+    if (mine == merged.extras.groups.end()) {
+      merged.extras.groups.push_back(theirs);
+    } else if (theirs.roster_epoch > mine->roster_epoch) {
+      *mine = theirs;
+    }
+  }
+  for (const AccountBackupCardFloor& theirs : stored.extras.card_floors) {
+    auto mine = std::find_if(merged.extras.card_floors.begin(), merged.extras.card_floors.end(),
+                             [&](const AccountBackupCardFloor& f) { return f.account_id == theirs.account_id; });
+    if (mine == merged.extras.card_floors.end()) {
+      merged.extras.card_floors.push_back(theirs);
+    } else {
+      mine->issued_at = std::max(mine->issued_at, theirs.issued_at);
+    }
+  }
+  for (const std::string& provider : stored.providers) {
+    if (std::find(merged.providers.begin(), merged.providers.end(), provider) == merged.providers.end()) {
+      merged.providers.push_back(provider);
+    }
+  }
+  return merged;
 }
 
 std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snapshots, const LockerKeys& keys,

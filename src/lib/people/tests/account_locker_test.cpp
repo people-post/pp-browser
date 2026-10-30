@@ -111,6 +111,34 @@ TEST(AccountLockerTest, SizesAreBucketedSoSmallChangesDoNotShow) {
   EXPECT_TRUE(account_locker::Open(c, keys));
 }
 
+TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
+  AccountLockerState ours = SampleState();  // bob, group:hike at epoch 3, floor for bob
+  AccountLockerState stored = SampleState();
+  Contact carol;
+  carol.id = "c2";
+  carol.remote.ids.push_back({mesh::ContactIdKind::Account, "account:carol", true});
+  SyncContactMirrors(carol);
+  stored.contacts.push_back(carol);
+  stored.contacts[0].local.display_name = "Bob (laptop's name)";
+  stored.extras.groups[0].roster_epoch = 5;       // the laptop saw a newer roster
+  stored.extras.groups[0].title = "Hike (renamed)";
+  AccountBackupGroup book_club;
+  book_club.group_id = "group:books";
+  stored.extras.groups.push_back(book_club);
+  stored.extras.card_floors = {{"account:bob", 1'800'000'000'000}, {"account:carol", 5}};
+  stored.providers = {"https://node.example/locker", "https://friend.example/locker"};
+
+  const AccountLockerState merged = account_locker::MergeForPublish(ours, stored);
+  ASSERT_EQ(merged.contacts.size(), 2u) << "carol, known only to the laptop, is kept";
+  EXPECT_EQ(merged.contacts[0].local.display_name, "Bob from work") << "ours win for a contact both have";
+  ASSERT_EQ(merged.extras.groups.size(), 2u);
+  EXPECT_EQ(merged.extras.groups[0].roster_epoch, 5u) << "the newer roster wins";
+  EXPECT_EQ(merged.extras.groups[0].title, "Hike (renamed)");
+  EXPECT_EQ(merged.extras.card_floors,
+            (std::vector<AccountBackupCardFloor>{{"account:bob", 1'800'000'000'000}, {"account:carol", 5}}));
+  EXPECT_EQ(merged.providers.size(), 2u);
+}
+
 TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
   ByteVector locker_id(32);

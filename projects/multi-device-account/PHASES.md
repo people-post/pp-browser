@@ -182,26 +182,29 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Snapshot codec (`lib/people/AccountLocker.*`): state (relay binding, nickname, contacts, groups with the signed statement, card floors, providers) → JSON, length-prefixed and zero-padded to 4 KiB × 4ⁿ buckets, XChaCha20-Poly1305 under the locker key (AAD binds locker id + version), signed with the locker ML-DSA key over tag / id / version / sealed; locker id = BLAKE2b-256(signing pk) so `VerifyOwner` needs no account knowledge
 - [x] Reader: `PickNewest` — the highest version that verifies and opens, none below the highest this device has seen
 - [ ] Person-level preferences in the state (which ones follow the person: decide with s4)
-- [ ] Persist the highest version seen per device (`Fetch(seed, at_least)` takes it; nothing stores it yet)
+- [x] Persist the highest version seen, per locker (`account_locker.json` in the profile dir; a provider serving an older copy of one locker says nothing about another)
 - [ ] Wire / disk doc in `docs/contracts/` (promote when s3 ships); unit tests `account_locker_test.cpp` hold the format until then
 
 ### s3 — Providers
 
 - [x] Relay locker API (web2 www `feat/account-locker`, local — **merges and deploys before the client**): `POST /v1/lockers/put` (relay half: the user's account signature; locker half: key hashes to the id, signature verifies; only newer; 4 lockers per user; ≤ 1 MiB) / `GET /v1/lockers/:id` by id alone; jest + golden vectors shared with the client ([SERVICE_ENDPOINTS § HTTP account lockers](../../docs/contracts/SERVICE_ENDPOINTS.md))
 - [x] Client: `HttpLockerClient` (`lib/net`), `AccountLockerWorkflow` (`feature/conversations`: current state → seal → put; seed → get → verify → open); probe `locker_publish` / `locker_fetch`; lab `account_locker_round_trip`
-- [ ] When to publish: debounced on contact / group / card changes (with s4)
+- [x] When to publish: 5 s after a burst of contact / group / card changes, and at every start (`ConversationsHub::PublishAccountLockerSoon`) — only with a recovery seed and a relay id
 - [ ] pp-node provider (same API); exported file provider
 - [ ] Provider list in the state; the configured relay tried first
 
 ### s4 — Change log
 
+- [x] Interim: each publish first merges what the locker holds (`MergeForPublish`: contacts union by Account ID, groups by the higher roster epoch, card floors max, providers union), so linked devices do not overwrite each other's additions. Removals do not carry yet
 - [ ] Encrypted change entries to our own siblings: own mailbox (M022) and Amp
 - [ ] Per-record last write wins on a hybrid clock, tombstones; group rosters follow the owner's signed statement (G012), never merged
 - [ ] Debounced snapshot rewrite from the merged state
 
 ### s5 — Restore and link
 
-- [ ] Restore: phrase → keys → locker → state; a new device signing a fresh list as master (d4); card floors before the first poll; announce to contacts
+- [x] Restore from a typed phrase (`ConversationsHub::RestoreFromRecoveryPhrase`): phrase → locker (it holds the relay binding: no locker, no restore) → the link bundle the phrase reconstructs (`RecoveryBundle`, a fresh DEK) imported → contacts → groups / card floors / announce through the restore path once messaging is up; probe `--restore-phrase-file`, lab `restore_from_phrase` (every device gone, the group back and active, messages both ways, the locker republished)
+- [ ] Fresh-install UI: "Restore with recovery phrase" on the identity fork (24-word entry + PIN)
+- [ ] A new device signing a fresh list as master (d4)
 - [ ] Link: the new device reads the locker / change log (no contacts in the bundle)
 - [ ] Restore finds the seed in the synced keychain first (easy tier), else asks for the phrase
 - [ ] Retire `LocalAccountBackup`, the probe's `--backup-store` / `--restore-backup`, and the lab's file-store restore. The Keychain store stays (easy tier); only the retired item's cleanup goes at 1.1.0 (`kRetiredKeychainBackupRemoveAt`)

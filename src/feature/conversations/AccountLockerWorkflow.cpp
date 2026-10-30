@@ -2,14 +2,21 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/RecoverySeed.h"
+#include "common/AtomicFileWrite.h"
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
+
+constexpr const char kHighestSeenFile[] = "account_locker.json";
 
 Roe<LockerKeys> LockerKeysOf(const ByteVector& seed) {
   auto recovery = DeriveRecoveryKeys(seed);
@@ -103,6 +110,59 @@ Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
   return state;
 }
 
+void AccountLockerWorkflow::SetDataDir(std::string data_dir) {
+  data_dir_ = std::move(data_dir);
+  if (data_dir_.empty()) {
+    return;
+  }
+  std::ifstream in(std::filesystem::path(data_dir_) / kHighestSeenFile);
+  std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const Object* seen = nullptr;
+  auto json = TryParseObject(text);
+  if (json) {
+    seen = json->getObject("highest_version_by_locker");
+  }
+  if (!seen) {
+    return;
+  }
+  std::lock_guard lock(mutex_);
+  for (const auto& [locker_id, value] : seen->entries()) {
+    if (auto version = asNonNegInt(value)) {
+      uint64_t& kept = highest_seen_[locker_id];
+      kept = std::max<uint64_t>(kept, *version);
+    }
+  }
+}
+
+uint64_t AccountLockerWorkflow::HighestSeen(const std::string& locker_id_hex) const {
+  std::lock_guard lock(mutex_);
+  auto found = highest_seen_.find(locker_id_hex);
+  return found == highest_seen_.end() ? 0 : found->second;
+}
+
+void AccountLockerWorkflow::RaiseHighestSeen(const std::string& locker_id_hex, const uint64_t version) {
+  Object json;
+  Object by_locker;
+  {
+    std::lock_guard lock(mutex_);
+    uint64_t& kept = highest_seen_[locker_id_hex];
+    if (version <= kept) {
+      return;
+    }
+    kept = version;
+    for (const auto& [id, seen] : highest_seen_) {
+      by_locker.setJsonUInt(id, seen);
+    }
+  }
+  if (data_dir_.empty()) {
+    return;
+  }
+  json.set("highest_version_by_locker", ObjectValue(std::move(by_locker)));
+  if (auto written = AtomicFileWrite::Write((std::filesystem::path(data_dir_) / kHighestSeenFile).string(), DumpJson(json)); !written) {
+    log().warning << "highest locker version not kept: " << written.error().message;
+  }
+}
+
 Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (!client_) {
     return Error("No locker provider configured");
@@ -125,23 +185,28 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (state->relay_user_id.empty()) {
     return Error("Not registered with the relay yet");
   }
-  const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), last_published_ + 1);
-  auto snapshot = account_locker::Seal(*state, *keys, version);
+  auto stored = Fetch(**seed);
+  if (!stored) {
+    return Error("Locker not read, not published: " + stored.error().message);
+  }
+  const AccountLockerState merged = *stored ? account_locker::MergeForPublish(*state, (*stored)->state) : *state;
+  const std::string locker_id = BytesToHex(keys->locker_id);
+  const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), HighestSeen(locker_id) + 1);
+  auto snapshot = account_locker::Seal(merged, *keys, version);
   if (!snapshot) {
     return snapshot.error();
   }
   std::optional<LockerPutRefusal> refused;
-  if (auto put = client_->Put(state->relay_user_id, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
+  if (auto put = client_->Put(merged.relay_user_id, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
     return put.error();
   }
-  last_published_ = version;
-  log().info << "Account locker published version=" << version << " contacts=" << state->contacts.size()
-             << " groups=" << state->extras.groups.size() << " bytes=" << snapshot->sealed.size();
+  RaiseHighestSeen(locker_id, version);
+  log().info << "Account locker published version=" << version << " contacts=" << merged.contacts.size()
+             << " groups=" << merged.extras.groups.size() << " bytes=" << snapshot->sealed.size();
   return version;
 }
 
-Roe<std::optional<AccountLockerState>> AccountLockerWorkflow::Fetch(const ByteVector& recovery_seed,
-                                                                    const uint64_t at_least) {
+Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(const ByteVector& recovery_seed) {
   if (!client_) {
     return Error("No locker provider configured");
   }
@@ -154,13 +219,14 @@ Roe<std::optional<AccountLockerState>> AccountLockerWorkflow::Fetch(const ByteVe
     return record.error();
   }
   if (!*record) {
-    return std::optional<AccountLockerState>{};
+    return std::optional<Fetched>{};
   }
   auto snapshot = LockerSnapshotFromRecord(**record);
   if (!snapshot) {
     return snapshot.error();
   }
-  auto newest = account_locker::PickNewest({*snapshot}, *keys, at_least);
+  const std::string locker_id = BytesToHex(keys->locker_id);
+  auto newest = account_locker::PickNewest({*snapshot}, *keys, HighestSeen(locker_id));
   if (!newest) {
     return Error("The provider's locker does not verify, or is older than one this device has seen");
   }
@@ -168,7 +234,8 @@ Roe<std::optional<AccountLockerState>> AccountLockerWorkflow::Fetch(const ByteVe
   if (!opened) {
     return opened.error();
   }
-  return std::optional<AccountLockerState>(std::move(*opened));
+  RaiseHighestSeen(locker_id, newest->version);
+  return std::optional<Fetched>(Fetched{.state = std::move(*opened), .version = newest->version});
 }
 
 } // namespace pbr

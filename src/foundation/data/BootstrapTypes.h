@@ -29,6 +29,11 @@ struct BootstrapOptions {
    * unlock gate's "Restore my account" does on a fresh install.
    */
   bool restore_local_backup = false;
+  /**
+   * Tests/automation: before unlocking with `pin`, restore the account from this recovery phrase (multi-device M023)
+   * — what "Restore with recovery phrase" does on a fresh install.
+   */
+  std::string restore_recovery_phrase;
 };
 
 } // namespace pbr

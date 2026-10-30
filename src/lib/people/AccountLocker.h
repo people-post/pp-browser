@@ -79,8 +79,16 @@ std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snap
                                          uint64_t at_least = 0);
 
 /**
+ * What to publish when the locker already holds `stored` (another device of the account wrote it): ours, plus what
+ * only it has — contacts by Account ID (ours win), groups by id (the higher roster epoch wins, ours on a tie), card
+ * floors (the newest per account), providers (union). Removals do not carry (until the change log, M023 s4): a
+ * contact removed on one device comes back from another's snapshot.
+ */
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored);
+
+/**
  * The bytes signed for a snapshot: `pp-browser:account-locker-v1` and a zero byte, version byte 1, LenBytes(locker
- * id), u64 BE version, LenBytes(sealed) — what a provider checks (the relay: `www` relay/LockerSignBytes.ts).
+ * id), u64 BE version, LenBytes(sealed) — what a provider checks (the relay: web2 `www` relay/AccountLocker.ts).
  */
 ByteVector SignBytes(const ByteVector& locker_id, uint64_t version, const ByteVector& sealed);
 

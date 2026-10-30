@@ -14,6 +14,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   LinkDeviceExchange.cpp
   LocalAccountBackup.cpp
   AccountLocker.cpp
+  RecoveryBundle.cpp
   RetiredKeychainBackup.cpp
   MeshHopPolicy.cpp
   PeerAccountBook.cpp

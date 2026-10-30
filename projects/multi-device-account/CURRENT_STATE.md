@@ -13,6 +13,7 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 | Sessions | Per device pair for `e2e_public` and group copies (M021 d2); one relay record per account with a copy per device, own-account records allowed (M022, relay deployed) |
 | Link | Paste bundle with the account keys, DEK and the issuing device's card — no sessions, no contacts (m4c superseded by M023) |
 | Siblings | A new device's card reaches siblings by a control-lane `device_list` notice to our own mailbox (once per card version per start). Sent messages do not show on siblings yet (d3) |
+| Account locker (M023) | Phrase shown in Me → Security behind the PIN; the locker published to the relay 5 s after contact / group / card changes and at each start (merged with what it holds); restore from a typed phrase works end to end (lab `restore_from_phrase`) but has **no fresh-install UI yet**. Relay API on web2 www `feat/account-locker` (local, not deployed) |
 | Restore | **Unsupported in the product** (at-rest A011): no backup store, nothing written to the Keychain (old items deleted until 1.1.0). The old `LocalAccountBackup` path (contacts, groups, card floors) stays lab-only via the probe's file store until M023 s5 replaces it. A restored install is a new device: it raises card floors before receiving and announces its card to every contact |
 | Directory | Account-first lookup, `endpoints[]` per device (M017) |
 

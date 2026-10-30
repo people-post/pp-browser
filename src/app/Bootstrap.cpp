@@ -100,6 +100,11 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
         return restored.error();
       }
     }
+    if (!options.restore_recovery_phrase.empty()) {
+      if (auto restored = messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin); !restored) {
+        return restored.error();
+      }
+    }
     if (auto unlocked = UnlockProfileForBootstrap(messaging, secrets, *pin); !unlocked) {
       return unlocked.error();
     }

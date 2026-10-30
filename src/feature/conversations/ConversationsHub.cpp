@@ -5,6 +5,9 @@
 
 #include "lib/people/LocalAccountBackup.h"
 #include "lib/people/RetiredKeychainBackup.h"
+#include "lib/people/RecoveryBundle.h"
+#include "lib/people/LinkDeviceCoordinator.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -1114,6 +1117,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       }
     });
     WriteLocalBackupAsync();
+    PublishAccountLockerSoon();
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
@@ -1135,7 +1139,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
   // The backup keeps every group (G013): rewrite it on any roster change.
-  group_roster_->SetOnChanged([this](const std::string&) { WriteLocalBackupAsync(); });
+  group_roster_->SetOnChanged([this](const std::string&) {
+    WriteLocalBackupAsync();
+    PublishAccountLockerSoon();
+  });
   thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
@@ -1264,7 +1271,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   BindPricingFamilies();
   peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
   // The backup keeps how new each account's newest card is (a restored device refuses older ones).
-  peer_cards_->SetOnNewerCard([this]() { WriteLocalBackupAsync(); });
+  peer_cards_->SetOnNewerCard([this]() {
+    WriteLocalBackupAsync();
+    PublishAccountLockerSoon();
+  });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   account_keys_->LoadKeptCards();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
@@ -1378,6 +1388,7 @@ void ConversationsHub::BuildMessagingObjects() {
                                : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
           }});
   account_locker_->SetClient(http_locker_.get());
+  account_locker_->SetDataDir(data_dir_);
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -1927,6 +1938,51 @@ Roe<void> ConversationsHub::RestoreLocalBackup(const std::string& pin) {
   }
   log().info << "Account restored from the local backup: contacts and sessions; " << extras.groups.size()
              << " group(s) and " << extras.card_floors.size() << " card floor(s) once messaging is up";
+  QueueRestoredState(std::move(extras));
+  return {};
+}
+
+Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin) {
+  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr ||
+      !account_locker_) {
+    return Error("Messaging is not ready");
+  }
+  auto seed = DecodeRecoveryPhrase(phrase);
+  if (!seed) {
+    return seed.error();
+  }
+  // The locker holds the relay binding (and the rest): without it there is no account to come back to here.
+  auto fetched = account_locker_->Fetch(*seed);
+  if (!fetched) {
+    return Error("Account restore failed: " + fetched.error().message);
+  }
+  if (!*fetched) {
+    return Error("No account was found for this recovery phrase");
+  }
+  AccountLockerState& state = (*fetched)->state;
+  const int64_t now_ms = util::NowUnixMs();
+  auto bundle = BuildRecoveryBundleJson(*seed, state.relay_user_id, state.nickname, now_ms);
+  if (!bundle) {
+    return Error("Account restore failed: " + bundle.error().message);
+  }
+  if (auto imported = LinkDeviceCoordinator::Import(Identity(), *Secrets()->Vault(), *PskStore(), Secrets(), *bundle,
+                                                    pin, now_ms);
+      !imported) {
+    return Error("Account restore failed: " + imported.error().message);
+  }
+  for (const Contact& contact : state.contacts) {
+    if (auto upserted = Contacts().Upsert(contact); !upserted) {
+      return Error("Account restore failed: " + upserted.error().message);
+    }
+  }
+  log().info << "Account restored from its recovery phrase: locker version " << (*fetched)->version << ", "
+             << state.contacts.size() << " contact(s); " << state.extras.groups.size() << " group(s) and "
+             << state.extras.card_floors.size() << " card floor(s) once messaging is up";
+  QueueRestoredState(std::move(state.extras));
+  return {};
+}
+
+void ConversationsHub::QueueRestoredState(AccountBackupExtras extras) {
   {
     std::lock_guard lock(restored_mutex_);
     for (AccountBackupGroup& group : extras.groups) {
@@ -1944,7 +2000,32 @@ Roe<void> ConversationsHub::RestoreLocalBackup(const std::string& pin) {
       AnnounceRestoredDevice();
     });
   }
-  return {};
+}
+
+void ConversationsHub::PublishAccountLockerSoon() {
+  if (!account_locker_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (locker_publish_queued_.exchange(true, std::memory_order_acq_rel)) {
+    return;  // the queued publish reads everything when it runs
+  }
+  // Batched: a burst of changes (a group's roster, its cards) becomes one snapshot.
+  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kLockerPublishDelayMs), [this]() {
+    AppRuntime::PostWorkerNormal([this]() {
+      locker_publish_queued_.store(false, std::memory_order_release);
+      if (!account_locker_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+        return;
+      }
+      auto seed = Identity().RecoverySeed();
+      auto identity = Identity().Get();
+      if (!seed || !*seed || !identity || identity->relay_user_id.empty()) {
+        return;  // an account from before M023, or not registered yet: nothing to publish
+      }
+      if (auto published = account_locker_->Publish(); !published) {
+        log().info << "Account locker not published: " << published.error().message;
+      }
+    });
+  });
 }
 
 bool ConversationsHub::RestorePending() {
@@ -2014,6 +2095,7 @@ void ConversationsHub::ResumeGroupRosterChecks() {
   if (!restored.empty()) {
     WriteLocalBackupAsync();  // this device's backup, with the groups back in it
   }
+  PublishAccountLockerSoon();  // at every start too: the locker catches up with what changed while it was off
   // Every group still checking its members (just restored, or the app quit mid-check) asks again.
   auto ids = group_roster_->ListGroupIds();
   if (!ids) {

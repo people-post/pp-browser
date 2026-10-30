@@ -118,6 +118,10 @@ Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() { ret
 
 Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) { return hub_.RestoreLocalBackup(pin); }
 
+Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin) {
+  return hub_.RestoreFromRecoveryPhrase(phrase, pin);
+}
+
 void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
 
 Roe<void> ConversationsFacade::DeleteLocalBackup() { return hub_.DeleteLocalBackup(); }

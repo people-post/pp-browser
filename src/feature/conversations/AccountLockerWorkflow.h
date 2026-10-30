@@ -11,7 +11,10 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
+#include <mutex>
 #include <optional>
+#include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -33,15 +36,29 @@ public:
 
   /** The provider to write to and read from (the relay); null: none configured. */
   void SetClient(ILockerClient* client) { client_ = client; }
+  /** Where the highest version this device has seen of each locker is kept (`account_locker.json`; empty: memory). */
+  void SetDataDir(std::string data_dir);
 
   /**
-   * Seal the account's current state and store it as a version newer than any this device published (its clock in
-   * ms, or one past the last). Errors when the account has no recovery seed (minted before M023) or no relay id.
+   * Seal the account's state and store it as a version newer than any this device has seen (its clock in ms, or one
+   * past). What the locker already holds is merged in first (MergeForPublish), so another device's additions are
+   * not overwritten. Errors when the account has no recovery seed (minted before M023) or no relay id, and when the
+   * locker cannot be read (publishing blind would drop another device's state).
    */
   Roe<uint64_t> Publish();
 
-  /** The state a recovery seed's locker holds at the provider, verified and opened; nullopt when there is none. */
-  Roe<std::optional<AccountLockerState>> Fetch(const ByteVector& recovery_seed, uint64_t at_least = 0);
+  struct Fetched {
+    AccountLockerState state;
+    uint64_t version = 0;
+  };
+  /**
+   * The state a recovery seed's locker holds at the provider, verified and opened — never older than the highest
+   * version this device has seen of that locker, which it raises; nullopt when there is none.
+   */
+  Roe<std::optional<Fetched>> Fetch(const ByteVector& recovery_seed);
+
+  /** The highest version this device has seen of a locker (hex id; published or fetched); 0 when none. */
+  uint64_t HighestSeen(const std::string& locker_id_hex) const;
 
   /** The account state as it is here now (what Publish seals). */
   Roe<AccountLockerState> CurrentState();
@@ -50,8 +67,13 @@ private:
   IdentityStore& identity_;
   ContactsStore& contacts_;
   Sources sources_;
+  void RaiseHighestSeen(const std::string& locker_id_hex, uint64_t version);
+
   ILockerClient* client_ = nullptr;
-  uint64_t last_published_ = 0;
+  std::string data_dir_;
+  mutable std::mutex mutex_;
+  /** Per locker (hex id): a provider serving an older copy of one locker says nothing about another. */
+  std::map<std::string, uint64_t> highest_seen_;
 };
 
 /** Provider text ↔ snapshot bytes (hex id, base64 fields). */

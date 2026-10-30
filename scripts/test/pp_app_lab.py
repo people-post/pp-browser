@@ -74,12 +74,14 @@ class User:
 
     # --- process --------------------------------------------------------------------------------
 
-    def start(self, restore_backup=False):
+    def start(self, restore_backup=False, restore_phrase_file=None):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
         argv = ["--config", self.config, "--pin", PIN, "--log-file", log, "--backup-store", self.keychain]
         if restore_backup:
             argv.append("--restore-backup")
+        if restore_phrase_file:
+            argv += ["--restore-phrase-file", restore_phrase_file]
         if self.container:
             # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
             script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
@@ -170,8 +172,20 @@ class User:
         if backup is None:
             backup = self.backup_snapshot()
         before = self.cmd("whoami")
+        self.uninstall()
+        os.makedirs(self.keychain, exist_ok=True)
+        with open(os.path.join(self.keychain, "account-backup"), "wb") as f:
+            f.write(backup)
+        self.surface = {"kind": "none"}
+        self.start(restore_backup=True)
+        who = self.wait_ready()
+        if who.get("account") != before.get("account") or who.get("peer_id") == before.get("peer_id"):
+            raise ProbeError("%s: restored as %s device %s (was %s device %s)" % (
+                self.name, who.get("account"), who.get("peer_id"), before.get("account"), before.get("peer_id")))
+
+    def uninstall(self):
+        """The app and its data dir gone (all but the lab's config and the logs of earlier runs)."""
         self.quit()
-        # The uninstall: the whole data dir but the lab's config (and the logs of earlier runs).
         for entry in os.listdir(self.dir):
             if entry == "config.json" or re.match(r"probe-\d+\.log$", entry):
                 continue
@@ -180,11 +194,18 @@ class User:
                 shutil.rmtree(path, ignore_errors=True)
             else:
                 os.remove(path)
-        os.makedirs(self.keychain, exist_ok=True)
-        with open(os.path.join(self.keychain, "account-backup"), "wb") as f:
-            f.write(backup)
+
+    def restore_from_phrase(self, phrase):
+        """Every device is gone; a fresh install restores the account from its recovery phrase (multi-device
+        M023): a new device of the same account, its state from the locker."""
+        before = self.cmd("whoami")
+        self.uninstall()
+        phrase_file = os.path.join(self.dir, "restore-phrase.txt")
+        with open(phrase_file, "w") as f:
+            f.write(phrase + "\n")
         self.surface = {"kind": "none"}
-        self.start(restore_backup=True)
+        self.start(restore_phrase_file=phrase_file)
+        os.remove(phrase_file)
         who = self.wait_ready()
         if who.get("account") != before.get("account") or who.get("peer_id") == before.get("peer_id"):
             raise ProbeError("%s: restored as %s device %s (was %s device %s)" % (
@@ -1727,12 +1748,43 @@ def scenario_account_locker_round_trip(lab):
         raise ProbeError("alice's locker: groups %s lack %s" % (found["groups"], group_id))
     if found["card_floors"] < 2:
         raise ProbeError("alice's locker: %d card floors (want her contacts')" % found["card_floors"])
-    nothing = b.cmd("locker_fetch", phrase=b.cmd("recovery_phrase", pin=PIN)["phrase"], timeout=60)
-    if nothing.get("found"):
+    # The BIP-0039 test phrase (seed 7f…): a valid phrase no account in the lab uses.
+    unused = ("legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful "
+              "legal winner thank year wave sausage worth title")
+    if b.cmd("locker_fetch", phrase=unused, timeout=60).get("found"):
         raise ProbeError("bob: a locker for a phrase that never published")
+    # Bob's own app publishes his locker by itself (registered, with a seed), and finding Alice's did not stop it.
+    wait_for(lambda: b.cmd("locker_fetch", phrase=b.cmd("recovery_phrase", pin=PIN)["phrase"],
+                           timeout=60).get("found") or None, 30, "bob: his own locker, published by itself")
     second = a.cmd("locker_publish", timeout=60)["version"]
     if second <= first:
         raise ProbeError("alice: locker version %d after %d" % (second, first))
+
+
+def scenario_restore_from_phrase(lab):
+    """Alice loses every device and reinstalls from her recovery phrase alone (multi-device M023): the same account
+    on a new device; her group comes back from her locker, checks its members and is active; Bob's next group
+    message reaches her new device and hers reaches him; the restored app republishes the locker by itself."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = lab_group_id(a, threads)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    roster = checked_roster(a, group_id, "active")
+    if sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
+        raise ProbeError("alice: restored roster %s" % roster["members"])
+    a_thread = group_thread_of(a, group_id)
+    if not a_thread:
+        raise ProbeError("alice: no group chat after the restore")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="welcome back")
+    wait_for(lambda: said_in(a, a_thread, "welcome back"), 40, "alice: bob's message on her restored device")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("compose_send", text="back from my phrase")
+    wait_for(lambda: said_in(b, threads[b.name], "back from my phrase"), 40, "bob: alice's message")
+    wait_for(lambda: a.log_text().count("Account locker published") >= 2, 30, "alice: the locker republished")
 
 
 def scenario_linked_devices_both_send(lab):
@@ -2399,6 +2451,7 @@ SCENARIOS = [
     ("restored_device_hears_first", scenario_restored_device_hears_first),
     ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
     ("account_locker_round_trip", scenario_account_locker_round_trip),
+    ("restore_from_phrase", scenario_restore_from_phrase),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),
