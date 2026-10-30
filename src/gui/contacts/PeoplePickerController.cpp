@@ -694,7 +694,12 @@ void PeoplePickerController::SyncGroupMemberRows() {
       }
       continue;
     }
-    GroupMemberRow row = BuildGroupMemberRow(member, ContactForMember(member), unreachable.count(member.member_identity) > 0);
+    const std::optional<Contact> contact = ContactForMember(member);
+    const std::string card_nickname = !contact && picker_ports_.kept_card_nickname
+                                          ? picker_ports_.kept_card_nickname(member.member_identity)
+                                          : std::string();
+    GroupMemberRow row =
+        BuildGroupMemberRow(member, contact, unreachable.count(member.member_identity) > 0, card_nickname);
     if (!MatchesIdentityQuery(row.title, row.identity, query)) {
       continue;
     }

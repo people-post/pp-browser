@@ -47,6 +47,12 @@ TEST(GroupMemberRowTest, NonContactShowsTheShortIdAndIsNotAContact) {
   EXPECT_FALSE(row.unreachable);
 }
 
+TEST(GroupMemberRowTest, NonContactShowsTheNicknameOnTheirCard) {
+  const GroupMemberRow row = BuildGroupMemberRow(Member("acct:k"), std::nullopt, false, "KEN-WIN");
+  EXPECT_EQ(row.title, "KEN-WIN");
+  EXPECT_FALSE(row.IsContact());
+}
+
 TEST(GroupMemberRowTest, OwnerAndUnreachableBadges) {
   const GroupMemberRow owner =
       BuildGroupMemberRow(Member("acct:o", MemberRole::Owner), SavedContact("c1", "Olga"), false);

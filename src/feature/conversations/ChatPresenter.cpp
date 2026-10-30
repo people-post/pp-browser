@@ -33,7 +33,7 @@ std::string ChatSessionKindName(const Thread& thread) {
 }
 
 GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
-                                   const bool unreachable) {
+                                   const bool unreachable, const std::string& card_nickname) {
   GroupMemberRow row;
   row.identity = member.member_identity;
   row.is_owner = member.role == MemberRole::Owner;
@@ -41,6 +41,9 @@ GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::o
   if (contact) {
     row.contact_id = contact->id;
     row.title = FormatContactTitle(*contact);
+  }
+  if (row.title.empty()) {
+    row.title = card_nickname;
   }
   if (row.title.empty()) {
     row.title = ShortRelayId(member.member_identity);
