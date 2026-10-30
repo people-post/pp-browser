@@ -47,7 +47,9 @@ Error RelayHttpStatusError(const char* action, long status_code, const std::stri
     detail += " body=" + TruncateForLog(body, 200);
   }
   logging::getLogger("HttpRelayClient").warning << detail;
-  return AppError::Network(Err::Network::HttpError, detail);
+  // A 4xx (but a timeout or a rate limit) is the relay refusing this request: final, not a hiccup.
+  const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
+  return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
 }
 
 } // namespace
@@ -157,15 +159,21 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
       if (item->contains("blob_b64")) {
         auto inbound = ParseRelayInboundRecord(*item);
         if (!inbound) {
+          logging::getLogger("HttpRelayClient").warning << "inbox record skipped: " << inbound.error().message;
           continue;
         }
         auto envelope = RelayEnvelopeFromInboundRecord(*inbound);
-        if (envelope) {
-          if (result.server_time_ms) {
-            envelope->relay_server_time_ms = result.server_time_ms;
-          }
-          result.messages.push_back(*envelope);
+        if (!envelope) {
+          // The cursor moves past it: an envelope we cannot read is never seen again.
+          logging::getLogger("HttpRelayClient").warning << "inbox record skipped sender=" << inbound->sender_contact_id
+                                                        << " stream=" << inbound->stream_id << ": "
+                                                        << envelope.error().message;
+          continue;
         }
+        if (result.server_time_ms) {
+          envelope->relay_server_time_ms = result.server_time_ms;
+        }
+        result.messages.push_back(*envelope);
       } else {
         auto envelope = ParseRelayEnvelope(*item);
         if (envelope) {

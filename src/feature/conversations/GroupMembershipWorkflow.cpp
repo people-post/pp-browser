@@ -167,6 +167,10 @@ Roe<Thread> GroupMembershipWorkflow::CreateGroup(const std::string& title,
     return member.error();
   }
 
+  if (auto signed_roster = SignRoster(group_id); !signed_roster) {
+    log().warning << "Roster not signed group=" << group_id << ": " << signed_roster.error().message;
+  }
+
   auto joined_detail = GroupMembershipCodec::EncodeMemberJoined(group_id, *local_identity, MemberRole::Owner, 1);
   if (!joined_detail) {
     return joined_detail.error();
@@ -570,8 +574,8 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
       !event) {
     return event.error();
   }
-  return FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberRemoved, *detail, "Member removed",
-                               *local, member_identity);
+  return FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberRemoved, WithSignedRoster(group_id, *detail),
+                               "Member removed", *local, member_identity);
 }
 
 Roe<void> GroupMembershipWorkflow::RemoveMember(const std::string& group_id, const std::string& member_contact_id) {
@@ -657,7 +661,20 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   if (!detail) {
     return detail.error();
   }
-  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::OwnerTransferred, *detail,
+  // G012: the hand-over, signed by us, lets members (and devices restored from an older backup) trust
+  // the new owner's statements.
+  std::string sent = *detail;
+  if (auto identity = identity_.Get(); identity && !identity->account_signing_public_key_b64.empty()) {
+    if (auto handed = group_roster_statement::SignTransfer(identity_, identity->account_signing_public_key_b64,
+                                                           group_id, new_owner_identity, transfer.roster_epoch)) {
+      if (auto with = group_roster_sync_codec::WithTransfer(sent, *handed)) {
+        sent = std::move(*with);
+      }
+    } else {
+      log().warning << "Owner transfer not signed group=" << group_id << ": " << handed.error().message;
+    }
+  }
+  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::OwnerTransferred, sent,
                               "Group ownership transferred", *local);
   (void)roster_.ClearGroupTarget(group_id);
   return {};
@@ -1077,10 +1094,23 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
       for_newcomer.members[i].card = std::move(card);
     }
   }
-  auto members_detail = GroupMembershipCodec::EncodeMemberJoined(for_members);
-  auto newcomer_detail = GroupMembershipCodec::EncodeMemberJoined(for_newcomer);
-  if (!members_detail || !newcomer_detail) {
+  auto members_encoded = GroupMembershipCodec::EncodeMemberJoined(for_members);
+  auto newcomer_encoded = GroupMembershipCodec::EncodeMemberJoined(for_newcomer);
+  if (!members_encoded || !newcomer_encoded) {
     return Error("member_joined: could not encode");
+  }
+  // Both carry the owner's statement of the roster with the newcomer in it (G012), signed once.
+  std::string members_detail = *members_encoded;
+  std::string newcomer_detail = *newcomer_encoded;
+  if (auto statement = SignRoster(group_id); statement) {
+    if (auto with = group_roster_sync_codec::WithStatement(members_detail, *statement)) {
+      members_detail = std::move(*with);
+    }
+    if (auto with = group_roster_sync_codec::WithStatement(newcomer_detail, *statement)) {
+      newcomer_detail = std::move(*with);
+    }
+  } else {
+    log().warning << "Roster not signed group=" << group_id << ": " << statement.error().message;
   }
   // Best-effort, like every membership event.
   std::vector<std::string> identities;
@@ -1093,11 +1123,227 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
   (void)FanOutPairwise(SelectPairwiseFanoutTargets(identities, *local), PairwiseFanoutMode::BestEffort,
                        [&](const std::string& identity) {
                          return SendMembershipDirectMessage(identity, GroupMembershipControlType::MemberJoined,
-                                                            *members_detail, "Member joined the group", *plain);
+                                                            members_detail, "Member joined the group", *plain);
                        });
   // Our copies keep the roster, not the cards (they are kept as cards on the other side).
-  (void)SendMembershipDirectMessage(member_identity, GroupMembershipControlType::MemberJoined, *newcomer_detail,
+  (void)SendMembershipDirectMessage(member_identity, GroupMembershipControlType::MemberJoined, newcomer_detail,
                                     "Member joined the group", *plain);
+  return {};
+}
+
+std::string GroupMembershipWorkflow::WithSignedRoster(const std::string& group_id, const std::string& detail_json) {
+  auto statement = SignRoster(group_id);
+  if (!statement) {
+    log().warning << "Roster not signed group=" << group_id << ": " << statement.error().message;
+    return detail_json;
+  }
+  auto with = group_roster_sync_codec::WithStatement(detail_json, *statement);
+  return with ? *with : detail_json;
+}
+
+Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string& group_id,
+                                                              const std::optional<GroupOwnerTransfer>& handed) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (identity->account_signing_public_key_b64.empty()) {
+    return Error("No account signing key yet");
+  }
+  auto update = GroupRosterStore::LockForUpdate();  // the roster read and the statement kept, as one
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (metadata->owner_identity != identity->account_id) {
+    return Error("Only the group owner signs its roster");
+  }
+  auto members = roster_.ListMembers(group_id);
+  if (!members) {
+    return members.error();
+  }
+  std::vector<GroupRosterStatementMember> rows;
+  rows.reserve(members->size());
+  for (const GroupRosterMember& m : *members) {
+    rows.push_back({m.member_identity, m.role, m.joined_at});
+  }
+  std::vector<GroupOwnerTransfer> chain;
+  if (auto held = group_roster_sync::Held(*metadata)) {
+    chain = held->owner_chain;
+  }
+  if (handed) {
+    chain.push_back(*handed);
+  }
+  auto statement = group_roster_statement::Sign(identity_, identity->account_signing_public_key_b64, group_id,
+                                                metadata->roster_epoch, std::move(rows), std::move(chain));
+  if (!statement) {
+    return statement.error();
+  }
+  if (auto kept = group_roster_sync::KeepStatement(roster_, *statement); !kept) {
+    return kept.error();
+  }
+  return statement;
+}
+
+Roe<void> GroupMembershipWorkflow::SignAndSendRoster(const std::string& group_id,
+                                                     const std::optional<GroupOwnerTransfer>& handed) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto statement = SignRoster(group_id, handed);
+  if (!statement) {
+    return statement.error();
+  }
+  std::vector<std::string> members;
+  for (const GroupRosterStatementMember& m : statement->members) {
+    members.push_back(m.identity);
+  }
+  const std::string detail = group_roster_sync_codec::EncodeStatement(*statement);
+  (void)FanOutPairwise(SelectPairwiseFanoutTargets(members, *local), PairwiseFanoutMode::BestEffort,
+                       [&](const std::string& identity) {
+                         return SendMembershipDirectMessage(identity, GroupMembershipControlType::GroupRosterStatement,
+                                                            detail, "Group members updated");
+                       });
+  return {};
+}
+
+Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request,
+                                                       const std::string& asker) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto metadata = roster_.LoadMetadata(request.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!metadata->has_value()) {
+    return {};
+  }
+  group_roster_sync_codec::RosterReply reply;
+  if ((*metadata)->owner_identity == *local && (*metadata)->sync_state == GroupSyncState::Active) {
+    // The owner answers with the roster as it is now.
+    auto statement = SignRoster(request.group_id);
+    if (!statement) {
+      return statement.error();
+    }
+    reply.group_id = request.group_id;
+    reply.request_id = request.request_id;
+    reply.removed = !statement->Lists(asker);
+    reply.statement = std::move(*statement);
+  } else {
+    auto answer = group_roster_sync::Answer(roster_, request, asker);
+    if (!answer) {
+      return answer.error();
+    }
+    if (!*answer) {
+      return {};
+    }
+    reply = std::move(**answer);
+  }
+  log().info << "Roster answer group=" << request.group_id << " to=" << asker
+             << " statement=" << (reply.statement ? reply.statement->roster_epoch : 0) << " removed=" << reply.removed;
+  return SendRosterControl(asker, GroupMembershipControlType::GroupRosterReply,
+                           group_roster_sync_codec::EncodeReply(reply), "Group members", *local);
+}
+
+Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto check = group_roster_sync::BeginCheck(roster_, group_id, *local, util::NowUnixMs());
+  if (!check) {
+    return check.error();
+  }
+  log().info << "Roster check group=" << group_id << " request_id=" << check->request.request_id
+             << " asking=" << check->ask.size();
+  const std::string detail = group_roster_sync_codec::EncodeRequest(check->request);
+  (void)FanOutPairwise(check->ask, PairwiseFanoutMode::BestEffort, [&](const std::string& identity) {
+    return SendRosterControl(identity, GroupMembershipControlType::GroupRosterRequest, detail,
+                             "Checking group members", *local);
+  });
+  return {};
+}
+
+Roe<void> GroupMembershipWorkflow::SendRosterControl(const std::string& peer_identity,
+                                                     const GroupMembershipControlType control_type,
+                                                     const std::string& detail_json, const std::string& display,
+                                                     const std::string& local_identity) {
+  // On the control lane (MakeGroupRosterSyncFamily): no chat row on either side, and an account copy with
+  // our card — the asker may be a device restored from its backup, which keeps none of the cards it had.
+  auto control = GroupMembershipCodec::BuildSystemMessage(std::string(), control_type, display, detail_json,
+                                                          local_identity);
+  if (!control) {
+    return control.error();
+  }
+  return mesh_messaging_.SendControl(peer_identity, *control);
+}
+
+Roe<std::vector<AccountBackupGroup>> GroupMembershipWorkflow::BackupGroups() const {
+  auto ids = roster_.ListGroupIds();
+  if (!ids) {
+    return ids.error();
+  }
+  std::vector<AccountBackupGroup> groups;
+  for (const std::string& group_id : *ids) {
+    auto metadata = roster_.LoadMetadata(group_id);
+    auto members = roster_.ListMembers(group_id);
+    if (!metadata || !*metadata || !members) {
+      continue;
+    }
+    if ((*metadata)->sync_state == GroupSyncState::Removed) {
+      continue;  // nothing to bring back
+    }
+    AccountBackupGroup group;
+    group.group_id = group_id;
+    group.title = (*metadata)->title;
+    group.owner_identity = (*metadata)->owner_identity;
+    group.roster_epoch = (*metadata)->roster_epoch;
+    group.title_version = (*metadata)->title_version;
+    group.policy_json = GroupMembershipCodec::EncodeGroupPolicy((*metadata)->policy);
+    group.roster_statement_json = (*metadata)->roster_statement_json;
+    for (const GroupRosterMember& m : *members) {
+      group.members.push_back({m.member_identity, MemberRoleToString(m.role), m.joined_at, m.contact_id});
+    }
+    groups.push_back(std::move(group));
+  }
+  return groups;
+}
+
+Roe<void> GroupMembershipWorkflow::RestoreGroup(const AccountBackupGroup& group) {
+  auto update = GroupRosterStore::LockForUpdate();
+  GroupMetadata metadata;
+  metadata.group_id = group.group_id;
+  metadata.owner_identity = group.owner_identity;
+  metadata.title = group.title;
+  metadata.roster_epoch = group.roster_epoch;
+  metadata.title_version = group.title_version;
+  if (auto policy = GroupMembershipCodec::DecodeGroupPolicy(group.policy_json)) {
+    metadata.policy = *policy;
+  }
+  metadata.roster_statement_json = group.roster_statement_json;
+  metadata.sync_state = GroupSyncState::Checking;
+  if (auto saved = roster_.UpsertMetadata(metadata); !saved) {
+    return saved.error();
+  }
+  for (const AccountBackupGroupMember& m : group.members) {
+    GroupRosterMember member;
+    member.member_identity = m.identity;
+    member.role = MemberRoleFromString(m.role);
+    member.joined_at = m.joined_at;
+    member.contact_id = m.contact_id;
+    if (auto upserted = roster_.UpsertMember(group.group_id, member); !upserted) {
+      return upserted.error();
+    }
+  }
+  update.unlock();
+  if (auto thread = store_.FindOrCreateGroupThread(group.group_id, group.title, {}); !thread) {
+    return thread.error();
+  }
+  log().info << "Group restored group=" << group.group_id << " members=" << group.members.size()
+             << " (checking its members)";
   return {};
 }
 

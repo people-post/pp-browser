@@ -85,6 +85,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     case Err::Network::TlsFailed:
       return Tr("errors.network.tls");
     case Err::Network::HttpError:
+    case Err::Network::HttpRejected:
       return Tr("errors.network.http");
     case Err::Network::Unreachable:
     case Err::Network::Generic:

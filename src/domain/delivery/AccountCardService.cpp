@@ -7,6 +7,9 @@
 #include "foundation/runtime/AppRuntime.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <memory>
 #include <utility>
 
 namespace pbr {
@@ -85,9 +88,23 @@ void AccountCardService::FetchReaching(const std::string& peer_id, const std::st
                 on_done(outcome, std::move(result));
                 return;
               }
-              // No link up: reach the device (it may be parked on a seed), then ask it once more.
-              reach_(peer_id, [this, alive, peer_id, account_id, on_done, result](bool reached) mutable {
-                if (!reached || alive.expired()) {
+              // No link up: reach the device (it may be parked on a seed), then ask it once more. A reach
+              // that does not settle in time counts as not reached, so the caller's fallback still runs.
+              auto settled = std::make_shared<std::atomic<bool>>(false);
+              AppRuntime::ScheduleCoordinatorOneShot(
+                  std::chrono::milliseconds(kReachTimeoutMs), [this, alive, settled, peer_id, on_done, result]() {
+                    if (settled->exchange(true) || alive.expired()) {
+                      return;
+                    }
+                    log().info << "card ask: reaching " << peer_id << " did not settle in " << kReachTimeoutMs
+                               << " ms";
+                    on_done(Outcome::NotReached, result);
+                  });
+              reach_(peer_id, [this, alive, settled, peer_id, account_id, on_done, result](bool reached) mutable {
+                if (settled->exchange(true) || alive.expired()) {
+                  return;
+                }
+                if (!reached) {
                   on_done(Outcome::NotReached, std::move(result));
                   return;
                 }

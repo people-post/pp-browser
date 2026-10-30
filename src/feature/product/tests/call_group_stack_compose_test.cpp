@@ -1200,6 +1200,27 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
+  // B102 (#410): everyone shows the one who came back among the call's members — the ones who stayed too.
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        for (size_t i : members_) {
+          auto rows = sides_[i].ui->ListJoinedParticipants(call_id);
+          if (!rows || rows->size() != 3u) {
+            return false;
+          }
+        }
+        return true;
+      },
+      8000);
+  for (size_t i : members_) {
+    auto joined_rows = sides_[i].ui->ListJoinedParticipants(call_id);
+    ASSERT_TRUE(joined_rows) << "side " << i;
+    EXPECT_EQ(joined_rows->size(), 3u) << "side " << i;
+    EXPECT_TRUE(std::any_of(joined_rows->begin(), joined_rows->end(),
+                            [&](const CallParticipant& row) { return row.identity == sides_[kC].local_identity; }))
+        << "side " << i << " lost the one who rejoined";
+  }
 }
 
 // B103: a group chat gets the call's record when this device leaves — not only when the call ends.

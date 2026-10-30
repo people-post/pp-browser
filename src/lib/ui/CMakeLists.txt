@@ -10,6 +10,7 @@ pp_browser_add_lib_library(pp_lib_ui
     ContextMenuHost.cpp
     EmojiCatalog.cpp
     InputCoordinator.cpp
+    MentionDraft.cpp
     QrSvg.cpp
     RmlVariantHelpers.cpp
     ShellInterruption.cpp

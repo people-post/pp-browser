@@ -61,8 +61,13 @@ SendFailure SendFailureFromRelay(const Error& error) {
   case ErrorCategory::Config:
     return SendFailure::RelayNotConfigured;
   case ErrorCategory::Network:
-    return static_cast<Err::Network>(error.code) == Err::Network::HttpError ? SendFailure::RelayRejected
-                                                                             : SendFailure::RelayUnreachable;
+    switch (static_cast<Err::Network>(error.code)) {
+    case Err::Network::HttpError:
+    case Err::Network::HttpRejected:
+      return SendFailure::RelayRejected;
+    default:
+      return SendFailure::RelayUnreachable;
+    }
   default:
     return SendFailure::Unknown;
   }

@@ -25,8 +25,18 @@ public:
   /** Error message of a send that needs the agent while a turn runs: nothing was stored or sent; queue and retry. */
   static constexpr const char* kAgentBusyError = "agent_busy";
 
+  /**
+   * `mentions_json` (group chats): the `mentions` / `all` payload of a text whose @names were picked from the
+   * composer's popup (BuildMentionsPayloadJson); it rides with the group message and decides "@ai" (see IsAtAiInvoke).
+   */
   Roe<void> Route(const std::string& thread_id, const std::string& text,
-                  std::optional<std::string> user_payload = std::nullopt);
+                  std::optional<std::string> user_payload = std::nullopt,
+                  std::optional<std::string> mentions_json = std::nullopt);
+  /**
+   * "@ai …" at the start asks the AI, unless the start of the text is a picked member's mention (a member
+   * named "ai"): then it is a person. A mention edited afterwards has no record and falls back to the text rule.
+   */
+  static bool IsAtAiInvoke(const std::string& text, const std::optional<std::string>& mentions_json);
   /** "@ai+ …" / "@ai++ …" the user already confirmed (before it was queued): shared without asking again. */
   Roe<void> RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text);
   /** Routing `text` in `thread_id` would ask the user to confirm sharing with the AI first. */
@@ -52,7 +62,8 @@ public:
   static bool HandlesAtAi(ThreadKind kind);
 
   bool ExpectsAgentWork(const std::string& thread_id, const std::string& text,
-                        const std::optional<std::string>& user_payload = std::nullopt) const;
+                        const std::optional<std::string>& user_payload = std::nullopt,
+                        const std::optional<std::string>& mentions_json = std::nullopt) const;
 
   void SetOnLocalAction(std::function<void(const std::string& message, const std::optional<std::string>& payload)> cb);
 

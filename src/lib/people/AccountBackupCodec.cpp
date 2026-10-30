@@ -1,5 +1,7 @@
 #include "lib/people/AccountBackupCodec.h"
 
+#include <optional>
+
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/people/ContactJson.h"
 #include "common/ValueJson.h"
@@ -55,6 +57,57 @@ Roe<AccountBackupV2> AccountBackupCodec::Parse(const std::vector<uint8_t>& bytes
   return backup;
 }
 
+Object AccountBackupCodec::GroupToJson(const AccountBackupGroup& group) {
+  Object json;
+  json.set("group_id", group.group_id);
+  json.set("title", group.title);
+  json.set("owner", group.owner_identity);
+  json.setJsonUInt("roster_epoch", group.roster_epoch);
+  json.setJsonUInt("title_version", group.title_version);
+  json.set("policy", group.policy_json);
+  std::vector<Value> members;
+  for (const AccountBackupGroupMember& m : group.members) {
+    Object row;
+    row.set("identity", m.identity);
+    row.set("role", m.role);
+    row.setJsonUInt("joined_at", static_cast<uint64_t>(m.joined_at < 0 ? 0 : m.joined_at));
+    row.set("contact_id", m.contact_id);
+    members.push_back(ObjectValue(std::move(row)));
+  }
+  json.set("members", ArrayValue(std::move(members)));
+  json.set("roster_statement", group.roster_statement_json);
+  return json;
+}
+
+std::optional<AccountBackupGroup> AccountBackupCodec::GroupFromJson(const Object& json) {
+  AccountBackupGroup group;
+  group.group_id = json.getString("group_id").value_or("");
+  group.owner_identity = json.getString("owner").value_or("");
+  if (group.group_id.empty() || group.owner_identity.empty()) {
+    return std::nullopt;
+  }
+  group.title = json.getString("title").value_or("");
+  group.roster_epoch = json.getNonNegInt("roster_epoch").value_or(0);
+  group.title_version = json.getNonNegInt("title_version").value_or(0);
+  group.policy_json = json.getString("policy").value_or("");
+  if (const Array* members = json.getArray("members")) {
+    for (const Value& item : members->elements) {
+      if (const Object* row = asObject(item)) {
+        AccountBackupGroupMember m;
+        m.identity = row->getString("identity").value_or("");
+        m.role = row->getString("role").value_or("member");
+        m.joined_at = static_cast<int64_t>(row->getNonNegInt("joined_at").value_or(0));
+        m.contact_id = row->getString("contact_id").value_or("");
+        if (!m.identity.empty()) {
+          group.members.push_back(std::move(m));
+        }
+      }
+    }
+  }
+  group.roster_statement_json = json.getString("roster_statement").value_or("");
+  return group;
+}
+
 Roe<std::vector<uint8_t>> AccountBackupCodec::SerializeContents(const AccountBackupContents& contents) {
   auto bundle = ParseObject(contents.link_bundle_json);
   if (!bundle) {
@@ -68,6 +121,23 @@ Roe<std::vector<uint8_t>> AccountBackupCodec::SerializeContents(const AccountBac
   Object out;
   out.set("link_bundle", *bundle);
   out.set("contacts", ArrayValue(std::move(contacts)));
+  if (!contents.extras.groups.empty()) {
+    std::vector<Value> groups;
+    for (const AccountBackupGroup& group : contents.extras.groups) {
+      groups.push_back(ObjectValue(GroupToJson(group)));
+    }
+    out.set("groups", ArrayValue(std::move(groups)));
+  }
+  if (!contents.extras.card_floors.empty()) {
+    std::vector<Value> floors;
+    for (const AccountBackupCardFloor& floor : contents.extras.card_floors) {
+      Object row;
+      row.set("account_id", floor.account_id);
+      row.set("issued_at", floor.issued_at);
+      floors.push_back(ObjectValue(std::move(row)));
+    }
+    out.set("card_floors", ArrayValue(std::move(floors)));
+  }
   const std::string json = DumpJson(out);
   return std::vector<uint8_t>(json.begin(), json.end());
 }
@@ -87,6 +157,29 @@ Roe<AccountBackupContents> AccountBackupCodec::ParseContents(const std::vector<u
     for (const Value& item : contacts->elements) {
       if (const Object* contact = asObject(item)) {
         contents.contacts.push_back(ContactFromJson(*contact));
+      }
+    }
+  }
+  if (const Array* groups = root->getArray("groups")) {
+    for (const Value& item : groups->elements) {
+      if (const Object* group = asObject(item)) {
+        if (auto parsed = GroupFromJson(*group)) {
+          contents.extras.groups.push_back(std::move(*parsed));
+        }
+      }
+    }
+  }
+  if (const Array* floors = root->getArray("card_floors")) {
+    for (const Value& item : floors->elements) {
+      const Object* row = asObject(item);
+      if (row == nullptr) {
+        continue;
+      }
+      AccountBackupCardFloor floor;
+      floor.account_id = row->getString("account_id").value_or("");
+      floor.issued_at = row->getIf<int64_t>("issued_at").value_or(0);
+      if (!floor.account_id.empty() && floor.issued_at > 0) {
+        contents.extras.card_floors.push_back(std::move(floor));
       }
     }
   }

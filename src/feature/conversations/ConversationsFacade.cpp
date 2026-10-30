@@ -78,24 +78,13 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
-Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() {
-  return LocalAccountBackup::PeekNickname(OsSecureBlobStore());
-}
+Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() { return hub_.LocalBackupNickname(); }
 
-Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
-      hub_.PskStore() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  return LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
-                                     *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin, util::NowUnixMs());
-}
+Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) { return hub_.RestoreLocalBackup(pin); }
 
 void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
 
-Roe<void> ConversationsFacade::DeleteLocalBackup() {
-  return LocalAccountBackup::Delete(OsSecureBlobStore());
-}
+Roe<void> ConversationsFacade::DeleteLocalBackup() { return hub_.DeleteLocalBackup(); }
 
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
 
@@ -317,7 +306,7 @@ void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const DeliveryN
   hub_.MeshMessaging().SetOnDeliveryNotice(std::move(callback));
 }
 
-void ConversationsFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback) {
+void ConversationsFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback) {
   hub_.MeshMessaging().SetOnBackgroundUnread(std::move(callback));
 }
 
@@ -525,6 +514,10 @@ std::optional<LocalIdentity> ConversationsFacade::GetIdentity() {
   return std::nullopt;
 }
 
+std::string ConversationsFacade::KeptCardNickname(const std::string& account_id) {
+  return hub_.KeptCardNickname(account_id);
+}
+
 Roe<std::optional<Contact>> ConversationsFacade::FindContactByIdentity(const std::string& identity,
                                                                   const mesh::ContactIdKind kind) {
   return hub_.Contacts().FindByIdentity(identity, kind);
@@ -560,16 +553,18 @@ void ConversationsFacade::SetOnActionMessage(std::function<void(const std::strin
 // --- Router -----------------------------------------------------------------
 
 Roe<void> ConversationsFacade::RouteMessage(const std::string& thread_id, const std::string& text,
-                                        std::optional<std::string> user_payload) {
+                                        std::optional<std::string> user_payload,
+                                        std::optional<std::string> mentions_json) {
   if (!hub_.HasRouter()) {
     return Error("Messaging not ready");
   }
-  return hub_.Router().Route(thread_id, text, std::move(user_payload));
+  return hub_.Router().Route(thread_id, text, std::move(user_payload), std::move(mentions_json));
 }
 
 bool ConversationsFacade::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
-                                       const std::optional<std::string>& user_payload) {
-  return hub_.HasRouter() && hub_.Router().ExpectsAgentWork(thread_id, text, user_payload);
+                                       const std::optional<std::string>& user_payload,
+                                       const std::optional<std::string>& mentions_json) {
+  return hub_.HasRouter() && hub_.Router().ExpectsAgentWork(thread_id, text, user_payload, mentions_json);
 }
 
 void ConversationsFacade::SetOnLocalAction(

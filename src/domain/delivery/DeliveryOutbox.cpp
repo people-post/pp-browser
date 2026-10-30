@@ -57,11 +57,14 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         return;
       }
       if (auto sent = relay->Send(request.envelope); !sent) {
+        const bool again = OutboxRetryAgain(1, sent.error());
         log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
-                      << " err=" << sent.error().message << " (queued for retry)";
-        Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
-                        .thread_id = request.thread_id, .attempt_count = 1, .amp_peer_key = request.amp_peer_key,
-                        .group_member = request.group_member, .copy_device = request.copy_device});
+                      << " err=" << sent.error().message << (again ? " (queued for retry)" : " (refused: not retried)");
+        if (again) {
+          Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
+                          .thread_id = request.thread_id, .attempt_count = 1, .amp_peer_key = request.amp_peer_key,
+                          .group_member = request.group_member, .copy_device = request.copy_device});
+        }
         outcome.failure = SendFailureFromRelay(sent.error());
         outcome.detail = sent.error().message;
         Report(std::move(outcome));
@@ -158,7 +161,7 @@ void DeliveryOutbox::Retry() {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
                                  .transport = MessageTransport::Relay, .relay_after_direct = tried_direct,
                                  .group_member = item.group_member, .copy_device = item.copy_device});
-        } else if (OutboxRetryAgain(item.attempt_count)) {
+        } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
         } else {

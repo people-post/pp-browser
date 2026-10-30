@@ -59,6 +59,11 @@ public:
   /** A device not reached yet (its link is still coming up) is tried again this often, this many times. */
   static constexpr int64_t kRetryAfterMs = 15 * 1000;
   static constexpr int kMaxTries = 3;
+  /**
+   * How long making a device reachable may take before the ask counts it not reached (#409: a reach that
+   * never answered held the directory fallback behind it forever).
+   */
+  static constexpr int64_t kReachTimeoutMs = 20 * 1000;
 
 private:
   /** How a fetch ended: answered (a card, or a refusal / a card that did not hold), or not reached. */

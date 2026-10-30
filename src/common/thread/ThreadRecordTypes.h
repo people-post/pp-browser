@@ -46,6 +46,8 @@ struct Thread {
   std::optional<std::string> group_id;
   int64_t updated_at = 0;
   int unread_count = 0;
+  /** A live message @-mentioned this account while the thread was not open; cleared when the thread is read. */
+  bool unread_mention = false;
   std::string preview;
   bool encrypted = false;
 };

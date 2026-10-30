@@ -45,6 +45,14 @@ TEST(AccountBackupCodecTest, RoundTripsContents) {
   AccountBackupContents contents;
   contents.link_bundle_json = R"({"schema":"pp-browser-link-device-v1","relay_user_id":"relay:u1","nickname":"alice"})";
   contents.contacts = {SampleContact()};
+  AccountBackupGroup group;
+  group.group_id = "group:hike";
+  group.title = "Weekend hike";
+  group.owner_identity = "account:alice";
+  group.roster_epoch = 4;
+  group.members = {{"account:alice", "owner", 1000, "c1"}};
+  contents.extras.groups = {group};
+  contents.extras.card_floors = {{"account:alice", 1700000000123}};
 
   auto bytes = AccountBackupCodec::SerializeContents(contents);
   ASSERT_TRUE(static_cast<bool>(bytes)) << bytes.error().message;
@@ -57,6 +65,18 @@ TEST(AccountBackupCodecTest, RoundTripsContents) {
   EXPECT_EQ(parsed->contacts[0].local.display_name, "Alice at work");
   EXPECT_EQ(parsed->contacts[0].local.trust, TrustLevel::Friendly);
   EXPECT_EQ(parsed->contacts[0].remote.nickname, "alice");
+  ASSERT_EQ(parsed->extras.groups.size(), 1u);
+  EXPECT_EQ(parsed->extras.groups[0].group_id, "group:hike");
+  EXPECT_EQ(parsed->extras.groups[0].roster_epoch, 4u);
+  EXPECT_EQ(parsed->extras.card_floors, contents.extras.card_floors);
+
+  // A backup from before groups and floors reads as having none.
+  AccountBackupContents older;
+  older.link_bundle_json = contents.link_bundle_json;
+  auto older_parsed = AccountBackupCodec::ParseContents(AccountBackupCodec::SerializeContents(older).value());
+  ASSERT_TRUE(static_cast<bool>(older_parsed));
+  EXPECT_TRUE(older_parsed->extras.groups.empty());
+  EXPECT_TRUE(older_parsed->extras.card_floors.empty());
 }
 
 TEST(AccountBackupCodecTest, RejectsOtherSchemasAndVersions) {

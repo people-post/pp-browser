@@ -2,6 +2,7 @@
 
 #include "common/PlatformLimits.h"
 #include "common/thread/ThreadTypes.h"
+#include "lib/messaging/GroupMentions.h"
 
 #include <gtest/gtest.h>
 
@@ -72,4 +73,28 @@ TEST(MessageRouterTest, LocalActionPayloadsGoToTheAgentExceptTheRemarkButton) {
   EXPECT_FALSE(pbr::MessageRouter::LocalActionTool(std::nullopt));
   // A typed payload is never an agent tool payload, so it cannot reach the old tool-payload path either.
   EXPECT_FALSE(pbr::MessageRouter::IsAgentToolPayload(pbr::ThreadKind::Ai, open));
+}
+
+// G015: "@ai" at the start of a group message. Typed by hand it is the AI; a member named "ai" picked from the
+// composer's popup is a person; edited afterwards (the record is void, nothing travels) it is the AI again.
+TEST(MessageRouterTest, HandTypedAtAiStillAsksTheAi) {
+  EXPECT_TRUE(pbr::MessageRouter::IsAtAiInvoke("@ai what time is it", std::nullopt));
+  EXPECT_TRUE(pbr::MessageRouter::IsAtAiInvoke("@ai++ summarize", std::nullopt));
+}
+
+TEST(MessageRouterTest, PickedMemberNamedAiAtTheStartIsAPersonNotTheAi) {
+  pbr::MentionsPayload mentions;
+  mentions.mentions.push_back({"acc-ai", 0, 3});
+  const std::string text = "@ai are you there";
+  const std::optional<std::string> json = pbr::BuildMentionsPayloadJson(text, mentions);
+  EXPECT_FALSE(pbr::MessageRouter::IsAtAiInvoke(text, json));
+  // A mention that is not at the start does not make the opening "@ai" a person.
+  pbr::MentionsPayload later;
+  later.mentions.push_back({"acc-bob", 10, 14});
+  EXPECT_TRUE(pbr::MessageRouter::IsAtAiInvoke("@ai ask @Bob", pbr::BuildMentionsPayloadJson("@ai ask @Bob", later)));
+}
+
+TEST(MessageRouterTest, EditedMentionFallsBackToTheTextRule) {
+  // The draft's record was voided: no mentions payload is sent, so the opening "@ai" is the AI again.
+  EXPECT_TRUE(pbr::MessageRouter::IsAtAiInvoke("@ai are you there", std::nullopt));
 }

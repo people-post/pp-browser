@@ -66,6 +66,11 @@ struct MessagingContactsPorts {
   std::function<void(const mesh::DirectoryHit& hit)> register_peer_keys_from_directory;
 
   std::function<bool(const Contact& contact)> is_contact_reachable;
+  /**
+   * A contact whose account's card is still unknown: ask for it again (#409). `done(true)` once one is kept;
+   * on any thread.
+   */
+  std::function<void(const Contact& contact, std::function<void(bool kept)> done)> refresh_contact_card;
 };
 
 class ConversationsHub;

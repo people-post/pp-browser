@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -151,6 +152,44 @@ TEST(PeerCardStoreTest, KeepsOnlyCheckedCardsAndPersistsTheNewest) {
   EXPECT_TRUE(SameKeys((*found)->keys, KeysOf(alice)));
   EXPECT_EQ((*found)->devices, (std::vector<std::string>{test::PeerIdOf("QmLaptop"), test::PeerIdOf("QmPhone")}));
   EXPECT_EQ(reopened.List().value().size(), 1u);
+  std::filesystem::remove_all(dir);
+}
+
+TEST(PeerCardStoreTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
+  const auto dir = std::filesystem::temp_directory_path() / "pp_peer_card_floor_test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::string db = (dir / "profile.db").string();
+  const test::TestAccount alice = test::TestAccount::Make();
+  const test::TestAccount bob = test::TestAccount::Make();
+  {
+    PeerCardStore store(db);
+    int newer = 0;
+    store.SetOnNewerCard([&newer]() { ++newer; });
+    // Restored: the backup knew Alice's card issued at kNow + 5 (her stolen phone taken out by then).
+    ASSERT_TRUE(store.RaiseFloors({{alice.account_id, kNow + 5}}));
+    ASSERT_TRUE(store.RaiseFloors({{alice.account_id, kNow + 1}})) << "a lower floor changes nothing";
+    EXPECT_EQ(store.Floor(alice.account_id).value(), kNow + 5);
+    EXPECT_EQ(store.Floor(bob.account_id).value(), 0);
+
+    EXPECT_FALSE(store.AddAccountCard(CardOf(alice, test::Devices({"QmStolen", "QmPhone"}), kNow), kNow + 10,
+                                      "envelope"))
+        << "an older card listing the stolen phone";
+    EXPECT_FALSE(store.Get(alice.account_id).value().has_value());
+    ASSERT_TRUE(store.AddAccountCard(CardOf(alice, test::Devices({"QmPhone"}), kNow + 5), kNow + 10, "envelope"));
+    ASSERT_TRUE(store.AddAccountCard(CardOf(bob, test::Devices({"QmBob"}), kNow + 2), kNow + 10, "envelope"));
+    EXPECT_EQ(newer, 2) << "each newer card rewrites the backup";
+    ASSERT_TRUE(store.AddAccountCard(CardOf(bob, test::Devices({"QmBob"}), kNow + 2), kNow + 10, "envelope"));
+    EXPECT_EQ(newer, 2) << "the same card again is not newer";
+  }
+  PeerCardStore reopened(db);
+  std::vector<PeerCardFloor> newest = reopened.NewestKnown().value();
+  std::sort(newest.begin(), newest.end(),
+            [](const PeerCardFloor& x, const PeerCardFloor& y) { return x.account_id < y.account_id; });
+  std::vector<PeerCardFloor> expected{{alice.account_id, kNow + 5}, {bob.account_id, kNow + 2}};
+  std::sort(expected.begin(), expected.end(),
+            [](const PeerCardFloor& x, const PeerCardFloor& y) { return x.account_id < y.account_id; });
+  EXPECT_EQ(newest, expected);
   std::filesystem::remove_all(dir);
 }
 

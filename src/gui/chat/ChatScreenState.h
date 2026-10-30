@@ -10,6 +10,13 @@
 
 namespace pbr {
 
+/** One row of the composer's @ popup. */
+struct MentionPopupRow {
+  int index = 0;
+  ui::String label;
+  bool everyone = false;
+};
+
 /** The chat screen's data model ("chat"): what the GUI binds; ChatController and its parts write it. */
 struct ChatScreenState {
   ui::String draft;
@@ -48,6 +55,11 @@ struct ChatScreenState {
   /** A reply is being written to a quoted message: the bar above the composer input. */
   bool quote_reply = false;
   ui::String quote_reply_text;
+  /** The composer's @ popup (group chats): visible, no match, the rows, the "no match" text. */
+  bool mention_open = false;
+  bool mention_empty = false;
+  std::vector<MentionPopupRow> mention_rows;
+  ui::String mention_empty_text;
   bool show_thread_actions = false;
   bool show_peer_sheet = false;
   bool show_call_actions = false;

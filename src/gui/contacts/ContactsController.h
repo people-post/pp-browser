@@ -147,6 +147,8 @@ private:
   void SyncFromStore();
   void LoadSelectedDetail(const std::string& contact_id);
   void OpenContactDetailPane();
+  /** The selected contact cannot be messaged yet: ask for its account's card again (#409). */
+  void MaybeRefreshContactCard(const std::string& contact_id);
   bool CloseContactDetailPane();
   void OnBackToList();
   void OnStartChat();

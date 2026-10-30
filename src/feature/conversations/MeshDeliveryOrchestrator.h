@@ -174,9 +174,9 @@ public:
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
-  /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
+  /** Fired on UI thread when a background ingest bumps unread (for OS notify); `mentioned`: it @-mentions this account. */
   void SetOnBackgroundUnread(
-      std::function<void(std::string title, std::string body, std::string thread_id)> callback);
+      std::function<void(std::string title, std::string body, std::string thread_id, bool mentioned)> callback);
   /**
    * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
    * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
@@ -246,6 +246,11 @@ public:
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
                         const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
+  /**
+   * Our card to each of `accounts` on the control lane (the `device_list` notice, as to our siblings): a device
+   * they do not know yet — one restored from the account backup — is on their list before they next write.
+   */
+  void NotifyContactsOfDevices(const std::vector<std::string>& accounts);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
@@ -325,7 +330,7 @@ private:
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
-  std::function<void(std::string, std::string, std::string)> on_background_unread_;
+  std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
@@ -339,6 +344,8 @@ private:
   Roe<void> SignEnvelope(RelayEnvelope& envelope);
   /** Our card to our other devices, through our own mailbox (M022). */
   void NotifySiblings();
+  /** The issue time of the own card our siblings were last told (a mesh bring-up does not repeat it). */
+  std::atomic<int64_t> siblings_told_card_at_{0};
   /** A link to device `peer_id` is up (its copy goes over it, M022). */
   bool LinkedTo(const std::string& peer_id) const;
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */

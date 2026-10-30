@@ -2,6 +2,7 @@
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/SqliteThreadStore.h"
 
+#include "lib/messaging/SqliteThreadSchema.h"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
@@ -331,6 +332,51 @@ TEST_F(IncompatibleProfileDbTest, FailsEveryCallNotJustTheFirst) {
   auto second = store_->ListThreads();
   ASSERT_FALSE(second);
   EXPECT_NE(second.error().message.find("Incompatible"), std::string::npos);
+}
+
+
+// An older profile.db (threads without unread_mention) opens, gains the column, and reads / writes it.
+TEST(SqliteThreadStoreTest, OldProfileDbWithoutUnreadMentionColumnIsUpgradedOnOpen) {
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_old_profile_db_test";
+  std::filesystem::remove_all(data_dir);
+  std::filesystem::create_directories(data_dir);
+  {
+    std::string schema = kSqliteThreadProfileSchemaV1;
+    const std::string column = ",\n  unread_mention INTEGER NOT NULL DEFAULT 0";
+    const size_t at = schema.find(column);
+    ASSERT_NE(at, std::string::npos);
+    schema.erase(at, column.size());
+    std::filesystem::create_directories(std::filesystem::path(SqliteThreadProfileDbFile(data_dir.string())).parent_path());
+    sqlite3* db = nullptr;
+    ASSERT_EQ(sqlite3_open(SqliteThreadProfileDbFile(data_dir.string()).c_str(), &db), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(db, schema.c_str(), nullptr, nullptr, nullptr), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(db,
+                           ("PRAGMA user_version = " + std::to_string(kSqliteThreadProfileUserVersion) + ";").c_str(),
+                           nullptr, nullptr, nullptr),
+              SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(db,
+                           "INSERT INTO threads (id, kind, channel, title, participant_contact_ids, updated_at, "
+                           "unread_count) VALUES ('old-1', 'direct', '', 'Old', '[]', 5, 2);",
+                           nullptr, nullptr, nullptr),
+              SQLITE_OK);
+    sqlite3_close(db);
+  }
+
+  SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+  auto threads = store.ListThreads();
+  ASSERT_TRUE(threads);
+  ASSERT_EQ(threads->size(), 1u);
+  EXPECT_EQ(threads->front().unread_count, 2);
+  EXPECT_FALSE(threads->front().unread_mention);
+
+  Thread marked = threads->front();
+  marked.unread_mention = true;
+  ASSERT_TRUE(store.UpsertThread(marked));
+  auto reread = store.GetThread("old-1");
+  ASSERT_TRUE(reread);
+  ASSERT_TRUE(*reread);
+  EXPECT_TRUE((*reread)->unread_mention);
 }
 
 } // namespace

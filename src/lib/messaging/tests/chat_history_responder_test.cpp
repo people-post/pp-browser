@@ -3,6 +3,7 @@
 #include "lib/messaging/ChatHistoryResponder.h"
 #include "lib/messaging/E2eRelayPayloadCodec.h"
 #include "lib/messaging/EnvelopeSigner.h"
+#include "lib/messaging/GroupMentions.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
@@ -206,4 +207,47 @@ TEST(ChatHistoryResponderTest, ServesOnlyASignedRequestOnItsOwnLink) {
 
   const ChatHistoryRequest old = harness.SignedRequest(util::NowUnixMs() - 2 * PeerRequestAuth::kMaxSkewMs);
   EXPECT_FALSE(harness.Serve(old, old.requester_peer_id)) << "stale";
+}
+
+// Re-encode call site: history sync. A stored text with @mentions is served as text_mentions, not as plain text.
+TEST(ChatHistoryResponderTest, ServedTextKeepsItsMentions) {
+  ResponderHarness harness("mentions");
+  harness.SeedOutbound(1, "plain");
+  {
+    ThreadMessage message;
+    message.id = "out-2";
+    message.thread_id = harness.thread.id;
+    message.sender_contact_id = kLocalSelfContactId;
+    message.text = "@bob hi";
+    MentionsPayload mentions;
+    MentionRange range;
+    range.account_id = "acct-bob";
+    range.start = 0;
+    range.end = 4;
+    mentions.mentions.push_back(range);
+    message.payload_json = BuildMentionsPayloadJson(message.text, mentions);
+    message.timestamp = 2;
+    message.delivery = MessageDelivery::Relayed;
+    message.relay_visible = true;
+    message.transport = MessageTransport::Local;
+    message.sender_seq = 2;
+    message.session_epoch = 1;
+    ASSERT_TRUE(harness.store.AppendMessage(message));
+  }
+  const ChatHistoryRequest request = harness.SignedRequest();
+  auto response = harness.Serve(request, request.requester_peer_id);
+  ASSERT_TRUE(static_cast<bool>(response));
+  ASSERT_EQ(response->messages.size(), 2u);
+  const ChatTargetKey target = E2eRelayPayloadCodec::ChatTargetFromThread(harness.thread);
+  auto decoded = E2eRelayPayloadCodec::DecryptEnvelope(response->messages[1], harness.requester_account, target,
+                                                       harness.psk_store);
+  ASSERT_TRUE(static_cast<bool>(decoded)) << decoded.error().message;
+  EXPECT_EQ(decoded->text, "@bob hi");
+  const MentionsPayload back = ParseMentionsPayload(decoded->payload_json);
+  ASSERT_EQ(back.mentions.size(), 1u);
+  EXPECT_EQ(back.mentions[0].account_id, "acct-bob");
+  auto plain = E2eRelayPayloadCodec::DecryptEnvelope(response->messages[0], harness.requester_account, target,
+                                                     harness.psk_store);
+  ASSERT_TRUE(static_cast<bool>(plain));
+  EXPECT_TRUE(ParseMentionsPayload(plain->payload_json).Empty());
 }

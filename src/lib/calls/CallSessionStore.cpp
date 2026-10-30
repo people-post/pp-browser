@@ -309,8 +309,13 @@ Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant
       "VALUES (?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, identity) DO UPDATE SET state=excluded.state, audio_muted=excluded.audio_muted, "
       "video_enabled=excluded.video_enabled, "
-      // Sticky SoftMigrate initiator: keep the earliest non-null joined_at.
+      // Sticky SoftMigrate initiator: keep the earliest non-null joined_at — within a stay. Coming back
+      // after leaving starts a new stay with the new stamp (B102, #410: the first stay's stamp won, so the
+      // roster of whoever let them back in carried it, and those who stayed took the rejoin for a stale
+      // roster). Stale rosters never get here: the roster merge wants a stamp newer than the one kept.
       "joined_at=CASE "
+      "WHEN call_participants.state = 'left' AND excluded.state IN ('joined', 'invited', 'ringing') "
+      "THEN excluded.joined_at "
       "WHEN excluded.joined_at IS NULL THEN call_participants.joined_at "
       "WHEN call_participants.joined_at IS NULL THEN excluded.joined_at "
       "WHEN excluded.joined_at < call_participants.joined_at THEN excluded.joined_at "

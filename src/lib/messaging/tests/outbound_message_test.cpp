@@ -1,8 +1,10 @@
 // What a send of ours writes and puts on the wire (OutboundMessage), checked against the receive
 // pipeline of the peer it goes to.
 #include "lib/messaging/OutboundMessage.h"
+#include "foundation/error/AppError.h"
 
 #include "lib/messaging/EnvelopeSigner.h"
+#include "lib/messaging/GroupMentions.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/PeerSigningKeyStore.h"
 #include "lib/messaging/ReactionTypes.h"
@@ -144,6 +146,28 @@ TEST_F(OutboundMessageTest, AFirstPublicSendOpensTheSessionAndThePeerReadsIt) {
   EXPECT_EQ(got.persisted_message->text, "hello");
 }
 
+// Re-encode call site: SealDirectPayload (first send, retry/resend of a stored row) keeps @mentions.
+TEST_F(OutboundMessageTest, ATextWithMentionsArrivesWithThem) {
+  const Thread thread = alice_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
+  MentionsPayload mentions;
+  MentionRange range;
+  range.account_id = "acct-bob";
+  range.start = 0;
+  range.end = 4;
+  mentions.mentions.push_back(range);
+  SendRelayOptions options;
+  options.payload_json = BuildMentionsPayloadJson("@bob hi", mentions);
+  auto sent = alice_->Send(thread, *bob_, "@bob hi", options);
+  ASSERT_TRUE(sent) << sent.error().message;
+  const RelayReceiveOutcome got = bob_->pipeline->ProcessEnvelope(*sent, bob_->keys.account_id);
+  ASSERT_TRUE(got.persisted_message) << got.receive_failure_detail;
+  EXPECT_EQ(got.persisted_message->content_type, ChatContentType::Text);
+  EXPECT_EQ(got.persisted_message->text, "@bob hi");
+  const MentionsPayload back = ParseMentionsPayload(got.persisted_message->payload_json);
+  ASSERT_EQ(back.mentions.size(), 1u);
+  EXPECT_EQ(back.mentions[0].account_id, "acct-bob");
+}
+
 TEST_F(OutboundMessageTest, KeysTheSendCannotHave) {
   const Thread e2e = alice_->DirectThreadTo(*bob_, ThreadChannel::E2e);
   auto no_psk = alice_->Send(e2e, *bob_, "x");
@@ -251,8 +275,12 @@ TEST(OutboxRetryTest, WhatIsStillWorthSending) {
   EXPECT_FALSE(OutboxSendStillWanted(true, kControlRetryWindowMs + 1, false)) << "signaling past its use";
   EXPECT_TRUE(OutboxSendStillWanted(false, kControlRetryWindowMs * 100, false)) << "a chat message waits";
   EXPECT_FALSE(OutboxSendStillWanted(false, 0, /*thread_paused=*/true));
-  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1));
-  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts)) << "then it fails";
+  const Error unreachable = AppError::Network(Err::Network::Unreachable, "relay down");
+  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1, unreachable));
+  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts, unreachable)) << "then it fails";
+  EXPECT_TRUE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpError, "502"))) << "a server hiccup";
+  // #391: the relay refused the request itself (a 400): the same bytes would be refused again.
+  EXPECT_FALSE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpRejected, "400")));
 }
 
 } // namespace

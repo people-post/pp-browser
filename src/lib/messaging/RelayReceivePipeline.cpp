@@ -3,6 +3,7 @@
 #include "lib/messaging/AccountCard.h"
 
 #include "lib/messaging/DeliveryNotice.h"
+#include "lib/messaging/GroupRosterSync.h"
 
 #include <cstdlib>
 
@@ -174,6 +175,42 @@ void RelayReceivePipeline::ApplyOutOfOrderControls(ThreadMessage& message, const
   }
 }
 
+void RelayReceivePipeline::KeepCarriedStatement(const ThreadMessage& message) const {
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  auto statement = detail ? group_roster_sync_codec::StatementIn(*detail) : std::nullopt;
+  if (!statement) {
+    return;  // an event from an app before G012
+  }
+  if (auto kept = group_roster_sync::KeepStatement(group_roster_, *statement); !kept) {
+    log().warning << "Roster statement not kept group_id=" << statement->group_id << ": " << kept.error().message;
+  }
+}
+
+Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& message,
+                                                     const std::string& actor_identity,
+                                                     const std::string& local_account,
+                                                     RelayReceiveOutcome* outcome) const {
+  if (outcome) {
+    outcome->suppress_inbox_chrome = true;  // bookkeeping between members, not something to read
+  }
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  if (!detail) {
+    return Error("roster statement: no detail");
+  }
+  auto statement = group_roster_sync_codec::DecodeStatement(*detail);
+  if (!statement) {
+    return statement.error();
+  }
+  auto member = group_roster_.IsMember(statement->group_id, local_account);
+  if (!member || !*member || statement->owner_identity != actor_identity) {
+    return {};  // not our group, or not sent by the owner it names
+  }
+  if (auto kept = group_roster_sync::KeepAndCatchUp(group_roster_, *statement); !kept) {
+    log().warning << "Roster statement not kept group_id=" << statement->group_id << ": " << kept.error().message;
+  }
+  return {};
+}
+
 void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const {
   if (controls_ && controls_->Quiet(message)) {
     outcome.suppress_inbox_chrome = true;
@@ -245,6 +282,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberJoinedToRoster(group_roster_, *joined, actor_identity); !applied) {
       return applied.error();
     }
+    KeepCarriedStatement(message);
     // What the owner says of the other members: kept; the cards are then left out of what is stored.
     bool carried_cards = false;
     for (const GroupMembershipCodec::MemberJoinedEntry& entry : joined->members) {
@@ -289,6 +327,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyOwnerTransferredToRoster(group_roster_, *transferred, actor_identity); !applied) {
       return applied.error();
     }
+    if (outcome && transferred->new_owner_identity == local_account) {
+      if (auto detail = group_roster_sync_codec::DetailOf(message)) {
+        if (auto handed = group_roster_sync_codec::TransferIn(*detail)) {
+          outcome->took_ownership_group_id = transferred->group_id;
+          outcome->took_ownership_transfer = std::move(*handed);
+        }
+      }
+    }
     auto thread = store_.FindGroupThread(transferred->group_id);
     if (thread && *thread) {
       auto detail = GroupMembershipCodec::EncodeOwnerTransferred(
@@ -319,6 +365,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberLeftToRoster(group_roster_, *left, actor_identity); !applied) {
       return applied.error();
     }
+    if (outcome) {
+      auto metadata = group_roster_.LoadMetadata(left->group_id);
+      if (metadata && *metadata && (*metadata)->owner_identity == local_account) {
+        outcome->resign_roster_group_id = left->group_id;
+      }
+    }
     auto thread = store_.FindGroupThread(left->group_id);
     if (thread && *thread) {
       auto detail =
@@ -346,6 +398,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberRemovedToRoster(group_roster_, *removed, actor_identity); !applied) {
       return applied.error();
     }
+    KeepCarriedStatement(message);
     if (!local_account.empty() && removed->member_identity == local_account) {
       (void)group_roster_.ClearGroupTarget(removed->group_id);
     }
@@ -398,6 +451,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       }
     }
     return {};
+  }
+
+  if (kind == GroupMembershipControlType::GroupRosterStatement) {
+    return ApplyRosterStatement(message, actor_identity, local_account, outcome);
   }
 
   if (!invite_gate_) {
@@ -474,12 +531,14 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
   std::optional<AccountCard> kept = account_cards_ ? account_cards_(target.peer_identity_value) : std::nullopt;
   // The opening message of a session carries the sender's card: one that proves itself for this sender and
   // is newer than the kept one (a new device, a newer list) speaks for the sender, and is kept once the
-  // envelope it came with has verified. An older one does not undo a newer list (a device taken out).
+  // envelope it came with has verified. An older one does not undo a newer list (a device taken out) — nor
+  // one older than the newest this device knew before a restore (its floor).
   std::optional<AccountCard> carried;
   if (const auto& card_json = envelope.body.e2e.sender_card) {
+    const int64_t floor = account_card_floor_ ? account_card_floor_(target.peer_identity_value) : 0;
     if (auto card = AccountCardFromJson(*card_json);
         card && card->keys.account_id == target.peer_identity_value && VerifyAccountCard(*card, util::NowUnixMs()) &&
-        (!kept || card->issued_at > kept->issued_at)) {
+        card->issued_at >= floor && (!kept || card->issued_at > kept->issued_at)) {
       carried = std::move(card.value());
     }
   }
@@ -1217,6 +1276,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   if (!sender_member || !*sender_member) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
+  }
+  // G013: while our check of a restored group goes unanswered, a member's message shows it is online.
+  if (auto metadata = group_roster_.LoadMetadata(group_id);
+      metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking &&
+      util::NowUnixMs() - (*metadata)->sync_requested_at >= group_roster_sync::kCheckRetryMs) {
+    outcome.restart_roster_check_group_id = group_id;
   }
   // Another device's copy in the shared mailbox (M013); our own account's siblings do not write yet (M021 d3).
   if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {

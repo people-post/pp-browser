@@ -4,6 +4,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "lib/messaging/AccountCard.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "common/Utilities.h"
 
 #include <utility>
 
@@ -144,16 +145,58 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     finish(true);
     return;
   }
-  FetchFromDevices(locator.devices, locator.account_id, [this, account_id = locator.account_id, finish](bool kept) {
+  FetchCard(locator.account_id, locator.devices, finish);
+}
+
+void ContactCardExchange::FetchCard(const std::string& account_id, std::vector<std::string> devices,
+                                    std::function<void(bool kept)> done) {
+  FetchFromDevices(std::move(devices), account_id, [this, account_id, done](bool kept) {
     if (kept) {
-      finish(true);
+      done(true);
       return;
     }
     // No listed device answered: the directory, when there is one, has the keys too (an HTTP call: off
     // the I/O thread this callback may be on).
-    auto task = [this, account_id, finish]() { finish(static_cast<bool>(keys_.Resolve(account_id))); };
+    auto task = [this, account_id, done]() {
+      auto resolved = keys_.Resolve(account_id);
+      if (!resolved) {
+        log().info << "no card for " << account_id << " from its devices or the directory: "
+                   << resolved.error().message;
+      }
+      done(static_cast<bool>(resolved));
+    };
     post_blocking_ ? post_blocking_(std::move(task)) : AppRuntime::PostWorkerBackground(std::move(task));
   });
+}
+
+void ContactCardExchange::RefreshIfMissing(const Contact& contact, std::function<void(bool kept)> done) {
+  const std::string account_id = IdOfKind(contact, mesh::ContactIdKind::Account);
+  if (account_id.empty()) {
+    done(false);
+    return;
+  }
+  if (auto kept = keys_.Kept(account_id); kept && *kept) {
+    done(false);
+    return;
+  }
+  const int64_t now = util::NowUnixMs();
+  {
+    std::lock_guard lock(refetch_mutex_);
+    int64_t& last = last_refetch_ms_[account_id];
+    if (last != 0 && now - last < kRefetchAfterMs) {
+      done(false);
+      return;
+    }
+    last = now;
+  }
+  std::vector<std::string> devices;
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && !id.value.empty()) {
+      devices.push_back(id.value);
+    }
+  }
+  log().info << "asking again for the card of " << account_id << " (" << devices.size() << " device(s))";
+  FetchCard(account_id, std::move(devices), std::move(done));
 }
 
 } // namespace pbr
