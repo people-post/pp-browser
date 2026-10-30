@@ -751,10 +751,28 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
   if (selected_.id.empty()) {
     return;
   }
+  MaybeRefreshContactCard(contact_id);
 
   OpenContactDetailPane();
   DirtyAll();
   NotifySurfaceChanged();
+}
+
+void ContactsController::MaybeRefreshContactCard(const std::string& contact_id) {
+  // Not messageable yet: its card may never have arrived (its devices were out of reach when it was added,
+  // #409). Opening it asks once more; the page updates when the card comes.
+  if (selected_.can_message || !contacts_ports_.refresh_contact_card || !contacts_ports_.get_contact) {
+    return;
+  }
+  auto contact = contacts_ports_.get_contact(contact_id);
+  if (!contact || !*contact) {
+    return;
+  }
+  contacts_ports_.refresh_contact_card(**contact, [](bool kept) {
+    if (kept) {
+      AppRuntime::PostUI([]() { ContactsController::Instance().Refresh(); });
+    }
+  });
 }
 
 void ContactsController::OpenContactDetailPane() {

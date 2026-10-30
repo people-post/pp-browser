@@ -1014,7 +1014,14 @@ void ConversationsHub::ConfigureAmpDirectoryProtocol() {
 }
 
 bool ConversationsHub::IsContactReachable(const Contact& contact) const {
-  return IsContactReachableForMessaging(contact, relay_ != nullptr);
+  bool keys_known = false;
+  if (account_keys_) {
+    if (auto account = ContactAccountId(contact)) {
+      keys_known = static_cast<bool>(
+          account_keys_->KeptSigning().Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), *account));
+    }
+  }
+  return IsContactReachableForMessaging(contact, relay_ != nullptr, keys_known);
 }
 
 
@@ -1251,11 +1258,16 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_cards_->SetCardFetcher([this](const std::string& peer_id, const std::string& account_id,
                                         std::function<void(Roe<PeerCardRecord>)> done) {
-    if (!mesh_messaging_) {
-      done(Error("Messaging not ready"));
-      return;
-    }
-    mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+    // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
+    // one we may dial — the republish its add posted may not have run yet (#409).
+    AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
+      if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
+        done(Error("Messaging not ready"));
+        return;
+      }
+      PublishAddressDisclosure();
+      mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+    });
   });
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
