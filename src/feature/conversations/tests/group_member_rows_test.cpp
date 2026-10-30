@@ -78,3 +78,38 @@ TEST(GroupMemberRowTest, UnreachableFirstThenOwnerThenByName) {
   }
   EXPECT_EQ(titles, (std::vector<std::string>{"Xia", "Yan", "Zed", "Abe", "Bea"}));
 }
+
+namespace {
+PendingGroupInvite Invite(const std::string& invitee, const int64_t created_at) {
+  PendingGroupInvite invite;
+  invite.invitee_identity = invitee;
+  invite.created_at = created_at;
+  invite.outbound = true;
+  return invite;
+}
+} // namespace
+
+TEST(GroupInvitedRowTest, FreshInviteIsWaiting) {
+  const auto row = BuildInvitedRow(Invite("acct:bob", 1000), {}, SavedContact("c2", "Bob"), 1000 + 60 * 1000);
+  ASSERT_TRUE(row.has_value());
+  EXPECT_TRUE(row->invited);
+  EXPECT_FALSE(row->invited_stale);
+  EXPECT_EQ(row->title, "Bob");
+  EXPECT_EQ(row->contact_id, "c2");
+  EXPECT_FALSE(row->unreachable);
+}
+
+TEST(GroupInvitedRowTest, InviteOlderThanADayIsStale) {
+  const auto row = BuildInvitedRow(Invite("acct:bob", 0), {}, std::nullopt, kInviteStaleAfterMs + 1, "Bobby");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_TRUE(row->invited_stale);
+  EXPECT_EQ(row->title, "Bobby");
+  const auto edge = BuildInvitedRow(Invite("acct:bob", 0), {}, std::nullopt, kInviteStaleAfterMs);
+  ASSERT_TRUE(edge.has_value());
+  EXPECT_FALSE(edge->invited_stale);
+}
+
+TEST(GroupInvitedRowTest, InviteeAlreadyOnTheRosterGetsNoRow) {
+  const std::unordered_set<std::string> roster = {"acct:bob"};
+  EXPECT_FALSE(BuildInvitedRow(Invite("acct:bob", 0), roster, std::nullopt, 10).has_value());
+}

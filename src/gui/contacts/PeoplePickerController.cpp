@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <optional>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -224,6 +225,7 @@ bool PeoplePickerController::RegisterModel(ui::Context* context) {
     ctor.Bind("cta_enabled", &controller.cta_enabled_);
     ctor.Bind("empty_hint", &controller.empty_hint_);
     ctor.Bind("full_hint", &controller.full_hint_);
+    ctor.Bind("invite_hint", &controller.invite_hint_);
     ctor.Bind("show_checks", &controller.show_checks_);
     ctor.Bind("show_cta", &controller.show_cta_);
     ctor.Bind("show_add_members", &controller.show_add_members_);
@@ -472,6 +474,7 @@ void PeoplePickerController::ResetState() {
   show_cta_ = true;
   show_add_members_ = false;
   full_hint_ = "";
+  invite_hint_ = "";
   search_query_ = "";
   step_ = kStepSelect;
   group_title_ = Tr("people_picker.default_group_title").c_str();
@@ -726,6 +729,42 @@ void PeoplePickerController::SyncGroupMemberRows() {
     rows_.push_back(std::move(row));
     member_rows_[member.identity] = std::move(member);
   }
+  // Invites this device sent that nobody has accepted yet: below the members, never counted as members.
+  if (group_is_owner_ && picker_ports_.list_invited_waiting) {
+    std::unordered_set<std::string> roster_identities;
+    for (const GroupRosterMember& member : *roster) {
+      roster_identities.insert(member.member_identity);
+    }
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+    std::vector<GroupMemberRow> invited;
+    for (const PendingGroupInvite& invite : picker_ports_.list_invited_waiting(group_id_)) {
+      if (invite.invitee_identity.empty() || invite.invitee_identity == local_identity) {
+        continue;
+      }
+      GroupRosterMember as_member;
+      as_member.member_identity = invite.invitee_identity;
+      const std::optional<Contact> contact = ContactForMember(as_member);
+      const std::string card_nickname = !contact && picker_ports_.kept_card_nickname
+                                            ? picker_ports_.kept_card_nickname(invite.invitee_identity)
+                                            : std::string();
+      std::optional<GroupMemberRow> row = BuildInvitedRow(invite, roster_identities, contact, now_ms, card_nickname);
+      if (row && MatchesIdentityQuery(row->title, row->identity, query)) {
+        invited.push_back(std::move(*row));
+      }
+    }
+    std::stable_sort(invited.begin(), invited.end(),
+                     [](const GroupMemberRow& a, const GroupMemberRow& b) { return a.title < b.title; });
+    for (GroupMemberRow& member : invited) {
+      PickerRow row;
+      row.id = member.identity.c_str();
+      row.title = member.title.c_str();
+      row.subtitle = Tr(member.invited_stale ? "people_picker.invited_stale" : "people_picker.invited_waiting").c_str();
+      rows_.push_back(std::move(row));
+      member_rows_[member.identity] = std::move(member);
+    }
+  }
 }
 
 void PeoplePickerController::SyncGroupAddRows() {
@@ -863,6 +902,7 @@ void PeoplePickerController::SyncCallAddGuestRows() {
 void PeoplePickerController::UpdateCta() {
   const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount(), group_sending_);
   cta_enabled_ = cta != PeoplePickerCta::Disabled && cta != PeoplePickerCta::Inviting;
+  invite_hint_ = ShowInviteNeedsContactHint(cta) ? Tr("people_picker.invite_needs_contact").c_str() : "";
   if (mode_ == PeoplePickerMode::GroupAddMember) {
     RefreshGroupAddLimit();
   }
@@ -978,6 +1018,7 @@ void PeoplePickerController::DirtyAll() {
   host.Dirty("people_picker", "cta_enabled");
   host.Dirty("people_picker", "empty_hint");
   host.Dirty("people_picker", "full_hint");
+  host.Dirty("people_picker", "invite_hint");
   host.Dirty("people_picker", "show_checks");
   host.Dirty("people_picker", "show_cta");
   host.Dirty("people_picker", "show_add_members");
@@ -1243,8 +1284,10 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
                          [this, row]() { ReinviteMember(row); },
                          "../icons/group.svg"});
     }
-    actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
-                       [this, row]() { RemoveMember(row); }, "../icons/trash.svg", true});
+    if (!row.invited) {
+      actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
+                         [this, row]() { RemoveMember(row); }, "../icons/trash.svg", true});
+    }
   }
   ContextMenuHost::Instance().ShowActions(menu_position, std::move(actions));
 }

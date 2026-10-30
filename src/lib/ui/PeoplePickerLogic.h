@@ -58,6 +58,14 @@ inline PeoplePickerCta ComputePeoplePickerCta(PeoplePickerMode mode, int free_se
   return PeoplePickerCta::CreateGroup;
 }
 
+/**
+ * Whether to tell the person picking that invited people must have added them as a contact: the button
+ * would create a group or invite into one.
+ */
+inline bool ShowInviteNeedsContactHint(PeoplePickerCta cta) {
+  return cta == PeoplePickerCta::CreateGroup || cta == PeoplePickerCta::Invite || cta == PeoplePickerCta::Inviting;
+}
+
 /** Roster members plus the people picked so far have reached the limit. */
 inline bool GroupIsFull(int roster_count, int selected_count) {
   return roster_count + selected_count >= kGroupMemberLimit;

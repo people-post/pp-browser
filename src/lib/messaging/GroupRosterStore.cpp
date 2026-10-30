@@ -5,6 +5,7 @@
 #include "common/Utilities.h"
 
 #include <sqlite3.h>
+#include <algorithm>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -405,6 +406,54 @@ Roe<void> GroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, 
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   return {};
+}
+
+Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ListOutboundPendingInvites(const std::string& group_id,
+                                                                                  const int64_t now_ms) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT invite_nonce, group_title, inviter_identity, invitee_identity, roster_epoch, "
+                         "expires_at, created_at FROM pending_group_invites WHERE group_id = ? AND outbound = 1 "
+                         "AND status = 'pending' AND (expires_at IS NULL OR expires_at > ?) "
+                         "ORDER BY created_at DESC;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare outbound invite list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 2, now_ms);
+  std::vector<PendingGroupInvite> invites;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PendingGroupInvite invite;
+    invite.group_id = group_id;
+    invite.invite_nonce = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_text(stmt, 1)) {
+      invite.group_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    invite.inviter_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    invite.roster_epoch = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    invite.status = InviteStatus::Pending;
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+      invite.expires_at = sqlite3_column_int64(stmt, 5);
+    }
+    invite.created_at = sqlite3_column_int64(stmt, 6);
+    invite.outbound = true;
+    const bool seen = std::any_of(invites.begin(), invites.end(), [&](const PendingGroupInvite& other) {
+      return other.invitee_identity == invite.invitee_identity;
+    });
+    if (!seen) {
+      invites.push_back(std::move(invite));
+    }
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return invites;
 }
 
 Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
