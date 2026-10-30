@@ -1,33 +1,28 @@
 # Multi-device account — current state
 
-**As of:** 2026-08-13 (**m3** `endpoints[]` hard cut + **M016** one-sender help landed)
+**As of:** 2026-10-30 (d1–d2 per-device sessions + M022 relay deployed; restore unsupported in the product, A011; account-state design M023 decided, not built)
+
+Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they supersede several older entries (each older entry says so in its *Superseded* / *Amended* line). Ordering and checkboxes: [PHASES.md](PHASES.md).
 
 ## Code today
 
 | Area | Behavior |
 |------|----------|
-| `LocalIdentity` | Device Ed25519 → Peer ID; account ML-DSA-65 + **account ML-KEM-768** + Account ID in `identity.enc` (schema v2) |
-| Signing | Account ML-DSA-65 for register/API/envelopes |
-| Brief (www) | Account KEM **1184**; by-account lookup; Account-first search; **`endpoints[]`** upserted on register (no top-level `peer_id`) |
-| Directory (client) | `LookupByAccount`; hits/contact primary = Account; parse **`endpoints[]`**; dial prefers newest `updated_at` |
-| Wire / threads / **calls** | Person = **Account ID**; route = **`relay:`** / Peer ID |
-| Inbox | Soft-ack (**M013**); 90d TTL + FIFO cap; local cursor per profile |
-| Vault | `CreateWithDek` / `ReplaceWithDek` for link import; per-profile `vault.bin` |
-| Link-device | `pp-browser-link-device-v1`; copies account ML-DSA + **account KEM** + **account-scope** public PSKs (**M020**); keeps Peer ID; Me → Security **copy payload** + one-sender help; new device **identity fork** + PIN + paste (empty vault); no private `e2e` PSKs (**M014** / **M015**); push re-attach after import. **No contacts / thread index yet** (**M018**) |
-| Private PSK | Per device (**M005** / **M014**); one Secure session per pair; not device-keyed |
-| Send | **D015** still one active sender; two linked senders can clash seq (**M016**) |
-
-## Gap summary
-
-| Gap | Phase |
-|-----|--------|
-| Contacts + public thread index in paste | **m4c** (**M018**) — next |
-| Unlink / revoke | **m4d** phase 1; KEM rotation later (**M019**) |
-| Device-scoped public PSK filter | **M020** (with e2e E027) |
-| Sibling public-PSK + chat-index *refresh* | Later (**M015**) — not a second paste |
-| Dual-writer seq; session divergence between siblings | **M021** d2 (replaces D074) |
-| `e2e_public` send | e2e c3+ / **D100** (not this project) |
+| Identity | Account ML-DSA-65 + account ML-KEM-768 + Account ID; each device its own ML-DSA (Peer ID) and ML-KEM key (M021 §1). Account keys are random today, not phrase-derived (M023 s1 open) |
+| Device list | Account card v2 (device entries signed by the account key, newest `issued_at` wins, ≤ 5 devices); every linked device still holds the account key (master device is d4) |
+| Sessions | Per device pair for `e2e_public` and group copies (M021 d2); one relay record per account with a copy per device, own-account records allowed (M022, relay deployed) |
+| Link | Paste bundle with the account keys, DEK and the issuing device's card — no sessions, no contacts (m4c superseded by M023) |
+| Siblings | A new device's card reaches siblings by a control-lane `device_list` notice to our own mailbox (once per card version per start). Sent messages do not show on siblings yet (d3) |
+| Restore | **Unsupported in the product** (at-rest A011): no backup store, nothing written to the Keychain (old items deleted until 1.1.0). The old `LocalAccountBackup` path (contacts, groups, card floors) stays lab-only via the probe's file store until M023 s5 replaces it. A restored install is a new device: it raises card floors before receiving and announces its card to every contact |
+| Directory | Account-first lookup, `endpoints[]` per device (M017) |
 
 ## Next
 
-Per-device sessions (**M021**): d1 device keys + device list, then the d2 wire cutover (sessions and numbering per device pair). Until d2 ships, the rows above hold: one sender (M016).
+1. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
+2. **s1–s2** — recovery phrase and locker format (client only; can start now).
+3. **s3** — relay locker API (relay change first), then pp-node provider.
+4. **d4** master device, **s4** change log, **s5** restore / link from the locker, **s6** lab + promotion.
+
+## Stated limits in force
+
+M021's limits (new devices have no history, revoke is eventual, …) and M023's (losing the phrase and every device loses the account; providers see locker size and timing).

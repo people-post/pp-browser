@@ -74,7 +74,7 @@
 1. Linked devices share one **DEK** (account secrets realm).
 2. Each install keeps its own **`vault.bin`** — PIN-derived wrap of that DEK (PIN may differ per device).
 3. Link-device seals the DEK to the new install; the new install wraps into its vault (A001 layering unchanged: PIN wraps DEK, DEK encrypts payloads).
-4. **PIN recovery / cloud vault backup** remain out of scope.
+4. **PIN recovery / cloud vault backup** remain out of scope. *Amended by [M023](../multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold):* recovery is in scope as a **recovery phrase** the user holds (the account keys derive from it) plus an encrypted account locker; PIN-wrapped keys on a server or in the Keychain stay out.
 5. Which ciphertext blobs sync under the shared DEK (account ML-DSA, **account KEM**, public PSKs, etc.) is owned by multi-device-account — private PSKs excluded by default (E025 / **M015**).
 
 **Rationale:** Per-device vault ≠ per-device master key; minimizes on-disk share while enabling one secrets realm.  
@@ -88,4 +88,4 @@
 **Decision:** The app configures no store for the local account backup (`ConversationsHub` defaults to `NoSecureBlobStore`): nothing is written to the iOS Keychain and a fresh install offers no "Restore my account". The code (`LocalAccountBackup`, its codec, the hub's restore steps) stays, unit-tested and driven in the lab by the probe's file store (`--backup-store`, `--restore-backup`), until restore is ready as a whole.  
 **Rationale:** The Keychain item's only reader is restore; without it the item only costs. It held the account secret keys under a short PIN (default-PIN accounts: readable by anyone with the unlocked phone), outliving an uninstall the user expects to remove them, and a growing copy of app data (contacts, groups, card floors) the Keychain is not meant for. Being `ThisDeviceOnly`, it never covered a lost phone either.  
 **Cleanup (temporary):** items earlier builds wrote are deleted once messaging is up (`RemoveRetiredKeychainBackup`, idempotent). It goes, with the iOS Keychain store (`OsSecureBlobStore`, `OsSecureBlob*`), at app version **1.1.0** (`kRetiredKeychainBackupRemoveAt`): `retired_keychain_backup_test` fails from that version on, so the release bump that reaches it carries the removal.  
-**Next (open):** the account root secret alone where the platform keeps secrets; contacts, groups and card floors in an encrypted, account-signed backup outside the Keychain (e.g. a relay-held blob).
+**Next:** decided in [M023](../multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) — a recovery phrase as the root (never on a server), account state (contacts, groups, card floors) in an encrypted, signed account locker any provider can hold. `LocalAccountBackup` is not re-enabled; its contents become locker snapshots.

@@ -1,12 +1,12 @@
 # Multi-device account
 
-**Status:** **m1–m2b** + **m4a–m4b** + **m3** done; **next: per-device sessions (M021, phases d1–d6)** — read M021 first: it supersedes M003 / M015 §2–3 / M016 / M020 and D074 as its phases ship  
+**Status:** **m1–m3**, **m4a–m4b** and per-device sessions **d1–d2** done; **next: d3–d6 (M021)** and account state **s1–s6 (M023)**. Read **M021** (sessions per device pair; supersedes M003 / M015 §2–3 / M016 / M020 / D074 as its phases ship) and **M023** (recovery phrase + encrypted account locker; supersedes M018 and the local account backup) before anything older. Status detail: [CURRENT_STATE.md](CURRENT_STATE.md)  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
 ## One-line goal
 
-One portable **Account ID** across linked devices, with **per-device Peer IDs**, shared **DEK** (per-device vault wrap), **account KEM** for public/group auto-key, **account-signed** envelopes, and **private PSKs not auto-synced** — so multi-device feels like one person without libp2p id conflicts.
+One portable **Account ID** across linked devices, with **per-device Peer IDs** and keys, sessions **per device pair** (M021), envelopes signed by the sending device and checked against the account-signed device list, shared **DEK** (per-device vault wrap), and account state recoverable from a **recovery phrase** (M023) — so multi-device feels like one person without libp2p id conflicts.
 
 ## Release scope (this project)
 
@@ -15,11 +15,11 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | Account ID format + account vs device key split | Full multi-relay product UX |
 | Brief: Account-first directory early (M011); one Account ID → one `relay:` binding; **m3 `endpoints[]` (M017)** | Nickname cosmetics beyond search/`q=` |
 | Wire/catalog hard cut to Account ID (M009/M010) | **`e2e_public` send** enablement |
-| Shared DEK; per-device `vault.bin`; link-device paste (M012) | PIN recovery / cloud vault backup |
+| Shared DEK; per-device `vault.bin`; link-device paste (M012) | PIN-wrapped key backup (rejected — M023 uses a recovery phrase) |
 | Private (`e2e`) PSK not auto-synced | Optional private PSK sync; D074 dual-writer |
-| Contacts + public thread index in paste (**M018**) | Transcripts in paste / cloud CRDT |
+| Account state via the encrypted locker + change log (**M023**; M018 paste superseded) | Message history sync |
 | Unlink spec (**M019**); phase 1 after m3 | KEM rotation revoke; remote wipe; Account ID rotation |
-| Dogfood: one active sender (**M016**) | Call multi-ring polish |
+| Every device sends (**M021** d2; M016's one-sender limit superseded) | Call multi-ring polish (d5) |
 
 ## Documents
 
@@ -41,9 +41,11 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | m4a | Soft inbox ack (shared mailbox; M013) | **Done** |
 | m4b | Link-device + DEK seal + sync policy | **Done** (first-run paste; QR later) |
 | m3 | Directory `endpoints[]` (M017) + one-sender help (M016) | **Done** (hard cut; no top-level `peer_id`) |
-| m4c | Paste contacts + public thread index (M018) | **Next** |
+| m4c | Paste contacts + public thread index (M018) | **Superseded** by M023 — not built |
 | m4d | Unlink phase 1 (M019) | Folded into d4 (revoke) |
-| d1–d6 | Per-device sessions, master device (**M021**) | **Next** — see PHASES |
+| d1–d2 | Device keys + list; sessions per device pair (**M021**, **M022**) | **Done** |
+| d3–d6 | Siblings, master device, calls on every device (**M021**) | **Next** — see PHASES |
+| s1–s6 | Recovery phrase, account locker, change log, restore (**M023**) | **Decided, not built** — see PHASES |
 
 ## Normative promotion
 

@@ -136,7 +136,8 @@ Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp m
 **Unsupported in the product** ([A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)):
 no store is configured, so nothing is written to the Keychain and no restore is offered; an item an earlier build
 wrote is deleted once messaging is up. The rest of this section is what the code does when a store is set (the lab's
-file store).
+file store); its decided successor is a recovery phrase plus an encrypted account locker
+([multi-device M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold), not built).
 
 The Keychain item described in [DATA_LAYOUT.md](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir)
 keeps only the nickname in the clear. The link-device bundle (DEK, account secret keys) and the contacts are sealed

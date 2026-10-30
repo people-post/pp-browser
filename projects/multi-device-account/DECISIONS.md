@@ -149,6 +149,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Date:** 2026-08-13  
 **Superseded:** §2 by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) — no public sessions in the bundle from d2; no account signing key from d4 (the master signs the new device in).  
+**Superseded:** the m4c part of §2 (contacts + thread index in the paste, M018) by [M023](#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) — a linked device reads account state from the locker.  
 **Updated:** 2026-08-13 — first-run identity fork; Security is export-only.  
 **Updated:** 2026-08-13 — paste snapshot of contacts + public thread index (**M018**); unlink spec (**M019**).  
 **Status:** **Accepted** (m4b paste path; QR later).  
@@ -209,6 +210,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Date:** 2026-08-13  
 **Superseded:** §2–3 by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d2 — sessions are per device pair, opened to the device KEM; the account KEM only opens a first contact (account copy).  
+**Superseded:** §6 (sibling chat-index refresh) by [M023](#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §6 — the change log; sessions are not synced at all (M021).  
 **Updated:** 2026-08-13 — unlink vs KEM rotation (**M019**); paste contacts/index is not live sibling sync (**M018**).  
 **Updated:** 2026-08-15 — device-scoped public PSKs stay off the link bundle (**M020**).  
 **Amends:** [M012](#m012--link-device-ritual-deferred-until-m4) (bundle includes account KEM); [E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) (encapsulate-to is the person).  
@@ -269,7 +271,8 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M018 — Link paste includes contacts + public thread index
 
 **Date:** 2026-08-13  
-**Status:** Accepted (m4c).  
+**Superseded:** by [M023](#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) — never built; a linked device reads account state from the locker and the change log. Do not implement m4c.  
+**Status:** Accepted (m4c), then superseded before it shipped.  
 **Amends:** [M012](#m012--link-device-ritual-deferred-until-m4) §2. Does **not** amend [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) live sibling refresh (still later).
 
 **Decision:**
@@ -329,6 +332,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Date:** 2026-10-25  
 **Status:** Accepted (Hongwei, 2026-10-25). Built in phases **d1–d6** ([PHASES.md](PHASES.md#d--per-device-sessions-m021)); until a phase ships, the decisions it supersedes still describe the code.  
+**Amended:** §8 and limit 6 by [M023](#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) — the account key's backup is the **recovery phrase** (not the local account backup, which is unsupported, at-rest A011); restoring from it still makes a new master that signs a fresh list. Account state (contacts, groups, …) comes from the M023 locker.  
 **Supersedes (as its phases ship):** [M003](#m003--account-ml-dsa-65-signs-envelopes-device-ml-dsa-65-is-endpoint-only) (devices sign envelopes, d2), [M012](#m012--link-device-ritual-deferred-until-m4) §2 and [M020](#m020--device-scoped-public-psks-stay-off-the-link-bundle) (no sessions in the link bundle, d2; no account signing key, d4), [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §2–3 (the account KEM only opens the first contact, d2), [M016](#m016--dogfood-one-active-sender-on-linked-devices) (every device may send, d2), [M019](#m019--unlink-local-forget-kem-rotation-is-revoke) §3 (revoke = a device list without it, d4), [D074](../chat-storage-and-memory/DECISIONS.md#d074--multi-device-extension-point-sender_instance_id) and [D015](../chat-storage-and-memory/DECISIONS.md#d015--single-active-sender-per-identity-v1) (no `sender_instance_id`; the device is in the pair, d2). Leaves [M014](#m014--private-secure-one-session-per-pair-transferable-lock-not-device-keyed) (private Secure stays on one device) as it is. [E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound) device-lock: to be re-decided on top of this (d6).
 
 **Principle:** there is no perfect multi-device design without a server that knows everything. This one keeps every rule local and simple, and **states its limits** (below) instead of trying to close every case.
@@ -385,3 +389,40 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 **Later (d4):** the relay authenticates requests with the account key; once only the master holds it, the relay accepts a device key with the account card listing it. Separate from this.
 
 **Alternatives:** device-addressed mailbox (the relay keeps `recipient_device`, a device polls its own queue — less download, but the relay holds the device list and a device cannot see a missing copy; rejected); the relay fans one upload out per device (rejected — complicates signing for little at 5 devices); every message always through the relay, the mesh only a speed-up (rejected — relay-optional where peers reach each other); siblings only over the mesh (built, rejected — needs both online and reachable, and the privacy gate does not know siblings).
+
+---
+
+## M023 — Account state: a recovery phrase is the root; an encrypted account locker any provider can hold
+
+**Date:** 2026-10-30  
+**Status:** Accepted (Hongwei, 2026-10-30) — **design; not built** (phases **s1–s6**, [PHASES.md](PHASES.md#s--account-state-m023)). Until a phase ships the code is as the entries it amends describe: restore is unsupported ([at-rest A011](../at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)) and nothing syncs account state between siblings.  
+**Amends (as its phases ship):** [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §8 and limit 6 (the account key's backup is the recovery phrase, not the local account backup); [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §6 (the deferred sibling chat-index refresh is the change log below).  
+**Supersedes:** [M018](#m018--link-paste-includes-contacts--public-thread-index) (never built — a linked device reads account state from the locker, the link bundle carries no contacts or thread index); the local account backup ([DATA_LAYOUT § Local account backup](../../docs/contracts/DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir), `LocalAccountBackup`) as the restore mechanism — its contents become locker snapshots and it is not re-enabled in the Keychain.  
+**Cross-project:** [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device) §4 and [A011](../at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product); [group-chat G013](../group-chat/DECISIONS.md#g013--roster-sync-after-restore-group_roster_request--group_roster_reply) (groups ride in the locker).
+
+**Problem:** with sessions per device pair (M021) nothing session-level needs syncing, but **account state** does — contacts, groups, card floors, preferences — and a device must find it when its siblings are offline or all gone (restore). Making a directory the agreed home for it hurts privacy and decentralization; the Keychain backup (A011) was device-local, PIN-guessable offline, and never covered a lost phone.
+
+**Decision:**
+
+1. **Three roles, kept apart.** *Trust* is the account key (self-certifying: Account ID = its hash, M002) — no server vouches for anything. *Availability* is an untrusted, encrypted **account locker** any provider can hold. *Live sync* is between online devices: Amp, and the account's own mailbox (M022).
+2. **The root is a recovery phrase** the user writes down: a 256-bit seed (24 words). The account signing and KEM keys are derived from it deterministically, and so — under separate labels — are the locker id, the locker encryption key and the locker signing key. The phrase and the account keys are **never stored on any server**, PIN-wrapped or otherwise. Social recovery (shares held by contacts) may come later.
+3. **What the locker holds:** account-level state only — contacts, groups (metadata, roster, the latest owner-signed statement, G012), card floors, the relay binding, the user's locker provider list, preferences that follow the person. **Never:** device keys or the device list's private parts (M021 §1), sessions (per device pair), private `e2e` material, messages.
+4. **Snapshot format:** the state AEAD-encrypted under the locker key, padded to a size bucket, with a rising `version` (u64), signed by the locker signing key, stored under the locker id. A provider stores a snapshot only if it is signed by that locker's key and newer than the one it holds. A reader verifies, takes the **highest valid version across every provider it reaches**, and remembers the highest it has seen (never goes below it).
+5. **Providers, any and several:** by default the relay the account is registered with (its blob store, under quota); the user can add their own pp-node, a friend's node, or an exported file. The provider list is part of the state; at restore the configured relay is tried first. No provider is authoritative.
+6. **Live changes:** an encrypted change log to our own siblings — through our own mailbox (M022) and over Amp — applied per record, last write wins on a hybrid clock, with tombstones for removals. Group rosters are not merged: the owner's signed statement decides (G012). The snapshot is rewritten from the merged state, debounced.
+7. **Restore** = phrase → keys → locker → state. The restored install is a **new device** (M021): its own device keys, a fresh device list it signs as master (M021 §8), card floors applied before anything is received, then its card announced to every contact so their next message reaches it (built for the lab restore in #411: `AnnounceRestoredDevice`).
+8. **Link** stays a device ritual (M021 d4: the master signs the new device in); the new device reads account state from the locker and the change log.
+
+**Stated limits:**
+
+1. Losing the phrase **and** every device loses the account. No server can recover it.
+2. A provider learns the locker id, the padded size and when it is written; with traffic analysis (IP, timing) it may link the locker to the account.
+3. A device restored from nothing cannot detect rollback below the newest version among the providers it reaches.
+4. Last write wins can drop one of two concurrent edits to the same record.
+5. No message history: a restored or new device starts with none (peers may re-serve it — G013 amendment 3).
+
+**Rationale:** Splitting trust from availability removes the need for a trusted home: the account key already proves everything, so the place that holds state only has to be reachable, and several untrusted places are better than one trusted one (availability, rollback resistance). A phrase keeps the root with the user instead of behind a PIN a server must rate-limit. Sessions per device pair already made "a new device appears" the ordinary case, so restore needs only account state, not sessions.
+
+**Alternatives:** a directory the user picks as the authority for account metadata (rejected — sees and controls it, central point); the PIN-wrapped Keychain backup (rejected — A011); PIN-wrapped keys on a server that limits guesses (rejected — trusts a server with the root); the phrase wrapping a random account key stored in the locker (keeps today's random keys and allows key rotation, but puts the account key on servers, encrypted — revisit if account-key rotation needs it); one provider only (rejected — availability, rollback); message history in the locker (rejected for now — size, privacy).
+
+**Open:** existing accounts' keys are random, not phrase-derived — pre-release, new accounts only ([COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md) allows a wipe) unless decided otherwise in s1; the relay's locker API (relay change, merges and deploys first); phrase UX copy and when to prompt for it.

@@ -4,7 +4,7 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
 **Rollout note (2026-08-13):** Skip interim dogfood/wipe between Account-ID cut and multi-device; keep implementing until a coherent multi-device slice is ready to test once.
 
-**Next:** per-device sessions (**M021**), phases **d1–d6** below. m4c / m4d are folded into them (contacts in the link paste stays m4c; unlink becomes the d4 revoke).
+**Next:** per-device sessions (**M021**), phases **d3–d6** below (d1–d2 landed); account state (**M023**), phases **s1–s6**. m4c is **superseded by M023** (do not build it); m4d is folded into the d4 revoke.
 
 ## m0 — Design freeze
 
@@ -81,7 +81,9 @@ Brief first (or same window), then client. Stops last-write-wins of a single `pe
 - [x] Promote shipped shape into [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
 - [x] Me → Security: one-active-sender help next to **Copy link payload…** (**M016**)
 
-## m4c — Paste contacts + public thread index (**M018**)
+## m4c — Paste contacts + public thread index (**M018**) — superseded, do not build
+
+Superseded by **M023**: a linked device reads account state from the locker (phase **s5**). Kept for history:
 
 - [ ] Bundle `contacts[]` (`ContactToJson`) + `public_threads[]` (catalog only, `e2e_public`)
 - [ ] Import merge by primary Account ID; `FindOrCreateDirectThread` for public index; still no private PSKs / transcripts
@@ -102,7 +104,7 @@ After m3 so Brief can drop the Peer ID row.
 
 - Device-scoped public PSKs stay off `public_psks[]` (**M020**)
 - Unlink phase 2: account KEM rotation + remaining-device refresh (**M019**)
-- Sibling public-PSK + chat-index *refresh* when both devices are reachable (**M015**)
+- ~~Sibling public-PSK + chat-index *refresh*~~ — sessions are per device pair (M021); account state syncs by the M023 change log (**s4**)
 - Private Secure “add this device” transfer UX (**M014**)
 - Dual-writer `sender_instance_id` (**D074**)
 - Optional private PSK opt-in sync
@@ -135,20 +137,20 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [x] Unit tests: two linked devices both send and both read (1:1, group, account copies), new device's card, old card refused
 - [x] Lab `linked_devices_both_send` (against the M022 relay branch)
 - [x] **M022:** one relay record per account with a copy per device (one signature); split delivery (a device with a live link gets its own envelope over it, the relay if that fails; the others share one relay record); account copies carry the sender's card; the sibling card exchange over the mesh dropped
-- [ ] **M022 relay (messenger `feat/self-send-multi-device`):** a record to one's own account allowed (and its history); mailbox cap doubled — merges and deploys before the client
+- [x] **M022 relay:** a record to one's own account allowed (and its history); mailbox cap doubled — messenger #17 and www #210, deployed (www 2026-10-29)
 - [ ] Sent messages to our own other devices (the own-account record's copies) — d3
 
 ### d3 — Siblings
 
 - [ ] Copies to our own siblings (sent messages show on every device)
 - [ ] Missing copy: ask the sender's device to send one (M021 §9)
-- [ ] A new device introduces itself to its contacts (opens its device pairs)
+- [ ] A new device introduces itself to its contacts (opens its device pairs) — the restored-device case exists (`ConversationsHub::AnnounceRestoredDevice`, a `device_list` notice on the control lane to every contact); a linked device does not do it yet
 
 ### d4 — Master device
 
 - [ ] Only the master holds the account signing key; two-step link (new device shows its keys, master signs it in)
 - [ ] Revoke = a list without the device; master hand-over while both are online
-- [ ] Restore = a new master with a fresh list; an old master that sees it stops sending
+- [ ] Restore = a new master with a fresh list; an old master that sees it stops sending — the account key comes from the **recovery phrase** (M023 s1, s5), not the local account backup
 
 ### d5 — Calls on every device
 
@@ -159,4 +161,44 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [ ] Directory carries the card (first contact without the account KEM)
 - [ ] Card version in every envelope (peers fetch a newer list: faster revoke)
 - [ ] Re-decide E027 device-lock on per-device sessions
+
+## s — Account state (M023)
+
+Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold). Nothing here is built. Today restore is unsupported ([at-rest A011](../at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); the lab drives the old `LocalAccountBackup` path only to keep that code honest until s5 replaces it.
+
+### s1 — Recovery phrase
+
+- [ ] 256-bit seed ↔ 24 words (a standard word list); account ML-DSA and ML-KEM keys derived from it deterministically (seed-based keygen in pp-cpp-crypto), and locker id / encryption key / signing key under separate labels
+- [ ] Decide existing accounts (random keys): new accounts only (pre-release wipe) or another path — record in M023 *Open*
+- [ ] Me → Security: show the phrase once on creation and on demand (PIN first); en + zh-Hans copy
+- [ ] Unit tests: phrase → the same Account ID every time; labels never collide
+
+### s2 — Locker format
+
+- [ ] Snapshot codec: state (contacts, groups with the signed statement, card floors, relay binding, provider list, person-level prefs) → AEAD under the locker key, padded to size buckets, `version`, signed by the locker signing key — reuse `AccountBackupCodec` contents where they fit
+- [ ] Reader: verify, highest valid version across providers, remember the highest seen
+- [ ] Wire / disk doc in `docs/contracts/` (promote when s3 ships)
+
+### s3 — Providers
+
+- [ ] Relay locker API: put (only newer version, valid locker signature) / get by locker id, quota — **relay change: merges and deploys before the client**
+- [ ] pp-node provider (same API); exported file provider
+- [ ] Provider list in the state; the configured relay tried first
+
+### s4 — Change log
+
+- [ ] Encrypted change entries to our own siblings: own mailbox (M022) and Amp
+- [ ] Per-record last write wins on a hybrid clock, tombstones; group rosters follow the owner's signed statement (G012), never merged
+- [ ] Debounced snapshot rewrite from the merged state
+
+### s5 — Restore and link
+
+- [ ] Restore: phrase → keys → locker → state; a new device signing a fresh list as master (d4); card floors before the first poll; announce to contacts
+- [ ] Link: the new device reads the locker / change log (no contacts in the bundle)
+- [ ] Retire `LocalAccountBackup`, the probe's `--backup-store` / `--restore-backup`, and the lab's file-store restore; the Keychain code goes with the A011 cleanup (`kRetiredKeychainBackupRemoveAt`)
+
+### s6 — Proof and promotion
+
+- [ ] Lab: lose every device, restore from the phrase, contacts / groups / floors back, contacts' next messages arrive; a provider serving an old snapshot is overruled by a newer one
+- [ ] Promote the locker format and API into `docs/contracts/`; mark M023 implemented
 
