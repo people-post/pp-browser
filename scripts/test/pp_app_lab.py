@@ -1794,8 +1794,8 @@ def scenario_restore_from_phrase(lab):
 def scenario_linked_devices_share_contact_edits(lab):
     """Alice's phone and her newly linked laptop share one address book through her locker (multi-device M023
     §7): the laptop's first sync brings the phone's contacts (the link carries none); a remark set on the laptop
-    reaches the phone; Bob removed on the laptop is removed on the phone too (the removal carries, not undone by the
-    phone's older copy)."""
+    reaches the phone by itself (the laptop's write nudges it); Bob removed on the laptop is removed on the phone too
+    (the removal carries, not undone by the phone's older copy)."""
     a, a_thread, b, b_thread = open_pair(lab)
     a.cmd("locker_publish", timeout=60)
     laptop = lab.linked_device(a, "alice-laptop")
@@ -1809,9 +1809,9 @@ def scenario_linked_devices_share_contact_edits(lab):
         raise ProbeError("alice's laptop: no Bob after its first sync (%s)" % laptop.cmd("contacts")["contacts"])
     laptop.cmd("rename_contact", account=b.account, remark="Bob (named on the laptop)")
     laptop.cmd("locker_publish", timeout=60)
-    a.cmd("locker_publish", timeout=60)
-    if remark_on(a, b.account) != "Bob (named on the laptop)":
-        raise ProbeError("alice's phone: Bob's remark %r (the laptop's did not arrive)" % remark_on(a, b.account))
+    # No sync asked on the phone: the laptop's write nudges it (a notice through Alice's own mailbox).
+    wait_for(lambda: remark_on(a, b.account) == "Bob (named on the laptop)", 40,
+             "alice's phone: the laptop's remark for Bob, by itself")
     laptop.cmd("remove_contact", account=b.account)
     laptop.cmd("locker_publish", timeout=60)
     a.cmd("locker_publish", timeout=60)

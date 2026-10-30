@@ -260,6 +260,9 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     return put.error();
   }
   RaiseHighestSeen(locker_id, version);
+  if (on_written_) {
+    on_written_();
+  }
   log().info << "Account locker published version=" << version << " contacts=" << merged.contacts.size()
              << " groups=" << merged.extras.groups.size() << " bytes=" << snapshot->sealed.size();
   return version;

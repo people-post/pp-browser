@@ -56,6 +56,11 @@ struct RelayReceiveOutcome {
   /** G012: we are this group's new owner; sign its roster with the transfer we were handed. */
   std::optional<std::string> took_ownership_group_id;
   std::optional<GroupOwnerTransfer> took_ownership_transfer;
+  /**
+   * A notice from another device of our own account verified (its card taken): the account's shared state may have
+   * changed there — the locker is worth a sync (M023 §7).
+   */
+  bool from_sibling = false;
   /** G013: a group message arrived while our check went unanswered — ask again (its sender is online). */
   std::optional<std::string> restart_roster_check_group_id;
   /**

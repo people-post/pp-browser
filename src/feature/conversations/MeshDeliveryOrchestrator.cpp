@@ -233,6 +233,16 @@ void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::st
   log().info << "device list sent to " << told << " of " << accounts.size() << " contact(s)";
 }
 
+void MeshDeliveryOrchestrator::NudgeSiblings() {
+  // The device_list notice alone: nothing about our own devices changed, so no disclosure republish.
+  if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
+    return;
+  }
+  if (auto sent = control_lane_.NotifySiblings(DeviceListNotice()); !sent) {
+    log().info << "siblings not nudged: " << sent.error().message;
+  }
+}
+
 void MeshDeliveryOrchestrator::NotifySiblings() {
   if (auto card = own_cards_.Card(util::NowUnixMs())) {
     siblings_told_card_at_.store(card->issued_at);
@@ -1702,6 +1712,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome);
           FollowUpMembershipAfterIngest(groups_, outcome);
+          if (outcome.from_sibling && on_sibling_notice_) {
+            on_sibling_notice_();
+          }
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {
             const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);

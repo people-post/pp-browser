@@ -199,7 +199,7 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Contacts sync through the locker (the change log's medium, decided over a separate sibling message: one channel, offline-safe): a per-contact register (`ContactClock`: present / the user's fields' digest / when; a removal is a tombstone) — `Publish` is a two-way sync: note local edits, take newer remote registers into the address book, store the merged state, write nothing when nothing is new; the registers ride in the locker (`contact_clock`) and in `account_locker.json`
 - [x] Groups need no entries: siblings are members as the same account and receive roster events; rosters follow the owner's signed statement (G012). Card floors: each device learns its own
 - [x] Sync 5 s after local changes, at each start and every 10 min (`kLockerSyncIntervalMs`); lab `linked_devices_share_contact_edits` (a linked laptop's first sync brings the contacts; a remark and a removal on the laptop reach the phone; the removal is not undone)
-- [ ] A nudge to siblings after a write (today they catch up within 10 min or at their next start)
+- [x] A nudge to siblings after a write: the writer sends the `device_list` control-lane notice to its own mailbox (only with more than one device on the card); a verified sibling notice makes the receiver sync 5 s later; a sync with nothing new writes nothing, so it stops there. Lab `linked_devices_share_contact_edits` (the phone gets the laptop's remark without asking)
 - [ ] Clocks are device wall clocks: a device far off in time can win or lose an edit wrongly (stated in M023)
 
 ### s5 — Restore and link

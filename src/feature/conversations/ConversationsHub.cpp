@@ -821,6 +821,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetOnSiblingNotice(nullptr);
     mesh_messaging_->SetAttachmentDownloads(nullptr);
   }
   if (inbox_) {
@@ -1389,6 +1390,13 @@ void ConversationsHub::BuildMessagingObjects() {
           }});
   account_locker_->SetClient(http_locker_.get());
   account_locker_->SetDataDir(data_dir_);
+  // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
+  account_locker_->SetOnWritten([this]() {
+    if (mesh_messaging_) {
+      mesh_messaging_->NudgeSiblings();
+    }
+  });
+  mesh_messaging_->SetOnSiblingNotice([this]() { PublishAccountLockerSoon(); });
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -2987,6 +2995,7 @@ void ConversationsHub::Shutdown() {
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetOnSiblingNotice(nullptr);
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);

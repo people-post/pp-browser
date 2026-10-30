@@ -36,6 +36,8 @@ public:
 
   /** The provider to write to and read from (the relay); null: none configured. */
   void SetClient(ILockerClient* client) { client_ = client; }
+  /** After a sync stored a new version (the account's other devices are worth telling). Any thread. */
+  void SetOnWritten(std::function<void()> callback) { on_written_ = std::move(callback); }
   /** Where the highest version this device has seen of each locker is kept (`account_locker.json`; empty: memory). */
   void SetDataDir(std::string data_dir);
 
@@ -75,6 +77,7 @@ private:
   Roe<void> TakeRemoteContacts(const std::vector<Contact>& local, const AccountLockerState& stored);
 
   ILockerClient* client_ = nullptr;
+  std::function<void()> on_written_;
   std::string data_dir_;
   mutable std::mutex mutex_;
   /** Serializes Publish (read, merge, write). */

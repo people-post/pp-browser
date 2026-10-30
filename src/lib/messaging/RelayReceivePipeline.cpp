@@ -707,6 +707,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     // the envelope verifies with it (SetOnSenderCard). Nothing else to apply.
     auto verified = VerifySignature(envelope, inbound_target);
     outcome.sender_verified = verified && *verified;
+    outcome.from_sibling = outcome.sender_verified;
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
