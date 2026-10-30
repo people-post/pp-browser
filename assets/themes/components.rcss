@@ -3114,10 +3114,16 @@ input.checkbox {
   font-weight: bold;
 }
 
-/* An @mention inside a message bubble: a tinted chip; --me when it is this account. */
+/* An @mention inside a message bubble: a tinted chip. */
 .chat-mention {
   font-weight: bold;
   padding: 0 3dp;
+  border-radius: 4dp;
+}
+
+/* A message that @-mentions this account: the whole row is tinted, with a bar on its left. */
+.message-row-mentions-me {
+  padding: 4dp 8dp;
   border-radius: 4dp;
 }
 
