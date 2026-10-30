@@ -10,6 +10,7 @@
 #include "lib/messaging/PublicPskLockCoordinator.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/GroupRosterSyncCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
@@ -50,6 +51,13 @@ struct RelayReceiveOutcome {
   std::optional<std::string> publish_member_joined_group_id;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
+  /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
+  std::optional<std::string> resign_roster_group_id;
+  /** G012: we are this group's new owner; sign its roster with the transfer we were handed. */
+  std::optional<std::string> took_ownership_group_id;
+  std::optional<GroupOwnerTransfer> took_ownership_transfer;
+  /** G013: a group message arrived while our check went unanswered — ask again (its sender is online). */
+  std::optional<std::string> restart_roster_check_group_id;
   /**
    * When an envelope from a known peer could not be read / applied: why (the GUI words it), with an
    * optional thread to attach a local system line. `receive_failure_detail` is for logs.
@@ -116,6 +124,13 @@ public:
    */
   void SetOnSenderCard(std::function<void(const AccountCard&)> callback) { on_sender_card_ = std::move(callback); }
   /**
+   * The issue time a carried card of an account must reach to speak for it (PeerCardStore::Floor): a restored
+   * device keeps no cards, only how new the ones it had were. None: 0.
+   */
+  void SetAccountCardFloor(std::function<int64_t(const std::string& account_id)> floor) {
+    account_card_floor_ = std::move(floor);
+  }
+  /**
    * Another member as the group owner's roster (member_joined) gives them: their card — keep it if it
    * proves itself (docs/contracts/ACCOUNT_CARD.md) — and their relay route.
    */
@@ -138,6 +153,7 @@ private:
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const AccountCard&)> on_sender_card_;
+  std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
@@ -196,6 +212,14 @@ private:
                                RelayReceiveOutcome& outcome) const;
   /** A quiet control message bumps no unread count, preview or notice. */
   void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
+  /** G012: keep the owner-signed roster a roster event carries, when it verifies and is newer. */
+  void KeepCarriedStatement(const ThreadMessage& message) const;
+  /**
+   * G012: a group_roster_statement from the owner. (The member check's request and reply ride the control
+   * lane: MakeGroupRosterSyncFamily.)
+   */
+  Roe<void> ApplyRosterStatement(const ThreadMessage& message, const std::string& actor_identity,
+                                 const std::string& local_account, RelayReceiveOutcome* outcome) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                  const ThreadMessage& message);

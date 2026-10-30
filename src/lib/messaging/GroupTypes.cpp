@@ -75,6 +75,12 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "group_forked";
   case GroupMembershipControlType::GroupOwnerUnreachable:
     return "group_owner_unreachable";
+  case GroupMembershipControlType::GroupRosterStatement:
+    return "group_roster_statement";
+  case GroupMembershipControlType::GroupRosterRequest:
+    return "group_roster_request";
+  case GroupMembershipControlType::GroupRosterReply:
+    return "group_roster_reply";
   }
   return "group_invite";
 }
@@ -110,7 +116,43 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   if (value == "group_owner_unreachable") {
     return GroupMembershipControlType::GroupOwnerUnreachable;
   }
+  if (value == "group_roster_statement") {
+    return GroupMembershipControlType::GroupRosterStatement;
+  }
+  if (value == "group_roster_request") {
+    return GroupMembershipControlType::GroupRosterRequest;
+  }
+  if (value == "group_roster_reply") {
+    return GroupMembershipControlType::GroupRosterReply;
+  }
   return std::nullopt;
+}
+
+bool IsGroupRosterSyncControl(const GroupMembershipControlType type) {
+  return type == GroupMembershipControlType::GroupRosterStatement ||
+         type == GroupMembershipControlType::GroupRosterRequest || type == GroupMembershipControlType::GroupRosterReply;
+}
+
+std::string GroupSyncStateToString(const GroupSyncState state) {
+  switch (state) {
+  case GroupSyncState::Checking:
+    return "checking";
+  case GroupSyncState::Removed:
+    return "removed";
+  case GroupSyncState::Active:
+    break;
+  }
+  return "active";
+}
+
+GroupSyncState GroupSyncStateFromString(const std::string& value) {
+  if (value == "checking") {
+    return GroupSyncState::Checking;
+  }
+  if (value == "removed") {
+    return GroupSyncState::Removed;
+  }
+  return GroupSyncState::Active;
 }
 
 uint32_t DefaultPermissionsForRole(const MemberRole role) {

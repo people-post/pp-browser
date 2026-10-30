@@ -95,6 +95,11 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   // Optional CLI/env unlock for tests/automation only. Interactive / silent default unlock
   // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
   if (auto pin = PinResolver::Resolve(options.pin); pin) {
+    if (options.restore_local_backup) {
+      if (auto restored = messaging.RestoreLocalBackup(*pin); !restored) {
+        return restored.error();
+      }
+    }
     if (auto unlocked = UnlockProfileForBootstrap(messaging, secrets, *pin); !unlocked) {
       return unlocked.error();
     }

@@ -79,3 +79,13 @@
 
 **Rationale:** Per-device vault ≠ per-device master key; minimizes on-disk share while enabling one secrets realm.  
 **Alternatives:** Distinct DEK per device; clone identical `vault.bin` bytes.
+---
+
+## A011 — Local account backup and restore unsupported in the product
+
+**Date:** 2026-10-29  
+**Status:** Accepted (Hongwei, 2026-10-29)  
+**Decision:** The app configures no store for the local account backup (`ConversationsHub` defaults to `NoSecureBlobStore`): nothing is written to the iOS Keychain and a fresh install offers no "Restore my account". The code (`LocalAccountBackup`, its codec, the hub's restore steps) stays, unit-tested and driven in the lab by the probe's file store (`--backup-store`, `--restore-backup`), until restore is ready as a whole.  
+**Rationale:** The Keychain item's only reader is restore; without it the item only costs. It held the account secret keys under a short PIN (default-PIN accounts: readable by anyone with the unlocked phone), outliving an uninstall the user expects to remove them, and a growing copy of app data (contacts, groups, card floors) the Keychain is not meant for. Being `ThisDeviceOnly`, it never covered a lost phone either.  
+**Cleanup (temporary):** items earlier builds wrote are deleted once messaging is up (`RemoveRetiredKeychainBackup`, idempotent). It goes, with the iOS Keychain store (`OsSecureBlobStore`, `OsSecureBlob*`), at app version **1.1.0** (`kRetiredKeychainBackupRemoveAt`): `retired_keychain_backup_test` fails from that version on, so the release bump that reaches it carries the removal.  
+**Next (open):** the account root secret alone where the platform keeps secrets; contacts, groups and card floors in an encrypted, account-signed backup outside the Keychain (e.g. a relay-held blob).

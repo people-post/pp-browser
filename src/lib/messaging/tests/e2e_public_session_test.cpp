@@ -465,6 +465,33 @@ TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
   EXPECT_EQ(kept, 0);
 }
 
+TEST(E2ePublicSessionCardTest, ACarriedCardOlderThanTheRestoredFloorProvesNothing) {
+  EnsureSodiumInit();
+  Side alice("alice-floor", 0x10);
+  Side bob("bob-floor", 0x40);  // restored: no card of Alice's kept, only how new her newest one was
+  alice.Know(bob);
+  alice.carry_keys = true;
+  bob.carry_keys = true;
+  int kept = 0;
+  bob.pipeline->SetOnSenderCard([&](const AccountCard&) { ++kept; });
+  int64_t floor = 0;
+  bob.pipeline->SetAccountCardFloor([&](const std::string& account_id) {
+    return account_id == alice.account ? floor : 0;
+  });
+
+  RelayEnvelope opening = alice.Signal(bob);
+  ASSERT_TRUE(opening.body.e2e.sender_card);
+  const int64_t issued_at = AccountCardFromJson(*opening.body.e2e.sender_card).value().issued_at;
+  // Bob had seen a newer card of hers before the restore (one without a device she took out since).
+  floor = issued_at + 1;
+  EXPECT_FALSE(bob.Receive(opening)) << "an older card does not speak for her";
+  EXPECT_EQ(kept, 0);
+
+  floor = issued_at;  // the newest card Bob knew is the one she carries
+  EXPECT_TRUE(bob.Receive(alice.Signal(bob)));
+  EXPECT_EQ(kept, 1);
+}
+
 TEST_F(E2ePublicSessionTest, OneSideOpensAndBothDirectionsWork) {
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "the opening send carries its key_init";
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_)));

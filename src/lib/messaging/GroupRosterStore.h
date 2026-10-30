@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "lib/messaging/GroupTypes.h"
 
 #include "common/Error.h"
@@ -29,8 +31,13 @@ public:
 
   Roe<void> EnsureSchema(sqlite3* profile_db) const;
 
+  /** Called after any change to a group's metadata or roster (the account backup is rewritten on it). */
+  void SetOnChanged(std::function<void(const std::string& group_id)> on_changed);
+
   Roe<void> UpsertMetadata(const GroupMetadata& metadata) const;
   Roe<std::optional<GroupMetadata>> LoadMetadata(const std::string& group_id) const;
+  /** Every group this profile holds (the account backup carries them). */
+  Roe<std::vector<std::string>> ListGroupIds() const;
 
   Roe<void> UpsertMember(const std::string& group_id, const GroupRosterMember& member) const;
   Roe<void> RemoveMember(const std::string& group_id, const std::string& member_identity) const;
@@ -63,7 +70,10 @@ private:
   /** profile.db with the busy timeout the other profile stores use (concurrent writers wait). */
   bool OpenDb(sqlite3** db) const;
 
+  void NotifyChanged(const std::string& group_id) const;
+
   std::string profile_db_path_;
+  std::function<void(const std::string& group_id)> on_changed_;
 };
 
 } // namespace pbr

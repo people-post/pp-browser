@@ -23,6 +23,16 @@ public:
   Roe<void> Delete(const std::string& name) override { return os::SecureBlobDelete(name); }
 };
 
+class NoStore final : public ISecureBlobStore {
+public:
+  bool Supported() const override { return false; }
+  Roe<void> Write(const std::string&, const std::vector<uint8_t>&) override { return {}; }
+  Roe<std::optional<std::vector<uint8_t>>> Read(const std::string&) override {
+    return std::optional<std::vector<uint8_t>>{};
+  }
+  Roe<void> Delete(const std::string&) override { return {}; }
+};
+
 Roe<std::optional<AccountBackupV2>> ReadBackup(ISecureBlobStore& store) {
   auto bytes = store.Read(AccountBackupCodec::kBlobName);
   if (!bytes) {
@@ -50,8 +60,14 @@ ISecureBlobStore& OsSecureBlobStore() {
   return store;
 }
 
+ISecureBlobStore& NoSecureBlobStore() {
+  static NoStore store;
+  return store;
+}
+
 Roe<void> LocalAccountBackup::Write(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
-                                    IPskSessionStore& psk_store, ContactsStore& contacts, const int64_t now_ms) {
+                                    IPskSessionStore& psk_store, ContactsStore& contacts, const int64_t now_ms,
+                                    AccountBackupExtras extras) {
   if (!store.Supported()) {
     return {};
   }
@@ -78,7 +94,7 @@ Roe<void> LocalAccountBackup::Write(ISecureBlobStore& store, IdentityStore& iden
   if (!vault_bytes) {
     return vault_bytes.error();
   }
-  auto contents = AccountBackupCodec::SerializeContents({std::move(*bundle), std::move(*list)});
+  auto contents = AccountBackupCodec::SerializeContents({std::move(*bundle), std::move(*list), std::move(extras)});
   if (!contents) {
     return contents.error();
   }
@@ -112,7 +128,8 @@ Roe<std::optional<std::string>> LocalAccountBackup::PeekNickname(ISecureBlobStor
 
 Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
                                       IPskSessionStore& psk_store, ProfileSecretsEngine* secrets,
-                                      ContactsStore& contacts, const std::string_view pin, const int64_t now_ms) {
+                                      ContactsStore& contacts, const std::string_view pin, const int64_t now_ms,
+                                      AccountBackupExtras* restored) {
   auto backup = ReadBackup(store);
   if (!backup) {
     return backup.error();
@@ -149,6 +166,9 @@ Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& id
     if (auto upserted = contacts.Upsert(contact); !upserted) {
       return Error("Account restore failed: " + upserted.error().message);
     }
+  }
+  if (restored) {
+    *restored = std::move(contents->extras);  // applied once messaging is up
   }
   return {};
 }

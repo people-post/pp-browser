@@ -6,6 +6,7 @@
 #include "common/Module.h"
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -43,6 +44,18 @@ PeerCardRecord MergeKeyCard(std::optional<PeerCardRecord> known, const KeyCard& 
  */
 PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card, const std::string& source);
 
+/**
+ * The newest account card this device knew for an account, by issue time only: kept in the account backup so
+ * a restored device, which keeps no cards, still refuses an older card than it had seen (one listing a device
+ * since taken out). See docs/contracts/ACCOUNT_CARD.md#newest-wins.
+ */
+struct PeerCardFloor {
+  std::string account_id;
+  int64_t issued_at = 0;
+
+  bool operator==(const PeerCardFloor&) const = default;
+};
+
 /** What a message carries for a kept account: its newest account card, else its key card. */
 Object CarriedCardJson(const PeerCardRecord& record);
 
@@ -59,14 +72,28 @@ public:
   Roe<std::optional<PeerCardRecord>> Get(const std::string& account_id) const;
   Roe<std::vector<PeerCardRecord>> List() const;
 
+  /**
+   * Floors restored from the account backup: from now on an account card older than its floor is refused
+   * (AddAccountCard), and a carried one does not speak for its sender (Floor). A lower floor changes nothing.
+   */
+  Roe<void> RaiseFloors(const std::vector<PeerCardFloor>& floors);
+  /** The issue time an account card of `account_id` must reach: its restored floor, else 0. */
+  Roe<int64_t> Floor(const std::string& account_id) const;
+  /** Per account, the newest issue time known — a kept account card's, or a floor's — for the backup. */
+  Roe<std::vector<PeerCardFloor>> NewestKnown() const;
+  /** Called (outside the store's lock) when an account's newest card got newer: the backup keeps its floor. */
+  void SetOnNewerCard(std::function<void()> callback);
+
 private:
   Roe<sqlite3*> OpenDb() const;
   Roe<std::optional<PeerCardRecord>> GetLocked(sqlite3* db, const std::string& account_id) const;
   Roe<void> PutLocked(sqlite3* db, const PeerCardRecord& record) const;
+  Roe<int64_t> FloorLocked(sqlite3* db, const std::string& account_id) const;
 
   std::string profile_db_path_;
   mutable std::mutex mutex_;
   mutable bool schema_ready_ = false;
+  std::function<void()> on_newer_card_;
 };
 
 } // namespace pbr

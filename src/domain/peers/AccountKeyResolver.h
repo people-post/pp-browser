@@ -8,6 +8,8 @@
 #include "common/Module.h"
 #include "mesh/types/IDirectoryClient.h"
 
+#include <cstdint>
+#include <limits>
 #include <string>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -29,6 +31,14 @@ public:
   void LoadKeptCards();
   /** What is kept for `account_id` (no lookup). */
   Roe<std::optional<PeerCardRecord>> Kept(const std::string& account_id) { return cards_.Get(account_id); }
+  /**
+   * The issue time an account card of `account_id` must reach (PeerCardStore::Floor; 0 when none). Unreadable:
+   * none does (a failed read must not let an older card in).
+   */
+  int64_t CardFloor(const std::string& account_id) {
+    auto floor = cards_.Floor(account_id);
+    return floor ? *floor : std::numeric_limits<int64_t>::max();
+  }
   /** The keys of `account_id`: a kept card, else the directory's entry, kept as a card. */
   Roe<PeerCardRecord> Resolve(const std::string& account_id);
   /** Keeps an account card that came another way (a contact card, a device, a locator's fetch). */

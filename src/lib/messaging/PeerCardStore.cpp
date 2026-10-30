@@ -5,6 +5,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <map>
 #include <utility>
 
 namespace pbr {
@@ -99,7 +100,9 @@ Roe<sqlite3*> PeerCardStore::OpenDb() const {
     char* err = nullptr;
     if (sqlite3_exec(db,
                      "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
-                     "updated_at INTEGER NOT NULL);",
+                     "updated_at INTEGER NOT NULL);"
+                     "CREATE TABLE IF NOT EXISTS peer_card_floors (account_id TEXT PRIMARY KEY, "
+                     "issued_at INTEGER NOT NULL);",
                      nullptr, nullptr, &err) != SQLITE_OK) {
       const std::string message = err ? err : "peer_cards schema failed";
       sqlite3_free(err);
@@ -178,23 +181,144 @@ Roe<PeerCardRecord> PeerCardStore::AddAccountCard(const AccountCard& card, int64
   if (auto checked = VerifyAccountCard(card, now_ms); !checked) {
     return checked.error();
   }
+  std::function<void()> notify;
+  PeerCardRecord merged;
+  {
+    std::lock_guard lock(mutex_);
+    auto db = OpenDb();
+    if (!db) {
+      return db.error();
+    }
+    auto floor = FloorLocked(*db, card.keys.account_id);
+    if (!floor) {
+      sqlite3_close(*db);
+      return floor.error();
+    }
+    if (card.issued_at < *floor) {
+      sqlite3_close(*db);
+      return Error("account card: older than the newest this device knew for the account");
+    }
+    auto known = GetLocked(*db, card.keys.account_id);
+    if (!known) {
+      sqlite3_close(*db);
+      return known.error();
+    }
+    const int64_t before = known.value() ? known.value()->issued_at : 0;
+    merged = MergeAccountCard(std::move(known.value()), card, source);
+    if (merged.issued_at > before) {
+      notify = on_newer_card_;
+    }
+    auto put = PutLocked(*db, merged);
+    sqlite3_close(*db);
+    if (!put) {
+      return put.error();
+    }
+  }
+  if (notify) {
+    notify();
+  }
+  return merged;
+}
+
+Roe<int64_t> PeerCardStore::FloorLocked(sqlite3* db, const std::string& account_id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "SELECT issued_at FROM peer_card_floors WHERE account_id = ?;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    return Error("Failed to prepare peer card floor read");
+  }
+  sqlite3_bind_text(stmt, 1, account_id.c_str(), -1, SQLITE_TRANSIENT);
+  int64_t floor = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    floor = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return floor;
+}
+
+Roe<void> PeerCardStore::RaiseFloors(const std::vector<PeerCardFloor>& floors) {
   std::lock_guard lock(mutex_);
   auto db = OpenDb();
   if (!db) {
     return db.error();
   }
-  auto known = GetLocked(*db, card.keys.account_id);
-  if (!known) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*db,
+                         "INSERT INTO peer_card_floors (account_id, issued_at) VALUES (?, ?) "
+                         "ON CONFLICT(account_id) DO UPDATE SET issued_at=MAX(issued_at, excluded.issued_at);",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
-    return known.error();
+    return Error("Failed to prepare peer card floor write");
   }
-  PeerCardRecord merged = MergeAccountCard(std::move(known.value()), card, source);
-  auto put = PutLocked(*db, merged);
+  bool ok = true;
+  for (const PeerCardFloor& floor : floors) {
+    if (floor.account_id.empty() || floor.issued_at <= 0) {
+      continue;
+    }
+    sqlite3_reset(stmt);
+    sqlite3_bind_text(stmt, 1, floor.account_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, floor.issued_at);
+    ok = ok && sqlite3_step(stmt) == SQLITE_DONE;
+  }
+  sqlite3_finalize(stmt);
   sqlite3_close(*db);
-  if (!put) {
-    return put.error();
+  if (!ok) {
+    return Error("Failed to write peer card floor");
   }
-  return merged;
+  return {};
+}
+
+Roe<int64_t> PeerCardStore::Floor(const std::string& account_id) const {
+  std::lock_guard lock(mutex_);
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  auto floor = FloorLocked(*db, account_id);
+  sqlite3_close(*db);
+  return floor;
+}
+
+Roe<std::vector<PeerCardFloor>> PeerCardStore::NewestKnown() const {
+  auto records = List();
+  if (!records) {
+    return records.error();
+  }
+  std::map<std::string, int64_t> newest;
+  for (const PeerCardRecord& record : *records) {
+    if (record.issued_at > 0) {
+      newest[record.keys.account_id] = record.issued_at;
+    }
+  }
+  std::lock_guard lock(mutex_);
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*db, "SELECT account_id, issued_at FROM peer_card_floors;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    sqlite3_close(*db);
+    return Error("Failed to prepare peer card floor list");
+  }
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const auto* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    int64_t& kept = newest[id ? id : ""];
+    kept = std::max<int64_t>(kept, sqlite3_column_int64(stmt, 1));
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(*db);
+  std::vector<PeerCardFloor> out;
+  for (const auto& [account_id, issued_at] : newest) {
+    if (!account_id.empty()) {
+      out.push_back({account_id, issued_at});
+    }
+  }
+  return out;
+}
+
+void PeerCardStore::SetOnNewerCard(std::function<void()> callback) {
+  std::lock_guard lock(mutex_);
+  on_newer_card_ = std::move(callback);
 }
 
 Roe<std::optional<PeerCardRecord>> PeerCardStore::Get(const std::string& account_id) const {

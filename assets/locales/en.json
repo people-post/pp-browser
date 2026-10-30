@@ -568,6 +568,8 @@
     "chat.group.remove_member_title": "Remove member",
     "chat.group.remove_member_confirm": "Remove {name} from this group? Others will be notified.",
     "chat.group.owner_only": "Only the owner can do that — see the note in the chat",
+    "chat.group.checking_members": "Checking who is in this group… You can send once it is done.",
+    "chat.group.removed": "You are no longer a member of this group.",
     "chat.clear_history": "Clear chat history?",
     "chat.jump_to_latest": "Latest",
     "chat.copy": "Copy",

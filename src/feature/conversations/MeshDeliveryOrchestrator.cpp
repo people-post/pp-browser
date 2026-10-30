@@ -6,6 +6,7 @@
 #include "domain/delivery/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
 
 #include "foundation/crypto/CryptoTypes.h"
@@ -128,6 +129,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "sender's account card not kept: " << kept.error().message;
     }
   });
+  receive_pipeline_->SetAccountCardFloor(
+      [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
   // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
   // hear, through our own mailbox (M022).
   own_cards_.SetOnChanged([this](const AccountCard& card) {
@@ -201,14 +204,35 @@ std::optional<Object> MeshDeliveryOrchestrator::OwnCardJson() {
   return AccountCardToJson(*card);
 }
 
-void MeshDeliveryOrchestrator::NotifySiblings() {
+namespace {
+
+/** A system message the receiver takes nothing from but the card its envelope carries. */
+ThreadMessage DeviceListNotice() {
   ThreadMessage notice;
   notice.id = util::GenerateUuid();
   notice.content_type = ChatContentType::System;
   notice.text = "Device list";
   notice.payload_json = R"({"control_type":"device_list"})";
   notice.timestamp = util::NowUnixMs();
-  if (auto sent = control_lane_.NotifySiblings(notice); !sent) {
+  return notice;
+}
+
+} // namespace
+
+void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::string>& accounts) {
+  size_t told = 0;
+  for (const std::string& account : accounts) {
+    if (auto sent = control_lane_.Send(account, DeviceListNotice()); !sent) {
+      log().info << "device list not sent to " << account << ": " << sent.error().message;
+      continue;
+    }
+    ++told;
+  }
+  log().info << "device list sent to " << told << " of " << accounts.size() << " contact(s)";
+}
+
+void MeshDeliveryOrchestrator::NotifySiblings() {
+  if (auto sent = control_lane_.NotifySiblings(DeviceListNotice()); !sent) {
     log().info << "siblings not told of the device list: " << sent.error().message;
   }
   if (on_own_devices_changed_) {
@@ -354,16 +378,25 @@ void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_
 
 namespace {
 
-void MaybePublishMemberJoinedAfterIngest(GroupMembershipWorkflow* groups, const RelayReceiveOutcome& outcome) {
-  if (!outcome.publish_member_joined_group_id || !outcome.publish_member_joined_member_identity) {
-    return;
-  }
+/** What an applied membership message leaves this device to do (the pipeline decides; the workflow sends). */
+void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayReceiveOutcome& outcome) {
   if (!groups) {
     return;
   }
-  (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
-                                    *outcome.publish_member_joined_member_identity,
-                                    outcome.publish_member_joined_epoch);
+  if (outcome.publish_member_joined_group_id && outcome.publish_member_joined_member_identity) {
+    (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
+                                      *outcome.publish_member_joined_member_identity,
+                                      outcome.publish_member_joined_epoch);
+  }
+  if (outcome.resign_roster_group_id) {
+    (void)groups->SignAndSendRoster(*outcome.resign_roster_group_id);
+  }
+  if (outcome.took_ownership_group_id) {
+    (void)groups->SignAndSendRoster(*outcome.took_ownership_group_id, outcome.took_ownership_transfer);
+  }
+  if (outcome.restart_roster_check_group_id) {
+    (void)groups->StartRosterCheck(*outcome.restart_roster_check_group_id);
+  }
 }
 
 } // namespace
@@ -453,7 +486,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
   if (outcome.sender_verified) {
     card_service_.NoteDevice(envelope.sender_contact_id, from_peer_id);
   }
-  MaybePublishMemberJoinedAfterIngest(groups_, outcome);
+  FollowUpMembershipAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
     auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
@@ -1282,6 +1315,13 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
     return Error("Not a group thread");
   }
+  // G013: a restored group checks its members before it sends (a stale roster would encrypt to someone
+  // removed since); a group we were removed from is read-only. Refused before anything is stored.
+  if (auto metadata = group_roster_.LoadMetadata(*(*thread)->group_id);
+      metadata && *metadata && !group_roster_sync::MaySend(**metadata)) {
+    return Error((*metadata)->sync_state == GroupSyncState::Removed ? group_roster_sync::kGroupRemovedError
+                                                                        : group_roster_sync::kGroupCheckingError);
+  }
 
   auto identity = identity_.Get();
   if (!identity || identity->relay_user_id.empty()) {
@@ -1655,7 +1695,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome);
-          MaybePublishMemberJoinedAfterIngest(groups_, outcome);
+          FollowUpMembershipAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {
             const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);

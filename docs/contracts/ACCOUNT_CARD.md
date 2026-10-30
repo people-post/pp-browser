@@ -91,7 +91,9 @@ An account card is valid when its key card is valid, `card_signature_b64` verifi
 receiver's clock. Version 1 cards (PeerIds only) are refused.
 
 **Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname and
-device list; an older card changes nothing. Until only a master device issues cards (M021 d4) every
+device list; an older card changes nothing. A restored install keeps no cards but knows each account's newest
+issue time from the backup (`card_floors`, [DATA_LAYOUT](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir))
+and refuses older cards. Until only a master device issues cards (M021 d4) every
 linked device holds the account key, so two may issue at once: a device that learns a card of its own
 account listing fewer devices than it knows re-issues with both, and takes the newest card's nickname as
 the account's. A newly linked device gets the linking device's card in the link bundle and signs itself
@@ -136,7 +138,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Carrier | What | When |
 |---------|------|------|
 | Relay directory | key card fields (+ endpoints) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
-| Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) or is an account copy (the control lane, a first contact): whoever reads it can check the sending device; a new device's first message to anyone brings its account's newer list |
+| Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) or is an account copy (the control lane, a first contact): whoever reads it can check the sending device; a new device's first message to anyone brings its account's newer list; a restored device sends it to every contact (`device_list` notice) |
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |
