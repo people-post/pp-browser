@@ -8,6 +8,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/ChatMenus.h"
+#include "gui/chat/ChatMentionController.h"
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
@@ -175,6 +176,9 @@ private:
   /** `from_home_chip`: a Home chip (not typed text) is being sent, so it continues that chip's own thread. */
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
+  /** SendUserText with the draft's picked @mentions (group chats): `mentions_json` rides with the group message. */
+  void SendUserTextWithMentions(const std::string& text, std::optional<std::string> user_payload, bool from_home_chip,
+                                std::optional<std::string> mentions_json);
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
@@ -241,7 +245,7 @@ private:
   /** The open thread's queued send is cancelled: its text goes back to the composer. */
   void CancelQueuedHere();
   /** Same decision SendUserText makes, before the composer is cleared: false = keep the draft. */
-  bool ComposerSendAllowed(const std::string& text);
+  bool ComposerSendAllowed(const std::string& text, const std::optional<std::string>& mentions = std::nullopt);
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
@@ -313,6 +317,9 @@ private:
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
+  /** The composer's @ popup in group chats; the send asks it for the mentions of the draft. */
+  ChatMentionController mention_{chat_, presenter_, context_,
+                                 {.thread_id = [this] { return ActiveThreadId(); }}};
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

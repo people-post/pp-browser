@@ -1451,7 +1451,10 @@ void ChatController::OnSendMessage() {
     return;
   }
   const std::string out = presenter_.ComposeWithQuote(text);
-  if (!ComposerSendAllowed(out)) {
+  // Picked @names ride with the message (a quote is appended after the text, so the ranges still hold).
+  mention_.Tick(); // the records must match the box as it is now (a send can come in the frame of a keystroke)
+  const std::optional<std::string> mentions = mention_.PayloadForSend(chat_.draft.c_str(), out);
+  if (!ComposerSendAllowed(out, mentions)) {
     return; // the draft stays: an AI send in the thread whose turn runs, or one already queued here
   }
   chat_.draft = "";
@@ -1459,15 +1462,15 @@ void ChatController::OnSendMessage() {
   scroller_.RequestScrollToLatest();
   close_keyboard();
   CancelQuoteReply();
-  SendUserText(out);
+  SendUserTextWithMentions(out, std::nullopt, /*from_home_chip=*/false, mentions);
 }
 
-bool ChatController::ComposerSendAllowed(const std::string& text) {
+bool ChatController::ComposerSendAllowed(const std::string& text, const std::optional<std::string>& mentions) {
   if (!messaging_ready_ || !facade_ || !facade_->HasRouter() || ChromeSnapshot().nav_tab == NavTab::Home) {
     return true; // a Home question opens its own thread; SendUserText decides there
   }
   const std::string thread_id = ActiveThreadId();
-  const bool is_ai_send = !agent_.UseLlm() || facade_->ExpectsAgentWork(thread_id, text, std::nullopt);
+  const bool is_ai_send = !agent_.UseLlm() || facade_->ExpectsAgentWork(thread_id, text, std::nullopt, mentions);
   switch (DecideSend(is_ai_send, agent_.Busy(), thread_id, agent_.HasQueued(thread_id))) {
   case SendDecision::BlockedHere:
     log().info << "Send kept in the composer: a reply is still loading in this thread";
@@ -1827,6 +1830,11 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
 
 void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload,
                                   bool from_home_chip) {
+  SendUserTextWithMentions(text, std::move(user_payload), from_home_chip, std::nullopt);
+}
+
+void ChatController::SendUserTextWithMentions(const std::string& text, std::optional<std::string> user_payload,
+                                              bool from_home_chip, std::optional<std::string> mentions_json) {
   const std::string trimmed = util::Trim(text);
   if (trimmed.empty()) {
     log().info << "Send ignored: empty text";
@@ -1838,8 +1846,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
   if (!messaging_ready_) {
     // The unlock can finish much later (PIN entry), so the chip origin travels with the deferred send.
-    WithSecrets([this, trimmed, user_payload = std::move(user_payload), from_home_chip]() mutable {
-      SendUserText(trimmed, std::move(user_payload), from_home_chip);
+    WithSecrets([this, trimmed, user_payload = std::move(user_payload), from_home_chip,
+                 mentions_json = std::move(mentions_json)]() mutable {
+      SendUserTextWithMentions(trimmed, std::move(user_payload), from_home_chip, std::move(mentions_json));
     });
     return;
   }
@@ -1869,7 +1878,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   bool expect_agent_work = use_mock_reply;
   if (!expect_agent_work && messaging_ready_ && facade_ && facade_->HasRouter()) {
     expect_agent_work = facade_->ExpectsAgentWork(
-        ActiveThreadId(), trimmed, user_payload);
+        ActiveThreadId(), trimmed, user_payload, mentions_json);
   } else if (!expect_agent_work) {
     expect_agent_work = true;
   }
@@ -1962,7 +1971,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     }
     log().info << "Routing message via MessageRouter";
     std::optional<std::string> payload_copy = user_payload;
-    auto routed = facade_->RouteMessage(target_thread, trimmed, std::move(user_payload));
+    auto routed = facade_->RouteMessage(target_thread, trimmed, std::move(user_payload), std::move(mentions_json));
     if (!routed) {
       if (routed.error().message == MessageRouter::kAgentBusyError) {
         // The session took another turn the UI had not heard of yet: nothing was stored or sent, so queue it.
@@ -2458,6 +2467,7 @@ bool ChatController::Setup(ui::Context* context) {
   if (!DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
         BindChatScreenState(ctor, chat_);
         ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
+        ctor.BindEventCallback("pick_mention", DataEvent<int>([this](const int row) { mention_.Pick(row); }));
         ctor.BindEventCallback("send_suggestion", DataEvent<std::string>([this](const std::string& text) {
           // A Home chip continues its own thread instead of opening a new one on every tap.
           SendUserText(text, std::nullopt, /*from_home_chip=*/true);
@@ -2657,6 +2667,7 @@ void ChatController::Update() {
   }
 
   agent_.Tick();  // the streamed row, a held send, the agent's events
+  mention_.Tick();
 }
 
 void ChatController::AfterLayout() {

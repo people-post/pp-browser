@@ -32,6 +32,9 @@ MentionsPayload ParseMentionsPayload(const std::string& payload_json);
 /** Writes `mentions` (always) and `all` (when present) into a payload JSON string with `text`. */
 std::string BuildMentionsPayloadJson(const std::string& text, const MentionsPayload& mentions);
 
+/** True when a mention (or @all) starts at byte 0 of the text: the message opens with a picked @name, not "@ai". */
+bool MentionsCoverMessageStart(const std::string& payload_json);
+
 /** Range content check: inside `text`, both ends on UTF-8 boundaries, slice starts with '@'. */
 bool MentionRangeFitsText(const std::string& text, uint32_t start, uint32_t end);
 

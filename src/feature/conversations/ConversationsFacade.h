@@ -189,6 +189,7 @@ public:
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();
+  std::string KeptCardNickname(const std::string& account_id);
   Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, mesh::ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
   std::optional<mesh::DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
@@ -204,9 +205,10 @@ public:
 
   // --- Router ---------------------------------------------------------------
   Roe<void> RouteMessage(const std::string& thread_id, const std::string& text,
-                         std::optional<std::string> user_payload);
+                         std::optional<std::string> user_payload, std::optional<std::string> mentions_json = std::nullopt);
   bool ExpectsAgentWork(const std::string& thread_id, const std::string& text,
-                        const std::optional<std::string>& user_payload);
+                        const std::optional<std::string>& user_payload,
+                        const std::optional<std::string>& mentions_json = std::nullopt);
 
   // --- Pricing (P001) -------------------------------------------------------
   /** True when peer initiation floor > 0, relationship not open, and payment rails unavailable. */

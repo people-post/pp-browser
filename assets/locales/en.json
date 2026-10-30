@@ -683,6 +683,8 @@
     "chat.banner.older_hint": "Older messages may be available from your peer.",
     "chat.banner.load_older": "Load older messages",
     "chat.insert_emoji": "Insert emoji",
+    "chat.mention.everyone": "Everyone",
+    "chat.mention.no_match": "No matching members",
     "chat.react": "React",
     "chat.shared_badge": "Shared",
     "chat.time.yesterday": "Yesterday {time}",

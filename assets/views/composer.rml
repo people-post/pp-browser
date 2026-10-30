@@ -1,3 +1,8 @@
+<div id="mention-popup" class="mention-popup" data-model="chat" data-if="mention_open" keep-focus="">
+  <div class="mention-empty" data-if="mention_empty">{{mention_empty_text}}</div>
+  <div data-for="row : mention_rows" class="mention-row" data-class-mention-row--everyone="row.everyone"
+       data-event-click="pick_mention(row.index)">{{row.label}}</div>
+</div>
 <div class="prompt-quote" data-model="chat" data-if="quote_reply" keep-focus="">
   <span class="prompt-quote-text">{{quote_reply_text}}</span>
   <button class="prompt-attachment-chip-remove" type="button" data-event-click="cancel_quote_reply()"

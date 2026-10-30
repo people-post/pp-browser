@@ -252,6 +252,17 @@ select selectbox option:hover {
   box-shadow: 0 2dp 8dp #00000044;
 }
 
+.mention-popup {
+  background-color: #1f2937;
+  border: 1dp #374151;
+  box-shadow: 0 2dp 8dp #00000044;
+}
+
+.mention-row:hover,
+.mention-row:active {
+  background-color: #374151;
+}
+
 .chat-link {
   color: #818cf8;
 }

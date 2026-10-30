@@ -47,6 +47,16 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("image_thumb_ready", &state.image_thumb_ready);
   ctor.Bind("image_thumb_src", &state.image_thumb_src);
   ctor.Bind("image_draft_name", &state.image_draft_name);
+  if (auto mention_handle = ctor.RegisterStruct<MentionPopupRow>()) {
+    mention_handle.RegisterMember("index", &MentionPopupRow::index);
+    mention_handle.RegisterMember("label", &MentionPopupRow::label);
+    mention_handle.RegisterMember("everyone", &MentionPopupRow::everyone);
+  }
+  ctor.RegisterArray<std::vector<MentionPopupRow>>();
+  ctor.Bind("mention_open", &state.mention_open);
+  ctor.Bind("mention_empty", &state.mention_empty);
+  ctor.Bind("mention_rows", &state.mention_rows);
+  ctor.Bind("mention_empty_text", &state.mention_empty_text);
   ctor.Bind("quote_reply", &state.quote_reply);
   ctor.Bind("quote_reply_text", &state.quote_reply_text);
   ctor.Bind("attachment_uploading", &state.attachment_uploading);

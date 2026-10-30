@@ -12,6 +12,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
+#include "common/directory/ShortRelayId.h"
 #include "lib/messaging/GroupTypes.h"
 
 #include <algorithm>
@@ -306,6 +307,48 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
   (void)facade_->FindOrCreateDirectThread(created->id, channel);
   facade_->NotifyThreadChanged();
   return created->id;
+}
+
+MentionTargets ChatPresenter::MentionTargetsOf(const std::string& thread_id) {
+  MentionTargets targets;
+  if (!facade_ || thread_id.empty()) {
+    return targets;
+  }
+  auto thread = facade_->GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return targets;
+  }
+  auto roster = facade_->ListGroupRoster(*(*thread)->group_id);
+  if (!roster) {
+    return targets;
+  }
+  targets.is_group = true;
+  std::string self;
+  if (auto identity = facade_->GetIdentity()) {
+    self = identity->account_id;
+  }
+  for (const GroupRosterMember& member : *roster) {
+    if (member.member_identity.empty()) {
+      continue;
+    }
+    if (member.member_identity == self) {
+      targets.is_owner = member.role == MemberRole::Owner;
+      continue;
+    }
+    std::string name;
+    if (auto contact = facade_->FindContactByIdentity(member.member_identity, mesh::ContactIdKind::Account);
+        contact && *contact) {
+      name = (*contact)->server_nickname;
+    }
+    if (name.empty()) {
+      name = facade_->KeptCardNickname(member.member_identity);
+    }
+    if (name.empty()) {
+      name = ShortRelayId(member.member_identity);
+    }
+    targets.members.push_back({member.member_identity, std::move(name)});
+  }
+  return targets;
 }
 
 ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {

@@ -1,5 +1,7 @@
 #include "lib/messaging/GroupMentions.h"
 
+#include <algorithm>
+
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
@@ -91,6 +93,15 @@ std::string BuildMentionsPayloadJson(const std::string& text, const MentionsPayl
     payload.set("all", ObjectValue(std::move(all)));
   }
   return DumpJson(payload);
+}
+
+bool MentionsCoverMessageStart(const std::string& payload_json) {
+  const MentionsPayload parsed = ParseMentionsPayload(payload_json);
+  if (parsed.all && parsed.all->start == 0) {
+    return true;
+  }
+  return std::any_of(parsed.mentions.begin(), parsed.mentions.end(),
+                     [](const MentionRange& m) { return m.start == 0; });
 }
 
 bool MentionRangeFitsText(const std::string& text, const uint32_t start, const uint32_t end) {

@@ -1602,6 +1602,14 @@ PeerSigningKeyStore& ConversationsHub::SigningKeys() {
   return signing_key_store_;
 }
 
+std::string ConversationsHub::KeptCardNickname(const std::string& account_id) {
+  if (!account_keys_) {
+    return {};
+  }
+  auto kept = account_keys_->Kept(account_id);
+  return kept && *kept ? (*kept)->nickname : std::string();
+}
+
 void ConversationsHub::TickMesh() {
   if (!messaging_ready_) {
     return;

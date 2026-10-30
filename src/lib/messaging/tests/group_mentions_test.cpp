@@ -100,3 +100,18 @@ TEST(GroupMentionsTest, RangeFitsText) {
   EXPECT_TRUE(MentionRangeFitsText("@\xE4\xBD\xA0", 0, 4));
   EXPECT_FALSE(MentionRangeFitsText("@\xE4\xBD\xA0", 0, 2)) << "ends inside the character";
 }
+
+namespace pbr {
+TEST(GroupMentionsTest, CoverMessageStartOnlyWhenARangeStartsAtByteZero) {
+  MentionsPayload first;
+  first.mentions.push_back({"acc-ai", 0, 3});
+  EXPECT_TRUE(MentionsCoverMessageStart(BuildMentionsPayloadJson("@ai hi", first)));
+  MentionsPayload later;
+  later.mentions.push_back({"acc-ai", 5, 8});
+  EXPECT_FALSE(MentionsCoverMessageStart(BuildMentionsPayloadJson("hey @ai hi", later)));
+  MentionsPayload all;
+  all.all = MentionRange{"", 0, 9};
+  EXPECT_TRUE(MentionsCoverMessageStart(BuildMentionsPayloadJson("@Everyone hi", all)));
+  EXPECT_FALSE(MentionsCoverMessageStart("not json"));
+}
+} // namespace pbr

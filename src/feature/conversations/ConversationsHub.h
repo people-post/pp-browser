@@ -366,6 +366,8 @@ public:
 
   /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is MeshHost MeshPump. */
   void TickMesh();
+  /** The nickname on a kept account card (the member's own, never a local remark); empty when none. */
+  std::string KeptCardNickname(const std::string& account_id);
   /** Drop cold peer connections (Android background). */
   void SuspendMeshColdPeers();
   /** The app went to the background / came back (AppLifecycle): the mesh follows. */

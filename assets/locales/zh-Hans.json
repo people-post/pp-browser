@@ -683,6 +683,8 @@
     "chat.banner.older_hint": "对方那里可能还有更早的消息。",
     "chat.banner.load_older": "加载更早的消息",
     "chat.insert_emoji": "插入表情",
+    "chat.mention.everyone": "所有人",
+    "chat.mention.no_match": "没有匹配的成员",
     "chat.react": "回应",
     "chat.shared_badge": "已分享",
     "chat.time.yesterday": "昨天 {time}",

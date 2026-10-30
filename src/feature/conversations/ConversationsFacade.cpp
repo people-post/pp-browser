@@ -467,6 +467,10 @@ std::optional<LocalIdentity> ConversationsFacade::GetIdentity() {
   return std::nullopt;
 }
 
+std::string ConversationsFacade::KeptCardNickname(const std::string& account_id) {
+  return hub_.KeptCardNickname(account_id);
+}
+
 Roe<std::optional<Contact>> ConversationsFacade::FindContactByIdentity(const std::string& identity,
                                                                   const mesh::ContactIdKind kind) {
   return hub_.Contacts().FindByIdentity(identity, kind);
@@ -502,16 +506,18 @@ void ConversationsFacade::SetOnActionMessage(std::function<void(const std::strin
 // --- Router -----------------------------------------------------------------
 
 Roe<void> ConversationsFacade::RouteMessage(const std::string& thread_id, const std::string& text,
-                                        std::optional<std::string> user_payload) {
+                                        std::optional<std::string> user_payload,
+                                        std::optional<std::string> mentions_json) {
   if (!hub_.HasRouter()) {
     return Error("Messaging not ready");
   }
-  return hub_.Router().Route(thread_id, text, std::move(user_payload));
+  return hub_.Router().Route(thread_id, text, std::move(user_payload), std::move(mentions_json));
 }
 
 bool ConversationsFacade::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
-                                       const std::optional<std::string>& user_payload) {
-  return hub_.HasRouter() && hub_.Router().ExpectsAgentWork(thread_id, text, user_payload);
+                                       const std::optional<std::string>& user_payload,
+                                       const std::optional<std::string>& mentions_json) {
+  return hub_.HasRouter() && hub_.Router().ExpectsAgentWork(thread_id, text, user_payload, mentions_json);
 }
 
 void ConversationsFacade::SetOnLocalAction(

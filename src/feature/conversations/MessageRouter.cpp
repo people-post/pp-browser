@@ -1,6 +1,7 @@
 #include "feature/conversations/MessageRouter.h"
 
 #include "lib/messaging/AtAiParser.h"
+#include "lib/messaging/GroupMentions.h"
 #include "common/PlatformLimits.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -106,7 +107,7 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
 }
 
 Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& text,
-                               std::optional<std::string> user_payload) {
+                               std::optional<std::string> user_payload, std::optional<std::string> mentions_json) {
   if (text.empty()) {
     return Error("Empty message");
   }
@@ -154,7 +155,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
 
   const AtAiParseResult at_ai = ParseAtAiPrefix(text);
   // A group used to send "@ai++ …" as plain text while the chat already showed "thinking" (B111).
-  if (HandlesAtAi((*thread)->kind) && at_ai.is_ai_invoke) {
+  if (HandlesAtAi((*thread)->kind) && IsAtAiInvoke(text, mentions_json)) {
     if (AgentBusy()) {
       return Error(kAgentBusyError); // nothing sent, no confirm asked: the UI queues it
     }
@@ -201,6 +202,9 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
 
   if ((*thread)->kind == ThreadKind::Group) {
     SendRelayOptions group_opts;
+    if (mentions_json && !mentions_json->empty()) {
+      group_opts.payload_json = *mentions_json;
+    }
     auto sent = mesh_messaging_.SendGroupMessage(thread_id, text, group_opts);
     if (!sent) {
       return sent.error();
@@ -259,7 +263,8 @@ bool MessageRouter::HandlesAtAi(const ThreadKind kind) {
 }
 
 bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
-                                     const std::optional<std::string>& user_payload) const {
+                                     const std::optional<std::string>& user_payload,
+                                     const std::optional<std::string>& mentions_json) const {
   if (text.empty()) {
     return false;
   }
@@ -275,9 +280,16 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
   }
 
   if (HandlesAtAi((*thread)->kind)) {
-    return ParseAtAiPrefix(text).is_ai_invoke;
+    return IsAtAiInvoke(text, mentions_json);
   }
   return true;
+}
+
+bool MessageRouter::IsAtAiInvoke(const std::string& text, const std::optional<std::string>& mentions_json) {
+  if (!ParseAtAiPrefix(text).is_ai_invoke) {
+    return false;
+  }
+  return !(mentions_json && MentionsCoverMessageStart(*mentions_json));
 }
 
 } // namespace pbr

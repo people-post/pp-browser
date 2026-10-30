@@ -4,6 +4,7 @@
 #include "common/Module.h"
 #include "feature/conversations/SessionMenu.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/ui/MentionDraft.h"
 
 #include <cstdint>
 #include <functional>
@@ -76,6 +77,15 @@ struct ChatGroupSheet {
   bool owner_unreachable = false;
   /** Members the owner may remove for being unreachable (never this device): identity, then the name to show. */
   std::vector<std::pair<std::string, std::string>> unreachable_members;
+};
+
+/** Who the composer's @ popup may offer in a chat (G015). */
+struct MentionTargets {
+  bool is_group = false;
+  /** This device owns the group: the popup also offers "Everyone". */
+  bool is_owner = false;
+  /** Members except this account, named by their OWN nickname. */
+  std::vector<MentionCandidate> members;
 };
 
 /** Visual chat type of a thread: ai | private | public | group. */
@@ -158,6 +168,12 @@ public:
    */
   Roe<std::string> AddPeerToContacts(const std::string& peer_id);
   ChatGroupSheet GroupSheetOf(const std::string& group_id);
+  /**
+   * The members the @ popup offers in chat `thread_id` (empty `members`, is_group false when it is no group).
+   * A name is the member's own nickname: the contact's server nickname, else the nickname on a kept card, else
+   * the short account id. The contact's display name is the local remark and never goes into a message (B113).
+   */
+  MentionTargets MentionTargetsOf(const std::string& thread_id);
 
   // --- a message's buttons (the open chat) ------------------------------------------------------
 

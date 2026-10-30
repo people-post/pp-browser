@@ -636,6 +636,37 @@ select selectbox option {
   opacity: 0.8;
 }
 
+/* The @ popup of a group chat's composer (G015): members above the box, five rows visible, then it scrolls. */
+.mention-popup {
+  flex-shrink: 0;
+  margin: 0 12dp 6dp 12dp;
+  max-height: 200dp;
+  overflow-y: auto;
+  border-radius: 10dp;
+}
+
+.mention-row {
+  display: block;
+  height: 40dp;
+  padding: 0 14dp;
+  line-height: 40dp;
+  font-size: 15dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-row--everyone {
+  font-weight: bold;
+}
+
+.mention-empty {
+  display: block;
+  padding: 10dp 14dp;
+  font-size: 14dp;
+  opacity: 0.7;
+}
+
 .prompt-attachment-chip {
   flex: 1;
   min-width: 0;
