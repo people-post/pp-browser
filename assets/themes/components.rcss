@@ -3114,9 +3114,11 @@ input.checkbox {
   font-weight: bold;
 }
 
-/* An @mention inside a message bubble; --me when it is this account. */
+/* An @mention inside a message bubble: a tinted chip; --me when it is this account. */
 .chat-mention {
   font-weight: bold;
+  padding: 0 3dp;
+  border-radius: 4dp;
 }
 
 /* Opens the archived threads, or returns to the list; shown only when something is archived. */

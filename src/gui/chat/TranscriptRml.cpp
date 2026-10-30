@@ -441,7 +441,10 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mentions) + "</p>";
   }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
+  const bool mentions_me =
+      std::any_of(mentions.begin(), mentions.end(), [](const TranscriptMention& m) { return m.me; });
+  std::string body = badges + "<div class=\"bubble " + bubble_class + (mentions_me ? " bubble-mentions-me" : "") +
+                     "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.

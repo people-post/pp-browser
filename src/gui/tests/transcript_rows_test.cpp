@@ -217,6 +217,19 @@ TEST(TranscriptMentionTest, HighlightsTheRangeAndMarksSelf) {
       << rml;
 }
 
+TEST(TranscriptMentionTest, OnlyAMessageThatMentionsMeTintsTheBubble) {
+  const auto row = MentionRow("hi @Ann and @Bob!", {{"a", 3, 7}, {"b", 12, 16}});
+  TranscriptFacts facts;
+  facts.mentions = [](const ThreadMessage&) {
+    return std::vector<TranscriptMention>{{3, 7, false}, {12, 16, true}};
+  };
+  EXPECT_NE(std::string(RenderTranscript({row}, facts)[0].content_rml.c_str()).find("bubble-mentions-me"),
+            std::string::npos);
+  facts.mentions = [](const ThreadMessage&) { return std::vector<TranscriptMention>{{3, 7, false}}; };
+  EXPECT_EQ(std::string(RenderTranscript({row}, facts)[0].content_rml.c_str()).find("bubble-mentions-me"),
+            std::string::npos);
+}
+
 TEST(TranscriptMentionTest, EscapesNamesAndSurroundingText) {
   const auto row = MentionRow("a&b @<i>x&y", {{"a", 4, 11}});
   TranscriptFacts facts;
