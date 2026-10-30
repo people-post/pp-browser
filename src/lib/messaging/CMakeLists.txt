@@ -30,6 +30,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupE2ePayloadCodec.cpp
     GroupMembershipApply.cpp
     GroupMembershipCodec.cpp
+    GroupRosterStatement.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
     OutboundMessage.cpp
