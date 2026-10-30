@@ -36,7 +36,11 @@ CREATE TABLE IF NOT EXISTS group_metadata (
   title TEXT NOT NULL DEFAULT '',
   roster_epoch INTEGER NOT NULL DEFAULT 1,
   policy_json TEXT NOT NULL DEFAULT '{}',
-  title_version INTEGER NOT NULL DEFAULT 0
+  title_version INTEGER NOT NULL DEFAULT 0,
+  roster_statement_json TEXT NOT NULL DEFAULT '',
+  sync_state TEXT NOT NULL DEFAULT 'active',
+  sync_request_id TEXT NOT NULL DEFAULT '',
+  sync_requested_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS group_rosters (
@@ -115,6 +119,13 @@ Roe<void> GroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
                      nullptr, nullptr, nullptr);
   (void)sqlite3_exec(profile_db, "ALTER TABLE group_metadata ADD COLUMN title_version INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
+  // G012 / G013: the owner-signed roster we hold, and a restored group's member check.
+  for (const char* column : {"roster_statement_json TEXT NOT NULL DEFAULT ''", "sync_state TEXT NOT NULL DEFAULT 'active'",
+                             "sync_request_id TEXT NOT NULL DEFAULT ''",
+                             "sync_requested_at INTEGER NOT NULL DEFAULT 0"}) {
+    const std::string sql = std::string("ALTER TABLE group_metadata ADD COLUMN ") + column + ";";
+    (void)sqlite3_exec(profile_db, sql.c_str(), nullptr, nullptr, nullptr);
+  }
   return {};
 }
 
@@ -142,10 +153,13 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO group_metadata (group_id, owner_identity, title, roster_epoch, policy_json, title_version) "
-      "VALUES (?, ?, ?, ?, ?, ?) "
+      "INSERT INTO group_metadata (group_id, owner_identity, title, roster_epoch, policy_json, title_version, "
+      "roster_statement_json, sync_state, sync_request_id, sync_requested_at) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(group_id) DO UPDATE SET owner_identity=excluded.owner_identity, title=excluded.title, "
-      "roster_epoch=excluded.roster_epoch, policy_json=excluded.policy_json, title_version=excluded.title_version;";
+      "roster_epoch=excluded.roster_epoch, policy_json=excluded.policy_json, title_version=excluded.title_version, "
+      "roster_statement_json=excluded.roster_statement_json, sync_state=excluded.sync_state, "
+      "sync_request_id=excluded.sync_request_id, sync_requested_at=excluded.sync_requested_at;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare group metadata upsert");
@@ -157,6 +171,11 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(metadata.roster_epoch));
   sqlite3_bind_text(stmt, 5, policy_json.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 6, static_cast<sqlite3_int64>(metadata.title_version));
+  sqlite3_bind_text(stmt, 7, metadata.roster_statement_json.c_str(), -1, SQLITE_TRANSIENT);
+  const std::string sync_state = GroupSyncStateToString(metadata.sync_state);
+  sqlite3_bind_text(stmt, 8, sync_state.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 9, metadata.sync_request_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 10, static_cast<sqlite3_int64>(metadata.sync_requested_at));
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
@@ -174,7 +193,8 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
   }
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db, "SELECT owner_identity, title, roster_epoch, policy_json, title_version FROM group_metadata WHERE "
+  if (sqlite3_prepare_v2(db, "SELECT owner_identity, title, roster_epoch, policy_json, title_version, roster_statement_json, "
+                             "sync_state, sync_request_id, sync_requested_at FROM group_metadata WHERE "
                              "group_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
@@ -195,6 +215,14 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
       }
     }
     metadata.title_version = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    const auto text = [stmt](int column) {
+      const unsigned char* value = sqlite3_column_text(stmt, column);
+      return value ? std::string(reinterpret_cast<const char*>(value)) : std::string();
+    };
+    metadata.roster_statement_json = text(5);
+    metadata.sync_state = GroupSyncStateFromString(text(6));
+    metadata.sync_request_id = text(7);
+    metadata.sync_requested_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 8));
     if (auto epoch = GetGroupSessionEpoch(group_id)) {
       metadata.session_epoch = *epoch;
     }
@@ -203,6 +231,28 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   return result;
+}
+
+Roe<std::vector<std::string>> GroupRosterStore::ListGroupIds() const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "SELECT group_id FROM group_metadata ORDER BY group_id;", -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare group list");
+  }
+  std::vector<std::string> ids;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (const unsigned char* id = sqlite3_column_text(stmt, 0)) {
+      ids.emplace_back(reinterpret_cast<const char*>(id));
+    }
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return ids;
 }
 
 Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const GroupRosterMember& member) const {

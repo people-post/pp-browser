@@ -31,6 +31,8 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupMembershipApply.cpp
     GroupMembershipCodec.cpp
     GroupRosterStatement.cpp
+    GroupRosterSync.cpp
+    GroupRosterSyncCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
     OutboundMessage.cpp

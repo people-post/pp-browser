@@ -31,6 +31,8 @@ public:
 
   Roe<void> UpsertMetadata(const GroupMetadata& metadata) const;
   Roe<std::optional<GroupMetadata>> LoadMetadata(const std::string& group_id) const;
+  /** Every group this profile holds (the account backup carries them). */
+  Roe<std::vector<std::string>> ListGroupIds() const;
 
   Roe<void> UpsertMember(const std::string& group_id, const GroupRosterMember& member) const;
   Roe<void> RemoveMember(const std::string& group_id, const std::string& member_identity) const;
