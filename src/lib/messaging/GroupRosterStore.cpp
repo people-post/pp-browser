@@ -519,6 +519,29 @@ Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ListOutboundPendingInvite
   return invites;
 }
 
+Roe<void> GroupRosterStore::ExpireOutboundInvitesTo(const std::string& group_id,
+                                                   const std::string& invitee_identity) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "UPDATE pending_group_invites SET status = 'expired' WHERE group_id = ? AND "
+                         "invitee_identity = ? AND outbound = 1 AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare invite expire");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return {};
+}
+
 Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
@@ -527,7 +550,7 @@ Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) c
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
-                         "SELECT COUNT(*) FROM pending_group_invites WHERE status = 'pending' AND created_at >= ?;",
+                         "SELECT COUNT(*) FROM pending_group_invites WHERE status = 'pending' AND outbound = 0 AND created_at >= ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare invite count");
