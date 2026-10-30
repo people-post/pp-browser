@@ -56,7 +56,8 @@ Roe<ByteVector> DecodeRecoveryPhrase(const std::string& phrase) {
   std::istringstream in(phrase);
   std::vector<std::string> words;
   for (std::string word; in >> word;) {
-    std::transform(word.begin(), word.end(), word.begin(), [](unsigned char c) { return std::tolower(c); });
+    std::transform(word.begin(), word.end(), word.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     words.push_back(std::move(word));
   }
   if (words.size() != kRecoveryPhraseWords) {

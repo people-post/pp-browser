@@ -1,4 +1,5 @@
 // The recovery seed and its phrase (multi-device M023 §2): BIP-0039 words for the seed itself, and what it derives.
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/crypto/RecoveryPhrase.h"
@@ -9,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <set>
+#include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -72,9 +74,11 @@ TEST(RecoverySeedTest, TheSameSeedDerivesTheSameAccountEveryTime) {
             HybridKem::GenerateKeyPairFromSeed(b.account_ml_kem_coins)->public_key);
 
   // Every label derives something else, and another seed derives another account.
-  const std::set<ByteVector> parts{a.account_ml_dsa_seed, ByteVector(a.account_ml_kem_coins.begin(),
-                                                                     a.account_ml_kem_coins.begin() + 32),
-                                   a.locker_key, a.locker_signing_seed};
+  // Compared as hex: a set of byte vectors trips GCC 13's -Wstringop-overread in Release (a false positive).
+  const std::set<std::string> parts{
+      BytesToHex(a.account_ml_dsa_seed),
+      BytesToHex(ByteVector(a.account_ml_kem_coins.begin(), a.account_ml_kem_coins.begin() + 32)),
+      BytesToHex(a.locker_key), BytesToHex(a.locker_signing_seed)};
   EXPECT_EQ(parts.size(), 4u);
   EXPECT_NE(DeriveRecoveryKeys(Filled(0x43))->account_ml_dsa_seed, a.account_ml_dsa_seed);
   EXPECT_FALSE(DeriveRecoveryKeys(ByteVector(31, 0)));
