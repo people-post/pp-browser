@@ -85,6 +85,10 @@ struct GroupMetadata {
 
 /** A group invite not accepted within a day is void (the inviter stamps expires_at; the invitee's gate drops it). */
 inline constexpr int64_t kGroupInviteTtlMs = 24LL * 60 * 60 * 1000;
+/** The owner still applies an accept this long after expiry: it may have waited for an owner who was offline. */
+inline constexpr int64_t kGroupInviteAcceptGraceMs = 24LL * 60 * 60 * 1000;
+/** Accepting an invite past its expiry; also the localization key of what the user sees. */
+inline constexpr const char kGroupInviteExpiredError[] = "chat.group.invite_expired";
 
 struct GroupInvitePayload {
   std::string group_id;

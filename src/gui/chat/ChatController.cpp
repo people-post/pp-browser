@@ -122,6 +122,9 @@ namespace {
 
 /** What the user sees when a row action (add / message) fails: the directory's state, never raw HTTP text. */
 std::string LocalActionFailureText(const Error& error) {
+  if (error.message == kGroupInviteExpiredError) {
+    return Tr(kGroupInviteExpiredError);
+  }
   switch (ClassifyPeopleLookupError(error)) {
   case PeopleLookupFailure::NotFound:
     return Tr("contacts.err.user_not_found");

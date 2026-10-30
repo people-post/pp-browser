@@ -387,13 +387,36 @@ TEST_F(GroupRosterInviteApplyTest, AcceptNeedsAnInviteWeIssuedForAGroupWeOwn) {
 TEST_F(GroupRosterInviteApplyTest, AnExpiredInviteIsNotAccepted) {
   SeedOwnedGroup();
   PendingGroupInvite pending = MakePending();
-  pending.expires_at = util::NowUnixMs() - 1;
+  pending.expires_at = util::NowUnixMs() - kGroupInviteAcceptGraceMs - 1;
   ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
   EXPECT_FALSE(Accept("nonce-1", "relay:bob"));
   EXPECT_FALSE(IsMember("relay:bob"));
   auto loaded = roster_->LoadPendingInvite("nonce-1");
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->status, InviteStatus::Expired);
+}
+
+// Accepted in time, but the owner was offline when it was sent: it still counts.
+TEST_F(GroupRosterInviteApplyTest, AnAcceptThatWaitedForTheOwnerStillCounts) {
+  SeedOwnedGroup();
+  PendingGroupInvite pending = MakePending();
+  pending.expires_at = util::NowUnixMs() - 1;
+  ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
+  EXPECT_TRUE(Accept("nonce-1", "relay:bob"));
+  EXPECT_TRUE(IsMember("relay:bob"));
+}
+
+TEST_F(GroupRosterInviteApplyTest, JoiningVoidsTheOtherCardsToThatPerson) {
+  SeedOwnedGroup();
+  PendingGroupInvite first = MakePending();
+  ASSERT_TRUE(roster_->UpsertPendingInvite(first));
+  PendingGroupInvite second = first;
+  second.invite_nonce = "nonce-2";
+  ASSERT_TRUE(roster_->UpsertPendingInvite(second));
+  EXPECT_TRUE(Accept("nonce-1", "relay:bob"));
+  auto other = roster_->LoadPendingInvite("nonce-2");
+  ASSERT_TRUE(other && other->has_value());
+  EXPECT_EQ((*other)->status, InviteStatus::Expired);
 }
 
 // The roster epoch moves by our own +1, whatever the stored invite says.

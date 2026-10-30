@@ -738,8 +738,15 @@ void PeoplePickerController::SyncGroupMemberRows() {
     }
     const int64_t now_ms = util::NowUnixMs();
     std::vector<GroupMemberRow> invited;
-    for (const PendingGroupInvite& invite : picker_ports_.list_invited_waiting(group_id_)) {
-      if (invite.invitee_identity.empty() || invite.invitee_identity == local_identity) {
+    // One row a person, for the newest invite: a re-invite leaves the older one pending too.
+    std::vector<PendingGroupInvite> waiting = picker_ports_.list_invited_waiting(group_id_);
+    std::stable_sort(waiting.begin(), waiting.end(), [](const PendingGroupInvite& a, const PendingGroupInvite& b) {
+      return a.created_at > b.created_at;
+    });
+    std::unordered_set<std::string> listed;
+    for (const PendingGroupInvite& invite : waiting) {
+      if (invite.invitee_identity.empty() || invite.invitee_identity == local_identity ||
+          !listed.insert(invite.invitee_identity).second) {
         continue;
       }
       GroupRosterMember as_member;
@@ -1319,6 +1326,10 @@ void PeoplePickerController::ReinviteMember(const GroupMemberRow& row) {
       return;
     }
     ShowToast(Tr("people_picker.reinvite_sent"), ToastDuration::Long);
+    if (mode_ == PeoplePickerMode::GroupMembers) {
+      SyncGroupMemberRows();
+      NotifySurfaceChanged();
+    }
   });
 }
 

@@ -92,7 +92,7 @@ struct GroupMemberRow {
   bool unreachable = false;
   /** Invited by this device, not on the roster yet (not a member; not counted in "N members"). */
   bool invited = false;
-  /** Invited more than a day ago and still not joined. */
+  /** Invited more than an hour ago and still not joined. */
   bool invited_stale = false;
 
   bool IsContact() const { return !contact_id.empty(); }
@@ -110,7 +110,7 @@ inline constexpr int64_t kInviteStaleAfterMs = 60LL * 60 * 1000;
 
 /**
  * The row for someone this device invited who has not joined: nothing when they are already on the
- * roster (`roster_identities`), else a row marked `invited`, `invited_stale` after a day. `contact` and
+ * roster (`roster_identities`), else a row marked `invited`, `invited_stale` after an hour. `contact` and
  * `card_nickname` name them as for a member.
  */
 std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,

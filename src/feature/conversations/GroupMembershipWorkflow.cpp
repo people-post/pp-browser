@@ -298,6 +298,10 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
   if ((*pending)->status != InviteStatus::Pending) {
     return Error("Invite is not pending");
   }
+  if ((*pending)->expires_at && util::NowUnixMs() > *(*pending)->expires_at) {
+    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+    return Error(kGroupInviteExpiredError);
+  }
 
   auto local = LocalRelayIdentity();
   if (!local) {
