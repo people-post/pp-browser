@@ -168,12 +168,13 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 
 ### s1 — Recovery phrase
 
-- [ ] 256-bit seed ↔ 24 words (a standard word list); account ML-DSA and ML-KEM keys derived from it deterministically (seed-based keygen in pp-cpp-crypto), and locker id / encryption key / signing key under separate labels
-- [ ] Decide existing accounts (random keys): new accounts only (pre-release wipe) or another path — record in M023 *Open*
+- [x] 256-bit seed ↔ 24 BIP-0039 English words with checksum (`foundation/crypto/RecoveryPhrase.*`, vectors from the BIP); account ML-DSA / ML-KEM seeds and locker id / key / signing seed by HKDF labels (`RecoverySeed.*`)
+- [x] New accounts mint from a recovery seed kept in `identity.enc` (`IdentityStore::RecoverySeed`); a link bundle carries it, refused unless it derives the bundle's keys (`LinkDeviceCodec`)
+- [x] Existing accounts (random keys): **new accounts only** — they show no phrase (pre-release; COMPATIBILITY allows a wipe). Recorded in M023 *Open*
 - [ ] Recovery tiers (M023 §3): **easy** (default, "Just continue") keeps the seed in the synced keychain — iOS `kSecAttrSynchronizable` (today's `OsSecureBlob_Ios.mm` is device-only: add a synced item), Android Block Store; **private** shows the phrase to write down; the easy tier's caveat in plain words
 - [ ] Me → Security: show the phrase on demand (PIN first); "Remove from iCloud / Google" (private, after the phrase was shown); private → easy in one tap; en + zh-Hans copy
 - [ ] Desktop (no synced keychain): the phrase, or link from a phone
-- [ ] Unit tests: phrase → the same Account ID every time; labels never collide
+- [x] Unit tests: BIP vectors, typed / mistyped phrases, phrase → the same Account ID, labels never collide, link bundle seed check
 
 ### s2 — Locker format
 

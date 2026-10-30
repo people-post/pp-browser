@@ -4,6 +4,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RecoverySeed.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
@@ -71,6 +72,17 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
   if (*derived != bundle.account_id) {
     return Error("Link bundle Account ID does not match signing key");
   }
+  if (bundle.recovery_seed_b64) {
+    // A seed that derives other keys would show a phrase that restores another account: refuse it.
+    auto seed = Base64Decode(*bundle.recovery_seed_b64);
+    auto keys = seed ? DeriveRecoveryKeys(*seed) : Roe<RecoveryKeys>(seed.error());
+    auto signing = keys ? MlDsa::GenerateKeyPairFromSeed(keys->account_ml_dsa_seed) : Roe<MlDsaKeyPair>(keys.error());
+    auto kem = keys ? HybridKem::GenerateKeyPairFromSeed(keys->account_ml_kem_coins) : Roe<HybridKemKeyPair>(keys.error());
+    if (!signing || !kem || Base64Encode(signing->public_key) != bundle.account_ml_dsa_pk_b64 ||
+        Base64Encode(kem->public_key) != bundle.account_kem_pk_b64) {
+      return Error("Link bundle recovery seed does not derive its account keys");
+    }
+  }
   for (const LinkDevicePublicPsk& row : bundle.public_psks) {
     if (row.key.channel != CryptoChannel::E2ePublic) {
       return Error("Link bundle must not include private e2e PSKs");
@@ -129,6 +141,9 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
     psks.push_back(ObjectValue(std::move(item)));
   }
   json.set("public_psks", ArrayValue(std::move(psks)));
+  if (bundle.recovery_seed_b64) {
+    json.set("recovery_seed_b64", *bundle.recovery_seed_b64);
+  }
   if (bundle.account_card_json) {
     json.set("account_card_json", *bundle.account_card_json);
   }
@@ -196,6 +211,7 @@ Roe<LinkDeviceBundleV1> LinkDeviceCodec::Parse(const std::string& json) {
   }
 
   bundle.account_card_json = parsed->getString("account_card_json");
+  bundle.recovery_seed_b64 = parsed->getString("recovery_seed_b64");
 
   if (auto valid = Validate(bundle); !valid) {
     return valid.error();

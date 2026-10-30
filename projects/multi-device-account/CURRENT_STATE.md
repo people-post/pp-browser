@@ -8,7 +8,7 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 
 | Area | Behavior |
 |------|----------|
-| Identity | Account ML-DSA-65 + account ML-KEM-768 + Account ID; each device its own ML-DSA (Peer ID) and ML-KEM key (M021 §1). Account keys are random today, not phrase-derived (M023 s1 open) |
+| Identity | Account ML-DSA-65 + account ML-KEM-768 + Account ID; each device its own ML-DSA (Peer ID) and ML-KEM key (M021 §1). A new account's keys derive from a recovery seed kept in `identity.enc` (M023 s1); accounts minted before have random keys and no phrase. No UI shows the phrase yet |
 | Device list | Account card v2 (device entries signed by the account key, newest `issued_at` wins, ≤ 5 devices); every linked device still holds the account key (master device is d4) |
 | Sessions | Per device pair for `e2e_public` and group copies (M021 d2); one relay record per account with a copy per device, own-account records allowed (M022, relay deployed) |
 | Link | Paste bundle with the account keys, DEK and the issuing device's card — no sessions, no contacts (m4c superseded by M023) |

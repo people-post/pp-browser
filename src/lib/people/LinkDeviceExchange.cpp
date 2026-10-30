@@ -53,6 +53,9 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   bundle.dek_b64 = Base64Encode(dek);
   bundle.relay_user_id = identity.relay_user_id;
   bundle.nickname = identity.nickname;
+  if (!identity.recovery_seed_b64.empty()) {
+    bundle.recovery_seed_b64 = identity.recovery_seed_b64;  // M023: the new device shows the same phrase
+  }
   bundle.created_at_ms = now_ms;
   bundle.expires_at_ms = now_ms + ttl_ms;
   bundle.public_psks = std::move(public_psks);
@@ -126,6 +129,9 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   next.account_id = parsed->account_id;
   next.account_signing_public_key_b64 = parsed->account_ml_dsa_pk_b64;
   next.account_signing_private_key_b64 = parsed->account_ml_dsa_sk_b64;
+  // The account's recovery seed when it has one (checked against these keys on Validate); none otherwise — the
+  // seed this install minted for itself names another account.
+  next.recovery_seed_b64 = parsed->recovery_seed_b64.value_or(std::string());
   next.kem_public_key_b64 = parsed->account_kem_pk_b64;
   next.kem_private_key_b64 = parsed->account_kem_sk_b64;
   next.relay_user_id = parsed->relay_user_id;

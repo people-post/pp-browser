@@ -3,6 +3,8 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RecoveryPhrase.h"
+#include "foundation/crypto/RecoverySeed.h"
 #include "crypto/PeerId.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
@@ -59,6 +61,31 @@ TEST_F(IdentityStoreTest, CreateHasPeerIdAndEmptyRelay) {
   auto derived = pp::PeerIdFromMlDsaPublicKey(*public_key);
   ASSERT_TRUE(static_cast<bool>(derived));
   EXPECT_EQ(identity->peer_id, *derived);
+}
+
+TEST_F(IdentityStoreTest, ANewAccountDerivesFromARecoverySeedItKeeps) {
+  std::string account_id;
+  std::string phrase;
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(identity);
+    account_id = identity->account_id;
+    auto seed = store.RecoverySeed();
+    ASSERT_TRUE(seed && *seed) << "M023: a new account has a recovery seed";
+    phrase = EncodeRecoveryPhrase(**seed).value();
+  }
+  // The phrase alone names the account (as a restore will find it).
+  const ByteVector seed = DecodeRecoveryPhrase(phrase).value();
+  auto keys = MlDsa::GenerateKeyPairFromSeed(DeriveRecoveryKeys(seed)->account_ml_dsa_seed);
+  ASSERT_TRUE(keys);
+  EXPECT_EQ(AccountIdFromMlDsaPublicKey(keys->public_key).value(), account_id);
+
+  // Kept across a restart, under the DEK.
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+  EXPECT_EQ(reloaded.RecoverySeed().value(), std::optional<ByteVector>(seed));
 }
 
 TEST_F(IdentityStoreTest, DerivesSamePeerIdAcrossReload) {

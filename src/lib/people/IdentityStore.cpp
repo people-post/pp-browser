@@ -6,6 +6,7 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/IdentitySeedDeriver.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RecoverySeed.h"
 #include "common/AtomicFileWrite.h"
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/error/AppError.h"
@@ -195,6 +196,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("device_kem_private_key_b64")) {
     identity.device_kem_private_key_b64 = *v;
   }
+  if (auto v = root.getString("recovery_seed_b64")) {
+    identity.recovery_seed_b64 = *v;
+  }
   if (auto v = root.getIf<int64_t>("initiation_floor")) {
     identity.initiation_floor = *v;
   }
@@ -216,6 +220,9 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("kem_private_key_b64", identity.kem_private_key_b64);
   root.set("device_kem_public_key_b64", identity.device_kem_public_key_b64);
   root.set("device_kem_private_key_b64", identity.device_kem_private_key_b64);
+  if (!identity.recovery_seed_b64.empty()) {
+    root.set("recovery_seed_b64", identity.recovery_seed_b64);
+  }
   root.set("nickname", identity.nickname);
   root.set("relay_user_id", identity.relay_user_id);
   root.set("brief_llm_api_key", identity.brief_llm_api_key);
@@ -339,8 +346,22 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }
-    const ByteVector* kem_coins = derived ? &derived->account_ml_kem_coins : nullptr;
-    const ByteVector* account_seed = derived ? &derived->account_ml_dsa_seed : nullptr;
+    // A new account's keys derive from a recovery seed (M023 §2), kept so its phrase can be shown; a pp-node's
+    // derive from its own identity seed.
+    std::optional<RecoveryKeys> recovery;
+    if (!derived) {
+      const ByteVector seed = GenerateRecoverySeed();
+      auto keys_from_seed = DeriveRecoveryKeys(seed);
+      if (!keys_from_seed) {
+        return keys_from_seed.error();
+      }
+      recovery = std::move(*keys_from_seed);
+      identity_.recovery_seed_b64 = Base64Encode(seed);
+    }
+    const ByteVector* kem_coins =
+        derived ? &derived->account_ml_kem_coins : &recovery->account_ml_kem_coins;
+    const ByteVector* account_seed =
+        derived ? &derived->account_ml_dsa_seed : &recovery->account_ml_dsa_seed;
     if (auto kem = EnsureHybridKemKeys(identity_, dirty_, kem_coins); !kem) {
       return kem.error();
     }
@@ -488,6 +509,22 @@ Roe<LocalIdentity> IdentityStore::LoadOrCreate() {
     dirty_ = false;
   }
   return identity_;
+}
+
+Roe<std::optional<ByteVector>> IdentityStore::RecoverySeed() const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  if (identity_.recovery_seed_b64.empty()) {
+    return std::optional<ByteVector>{};
+  }
+  auto seed = Base64Decode(identity_.recovery_seed_b64);
+  if (!seed) {
+    return seed.error();
+  }
+  return std::optional<ByteVector>(std::move(*seed));
 }
 
 Roe<LocalIdentity> IdentityStore::Get() const {

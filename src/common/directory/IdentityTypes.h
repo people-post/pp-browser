@@ -32,6 +32,12 @@ struct LocalIdentity {
    */
   std::string device_kem_public_key_b64;
   std::string device_kem_private_key_b64;
+  /**
+   * The 32-byte recovery seed the account keys derive from (base64; multi-device M023 §2) — the recovery phrase's
+   * content. Empty for an account minted before M023 (random account keys: no phrase) or a pp-node (its own seed).
+   * Under DEK with the rest of identity.enc; travels with the account keys in a link bundle.
+   */
+  std::string recovery_seed_b64;
   std::string nickname;
   /** Device endpoint: mesh PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;

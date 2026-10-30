@@ -11,6 +11,8 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     FileCipher.cpp
     HybridKem.cpp
     IdentitySeedDeriver.cpp
+    RecoveryPhrase.cpp
+    RecoverySeed.cpp
     KemKeyBinding.cpp
     MlDsa.cpp
     MessageCipher.cpp

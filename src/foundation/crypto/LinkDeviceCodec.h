@@ -44,6 +44,11 @@ struct LinkDeviceBundleV1 {
    * signs itself into. Absent in a local backup (a restore starts a list of its own).
    */
   std::optional<std::string> account_card_json;
+  /**
+   * The recovery seed the account keys derive from (base64; multi-device M023 §2), when the account has one: the
+   * new device can show the same phrase. Checked on Validate — it must derive exactly the bundle's account keys.
+   */
+  std::optional<std::string> recovery_seed_b64;
 };
 
 class LinkDeviceCodec {
