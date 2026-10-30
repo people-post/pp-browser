@@ -43,6 +43,11 @@ public:
   Roe<std::optional<PendingGroupInvite>> LoadPendingInvite(const std::string& invite_nonce) const;
   Roe<void> UpdateInviteStatus(const std::string& invite_nonce, InviteStatus status) const;
   Roe<size_t> CountPendingInvitesSince(int64_t since_ms) const;
+  /**
+   * The group's invites this device sent that are still Pending and not expired at `now_ms`: the latest
+   * one per invitee, newest first.
+   */
+  Roe<std::vector<PendingGroupInvite>> ListOutboundPendingInvites(const std::string& group_id, int64_t now_ms) const;
 
   Roe<void> UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
                               uint32_t session_epoch, uint64_t next_outgoing_seq) const;

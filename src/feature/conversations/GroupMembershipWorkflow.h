@@ -71,6 +71,8 @@ public:
   bool IsMemberUnreachable(const std::string& group_id, const std::string& member_identity) const;
   std::vector<std::string> ListUnreachable(const std::string& group_id) const;
   bool IsOwnerUnreachable(const std::string& group_id) const;
+  /** Invites this device sent for the group that are still waiting (not expired), latest per invitee. */
+  std::vector<PendingGroupInvite> ListInvitedWaiting(const std::string& group_id) const;
 
   /** Insert at most one unresolved owner-unreachable advisory on the group thread. */
   Roe<void> EnsureOwnerUnreachableAdvisory(const std::string& group_id);

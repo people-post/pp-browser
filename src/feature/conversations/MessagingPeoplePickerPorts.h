@@ -30,6 +30,8 @@ struct MessagingPeoplePickerPorts {
   std::function<Roe<Thread>(const std::string& title, const std::vector<std::string>& member_contact_ids)> create_group;
   std::function<Roe<std::vector<CallParticipant>>(const std::string& call_id)> list_call_participants;
   std::function<std::vector<std::string>(const std::string& group_id)> list_unreachable_members;
+  /** Owner: invites this device sent that are still waiting (not expired); latest per invitee. */
+  std::function<std::vector<PendingGroupInvite>(const std::string& group_id)> list_invited_waiting;
   /** A member who is not a contact: the nickname on their kept account card (empty if none). */
   std::function<std::string(const std::string& account_id)> kept_card_nickname;
   std::function<Roe<void>(const std::string& group_id, const std::string& member_identity)> remove_member_by_identity;
