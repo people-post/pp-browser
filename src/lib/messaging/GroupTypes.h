@@ -83,6 +83,9 @@ struct GroupMetadata {
   int64_t sync_requested_at = 0;
 };
 
+/** A group invite not accepted within a day is void (the inviter stamps expires_at; the invitee's gate drops it). */
+inline constexpr int64_t kGroupInviteTtlMs = 24LL * 60 * 60 * 1000;
+
 struct GroupInvitePayload {
   std::string group_id;
   std::string group_title;

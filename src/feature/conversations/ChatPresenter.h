@@ -105,8 +105,8 @@ struct GroupMemberRow {
  */
 GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
                                    bool unreachable, const std::string& card_nickname = {});
-/** An invite waiting longer than this shows the "not joined yet" hint. */
-inline constexpr int64_t kInviteStaleAfterMs = 24LL * 60 * 60 * 1000;
+/** An invite waiting longer than this shows the "not joined yet" hint (it expires at kGroupInviteTtlMs). */
+inline constexpr int64_t kInviteStaleAfterMs = 60LL * 60 * 1000;
 
 /**
  * The row for someone this device invited who has not joined: nothing when they are already on the

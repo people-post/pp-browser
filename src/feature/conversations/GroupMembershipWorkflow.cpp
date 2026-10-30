@@ -217,7 +217,7 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   invite.invitee_identity = *invitee_identity;
   invite.invite_nonce = util::GenerateUuid();
   invite.roster_epoch = metadata->roster_epoch;
-  invite.expires_at = util::NowUnixMs() + 7LL * 24 * 60 * 60 * 1000;
+  invite.expires_at = util::NowUnixMs() + kGroupInviteTtlMs;
   invite.actor_role = MemberRole::Owner;
 
   PendingGroupInvite pending;
