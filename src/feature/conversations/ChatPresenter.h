@@ -94,9 +94,12 @@ struct GroupMemberRow {
   bool operator==(const GroupMemberRow&) const = default;
 };
 
-/** `contact`: the saved contact for this member, when there is one. */
+/**
+ * `contact`: the saved contact for this member, when there is one. Name: the contact's, else
+ * `card_nickname` (the member's own, from the account card the roster carried), else the short account id.
+ */
 GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
-                                   bool unreachable);
+                                   bool unreachable, const std::string& card_nickname = {});
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
