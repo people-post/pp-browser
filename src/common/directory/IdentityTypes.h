@@ -28,7 +28,7 @@ struct LocalIdentity {
   std::string kem_private_key_b64;
   /**
    * This device's own ML-KEM-768 key pair (base64; M021): peers open sessions with this device under it.
-   * Never leaves the device (not in a link bundle or a backup); minted on first load.
+   * Never leaves the device (not in a link bundle, nor in the account locker); minted on first load.
    */
   std::string device_kem_public_key_b64;
   std::string device_kem_private_key_b64;

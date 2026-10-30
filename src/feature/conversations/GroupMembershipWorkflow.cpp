@@ -10,6 +10,7 @@
 
 #include "common/Utilities.h"
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -1290,6 +1291,7 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
   if (!ids) {
     return ids.error();
   }
+  const auto local = LocalRelayIdentity();
   std::vector<AccountStateGroup> groups;
   for (const std::string& group_id : *ids) {
     auto metadata = roster_.LoadMetadata(group_id);
@@ -1297,14 +1299,19 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
     if (!metadata || !*metadata || !members) {
       continue;
     }
-    if ((*metadata)->sync_state == GroupSyncState::Removed) {
-      continue;  // nothing to bring back
-    }
     AccountStateGroup group;
     group.group_id = group_id;
-    group.title = (*metadata)->title;
     group.owner_identity = (*metadata)->owner_identity;
     group.roster_epoch = (*metadata)->roster_epoch;
+    const bool member = local && std::any_of(members->begin(), members->end(), [&](const GroupRosterMember& m) {
+                          return m.member_identity == *local;
+                        });
+    if ((*metadata)->sync_state == GroupSyncState::Removed || (local && !member)) {
+      group.left = true;  // a tombstone: an older copy where we were in must not bring it back
+      groups.push_back(std::move(group));
+      continue;
+    }
+    group.title = (*metadata)->title;
     group.title_version = (*metadata)->title_version;
     group.policy_json = GroupMembershipCodec::EncodeGroupPolicy((*metadata)->policy);
     group.roster_statement_json = (*metadata)->roster_statement_json;

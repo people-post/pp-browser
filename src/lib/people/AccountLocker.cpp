@@ -286,8 +286,9 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
                              [&](const AccountStateGroup& g) { return g.group_id == theirs.group_id; });
     if (mine == merged.extras.groups.end()) {
       merged.extras.groups.push_back(theirs);
-    } else if (theirs.roster_epoch > mine->roster_epoch) {
-      *mine = theirs;
+    } else if (theirs.roster_epoch > mine->roster_epoch ||
+               (theirs.roster_epoch == mine->roster_epoch && theirs.left && !mine->left)) {
+      *mine = theirs;  // the newer roster; at the same epoch, being out of the group wins
     }
   }
   for (const AccountCardFloor& theirs : stored.extras.card_floors) {

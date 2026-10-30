@@ -8,22 +8,8 @@
 
 namespace pbr {
 
-namespace {
-
-Roe<void> DropPrivatePsks(std::vector<LinkDevicePublicPsk>& rows) {
-  for (const LinkDevicePublicPsk& row : rows) {
-    if (row.key.channel != CryptoChannel::E2ePublic) {
-      return Error("Link export must not include private e2e PSKs");
-    }
-  }
-  return {};
-}
-
-} // namespace
-
 Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identity, const ByteVector& dek,
-                                                    std::vector<LinkDevicePublicPsk> public_psks, const int64_t now_ms,
-                                                    const int64_t ttl_ms) {
+                                                    const int64_t now_ms, const int64_t ttl_ms) {
   if (identity.account_id.empty() || identity.account_signing_private_key_b64.empty() ||
       identity.account_signing_public_key_b64.empty()) {
     return Error("Local account identity unavailable");
@@ -36,9 +22,6 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   }
   if (now_ms <= 0 || ttl_ms <= 0) {
     return Error("Invalid link-device lifetime");
-  }
-  if (auto filtered = DropPrivatePsks(public_psks); !filtered) {
-    return filtered.error();
   }
   if (identity.kem_public_key_b64.empty() || identity.kem_private_key_b64.empty()) {
     return Error("Local account KEM unavailable");
@@ -58,7 +41,6 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   }
   bundle.created_at_ms = now_ms;
   bundle.expires_at_ms = now_ms + ttl_ms;
-  bundle.public_psks = std::move(public_psks);
   if (auto valid = LinkDeviceCodec::Validate(bundle, now_ms); !valid) {
     return valid.error();
   }
@@ -66,9 +48,12 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
 }
 
 Roe<std::string> LinkDeviceExchange::ExportJson(const LocalIdentity& identity, const ByteVector& dek,
-                                                std::vector<LinkDevicePublicPsk> public_psks, const int64_t now_ms,
-                                                const int64_t ttl_ms, std::optional<std::string> account_card_json) {
-  auto bundle = Capture(identity, dek, std::move(public_psks), now_ms, ttl_ms);
+                                                std::string account_card_json, const int64_t now_ms,
+                                                const int64_t ttl_ms) {
+  if (account_card_json.empty()) {
+    return Error("No account card to link a device with");
+  }
+  auto bundle = Capture(identity, dek, now_ms, ttl_ms);
   if (!bundle) {
     return bundle.error();
   }
@@ -150,7 +135,6 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
 
   LinkDeviceImportResult result;
   result.identity = *saved;
-  result.public_psks = std::move(parsed->public_psks);
   result.account_card_json = std::move(parsed->account_card_json);
   return result;
 }

@@ -1922,8 +1922,7 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
 }
 
 Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin) {
-  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr ||
-      !account_locker_) {
+  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || !account_locker_) {
     return Error("Messaging is not ready");
   }
   auto seed = DecodeRecoveryPhrase(phrase);
@@ -1944,8 +1943,7 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase,
   if (!bundle) {
     return Error("Account restore failed: " + bundle.error().message);
   }
-  if (auto imported = LinkDeviceCoordinator::Import(Identity(), *Secrets()->Vault(), *PskStore(), Secrets(), *bundle,
-                                                    pin, now_ms);
+  if (auto imported = LinkDeviceCoordinator::Import(Identity(), *Secrets()->Vault(), Secrets(), *bundle, pin, now_ms);
       !imported) {
     return Error("Account restore failed: " + imported.error().message);
   }
@@ -2062,6 +2060,9 @@ void ConversationsHub::ResumeGroupRosterChecks() {
     restored.swap(restored_.groups);
   }
   for (const AccountStateGroup& group : restored) {
+    if (group.left) {
+      continue;  // a group the account is out of: nothing to bring back
+    }
     if (auto recreated = group_membership_->RestoreGroup(group); !recreated) {
       log().warning << "Group not restored group=" << group.group_id << ": " << recreated.error().message;
     }

@@ -21,7 +21,6 @@
 #include "lib/messaging/tests/TestAccount.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PskSessionRestart.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/Utilities.h"
 
@@ -257,15 +256,21 @@ struct Side {
   /** This device's PeerId. */
   const std::string& Device() const { return keys.device.peer_id; }
 
-  /** Restored from an account backup: a fresh profile with the public sessions back, marked to restart. */
-  void RestoreFromBackup() {
+  /**
+   * Through *Reset chats* (Application::ResetChatData): a fresh chat store with the public sessions kept,
+   * each marked to restart.
+   */
+  void ResetChats() {
     auto sessions = psk->List();
     ASSERT_TRUE(sessions);
-    OpenProfile("profile-restored-" + util::GenerateUuid());
-    for (const PskSessionRecord& record : *sessions) {
+    OpenProfile("profile-reset-" + util::GenerateUuid());
+    for (PskSessionRecord& record : *sessions) {
+      if (record.key.channel != CryptoChannel::E2ePublic || !record.master_psk_b64) {
+        continue;
+      }
+      record.restart_pending = true;
       ASSERT_TRUE(psk->Save(record));
     }
-    ASSERT_TRUE(MarkPublicSessionsForRestart(*psk));
   }
 
   /** What a send does first in a pair marked to restart (MeshDeliveryOrchestrator::StartNextEpochIfRestored). */
@@ -521,17 +526,17 @@ TEST_F(E2ePublicSessionTest, ASideThatStartsOverIsHeardAgain) {
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
 }
 
-// #378: a device restored from the account backup has its sessions back but not its numbering. Rewinding in
-// the same epoch is dropped by design (D046 first-seen); it starts the pair's next epoch instead (D014).
-TEST_F(E2ePublicSessionTest, ARestoredDeviceStartsTheNextEpochAndEveryMessageArrives) {
+// #378: a device that reset its chats keeps its public sessions but not its numbering. Rewinding in the same
+// epoch is dropped by design (D046 first-seen); it starts the pair's next epoch instead (D014).
+TEST_F(E2ePublicSessionTest, AfterAChatResetTheDeviceStartsTheNextEpochAndEveryMessageArrives) {
   for (int i = 0; i < 3; ++i) {
     ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
   }
-  alice_->RestoreFromBackup();
+  alice_->ResetChats();
   alice_->RestartIfPending(*bob_);
   for (int i = 0; i < 3; ++i) {
     EXPECT_TRUE(bob_->Keep(alice_->Chat(*bob_, "after " + std::to_string(i))))
-        << "message " << i << " from the restored device";
+        << "message " << i << " after the reset";
   }
   auto threads = bob_->store->ListThreads();
   ASSERT_TRUE(threads);
@@ -547,7 +552,7 @@ TEST_F(E2ePublicSessionTest, RewindingInTheSameEpochIsStillDropped) {
   for (int i = 0; i < 2; ++i) {
     ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
   }
-  alice_->RestoreFromBackup();  // no restart: a device that rewinds where Bob holds its messages
+  alice_->ResetChats();  // no restart: a device that rewinds where Bob holds its messages
   EXPECT_FALSE(bob_->Keep(alice_->Chat(*bob_, "rewound"))) << "first-seen keeps seq 1 (D046)";
 }
 
@@ -620,9 +625,9 @@ TEST(GroupPairwiseKeyTest, AGroupCopyIsAPairMessageNumberedInThePair) {
   EXPECT_EQ(bob.PairEpoch(alice), 1u);
   EXPECT_TRUE(bob.Keep(alice.Chat(bob, "a 1:1 message")));
 
-  // Bob restores from his backup (the pair sessions back, marked to restart; his counts gone): his first
-  // group copy to alice restarts their pair at epoch 2 from seq 1 — not taken for one alice already holds.
-  bob.RestoreFromBackup();
+  // Bob resets his chats (the pair sessions kept, marked to restart; his counts gone): his first group copy
+  // to alice restarts their pair at epoch 2 from seq 1 — not taken for one alice already holds.
+  bob.ResetChats();
   bob.JoinGroup(group, everyone);
   bob.group_seq.clear();
   auto restored = bob.GroupChat(group, everyone, "bob is back");

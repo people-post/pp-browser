@@ -190,7 +190,8 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Relay locker API (web2 www `feat/account-locker`, local — **merges and deploys before the client**): `POST /v1/lockers/put` (relay half: the user's account signature; locker half: key hashes to the id, signature verifies; only newer; 4 lockers per user; ≤ 1 MiB) / `GET /v1/lockers/:id` by id alone; jest + golden vectors shared with the client ([SERVICE_ENDPOINTS § HTTP account lockers](../../docs/contracts/SERVICE_ENDPOINTS.md))
 - [x] Client: `HttpLockerClient` (`lib/net`), `AccountLockerWorkflow` (`feature/conversations`: current state → seal → put; seed → get → verify → open); probe `locker_publish` / `locker_fetch`; lab `account_locker_round_trip`
 - [x] When to publish: 5 s after a burst of contact / group / card changes, and at every start (`ConversationsHub::PublishAccountLockerSoon`) — only with a recovery seed and a relay id
-- [ ] pp-node provider (same API); exported file provider
+- ~~pp-node provider~~ — dropped (M023 §6 amendment: nodes are stateless, caches only)
+- [ ] Exported file provider: save the sealed snapshot as a file; restore from the phrase plus the file (newest valid version wins, the relay copy included)
 - [ ] Provider list in the state; the configured relay tried first
 
 ### s4 — Change log
@@ -201,7 +202,7 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Sync 5 s after local changes, at each start and every 10 min (`kLockerSyncIntervalMs`); lab `linked_devices_share_contact_edits` (a linked laptop's first sync brings the contacts; a remark and a removal on the laptop reach the phone; the removal is not undone)
 - [x] A nudge to siblings after a write: the writer sends the `device_list` control-lane notice to its own mailbox (only with more than one device on the card); a verified sibling notice makes the receiver sync 5 s later; a sync with nothing new writes nothing, so it stops there. Lab `linked_devices_share_contact_edits` (the phone gets the laptop's remark without asking)
 - [x] Clocks: a register moves past any time it has seen (`max(now, at + 1)`), so an edit made after seeing another always wins; only edits made concurrently on two devices are ordered by their wall clocks (stated in M023 and ACCOUNT_LOCKER § Sync)
-- [ ] Leaving a group: groups only merge in (higher roster epoch), so a group left on one device stays in the locker and a restore brings it back (checking its members, it finds itself out). Needs a per-group register like the contacts'
+- [x] Leaving a group: a group the account is out of (left, or removed — found by the member check) goes into the state as a tombstone (`left`, at its roster epoch); the merge prefers it at the same epoch, a re-invite's higher epoch beats it, restore skips it. Lab `group_removed_member_restores` (a second restore does not bring the group back)
 
 ### s5 — Restore and link
 

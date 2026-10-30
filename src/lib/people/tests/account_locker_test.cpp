@@ -139,6 +139,28 @@ TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
   EXPECT_EQ(merged.providers.size(), 2u);
 }
 
+TEST(AccountLockerTest, AGroupLeftOnOneDeviceStaysLeft) {
+  // M023 s4: the laptop left the hike group (epoch 4, a tombstone); the phone's stored copy is from epoch 3 and,
+  // after the check, the phone's own record is a tombstone at the epoch it still had.
+  AccountLockerState laptop = SampleState();
+  AccountLockerState stored = SampleState();  // group:hike at epoch 3, we are in
+  laptop.extras.groups[0].roster_epoch = 4;
+  laptop.extras.groups[0].left = true;
+  AccountLockerState merged = account_locker::MergeForPublish(laptop, stored);
+  ASSERT_EQ(merged.extras.groups.size(), 1u);
+  EXPECT_TRUE(merged.extras.groups[0].left) << "the older copy where we were in does not bring it back";
+
+  AccountLockerState phone = SampleState();
+  phone.extras.groups[0].left = true;  // same epoch 3: removed, found by the member check
+  merged = account_locker::MergeForPublish(stored, phone);
+  EXPECT_TRUE(merged.extras.groups[0].left) << "at the same epoch, being out wins";
+
+  AccountLockerState reinvited = SampleState();
+  reinvited.extras.groups[0].roster_epoch = 6;  // invited back later
+  merged = account_locker::MergeForPublish(reinvited, laptop);
+  EXPECT_FALSE(merged.extras.groups[0].left) << "a newer roster with us in it wins over the tombstone";
+}
+
 TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
   ByteVector locker_id(32);

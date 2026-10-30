@@ -7,7 +7,6 @@
 #include "common/chat/RelayEnvelope.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "lib/people/LinkDeviceCoordinator.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
@@ -260,17 +259,6 @@ TEST(PublicPskLockCoordinatorTest, AutoRekeyOnlyWhenBothDeviceBound) {
   record.key_scope = PublicKeyScope::DeviceSelf;
   ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
   EXPECT_FALSE(*alice.lock->ShouldAutoRekey(alice.thread_id, 1 + kPublicPskAutoRotateIntervalMs));
-}
-
-TEST(PublicPskLockCoordinatorTest, LinkExportOmitsDeviceScopedPsk) {
-  LockFixture alice("link");
-  auto loaded = alice.psk_store->Load(alice.key);
-  PskSessionRecord record = loaded->value();
-  record.key_scope = PublicKeyScope::DeviceSelf;
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
-  auto collected = LinkDeviceCoordinator::CollectPublicPsks(*alice.psk_store);
-  ASSERT_TRUE(static_cast<bool>(collected));
-  EXPECT_TRUE(collected->empty());
 }
 
 } // namespace

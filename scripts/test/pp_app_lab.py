@@ -2369,7 +2369,8 @@ def scenario_group_restore_checks_members(lab):
 
 def scenario_group_removed_member_restores(lab):
     """Dave's locker still has him in the group: his phone was lost before Alice removed him. When he restores
-    from his recovery phrase, his group's member check ends removed: read-only, nothing sent."""
+    from his recovery phrase, his group's member check ends removed: read-only, nothing sent. His locker then
+    keeps the group as left (M023 s4), so restoring once more does not bring it back."""
     users, threads = open_group(lab, 3)
     a, b, d = users
     group_id = lab_group_id(a, threads)
@@ -2380,6 +2381,12 @@ def scenario_group_removed_member_restores(lab):
     d.restore_from_phrase(phrase)
     d.wait_mesh()
     checked_roster(d, group_id, "removed")
+    d.cmd("locker_publish", timeout=60)
+    d.restore_from_phrase(phrase)
+    d.wait_mesh()
+    roster = d.cmd("group_roster", group_id=group_id)
+    if roster.get("sync_state") or roster.get("members"):
+        raise ProbeError("dave: a group he was removed from came back from his locker (%s)" % roster)
 
 
 def scenario_group_restored_owner_takes_newer_roster(lab):

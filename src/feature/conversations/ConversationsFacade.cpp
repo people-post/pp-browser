@@ -87,21 +87,24 @@ bool ConversationsFacade::HasRecoveryPhrase() {
 }
 
 Roe<std::string> ConversationsFacade::ExportLinkDevice() {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
-      hub_.PskStore() == nullptr) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
-  return LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
-                                           util::NowUnixMs(), kLinkDeviceDefaultTtlMs, hub_.OwnAccountCardJson());
+  // The new device signs itself into this device's account card (M021): no card, no link.
+  std::optional<std::string> card = hub_.OwnAccountCardJson();
+  if (!card) {
+    return Error("This device has no account card yet");
+  }
+  return LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), std::move(*card),
+                                           util::NowUnixMs());
 }
 
 Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const std::string& pin) {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
-      hub_.PskStore() == nullptr) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
-  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
-                                                hub_.Secrets(), bundle_json, pin, util::NowUnixMs());
+  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), hub_.Secrets(),
+                                                bundle_json, pin, util::NowUnixMs());
   if (!imported) {
     return imported.error();
   }

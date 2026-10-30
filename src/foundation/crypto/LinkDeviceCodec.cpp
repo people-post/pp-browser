@@ -25,10 +25,6 @@ Roe<void> RequireB64Size(const std::string& b64, const size_t expected, const ch
   return {};
 }
 
-CryptoChannel ChannelFromString(const std::string& value) {
-  return value == "e2e_public" ? CryptoChannel::E2ePublic : CryptoChannel::E2e;
-}
-
 } // namespace
 
 Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int64_t now_ms) {
@@ -83,20 +79,6 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
       return Error("Link bundle recovery seed does not derive its account keys");
     }
   }
-  for (const LinkDevicePublicPsk& row : bundle.public_psks) {
-    if (row.key.channel != CryptoChannel::E2ePublic) {
-      return Error("Link bundle must not include private e2e PSKs");
-    }
-    if (row.key.peer_identity_kind.empty() || row.key.peer_identity_value.empty()) {
-      return Error("Link bundle public PSK missing peer identity");
-    }
-    if (row.session_epoch == 0) {
-      return Error("Link bundle public PSK missing session_epoch");
-    }
-    if (auto psk = RequireB64Size(row.master_psk_b64, kMasterPskSize, "Public PSK"); !psk) {
-      return psk.error();
-    }
-  }
   return {};
 }
 
@@ -116,31 +98,6 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
   json.set("nickname", bundle.nickname);
   json.set("created_at", bundle.created_at_ms);
   json.set("expires_at", bundle.expires_at_ms);
-  std::vector<Value> psks;
-  psks.reserve(bundle.public_psks.size());
-  for (const LinkDevicePublicPsk& row : bundle.public_psks) {
-    Object item;
-    item.set("peer_identity_kind", row.key.peer_identity_kind);
-    item.set("peer_identity_value", row.key.peer_identity_value);
-    item.set("channel", CryptoChannelToString(row.key.channel));
-    item.setJsonUInt("session_epoch", row.session_epoch);
-    item.set("master_psk_b64", row.master_psk_b64);
-    if (row.psk_verified_at) {
-      item.set("psk_verified_at", *row.psk_verified_at);
-    }
-    std::vector<Value> retired;
-    retired.reserve(row.retired_psks.size());
-    for (const RetiredPskEntry& entry : row.retired_psks) {
-      Object retired_item;
-      retired_item.setJsonUInt("epoch", entry.epoch);
-      retired_item.set("master_psk_b64", entry.master_psk_b64);
-      retired_item.set("retired_at", entry.retired_at);
-      retired.push_back(ObjectValue(std::move(retired_item)));
-    }
-    item.set("retired_psks", ArrayValue(std::move(retired)));
-    psks.push_back(ObjectValue(std::move(item)));
-  }
-  json.set("public_psks", ArrayValue(std::move(psks)));
   if (bundle.recovery_seed_b64) {
     json.set("recovery_seed_b64", *bundle.recovery_seed_b64);
   }
@@ -177,38 +134,6 @@ Roe<LinkDeviceBundleV1> LinkDeviceCodec::Parse(const std::string& json) {
   bundle.nickname = parsed->getString("nickname").value_or(std::string{});
   bundle.created_at_ms = parsed->getIf<int64_t>("created_at").value_or(0);
   bundle.expires_at_ms = parsed->getIf<int64_t>("expires_at").value_or(0);
-
-  if (const Array* public_psks = parsed->getArray("public_psks")) {
-    for (const Value& item_value : public_psks->elements) {
-      const Object* item = asObject(item_value);
-      if (!item) {
-        return Error("Invalid public PSK row in link bundle");
-      }
-      LinkDevicePublicPsk row;
-      row.key.peer_identity_kind = item->getString("peer_identity_kind").value_or(std::string{});
-      row.key.peer_identity_value = item->getString("peer_identity_value").value_or(std::string{});
-      row.key.channel = ChannelFromString(item->getString("channel").value_or(std::string{}));
-      row.session_epoch = static_cast<uint32_t>(item->getNonNegInt("session_epoch").value_or(0));
-      row.master_psk_b64 = item->getString("master_psk_b64").value_or(std::string{});
-      if (auto verified = item->getIf<int64_t>("psk_verified_at")) {
-        row.psk_verified_at = *verified;
-      }
-      if (const Array* retired = item->getArray("retired_psks")) {
-        for (const Value& retired_value : retired->elements) {
-          const Object* retired_item = asObject(retired_value);
-          if (!retired_item) {
-            continue;
-          }
-          RetiredPskEntry entry;
-          entry.epoch = static_cast<uint32_t>(retired_item->getNonNegInt("epoch").value_or(0));
-          entry.master_psk_b64 = retired_item->getString("master_psk_b64").value_or(std::string{});
-          entry.retired_at = retired_item->getIf<int64_t>("retired_at").value_or(0);
-          row.retired_psks.push_back(std::move(entry));
-        }
-      }
-      bundle.public_psks.push_back(std::move(row));
-    }
-  }
 
   bundle.account_card_json = parsed->getString("account_card_json");
   bundle.recovery_seed_b64 = parsed->getString("recovery_seed_b64");

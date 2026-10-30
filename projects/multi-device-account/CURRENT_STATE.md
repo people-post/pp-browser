@@ -19,10 +19,9 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 
 ## Next
 
-1. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
-2. **s1–s2** — recovery seed with its two tiers (easy: synced keychain, the default; private: the phrase) and the locker format (client only; can start now).
-3. **s3** — relay locker API (relay change first), then pp-node provider.
-4. **d4** master device, **s4** change log, **s5** restore / link from the locker, **s6** lab + promotion.
+1. **Account state (M023)** — built: phrase, relay locker, contact sync between siblings (with a nudge), restore from a typed phrase. Left: the exported-file provider; the recovery tiers (easy: synced keychain, needs a device; tier switch UI); the relay locker API deploys (www PR #215). pp-node is not a provider (M023 §6 amendment).
+2. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
+3. **d4** — master device (a restored or linked device signs a fresh list as master), revoke.
 
 ## Stated limits in force
 

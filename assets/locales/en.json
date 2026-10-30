@@ -254,7 +254,7 @@
     "settings.security.clear_undelivered_done": "Undelivered relay items cleared",
     "settings.security.clear_undelivered.not_ready": "Unlock and register before clearing the delivery queue.",
     "settings.security.link_device": "Use this account on another device",
-    "settings.security.link_device.help": "Copy a transfer code below (valid for 15 minutes). On the new device open PP, choose “I already have an account on another device” and paste it. Private chats are not copied.",
+    "settings.security.link_device.help": "Copy a transfer code below (valid for 15 minutes). On the new device open PP, choose “I already have an account on another device” and paste it. Your contacts follow; earlier messages stay on this device.",
     "settings.security.link_device.send_hint": "Both devices share this account. For now send from one device at a time; both can receive.",
     "settings.security.link_device.reset_hint": "Already using another account on this device? Reset it under Storage first.",
     "settings.security.link_device.export": "Copy transfer code…",

@@ -36,6 +36,11 @@ struct AccountStateGroup {
   std::vector<AccountStateGroupMember> members;
   /** The owner-signed roster statement JSON held; empty when none. */
   std::string roster_statement_json;
+  /**
+   * The account is out of this group (left, or removed) as of `roster_epoch`: a tombstone (id, owner and epoch
+   * only) so an older copy where it was a member does not bring the group back. A restore skips it.
+   */
+  bool left = false;
 };
 
 /**

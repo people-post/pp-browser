@@ -1045,10 +1045,10 @@ Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const ChatTarge
   if (!loaded->has_value() || !(*loaded)->restart_pending) {
     return {};
   }
-  // This device lost its numbering in the pair (restored from a backup, or through a chat reset): the
-  // pair moves to its next epoch at seq 1 instead of rewinding in this one (D014, #378) — for the 1:1 chat
-  // and for every group copy, which are numbered in the pair too (G010). A fresh session opens there with
-  // this send's key_init, which is how the peer follows; the old one is kept retired.
+  // This device lost its numbering in the pair (its sessions kept through *Reset chats*): the pair moves to
+  // its next epoch at seq 1 instead of rewinding in this one (D014, #378) — for the 1:1 chat and for every
+  // group copy, which are numbered in the pair too (G010). A fresh session opens there with this send's
+  // key_init, which is how the peer follows; the old one is kept retired.
   const uint32_t old_epoch = (*loaded)->session_epoch;
   uint32_t new_epoch = old_epoch + 1;
   DirectChatTarget direct{key.peer_identity_kind, key.peer_identity_value, ThreadChannel::E2ePublic};

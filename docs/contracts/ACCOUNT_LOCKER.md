@@ -5,7 +5,7 @@
 An account's state beyond its keys — the relay binding, nickname, contacts, groups, card floors — lives in
 an **account locker**: one encrypted snapshot, sealed and signed with keys derived from the account's
 **recovery seed** ([M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold)).
-The provider holding it (today the relay) cannot read it or forge it, and keeps only the newest version.
+The provider holding it (the relay; later other relays) cannot read it or forge it, and keeps only the newest version.
 The same snapshot is how linked devices share contact edits and how an account comes back on a fresh
 install from its recovery phrase.
 
@@ -53,9 +53,9 @@ vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/Acc
 | `relay_user_id` | the account's relay binding (restore needs it: no locker, no restore) |
 | `nickname` | the account's nickname |
 | `contacts` | address book rows (`ContactToJson`) |
-| `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)) |
+| `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true` |
 | `card_floors` | `{account_id, issued_at}`: the newest account card issue time seen per account — a restored device refuses older cards ([ACCOUNT_CARD § Newest wins](ACCOUNT_CARD.md)) |
-| `providers` | provider list (reserved; empty until more providers than the relay exist) |
+| `providers` | provider list (reserved; empty until a second relay exists). pp-nodes are never providers: they keep caches only (M023 §6 amendment) |
 | `contact_clock` | one register per contact account: `{account_id, at, present, digest}` (below) |
 
 Every key is optional on read; unknown keys are ignored.
@@ -72,7 +72,7 @@ One sync (`AccountLockerWorkflow::Publish`), serialized per device:
 3. **Take remote edits:** a register newer than ours wins — present: the remote user's fields go into
    this device's row (keeping its own id and directory data); absent: the contact is removed here.
 4. Store the merged state: contacts by register; groups by the higher `roster_epoch`; card floors by
-   the higher `issued_at`; providers by union. **Nothing new → no write.**
+   the higher `issued_at`; providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. **Nothing new → no write.**
 5. After a write, nudge the siblings: a `device_list` control-lane notice to the account's own mailbox,
    only when the own account card lists more than one device. A device that receives a verified sibling
    notice syncs 5 s later; since a sync with nothing new writes nothing, the exchange stops.
@@ -81,15 +81,15 @@ Triggers: 5 s after a contact, group or card change, or a sibling's nudge; at ea
 Only an account with a recovery seed and a relay id syncs.
 
 Limits: registers use device wall clocks, so only edits made **concurrently** on two devices are
-ordered by clock (an edit made after seeing another always wins). A group left on one device is not
-yet dropped from the locker (groups only merge in).
+ordered by clock (an edit made after seeing another always wins). Tombstones (contacts and groups) are kept;
+nothing prunes them yet.
 
 ## Restore
 
 On a fresh install, a typed phrase → seed → locker (fetched by id alone) → the link bundle the seed
 reconstructs (`RecoveryBundle`: derived account keys, the seed, a fresh DEK, the locker's relay id and
 nickname) imported under the PIN the user chooses → contacts written → once messaging is up: card floors
-before anything is received, groups recreated and checking their members, the device announced, the
+before anything is received, groups recreated (tombstones skipped) and checking their members, the device announced, the
 locker synced.
 
 ## On disk

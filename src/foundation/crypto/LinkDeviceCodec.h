@@ -1,30 +1,18 @@
 #pragma once
 
-#include "foundation/crypto/CryptoTypes.h"
-#include "foundation/crypto/IPskSessionStore.h"
-
 #include "common/Error.h"
 
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-/** Syncable PSK row for link-device — `e2e_public` (and later group) only (M005). */
-struct LinkDevicePublicPsk {
-  ChatTargetKey key;
-  uint32_t session_epoch = 1;
-  std::string master_psk_b64;
-  std::optional<int64_t> psk_verified_at;
-  std::vector<RetiredPskEntry> retired_psks;
-};
-
 /**
- * QR / paste payload `pp-browser-link-device-v1` (M012).
- * Never includes private (`e2e`) PSKs.
+ * QR / paste payload `pp-browser-link-device-v1` (M012): the account keys, the shared DEK, the relay binding,
+ * the nickname, the issuer's account card and the recovery seed. No sessions: each device opens its own, per
+ * device pair (M021). Keys the parser does not know (an older build's `public_psks`) are ignored.
  */
 struct LinkDeviceBundleV1 {
   std::string account_id;
@@ -38,7 +26,6 @@ struct LinkDeviceBundleV1 {
   std::string nickname;
   int64_t created_at_ms = 0;
   int64_t expires_at_ms = 0;
-  std::vector<LinkDevicePublicPsk> public_psks;
   /**
    * The issuing device's account card (JSON text; M021): the account's device list, which the new device
    * signs itself into. Absent in a recovery bundle (a restore starts a list of its own).

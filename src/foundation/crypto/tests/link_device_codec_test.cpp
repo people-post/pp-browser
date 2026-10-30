@@ -43,24 +43,25 @@ LinkDeviceBundleV1 MakeValidBundle() {
 
 TEST(LinkDeviceCodecTest, SerializeParseRoundTrip) {
   LinkDeviceBundleV1 bundle = MakeValidBundle();
-  LinkDevicePublicPsk row;
-  row.key.peer_identity_kind = "account";
-  row.key.peer_identity_value = "account:bob";
-  row.key.channel = CryptoChannel::E2ePublic;
-  row.session_epoch = 2;
-  row.master_psk_b64 = Base64Encode(TestDek());
-  bundle.public_psks.push_back(row);
-
   auto json = LinkDeviceCodec::Serialize(bundle);
   ASSERT_TRUE(json) << json.error().message;
+  EXPECT_EQ(json->find("public_psks"), std::string::npos) << "no sessions ride a link bundle (M021)";
   auto parsed = LinkDeviceCodec::Parse(*json);
   ASSERT_TRUE(parsed) << parsed.error().message;
   EXPECT_EQ(parsed->account_id, bundle.account_id);
   EXPECT_EQ(parsed->account_kem_pk_b64, bundle.account_kem_pk_b64);
+  EXPECT_EQ(parsed->dek_b64, bundle.dek_b64);
   EXPECT_EQ(parsed->relay_user_id, "relay:alice");
-  ASSERT_EQ(parsed->public_psks.size(), 1u);
-  EXPECT_EQ(parsed->public_psks.front().key.peer_identity_value, "account:bob");
-  EXPECT_EQ(parsed->public_psks.front().key.channel, CryptoChannel::E2ePublic);
+  EXPECT_EQ(parsed->nickname, "alice");
+}
+
+TEST(LinkDeviceCodecTest, KeysItDoesNotKnowAreIgnored) {
+  // An older build's bundle still carried the account's public sessions: the account in it links all the same.
+  const std::string json = LinkDeviceCodec::Serialize(MakeValidBundle()).value();
+  const std::string older = json.substr(0, json.size() - 1) + R"(,"public_psks":[{"channel":"e2e"}]})";
+  auto parsed = LinkDeviceCodec::Parse(older);
+  ASSERT_TRUE(parsed) << parsed.error().message;
+  EXPECT_EQ(parsed->relay_user_id, "relay:alice");
 }
 
 TEST(LinkDeviceCodecTest, TheIssuersAccountCardRidesAlongWhenGiven) {
@@ -106,19 +107,6 @@ TEST(LinkDeviceCodecTest, TheRecoverySeedTravelsOnlyWithTheKeysItDerives) {
   LinkDeviceBundleV1 older = MakeValidBundle();
   EXPECT_FALSE(older.recovery_seed_b64);
   EXPECT_TRUE(LinkDeviceCodec::Validate(older));
-}
-
-TEST(LinkDeviceCodecTest, RejectsPrivateE2ePsks) {
-  LinkDeviceBundleV1 bundle = MakeValidBundle();
-  LinkDevicePublicPsk row;
-  row.key.peer_identity_kind = "account";
-  row.key.peer_identity_value = "account:bob";
-  row.key.channel = CryptoChannel::E2e;
-  row.session_epoch = 1;
-  row.master_psk_b64 = Base64Encode(TestDek());
-  bundle.public_psks.push_back(row);
-  auto json = LinkDeviceCodec::Serialize(bundle);
-  EXPECT_FALSE(json);
 }
 
 TEST(LinkDeviceCodecTest, RejectsExpiredBundle) {

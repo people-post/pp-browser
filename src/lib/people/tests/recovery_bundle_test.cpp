@@ -28,7 +28,6 @@ TEST(RecoveryBundleTest, ThePhraseRebuildsTheSameAccountWithAFreshDataKey) {
   EXPECT_EQ(a.recovery_seed_b64, std::optional<std::string>(Base64Encode(seed))) << "the restored install keeps it";
   EXPECT_NE(a.dek_b64, b.dek_b64) << "nothing here was sealed under the old data key: a new one";
   EXPECT_FALSE(a.account_card_json) << "the restored install signs a fresh device list";
-  EXPECT_TRUE(a.public_psks.empty()) << "sessions are per device: none to bring back";
   EXPECT_FALSE(BuildRecoveryBundleJson(seed, "", "alice", 1)) << "no relay binding: no account to come back to";
 }
 

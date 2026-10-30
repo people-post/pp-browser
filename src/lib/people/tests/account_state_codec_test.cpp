@@ -59,5 +59,21 @@ TEST(AccountStateCodecTest, DropsMembersWithoutAnIdentity) {
   EXPECT_EQ(parsed->members[0].identity, "account:alice");
 }
 
+TEST(AccountStateCodecTest, ALeftGroupRoundTripsAsATombstone) {
+  AccountStateGroup group;
+  group.group_id = "group:hike";
+  group.owner_identity = "account:alice";
+  group.roster_epoch = 7;
+  group.left = true;
+  const Object json = AccountStateCodec::GroupToJson(group);
+  auto parsed = AccountStateCodec::GroupFromJson(json);
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_TRUE(parsed->left);
+  EXPECT_EQ(parsed->roster_epoch, 7u);
+
+  group.left = false;
+  EXPECT_FALSE(AccountStateCodec::GroupToJson(group).contains("left")) << "a group we are in carries no flag";
+}
+
 } // namespace
 } // namespace pbr
