@@ -6,6 +6,8 @@
 #include "domain/delivery/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+
+#include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
 
@@ -1693,6 +1695,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           std::string title;
           std::string body;
           std::string thread_id;
+          bool mentions_us = false;
         };
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
@@ -1739,6 +1742,8 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
                 .title = std::move(notice_title),
                 .body = preview && !preview->empty() ? *preview : "You have a new message",
                 .thread_id = resolved_thread_id,
+                .mentions_us = outcome.persisted_message &&
+                               InboundMentionsUs(resolved_thread_id, *outcome.persisted_message, local_account_id),
             });
           }
         }
@@ -1769,7 +1774,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
                                     for (auto& notice : notices) {
                                       on_background_unread_(std::move(notice.title),
                                                             std::move(notice.body),
-                                                            std::move(notice.thread_id));
+                                                            std::move(notice.thread_id), notice.mentions_us);
                                     }
                                   });
         }
@@ -1845,8 +1850,18 @@ void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const Deli
 }
 
 void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
-    std::function<void(std::string title, std::string body, std::string thread_id)> callback) {
+    std::function<void(std::string, std::string, std::string, bool)> callback) {
   on_background_unread_ = std::move(callback);
+}
+
+bool MeshDeliveryOrchestrator::InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message,
+                                                 const std::string& local_account) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread || !(*thread)->group_id) {
+    return false;
+  }
+  const auto blocked = contacts_.IsAccountBlocked(message.sender_contact_id);
+  return MessageMentionsUs(message, *(*thread)->group_id, local_account, group_roster_, blocked && *blocked);
 }
 
 } // namespace pbr

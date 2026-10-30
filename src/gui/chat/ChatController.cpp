@@ -33,6 +33,7 @@
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/PlainTextLinks.h"
 #include "lib/messaging/QuoteReply.h"
@@ -2275,14 +2276,20 @@ void ChatController::WireMessagingBindings() {
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread(
-      [this](std::string title, std::string body, std::string thread_id) {
+      [this](std::string title, std::string body, std::string thread_id, bool mentions_us) {
         if (!Store().Snapshot().profile_prefs.show_notifications) {
           return;
         }
-        // A muted thread still counts as unread in the list; it just does not notify.
+        // A muted thread still counts as unread in the list; it just does not notify — unless the message
+        // mentions us (G015), and then once a minute per group at most.
         const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
-        if (prefs && ThreadIsMuted(prefs->muted_until, util::NowUnixMs())) {
-          return;
+        const int64_t now_ms = util::NowUnixMs();
+        if (prefs && ThreadIsMuted(prefs->muted_until, now_ms)) {
+          int64_t& last = muted_mention_alert_ms_[thread_id];
+          if (!mentions_us || !MutedMentionMayAlert(last, now_ms)) {
+            return;
+          }
+          last = now_ms;
         }
         // A stranger's first message arrives before the directory answered, so the title would be a bare
         // id. Give the lookup a moment and use whatever name is known by then.

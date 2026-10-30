@@ -35,6 +35,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupRosterSyncCodec.cpp
     GroupRosterSyncFamily.cpp
     TextSpans.cpp
+    MentionAlert.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
     OutboundMessage.cpp

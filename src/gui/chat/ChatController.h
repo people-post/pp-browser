@@ -278,6 +278,8 @@ private:
   ConversationsFacade* facade_ = nullptr;
   /** The chats list's decisions and buttons (pp-app-probe drives the same presenter). */
   ChatPresenter presenter_;
+  /** When each muted group last alerted on a mention (G015: at most once a minute). */
+  std::unordered_map<std::string, int64_t> muted_mention_alert_ms_;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;
