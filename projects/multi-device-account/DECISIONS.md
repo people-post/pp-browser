@@ -422,7 +422,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 1. Private tier: losing the phrase **and** every device loses the account. Easy tier: losing the platform account too. No server of ours can recover it.
 2. Easy tier: the platform account (Apple / Google) is a way into the PP account.
-3. A provider learns the locker id, the padded size and when it is written; with traffic analysis (IP, timing) it may link the locker to the account.
+3. A provider learns the locker id, the padded size and when it is written; with traffic analysis (IP, timing) it may link the locker to the account. The relay as provider **knows** which of its registered users writes which locker: writes are authenticated for its quota (s3); reads carry no identity.
 4. A device restored from nothing cannot detect rollback below the newest version among the providers it reaches.
 5. Last write wins can drop one of two concurrent edits to the same record.
 6. No message history: a restored or new device starts with none (peers may re-serve it — G013 amendment 3).

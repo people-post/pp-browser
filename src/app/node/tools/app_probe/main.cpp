@@ -30,6 +30,9 @@
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
+//   locker_publish                      seal this account's state into its locker at the relay {version} (M023)
+//   locker_fetch {phrase}               the locker a recovery phrase opens: {found, relay_user_id, nickname,
+//                                       contacts: [account ids], groups: [group ids], card_floors}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
@@ -65,6 +68,8 @@
 #include "feature/product/ProductStack.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "lib/people/LocalAccountBackup.h"
+#include "feature/conversations/AccountLockerWorkflow.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -413,6 +418,63 @@ public:
             }
             Object out = Reply(id, true);
             out.set("phrase", phrase->value_or(""));
+            Emit(out);
+          });
+    } else if (cmd == "locker_publish") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<uint64_t>>(
+          WorkerLane::Normal,
+          [this]() {
+            AccountLockerWorkflow* locker = Hub().AccountLocker();
+            return locker ? locker->Publish() : Roe<uint64_t>(Error("messaging not ready"));
+          },
+          [id](Roe<uint64_t> version) {
+            if (!version) {
+              ReplyError(id, version.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.setJsonUInt("version", *version);
+            Emit(out);
+          });
+    } else if (cmd == "locker_fetch") {
+      const std::string phrase = request->getString("phrase").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<AccountLockerState>>>(
+          WorkerLane::Normal,
+          [this, phrase]() -> Roe<std::optional<AccountLockerState>> {
+            auto seed = DecodeRecoveryPhrase(phrase);
+            if (!seed) {
+              return seed.error();
+            }
+            AccountLockerWorkflow* locker = Hub().AccountLocker();
+            return locker ? locker->Fetch(*seed) : Roe<std::optional<AccountLockerState>>(Error("messaging not ready"));
+          },
+          [id](Roe<std::optional<AccountLockerState>> state) {
+            if (!state) {
+              ReplyError(id, state.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("found", state->has_value());
+            if (*state) {
+              const AccountLockerState& s = **state;
+              out.set("relay_user_id", s.relay_user_id);
+              out.set("nickname", s.nickname);
+              std::vector<Value> contacts;
+              for (const Contact& contact : s.contacts) {
+                for (const mesh::ContactId& cid : contact.remote.ids) {
+                  if (cid.kind == mesh::ContactIdKind::Account) {
+                    contacts.emplace_back(cid.value);
+                  }
+                }
+              }
+              out.set("contacts", ArrayValue(std::move(contacts)));
+              std::vector<Value> groups;
+              for (const AccountBackupGroup& group : s.extras.groups) {
+                groups.emplace_back(group.group_id);
+              }
+              out.set("groups", ArrayValue(std::move(groups)));
+              out.set("card_floors", static_cast<int64_t>(s.extras.card_floors.size()));
+            }
             Emit(out);
           });
     } else if (cmd == "link_import") {

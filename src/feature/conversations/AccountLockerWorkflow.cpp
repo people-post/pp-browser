@@ -1,0 +1,174 @@
+#include "feature/conversations/AccountLockerWorkflow.h"
+
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/RecoverySeed.h"
+#include "common/Utilities.h"
+
+#include <algorithm>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+namespace {
+
+Roe<LockerKeys> LockerKeysOf(const ByteVector& seed) {
+  auto recovery = DeriveRecoveryKeys(seed);
+  if (!recovery) {
+    return recovery.error();
+  }
+  return account_locker::KeysFrom(*recovery);
+}
+
+Roe<ByteVector> HexToBytes(const std::string& hex) {
+  if (hex.size() % 2 != 0) {
+    return Error("odd-length hex");
+  }
+  ByteVector out;
+  out.reserve(hex.size() / 2);
+  for (size_t i = 0; i < hex.size(); i += 2) {
+    const auto nibble = [](char c) -> int {
+      if (c >= '0' && c <= '9') return c - '0';
+      if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+      return -1;
+    };
+    const int hi = nibble(hex[i]);
+    const int lo = nibble(hex[i + 1]);
+    if (hi < 0 || lo < 0) {
+      return Error("not lowercase hex");
+    }
+    out.push_back(static_cast<uint8_t>(hi * 16 + lo));
+  }
+  return out;
+}
+
+} // namespace
+
+LockerRecord LockerRecordFromSnapshot(const LockerSnapshot& snapshot) {
+  return LockerRecord{.locker_id = BytesToHex(snapshot.locker_id),
+                      .version = snapshot.version,
+                      .signing_public_key_b64 = Base64Encode(snapshot.signing_public_key),
+                      .sealed_b64 = Base64Encode(snapshot.sealed),
+                      .signature_b64 = Base64Encode(snapshot.signature)};
+}
+
+Roe<LockerSnapshot> LockerSnapshotFromRecord(const LockerRecord& record) {
+  auto id = HexToBytes(record.locker_id);
+  auto pk = Base64Decode(record.signing_public_key_b64);
+  auto sealed = Base64Decode(record.sealed_b64);
+  auto signature = Base64Decode(record.signature_b64);
+  if (!id || !pk || !sealed || !signature) {
+    return Error("account locker: a malformed record");
+  }
+  return LockerSnapshot{.locker_id = std::move(*id),
+                        .version = record.version,
+                        .signing_public_key = std::move(*pk),
+                        .sealed = std::move(*sealed),
+                        .signature = std::move(*signature)};
+}
+
+AccountLockerWorkflow::AccountLockerWorkflow(IdentityStore& identity, ContactsStore& contacts, Sources sources)
+    : identity_(identity), contacts_(contacts), sources_(std::move(sources)) {
+  redirectLogger("AccountLocker");
+}
+
+Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  AccountLockerState state;
+  state.relay_user_id = identity->relay_user_id;
+  state.nickname = identity->nickname;
+  auto contacts = contacts_.List();
+  if (!contacts) {
+    return contacts.error();
+  }
+  state.contacts = std::move(*contacts);
+  if (sources_.groups) {
+    if (auto groups = sources_.groups()) {
+      state.extras.groups = std::move(*groups);
+    } else {
+      log().warning << "Locker without groups: " << groups.error().message;
+    }
+  }
+  if (sources_.card_floors) {
+    if (auto floors = sources_.card_floors()) {
+      for (const PeerCardFloor& floor : *floors) {
+        state.extras.card_floors.push_back({floor.account_id, floor.issued_at});
+      }
+    } else {
+      log().warning << "Locker without card floors: " << floors.error().message;
+    }
+  }
+  return state;
+}
+
+Roe<uint64_t> AccountLockerWorkflow::Publish() {
+  if (!client_) {
+    return Error("No locker provider configured");
+  }
+  auto seed = identity_.RecoverySeed();
+  if (!seed) {
+    return seed.error();
+  }
+  if (!*seed) {
+    return Error("This account has no recovery seed (minted before M023): nothing to seal a locker with");
+  }
+  auto keys = LockerKeysOf(**seed);
+  if (!keys) {
+    return keys.error();
+  }
+  auto state = CurrentState();
+  if (!state) {
+    return state.error();
+  }
+  if (state->relay_user_id.empty()) {
+    return Error("Not registered with the relay yet");
+  }
+  const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), last_published_ + 1);
+  auto snapshot = account_locker::Seal(*state, *keys, version);
+  if (!snapshot) {
+    return snapshot.error();
+  }
+  std::optional<LockerPutRefusal> refused;
+  if (auto put = client_->Put(state->relay_user_id, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
+    return put.error();
+  }
+  last_published_ = version;
+  log().info << "Account locker published version=" << version << " contacts=" << state->contacts.size()
+             << " groups=" << state->extras.groups.size() << " bytes=" << snapshot->sealed.size();
+  return version;
+}
+
+Roe<std::optional<AccountLockerState>> AccountLockerWorkflow::Fetch(const ByteVector& recovery_seed,
+                                                                    const uint64_t at_least) {
+  if (!client_) {
+    return Error("No locker provider configured");
+  }
+  auto keys = LockerKeysOf(recovery_seed);
+  if (!keys) {
+    return keys.error();
+  }
+  auto record = client_->Get(BytesToHex(keys->locker_id));
+  if (!record) {
+    return record.error();
+  }
+  if (!*record) {
+    return std::optional<AccountLockerState>{};
+  }
+  auto snapshot = LockerSnapshotFromRecord(**record);
+  if (!snapshot) {
+    return snapshot.error();
+  }
+  auto newest = account_locker::PickNewest({*snapshot}, *keys, at_least);
+  if (!newest) {
+    return Error("The provider's locker does not verify, or is older than one this device has seen");
+  }
+  auto opened = account_locker::Open(*newest, *keys);
+  if (!opened) {
+    return opened.error();
+  }
+  return std::optional<AccountLockerState>(std::move(*opened));
+}
+
+} // namespace pbr

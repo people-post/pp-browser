@@ -1,6 +1,7 @@
 // The account locker (multi-device M023 §4): sealed, padded, signed snapshots any provider can hold.
 #include "lib/people/AccountLocker.h"
 
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/crypto/RecoverySeed.h"
 
@@ -108,6 +109,17 @@ TEST(AccountLockerTest, SizesAreBucketedSoSmallChangesDoNotShow) {
   const auto c = account_locker::Seal(many, keys, 3).value();
   EXPECT_GT(c.sealed.size(), a.sealed.size()) << "a much larger state moves up a bucket";
   EXPECT_TRUE(account_locker::Open(c, keys));
+}
+
+TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
+  // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
+  ByteVector locker_id(32);
+  for (size_t i = 0; i < locker_id.size(); ++i) {
+    locker_id[i] = static_cast<uint8_t>(i);
+  }
+  EXPECT_EQ(BytesToHex(account_locker::SignBytes(locker_id, 7, ByteVector{0xaa, 0xbb})),
+            "70702d62726f777365723a6163636f756e742d6c6f636b65722d763100010000000000000020000102030405060708090a0b0c0d0e0f"
+            "101112131415161718191a1b1c1d1e1f00000000000000070000000000000002aabb");
 }
 
 } // namespace

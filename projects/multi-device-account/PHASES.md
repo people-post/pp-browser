@@ -182,12 +182,14 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Snapshot codec (`lib/people/AccountLocker.*`): state (relay binding, nickname, contacts, groups with the signed statement, card floors, providers) → JSON, length-prefixed and zero-padded to 4 KiB × 4ⁿ buckets, XChaCha20-Poly1305 under the locker key (AAD binds locker id + version), signed with the locker ML-DSA key over tag / id / version / sealed; locker id = BLAKE2b-256(signing pk) so `VerifyOwner` needs no account knowledge
 - [x] Reader: `PickNewest` — the highest version that verifies and opens, none below the highest this device has seen
 - [ ] Person-level preferences in the state (which ones follow the person: decide with s4)
-- [ ] Persist the highest version seen per device (with s3, where snapshots are fetched)
+- [ ] Persist the highest version seen per device (`Fetch(seed, at_least)` takes it; nothing stores it yet)
 - [ ] Wire / disk doc in `docs/contracts/` (promote when s3 ships); unit tests `account_locker_test.cpp` hold the format until then
 
 ### s3 — Providers
 
-- [ ] Relay locker API: put (only newer version, valid locker signature) / get by locker id, quota — **relay change: merges and deploys before the client**
+- [x] Relay locker API (web2 www `feat/account-locker`, local — **merges and deploys before the client**): `POST /v1/lockers/put` (relay half: the user's account signature; locker half: key hashes to the id, signature verifies; only newer; 4 lockers per user; ≤ 1 MiB) / `GET /v1/lockers/:id` by id alone; jest + golden vectors shared with the client ([SERVICE_ENDPOINTS § HTTP account lockers](../../docs/contracts/SERVICE_ENDPOINTS.md))
+- [x] Client: `HttpLockerClient` (`lib/net`), `AccountLockerWorkflow` (`feature/conversations`: current state → seal → put; seed → get → verify → open); probe `locker_publish` / `locker_fetch`; lab `account_locker_round_trip`
+- [ ] When to publish: debounced on contact / group / card changes (with s4)
 - [ ] pp-node provider (same API); exported file provider
 - [ ] Provider list in the state; the configured relay tried first
 

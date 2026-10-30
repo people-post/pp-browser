@@ -243,6 +243,9 @@ void ConversationsHub::WireRelayAuthSigner() {
   if (http_blob_) {
     http_blob_->SetAuthSigner(signer);
   }
+  if (http_locker_) {
+    http_locker_->SetAuthSigner(signer);
+  }
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
@@ -320,13 +323,21 @@ void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
       http_registration_url_ = registration_url;
       http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
       http_blob_ = std::make_unique<HttpBlobClient>(http_registration_url_);
+      http_locker_ = std::make_unique<HttpLockerClient>(http_registration_url_);
       WireRelayAuthSigner();
     }
     registration_ = http_registration_.get();
     blob_ = http_blob_.get();
+    if (account_locker_) {
+      account_locker_->SetClient(http_locker_.get());
+    }
   } else {
     http_registration_.reset();
+    if (account_locker_) {
+      account_locker_->SetClient(nullptr);
+    }
     http_blob_.reset();
+    http_locker_.reset();
     http_registration_url_.clear();
     registration_ = nullptr;
     blob_ = nullptr;
@@ -814,6 +825,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     inbox_->SetAttachmentDownloads(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
+  account_locker_.reset();
   group_membership_.reset();
   // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
   if (secrets_ != nullptr) {
@@ -1354,6 +1366,18 @@ void ConversationsHub::BuildMessagingObjects() {
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   BindGroupRosterSyncFamily();
+  account_locker_ = std::make_unique<AccountLockerWorkflow>(
+      *identity_, *contacts_,
+      AccountLockerWorkflow::Sources{
+          .groups = [this]() -> Roe<std::vector<AccountBackupGroup>> {
+            return group_membership_ ? group_membership_->BackupGroups()
+                                     : Roe<std::vector<AccountBackupGroup>>(std::vector<AccountBackupGroup>{});
+          },
+          .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
+            return peer_cards_ ? peer_cards_->NewestKnown()
+                               : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
+          }});
+  account_locker_->SetClient(http_locker_.get());
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -2928,6 +2952,7 @@ void ConversationsHub::Shutdown() {
   system_controls_.Unbind(kInitiationBillingFamily);
   system_controls_.Unbind(kPaymentPromiseFamily);
   system_controls_.Unbind(kGroupRosterSyncFamily);
+  account_locker_.reset();
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();

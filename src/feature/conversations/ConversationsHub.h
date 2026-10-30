@@ -9,6 +9,8 @@
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AccountBackupCodec.h"
 #include "lib/people/LocalAccountBackup.h"
+#include "lib/net/HttpLockerClient.h"
+#include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/ProfileIdentityView.h"
@@ -285,6 +287,8 @@ public:
    */
   Roe<void> RestoreLocalBackup(const std::string& pin);
   Roe<void> DeleteLocalBackup();
+  /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
+  AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
@@ -500,6 +504,9 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
+  /** The relay as account-locker provider (M023), next to the blob client on the registration base URL. */
+  std::unique_ptr<HttpLockerClient> http_locker_;
+  std::unique_ptr<AccountLockerWorkflow> account_locker_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;

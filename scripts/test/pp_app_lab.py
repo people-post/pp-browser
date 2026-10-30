@@ -1708,6 +1708,33 @@ def scenario_recovery_phrase_needs_the_pin(lab):
         raise ProbeError("alice's laptop: another recovery phrase than her phone's")
 
 
+def scenario_account_locker_round_trip(lab):
+    """Alice's account state sealed into her locker at the relay (multi-device M023 s3): anyone holding only her
+    recovery phrase — here Bob's app, as a restoring device would — finds the locker, checks it is hers and opens
+    her contacts, her group and her card floors; a phrase that never published finds nothing, and a second
+    publish stores a newer version."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = lab_group_id(a, threads)
+    first = a.cmd("locker_publish", timeout=60)["version"]
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    found = b.cmd("locker_fetch", phrase=phrase, timeout=60)
+    if not found.get("found"):
+        raise ProbeError("bob: no locker for alice's phrase")
+    if sorted(found["contacts"]) != sorted([b.account, c.account]):
+        raise ProbeError("alice's locker: contacts %s (want bob and carol)" % found["contacts"])
+    if group_id not in found["groups"]:
+        raise ProbeError("alice's locker: groups %s lack %s" % (found["groups"], group_id))
+    if found["card_floors"] < 2:
+        raise ProbeError("alice's locker: %d card floors (want her contacts')" % found["card_floors"])
+    nothing = b.cmd("locker_fetch", phrase=b.cmd("recovery_phrase", pin=PIN)["phrase"], timeout=60)
+    if nothing.get("found"):
+        raise ProbeError("bob: a locker for a phrase that never published")
+    second = a.cmd("locker_publish", timeout=60)["version"]
+    if second <= first:
+        raise ProbeError("alice: locker version %d after %d" % (second, first))
+
+
 def scenario_linked_devices_both_send(lab):
     """Alice's phone and her newly linked laptop are two devices of one account (M021). The laptop's first
     message brings Bob its device list; from then on Bob's answers reach both devices, and both keep writing
@@ -2371,6 +2398,7 @@ SCENARIOS = [
     ("restored_device_is_heard", scenario_restored_device_is_heard),
     ("restored_device_hears_first", scenario_restored_device_hears_first),
     ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
+    ("account_locker_round_trip", scenario_account_locker_round_trip),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),

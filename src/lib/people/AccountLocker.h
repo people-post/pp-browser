@@ -78,7 +78,10 @@ Roe<AccountLockerState> Open(const LockerSnapshot& snapshot, const LockerKeys& k
 std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snapshots, const LockerKeys& keys,
                                          uint64_t at_least = 0);
 
-/** The bytes signed for a snapshot: a tag, the locker id, the version and the sealed state. */
+/**
+ * The bytes signed for a snapshot: `pp-browser:account-locker-v1` and a zero byte, version byte 1, LenBytes(locker
+ * id), u64 BE version, LenBytes(sealed) — what a provider checks (the relay: `www` relay/LockerSignBytes.ts).
+ */
 ByteVector SignBytes(const ByteVector& locker_id, uint64_t version, const ByteVector& sealed);
 
 /** The JSON a snapshot's state is (exposed for tests). */

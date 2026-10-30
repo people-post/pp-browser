@@ -14,7 +14,9 @@ namespace pbr {
 namespace account_locker {
 namespace {
 
-constexpr const char kSignTag[] = "pp-browser:account-locker-v1";
+/** Signed-bytes domain (the relay's convention: UTF-8, then a zero byte, then a version byte). */
+constexpr const char kSignDomain[] = "pp-browser:account-locker-v1";
+constexpr uint8_t kSignVersion = 1;
 constexpr size_t kFirstBucket = 4 * 1024;
 
 void AppendU32(ByteVector& out, uint32_t v) {
@@ -29,8 +31,9 @@ void AppendU64(ByteVector& out, uint64_t v) {
   }
 }
 
-void AppendLen(ByteVector& out, const ByteVector& bytes) {
-  AppendU32(out, static_cast<uint32_t>(bytes.size()));
+/** LenBytes: u64 BE length, then the bytes (WIRE_SCHEMAS encoding table). */
+void AppendLenBytes(ByteVector& out, const ByteVector& bytes) {
+  AppendU64(out, bytes.size());
   out.insert(out.end(), bytes.begin(), bytes.end());
 }
 
@@ -63,10 +66,11 @@ Roe<LockerKeys> KeysFrom(const RecoveryKeys& recovery) {
 }
 
 ByteVector SignBytes(const ByteVector& locker_id, const uint64_t version, const ByteVector& sealed) {
-  ByteVector out(kSignTag, kSignTag + sizeof(kSignTag) - 1);
-  AppendLen(out, locker_id);
+  ByteVector out(kSignDomain, kSignDomain + sizeof(kSignDomain));  // the domain and its terminating zero byte
+  out.push_back(kSignVersion);
+  AppendLenBytes(out, locker_id);
   AppendU64(out, version);
-  AppendLen(out, sealed);
+  AppendLenBytes(out, sealed);
   return out;
 }
 
