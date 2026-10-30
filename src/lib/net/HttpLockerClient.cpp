@@ -22,7 +22,9 @@ std::string ErrorText(const HttpResponse& response) {
   return "HTTP status " + std::to_string(response.status_code);
 }
 
-Object RecordToJson(const LockerRecord& record) {
+} // namespace
+
+Object LockerRecordToJson(const LockerRecord& record) {
   Object json;
   json.set("locker_id", record.locker_id);
   json.setJsonUInt("version", record.version);
@@ -32,7 +34,15 @@ Object RecordToJson(const LockerRecord& record) {
   return json;
 }
 
-} // namespace
+LockerRecord LockerRecordFromJson(const Object& json) {
+  LockerRecord record;
+  record.locker_id = json.getString("locker_id").value_or("");
+  record.version = json.getNonNegInt("version").value_or(0);
+  record.signing_public_key_b64 = json.getString("signing_public_key_b64").value_or("");
+  record.sealed_b64 = json.getString("sealed_b64").value_or("");
+  record.signature_b64 = json.getString("signature_b64").value_or("");
+  return record;
+}
 
 std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& relay_user_id, const std::string& locker_id,
                                              const uint64_t version, const int64_t timestamp) {
@@ -65,7 +75,7 @@ Roe<void> HttpLockerClient::Put(const std::string& relay_user_id, const LockerRe
   body.set("relay_user_id", relay_user_id);
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
-  body.set("locker", ObjectValue(RecordToJson(record)));
+  body.set("locker", ObjectValue(LockerRecordToJson(record)));
   auto response =
       HttpClient::Post(base_url_ + "/v1/lockers/put", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
@@ -103,12 +113,7 @@ Roe<std::optional<LockerRecord>> HttpLockerClient::Get(const std::string& locker
   if (!locker) {
     return Error("Locker get: no locker in the answer");
   }
-  LockerRecord record;
-  record.locker_id = locker->getString("locker_id").value_or("");
-  record.version = locker->getNonNegInt("version").value_or(0);
-  record.signing_public_key_b64 = locker->getString("signing_public_key_b64").value_or("");
-  record.sealed_b64 = locker->getString("sealed_b64").value_or("");
-  record.signature_b64 = locker->getString("signature_b64").value_or("");
+  LockerRecord record = LockerRecordFromJson(*locker);
   if (record.locker_id != locker_id) {
     return Error("Locker get: another locker in the answer");
   }

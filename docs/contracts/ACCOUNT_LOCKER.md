@@ -92,6 +92,15 @@ nickname) imported under the PIN the user chooses → contacts written → once 
 before anything is received, groups recreated (tombstones skipped) and checking their members, the device announced, the
 locker synced.
 
+## Saved copy (exported locker file)
+
+The user can keep a copy of the locker wherever they like (M023 §6 amendment): `ExportFileJson` seals the state as
+this device has it — no network — at a version above any seen (so the provider's next write goes higher still),
+as JSON `{format: "pp-browser-account-locker-file-v1", exported_at, locker: {locker_id, version,
+signing_public_key_b64, sealed_b64, signature_b64}}` (the record the relay stores). Restore takes the phrase and
+any saved copies: the newest valid snapshot among them and the provider's wins (same checks as above); with a
+saved copy an unreachable provider is not an error. A file of another phrase, or not a saved account, is refused.
+
 ## On disk
 
 `{data_dir}/profiles/{id}/account_locker.json` (plaintext, atomic write):

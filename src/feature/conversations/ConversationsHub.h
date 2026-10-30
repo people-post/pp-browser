@@ -270,9 +270,11 @@ public:
    * Fresh install, before unlocking: the account back from its recovery phrase (multi-device M023 §8) — its locker
    * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), imported as a link bundle
    * the phrase reconstructs (a fresh DEK under `pin`), the contacts put back; groups, card floors and the announce
-   * to contacts follow once messaging is up, as for any restore.
+   * to contacts follow once messaging is up, as for any restore. `saved_copies`: exported locker files' text — the
+   * newest valid copy among them and the provider's is used (M023 §6 amendment).
    */
-  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin);
+  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                      const std::vector<std::string>& saved_copies = {});
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);

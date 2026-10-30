@@ -116,8 +116,17 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
-Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin) {
-  return hub_.RestoreFromRecoveryPhrase(phrase, pin);
+Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                                         const std::vector<std::string>& saved_copies) {
+  return hub_.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+}
+
+Roe<std::string> ConversationsFacade::ExportAccountCopy() {
+  AccountLockerWorkflow* locker = hub_.AccountLocker();
+  if (!hub_.IsMessagingReady() || !locker) {
+    return Error("Messaging is not ready");
+  }
+  return locker->ExportFileJson();
 }
 
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }

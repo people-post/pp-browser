@@ -5,6 +5,7 @@
 #include "foundation/data/UserPreferences.h"
 
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -29,6 +30,8 @@ struct BootstrapOptions {
    * — what "Restore with recovery phrase" does on a fresh install.
    */
   std::string restore_recovery_phrase;
+  /** With it: saved account copies (exported locker files' text) to restore from as well as the relay's. */
+  std::vector<std::string> restore_saved_copies;
 };
 
 } // namespace pbr

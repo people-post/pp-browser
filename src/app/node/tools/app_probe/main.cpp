@@ -37,6 +37,7 @@
 //   remove_contact {account}            take the contact out of the address book
 //   locker_fetch {phrase}               the locker a recovery phrase opens: {found, relay_user_id, nickname,
 //                                       contacts: [account ids], groups: [group ids], card_floors}
+//   locker_export {path}                save the account's state as an exported locker file at path: {version}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
@@ -48,6 +49,7 @@
 // Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
 //
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
+// --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
 
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
@@ -429,6 +431,26 @@ public:
             }
             Object out = Reply(id, true);
             out.setJsonUInt("version", *version);
+            Emit(out);
+          });
+    } else if (cmd == "locker_export") {
+      const std::string path = request->getString("path").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+          WorkerLane::Normal, [this]() { return facade_->ExportAccountCopy(); },
+          [id, path](Roe<std::string> file) {
+            if (!file) {
+              ReplyError(id, file.error().message);
+              return;
+            }
+            auto record = LockerRecordFromFileJson(*file);
+            std::ofstream out_file(path, std::ios::binary | std::ios::trunc);
+            out_file << *file;
+            if (!record || !out_file) {
+              ReplyError(id, "the saved copy was not written");
+              return;
+            }
+            Object out = Reply(id, true);
+            out.setJsonUInt("version", record->version);
             Emit(out);
           });
     } else if (cmd == "locker_fetch") {
@@ -1168,6 +1190,7 @@ int main(int argc, char** argv) {
   std::string pin;
   std::string log_file;
   std::string restore_phrase_file;
+  std::string restore_saved_copy;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
@@ -1175,10 +1198,13 @@ int main(int argc, char** argv) {
       log_file = argv[++i];
     } else if (std::strcmp(argv[i], "--restore-phrase-file") == 0 && i + 1 < argc) {
       restore_phrase_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--restore-saved-copy") == 0 && i + 1 < argc) {
+      restore_saved_copy = argv[++i];
     }
   }
   if (pin.empty()) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE]\n");
+    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
+                         "[--restore-saved-copy FILE]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
@@ -1209,6 +1235,10 @@ int main(int argc, char** argv) {
   if (!restore_phrase_file.empty()) {
     std::ifstream phrase_in(restore_phrase_file);
     std::getline(phrase_in, options.restore_recovery_phrase);
+  }
+  if (!restore_saved_copy.empty()) {
+    std::ifstream copy_in(restore_saved_copy, std::ios::binary);
+    options.restore_saved_copies.emplace_back(std::istreambuf_iterator<char>(copy_in), std::istreambuf_iterator<char>());
   }
   auto booted = pbr::Bootstrap::Run(options, probe->Hub(), probe->Secrets());
   if (!booted) {

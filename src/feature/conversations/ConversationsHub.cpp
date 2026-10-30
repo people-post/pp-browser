@@ -1921,7 +1921,8 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   return {};
 }
 
-Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin) {
+Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                                     const std::vector<std::string>& saved_copies) {
   if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || !account_locker_) {
     return Error("Messaging is not ready");
   }
@@ -1930,7 +1931,7 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase,
     return seed.error();
   }
   // The locker holds the relay binding (and the rest): without it there is no account to come back to here.
-  auto fetched = account_locker_->Fetch(*seed);
+  auto fetched = account_locker_->Fetch(*seed, saved_copies);
   if (!fetched) {
     return Error("Account restore failed: " + fetched.error().message);
   }

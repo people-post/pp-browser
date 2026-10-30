@@ -73,12 +73,14 @@ class User:
 
     # --- process --------------------------------------------------------------------------------
 
-    def start(self, restore_phrase_file=None):
+    def start(self, restore_phrase_file=None, saved_copy_file=None):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
         argv = ["--config", self.config, "--pin", PIN, "--log-file", log]
         if restore_phrase_file:
             argv += ["--restore-phrase-file", restore_phrase_file]
+        if saved_copy_file:
+            argv += ["--restore-saved-copy", saved_copy_file]
         if self.container:
             # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
             script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
@@ -161,18 +163,25 @@ class User:
             else:
                 os.remove(path)
 
-    def restore_from_phrase(self, phrase):
+    def restore_from_phrase(self, phrase, saved_copy=None):
         """Every device is gone; a fresh install restores the account from its recovery phrase (multi-device
-        M023): a new device of the same account, its state from the locker. The app may already be dead (a
-        crashed or lost phone)."""
+        M023): a new device of the same account, its state from the locker — and from `saved_copy` (an exported
+        locker file's text) when given. The app may already be dead (a crashed or lost phone)."""
         before = self.cmd("whoami") if self.alive() else {"account": self.account, "peer_id": self.peer_id}
         self.uninstall()
         phrase_file = os.path.join(self.dir, "restore-phrase.txt")
         with open(phrase_file, "w") as f:
             f.write(phrase + "\n")
+        copy_file = None
+        if saved_copy is not None:
+            copy_file = os.path.join(self.dir, "saved-copy.json")
+            with open(copy_file, "w") as f:
+                f.write(saved_copy)
         self.surface = {"kind": "none"}
-        self.start(restore_phrase_file=phrase_file)
+        self.start(restore_phrase_file=phrase_file, saved_copy_file=copy_file)
         os.remove(phrase_file)
+        if copy_file:
+            os.remove(copy_file)
         who = self.wait_ready()
         if who.get("account") != before.get("account") or who.get("peer_id") == before.get("peer_id"):
             raise ProbeError("%s: restored as %s device %s (was %s device %s)" % (
@@ -1764,6 +1773,31 @@ def scenario_restore_from_phrase(lab):
     wait_for(lambda: a.log_text().count("Account locker published") >= 2, 30, "alice: the locker republished")
 
 
+def scenario_restore_from_a_saved_copy(lab):
+    """Alice keeps a saved copy of her account (an exported locker file, M023 §6 amendment): she names Bob, saves
+    a copy, and her phone dies before her locker caught up. Restored from her phrase and the file, the newer copy —
+    the file — wins: Bob keeps his name; and they still talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    a.cmd("rename_contact", account=b.account, remark="Bob (in the saved copy)")
+    copy_path = os.path.join(a.dir, "exported-copy.json")
+    saved = a.cmd("locker_export", path=copy_path)
+    a.crash()  # before the locker's own sync (5 s after the rename)
+    with open(copy_path) as f:
+        copy_text = f.read()
+    a.restore_from_phrase(phrase, saved_copy=copy_text)
+    if "locker version %d," % saved["version"] not in a.log_text():
+        raise ProbeError("alice: the restore did not use the saved copy (version %d)" % saved["version"])
+    row = next((c for c in a.cmd("contacts")["contacts"] if c["account"] == b.account), None)
+    if row is None or row["remark"] != "Bob (in the saved copy)":
+        raise ProbeError("alice: Bob after the restore %s" % row)
+    a.wait_mesh()
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    a.cmd("send", thread=a_thread, text="back from my saved copy")
+    wait_for(lambda: said_in(b, b_thread, "back from my saved copy"), 40, "bob: alice's message")
+
+
 def scenario_linked_devices_share_contact_edits(lab):
     """Alice's phone and her newly linked laptop share one address book through her locker (multi-device M023
     §7): the laptop's first sync brings the phone's contacts (the link carries none); a remark set on the laptop
@@ -2480,6 +2514,7 @@ SCENARIOS = [
     ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
     ("account_locker_round_trip", scenario_account_locker_round_trip),
     ("restore_from_phrase", scenario_restore_from_phrase),
+    ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),

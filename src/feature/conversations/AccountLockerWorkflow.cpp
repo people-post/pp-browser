@@ -17,6 +17,8 @@ namespace pbr {
 namespace {
 
 constexpr const char kStateFile[] = "account_locker.json";
+/** An exported locker file (M023 §6): the provider record as the relay stores it. */
+constexpr const char kLockerFileFormat[] = "pp-browser-account-locker-file-v1";
 
 Roe<LockerKeys> LockerKeysOf(const ByteVector& seed) {
   auto recovery = DeriveRecoveryKeys(seed);
@@ -268,29 +270,52 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   return version;
 }
 
-Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(const ByteVector& recovery_seed) {
-  if (!client_) {
+Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
+    const ByteVector& recovery_seed, const std::vector<std::string>& saved_copies) {
+  if (!client_ && saved_copies.empty()) {
     return Error("No locker provider configured");
   }
   auto keys = LockerKeysOf(recovery_seed);
   if (!keys) {
     return keys.error();
   }
-  auto record = client_->Get(BytesToHex(keys->locker_id));
-  if (!record) {
-    return record.error();
+  const std::string locker_id = BytesToHex(keys->locker_id);
+  // Every copy within reach — the provider's and any saved file — and the newest valid one wins (M023 §5).
+  std::vector<LockerSnapshot> candidates;
+  for (const std::string& file_json : saved_copies) {
+    auto record = LockerRecordFromFileJson(file_json);
+    if (!record) {
+      return record.error();
+    }
+    if (auto snapshot = LockerSnapshotFromRecord(*record)) {
+      candidates.push_back(std::move(*snapshot));
+    } else {
+      return Error("The saved copy is damaged: " + snapshot.error().message);
+    }
   }
-  if (!*record) {
+  if (client_) {
+    auto record = client_->Get(locker_id);
+    if (!record && candidates.empty()) {
+      return record.error();
+    }
+    if (!record) {
+      log().warning << "Locker provider not read, using the saved copy: " << record.error().message;
+    } else if (*record) {
+      auto snapshot = LockerSnapshotFromRecord(**record);
+      if (!snapshot) {
+        return snapshot.error();
+      }
+      candidates.push_back(std::move(*snapshot));
+    }
+  }
+  if (candidates.empty()) {
     return std::optional<Fetched>{};
   }
-  auto snapshot = LockerSnapshotFromRecord(**record);
-  if (!snapshot) {
-    return snapshot.error();
-  }
-  const std::string locker_id = BytesToHex(keys->locker_id);
-  auto newest = account_locker::PickNewest({*snapshot}, *keys, HighestSeen(locker_id));
+  auto newest = account_locker::PickNewest(candidates, *keys, HighestSeen(locker_id));
   if (!newest) {
-    return Error("The provider's locker does not verify, or is older than one this device has seen");
+    return Error(saved_copies.empty()
+                     ? "The provider's locker does not verify, or is older than one this device has seen"
+                     : "No copy belongs to this recovery phrase, or every copy is older than one this device has seen");
   }
   auto opened = account_locker::Open(*newest, *keys);
   if (!opened) {
@@ -298,6 +323,65 @@ Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
   }
   RaiseHighestSeen(locker_id, newest->version);
   return std::optional<Fetched>(Fetched{.state = std::move(*opened), .version = newest->version});
+}
+
+Roe<std::string> AccountLockerWorkflow::ExportFileJson() {
+  std::lock_guard sync(sync_mutex_);
+  auto seed = identity_.RecoverySeed();
+  if (!seed) {
+    return seed.error();
+  }
+  if (!*seed) {
+    return Error("This account has no recovery phrase: nothing to seal a copy with");
+  }
+  auto keys = LockerKeysOf(**seed);
+  if (!keys) {
+    return keys.error();
+  }
+  auto local = contacts_.List();
+  if (!local) {
+    return local.error();
+  }
+  auto state = CurrentState();
+  if (!state) {
+    return state.error();
+  }
+  if (state->relay_user_id.empty()) {
+    return Error("Not registered with the relay yet");
+  }
+  {
+    std::lock_guard lock(mutex_);
+    clock_.Observe(*local, util::NowUnixMs());
+    state->contact_clock = clock_.Entries();
+  }
+  // A version of its own, above any seen: the provider's next write goes higher still, so neither copy hides
+  // an edit made after the other.
+  const std::string locker_id = BytesToHex(keys->locker_id);
+  const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), HighestSeen(locker_id) + 1);
+  auto snapshot = account_locker::Seal(*state, *keys, version);
+  if (!snapshot) {
+    return snapshot.error();
+  }
+  RaiseHighestSeen(locker_id, version);
+  Save();
+  Object file;
+  file.set("format", kLockerFileFormat);
+  file.set("exported_at", util::NowUnixMs());
+  file.set("locker", ObjectValue(LockerRecordToJson(LockerRecordFromSnapshot(*snapshot))));
+  log().info << "Account locker saved as a file version=" << version << " contacts=" << state->contacts.size();
+  return DumpJson(file);
+}
+
+Roe<LockerRecord> LockerRecordFromFileJson(const std::string& file_json) {
+  auto root = TryParseObject(file_json);
+  if (!root || root->getString("format").value_or("") != kLockerFileFormat) {
+    return Error("This file is not a saved PP account");
+  }
+  const Object* locker = root->getObject("locker");
+  if (!locker) {
+    return Error("The saved copy is damaged: no locker in it");
+  }
+  return LockerRecordFromJson(*locker);
 }
 
 } // namespace pbr

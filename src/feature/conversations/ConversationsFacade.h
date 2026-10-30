@@ -72,7 +72,10 @@ public:
   bool HasRecoveryPhrase();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
   /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
-  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin);
+  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                      const std::vector<std::string>& saved_copies = {});
+  /** The account's state sealed as an exported locker file's text (M023 §6 amendment; the user keeps it). */
+  Roe<std::string> ExportAccountCopy();
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

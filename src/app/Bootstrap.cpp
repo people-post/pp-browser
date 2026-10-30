@@ -96,7 +96,9 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
   if (auto pin = PinResolver::Resolve(options.pin); pin) {
     if (!options.restore_recovery_phrase.empty()) {
-      if (auto restored = messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin); !restored) {
+      if (auto restored = messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin,
+                                                                  options.restore_saved_copies);
+          !restored) {
         return restored.error();
       }
     }

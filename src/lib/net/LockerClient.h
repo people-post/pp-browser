@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/Value.h"
 
 #include <cstdint>
 #include <optional>
@@ -22,6 +23,10 @@ struct LockerRecord {
   std::string signature_b64;
 };
 
+/** A record as JSON (the relay's `locker` object; also an exported locker file's). */
+Object LockerRecordToJson(const LockerRecord& record);
+LockerRecord LockerRecordFromJson(const Object& json);
+
 /** Why a locker write did not store. */
 enum class LockerPutRefusal {
   /** The provider holds this version or a newer one (`stored_version` when it said which). */
@@ -30,7 +35,7 @@ enum class LockerPutRefusal {
   QuotaReached,
 };
 
-/** One locker provider (the relay; later a pp-node, a file). */
+/** One locker provider (the relay; later other relays). */
 class ILockerClient {
 public:
   virtual ~ILockerClient() = default;

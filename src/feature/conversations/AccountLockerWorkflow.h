@@ -55,10 +55,18 @@ public:
     uint64_t version = 0;
   };
   /**
-   * The state a recovery seed's locker holds at the provider, verified and opened — never older than the highest
-   * version this device has seen of that locker, which it raises; nullopt when there is none.
+   * The state a recovery seed's locker holds, verified and opened: the newest valid copy among the provider's and
+   * `saved_copies` (exported locker files' text) — never older than the highest version this device has seen of
+   * that locker, which it raises; nullopt when there is none. With saved copies, an unreachable provider is not an
+   * error; a file that is not a saved account is.
    */
-  Roe<std::optional<Fetched>> Fetch(const ByteVector& recovery_seed);
+  Roe<std::optional<Fetched>> Fetch(const ByteVector& recovery_seed, const std::vector<std::string>& saved_copies = {});
+
+  /**
+   * The account's state as this device has it, sealed as a locker snapshot (a version above any seen) inside an
+   * exported locker file's JSON — the user keeps it where they like (M023 §6 amendment). No network.
+   */
+  Roe<std::string> ExportFileJson();
 
   /** The highest version this device has seen of a locker (hex id; published or fetched); 0 when none. */
   uint64_t HighestSeen(const std::string& locker_id_hex) const;
@@ -90,5 +98,7 @@ private:
 /** Provider text ↔ snapshot bytes (hex id, base64 fields). */
 LockerRecord LockerRecordFromSnapshot(const LockerSnapshot& snapshot);
 Roe<LockerSnapshot> LockerSnapshotFromRecord(const LockerRecord& record);
+/** The record inside an exported locker file; an error when the text is not one. */
+Roe<LockerRecord> LockerRecordFromFileJson(const std::string& file_json);
 
 } // namespace pbr
