@@ -6,6 +6,8 @@
 #include "foundation/crypto/RecoverySeed.h"
 
 #include <gtest/gtest.h>
+
+#include <algorithm>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -132,11 +134,41 @@ TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
   ASSERT_EQ(merged.contacts.size(), 2u) << "carol, known only to the laptop, is kept";
   EXPECT_EQ(merged.contacts[0].local.display_name, "Bob from work") << "ours win for a contact both have";
   ASSERT_EQ(merged.extras.groups.size(), 2u);
-  EXPECT_EQ(merged.extras.groups[0].roster_epoch, 5u) << "the newer roster wins";
-  EXPECT_EQ(merged.extras.groups[0].title, "Hike (renamed)");
+  const auto hike = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
+                                 [](const AccountStateGroup& g) { return g.group_id == "group:hike"; });
+  ASSERT_NE(hike, merged.extras.groups.end());
+  EXPECT_EQ(hike->roster_epoch, 5u) << "the newer roster wins";
+  EXPECT_EQ(hike->title, "Hike (renamed)");
   EXPECT_EQ(merged.extras.card_floors,
             (std::vector<AccountCardFloor>{{"account:bob", 1'800'000'000'000}, {"account:carol", 5}}));
   EXPECT_EQ(merged.providers.size(), 2u);
+}
+
+TEST(AccountLockerTest, ASyncWithNothingNewerChangesNothingOnEitherDevice) {
+  // The phone and the laptop each hold Bob as their own row (another local id), with the same register; their
+  // lists in another order. Whichever device merges, the stored state stands — no write, no nudge back (M023 s4).
+  AccountLockerState phone = SampleState();
+  phone.contact_clock = {{"account:bob", 1000, true, ContactUserFieldsDigest(phone.contacts[0])},
+                         {"account:carol", 900, false, ""}};
+  AccountStateGroup books;
+  books.group_id = "group:books";
+  books.owner_identity = "account:alice";
+  books.roster_epoch = 2;
+  phone.extras.groups.push_back(books);
+  phone.extras.card_floors = {{"account:bob", 7}, {"account:carol", 3}};
+  AccountLockerState laptop = phone;
+  laptop.contacts[0].id = "laptop-local-id";
+  laptop.extras.groups[0].members = {{"account:alice", "owner", 1, "laptop-contact"}};
+  std::reverse(laptop.contact_clock.begin(), laptop.contact_clock.end());
+  std::reverse(laptop.extras.groups.begin(), laptop.extras.groups.end());
+  std::reverse(laptop.extras.card_floors.begin(), laptop.extras.card_floors.end());
+
+  const AccountLockerState stored = account_locker::MergeForPublish(phone, phone);  // what the phone wrote
+  EXPECT_EQ(account_locker::StateToJson(account_locker::MergeForPublish(laptop, stored)),
+            account_locker::StateToJson(stored));
+  const AccountLockerState laptop_wrote = account_locker::MergeForPublish(laptop, laptop);
+  EXPECT_EQ(account_locker::StateToJson(account_locker::MergeForPublish(phone, laptop_wrote)),
+            account_locker::StateToJson(laptop_wrote));
 }
 
 TEST(AccountLockerTest, AGroupLeftOnOneDeviceStaysLeft) {

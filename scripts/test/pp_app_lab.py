@@ -1916,6 +1916,21 @@ def scenario_restore_signs_out_the_other_devices(lab):
     wait_for(lambda: transcript_row(a, a_thread, r), 40, "restored phone: bob's answer")
 
 
+def scenario_linked_device_introduces_itself(lab):
+    """A newly linked device tells its contacts it exists (M021 d3): Alice links a laptop; before the laptop writes
+    to anyone, Bob holds Alice's list with it, and his next message reaches the laptop as well as the phone."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: Alice's list with the laptop")
+    m = b.cmd("send", thread=b_thread, text="hello, new laptop")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, m), 30, "phone: bob's message")
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 30, "laptop: a chat with bob")
+    wait_for(lambda: transcript_row(laptop, l_thread, m), 30, "laptop: bob's message")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2577,6 +2592,7 @@ SCENARIOS = [
     ("restore_from_phrase", scenario_restore_from_phrase),
     ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
     ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
+    ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

@@ -233,7 +233,9 @@ void MergeContacts(const AccountLockerState& ours, const AccountLockerState& sto
   }
   for (const ContactClockEntry& entry : stored.contact_clock) {
     auto found = winners.find(entry.account_id);
-    if (found == winners.end() || entry.at > found->second.first.at) {
+    // At a tie the stored register (and its row) stands: a sync with nothing newer writes nothing, whichever
+    // device runs it (rows differ per device in their local fields).
+    if (found == winners.end() || entry.at >= found->second.first.at) {
       winners[entry.account_id] = {entry, true};
     }
   }
@@ -287,8 +289,10 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
     if (mine == merged.extras.groups.end()) {
       merged.extras.groups.push_back(theirs);
     } else if (theirs.roster_epoch > mine->roster_epoch ||
-               (theirs.roster_epoch == mine->roster_epoch && theirs.left && !mine->left)) {
-      *mine = theirs;  // the newer roster; at the same epoch, being out of the group wins
+               (theirs.roster_epoch == mine->roster_epoch && (theirs.left || !mine->left))) {
+      // The newer roster; at the same epoch, being out of the group wins, else the stored one stands (members'
+      // contact ids are each device's own).
+      *mine = theirs;
     }
   }
   for (const AccountCardFloor& theirs : stored.extras.card_floors) {
@@ -305,6 +309,12 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
       merged.providers.push_back(provider);
     }
   }
+  // One order whichever device merges, so equal states serialize equal.
+  std::sort(merged.extras.groups.begin(), merged.extras.groups.end(),
+            [](const AccountStateGroup& a, const AccountStateGroup& b) { return a.group_id < b.group_id; });
+  std::sort(merged.extras.card_floors.begin(), merged.extras.card_floors.end(),
+            [](const AccountCardFloor& a, const AccountCardFloor& b) { return a.account_id < b.account_id; });
+  std::sort(merged.providers.begin(), merged.providers.end());
   return merged;
 }
 

@@ -236,6 +236,16 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
   if ((issued || !ours || !(*ours == *result)) && on_changed_) {
     on_changed_(*result);
   }
+  if (on_joined_ && ours && !result->devices.empty()) {
+    auto self = Self();
+    const bool master = self && result->devices.front().peer_id == self->peer_id;
+    const bool grew = std::any_of(result->devices.begin(), result->devices.end(), [&](const AccountCardDevice& d) {
+      return !Lists(ours->devices, d.peer_id);
+    });
+    if (master && grew) {
+      on_joined_(*result);
+    }
+  }
   return result;
 }
 

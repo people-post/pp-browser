@@ -821,6 +821,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
     mesh_messaging_->SetAttachmentDownloads(nullptr);
   }
   if (inbox_) {
@@ -1389,6 +1390,9 @@ void ConversationsHub::BuildMessagingObjects() {
     }
   });
   mesh_messaging_->SetOnSiblingNotice([this]() { PublishAccountLockerSoon(); });
+  // A device just joined our list (we are the master): our contacts hear of it, so their next message reaches it.
+  mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(
+      [this](const AccountCard&) { AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); }); });
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -2917,6 +2921,7 @@ void ConversationsHub::Shutdown() {
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
@@ -3105,8 +3110,8 @@ void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {
   // first sync runs a few seconds after start), and the announce goes to them.
   if (account_locker_) {
     if (auto seed = Identity().RecoverySeed(); seed && *seed) {
-      if (auto synced = account_locker_->Publish(); !synced) {
-        log().info << "Account locker not synced before the device announce: " << synced.error().message;
+      if (auto published = account_locker_->Publish(); !published) {
+        log().info << "Account locker not synced before the device announce: " << published.error().message;
       }
     }
   }

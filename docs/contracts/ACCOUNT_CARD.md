@@ -100,7 +100,9 @@ and refuses older cards. A device takes the newest card's nickname as the accoun
 card to bring its own entry or the nickname up to date, the list otherwise as it is. Only the main device gives
 out a transfer code; the new device gets its card in the link bundle and appends itself at the end, once
 (`card_intent` join). While a code is out (15 min), the main device keeps a device that only an older card of
-the account lists — a join that reached it after it issued another card. A device restored from the recovery
+the account lists — a join that reached it after it issued another card. When the main device takes in the card a
+new device appended itself to, it sends that card to its contacts (the `device_list` notice), so their next
+message reaches the new device too. A device restored from the recovery
 phrase starts a fresh list holding only itself (`card_intent` fresh), newer than any it or the account's card
 floor knew. A device the newest list leaves out is **signed out**: it issues no card, sends nothing, and stops
 syncing the account locker; Me → Security says so. The rule is followed by the account's own devices — each

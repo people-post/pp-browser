@@ -144,7 +144,7 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 
 - [ ] Copies to our own siblings (sent messages show on every device)
 - [ ] Missing copy: ask the sender's device to send one (M021 §9)
-- [ ] A new device introduces itself to its contacts (opens its device pairs) — the restored-device case exists (`ConversationsHub::AnnounceRestoredDevice`, a `device_list` notice on the control lane to every contact); a linked device does not do it yet
+- [x] A new device is introduced to the account's contacts: a restored one announces itself (`AnnounceRestoredDevice`); for a linked one the **master** does it when it takes in the card that adds it (`OwnCards::SetOnDeviceJoined` → `AnnounceOwnDevicesToContacts`) — the master has the contacts, the new device may not yet (its first locker sync may find none). Lab `linked_device_introduces_itself` (Bob's message reaches the laptop before the laptop wrote to anyone)
 
 ### d4 — Master device
 

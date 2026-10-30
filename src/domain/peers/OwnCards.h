@@ -76,6 +76,11 @@ public:
    * siblings hear of it and its own devices are reached; outside any lock.
    */
   void SetOnChanged(std::function<void(const AccountCard&)> on_changed) { on_changed_ = std::move(on_changed); }
+  /**
+   * Runs on the master when a card it takes in lists a device it did not (one just linked): the account's contacts
+   * are worth telling (M021 d3) — the master has them; the new device may not yet. Outside any lock.
+   */
+  void SetOnDeviceJoined(std::function<void(const AccountCard&)> on_joined) { on_joined_ = std::move(on_joined); }
 
 private:
   /** The card listing `devices`: `base` when it says it all, else a new one (`issued` set). */
@@ -90,6 +95,7 @@ private:
   std::mutex keys_mutex_;
   std::optional<KeyCard> keys_;
   std::function<void(const AccountCard&)> on_changed_;
+  std::function<void(const AccountCard&)> on_joined_;
   int64_t join_expected_until_ms_ = 0;  // under mutex_
 };
 
