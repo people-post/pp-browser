@@ -32,4 +32,6 @@ consume the sibling checkout.
 
 Physical acceptance checks actual delivered FPS, first-frame latency, real dense/far QR identity,
 zoom/cancel/reopen, and camera coexistence with calls. Automated and device results remain distinct.
-See [LESSONS.md](LESSONS.md) for the checks that caught earlier misses.
+Past verification misses (theme tint on QR white, FPS from native delivery not SDL config, zoom
+ramp feedback vs wall-clock fakes, reopen invalidating camera property IDs) are recorded under
+[CURRENT_STATE.md](CURRENT_STATE.md) Verification — keep regressions there, not a parallel lessons file.
