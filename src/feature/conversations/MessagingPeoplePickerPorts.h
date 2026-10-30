@@ -30,6 +30,8 @@ struct MessagingPeoplePickerPorts {
   std::function<Roe<Thread>(const std::string& title, const std::vector<std::string>& member_contact_ids)> create_group;
   std::function<Roe<std::vector<CallParticipant>>(const std::string& call_id)> list_call_participants;
   std::function<std::vector<std::string>(const std::string& group_id)> list_unreachable_members;
+  /** A member who is not a contact: the nickname on their kept account card (empty if none). */
+  std::function<std::string(const std::string& account_id)> kept_card_nickname;
   std::function<Roe<void>(const std::string& group_id, const std::string& member_identity)> remove_member_by_identity;
   /** Owner: one invite per contact on a worker; `done` on the UI thread. Application fills it from the facade. */
   std::function<void(const std::string& group_id, std::vector<std::string> contact_ids,

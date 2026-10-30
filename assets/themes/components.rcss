@@ -4189,7 +4189,7 @@ input.checkbox {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 40;
+  z-index: 52;  /* above dialogs (50–51: a menu opened from a full-screen list), below the PIN gate and popovers (55) */
 }
 
 .context-menu-scrim {
