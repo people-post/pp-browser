@@ -10,8 +10,6 @@ namespace pbr {
 
 namespace {
 
-constexpr size_t kMaxMentions = 50;
-
 bool IsContinuation(const unsigned char byte) {
   return (byte & 0xC0) == 0x80;
 }
@@ -249,7 +247,7 @@ void MentionDraft::Refresh(const std::string& query) {
   }
 }
 
-std::optional<DraftEdit> MentionDraft::Pick(const int row_index) {
+std::optional<DraftEdit> MentionDraft::Pick(const int row_index, const std::optional<std::string>& current_text) {
   if (!open_ || row_index < 0 || row_index >= static_cast<int>(rows_.size())) {
     return std::nullopt;
   }
@@ -260,18 +258,31 @@ std::optional<DraftEdit> MentionDraft::Pick(const int row_index) {
   const std::string replacement = inserted + " ";
 
   const size_t at = at_byte_;
-  const size_t query_end = cursor_byte_;
-  const long delta = static_cast<long>(replacement.size()) - static_cast<long>(query_end - at);
+  // Base: the text the records refer to. Characters typed at the cursor since then extend the query.
+  const std::string& old_text = last_text_;
+  const size_t old_query_end = cursor_byte_;
+  std::string base = old_text;
+  size_t query_end = old_query_end;
+  if (current_text && current_text->size() > old_text.size()) {
+    const std::string& now = *current_text;
+    const size_t extra = now.size() - old_text.size();
+    if (now.compare(0, old_query_end, old_text, 0, old_query_end) == 0 &&
+        now.compare(old_query_end + extra, std::string::npos, old_text, old_query_end, std::string::npos) == 0) {
+      base = now;
+      query_end = old_query_end + extra;
+    }
+  }
 
-  std::string text = last_text_.substr(0, at) + replacement + last_text_.substr(query_end);
+  std::string text = base.substr(0, at) + replacement + base.substr(query_end);
+  const long shift = static_cast<long>(text.size()) - static_cast<long>(old_text.size());
   for (DraftMention& m : mentions_) {
-    if (m.start >= query_end) {
-      m.start = static_cast<size_t>(static_cast<long>(m.start) + delta);
-      m.end = static_cast<size_t>(static_cast<long>(m.end) + delta);
+    if (m.start >= old_query_end) {
+      m.start = static_cast<size_t>(static_cast<long>(m.start) + shift);
+      m.end = static_cast<size_t>(static_cast<long>(m.end) + shift);
     }
   }
   const bool have_all = std::any_of(mentions_.begin(), mentions_.end(), [](const DraftMention& m) { return m.all; });
-  if (mentions_.size() < kMaxMentions && !(everyone && have_all)) {
+  if (mentions_.size() < kMaxDraftMentions && !(everyone && have_all)) {
     DraftMention record;
     record.account_id = everyone ? std::string() : members_[member].account_id;
     record.all = everyone;
@@ -299,7 +310,7 @@ std::vector<DraftMention> MentionDraft::FinalizeForSend(const std::string& draft
   }
   bool have_all = false;
   for (const DraftMention& m : mentions_) {
-    if (out.size() >= kMaxMentions || m.start < lead || m.end <= m.start) {
+    if (out.size() >= kMaxDraftMentions || m.start < lead || m.end <= m.start) {
       continue;
     }
     const size_t start = m.start - lead;

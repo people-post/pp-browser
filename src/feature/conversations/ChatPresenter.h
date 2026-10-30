@@ -84,6 +84,8 @@ struct ChatGroupSheet {
 /** Who the composer's @ popup may offer in a chat (G015). */
 struct MentionTargets {
   bool is_group = false;
+  /** Could not tell yet (facade not ready, thread or roster read failed): not "not a group"; ask again later. */
+  bool unknown = false;
   /** This device owns the group: the popup also offers "Everyone". */
   bool is_owner = false;
   /** Members except this account, named by their OWN nickname. */

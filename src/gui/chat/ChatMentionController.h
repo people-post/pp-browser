@@ -2,6 +2,7 @@
 
 #include "gui/chat/ChatScreenState.h"
 #include "lib/ui/MentionDraft.h"
+#include "lib/ui/MentionTargetsRetry.h"
 
 #include <ui/dom/EventListener.h>
 
@@ -47,6 +48,8 @@ public:
   std::optional<std::string> PayloadForSend(const std::string& draft_text, const std::string& sent_text) const;
 
   void ProcessEvent(ui::Event& event) override;
+  /** The document the listeners sit on went away (reload / teardown): forget it so Tick attaches to the new one. */
+  void OnDetach(ui::Element* element) override;
 
 private:
   ui::ElementFormControlTextArea* DraftBox() const;
@@ -54,6 +57,7 @@ private:
   void Apply(const DraftEdit& edit);
   void SyncState();
   void Attach(ui::Element* document);
+  void Detach();
 
   ChatScreenState& state_;
   ChatPresenter& presenter_;
@@ -62,6 +66,8 @@ private:
   MentionDraft draft_;
   std::string thread_id_;
   bool committed_input_ = false;
+  /** The last roster read did not work: Tick tries again (at most once a second). */
+  MentionTargetsRetry targets_retry_;
   ui::Element* attached_document_ = nullptr;
 };
 

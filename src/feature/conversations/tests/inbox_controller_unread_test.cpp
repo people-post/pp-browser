@@ -8,6 +8,9 @@
 #include "lib/messaging/GroupMentions.h"
 #include <filesystem>
 #include <gtest/gtest.h>
+
+#include <atomic>
+#include <thread>
 #include <memory>
 #include <stdexcept>
 
@@ -233,6 +236,50 @@ TEST(InboxControllerMentionTest, LiveMentionSetsMarkerAndOpeningClearsIt) {
 
   ASSERT_TRUE(env.inbox->OpenThread("g1"));
   EXPECT_FALSE(MentionFlag(env, "g1"));
+}
+
+TEST(InboxControllerMentionTest, ClearingTheHistoryDropsTheMarker) {
+  InboxTestEnv env("mention_clear");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  ASSERT_TRUE(env.store->UpsertThread(GroupThread("g1")));
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, true);
+  ASSERT_TRUE(MentionFlag(env, "g1"));
+  ASSERT_TRUE(env.inbox->ClearThreadHistory("g1", false));
+  EXPECT_FALSE(MentionFlag(env, "g1"));
+}
+
+TEST(InboxControllerMentionTest, PersistReportsWhetherTheMessageMentionsMe) {
+  InboxTestEnv env("mention_report");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  ASSERT_TRUE(env.store->UpsertThread(GroupThread("g1")));
+  const ThreadMessage plain = MentionMessage("g1", kOwner, false);
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  EXPECT_FALSE(env.inbox->OnInboundMessagePersisted("g1", "hi", &plain, true));
+  EXPECT_TRUE(env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, true));
+  EXPECT_FALSE(env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, false)); // history fill-in
+}
+
+TEST(InboxControllerMentionTest, HooksCanBeSwappedWhileTheIngestWorkerReads) {
+  InboxTestEnv env("mention_race");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  std::atomic<bool> stop{false};
+  std::thread worker([&] {
+    while (!stop) {
+      (void)env.inbox->MessageMentionsMe("group:g1", mention);
+    }
+  });
+  for (int i = 0; i < 2000; ++i) {
+    env.inbox->SetMentionContext(nullptr, nullptr);
+    WireMention(env, &roster);
+  }
+  stop = true;
+  worker.join();
+  EXPECT_TRUE(env.inbox->MessageMentionsMe("group:g1", mention));
 }
 
 TEST(InboxControllerMentionTest, HistorySyncNeverSetsTheMarker) {

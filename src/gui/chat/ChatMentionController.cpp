@@ -5,6 +5,8 @@
 #include "gui/shell/DataModelHost.h"
 #include "lib/messaging/GroupMentions.h"
 
+#include <chrono>
+
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
@@ -27,13 +29,20 @@ bool InsidePopup(ui::Element* element) {
   return false;
 }
 
+int64_t NowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
 } // namespace
 
 ChatMentionController::ChatMentionController(ChatScreenState& state, ChatPresenter& presenter,
                                              ui::Context*& context, Ports ports)
     : state_(state), presenter_(presenter), context_(context), ports_(std::move(ports)) {}
 
-ChatMentionController::~ChatMentionController() = default;
+ChatMentionController::~ChatMentionController() {
+  Detach();
+}
 
 ui::ElementFormControlTextArea* ChatMentionController::DraftBox() const {
   if (!context_ || context_->GetNumDocuments() == 0) {
@@ -46,11 +55,27 @@ void ChatMentionController::Attach(ui::Element* document) {
   if (document == attached_document_) {
     return;
   }
-  // A replaced document took its listeners with it.
+  Detach(); // from the old document, if it is still around
   attached_document_ = document;
   if (document) {
     document->AddEventListener(ui::EventId::Textinput, this, true);
     document->AddEventListener(ui::EventId::Mousedown, this, true);
+  }
+}
+
+void ChatMentionController::Detach() {
+  ui::Element* document = attached_document_;
+  attached_document_ = nullptr;
+  if (document) {
+    document->RemoveEventListener(ui::EventId::Textinput, this, true);
+    document->RemoveEventListener(ui::EventId::Mousedown, this, true);
+  }
+}
+
+void ChatMentionController::OnDetach(ui::Element* element) {
+  // Fired when the document is destroyed (a reload at the same address included) and by our own Remove calls.
+  if (element == attached_document_) {
+    attached_document_ = nullptr;
   }
 }
 
@@ -72,6 +97,7 @@ void ChatMentionController::ProcessEvent(ui::Event& event) {
 void ChatMentionController::Reconfigure(const std::string& thread_id) {
   thread_id_ = thread_id;
   const MentionTargets targets = presenter_.MentionTargetsOf(thread_id);
+  targets_retry_.Record(targets.unknown, NowMs());
   if (!targets.is_group) {
     draft_.Disable();
     return;
@@ -93,7 +119,7 @@ void ChatMentionController::Tick() {
   }
   Attach(context_->GetDocument(0));
   const std::string thread = ports_.thread_id ? ports_.thread_id() : std::string();
-  if (thread != thread_id_) {
+  if (thread != thread_id_ || targets_retry_.Due(NowMs())) {
     Reconfigure(thread);
     SyncState();
   }
@@ -136,7 +162,8 @@ void ChatMentionController::Apply(const DraftEdit& edit) {
 }
 
 void ChatMentionController::Pick(const int row_index) {
-  if (const auto edit = draft_.Pick(row_index)) {
+  const ui::ElementFormControlTextArea* box = DraftBox();
+  if (const auto edit = draft_.Pick(row_index, box ? box->GetValue() : std::string())) {
     Apply(*edit);
   }
   SyncState();

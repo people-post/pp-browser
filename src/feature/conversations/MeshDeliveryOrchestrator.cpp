@@ -1726,16 +1726,14 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           if (outcome.persisted_message) {
             preview = outcome.persisted_message->text;
           }
-          inbox_.OnInboundMessagePersisted(resolved_thread_id, preview,
-                                           outcome.persisted_message ? &*outcome.persisted_message : nullptr);
+          const bool mentions_me = inbox_.OnInboundMessagePersisted(
+              resolved_thread_id, preview, outcome.persisted_message ? &*outcome.persisted_message : nullptr);
           MaybeEnqueueAttachmentDownload(outcome);
           if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
             std::string notice_title = "New message";
-            bool mentioned = false;
+            const bool mentioned = mentions_me; // decided once, in OnInboundMessagePersisted
             if (auto thread = store_.GetThread(resolved_thread_id)) {
               if (*thread) {
-                mentioned = outcome.persisted_message && (*thread)->kind == ThreadKind::Group && (*thread)->group_id &&
-                            inbox_.MessageMentionsMe(*(*thread)->group_id, *outcome.persisted_message);
                 notice_title = inbox_.ResolveThreadLabel(**thread).title;
                 if (notice_title.empty()) {
                   notice_title = "New message";

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
@@ -21,6 +22,12 @@ struct MentionCandidate {
   std::string account_id;
   std::string name;
 };
+
+/**
+ * Most mentions one message carries. Same value as kMaxMentionsPerMessage in lib/messaging/GroupMentions.h
+ * (lib/ui cannot include lib/messaging); src/gui/tests/mention_limits_test.cpp pins the two together.
+ */
+inline constexpr size_t kMaxDraftMentions = 50;
 
 /** One popup row. `index` is what Pick() takes. */
 struct MentionRow {
@@ -79,8 +86,12 @@ public:
   const std::vector<MentionRow>& Rows() const { return rows_; }
   void ClosePopup();
 
-  /** Insert "@name " for the row, record it. nullopt when the popup is closed or the row is unknown. */
-  std::optional<DraftEdit> Pick(int row_index);
+  /**
+   * Insert "@name " for the row, record it. nullopt when the popup is closed or the row is unknown.
+   * `current_text`: the box's value right now. A keystroke typed since the last OnDraftChanged (the query grew at
+   * the cursor) is kept and counts as part of the query; any other difference is ignored (the last seen text is used). nullopt: the last seen text.
+   */
+  std::optional<DraftEdit> Pick(int row_index, const std::optional<std::string>& current_text = std::nullopt);
 
   /**
    * The records to send. `draft_text` is the box content, `sent_text` what goes out (trimmed; a quote may

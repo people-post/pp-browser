@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -103,8 +104,10 @@ public:
   /**
    * `message`: the stored message, so an @mention of this account can be told (by the roster as it is now).
    * `live`: false for messages that only fill in history (sync): they never set the "mentioned you" marker.
+   * Returns whether the message @-mentions this account (checked once, for a thread that is not the open one;
+   * false otherwise): the caller reuses it for the notice instead of reading the roster again.
    */
-  void OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview = std::nullopt,
+  bool OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview = std::nullopt,
                                  const ThreadMessage* message = nullptr, bool live = true);
   /** True when `message` (stored in a group thread) @-mentions this account by the roster as it is now. */
   bool MessageMentionsMe(const std::string& group_id, const ThreadMessage& message) const;
@@ -138,6 +141,11 @@ public:
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
 
 private:
+  struct MentionHooksCopy {
+    std::function<std::string()> self_account_id;
+    std::function<std::vector<GroupRosterMember>(const std::string& group_id)> roster;
+  };
+  MentionHooksCopy MentionHooks() const;
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
   std::optional<std::string> ControlLine(const ThreadMessage& message) const;
   TranscriptAttachmentView AttachmentView(const ThreadMessage& message) const;
@@ -148,6 +156,8 @@ private:
   const SystemControlRegistry* controls_ = nullptr;
   DirectoryShadowCache* shadows_ = nullptr;
   GroupMembershipWorkflow* groups_ = nullptr;
+  // Set on the UI thread, called on the ingest worker too: read only through MentionHooks().
+  mutable std::mutex mention_mutex_;
   std::function<std::string()> mention_self_account_id_;
   std::function<std::vector<GroupRosterMember>(const std::string& group_id)> mention_roster_;
   std::string profile_data_dir_;

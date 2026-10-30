@@ -312,15 +312,24 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
 
 MentionTargets ChatPresenter::MentionTargetsOf(const std::string& thread_id) {
   MentionTargets targets;
-  if (!facade_ || thread_id.empty()) {
+  if (thread_id.empty()) {
+    return targets;
+  }
+  if (!facade_) {
+    targets.unknown = true;
     return targets;
   }
   auto thread = facade_->GetThread(thread_id);
-  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+  if (!thread || !*thread) {
+    targets.unknown = true; // not readable (yet)
+    return targets;
+  }
+  if ((*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
     return targets;
   }
   auto roster = facade_->ListGroupRoster(*(*thread)->group_id);
   if (!roster) {
+    targets.unknown = true;
     return targets;
   }
   targets.is_group = true;

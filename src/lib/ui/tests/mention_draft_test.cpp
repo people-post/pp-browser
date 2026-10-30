@@ -39,6 +39,23 @@ TEST(MentionDraftTest, AtAtStartOrAfterSpaceOpens) {
   EXPECT_TRUE(f.PopupOpen());
 }
 
+TEST(MentionDraftTest, PickKeepsAKeystrokeTypedInTheSameFrame) {
+  MentionDraft d = Group();
+  Type(d, "", "hi @bo");
+  ASSERT_TRUE(d.PopupOpen());
+  // "b" arrived after the last tick: the box already holds "hi @bob".
+  const auto edit = d.Pick(0, std::string("hi @bob"));
+  ASSERT_TRUE(edit);
+  EXPECT_EQ(edit->text, "hi @Bob ");
+  EXPECT_EQ(d.Mentions()[0].start, 3u);
+  EXPECT_EQ(d.Mentions()[0].end, 7u);
+  // Text after the cursor shifts the same way.
+  MentionDraft e = Group();
+  Type(e, "", "x @bo");
+  e.OnDraftChanged("x @bo and", 5, false);
+  EXPECT_EQ(e.Pick(0, std::string("x @bo and"))->text, "x @Bob  and");
+}
+
 TEST(MentionDraftTest, EmailDoesNotTrigger) {
   MentionDraft d = Group();
   Type(d, "", "me@x");

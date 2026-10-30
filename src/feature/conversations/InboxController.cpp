@@ -36,16 +36,23 @@ void InboxController::SetGroupMembership(GroupMembershipWorkflow* groups) {
 void InboxController::SetMentionContext(
     std::function<std::string()> self_account_id,
     std::function<std::vector<GroupRosterMember>(const std::string& group_id)> roster) {
+  std::lock_guard<std::mutex> lock(mention_mutex_);
   mention_self_account_id_ = std::move(self_account_id);
   mention_roster_ = std::move(roster);
 }
 
+InboxController::MentionHooksCopy InboxController::MentionHooks() const {
+  std::lock_guard<std::mutex> lock(mention_mutex_);
+  return {mention_self_account_id_, mention_roster_};
+}
+
 bool InboxController::MessageMentionsMe(const std::string& group_id, const ThreadMessage& message) const {
-  if (!mention_self_account_id_ || !mention_roster_ || group_id.empty() || message.sender_contact_id == kLocalSelfContactId ||
+  const MentionHooksCopy hooks = MentionHooks(); // called outside the lock: the roster read can be slow
+  if (!hooks.self_account_id || !hooks.roster || group_id.empty() || message.sender_contact_id == kLocalSelfContactId ||
       message.payload_json.empty()) {
     return false;
   }
-  return MentionsMe(message.payload_json, mention_self_account_id_(), message.sender_contact_id, mention_roster_(group_id));
+  return MentionsMe(message.payload_json, hooks.self_account_id(), message.sender_contact_id, hooks.roster(group_id));
 }
 
 Roe<std::vector<Thread>> InboxController::ListThreads() {
@@ -261,6 +268,7 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
   Thread updated = **thread;
   updated.preview = "";
   updated.unread_count = 0;
+  updated.unread_mention = false; // ClearMessages already zeroed it in the store; this row is the stale copy
   updated.updated_at = util::NowUnixMs();
   if (!store_.UpsertThread(updated)) {
     return Error("Failed to update thread after clear");
@@ -394,19 +402,20 @@ void InboxController::IncrementUnread(const std::string& thread_id, const int de
   (void)store_.UpsertThread(updated);
 }
 
-void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
+bool InboxController::OnInboundMessagePersisted(const std::string& thread_id,
                                                 const std::optional<std::string>& preview, const ThreadMessage* message,
                                                 const bool live) {
   if (thread_id.empty()) {
-    return;
+    return false;
   }
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
-    return;
+    return false;
   }
 
   Thread updated = **thread;
   bool changed = false;
+  bool mentions_me = false;
   if (preview && *preview != updated.preview) {
     updated.preview = *preview;
     changed = true;
@@ -414,16 +423,19 @@ void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
   if (thread_id != active_thread_id_) {
     updated.unread_count += 1;
     changed = true;
-    if (live && message && updated.kind == ThreadKind::Group && updated.group_id &&
-        MessageMentionsMe(*updated.group_id, *message) && !updated.unread_mention) {
-      updated.unread_mention = true;
+    if (live && message && updated.kind == ThreadKind::Group && updated.group_id) {
+      mentions_me = MessageMentionsMe(*updated.group_id, *message);
+      if (mentions_me) {
+        updated.unread_mention = true;
+      }
     }
   }
   if (!changed) {
-    return;
+    return false;
   }
   updated.updated_at = util::NowUnixMs();
   (void)store_.UpsertThread(updated);
+  return mentions_me;
 }
 
 int InboxController::SumUnread() const {
@@ -602,16 +614,15 @@ TranscriptFacts InboxController::Facts() const {
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
   facts.control_line = [this](const ThreadMessage& message) { return ControlLine(message); };
   facts.attachment = [this](const ThreadMessage& message) { return AttachmentView(message); };
-  if (mention_self_account_id_ && mention_roster_) {
+  if (MentionHooksCopy hooks = MentionHooks(); hooks.self_account_id && hooks.roster) {
     // One roster read per group per render; messages without mentions never reach the store.
     struct Cache {
       std::unordered_map<std::string, std::optional<std::vector<GroupRosterMember>>> rosters;
     };
     auto cache = std::make_shared<Cache>();
-    facts.mentions = [this, cache](const ThreadMessage& message) {
+    facts.mentions = [this, cache, hooks = std::move(hooks)](const ThreadMessage& message) {
       std::vector<TranscriptMention> out;
-      if (message.payload_json.find("\"mentions\"") == std::string::npos &&
-          message.payload_json.find("\"all\"") == std::string::npos) {
+      if (!ChatPayloadCodec::HasMentions(message)) {
         return out;
       }
       auto it = cache->rosters.find(message.thread_id);
@@ -619,14 +630,14 @@ TranscriptFacts InboxController::Facts() const {
         std::optional<std::vector<GroupRosterMember>> roster;
         auto thread = store_.GetThread(message.thread_id);
         if (thread && *thread && (*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-          roster = mention_roster_(*(*thread)->group_id);
+          roster = hooks.roster(*(*thread)->group_id);
         }
         it = cache->rosters.emplace(message.thread_id, std::move(roster)).first;
       }
       if (!it->second) {
         return out;
       }
-      const std::string self = mention_self_account_id_();
+      const std::string self = hooks.self_account_id();
       const std::string sender = message.sender_contact_id == kLocalSelfContactId ? self : message.sender_contact_id;
       for (const MentionRange& range : EligibleMentions(message.payload_json, sender, *it->second)) {
         out.push_back({range.start, range.end, !self.empty() && (range.account_id == self || (range.account_id.empty() && message.sender_contact_id != kLocalSelfContactId))});
