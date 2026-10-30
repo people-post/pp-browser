@@ -61,14 +61,14 @@ TEST(CallSummaryLogicTest, AGroupRecordHasOneFixedIdPerCall) {
   EXPECT_EQ(GroupCallSummaryMessageId("call:s"), "call-summary:call:s");
 }
 
-TEST(CallSummaryLogicTest, ALeaveAddsItsTalkTimeToTheEarlierSegments) {
+TEST(CallSummaryLogicTest, ALaterLeaveReplacesTheRecord) {
   CallSummaryDetail first;
   first.group = true;
   first.duration_ms = 4'000;
   CallSummaryDetail second = first;
-  second.duration_ms = 3'000;
+  second.duration_ms = 9'000;  // first join to the second leave
   EXPECT_EQ(MergeGroupSummary(std::nullopt, first, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(4'000));
-  EXPECT_EQ(MergeGroupSummary(first, second, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(7'000));
+  EXPECT_EQ(MergeGroupSummary(first, second, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(9'000));
   CallSummaryDetail none;
   EXPECT_FALSE(MergeGroupSummary(first, none, SummaryWrite::Leave)) << "a segment without talk time changes nothing";
 }

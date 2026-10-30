@@ -1254,7 +1254,7 @@ TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoi
   leave(kC);
   ASSERT_EQ(SummariesIn(kC).size(), 1u) << "leave, rejoin, leave: still one record";
   const int64_t both = SummariesIn(kC).front().duration_ms.value_or(0);
-  EXPECT_GT(both, first) << "talk time is both stays added";
+  EXPECT_GT(both, first) << "the record runs from the first join to the last leave";
 
   // The call then ends for everyone (CallEnded reaches C): its record is left as it was.
   leave(kA);

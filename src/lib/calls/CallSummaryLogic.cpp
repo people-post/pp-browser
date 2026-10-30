@@ -67,15 +67,10 @@ std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSumma
   if (mode == SummaryWrite::Final) {
     return std::nullopt;
   }
-  if (!existing->duration_ms) {
-    return next;
+  if (existing->duration_ms && !next.duration_ms) {
+    return std::nullopt;  // this stay had no talk time: the earlier record says more
   }
-  if (!next.duration_ms) {
-    return std::nullopt;  // this segment had no talk time: the earlier record says more
-  }
-  CallSummaryDetail merged = next;
-  merged.duration_ms = *existing->duration_ms + *next.duration_ms;
-  return merged;
+  return next;  // from the first join to this leave
 }
 
 } // namespace pbr
