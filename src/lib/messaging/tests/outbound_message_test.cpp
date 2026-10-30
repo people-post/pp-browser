@@ -4,6 +4,7 @@
 #include "foundation/error/AppError.h"
 
 #include "lib/messaging/EnvelopeSigner.h"
+#include "lib/messaging/GroupMentions.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/PeerSigningKeyStore.h"
 #include "lib/messaging/ReactionTypes.h"
@@ -143,6 +144,28 @@ TEST_F(OutboundMessageTest, AFirstPublicSendOpensTheSessionAndThePeerReadsIt) {
   const RelayReceiveOutcome got = bob_->pipeline->ProcessEnvelope(*first, bob_->keys.account_id);
   ASSERT_TRUE(got.persisted_message) << got.receive_failure_detail;
   EXPECT_EQ(got.persisted_message->text, "hello");
+}
+
+// Re-encode call site: SealDirectPayload (first send, retry/resend of a stored row) keeps @mentions.
+TEST_F(OutboundMessageTest, ATextWithMentionsArrivesWithThem) {
+  const Thread thread = alice_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
+  MentionsPayload mentions;
+  MentionRange range;
+  range.account_id = "acct-bob";
+  range.start = 0;
+  range.end = 4;
+  mentions.mentions.push_back(range);
+  SendRelayOptions options;
+  options.payload_json = BuildMentionsPayloadJson("@bob hi", mentions);
+  auto sent = alice_->Send(thread, *bob_, "@bob hi", options);
+  ASSERT_TRUE(sent) << sent.error().message;
+  const RelayReceiveOutcome got = bob_->pipeline->ProcessEnvelope(*sent, bob_->keys.account_id);
+  ASSERT_TRUE(got.persisted_message) << got.receive_failure_detail;
+  EXPECT_EQ(got.persisted_message->content_type, ChatContentType::Text);
+  EXPECT_EQ(got.persisted_message->text, "@bob hi");
+  const MentionsPayload back = ParseMentionsPayload(got.persisted_message->payload_json);
+  ASSERT_EQ(back.mentions.size(), 1u);
+  EXPECT_EQ(back.mentions[0].account_id, "acct-bob");
 }
 
 TEST_F(OutboundMessageTest, KeysTheSendCannotHave) {

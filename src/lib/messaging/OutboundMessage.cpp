@@ -173,7 +173,8 @@ Roe<SealedPayload> EncryptNumbered(const ThreadMessage& message, const CryptoCha
   params.session_epoch = *message.session_epoch;
   params.timestamp = message.timestamp;
   Roe<E2eEncryptResult> encrypted = [&]() -> Roe<E2eEncryptResult> {
-    if (options.content_type && *options.content_type != ChatContentType::Text) {
+    if ((options.content_type && *options.content_type != ChatContentType::Text) ||
+        ChatPayloadCodec::HasMentions(message)) {
       auto plaintext = ChatPayloadCodec::EncodeToRow(message);
       if (!plaintext) {
         return plaintext.error();

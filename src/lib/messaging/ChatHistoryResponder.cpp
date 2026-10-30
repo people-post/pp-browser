@@ -57,9 +57,9 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
     params.session_epoch = *message.session_epoch;
     params.timestamp = message.timestamp;
     // Annotations (reactions, retracts) go out as what they are, so a missed "delete for everyone" can
-    // still be repaired; other rows keep the text encoding.
+    // still be repaired; texts with @mentions go out as type 6; other rows keep the text encoding.
     Roe<std::string> encrypted = Error("not encrypted");
-    if (message.content_type == ChatContentType::Annotation) {
+    if (message.content_type == ChatContentType::Annotation || ChatPayloadCodec::HasMentions(message)) {
       auto row = ChatPayloadCodec::EncodeToRow(message);
       if (!row) {
         return row.error();

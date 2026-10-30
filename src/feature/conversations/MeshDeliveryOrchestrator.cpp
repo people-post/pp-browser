@@ -1384,7 +1384,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
 
   std::optional<std::vector<uint8_t>> rich_plaintext;
-  if (options.content_type && *options.content_type != ChatContentType::Text) {
+  if ((options.content_type && *options.content_type != ChatContentType::Text) ||
+      ChatPayloadCodec::HasMentions(message)) {
     auto plaintext = ChatPayloadCodec::EncodeToRow(message);
     if (!plaintext) {
       return FailOutbound(store_, *appended, plaintext.error());

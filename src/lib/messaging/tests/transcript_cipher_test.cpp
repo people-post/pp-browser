@@ -1,5 +1,6 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/TranscriptBodyCodec.h"
+#include "lib/messaging/GroupMentions.h"
 #include "lib/messaging/TranscriptCipher.h"
 
 #include <gtest/gtest.h>
@@ -84,3 +85,26 @@ TEST(TranscriptCipherTest, MemoryRoundTrip) {
 
 } // namespace
 } // namespace pbr
+
+// Re-encode call site: the stored transcript body (EncodeToRow) keeps @mentions through a store/load.
+TEST(TranscriptBodyCodecTest, MentionsSurviveTheStoredBody) {
+  using namespace pbr;
+  ThreadMessage message;
+  message.content_type = ChatContentType::Text;
+  message.text = "@bob hi";
+  MentionsPayload mentions;
+  MentionRange range;
+  range.account_id = "acct-bob";
+  range.start = 0;
+  range.end = 4;
+  mentions.mentions.push_back(range);
+  message.payload_json = BuildMentionsPayloadJson(message.text, mentions);
+  auto body = TranscriptBodyCodec::FromMessage(message);
+  ASSERT_TRUE(static_cast<bool>(body));
+  ThreadMessage loaded;
+  ASSERT_TRUE(static_cast<bool>(TranscriptBodyCodec::ApplyToMessage(*body, loaded)));
+  EXPECT_EQ(loaded.content_type, ChatContentType::Text);
+  const MentionsPayload back = ParseMentionsPayload(loaded.payload_json);
+  ASSERT_EQ(back.mentions.size(), 1u);
+  EXPECT_EQ(back.mentions[0].account_id, "acct-bob");
+}

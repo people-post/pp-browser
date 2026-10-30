@@ -4,6 +4,7 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Serialize.hpp"
+#include "common/Logger.h"
 #include "common/ValueJson.h"
 
 #include <functional>
@@ -60,9 +61,12 @@ constexpr uint8_t kContentTypeAnnotation = 2;
 constexpr uint8_t kContentTypeContactCard = 3;
 constexpr uint8_t kContentTypeCryptoTx = 4;
 constexpr uint8_t kContentTypeAttachment = 5;
+constexpr uint8_t kContentTypeTextMentions = 6;
 
 constexpr uint8_t kSubVersion = 1;
 constexpr uint8_t kContactCardSubVersion = 2;
+constexpr uint8_t kMentionsFlagAll = 0x01;
+constexpr char kCodecLogger[] = "ChatPayloadCodec";
 
 void WriteLenUtf8(OutputArchive& ar, const std::string& value) {
   WireLenUtf8 field{value};
@@ -114,6 +118,43 @@ Roe<void> ReadExactEnd(InputArchive& ar) {
   return {};
 }
 
+/** Drops mentions (and `all`) whose range is out of bounds, overlapping, off a UTF-8 boundary or not on an '@'. */
+MentionsPayload KeepFittingMentions(const std::string& text, const MentionsPayload& in) {
+  MentionsPayload out;
+  std::vector<std::pair<uint32_t, uint32_t>> taken;
+  const auto fits = [&](const MentionRange& range) {
+    if (!MentionRangeFitsText(text, range.start, range.end)) {
+      return false;
+    }
+    for (const auto& [start, end] : taken) {
+      if (range.start < end && start < range.end) {
+        return false;
+      }
+    }
+    return true;
+  };
+  size_t dropped = 0;
+  for (const MentionRange& range : in.mentions) {
+    if (!range.account_id.empty() && fits(range)) {
+      taken.emplace_back(range.start, range.end);
+      out.mentions.push_back(range);
+    } else {
+      ++dropped;
+    }
+  }
+  if (in.all) {
+    if (fits(*in.all)) {
+      out.all = in.all;
+    } else {
+      ++dropped;
+    }
+  }
+  if (dropped > 0) {
+    logging::getLogger(kCodecLogger).warning << "dropped " << dropped << " invalid mention range(s)";
+  }
+  return out;
+}
+
 std::string PayloadJsonForMessage(const ThreadMessage& message) {
   Object payload;
   if (message.content_type == ChatContentType::Annotation) {
@@ -144,6 +185,8 @@ std::string PayloadJsonForMessage(const ThreadMessage& message) {
     if (auto parsed = TryParseObject(message.payload_json)) {
       payload = std::move(*parsed);
     }
+  } else if (ChatPayloadCodec::HasMentions(message)) {
+    return BuildMentionsPayloadJson(message.text, ParseMentionsPayload(message.payload_json));
   } else {
     payload.set("text", message.text);
   }
@@ -154,6 +197,36 @@ std::string PayloadJsonForMessage(const ThreadMessage& message) {
 
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeText(const std::string& text) {
   return EncodePayloadBytes(kContentTypeText, text, nullptr);
+}
+
+Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeTextMentions(const std::string& text,
+                                                               const MentionsPayload& mentions) {
+  if (mentions.mentions.size() > kMaxMentionsPerMessage) {
+    return Error("Too many mentions");
+  }
+  const MentionsPayload kept = KeepFittingMentions(text, mentions);
+  if (kept.Empty()) {
+    return EncodeText(text);
+  }
+  return EncodePayloadBytes(kContentTypeTextMentions, text, [&](OutputArchive& ar) {
+    ar & kSubVersion;
+    ar & static_cast<uint16_t>(kept.mentions.size());
+    for (const MentionRange& range : kept.mentions) {
+      WriteLenUtf8(ar, range.account_id);
+      ar & range.start;
+      ar & range.end;
+    }
+    ar & static_cast<uint8_t>(kept.all ? kMentionsFlagAll : 0);
+    if (kept.all) {
+      ar & kept.all->start;
+      ar & kept.all->end;
+    }
+  });
+}
+
+bool ChatPayloadCodec::HasMentions(const ThreadMessage& message) {
+  return message.content_type == ChatContentType::Text && !message.payload_json.empty() && message.payload_json.find("\"mentions\"") != std::string::npos &&
+         !ParseMentionsPayload(message.payload_json).Empty();
 }
 
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeAnnotation(const ChatAnnotationFields& fields) {
@@ -268,6 +341,9 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeToRow(const ThreadMessage& mes
     return EncodeText(std::string());
   case ChatContentType::Text:
   default:
+    if (HasMentions(message)) {
+      return EncodeTextMentions(message.text, ParseMentionsPayload(message.payload_json));
+    }
     return EncodeText(message.text);
   }
 }
@@ -302,7 +378,7 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
 
   if (content_type != kContentTypeSystem && content_type != kContentTypeAnnotation &&
       content_type != kContentTypeContactCard && content_type != kContentTypeCryptoTx &&
-      content_type != kContentTypeAttachment) {
+      content_type != kContentTypeAttachment && content_type != kContentTypeTextMentions) {
     message.content_type = ChatContentType::Unsupported;
     Object payload;
     payload.set("wire_content_type", static_cast<int64_t>(content_type));
@@ -316,6 +392,45 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
   const uint8_t expected_sub_version = content_type == kContentTypeContactCard ? kContactCardSubVersion : kSubVersion;
   if (ar.failed() || sub_version != expected_sub_version) {
     return Error("Unsupported ChatPayload sub-version");
+  }
+
+  if (content_type == kContentTypeTextMentions) {
+    message.content_type = ChatContentType::Text;
+    uint16_t count = 0;
+    ar & count;
+    if (ar.failed() || count > kMaxMentionsPerMessage) {
+      return Error("Malformed mentions ChatPayload");
+    }
+    MentionsPayload wire;
+    for (uint16_t i = 0; i < count; ++i) {
+      MentionRange range;
+      range.account_id = ReadLenUtf8(ar);
+      ar & range.start;
+      ar & range.end;
+      if (ar.failed()) {
+        return Error("Malformed mentions ChatPayload");
+      }
+      wire.mentions.push_back(std::move(range));
+    }
+    uint8_t flags = 0;
+    ar & flags;
+    if (ar.failed() || (flags & ~kMentionsFlagAll) != 0) {
+      return Error("Malformed mentions ChatPayload");
+    }
+    if (flags & kMentionsFlagAll) {
+      MentionRange all;
+      ar & all.start;
+      ar & all.end;
+      if (ar.failed()) {
+        return Error("Malformed mentions ChatPayload");
+      }
+      wire.all = all;
+    }
+    if (auto end = ReadExactEnd(ar); !end) {
+      return end;
+    }
+    message.payload_json = BuildMentionsPayloadJson(message.text, KeepFittingMentions(message.text, wire));
+    return {};
   }
 
   if (content_type == kContentTypeSystem) {

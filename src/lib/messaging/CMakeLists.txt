@@ -9,6 +9,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     ChatHistoryResponder.cpp
     PeerRequestAuth.cpp
     ChatPayloadCodec.cpp
+    GroupMentions.cpp
     ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp
     PeerThreadLogic.cpp
