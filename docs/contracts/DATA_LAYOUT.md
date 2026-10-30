@@ -89,7 +89,7 @@ Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
 **Unsupported in the product** ([at-rest A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)):
 the app writes no such item and offers no restore; the format below is what the code writes when a store is set
-(the lab's file store). Items written by earlier builds may still be on a device.
+(the lab's file store). Items written by earlier builds are deleted once messaging is up (until app version 1.1.0).
 
 One generic-password item, service `dev.pp-browser.secure-blob`, account `account-backup`,
 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (never synced, never in device backups, gone with the device).

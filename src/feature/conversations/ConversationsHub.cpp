@@ -4,6 +4,7 @@
 #include "domain/node/AppRuntimeMeshExecutors.h"
 
 #include "lib/people/LocalAccountBackup.h"
+#include "lib/people/RetiredKeychainBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -1539,6 +1540,12 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
     AnnounceRestoredDevice();
+    if (backup_store_ == nullptr) {
+      // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
+      if (auto removed = RemoveRetiredKeychainBackup(); !removed) {
+        log().warning << "Retired Keychain backup not removed: " << removed.error().message;
+      }
+    }
   });
   return {};
 }
