@@ -217,6 +217,7 @@ void CallStack::PublishUiState() {
     if (const LiveCall* shown = live.Shown()) {
       state.active_call_id = shown->Id();
       state.live_since_ms = shown->MediaProgress().live_since_ms;
+      state.alone_until_ms = call_sessions_->AloneUntilMs(shown->Id());
     }
     state.accepting_call_id = call_sessions_->AcceptingCallId();
     if (const LiveCall* ring = live.TheRing()) {

@@ -34,6 +34,18 @@ public:
                                                                           int64_t after_display_order) const = 0;
   virtual Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> UpdateMessage(const ThreadMessage& message) = 0;
+  /**
+   * Insert, or overwrite the row with the same id (keeps its place in the thread) — for a record one
+   * device rewrites as it goes (a group call's summary). The SQLite store does it in one statement;
+   * the default (test doubles) is update-then-append.
+   */
+  virtual Roe<ThreadMessage> UpsertMessage(const ThreadMessage& message) {
+    auto updated = UpdateMessage(message);
+    if (updated && *updated) {
+      return message;
+    }
+    return AppendMessage(message);
+  }
   /** One message by id (nullopt when unknown). Default: scan the newest page (test doubles). */
   virtual Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id) const {
     auto page = GetMessagesPage(thread_id, std::nullopt, 10000);

@@ -1,5 +1,7 @@
 #include "lib/calls/CallScreen.h"
 
+#include "lib/calls/CallSessionLogic.h"
+
 namespace pbr {
 
 const char* CallScreenKindName(const CallScreen::Kind kind) {
@@ -40,8 +42,67 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
     return "activity";
   case CallScreen::Status::Raw:
     return "raw";
+  case CallScreen::Status::WaitingForOthers:
+    return "waiting_for_others";
   }
   return "?";
+}
+
+bool ShowsParticipantCount(const CallScreen& screen) {
+  using Status = CallScreen::Status;
+  if (!screen.group || screen.members.empty() || screen.status == Status::Activity ||
+      screen.status == Status::WaitingForOthers) {
+    return false;
+  }
+  if (screen.media_connected) {
+    return true;
+  }
+  const bool regrouping = screen.status == Status::SettingUpGroup || screen.status == Status::WaitingForMediaPath ||
+                          screen.status == Status::Connecting;
+  return screen.was_connected && regrouping;
+}
+
+bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, const bool remote_ended) {
+  using Status = CallScreen::Status;
+  if (remote_ended || before.kind != CallScreen::Kind::InCall || before.was_connected || before.call_id.empty()) {
+    return false;
+  }
+  if (after.kind == CallScreen::Kind::InCall && after.call_id == before.call_id) {
+    return false;
+  }
+  return before.status == Status::CouldntConnect || before.status == Status::Connecting ||
+         before.status == Status::SettingUpGroup || before.status == Status::WaitingForMediaPath;
+}
+
+bool EndedAlone(const CallScreen& before, const CallScreen& after, const int64_t now_ms) {
+  if (before.kind != CallScreen::Kind::InCall || before.status != CallScreen::Status::WaitingForOthers ||
+      before.alone_until_ms <= 0 || before.call_id.empty()) {
+    return false;
+  }
+  if (after.kind == CallScreen::Kind::InCall && after.call_id == before.call_id) {
+    return false;
+  }
+  // The user's own End clears the screen first; this is the wait running out (a sweep may lag a little).
+  return now_ms >= before.alone_until_ms - kAloneEndLagMs;
+}
+
+bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
+  if (watch.call_id != sample.call_id) {
+    watch = {};
+    watch.call_id = sample.call_id;
+  }
+  const bool woke = watch.last_step_ms > 0 && sample.now_ms - watch.last_step_ms > CallSessionLogic::kAppSleptGapMs;
+  watch.last_step_ms = sample.now_ms;
+  const bool arriving = sample.last_rx_ms > 0 && sample.now_ms - sample.last_rx_ms < kMediaArrivingWindowMs;
+  if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live || woke ||
+      arriving) {
+    watch.silent_since_ms = 0;
+    return false;
+  }
+  if (watch.silent_since_ms == 0) {
+    watch.silent_since_ms = sample.now_ms;
+  }
+  return sample.now_ms - watch.silent_since_ms >= kGroupNoMediaEndMs;
 }
 
 InCallStatus DecideInCallStatus(const InCallSignals& s) {
@@ -62,12 +123,20 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     activity = false;
   }
   const bool failed = s.media_status == CallMediaStatus::Failed;
-  if (s.was_connected && !out.media_connected && (s.p2p_connect_failed || failed)) {
+  // "Couldn't connect" is a latch: the state machine moving the call onto another path (migrating,
+  // attaching to a hop, waiting for one) makes it "connecting" again.
+  const bool path_moving = s.media_status == CallMediaStatus::Migrating ||
+                           s.media_status == CallMediaStatus::HopAttaching ||
+                           s.media_status == CallMediaStatus::HopWaiting;
+  if (path_moving) {
+    out.show_retry = false;
+  }
+  if (s.was_connected && !out.media_connected && ((s.p2p_connect_failed && !path_moving) || failed)) {
     // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
     out.status = Status::Disconnected;
     out.show_retry = false;
     out.show_invite = false;
-  } else if (s.p2p_connect_failed) {
+  } else if (s.p2p_connect_failed && !path_moving) {
     out.status = Status::CouldntConnect;
     out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::P2pConnect;
     out.show_invite = false;

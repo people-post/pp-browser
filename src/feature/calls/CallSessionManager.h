@@ -239,6 +239,7 @@ public:
   std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const { return workflow_.PeekTopPendingInvite(); }
+  int64_t AloneUntilMs(const std::string& call_id) const { return workflow_.AloneUntilMs(call_id); }
 
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;

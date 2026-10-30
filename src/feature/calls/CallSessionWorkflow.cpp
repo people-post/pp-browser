@@ -903,7 +903,8 @@ void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identi
   }
 }
 
-void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
+void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason,
+                                      const SummaryWrite write) {
   if (!session.origin_thread_id || !host_.wire.send_summary) {
     return;
   }
@@ -917,7 +918,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
   if (!plan) {
     return;
   }
-  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only); !sent) {
+  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only, write); !sent) {
     log().warning << "call summary not written call_id=" << session.call_id << " err=" << sent.error().message;
   }
 }
@@ -931,11 +932,22 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
   if (auto saved = sessions_.UpsertSession(session); !saved) {
     return saved.error();
   }
-  SendSummary(session, reason);
+  SendSummary(session, reason, StillInCall(session.call_id) ? SummaryWrite::EndWhileIn : SummaryWrite::Final);
   if (host_.wire.notify_ring_changed) {
     host_.wire.notify_ring_changed();
   }
   return {};
+}
+
+bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
+  auto local = host_.wire.local_relay_identity();
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!local || !participants) {
+    return false;
+  }
+  return std::any_of(participants->begin(), participants->end(), [&](const CallParticipant& p) {
+    return p.identity == *local && p.state == CallParticipantState::Joined;
+  });
 }
 
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
@@ -976,6 +988,12 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   self.left_at = now;
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     return saved.error();
+  }
+
+  if ((*session)->origin_group_id) {
+    // A group's call goes on for the others: this device's history line is written now, not when (if ever)
+    // it ends. A restart cleanup (Orphaned) never rewrites a line that exists.
+    SendSummary(**session, reason, reason == LiveCallEndReason::Orphaned ? SummaryWrite::Final : SummaryWrite::Leave);
   }
 
   CallLeaveDetail leave;
@@ -1919,6 +1937,11 @@ void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity,
   group_members_seen_ = std::move(seen);
 }
 
+int64_t CallSessionWorkflow::AloneUntilMs(const std::string& call_id) const {
+  auto it = alone_since_ms_.find(call_id);
+  return it == alone_since_ms_.end() ? 0 : it->second + CallSessionLogic::kAloneInGroupCallMs;
+}
+
 void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_identity, const int64_t now) {
   DropWhoLeftTheGroup(local_identity, now);
   ResendRotatedMediaKeys(local_identity, now);
@@ -1946,7 +1969,14 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     it = join_requested_until_ms_.erase(it);
     host_.wire.notify_ring_changed();
   }
+  const bool slept = last_alone_sweep_ms_ > 0 && now - last_alone_sweep_ms_ > CallSessionLogic::kAppSleptGapMs;
+  last_alone_sweep_ms_ = now;
   for (auto it = alone_since_ms_.begin(); it != alone_since_ms_.end();) {
+    // Asleep (backgrounded): the wait starts over. (Someone ringing is not waited on: an offer nobody
+    // answers stays Invited with no end, and the wait is longer than a ring anyway.)
+    if (slept) {
+      it->second = now;
+    }
     if (now - it->second < CallSessionLogic::kAloneInGroupCallMs) {
       ++it;
       continue;
@@ -1954,7 +1984,8 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     const std::string call_id = it->first;
     it = alone_since_ms_.erase(it);
     if (call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
-      log().info << "Alone in group call for 5 min — leaving call_id=" << call_id;
+      log().info << "Alone in group call for " << CallSessionLogic::kAloneInGroupCallMs / 1000
+                 << " s — leaving call_id=" << call_id;
       (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
     }
   }

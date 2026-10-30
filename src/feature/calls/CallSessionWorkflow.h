@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -49,7 +50,8 @@ public:
      * The call's history line: a summary into its thread (the starter's side writes it); `local_only`
      * keeps it on this device (the app is going down: no sends).
      */
-    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only)>
+    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only,
+                            SummaryWrite write)>
         send_summary;
     /**
      * This device's thread for an inbound call: the group's (`group_id`), else the DM with `inviter`.
@@ -186,6 +188,10 @@ public:
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   /** No sweep, no writes (UI reads): expired invites are skipped instead. */
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
+  /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
+  int64_t AloneUntilMs(const std::string& call_id) const;
+  /** This device is Joined in the call (not left it). */
+  bool StillInCall(const std::string& call_id) const;
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each
@@ -265,7 +271,7 @@ private:
                       const std::string& local_identity);
   /** "Call started" in the origin thread's history. */
   /** The starter's summary of a call that just ended (no-op on an invitee's side). */
-  void SendSummary(const CallSession& session, LiveCallEndReason reason);
+  void SendSummary(const CallSession& session, LiveCallEndReason reason, SummaryWrite write = SummaryWrite::Final);
   /** Invite every invitee (control thread warmed first), then prefetch their reach. */
   Roe<void> InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);
@@ -360,6 +366,8 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** The last sweep: a long gap means the app slept, and the alone waits start over. */
+  int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */
   struct MediaKeyResend {
     uint32_t epoch = 0;
