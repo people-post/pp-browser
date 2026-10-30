@@ -168,7 +168,7 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 
 ### s1 — Recovery phrase
 
-- [x] 256-bit seed ↔ 24 BIP-0039 English words with checksum (`foundation/crypto/RecoveryPhrase.*`, vectors from the BIP); account ML-DSA / ML-KEM seeds and locker id / key / signing seed by HKDF labels (`RecoverySeed.*`)
+- [x] 256-bit seed ↔ 24 BIP-0039 English words with checksum (`foundation/crypto/RecoveryPhrase.*`, vectors from the BIP); account ML-DSA / ML-KEM seeds and locker key / signing seed by HKDF labels (`RecoverySeed.*`); locker id = BLAKE2b-256(locker signing pk)
 - [x] New accounts mint from a recovery seed kept in `identity.enc` (`IdentityStore::RecoverySeed`); a link bundle carries it, refused unless it derives the bundle's keys (`LinkDeviceCodec`)
 - [x] Existing accounts (random keys): **new accounts only** — they show no phrase (pre-release; COMPATIBILITY allows a wipe). Recorded in M023 *Open*
 - [ ] Recovery tiers (M023 §3): **easy** (default, "Just continue") keeps the seed in the synced keychain — iOS `kSecAttrSynchronizable` (today's `OsSecureBlob_Ios.mm` is device-only: add a synced item), Android Block Store; **private** shows the phrase to write down; the easy tier's caveat in plain words
@@ -178,9 +178,11 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 
 ### s2 — Locker format
 
-- [ ] Snapshot codec: state (contacts, groups with the signed statement, card floors, relay binding, provider list, person-level prefs) → AEAD under the locker key, padded to size buckets, `version`, signed by the locker signing key — reuse `AccountBackupCodec` contents where they fit
-- [ ] Reader: verify, highest valid version across providers, remember the highest seen
-- [ ] Wire / disk doc in `docs/contracts/` (promote when s3 ships)
+- [x] Snapshot codec (`lib/people/AccountLocker.*`): state (relay binding, nickname, contacts, groups with the signed statement, card floors, providers) → JSON, length-prefixed and zero-padded to 4 KiB × 4ⁿ buckets, XChaCha20-Poly1305 under the locker key (AAD binds locker id + version), signed with the locker ML-DSA key over tag / id / version / sealed; locker id = BLAKE2b-256(signing pk) so `VerifyOwner` needs no account knowledge
+- [x] Reader: `PickNewest` — the highest version that verifies and opens, none below the highest this device has seen
+- [ ] Person-level preferences in the state (which ones follow the person: decide with s4)
+- [ ] Persist the highest version seen per device (with s3, where snapshots are fetched)
+- [ ] Wire / disk doc in `docs/contracts/` (promote when s3 ships); unit tests `account_locker_test.cpp` hold the format until then
 
 ### s3 — Providers
 

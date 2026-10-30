@@ -13,6 +13,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   LinkDeviceCoordinator.cpp
   LinkDeviceExchange.cpp
   LocalAccountBackup.cpp
+  AccountLocker.cpp
   RetiredKeychainBackup.cpp
   MeshHopPolicy.cpp
   PeerAccountBook.cpp

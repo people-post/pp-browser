@@ -64,7 +64,7 @@ TEST(RecoverySeedTest, TheSameSeedDerivesTheSameAccountEveryTime) {
   const RecoveryKeys a = DeriveRecoveryKeys(seed).value();
   const RecoveryKeys b = DeriveRecoveryKeys(seed).value();
   EXPECT_EQ(a.account_ml_dsa_seed, b.account_ml_dsa_seed);
-  EXPECT_EQ(a.locker_id, b.locker_id);
+  EXPECT_EQ(a.locker_key, b.locker_key);
   const auto first = MlDsa::GenerateKeyPairFromSeed(a.account_ml_dsa_seed).value();
   const auto again = MlDsa::GenerateKeyPairFromSeed(b.account_ml_dsa_seed).value();
   EXPECT_EQ(AccountIdFromMlDsaPublicKey(first.public_key).value(), AccountIdFromMlDsaPublicKey(again.public_key).value());
@@ -74,8 +74,8 @@ TEST(RecoverySeedTest, TheSameSeedDerivesTheSameAccountEveryTime) {
   // Every label derives something else, and another seed derives another account.
   const std::set<ByteVector> parts{a.account_ml_dsa_seed, ByteVector(a.account_ml_kem_coins.begin(),
                                                                      a.account_ml_kem_coins.begin() + 32),
-                                   a.locker_id, a.locker_key, a.locker_signing_seed};
-  EXPECT_EQ(parts.size(), 5u);
+                                   a.locker_key, a.locker_signing_seed};
+  EXPECT_EQ(parts.size(), 4u);
   EXPECT_NE(DeriveRecoveryKeys(Filled(0x43))->account_ml_dsa_seed, a.account_ml_dsa_seed);
   EXPECT_FALSE(DeriveRecoveryKeys(ByteVector(31, 0)));
 }

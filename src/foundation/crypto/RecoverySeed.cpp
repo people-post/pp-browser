@@ -13,7 +13,6 @@ namespace {
 constexpr const char kRecoveryHkdfSalt[] = "pp-browser-recovery-v1";
 constexpr const char kAccountMlDsaInfo[] = "account-ml-dsa";
 constexpr const char kAccountMlKemInfo[] = "account-ml-kem";
-constexpr const char kLockerIdInfo[] = "locker-id";
 constexpr const char kLockerKeyInfo[] = "locker-key";
 constexpr const char kLockerSigningInfo[] = "locker-signing";
 
@@ -52,7 +51,7 @@ Roe<RecoveryKeys> DeriveRecoveryKeys(const ByteVector& seed) {
   };
   const Part parts[] = {
       {&keys.account_ml_dsa_seed, kAccountMlDsaInfo, 32}, {&keys.account_ml_kem_coins, kAccountMlKemInfo, 64},
-      {&keys.locker_id, kLockerIdInfo, 32},              {&keys.locker_key, kLockerKeyInfo, 32},
+      {&keys.locker_key, kLockerKeyInfo, 32},
       {&keys.locker_signing_seed, kLockerSigningInfo, 32},
   };
   for (const Part& part : parts) {
