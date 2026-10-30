@@ -156,7 +156,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 | Local | Stored as `ChatContentType::Text`; `mentions` / `all` ride in `payload_json`. |
 | `@everyone` | Only the group owner may use it; the receiver checks the sender against its roster. |
 | Receive | Structure errors reject the message. A bad range drops only that mention (text shown normally). Membership of `account_id` and the owner check on `all` are made against the local roster **when displayed or when notifying**, not at decode. |
-| Notify | Not muted: notify as for any group message. Muted group and mentioned: notify **at most once per group per 60 s**. Not muted and not mentioned: unchanged. Messages from history sync never mark or notify. |
+| Notify | Not muted: notify as for any group message. Muted group and mentioned: notify **at most once per group per 60 s**. Muted and not mentioned: no notification, as today. Messages from history sync never mark or notify. |
 | Marker | Per-thread `unread_mention` flag in `profile.db` ([DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md)), set by a live mention, cleared on opening the thread. |
 | Limits | At most 50 mentions per message (G014). All devices on the same build: unreleased, no backward compatibility; an older build shows "update to view". |
 
