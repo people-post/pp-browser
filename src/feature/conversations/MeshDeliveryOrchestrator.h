@@ -344,6 +344,8 @@ private:
   Roe<void> SignEnvelope(RelayEnvelope& envelope);
   /** Our card to our other devices, through our own mailbox (M022). */
   void NotifySiblings();
+  /** The issue time of the own card our siblings were last told (a mesh bring-up does not repeat it). */
+  std::atomic<int64_t> siblings_told_card_at_{0};
   /** A link to device `peer_id` is up (its copy goes over it, M022). */
   bool LinkedTo(const std::string& peer_id) const;
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */

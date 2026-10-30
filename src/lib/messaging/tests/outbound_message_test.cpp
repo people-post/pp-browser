@@ -1,6 +1,7 @@
 // What a send of ours writes and puts on the wire (OutboundMessage), checked against the receive
 // pipeline of the peer it goes to.
 #include "lib/messaging/OutboundMessage.h"
+#include "foundation/error/AppError.h"
 
 #include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupRosterStore.h"
@@ -251,8 +252,12 @@ TEST(OutboxRetryTest, WhatIsStillWorthSending) {
   EXPECT_FALSE(OutboxSendStillWanted(true, kControlRetryWindowMs + 1, false)) << "signaling past its use";
   EXPECT_TRUE(OutboxSendStillWanted(false, kControlRetryWindowMs * 100, false)) << "a chat message waits";
   EXPECT_FALSE(OutboxSendStillWanted(false, 0, /*thread_paused=*/true));
-  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1));
-  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts)) << "then it fails";
+  const Error unreachable = AppError::Network(Err::Network::Unreachable, "relay down");
+  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1, unreachable));
+  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts, unreachable)) << "then it fails";
+  EXPECT_TRUE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpError, "502"))) << "a server hiccup";
+  // #391: the relay refused the request itself (a 400): the same bytes would be refused again.
+  EXPECT_FALSE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpRejected, "400")));
 }
 
 } // namespace
