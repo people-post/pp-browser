@@ -31,12 +31,12 @@ public:
 
   Roe<void> EnsureSchema(sqlite3* profile_db) const;
 
-  /** Called after any change to a group's metadata or roster (the account backup is rewritten on it). */
+  /** Called after any change to a group's metadata or roster (the account locker is republished on it). */
   void SetOnChanged(std::function<void(const std::string& group_id)> on_changed);
 
   Roe<void> UpsertMetadata(const GroupMetadata& metadata) const;
   Roe<std::optional<GroupMetadata>> LoadMetadata(const std::string& group_id) const;
-  /** Every group this profile holds (the account backup carries them). */
+  /** Every group this profile holds (the account locker carries them). */
   Roe<std::vector<std::string>> ListGroupIds() const;
 
   Roe<void> UpsertMember(const std::string& group_id, const GroupRosterMember& member) const;

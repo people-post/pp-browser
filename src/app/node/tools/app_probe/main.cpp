@@ -47,8 +47,6 @@
 //
 // Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
 //
-// --backup-store DIR: the phone's secure store (the account backup) as files in DIR, outside the data dir.
-// --restore-backup: a fresh install restores the account from it before unlocking ("Restore my account").
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 
 #include "app/Bootstrap.h"
@@ -72,7 +70,6 @@
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "lib/people/LocalAccountBackup.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactClock.h"
 #include "foundation/crypto/RecoveryPhrase.h"
@@ -91,7 +88,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -142,46 +138,6 @@ const char* NoticeKindName(CallNotice::Kind kind) {
   }
   return "?";
 }
-
-/**
- * The phone's secure store (iOS Keychain) as files in a directory outside the data dir: the app writes its
- * account backup there as it would on a phone, and a fresh install (`--restore-backup`) reads it back.
- */
-class FileBlobStore final : public ISecureBlobStore {
-public:
-  explicit FileBlobStore(std::filesystem::path dir) : dir_(std::move(dir)) {}
-  bool Supported() const override { return true; }
-  Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes) override {
-    std::error_code ec;
-    std::filesystem::create_directories(dir_, ec);
-    const std::filesystem::path tmp = dir_ / (name + ".tmp");
-    {
-      std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-      if (!out) {
-        return Error("backup store: write failed");
-      }
-    }
-    std::filesystem::rename(tmp, dir_ / name, ec);
-    return ec ? Roe<void>(Error("backup store: " + ec.message())) : Roe<void>();
-  }
-  Roe<std::optional<std::vector<uint8_t>>> Read(const std::string& name) override {
-    std::ifstream in(dir_ / name, std::ios::binary);
-    if (!in) {
-      return std::optional<std::vector<uint8_t>>{};
-    }
-    return std::optional<std::vector<uint8_t>>(
-        std::vector<uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
-  }
-  Roe<void> Delete(const std::string& name) override {
-    std::error_code ec;
-    std::filesystem::remove(dir_ / name, ec);
-    return {};
-  }
-
-private:
-  std::filesystem::path dir_;
-};
 
 /** One scripted user: the app's objects; its call buttons and call screen are the GUI's (CallPresenter). */
 class Probe {
@@ -510,7 +466,7 @@ public:
               }
               out.set("contacts", ArrayValue(std::move(contacts)));
               std::vector<Value> groups;
-              for (const AccountBackupGroup& group : s.extras.groups) {
+              for (const AccountStateGroup& group : s.extras.groups) {
                 groups.emplace_back(group.group_id);
               }
               out.set("groups", ArrayValue(std::move(groups)));
@@ -1211,25 +1167,18 @@ private:
 int main(int argc, char** argv) {
   std::string pin;
   std::string log_file;
-  std::string backup_store;
-  bool restore_backup = false;
   std::string restore_phrase_file;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--log-file") == 0 && i + 1 < argc) {
       log_file = argv[++i];
-    } else if (std::strcmp(argv[i], "--backup-store") == 0 && i + 1 < argc) {
-      backup_store = argv[++i];
-    } else if (std::strcmp(argv[i], "--restore-backup") == 0) {
-      restore_backup = true;
     } else if (std::strcmp(argv[i], "--restore-phrase-file") == 0 && i + 1 < argc) {
       restore_phrase_file = argv[++i];
     }
   }
-  if (pin.empty() || (restore_backup && backup_store.empty())) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--backup-store DIR "
-                         "[--restore-backup]]\n");
+  if (pin.empty()) {
+    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
@@ -1253,17 +1202,10 @@ int main(int argc, char** argv) {
 
   auto probe = std::make_unique<pbr::Probe>();
   probe->Wire();
-  // The phone's account backup (iOS Keychain) — written as the app runs, read back by a fresh install.
-  std::unique_ptr<pbr::FileBlobStore> blob_store;
-  if (!backup_store.empty()) {
-    blob_store = std::make_unique<pbr::FileBlobStore>(backup_store);
-    probe->Hub().SetBackupStore(blob_store.get());
-  }
   pbr::BootstrapOptions options;
   options.argc = argc;
   options.argv = argv;
   options.pin = pin;
-  options.restore_local_backup = restore_backup;
   if (!restore_phrase_file.empty()) {
     std::ifstream phrase_in(restore_phrase_file);
     std::getline(phrase_in, options.restore_recovery_phrase);

@@ -26,7 +26,7 @@ AccountLockerState SampleState() {
   bob.remote.ids.push_back({mesh::ContactIdKind::Account, "account:bob", true});
   SyncContactMirrors(bob);
   state.contacts = {bob};
-  AccountBackupGroup group;
+  AccountStateGroup group;
   group.group_id = "group:hike";
   group.title = "Weekend hike";
   group.owner_identity = "account:alice";
@@ -122,7 +122,7 @@ TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
   stored.contacts[0].local.display_name = "Bob (laptop's name)";
   stored.extras.groups[0].roster_epoch = 5;       // the laptop saw a newer roster
   stored.extras.groups[0].title = "Hike (renamed)";
-  AccountBackupGroup book_club;
+  AccountStateGroup book_club;
   book_club.group_id = "group:books";
   stored.extras.groups.push_back(book_club);
   stored.extras.card_floors = {{"account:bob", 1'800'000'000'000}, {"account:carol", 5}};
@@ -135,7 +135,7 @@ TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
   EXPECT_EQ(merged.extras.groups[0].roster_epoch, 5u) << "the newer roster wins";
   EXPECT_EQ(merged.extras.groups[0].title, "Hike (renamed)");
   EXPECT_EQ(merged.extras.card_floors,
-            (std::vector<AccountBackupCardFloor>{{"account:bob", 1'800'000'000'000}, {"account:carol", 5}}));
+            (std::vector<AccountCardFloor>{{"account:bob", 1'800'000'000'000}, {"account:carol", 5}}));
   EXPECT_EQ(merged.providers.size(), 2u);
 }
 

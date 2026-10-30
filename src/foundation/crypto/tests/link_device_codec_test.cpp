@@ -67,7 +67,7 @@ TEST(LinkDeviceCodecTest, TheIssuersAccountCardRidesAlongWhenGiven) {
   LinkDeviceBundleV1 bundle = MakeValidBundle();
   auto without = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
   ASSERT_TRUE(without);
-  EXPECT_FALSE(without->account_card_json.has_value()) << "a backup carries none";
+  EXPECT_FALSE(without->account_card_json.has_value()) << "a recovery bundle carries none";
   bundle.account_card_json = R"({"card_version":2})";
   auto with = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
   ASSERT_TRUE(with);

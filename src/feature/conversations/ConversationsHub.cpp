@@ -3,7 +3,6 @@
 #include "lib/messaging/DeleteForEveryone.h"
 #include "domain/node/AppRuntimeMeshExecutors.h"
 
-#include "lib/people/LocalAccountBackup.h"
 #include "lib/people/RetiredKeychainBackup.h"
 #include "lib/people/RecoveryBundle.h"
 #include "lib/people/LinkDeviceCoordinator.h"
@@ -1117,7 +1116,6 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         PublishAddressDisclosure();
       }
     });
-    WriteLocalBackupAsync();
     PublishAccountLockerSoon();
   });
   PublishAddressDisclosure();
@@ -1139,11 +1137,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
-  // The backup keeps every group (G013): rewrite it on any roster change.
-  group_roster_->SetOnChanged([this](const std::string&) {
-    WriteLocalBackupAsync();
-    PublishAccountLockerSoon();
-  });
+  // The account locker keeps every group (G013): republish it on any roster change.
+  group_roster_->SetOnChanged([this](const std::string&) { PublishAccountLockerSoon(); });
   thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
@@ -1271,11 +1266,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   }
   BindPricingFamilies();
   peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
-  // The backup keeps how new each account's newest card is (a restored device refuses older ones).
-  peer_cards_->SetOnNewerCard([this]() {
-    WriteLocalBackupAsync();
-    PublishAccountLockerSoon();
-  });
+  // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
+  peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   account_keys_->LoadKeptCards();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
@@ -1380,9 +1372,9 @@ void ConversationsHub::BuildMessagingObjects() {
   account_locker_ = std::make_unique<AccountLockerWorkflow>(
       *identity_, *contacts_,
       AccountLockerWorkflow::Sources{
-          .groups = [this]() -> Roe<std::vector<AccountBackupGroup>> {
-            return group_membership_ ? group_membership_->BackupGroups()
-                                     : Roe<std::vector<AccountBackupGroup>>(std::vector<AccountBackupGroup>{});
+          .groups = [this]() -> Roe<std::vector<AccountStateGroup>> {
+            return group_membership_ ? group_membership_->StateGroups()
+                                     : Roe<std::vector<AccountStateGroup>>(std::vector<AccountStateGroup>{});
           },
           .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
             return peer_cards_ ? peer_cards_->NewestKnown()
@@ -1581,25 +1573,17 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
 
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
-  const bool restoring = RestorePending();
   messaging_ready_ = true;
   mesh_ready_ = false;
   StartCoordinatorTimers();
   NotifyMessagingReady();
   ScheduleMeshBringUp();
-  if (!restoring) {
-    // Accounts that registered before this build get their backup on the next unlock. (After a restore it is
-    // written once the groups are back, so it never drops them.)
-    WriteLocalBackupAsync();
-  }
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
     AnnounceRestoredDevice();
-    if (backup_store_ == nullptr) {
-      // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
-      if (auto removed = RemoveRetiredKeychainBackup(); !removed) {
-        log().warning << "Retired Keychain backup not removed: " << removed.error().message;
-      }
+    // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
+    if (auto removed = RemoveRetiredKeychainBackup(); !removed) {
+      log().warning << "Retired Keychain backup not removed: " << removed.error().message;
     }
   });
   return {};
@@ -1891,7 +1875,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
       return result.error();
     }
   }
-  WriteLocalBackupAsync();
+  PublishAccountLockerSoon();  // the locker keeps the nickname
   return {};
 }
 
@@ -1933,29 +1917,7 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   if (!applied) {
     return applied.error();
   }
-  WriteLocalBackupAsync();
-  return {};
-}
-
-Roe<std::optional<std::string>> ConversationsHub::LocalBackupNickname() {
-  return LocalAccountBackup::PeekNickname(BackupStore());
-}
-
-Roe<void> ConversationsHub::DeleteLocalBackup() { return LocalAccountBackup::Delete(BackupStore()); }
-
-Roe<void> ConversationsHub::RestoreLocalBackup(const std::string& pin) {
-  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  AccountBackupExtras extras;
-  if (auto restored = LocalAccountBackup::Restore(BackupStore(), Identity(), *Secrets()->Vault(), *PskStore(),
-                                                  Secrets(), Contacts(), pin, util::NowUnixMs(), &extras);
-      !restored) {
-    return restored.error();
-  }
-  log().info << "Account restored from the local backup: contacts and sessions; " << extras.groups.size()
-             << " group(s) and " << extras.card_floors.size() << " card floor(s) once messaging is up";
-  QueueRestoredState(std::move(extras));
+  PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
   return {};
 }
 
@@ -1999,13 +1961,13 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase,
   return {};
 }
 
-void ConversationsHub::QueueRestoredState(AccountBackupExtras extras) {
+void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
   {
     std::lock_guard lock(restored_mutex_);
-    for (AccountBackupGroup& group : extras.groups) {
+    for (AccountStateGroup& group : extras.groups) {
       restored_.groups.push_back(std::move(group));
     }
-    for (AccountBackupCardFloor& floor : extras.card_floors) {
+    for (AccountCardFloor& floor : extras.card_floors) {
       restored_.card_floors.push_back(std::move(floor));
     }
     restored_.announce = true;
@@ -2045,13 +2007,8 @@ void ConversationsHub::PublishAccountLockerSoon() {
   });
 }
 
-bool ConversationsHub::RestorePending() {
-  std::lock_guard lock(restored_mutex_);
-  return restored_.announce || !restored_.groups.empty() || !restored_.card_floors.empty();
-}
-
 void ConversationsHub::ApplyRestoredCardFloors() {
-  std::vector<AccountBackupCardFloor> restored;
+  std::vector<AccountCardFloor> restored;
   {
     std::lock_guard lock(restored_mutex_);
     restored.swap(restored_.card_floors);
@@ -2061,7 +2018,7 @@ void ConversationsHub::ApplyRestoredCardFloors() {
   }
   std::vector<PeerCardFloor> floors;
   floors.reserve(restored.size());
-  for (const AccountBackupCardFloor& floor : restored) {
+  for (const AccountCardFloor& floor : restored) {
     floors.push_back({floor.account_id, floor.issued_at});
   }
   if (auto raised = peer_cards_->RaiseFloors(floors); !raised) {
@@ -2099,18 +2056,15 @@ void ConversationsHub::ResumeGroupRosterChecks() {
       shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
-  std::vector<AccountBackupGroup> restored;
+  std::vector<AccountStateGroup> restored;
   {
     std::lock_guard lock(restored_mutex_);
     restored.swap(restored_.groups);
   }
-  for (const AccountBackupGroup& group : restored) {
+  for (const AccountStateGroup& group : restored) {
     if (auto recreated = group_membership_->RestoreGroup(group); !recreated) {
       log().warning << "Group not restored group=" << group.group_id << ": " << recreated.error().message;
     }
-  }
-  if (!restored.empty()) {
-    WriteLocalBackupAsync();  // this device's backup, with the groups back in it
   }
   PublishAccountLockerSoon();  // at every start too: the locker catches up with what changed while it was off
   // Every group still checking its members (just restored, or the app quit mid-check) asks again.
@@ -2126,48 +2080,6 @@ void ConversationsHub::ResumeGroupRosterChecks() {
       }
     }
   }
-}
-
-void ConversationsHub::WriteLocalBackupAsync() {
-  if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
-    return;
-  }
-  if (backup_write_queued_.exchange(true, std::memory_order_acq_rel)) {
-    return;  // the queued write reads everything when it runs
-  }
-  AppRuntime::PostWorkerNormal([this]() {
-    backup_write_queued_.store(false, std::memory_order_release);
-    if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire) ||
-        Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr) {
-      return;
-    }
-    AccountBackupExtras extras;
-    if (group_membership_) {
-      if (auto listed = group_membership_->BackupGroups()) {
-        extras.groups = std::move(*listed);
-      } else {
-        log().warning << "Groups not backed up: " << listed.error().message;
-      }
-    }
-    if (peer_cards_) {
-      if (auto newest = peer_cards_->NewestKnown()) {
-        for (const PeerCardFloor& floor : *newest) {
-          extras.card_floors.push_back({floor.account_id, floor.issued_at});
-        }
-      } else {
-        log().warning << "Card floors not backed up: " << newest.error().message;
-      }
-    }
-    const size_t groups = extras.groups.size();
-    const size_t floors = extras.card_floors.size();
-    auto written = LocalAccountBackup::Write(BackupStore(), Identity(), *Secrets()->Vault(), *PskStore(), Contacts(),
-                                             util::NowUnixMs(), std::move(extras));
-    if (!written) {
-      log().warning << "Local account backup not written: " << written.error().message;
-    } else if (BackupStore().Supported()) {
-      log().info << "Local account backup written groups=" << groups << " card_floors=" << floors;
-    }
-  });
 }
 
 Roe<void> ConversationsHub::UploadProfileIconFromPath(const std::string& path) {

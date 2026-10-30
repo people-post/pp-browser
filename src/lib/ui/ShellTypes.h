@@ -148,16 +148,12 @@ struct PinGateState {
   bool active = false;
   /** No vault yet: I'm new vs I already have an account. */
   bool identity_fork_mode = false;
-  /** Fork extra: "Restore my account: <nickname>" when a local backup exists; empty hides it. */
-  ui::String restore_label;
   bool chooser_mode = false;
   bool create_mode = false;
   /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
   bool link_paste_mode = false;
   /** The paste page asks for a recovery phrase (multi-device M023) instead of a transfer code. */
   bool phrase_flow = false;
-  /** Restore: enter the PIN the account used (one field, with Back). */
-  bool restore_pin_mode = false;
   /** Plain unlock (vault exists): shows the "Forgot PIN?" link; `forgot_open` expands its explanation. */
   bool unlock_mode = false;
   bool forgot_open = false;

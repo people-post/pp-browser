@@ -308,8 +308,6 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
-  out << "<button class=\"btn btn-primary\" data-if=\"pin_gate_restore_label != ''\" "
-         "data-event-click=\"pin_gate_identity_restore()\">{{pin_gate_restore_label}}</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
       << Tr("pin.identity_new") << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
@@ -344,7 +342,7 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode || pin_gate_restore_pin_mode\" "
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("common.back") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")

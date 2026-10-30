@@ -23,10 +23,6 @@ public:
 
   /** Ports filled onto ProfileUnlockPorts::ui by Application. */
   void ShowIdentityFork();
-  /** Identity fork plus "Restore my account: <nickname>" (local backup found on a fresh install). */
-  void ShowIdentityRestore(const std::string& nickname);
-  /** Restore: ask for the PIN the account used (enter mode); `wrong_pin` shows "that PIN is not right". */
-  void ShowRestorePin(bool wrong_pin);
   void ShowChooser();
   void ShowUnlock();
   void Dismiss();
@@ -40,7 +36,6 @@ public:
   void OnUseDefaultPin();
   void OnIdentityNew();
   void OnIdentityLink();
-  void OnIdentityRestore();
   /** "Restore with my recovery phrase": the link flow's PIN steps, then the phrase instead of a transfer code. */
   void OnIdentityPhrase();
   void OnForgotToggle();

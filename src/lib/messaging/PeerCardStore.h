@@ -45,7 +45,7 @@ PeerCardRecord MergeKeyCard(std::optional<PeerCardRecord> known, const KeyCard& 
 PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card, const std::string& source);
 
 /**
- * The newest account card this device knew for an account, by issue time only: kept in the account backup so
+ * The newest account card this device knew for an account, by issue time only: kept in the account locker so
  * a restored device, which keeps no cards, still refuses an older card than it had seen (one listing a device
  * since taken out). See docs/contracts/ACCOUNT_CARD.md#newest-wins.
  */
@@ -73,15 +73,15 @@ public:
   Roe<std::vector<PeerCardRecord>> List() const;
 
   /**
-   * Floors restored from the account backup: from now on an account card older than its floor is refused
+   * Floors restored from the account locker: from now on an account card older than its floor is refused
    * (AddAccountCard), and a carried one does not speak for its sender (Floor). A lower floor changes nothing.
    */
   Roe<void> RaiseFloors(const std::vector<PeerCardFloor>& floors);
   /** The issue time an account card of `account_id` must reach: its restored floor, else 0. */
   Roe<int64_t> Floor(const std::string& account_id) const;
-  /** Per account, the newest issue time known — a kept account card's, or a floor's — for the backup. */
+  /** Per account, the newest issue time known — a kept account card's, or a floor's — for the account locker. */
   Roe<std::vector<PeerCardFloor>> NewestKnown() const;
-  /** Called (outside the store's lock) when an account's newest card got newer: the backup keeps its floor. */
+  /** Called (outside the store's lock) when an account's newest card got newer: the account locker keeps its floor. */
   void SetOnNewerCard(std::function<void()> callback);
 
 private:

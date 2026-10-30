@@ -665,7 +665,7 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   if (!detail) {
     return detail.error();
   }
-  // G012: the hand-over, signed by us, lets members (and devices restored from an older backup) trust
+  // G012: the hand-over, signed by us, lets members (and devices restored from an older locker snapshot) trust
   // the new owner's statements.
   std::string sent = *detail;
   if (auto identity = identity_.Get(); identity && !identity->account_signing_public_key_b64.empty()) {
@@ -1276,7 +1276,7 @@ Roe<void> GroupMembershipWorkflow::SendRosterControl(const std::string& peer_ide
                                                      const std::string& detail_json, const std::string& display,
                                                      const std::string& local_identity) {
   // On the control lane (MakeGroupRosterSyncFamily): no chat row on either side, and an account copy with
-  // our card — the asker may be a device restored from its backup, which keeps none of the cards it had.
+  // our card — the asker may be a device restored from the account locker, which keeps none of the cards it had.
   auto control = GroupMembershipCodec::BuildSystemMessage(std::string(), control_type, display, detail_json,
                                                           local_identity);
   if (!control) {
@@ -1285,12 +1285,12 @@ Roe<void> GroupMembershipWorkflow::SendRosterControl(const std::string& peer_ide
   return mesh_messaging_.SendControl(peer_identity, *control);
 }
 
-Roe<std::vector<AccountBackupGroup>> GroupMembershipWorkflow::BackupGroups() const {
+Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const {
   auto ids = roster_.ListGroupIds();
   if (!ids) {
     return ids.error();
   }
-  std::vector<AccountBackupGroup> groups;
+  std::vector<AccountStateGroup> groups;
   for (const std::string& group_id : *ids) {
     auto metadata = roster_.LoadMetadata(group_id);
     auto members = roster_.ListMembers(group_id);
@@ -1300,7 +1300,7 @@ Roe<std::vector<AccountBackupGroup>> GroupMembershipWorkflow::BackupGroups() con
     if ((*metadata)->sync_state == GroupSyncState::Removed) {
       continue;  // nothing to bring back
     }
-    AccountBackupGroup group;
+    AccountStateGroup group;
     group.group_id = group_id;
     group.title = (*metadata)->title;
     group.owner_identity = (*metadata)->owner_identity;
@@ -1316,7 +1316,7 @@ Roe<std::vector<AccountBackupGroup>> GroupMembershipWorkflow::BackupGroups() con
   return groups;
 }
 
-Roe<void> GroupMembershipWorkflow::RestoreGroup(const AccountBackupGroup& group) {
+Roe<void> GroupMembershipWorkflow::RestoreGroup(const AccountStateGroup& group) {
   auto update = GroupRosterStore::LockForUpdate();
   GroupMetadata metadata;
   metadata.group_id = group.group_id;
@@ -1332,7 +1332,7 @@ Roe<void> GroupMembershipWorkflow::RestoreGroup(const AccountBackupGroup& group)
   if (auto saved = roster_.UpsertMetadata(metadata); !saved) {
     return saved.error();
   }
-  for (const AccountBackupGroupMember& m : group.members) {
+  for (const AccountStateGroupMember& m : group.members) {
     GroupRosterMember member;
     member.member_identity = m.identity;
     member.role = MemberRoleFromString(m.role);

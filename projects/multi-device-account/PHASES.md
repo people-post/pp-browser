@@ -183,7 +183,7 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Reader: `PickNewest` — the highest version that verifies and opens, none below the highest this device has seen
 - [ ] Person-level preferences in the state (which ones follow the person: decide with s4)
 - [x] Persist the highest version seen, per locker (`account_locker.json` in the profile dir; a provider serving an older copy of one locker says nothing about another)
-- [ ] Wire / disk doc in `docs/contracts/` (promote when s3 ships); unit tests `account_locker_test.cpp` hold the format until then
+- [x] Wire / disk doc: [ACCOUNT_LOCKER.md](../../docs/contracts/ACCOUNT_LOCKER.md) (keys, snapshot, state JSON, sync, restore, `account_locker.json`); HTTP in SERVICE_ENDPOINTS
 
 ### s3 — Providers
 
@@ -200,19 +200,21 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] Groups need no entries: siblings are members as the same account and receive roster events; rosters follow the owner's signed statement (G012). Card floors: each device learns its own
 - [x] Sync 5 s after local changes, at each start and every 10 min (`kLockerSyncIntervalMs`); lab `linked_devices_share_contact_edits` (a linked laptop's first sync brings the contacts; a remark and a removal on the laptop reach the phone; the removal is not undone)
 - [x] A nudge to siblings after a write: the writer sends the `device_list` control-lane notice to its own mailbox (only with more than one device on the card); a verified sibling notice makes the receiver sync 5 s later; a sync with nothing new writes nothing, so it stops there. Lab `linked_devices_share_contact_edits` (the phone gets the laptop's remark without asking)
-- [ ] Clocks are device wall clocks: a device far off in time can win or lose an edit wrongly (stated in M023)
+- [x] Clocks: a register moves past any time it has seen (`max(now, at + 1)`), so an edit made after seeing another always wins; only edits made concurrently on two devices are ordered by their wall clocks (stated in M023 and ACCOUNT_LOCKER § Sync)
+- [ ] Leaving a group: groups only merge in (higher roster epoch), so a group left on one device stays in the locker and a restore brings it back (checking its members, it finds itself out). Needs a per-group register like the contacts'
 
 ### s5 — Restore and link
 
 - [x] Restore from a typed phrase (`ConversationsHub::RestoreFromRecoveryPhrase`): phrase → locker (it holds the relay binding: no locker, no restore) → the link bundle the phrase reconstructs (`RecoveryBundle`, a fresh DEK) imported → contacts → groups / card floors / announce through the restore path once messaging is up; probe `--restore-phrase-file`, lab `restore_from_phrase` (every device gone, the group back and active, messages both ways, the locker republished)
 - [x] Fresh-install UI: **Restore with my recovery phrase** on the identity fork → the link flow's PIN choice (Set a PIN / Just continue) → the 24-word page → `ProfileUnlockGate::CompletePhraseRestore` (shares `CompleteAccountImport` with the link) → unlocked, no first-run wizard; gtests for the gate and `PinGateController`; checked on screen (Xvfb)
 - [ ] A new device signing a fresh list as master (d4)
-- [ ] Link: the new device reads the locker / change log (no contacts in the bundle)
+- [x] Link: the new device reads the locker (the bundle carries the seed, no contacts); its first sync, at start, brings the contacts — lab `linked_devices_share_contact_edits`
 - [ ] Restore finds the seed in the synced keychain first (easy tier), else asks for the phrase
-- [ ] Retire `LocalAccountBackup`, the probe's `--backup-store` / `--restore-backup`, and the lab's file-store restore. The Keychain store stays (easy tier); only the retired item's cleanup goes at 1.1.0 (`kRetiredKeychainBackupRemoveAt`)
+- [x] Retire `LocalAccountBackup` (gone with its blob codec, the gate's "Restore my account", the probe's `--backup-store` / `--restore-backup`); the store interface lives on as `lib/people/SecureBlobStore` (easy tier), the surviving group / floor types as `AccountStateCodec`; the lab's restore scenarios (`restored_device_*`, `group_restore_checks_members`, `group_removed_member_restores`, `group_restored_owner_takes_newer_roster`) restore from the phrase. Only the retired item's cleanup goes at 1.1.0 (`kRetiredKeychainBackupRemoveAt`)
 
 ### s6 — Proof and promotion
 
 - [ ] Lab: lose every device, restore from the phrase (and, with a file standing in for the synced keychain, the easy tier), contacts / groups / floors back, contacts' next messages arrive; a provider serving an old snapshot is overruled by a newer one
-- [ ] Promote the locker format and API into `docs/contracts/`; mark M023 implemented
+- [x] Promote the locker format and API into `docs/contracts/` (ACCOUNT_LOCKER, SERVICE_ENDPOINTS; AT_REST / DATA_LAYOUT point to them)
+- [ ] Mark M023 implemented (after the tiers and the remaining s3 / s5 items)
 

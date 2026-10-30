@@ -133,7 +133,7 @@ Two signatures on a write:
 | Relay (quota) | the relay user's account key | `pp-browser:relay-locker-put-v1` ‖ 0 ‖ u8 1 ‖ LenUtf8 `relay_user_id` ‖ LenUtf8 `locker_id` ‖ u64 `version` ‖ i64 `timestamp` |
 | Locker (owner) | the locker ML-DSA-65 key; `locker_id` = lowercase hex of BLAKE2b-256(its public key) | `pp-browser:account-locker-v1` ‖ 0 ‖ u8 1 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(sealed) |
 
-`sealed` (≤ 1 MiB + 256 bytes) is XChaCha20-Poly1305 under the locker key, AAD `account-locker|{locker id hex}|{version}`, of the state JSON length-prefixed (u32 BE) and zero-padded to 4 KiB × 4ⁿ. Golden vectors for both sign-byte layouts are shared between `account_locker_test` / `http_locker_client_test` and www `__tests__/AccountLocker.test.ts`. The relay learns which registered user writes which locker (the write is authenticated for its quota); reads carry no identity.
+The snapshot (`sealed`, the owner signature, rollback protection) and the state inside it: [ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md). Golden vectors for both sign-byte layouts are shared between `account_locker_test` / `http_locker_client_test` and www `__tests__/AccountLocker.test.ts`. The relay learns which registered user writes which locker (the write is authenticated for its quota); reads carry no identity.
 
 ## Client compatibility discovery
 

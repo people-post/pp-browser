@@ -1,7 +1,8 @@
 #pragma once
 
-#include "lib/people/AccountBackupCodec.h"
+#include "lib/people/AccountStateCodec.h"
 #include "lib/people/ContactClock.h"
+#include "lib/people/ContactTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/RecoverySeed.h"
 
@@ -24,7 +25,7 @@ struct AccountLockerState {
   std::string nickname;
   std::vector<Contact> contacts;
   /** Groups (with the latest owner-signed roster statement) and card floors. */
-  AccountBackupExtras extras;
+  AccountStateExtras extras;
   /** Where else this locker is kept (provider base URLs); the configured relay is always tried first. */
   std::vector<std::string> providers;
   /** Each contact's sync register (M023 §7): the newest wins per account, a removal is a tombstone. */

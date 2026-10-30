@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 // Desktop and test hosts have no uninstall-surviving store: the stub must say so, read as "nothing
-// stored" and delete without error, so the account-backup code can treat it like an empty store.
+// stored" and delete without error, so its callers can treat it like an empty store.
 TEST(OsSecureBlobTest, UnsupportedPlatformReadsEmptyAndDeletesQuietly) {
   if (pbr::os::SecureBlobSupported()) {
     GTEST_SKIP() << "real secure store on this platform";

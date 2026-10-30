@@ -37,8 +37,8 @@ public:
   Roe<void> ReplaceWithDek(std::string_view pin, ByteVector dek);
   Roe<void> Unlock(std::string_view pin);
   /**
-   * DEK from `vault.bin` bytes (this vault's or a copy, e.g. the local account backup) and the
-   * profile id they are bound to. Wrong PIN → Pin-category error; nothing is stored.
+   * DEK from `vault.bin` bytes (this vault's or a copy) and the profile id they are bound to.
+   * Wrong PIN → Pin-category error; nothing is stored.
    */
   static Roe<ByteVector> UnwrapDekFromVaultBytes(const ByteVector& vault_bytes, std::string_view profile_id,
                                                  std::string_view pin);

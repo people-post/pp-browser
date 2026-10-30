@@ -51,7 +51,7 @@ protected:
     return group_roster_statement::Sign(signer, signer.Key(), kGroup, epoch, rows, std::move(chain)).value();
   }
 
-  /** The roster as the backup had it, holding `held`. */
+  /** The roster as the account locker had it, holding `held`. */
   void Seed(const GroupRosterStatement& held) {
     GroupMetadata metadata;
     metadata.group_id = kGroup;
@@ -102,7 +102,7 @@ TEST_F(GroupRosterSyncTest, RestoredMemberTakesTheNewerRosterAndStopsSendingToTh
   EXPECT_EQ(ask, expected) << "the owner and every member but us";
   EXPECT_FALSE(group_roster_sync::MaySend(Metadata())) << "no send while checking (a stale roster would leak)";
 
-  // Alice removed Dave after the backup; Bob holds her newer statement.
+  // Alice removed Dave after the locker snapshot; Bob holds her newer statement.
   auto outcome = group_roster_sync::ApplyReply(*roster_, ReplyWith(check->request.request_id,
                                                                    Statement(4, {bob_, carol_})),
                                                carol_, bob_);

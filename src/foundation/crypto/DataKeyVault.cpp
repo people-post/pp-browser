@@ -235,8 +235,8 @@ Roe<ByteVector> DataKeyVault::UnwrapDekFromVaultBytes(const ByteVector& vault_by
 }
 
 Roe<void> DataKeyVault::ChangePin(std::string_view old_pin, std::string_view new_pin) {
-  // Verify the old PIN without touching dek_: the local backup writer may be reading it on a
-  // worker thread, and the DEK itself does not change — only its wrap does.
+  // Verify the old PIN without touching dek_: a worker thread may be reading it, and the DEK itself
+  // does not change — only its wrap does.
   auto bytes = ReadVaultFile();
   if (!bytes) {
     return bytes.error();

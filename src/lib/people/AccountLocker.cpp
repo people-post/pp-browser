@@ -86,12 +86,12 @@ std::string StateToJson(const AccountLockerState& state) {
   }
   root.set("contacts", ArrayValue(std::move(contacts)));
   std::vector<Value> groups;
-  for (const AccountBackupGroup& group : state.extras.groups) {
-    groups.push_back(ObjectValue(AccountBackupCodec::GroupToJson(group)));
+  for (const AccountStateGroup& group : state.extras.groups) {
+    groups.push_back(ObjectValue(AccountStateCodec::GroupToJson(group)));
   }
   root.set("groups", ArrayValue(std::move(groups)));
   std::vector<Value> floors;
-  for (const AccountBackupCardFloor& floor : state.extras.card_floors) {
+  for (const AccountCardFloor& floor : state.extras.card_floors) {
     Object row;
     row.set("account_id", floor.account_id);
     row.set("issued_at", floor.issued_at);
@@ -125,7 +125,7 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* groups = root->getArray("groups")) {
     for (const Value& item : groups->elements) {
       if (const Object* row = asObject(item)) {
-        if (auto group = AccountBackupCodec::GroupFromJson(*row)) {
+        if (auto group = AccountStateCodec::GroupFromJson(*row)) {
           state.extras.groups.push_back(std::move(*group));
         }
       }
@@ -134,7 +134,7 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* floors = root->getArray("card_floors")) {
     for (const Value& item : floors->elements) {
       if (const Object* row = asObject(item)) {
-        AccountBackupCardFloor floor{row->getString("account_id").value_or(""),
+        AccountCardFloor floor{row->getString("account_id").value_or(""),
                                      row->getIf<int64_t>("issued_at").value_or(0)};
         if (!floor.account_id.empty() && floor.issued_at > 0) {
           state.extras.card_floors.push_back(std::move(floor));
@@ -281,18 +281,18 @@ void MergeContacts(const AccountLockerState& ours, const AccountLockerState& sto
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
   AccountLockerState merged = ours;
   MergeContacts(ours, stored, merged);
-  for (const AccountBackupGroup& theirs : stored.extras.groups) {
+  for (const AccountStateGroup& theirs : stored.extras.groups) {
     auto mine = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
-                             [&](const AccountBackupGroup& g) { return g.group_id == theirs.group_id; });
+                             [&](const AccountStateGroup& g) { return g.group_id == theirs.group_id; });
     if (mine == merged.extras.groups.end()) {
       merged.extras.groups.push_back(theirs);
     } else if (theirs.roster_epoch > mine->roster_epoch) {
       *mine = theirs;
     }
   }
-  for (const AccountBackupCardFloor& theirs : stored.extras.card_floors) {
+  for (const AccountCardFloor& theirs : stored.extras.card_floors) {
     auto mine = std::find_if(merged.extras.card_floors.begin(), merged.extras.card_floors.end(),
-                             [&](const AccountBackupCardFloor& f) { return f.account_id == theirs.account_id; });
+                             [&](const AccountCardFloor& f) { return f.account_id == theirs.account_id; });
     if (mine == merged.extras.card_floors.end()) {
       merged.extras.card_floors.push_back(theirs);
     } else {

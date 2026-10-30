@@ -14,7 +14,7 @@ Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-cry
 - Random **32-byte DEK** wrapped by a PIN-derived KEK (Argon2id).
 - **XChaCha20-Poly1305** encrypts identity and PSK material under the DEK.
 - Whole-file replaces use **atomic write** (tmp → fsync → rename).
-- **Forgotten PIN:** wipe the profile. No recovery key in v1.
+- **Forgotten PIN:** wipe the profile; the account (not its messages) comes back from its recovery phrase (§ Account recovery).
 - **No migrators** from plaintext layouts — delete data dir when upgrading during development.
 
 ## Algorithms
@@ -131,23 +131,9 @@ Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore
 
 Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).
 
-## Local account backup (iOS)
+## Account recovery (recovery phrase, account locker)
 
-**Unsupported in the product** ([A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)):
-no store is configured, so nothing is written to the Keychain and no restore is offered; an item an earlier build
-wrote is deleted once messaging is up. The rest of this section is what the code does when a store is set (the lab's
-file store); its decided successor is a recovery phrase plus an encrypted account locker
-([multi-device M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold), not built).
+An account minted since M023 s1 derives its account keys from a 32-byte recovery seed kept in `identity.enc` (§ Identity plaintext); the seed also derives the keys of the **account locker**, the encrypted snapshot of the account's state a provider holds for it ([ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md)). Me → Security shows the recovery phrase (the seed as 24 words) only after the profile PIN is entered. A fresh install restores from the typed phrase under a PIN the user chooses; the DEK is new (nothing sealed under the old one comes back — the locker holds the state). Whoever has the phrase has the account.
 
-The Keychain item described in [DATA_LAYOUT.md](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir)
-keeps only the nickname in the clear. The link-device bundle (DEK, account secret keys) and the contacts are sealed
-under the DEK, and the item carries a copy of `vault.bin`, so opening it needs the profile PIN — holding the unlocked
-phone is not enough. Restore on a fresh install first tries the default PIN in the background (accounts that never set
-one come back without a question — for them, holding the unlocked phone still suffices, by design); otherwise it asks for the PIN the account used (enter, not create). A wrong PIN
-fails before anything is written and keeps the page up; Back returns to the fresh-install choices. The right PIN
-unwraps the copied vault, opens the sealed contents, imports the bundle exactly like a pasted transfer code
-(`LinkDeviceCoordinator::Import`) under that **same** PIN, then upserts the contacts. Its groups come back once
-messaging is up, each checking its members before it sends (group-chat G013). A PIN change rewrites the item; `DataKeyVault::ChangePin` only re-wraps and never clears the live DEK, so a backup
-write running on a worker at the same time cannot observe a zeroed key.
-Known gap: like `vault.bin` itself, the copied vault can be attacked offline by guessing PINs, and the restore page
-does not limit attempts.
+The earlier PIN-sealed local account backup (iOS Keychain) is retired ([A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); an item an earlier build wrote is deleted once messaging is up, until app version 1.1.0 ([DATA_LAYOUT](DATA_LAYOUT.md#retired-local-account-backup-ios-keychain-outside-the-data-dir)).
+

@@ -10,7 +10,6 @@
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "lib/people/LinkDeviceCoordinator.h"
-#include "lib/people/LocalAccountBackup.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -114,17 +113,9 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
-Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() { return hub_.LocalBackupNickname(); }
-
-Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) { return hub_.RestoreLocalBackup(pin); }
-
 Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin) {
   return hub_.RestoreFromRecoveryPhrase(phrase, pin);
 }
-
-void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
-
-Roe<void> ConversationsFacade::DeleteLocalBackup() { return hub_.DeleteLocalBackup(); }
 
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
 

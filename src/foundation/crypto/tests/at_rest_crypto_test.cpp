@@ -87,7 +87,7 @@ TEST_F(AtRestCryptoTest, ReplaceWithDekOverwritesExistingVault) {
   EXPECT_EQ(*reopened.Dek(), shared_dek);
 }
 
-// A copy of the vault bytes (the local account backup keeps one) opens only with the same PIN and
+// A copy of the vault bytes opens only with the same PIN and
 // profile id; a wrong PIN is a PIN error.
 TEST_F(AtRestCryptoTest, UnwrapDekFromVaultBytesNeedsPinAndProfile) {
   const auto vault_path = (dir_ / "vault-copy.bin").string();

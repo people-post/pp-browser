@@ -3,7 +3,7 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/GroupRosterSync.h"
-#include "lib/people/AccountBackupCodec.h"
+#include "lib/people/AccountStateCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -94,13 +94,13 @@ public:
   Roe<void> AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request, const std::string& asker);
   /** G013: check the group's members — ask the owner and every member we know; no sends until answered. */
   Roe<void> StartRosterCheck(const std::string& group_id);
-  /** Groups as the account backup keeps them. */
-  Roe<std::vector<AccountBackupGroup>> BackupGroups() const;
+  /** Groups as the account locker keeps them (multi-device M023 §4). */
+  Roe<std::vector<AccountStateGroup>> StateGroups() const;
   /**
-   * A group from the account backup: metadata, roster, the statement held and its chat (no messages),
+   * A group from the account locker: metadata, roster, the statement held and its chat (no messages),
    * checking its members (G013). The caller then starts the check once messaging is up.
    */
-  Roe<void> RestoreGroup(const AccountBackupGroup& group);
+  Roe<void> RestoreGroup(const AccountStateGroup& group);
 
 private:
   Roe<std::string> ResolveRelayIdentity(const std::string& contact_id) const;

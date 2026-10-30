@@ -71,14 +71,8 @@ public:
   /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
   bool HasRecoveryPhrase();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
-  /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
-  Roe<std::optional<std::string>> LocalBackupNickname();
-  Roe<void> RestoreLocalBackup(const std::string& pin);
   /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
   Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin);
-  /** Rewrite the local account backup on a worker (e.g. after a PIN change). Best effort. */
-  void WriteLocalBackupAsync();
-  Roe<void> DeleteLocalBackup();
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

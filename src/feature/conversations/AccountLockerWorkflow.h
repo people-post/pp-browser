@@ -28,7 +28,7 @@ class AccountLockerWorkflow : public Module {
 public:
   /** Where the groups and card floors come from (null-safe: missing ones are left out). */
   struct Sources {
-    std::function<Roe<std::vector<AccountBackupGroup>>()> groups;
+    std::function<Roe<std::vector<AccountStateGroup>>()> groups;
     std::function<Roe<std::vector<PeerCardFloor>>()> card_floors;
   };
 

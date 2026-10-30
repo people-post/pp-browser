@@ -92,7 +92,7 @@ receiver's clock. Version 1 cards (PeerIds only) are refused.
 
 **Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname and
 device list; an older card changes nothing. A restored install keeps no cards but knows each account's newest
-issue time from the backup (`card_floors`, [DATA_LAYOUT](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir))
+issue time from the account locker (`card_floors`, [ACCOUNT_LOCKER](ACCOUNT_LOCKER.md#state-json))
 and refuses older cards. Until only a master device issues cards (M021 d4) every
 linked device holds the account key, so two may issue at once: a device that learns a card of its own
 account listing fewer devices than it knows re-issues with both, and takes the newest card's nickname as
