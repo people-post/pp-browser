@@ -178,6 +178,8 @@ private:
   std::string group_id_;
   std::string group_thread_id_;
   bool group_is_owner_ = false;
+  /** This account, on the member list (its own row is not tappable). */
+  std::string local_identity_;
   bool group_sending_ = false;
   int group_roster_count_ = 0;
   std::unordered_map<std::string, GroupMemberRow> member_rows_;

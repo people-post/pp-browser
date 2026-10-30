@@ -665,6 +665,7 @@ void PeoplePickerController::SyncGroupMemberRows() {
       local_identity = *identity;
     }
   }
+  local_identity_ = local_identity;
   group_is_owner_ = std::any_of(roster->begin(), roster->end(), [&](const GroupRosterMember& member) {
     return member.member_identity == local_identity && member.role == MemberRole::Owner;
   });
@@ -680,8 +681,14 @@ void PeoplePickerController::SyncGroupMemberRows() {
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
   std::vector<GroupMemberRow> members;
+  std::optional<GroupMemberRow> self_row;
   for (const GroupRosterMember& member : *roster) {
-    if (member.member_identity.empty() || member.member_identity == local_identity) {
+    if (member.member_identity.empty()) {
+      continue;
+    }
+    if (member.member_identity == local_identity) {
+      self_row = BuildGroupMemberRow(member, std::nullopt, false);
+      self_row->title = Tr("people_picker.you");
       continue;
     }
     GroupMemberRow row = BuildGroupMemberRow(member, ContactForMember(member), unreachable.count(member.member_identity) > 0);
@@ -691,6 +698,10 @@ void PeoplePickerController::SyncGroupMemberRows() {
     members.push_back(std::move(row));
   }
   SortGroupMemberRows(members);
+  // This device's own row first, so the list counts the same people as "N members".
+  if (self_row) {
+    members.insert(members.begin(), std::move(*self_row));
+  }
   rows_.reserve(members.size());
   for (GroupMemberRow& member : members) {
     PickerRow row;
@@ -1198,6 +1209,9 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
     return;
   }
   const GroupMemberRow row = found->second;
+  if (row.identity == local_identity_) {
+    return;
+  }
   // A non-owner who taps a contact goes straight to the chat with them.
   if (!group_is_owner_ && row.IsContact()) {
     StartDirectMessage(row.contact_id);

@@ -10,11 +10,11 @@ namespace pbr {
 inline constexpr int kGroupMemberLimit = 50;
 
 /**
- * "Re-invite" on the member list. It only helps if the invitee, who lost the group, can accept it and then be
- * heard by the owner and the others. That holds when they only cleared the group, not when they came back on a
- * fresh profile (ReInvitedMemberTest.DISABLED_AMemberOnAFreshProfile…, a messaging gap): off until that passes.
+ * "Re-invite" on the member list, for a member who lost the group (left it, or cleared it) and is still on the
+ * roster: ReInvitedMemberTest. A reinstall without restore is a new account (added as a new member); a restore
+ * is a new device whose pairs restart (G010/G011).
  */
-inline constexpr bool kGroupReinviteEnabled = false;
+inline constexpr bool kGroupReinviteEnabled = true;
 
 enum class PeoplePickerMode {
   Free,

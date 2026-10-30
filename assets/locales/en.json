@@ -479,6 +479,7 @@
     "people_picker.title_group_members": "Group members",
     "people_picker.add_members": "Add members",
     "people_picker.badge_owner": "Owner",
+    "people_picker.you": "You",
     "people_picker.badge_unreachable": "Unreachable",
     "people_picker.cta_invite": "Invite ({count})",
     "people_picker.cta_inviting": "Inviting…",
