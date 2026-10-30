@@ -395,25 +395,44 @@ void ProfileUnlockGate::CompleteRestoreBackup(const std::string& pin, const bool
 
 void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::string& bundle_json,
                                            const bool set_default_pin) {
-  if (unlock_in_progress_) {
-    return;
-  }
   if (!ports_.import_link_device) {
     ReportError("Link import is not available");
     return;
   }
-  SetUnlockInProgress(true);
-  StartupMark("link_device_import_begin");
+  CompleteAccountImport(
+      pin, set_default_pin, [this, pin, bundle_json]() { return ports_.import_link_device(pin, bundle_json); },
+      "link_device_import");
+}
 
-  auto work = [this, pin, bundle_json]() -> Roe<void> {
-    if (auto imported = ports_.import_link_device(pin, bundle_json); !imported) {
+void ProfileUnlockGate::CompletePhraseRestore(const std::string& pin, const std::string& phrase,
+                                              const bool set_default_pin) {
+  if (!ports_.restore_recovery_phrase) {
+    ReportError("Restore from a recovery phrase is not available");
+    return;
+  }
+  CompleteAccountImport(
+      pin, set_default_pin, [this, pin, phrase]() { return ports_.restore_recovery_phrase(pin, phrase); },
+      "phrase_restore");
+}
+
+void ProfileUnlockGate::CompleteAccountImport(const std::string& pin, const bool set_default_pin,
+                                              std::function<Roe<void>()> import, const char* mark) {
+  if (unlock_in_progress_) {
+    return;
+  }
+  SetUnlockInProgress(true);
+  const std::string mark_name = mark;
+  StartupMark((mark_name + "_begin").c_str());
+
+  auto work = [this, pin, import = std::move(import)]() -> Roe<void> {
+    if (auto imported = import(); !imported) {
       return imported.error();
     }
     return UnlockAndReady(pin);
   };
-  auto on_done = [this, set_default_pin](Roe<void> result) {
+  auto on_done = [this, set_default_pin, mark_name](Roe<void> result) {
     if (!result) {
-      StartupMark("link_device_import_fail");
+      StartupMark((mark_name + "_fail").c_str());
       ReportError(result.error());
       return;
     }
@@ -423,7 +442,7 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
     if (!set_default_pin && ports_.set_pin_is_default) {
       ports_.set_pin_is_default(false);
     }
-    StartupMark("link_device_import_ok");
+    StartupMark((mark_name + "_ok").c_str());
     if (set_default_pin && ports_.ui.on_default_provisioned) {
       ports_.ui.on_default_provisioned();
     }

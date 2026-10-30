@@ -173,5 +173,45 @@ TEST_F(ProfileUnlockGateTest, RestoreTriesTheDefaultPinThenAsksForTheAccountPin)
   EXPECT_FALSE(*pin_is_default);
 }
 
+// "Restore with my recovery phrase" (multi-device M023): the phrase restored under the PIN chosen for this device,
+// then unlocked; no first-run wizard (as after a link). A phrase that finds no account leaves the vault absent.
+TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
+  ASSERT_FALSE(engine_.HasVault());
+  std::vector<std::pair<std::string, std::string>> restores;  // pin, phrase
+  int imported_notices = 0;
+  int errors = 0;
+  bool dismissed = false;
+  std::optional<bool> pin_is_default;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.restore_recovery_phrase = [&](const std::string& pin, const std::string& phrase) -> Roe<void> {
+    restores.emplace_back(pin, phrase);
+    if (phrase != "the right words") {
+      return Error("No account was found for this recovery phrase");
+    }
+    return engine_.Vault()->CreateWithDek(pin, ByteVector(kDataEncryptionKeySize, 0x62));
+  };
+  ports.set_pin_is_default = [&](const bool is_default) { pin_is_default = is_default; };
+  ports.ui.on_link_imported = [&]() { ++imported_notices; };
+  ports.ui.show_error = [&](const std::string&) { ++errors; };
+  ports.ui.dismiss = [&]() { dismissed = true; };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.CompletePhraseRestore("4321", "unknown words", /*set_default_pin=*/false);
+  EXPECT_EQ(errors, 1);
+  EXPECT_FALSE(engine_.HasVault());
+  EXPECT_FALSE(gate_.IsUnlockInProgress()) << "the user can try again";
+
+  gate_.CompletePhraseRestore("4321", "the right words", /*set_default_pin=*/false);
+  ASSERT_EQ(restores.size(), 2u);
+  EXPECT_EQ(restores.back(), std::make_pair(std::string("4321"), std::string("the right words")));
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_TRUE(dismissed);
+  EXPECT_EQ(imported_notices, 1) << "no first-run wizard for an account that came back";
+  ASSERT_TRUE(pin_is_default.has_value());
+  EXPECT_FALSE(*pin_is_default);
+}
+
 } // namespace
 } // namespace pbr

@@ -1069,6 +1069,10 @@ void Application::WireUnlockPinAndFlow() {
     gate_complete.complete_restore_backup = [this](const std::string& pin, const bool set_default_pin) {
       unlock_gate_->CompleteRestoreBackup(pin, set_default_pin);
     };
+    gate_complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase,
+                                                   const bool set_default_pin) {
+      unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin);
+    };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
@@ -1114,6 +1118,9 @@ void Application::WireUnlockPinAndFlow() {
   };
   unlock_ports.local_backup_nickname = [&facade]() { return facade.LocalBackupNickname(); };
   unlock_ports.restore_local_backup = [&facade](const std::string& pin) { return facade.RestoreLocalBackup(pin); };
+  unlock_ports.restore_recovery_phrase = [&facade](const std::string& pin, const std::string& phrase) {
+    return facade.RestoreFromRecoveryPhrase(phrase, pin);
+  };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
@@ -1220,6 +1227,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
     pin_actions.on_identity_restore = [this]() { pin_gate_->OnIdentityRestore(); };
+    pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }

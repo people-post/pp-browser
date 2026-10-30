@@ -133,6 +133,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
+    ctor.Bind("pin_gate_phrase_flow", &host.state_.pin_gate.phrase_flow);
     ctor.Bind("pin_gate_restore_pin_mode", &host.state_.pin_gate.restore_pin_mode);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
@@ -258,6 +259,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_identity_new", DataEvent<>([this]() { PinGateIdentityNew(); }));
     ctor.BindEventCallback("pin_gate_identity_link", DataEvent<>([this]() { PinGateIdentityLink(); }));
     ctor.BindEventCallback("pin_gate_identity_restore", DataEvent<>([this]() { PinGateIdentityRestore(); }));
+    ctor.BindEventCallback("pin_gate_identity_phrase", DataEvent<>([this]() { PinGateIdentityPhrase(); }));
     ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
     ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
@@ -799,6 +801,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_phrase_flow");
   DataModelHost::Instance().Dirty("window", "pin_gate_restore_pin_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
@@ -2015,6 +2018,12 @@ void ShellHost::PinGateIdentityLink() {
 void ShellHost::PinGateIdentityRestore() {
   if (pin_gate_actions_.on_identity_restore) {
     pin_gate_actions_.on_identity_restore();
+  }
+}
+
+void ShellHost::PinGateIdentityPhrase() {
+  if (pin_gate_actions_.on_identity_phrase) {
+    pin_gate_actions_.on_identity_phrase();
   }
 }
 

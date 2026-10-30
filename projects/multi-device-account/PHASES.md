@@ -203,7 +203,7 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 ### s5 — Restore and link
 
 - [x] Restore from a typed phrase (`ConversationsHub::RestoreFromRecoveryPhrase`): phrase → locker (it holds the relay binding: no locker, no restore) → the link bundle the phrase reconstructs (`RecoveryBundle`, a fresh DEK) imported → contacts → groups / card floors / announce through the restore path once messaging is up; probe `--restore-phrase-file`, lab `restore_from_phrase` (every device gone, the group back and active, messages both ways, the locker republished)
-- [ ] Fresh-install UI: "Restore with recovery phrase" on the identity fork (24-word entry + PIN)
+- [x] Fresh-install UI: **Restore with my recovery phrase** on the identity fork → the link flow's PIN choice (Set a PIN / Just continue) → the 24-word page → `ProfileUnlockGate::CompletePhraseRestore` (shares `CompleteAccountImport` with the link) → unlocked, no first-run wizard; gtests for the gate and `PinGateController`; checked on screen (Xvfb)
 - [ ] A new device signing a fresh list as master (d4)
 - [ ] Link: the new device reads the locker / change log (no contacts in the bundle)
 - [ ] Restore finds the seed in the synced keychain first (easy tier), else asks for the phrase

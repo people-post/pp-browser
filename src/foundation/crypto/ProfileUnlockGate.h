@@ -61,6 +61,8 @@ struct ProfileUnlockPorts {
    */
   std::function<Roe<std::optional<std::string>>()> local_backup_nickname;
   std::function<Roe<void>(const std::string& pin)> restore_local_backup;
+  /** Fresh install: the account back from its recovery phrase (M023) under `pin` for this device. */
+  std::function<Roe<void>(const std::string& pin, const std::string& phrase)> restore_recovery_phrase;
 
   /**
    * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
@@ -108,6 +110,8 @@ public:
   void CompleteWithDefaultPin();
   /** UI: first-run "I already have an account" after PIN + paste. */
   void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
+  /** "Restore with my recovery phrase": restore under `pin`, then unlock — no first-run wizard, as after a link. */
+  void CompletePhraseRestore(const std::string& pin, const std::string& phrase, bool set_default_pin);
   /**
    * UI: fresh install "Restore my account" with the account's PIN. The UI first passes the default PIN
    * (`set_default_pin`); if that is not it, show_restore_pin asks for the PIN.
@@ -117,6 +121,9 @@ public:
   void Cancel();
 
 private:
+  /** A first secrets use that brings an existing account (link / phrase): `import` under `pin`, then unlock. */
+  void CompleteAccountImport(const std::string& pin, bool set_default_pin, std::function<Roe<void>()> import,
+                             const char* mark);
   ProfileSecretsEngine& Secrets();
   Roe<void> UnlockAndReady(const std::string& pin);
   void RunUnlockAndReadyAsync(std::string pin, bool set_default_pin, bool clear_default_pin);

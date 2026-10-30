@@ -314,6 +314,8 @@ std::string ShellLayoutRml::PinGate() const {
       << Tr("pin.identity_new") << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
       << Tr("pin.identity_link") << "</button>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_identity_phrase()\">"
+      << Tr("pin.identity_phrase") << "</button>";
   out << "</div>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
@@ -323,9 +325,12 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back")
       << "</button>";
   out << "</div>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow\" "
          "data-value=\"pin_gate_link_payload\" placeholder=\""
       << Tr("pin.link_paste_placeholder") << "\"></textarea>";
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow\" "
+         "data-value=\"pin_gate_link_payload\" placeholder=\""
+      << Tr("pin.phrase_paste_placeholder") << "\"></textarea>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
          "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode\" "
          "data-value=\"pin_gate_pin\" placeholder=\""

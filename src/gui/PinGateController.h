@@ -41,6 +41,8 @@ public:
   void OnIdentityNew();
   void OnIdentityLink();
   void OnIdentityRestore();
+  /** "Restore with my recovery phrase": the link flow's PIN steps, then the phrase instead of a transfer code. */
+  void OnIdentityPhrase();
   void OnForgotToggle();
   void DirtyPinFields();
 
@@ -55,6 +57,8 @@ private:
   ShellPinGatePorts shell_pin_gate_;
   PinGateState pin_state_;
   bool link_flow_ = false;
+  /** Within the link flow: the paste page takes a recovery phrase (M023), not a transfer code. */
+  bool phrase_flow_ = false;
   bool pending_link_default_pin_ = false;
   std::string pending_link_pin_;
 };

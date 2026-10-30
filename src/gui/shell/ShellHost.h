@@ -227,6 +227,7 @@ private:
   void PinGateIdentityNew();
   void PinGateIdentityLink();
   void PinGateIdentityRestore();
+  void PinGateIdentityPhrase();
   void PinGateForgotToggle();
   void CallAccept();
   void CallAcceptVoice();
