@@ -3,7 +3,9 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/SessionMenu.h"
+#include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/people/ContactTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -11,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -77,6 +80,45 @@ struct ChatGroupSheet {
   /** Members the owner may remove for being unreachable (never this device): identity, then the name to show. */
   std::vector<std::pair<std::string, std::string>> unreachable_members;
 };
+
+/** One person on the group's member list, before any text is chosen for the badges. */
+struct GroupMemberRow {
+  std::string identity;
+  /** Contact name, else the server nickname, else the short account id. */
+  std::string title;
+  /** The saved contact's id; empty for someone who is not a contact yet. */
+  std::string contact_id;
+  bool is_owner = false;
+  bool unreachable = false;
+  /** Invited by this device, not on the roster yet (not a member; not counted in "N members"). */
+  bool invited = false;
+  /** Invited more than an hour ago and still not joined. */
+  bool invited_stale = false;
+
+  bool IsContact() const { return !contact_id.empty(); }
+  bool operator==(const GroupMemberRow&) const = default;
+};
+
+/**
+ * `contact`: the saved contact for this member, when there is one. Name: the contact's, else
+ * `card_nickname` (the member's own, from the account card the roster carried), else the short account id.
+ */
+GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
+                                   bool unreachable, const std::string& card_nickname = {});
+/** An invite waiting longer than this shows the "not joined yet" hint (it expires at kGroupInviteTtlMs). */
+inline constexpr int64_t kInviteStaleAfterMs = 60LL * 60 * 1000;
+
+/**
+ * The row for someone this device invited who has not joined: nothing when they are already on the
+ * roster (`roster_identities`), else a row marked `invited`, `invited_stale` after an hour. `contact` and
+ * `card_nickname` name them as for a member.
+ */
+std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
+                                              const std::unordered_set<std::string>& roster_identities,
+                                              const std::optional<Contact>& contact, int64_t now_ms,
+                                              const std::string& card_nickname = {});
+/** Unreachable members first (the owner re-invites them), then the owner, then by name. */
+void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);

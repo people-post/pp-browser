@@ -217,7 +217,7 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   invite.invitee_identity = *invitee_identity;
   invite.invite_nonce = util::GenerateUuid();
   invite.roster_epoch = metadata->roster_epoch;
-  invite.expires_at = util::NowUnixMs() + 7LL * 24 * 60 * 60 * 1000;
+  invite.expires_at = util::NowUnixMs() + kGroupInviteTtlMs;
   invite.actor_role = MemberRole::Owner;
 
   PendingGroupInvite pending;
@@ -297,6 +297,10 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
   }
   if ((*pending)->status != InviteStatus::Pending) {
     return Error("Invite is not pending");
+  }
+  if ((*pending)->expires_at && util::NowUnixMs() > *(*pending)->expires_at) {
+    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+    return Error(kGroupInviteExpiredError);
   }
 
   auto local = LocalRelayIdentity();
@@ -556,6 +560,8 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
   }
   metadata->roster_epoch = removal.roster_epoch;
   update.unlock();  // not across the sends below
+  // A removed member must not keep showing as "invited, waiting".
+  (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
   // The removed member reads nothing that follows: no copy is made for it (every copy is pairwise, G011).
   ClearMemberUnreachable(group_id, member_identity);
 
@@ -729,6 +735,11 @@ std::vector<std::string> GroupMembershipWorkflow::ListUnreachable(const std::str
     }
   }
   return out;
+}
+
+std::vector<PendingGroupInvite> GroupMembershipWorkflow::ListInvitedWaiting(const std::string& group_id) const {
+  auto invites = roster_.ListOutboundPendingInvites(group_id, util::NowUnixMs());
+  return invites ? std::move(*invites) : std::vector<PendingGroupInvite>{};
 }
 
 bool GroupMembershipWorkflow::IsOwnerUnreachable(const std::string& group_id) const {

@@ -363,6 +363,8 @@ public:
 
   void BindAgentInbound(AgentInboundPorts ports);
   PeerSigningKeyStore& SigningKeys();
+  /** The nickname on the account card kept for `account_id` (a group roster carries members' cards); empty if none. */
+  std::string KeptCardNickname(const std::string& account_id);
 
   /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is MeshHost MeshPump. */
   void TickMesh();

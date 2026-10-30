@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "feature/conversations/MessagingPeoplePickerPorts.h"
 #include "gui/CallActionsPorts.h"
@@ -15,7 +16,9 @@
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Types.h>
+#include <ui/base/Vector2.h>
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -57,6 +60,8 @@ public:
     ui::String subtitle;
     bool selected = false;
     bool locked = false;
+    /** Greyed out and not pickable (the group is full). */
+    bool disabled = false;
   };
 
   struct MemberSummaryRow {
@@ -77,6 +82,9 @@ public:
   /** Active call: invite additional contacts as guests. */
   void OpenForCallAddGuest(const std::string& call_id);
 
+  /** The member list of the group chat `thread_id`; the owner adds, removes and re-invites from it. */
+  void OpenForGroupMembers(const std::string& thread_id);
+
   void Close();
 
 private:
@@ -86,11 +94,24 @@ private:
   static void CancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void BackCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CreateGroupCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void AddMembersCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids);
   void SyncRows();
   void SyncGroupCallRows();
   void SyncCallAddGuestRows();
+  void SyncGroupMemberRows();
+  void SyncGroupAddRows();
+  void OpenForGroupAddMember();
+  void RefreshGroupAddLimit();
+  std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
+  void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
+  void ReinviteMember(const GroupMemberRow& row);
+  void RemoveMember(const GroupMemberRow& row);
+  void AddMemberAsContact(const GroupMemberRow& row);
+  void OnInviteMembers();
+  void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
+                        const GroupInviteBatchResult& result);
   void UpdateCta();
   void DirtyAll();
   void OnToggleContact(const std::string& contact_id);
@@ -106,6 +127,8 @@ private:
   void StartDirectMessage(const std::string& contact_id);
   void CreateGroupWithTitle(const std::vector<std::string>& member_contact_ids, std::string title);
   void ResetState();
+  /** Closes Add members and returns to the member list it was opened from. */
+  void CloseAddMembers();
   void OnFlowDismissed();
   void RegisterFlow();
   std::vector<std::string> SelectedContactIds() const;
@@ -135,6 +158,11 @@ private:
   ui::String cta_label_;
   ui::String empty_hint_;
   bool cta_enabled_ = false;
+  bool show_checks_ = true;
+  bool show_cta_ = true;
+  bool show_add_members_ = false;
+  ui::String full_hint_;
+  ui::String invite_hint_;
   MessagingContactsPorts contacts_ports_;
   MessagingPeoplePickerPorts picker_ports_;
   UnlockEnsurePorts unlock_ensure_;
@@ -149,6 +177,17 @@ private:
   bool call_video_allowed_ = false;
   bool show_call_video_option_ = false;
   std::unordered_map<std::string, std::string> identity_for_contact_;
+  // GroupMembers / GroupAddMember
+  std::string group_id_;
+  std::string group_thread_id_;
+  bool group_is_owner_ = false;
+  /** This account, on the member list (its own row is not tappable). */
+  std::string local_identity_;
+  bool group_sending_ = false;
+  /** The latest invite batch; an older one finishing does not end the current send. */
+  uint64_t invite_batch_ = 0;
+  int group_roster_count_ = 0;
+  std::unordered_map<std::string, GroupMemberRow> member_rows_;
 
   static PeoplePickerController* installed_instance_;
 };

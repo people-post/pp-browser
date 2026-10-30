@@ -43,7 +43,7 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
   if (invite.status != InviteStatus::Pending) {
     return Error("Invite is not pending");
   }
-  if (invite.expires_at && now_ms > *invite.expires_at) {
+  if (invite.expires_at && now_ms > *invite.expires_at + kGroupInviteAcceptGraceMs) {
     (void)roster.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
     return Error("Invite expired");
   }
@@ -65,6 +65,8 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
   if (auto status = roster.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); !status) {
     return status.error();
   }
+  // A re-invite left other cards out: once in, one of them must not bring back someone who later leaves.
+  (void)roster.ExpireOutboundInvitesTo(invite.group_id, member_identity);
   return true;
 }
 

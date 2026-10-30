@@ -19,6 +19,7 @@
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "feature/conversations/GroupInviteBatch.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/MessageRouter.h"
@@ -186,6 +187,14 @@ public:
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
+  /**
+   * Owner: send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
+   * members. Resolves the invitee, seals and writes on the calling thread: the UI thread uses InviteMembersAsync.
+   */
+  Roe<void> InviteMember(const std::string& group_id, const std::string& contact_id);
+  /** UI thread: one InviteMember per contact on a worker (a failure does not stop the rest); `done` runs on the UI thread. */
+  void InviteMembersAsync(const std::string& group_id, std::vector<std::string> contact_ids,
+                          std::function<void(GroupInviteBatchResult)> done);
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();

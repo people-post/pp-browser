@@ -44,7 +44,7 @@
           </div>
           <p class="text-xs chat-peer-link">{{peer_link_status}}</p>
         </div>
-        <p class="text-xs muted chat-header-subtitle">{{thread_subtitle}}</p>
+        <p class="text-xs muted chat-header-subtitle" data-event-click="open_group_members()">{{thread_subtitle}}</p>
       </div>
     </div>
     <div class="chat-header-actions row">

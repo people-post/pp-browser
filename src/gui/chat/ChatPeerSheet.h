@@ -25,6 +25,8 @@ public:
                 const ContactsNotifyPorts& contacts_notify, const PeoplePickerNotifyPorts& people_picker_notify);
 
   void Open(ui::Event& ev);
+  /** The group's member list (the header's "N members", and a peer sheet item). */
+  void OpenGroupMembers();
 
 private:
   std::vector<ContextMenuAction> DirectActions(const Thread& thread);

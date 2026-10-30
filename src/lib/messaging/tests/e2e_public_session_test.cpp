@@ -638,6 +638,68 @@ TEST(GroupPairwiseKeyTest, AGroupCopyIsAPairMessageNumberedInThePair) {
   EXPECT_TRUE(alice.Keep(bob.Chat(alice, "and in our 1:1 chat")));
 }
 
+// Re-inviting a member who lost the group: accepting rebuilds the group on their side. Their group messages must
+// reach the owner and a third member, and again after a second re-invite. (The invite and accept themselves are
+// GroupMembershipWorkflow's; this is the receiving end of what the rebuilt group sends.)
+class ReInvitedMemberTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    EnsureSodiumInit();
+    alice_ = std::make_unique<Side>("alice-r", 0x10);
+    bob_ = std::make_unique<Side>("bob-r", 0x40);
+    carol_ = std::make_unique<Side>("carol-r", 0x70);
+    everyone_ = {alice_.get(), bob_.get(), carol_.get()};
+    for (const Side* a : everyone_) {
+      for (const Side* b : everyone_) {
+        if (a != b) {
+          const_cast<Side*>(a)->Know(*b);
+        }
+      }
+    }
+    for (const Side* s : everyone_) {
+      const_cast<Side*>(s)->JoinGroup(group_, everyone_);
+    }
+    // The pairs have lived a while: everyone has sent, so each pair holds a session.
+    for (int i = 0; i < 2; ++i) {
+      auto from_alice = alice_->GroupChat(group_, everyone_, "alice " + std::to_string(i));
+      EXPECT_TRUE(bob_->Keep(from_alice.at(bob_->account)));
+      EXPECT_TRUE(carol_->Keep(from_alice.at(carol_->account)));
+      auto from_bob = bob_->GroupChat(group_, everyone_, "bob " + std::to_string(i));
+      EXPECT_TRUE(alice_->Keep(from_bob.at(alice_->account)));
+      EXPECT_TRUE(carol_->Keep(from_bob.at(carol_->account)));
+    }
+  }
+
+  /** Bob, back in the group, sends twice; the owner and the third member must keep both, and bob hears the owner. */
+  void ExpectBobIsHeard(const int round) {
+    auto sent = bob_->GroupChat(group_, everyone_, "bob is back " + std::to_string(round));
+    EXPECT_TRUE(alice_->Keep(sent.at(alice_->account))) << "the owner hears the re-invited member, round " << round;
+    EXPECT_TRUE(carol_->Keep(sent.at(carol_->account))) << "the third member hears them, round " << round;
+    auto again = bob_->GroupChat(group_, everyone_, "and again " + std::to_string(round));
+    EXPECT_TRUE(alice_->Keep(again.at(alice_->account))) << "the next one too, round " << round;
+    EXPECT_TRUE(carol_->Keep(again.at(carol_->account)));
+    auto reply = alice_->GroupChat(group_, everyone_, "welcome back " + std::to_string(round));
+    EXPECT_TRUE(bob_->Keep(reply.at(bob_->account))) << "the member hears the owner, round " << round;
+  }
+
+  const std::string group_ = "group:reinvite";
+  std::unique_ptr<Side> alice_;
+  std::unique_ptr<Side> bob_;
+  std::unique_ptr<Side> carol_;
+  std::vector<const Side*> everyone_;
+};
+
+// Cleared chats: the group and its roster are gone on bob's side, his pair sessions and counts are not.
+TEST_F(ReInvitedMemberTest, AMemberWhoClearedTheGroupIsHeardAfterEveryReInvite) {
+  for (int round = 1; round <= 2; ++round) {
+    for (const Side* member : everyone_) {
+      ASSERT_TRUE(bob_->roster->RemoveMember(group_, member->account));
+    }
+    bob_->JoinGroup(group_, everyone_);
+    ExpectBobIsHeard(round);
+  }
+}
+
 } // namespace
 } // namespace pbr
 

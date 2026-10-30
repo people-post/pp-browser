@@ -387,13 +387,36 @@ TEST_F(GroupRosterInviteApplyTest, AcceptNeedsAnInviteWeIssuedForAGroupWeOwn) {
 TEST_F(GroupRosterInviteApplyTest, AnExpiredInviteIsNotAccepted) {
   SeedOwnedGroup();
   PendingGroupInvite pending = MakePending();
-  pending.expires_at = util::NowUnixMs() - 1;
+  pending.expires_at = util::NowUnixMs() - kGroupInviteAcceptGraceMs - 1;
   ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
   EXPECT_FALSE(Accept("nonce-1", "relay:bob"));
   EXPECT_FALSE(IsMember("relay:bob"));
   auto loaded = roster_->LoadPendingInvite("nonce-1");
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->status, InviteStatus::Expired);
+}
+
+// Accepted in time, but the owner was offline when it was sent: it still counts.
+TEST_F(GroupRosterInviteApplyTest, AnAcceptThatWaitedForTheOwnerStillCounts) {
+  SeedOwnedGroup();
+  PendingGroupInvite pending = MakePending();
+  pending.expires_at = util::NowUnixMs() - 1;
+  ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
+  EXPECT_TRUE(Accept("nonce-1", "relay:bob"));
+  EXPECT_TRUE(IsMember("relay:bob"));
+}
+
+TEST_F(GroupRosterInviteApplyTest, JoiningVoidsTheOtherCardsToThatPerson) {
+  SeedOwnedGroup();
+  PendingGroupInvite first = MakePending();
+  ASSERT_TRUE(roster_->UpsertPendingInvite(first));
+  PendingGroupInvite second = first;
+  second.invite_nonce = "nonce-2";
+  ASSERT_TRUE(roster_->UpsertPendingInvite(second));
+  EXPECT_TRUE(Accept("nonce-1", "relay:bob"));
+  auto other = roster_->LoadPendingInvite("nonce-2");
+  ASSERT_TRUE(other && other->has_value());
+  EXPECT_EQ((*other)->status, InviteStatus::Expired);
 }
 
 // The roster epoch moves by our own +1, whatever the stored invite says.
@@ -504,4 +527,59 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
 }
 
 } // namespace
+TEST_F(GroupRosterInviteApplyTest, ListOutboundPendingInvitesKeepsLiveOutboundOnesOncePerInvitee) {
+  const int64_t now = util::NowUnixMs();
+  auto make = [&](const std::string& nonce, const std::string& invitee, const int64_t created,
+                  const InviteStatus status, const int64_t expires, const bool outbound, const std::string& group) {
+    PendingGroupInvite invite = MakePending();
+    invite.invite_nonce = nonce;
+    invite.group_id = group;
+    invite.invitee_identity = invitee;
+    invite.created_at = created;
+    invite.status = status;
+    invite.expires_at = expires;
+    invite.outbound = outbound;
+    ASSERT_TRUE(roster_->UpsertPendingInvite(invite));
+  };
+  make("old", "relay:bob", now - 5000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("new", "relay:bob", now - 1000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("carol", "relay:carol", now - 3000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("expired", "relay:dan", now - 9000, InviteStatus::Pending, now - 1, true, "group:hike");
+  make("done", "relay:eve", now - 9000, InviteStatus::Accepted, now + 100000, true, "group:hike");
+  make("inbound", "relay:fay", now - 9000, InviteStatus::Pending, now + 100000, false, "group:hike");
+  make("other", "relay:gus", now - 9000, InviteStatus::Pending, now + 100000, true, "group:other");
+  auto listed = roster_->ListOutboundPendingInvites("group:hike", now);
+  ASSERT_TRUE(listed);
+  ASSERT_EQ(listed->size(), 2u);
+  EXPECT_EQ((*listed)[0].invite_nonce, "new");
+  EXPECT_EQ((*listed)[0].invitee_identity, "relay:bob");
+  EXPECT_EQ((*listed)[1].invitee_identity, "relay:carol");
+}
+
+TEST_F(GroupRosterInviteApplyTest, ExpireOutboundInvitesToOnlyEndsThatGroupsLiveInvitesToThatPerson) {
+  const int64_t now = util::NowUnixMs();
+  auto make = [&](const std::string& nonce, const std::string& invitee, const bool outbound, const std::string& group) {
+    PendingGroupInvite invite = MakePending();
+    invite.invite_nonce = nonce;
+    invite.group_id = group;
+    invite.invitee_identity = invitee;
+    invite.created_at = now - 1000;
+    invite.status = InviteStatus::Pending;
+    invite.expires_at = now + 100000;
+    invite.outbound = outbound;
+    ASSERT_TRUE(roster_->UpsertPendingInvite(invite));
+  };
+  make("bob", "relay:bob", true, "group:hike");
+  make("carol", "relay:carol", true, "group:hike");
+  make("bob-other", "relay:bob", true, "group:other");
+  ASSERT_TRUE(roster_->ExpireOutboundInvitesTo("group:hike", "relay:bob"));
+  auto hike = roster_->ListOutboundPendingInvites("group:hike", now);
+  ASSERT_TRUE(hike);
+  ASSERT_EQ(hike->size(), 1u);
+  EXPECT_EQ((*hike)[0].invitee_identity, "relay:carol");
+  auto other = roster_->ListOutboundPendingInvites("group:other", now);
+  ASSERT_TRUE(other);
+  EXPECT_EQ(other->size(), 1u);
+}
+
 } // namespace pbr
