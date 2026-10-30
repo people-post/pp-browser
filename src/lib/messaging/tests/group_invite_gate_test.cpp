@@ -127,5 +127,23 @@ TEST_F(GroupInviteGateTest, RateLimitRejectsAboveCap) {
   EXPECT_FALSE(*allowed);
 }
 
+TEST_F(GroupInviteGateTest, OurOwnOutgoingInvitesDoNotFillTheInboundCap) {
+  gate_->SetInboundPolicy(GroupInvitePolicy::Everyone);
+  for (size_t i = 0; i < GroupInviteGate::kMaxPendingInvitesPerDay + 5; ++i) {
+    PendingGroupInvite pending;
+    pending.invite_nonce = "out-" + std::to_string(i);
+    pending.group_id = "group:x";
+    pending.inviter_identity = "account:me";
+    pending.invitee_identity = "account:bob" + std::to_string(i);
+    pending.status = InviteStatus::Pending;
+    pending.created_at = util::NowUnixMs();
+    pending.outbound = true;
+    ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
+  }
+  auto allowed = gate_->AllowsInboundInvite(MakeInvite());
+  ASSERT_TRUE(allowed);
+  EXPECT_TRUE(*allowed);
+}
+
 } // namespace
 } // namespace pbr

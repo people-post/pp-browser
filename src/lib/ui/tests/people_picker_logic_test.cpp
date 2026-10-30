@@ -62,6 +62,13 @@ TEST(PeoplePickerLogicTest, AddMemberCandidatesLeaveOutTheRosterAndSelf) {
   EXPECT_EQ(ids, (std::vector<std::string>{"c1", "c5"}));
 }
 
+TEST(PeoplePickerLogicTest, AddMemberCandidatesLeaveOutPeopleAlreadyInvited) {
+  using pbr::AddMemberCandidate;
+  const std::vector<AddMemberCandidate> contacts = {{"c1", "acct:alice"}, {"c2", "acct:bob"}};
+  const std::vector<std::string> ids = pbr::AddMemberCandidateIds(contacts, {}, "acct:me", {"acct:alice"});
+  EXPECT_EQ(ids, (std::vector<std::string>{"c2"}));
+}
+
 TEST(PeoplePickerLogicTest, InviteNeedsContactHintShowsWhenTheButtonCreatesOrInvites) {
   using pbr::ShowInviteNeedsContactHint;
   EXPECT_TRUE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::FromDm, 1)));

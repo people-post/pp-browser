@@ -127,6 +127,8 @@ private:
   void StartDirectMessage(const std::string& contact_id);
   void CreateGroupWithTitle(const std::vector<std::string>& member_contact_ids, std::string title);
   void ResetState();
+  /** Closes Add members and returns to the member list it was opened from. */
+  void CloseAddMembers();
   void OnFlowDismissed();
   void RegisterFlow();
   std::vector<std::string> SelectedContactIds() const;

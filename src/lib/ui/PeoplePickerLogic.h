@@ -82,14 +82,15 @@ struct AddMemberCandidate {
   std::string identity;
 };
 
-/** Contacts that may be invited into the group: not on the roster, not this account, invitable. */
+/** Contacts that may be invited into the group: not on the roster, not this account, not already invited, invitable. */
 inline std::vector<std::string> AddMemberCandidateIds(const std::vector<AddMemberCandidate>& contacts,
                                                       const std::unordered_set<std::string>& roster_identities,
-                                                      const std::string& self_identity) {
+                                                      const std::string& self_identity,
+                                                      const std::unordered_set<std::string>& invited_identities = {}) {
   std::vector<std::string> ids;
   for (const AddMemberCandidate& candidate : contacts) {
     if (candidate.identity.empty() || candidate.identity == self_identity ||
-        roster_identities.count(candidate.identity) > 0) {
+        roster_identities.count(candidate.identity) > 0 || invited_identities.count(candidate.identity) > 0) {
       continue;
     }
     ids.push_back(candidate.contact_id);

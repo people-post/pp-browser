@@ -552,6 +552,8 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
   }
   metadata->roster_epoch = removal.roster_epoch;
   update.unlock();  // not across the sends below
+  // A removed member must not keep showing as "invited, waiting".
+  (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
   // The removed member reads nothing that follows: no copy is made for it (every copy is pairwise, G011).
   ClearMemberUnreachable(group_id, member_identity);
 

@@ -2057,7 +2057,7 @@ select selectbox option {
 }
 
 .shell-call-chrome-mount--ring {
-  z-index: 50;
+  z-index: 53;  /* above context menus (52) so a menu scrim never eats the Accept tap; below the PIN gate (55) */
 }
 
 .shell-call-chrome-mount .shell-layer {
