@@ -350,7 +350,7 @@ Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db_.profile_db(),
                          "SELECT id, kind, channel, title, participant_contact_ids, updated_at, unread_count, "
-                         "preview_enc, peer_identity_kind, peer_identity_value, group_id, local_title FROM threads "
+                         "preview_enc, peer_identity_kind, peer_identity_value, group_id, local_title, unread_mention FROM threads "
                          "ORDER BY updated_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to list threads");
@@ -401,6 +401,7 @@ Roe<Thread> SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
     thread.group_id = std::move(*group_id);
   }
   thread.local_title = SqlText(stmt, 11);
+  thread.unread_mention = sqlite3_column_int(stmt, 12) != 0;
   thread.encrypted = thread.kind == ThreadKind::Group || ThreadChannelIsE2e(thread.channel);
   return thread;
 }
@@ -437,14 +438,14 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   const std::string channel_text = ThreadChannelToString(thread.channel);
   const char* sql =
       "INSERT INTO threads (id, kind, channel, title, local_title, participant_contact_ids, preview_enc, updated_at, "
-      "unread_count, peer_identity_kind, peer_identity_value, group_id) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "unread_count, peer_identity_kind, peer_identity_value, group_id, unread_mention) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, channel=excluded.channel, title=excluded.title, "
       "local_title=excluded.local_title, "
       "participant_contact_ids=excluded.participant_contact_ids, preview_enc=excluded.preview_enc, "
       "updated_at=excluded.updated_at, unread_count=excluded.unread_count, "
       "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value, "
-      "group_id=excluded.group_id;";
+      "group_id=excluded.group_id, unread_mention=excluded.unread_mention;";
   if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to upsert thread");
   }
@@ -473,6 +474,7 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   } else {
     sqlite3_bind_null(stmt, 12);
   }
+  sqlite3_bind_int(stmt, 13, thread.unread_mention ? 1 : 0);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to upsert thread row");
@@ -1018,7 +1020,7 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
       sqlite3_step(stmt);
       sqlite3_finalize(stmt);
     }
-    if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE threads SET preview_enc = NULL, unread_count = 0 WHERE id = ?;", -1,
+    if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE threads SET preview_enc = NULL, unread_count = 0, unread_mention = 0 WHERE id = ?;", -1,
                            &stmt, nullptr) == SQLITE_OK) {
       sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
       sqlite3_step(stmt);

@@ -282,6 +282,8 @@ private:
   ConversationsFacade* facade_ = nullptr;
   /** The chats list's decisions and buttons (pp-app-probe drives the same presenter). */
   ChatPresenter presenter_;
+  /** When a muted thread last notified for an @mention (UI thread only; the once-a-minute limit). */
+  std::unordered_map<std::string, int64_t> last_mention_notify_ms_;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;

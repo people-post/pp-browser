@@ -104,6 +104,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("pinned", &SessionDisplayRow::pinned);
     session_handle.RegisterMember("muted", &SessionDisplayRow::muted);
     session_handle.RegisterMember("unread_dot", &SessionDisplayRow::unread_dot);
+    session_handle.RegisterMember("mention_badge", &SessionDisplayRow::mention_badge);
   }
   ctor.RegisterArray<std::vector<SessionDisplayRow>>();
   ctor.Bind("sessions", &state.sessions);

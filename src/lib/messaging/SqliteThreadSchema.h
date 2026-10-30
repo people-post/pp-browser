@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS threads (
   preview_enc BLOB,
   updated_at INTEGER NOT NULL,
   unread_count INTEGER NOT NULL DEFAULT 0,
-  session_epoch INTEGER
+  session_epoch INTEGER,
+  unread_mention INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_threads_updated ON threads(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_direct ON threads(kind, channel, peer_identity_kind, peer_identity_value);

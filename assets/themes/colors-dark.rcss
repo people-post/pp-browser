@@ -1127,6 +1127,18 @@ select selectbox option:hover {
   background-color: #6366f1;
 }
 
+.sidebar-mention {
+  color: #f87171;
+}
+
+.chat-mention {
+  color: #a5b4fc;
+}
+
+.chat-mention--me {
+  color: #fbbf24;
+}
+
 .sidebar-unread {
   background-color: #6366f1;
   color: #ffffff;

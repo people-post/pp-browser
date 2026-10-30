@@ -7,11 +7,13 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/GroupMentions.h"
 #include "lib/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -29,6 +31,21 @@ InboxController::InboxController(IThreadStore& store, ContactsStore& contacts, P
 
 void InboxController::SetGroupMembership(GroupMembershipWorkflow* groups) {
   groups_ = groups;
+}
+
+void InboxController::SetMentionContext(
+    std::function<std::string()> self_account_id,
+    std::function<std::vector<GroupRosterMember>(const std::string& group_id)> roster) {
+  mention_self_account_id_ = std::move(self_account_id);
+  mention_roster_ = std::move(roster);
+}
+
+bool InboxController::MessageMentionsMe(const std::string& group_id, const ThreadMessage& message) const {
+  if (!mention_self_account_id_ || !mention_roster_ || group_id.empty() || message.sender_contact_id == kLocalSelfContactId ||
+      message.payload_json.empty()) {
+    return false;
+  }
+  return MentionsMe(message.payload_json, mention_self_account_id_(), message.sender_contact_id, mention_roster_(group_id));
 }
 
 Roe<std::vector<Thread>> InboxController::ListThreads() {
@@ -354,11 +371,12 @@ void InboxController::MarkThreadRead(const std::string& thread_id) {
   if (!thread || !*thread) {
     return;
   }
-  if ((*thread)->unread_count == 0) {
+  if ((*thread)->unread_count == 0 && !(*thread)->unread_mention) {
     return;
   }
   Thread updated = **thread;
   updated.unread_count = 0;
+  updated.unread_mention = false;
   (void)store_.UpsertThread(updated);
 }
 
@@ -377,7 +395,8 @@ void InboxController::IncrementUnread(const std::string& thread_id, const int de
 }
 
 void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
-                                                const std::optional<std::string>& preview) {
+                                                const std::optional<std::string>& preview, const ThreadMessage* message,
+                                                const bool live) {
   if (thread_id.empty()) {
     return;
   }
@@ -395,6 +414,10 @@ void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
   if (thread_id != active_thread_id_) {
     updated.unread_count += 1;
     changed = true;
+    if (live && message && updated.kind == ThreadKind::Group && updated.group_id &&
+        MessageMentionsMe(*updated.group_id, *message) && !updated.unread_mention) {
+      updated.unread_mention = true;
+    }
   }
   if (!changed) {
     return;
@@ -579,6 +602,38 @@ TranscriptFacts InboxController::Facts() const {
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
   facts.control_line = [this](const ThreadMessage& message) { return ControlLine(message); };
   facts.attachment = [this](const ThreadMessage& message) { return AttachmentView(message); };
+  if (mention_self_account_id_ && mention_roster_) {
+    // One roster read per group per render; messages without mentions never reach the store.
+    struct Cache {
+      std::unordered_map<std::string, std::optional<std::vector<GroupRosterMember>>> rosters;
+    };
+    auto cache = std::make_shared<Cache>();
+    facts.mentions = [this, cache](const ThreadMessage& message) {
+      std::vector<TranscriptMention> out;
+      if (message.payload_json.find("\"mentions\"") == std::string::npos &&
+          message.payload_json.find("\"all\"") == std::string::npos) {
+        return out;
+      }
+      auto it = cache->rosters.find(message.thread_id);
+      if (it == cache->rosters.end()) {
+        std::optional<std::vector<GroupRosterMember>> roster;
+        auto thread = store_.GetThread(message.thread_id);
+        if (thread && *thread && (*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
+          roster = mention_roster_(*(*thread)->group_id);
+        }
+        it = cache->rosters.emplace(message.thread_id, std::move(roster)).first;
+      }
+      if (!it->second) {
+        return out;
+      }
+      const std::string self = mention_self_account_id_();
+      const std::string sender = message.sender_contact_id == kLocalSelfContactId ? self : message.sender_contact_id;
+      for (const MentionRange& range : EligibleMentions(message.payload_json, sender, *it->second)) {
+        out.push_back({range.start, range.end, !self.empty() && (range.account_id == self || (range.account_id.empty() && message.sender_contact_id != kLocalSelfContactId))});
+      }
+      return out;
+    };
+  }
   return facts;
 }
 

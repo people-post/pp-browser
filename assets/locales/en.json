@@ -1053,6 +1053,7 @@
     "sidebar.archived.back": "Back to chats",
     "sidebar.error.prefs_failed": "Could not save the setting",
     "sidebar.empty": "No conversations yet.",
+    "chat.list.mentioned_you": "You were mentioned",
     "preview.empty": "Results, forms, and lists appear here when the assistant produces them.",
     "emoji.category.smileys": "Smileys & emotion",
     "emoji.category.people": "People & body",

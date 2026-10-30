@@ -174,9 +174,9 @@ public:
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
-  /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
+  /** Fired on UI thread when a background ingest bumps unread (for OS notify); `mentioned`: it @-mentions this account. */
   void SetOnBackgroundUnread(
-      std::function<void(std::string title, std::string body, std::string thread_id)> callback);
+      std::function<void(std::string title, std::string body, std::string thread_id, bool mentioned)> callback);
   /**
    * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
    * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
@@ -330,7 +330,7 @@ private:
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
-  std::function<void(std::string, std::string, std::string)> on_background_unread_;
+  std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */

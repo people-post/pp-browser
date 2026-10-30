@@ -5,6 +5,7 @@
 #include "feature/conversations/InboxController.h"
 #include "domain/peers/PeerDisplaySources.h"
 
+#include "lib/messaging/GroupMentions.h"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
@@ -158,6 +159,130 @@ TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
   ASSERT_TRUE(listed);
   EXPECT_TRUE(listed->empty());
   EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
+}
+
+
+// --- "Someone mentioned you" marker (G015) ------------------------------------------------------------
+
+constexpr const char* kSelf = "acct-me";
+constexpr const char* kOwner = "acct-owner";
+
+std::vector<GroupRosterMember> MentionRoster(const bool include_self = true) {
+  std::vector<GroupRosterMember> roster;
+  GroupRosterMember owner;
+  owner.member_identity = kOwner;
+  owner.role = MemberRole::Owner;
+  roster.push_back(owner);
+  if (include_self) {
+    GroupRosterMember self;
+    self.member_identity = kSelf;
+    roster.push_back(self);
+  }
+  return roster;
+}
+
+Thread GroupThread(const std::string& id) {
+  Thread group;
+  group.id = id;
+  group.kind = ThreadKind::Group;
+  group.group_id = "group:" + id;
+  group.title = "Team";
+  group.updated_at = 1;
+  return group;
+}
+
+ThreadMessage MentionMessage(const std::string& thread_id, const std::string& sender, const bool mention_me) {
+  ThreadMessage message;
+  message.id = "m-" + thread_id;
+  message.thread_id = thread_id;
+  message.sender_contact_id = sender;
+  message.text = "hi @Me";
+  MentionsPayload mentions;
+  if (mention_me) {
+    mentions.mentions.push_back({kSelf, 3, 6});
+  }
+  message.payload_json = BuildMentionsPayloadJson(message.text, mentions);
+  return message;
+}
+
+bool MentionFlag(InboxTestEnv& env, const std::string& id) {
+  auto loaded = env.store->GetThread(id);
+  EXPECT_TRUE(loaded && *loaded);
+  return loaded && *loaded && (*loaded)->unread_mention;
+}
+
+void WireMention(InboxTestEnv& env, std::vector<GroupRosterMember>* roster) {
+  env.inbox->SetMentionContext([] { return std::string(kSelf); },
+                               [roster](const std::string&) { return *roster; });
+}
+
+TEST(InboxControllerMentionTest, LiveMentionSetsMarkerAndOpeningClearsIt) {
+  InboxTestEnv env("mention_live");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  const Thread group = GroupThread("g1");
+  ASSERT_TRUE(env.store->UpsertThread(group));
+
+  const ThreadMessage plain = MentionMessage("g1", kOwner, false);
+  env.inbox->OnInboundMessagePersisted("g1", "hi", &plain, true);
+  EXPECT_FALSE(MentionFlag(env, "g1"));
+
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, true);
+  EXPECT_TRUE(MentionFlag(env, "g1"));
+
+  ASSERT_TRUE(env.inbox->OpenThread("g1"));
+  EXPECT_FALSE(MentionFlag(env, "g1"));
+}
+
+TEST(InboxControllerMentionTest, HistorySyncNeverSetsTheMarker) {
+  InboxTestEnv env("mention_history");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  ASSERT_TRUE(env.store->UpsertThread(GroupThread("g1")));
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  env.inbox->OnInboundMessagePersisted("g1", std::nullopt, &mention, false);
+  EXPECT_FALSE(MentionFlag(env, "g1"));
+}
+
+TEST(InboxControllerMentionTest, OpenThreadIsNotMarked) {
+  InboxTestEnv env("mention_open");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  ASSERT_TRUE(env.store->UpsertThread(GroupThread("g1")));
+  ASSERT_TRUE(env.inbox->OpenThread("g1"));
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, true);
+  EXPECT_FALSE(MentionFlag(env, "g1"));
+}
+
+TEST(InboxControllerMentionTest, NotOnTheRosterIsNotMentioned) {
+  InboxTestEnv env("mention_roster");
+  auto roster = MentionRoster(false);
+  WireMention(env, &roster);
+  ASSERT_TRUE(env.store->UpsertThread(GroupThread("g1")));
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, true);
+  EXPECT_FALSE(MentionFlag(env, "g1"));
+  EXPECT_FALSE(env.inbox->MessageMentionsMe("group:g1", mention));
+  roster = MentionRoster(true);
+  EXPECT_TRUE(env.inbox->MessageMentionsMe("group:g1", mention));
+}
+
+TEST(InboxControllerMentionTest, MarkerSurvivesReopeningTheStore) {
+  InboxTestEnv env("mention_persist");
+  auto roster = MentionRoster();
+  WireMention(env, &roster);
+  ASSERT_TRUE(env.store->UpsertThread(GroupThread("g1")));
+  const ThreadMessage mention = MentionMessage("g1", kOwner, true);
+  env.inbox->OnInboundMessagePersisted("g1", "hi", &mention, true);
+  env.store->Flush();
+
+  SqliteThreadStore reopened(env.data_dir.string());
+  ASSERT_TRUE(reopened.SetDek(TestDek()));
+  auto loaded = reopened.GetThread("g1");
+  ASSERT_TRUE(loaded && *loaded);
+  EXPECT_TRUE((*loaded)->unread_mention);
 }
 
 } // namespace

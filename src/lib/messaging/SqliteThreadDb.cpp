@@ -119,6 +119,25 @@ Roe<void> SqliteThreadDb::WipeLegacyJsonIfPresent() const {
   return {};
 }
 
+namespace {
+bool ProfileThreadsHasColumn(sqlite3* db, const char* column) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "PRAGMA table_info(threads);", -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  bool found = false;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const unsigned char* name = sqlite3_column_text(stmt, 1);
+    if (name && std::string(reinterpret_cast<const char*>(name)) == column) {
+      found = true;
+      break;
+    }
+  }
+  sqlite3_finalize(stmt);
+  return found;
+}
+} // namespace
+
 Roe<void> SqliteThreadDb::OpenProfileDb() const {
   if (profile_db_) {
     return {};
@@ -172,6 +191,13 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
                      nullptr, nullptr);
   (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN restart_pending INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
+  if (!ProfileThreadsHasColumn(profile_db_, "unread_mention")) {
+    if (auto added = SqliteThreadExecSql(
+            profile_db_, "ALTER TABLE threads ADD COLUMN unread_mention INTEGER NOT NULL DEFAULT 0;");
+        !added) {
+      return added.error();
+    }
+  }
   GroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
     return group_schema.error();

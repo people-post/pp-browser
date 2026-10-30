@@ -33,6 +33,8 @@ struct ChatSessionRow {
   int unread_count = 0;
   /** Marked unread by hand with no real unread count: a dot, not a number. */
   bool unread_dot = false;
+  /** A live message @-mentioned this account since the thread was last opened. */
+  bool mention_badge = false;
   bool pinned = false;
   bool muted = false;
   std::string date_label;
