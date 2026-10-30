@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/chat/ChatPayloadTypes.h"
+#include "lib/messaging/TextSpans.h"
 #include "common/thread/ThreadTypes.h"
 
 #include "common/Error.h"
@@ -14,6 +15,8 @@ namespace pbr {
 class ChatPayloadCodec {
 public:
   static Roe<std::vector<uint8_t>> EncodeText(const std::string& text);
+  /** Text with marked ranges (text_spans, G015); plain text when there are none. */
+  static Roe<std::vector<uint8_t>> EncodeText(const std::string& text, const std::vector<TextSpan>& spans);
   static Roe<std::vector<uint8_t>> EncodeAnnotation(const ChatAnnotationFields& fields);
   static Roe<std::vector<uint8_t>> EncodeContactCard(const ChatContactCardFields& fields, const std::string& text);
   static Roe<std::vector<uint8_t>> EncodeCryptoTx(const ChatCryptoTxFields& fields, const std::string& text);

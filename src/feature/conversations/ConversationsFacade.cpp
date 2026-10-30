@@ -306,7 +306,7 @@ void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const DeliveryN
   hub_.MeshMessaging().SetOnDeliveryNotice(std::move(callback));
 }
 
-void ConversationsFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback) {
+void ConversationsFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback) {
   hub_.MeshMessaging().SetOnBackgroundUnread(std::move(callback));
 }
 

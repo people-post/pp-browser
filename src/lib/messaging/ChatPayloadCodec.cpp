@@ -1,10 +1,13 @@
 #include "lib/messaging/ChatPayloadCodec.h"
 
+#include "lib/messaging/TextSpans.h"
+
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Serialize.hpp"
 #include "common/ValueJson.h"
+#include "common/Logger.h"
 
 #include <functional>
 #include <sstream>
@@ -60,6 +63,7 @@ constexpr uint8_t kContentTypeAnnotation = 2;
 constexpr uint8_t kContentTypeContactCard = 3;
 constexpr uint8_t kContentTypeCryptoTx = 4;
 constexpr uint8_t kContentTypeAttachment = 5;
+constexpr uint8_t kContentTypeTextSpans = 6;
 
 constexpr uint8_t kSubVersion = 1;
 constexpr uint8_t kContactCardSubVersion = 2;
@@ -114,6 +118,57 @@ Roe<void> ReadExactEnd(InputArchive& ar) {
   return {};
 }
 
+void WriteSpans(OutputArchive& ar, const std::vector<TextSpan>& spans) {
+  ar & kSubVersion;
+  ar & static_cast<uint8_t>(spans.size());
+  for (const TextSpan& span : spans) {
+    ar & span.kind;
+    ar & span.start;
+    ar & span.end;
+    WriteLenBytes(ar, text_spans::EncodeBody(span));
+  }
+}
+
+/** text_spans (G015): structure errors reject the message; a bad range drops only its span. */
+Roe<void> ReadSpans(InputArchive& ar, ThreadMessage& message) {
+  uint8_t sub_version = 0;
+  uint8_t count = 0;
+  ar & sub_version;
+  ar & count;
+  if (ar.failed() || sub_version != kSubVersion) {
+    return Error("Unsupported ChatPayload sub-version");
+  }
+  std::vector<TextSpan> spans;
+  for (uint8_t i = 0; i < count; ++i) {
+    TextSpan span;
+    ar & span.kind;
+    ar & span.start;
+    ar & span.end;
+    const std::vector<uint8_t> body = ReadLenBytes(ar);
+    if (ar.failed()) {
+      return Error("Malformed text_spans ChatPayload");
+    }
+    if (auto decoded = text_spans::DecodeBody(span, body); !decoded) {
+      return decoded.error();
+    }
+    spans.push_back(std::move(span));
+  }
+  if (auto exact = ReadExactEnd(ar); !exact) {
+    return exact;
+  }
+  if (auto checked = text_spans::CheckStructure(spans); !checked) {
+    return checked.error();
+  }
+  size_t dropped = 0;
+  spans = text_spans::KeepValidRanges(message.text, std::move(spans), &dropped);
+  if (dropped > 0) {
+    logging::getLogger("ChatPayloadCodec").info << "text_spans: " << dropped << " span(s) with a bad range dropped";
+  }
+  message.content_type = ChatContentType::Text;
+  message.payload_json = text_spans::ToPayloadJson(message.text, spans);
+  return {};
+}
+
 std::string PayloadJsonForMessage(const ThreadMessage& message) {
   Object payload;
   if (message.content_type == ChatContentType::Annotation) {
@@ -145,7 +200,7 @@ std::string PayloadJsonForMessage(const ThreadMessage& message) {
       payload = std::move(*parsed);
     }
   } else {
-    payload.set("text", message.text);
+    return text_spans::ToPayloadJson(message.text, text_spans::FromPayloadJson(message.payload_json));
   }
   return DumpJson(payload);
 }
@@ -154,6 +209,16 @@ std::string PayloadJsonForMessage(const ThreadMessage& message) {
 
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeText(const std::string& text) {
   return EncodePayloadBytes(kContentTypeText, text, nullptr);
+}
+
+Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeText(const std::string& text, const std::vector<TextSpan>& spans) {
+  if (spans.empty()) {
+    return EncodeText(text);
+  }
+  if (auto checked = text_spans::CheckStructure(spans); !checked) {
+    return checked.error();
+  }
+  return EncodePayloadBytes(kContentTypeTextSpans, text, [&](OutputArchive& ar) { WriteSpans(ar, spans); });
 }
 
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeAnnotation(const ChatAnnotationFields& fields) {
@@ -268,7 +333,7 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeToRow(const ThreadMessage& mes
     return EncodeText(std::string());
   case ChatContentType::Text:
   default:
-    return EncodeText(message.text);
+    return EncodeText(message.text, text_spans::FromPayloadJson(message.payload_json));
   }
 }
 
@@ -298,6 +363,9 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
     payload.set("text", message.text);
     message.payload_json = DumpJson(payload);
     return ReadExactEnd(ar);
+  }
+  if (content_type == kContentTypeTextSpans) {
+    return ReadSpans(ar, message);
   }
 
   if (content_type != kContentTypeSystem && content_type != kContentTypeAnnotation &&

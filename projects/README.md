@@ -66,7 +66,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [multi-device-account](multi-device-account/) | Account ID, shared DEK, link-device |
 | [adp](adp/) | ADP L1 + AMP stack (mesh underlay) |
 | [feature-layer-reorg](feature-layer-reorg/) | `app → feature → domain → …` cleanup |
-| [group-chat](group-chat/) | Group threads (design / follow-on) |
+| [group-chat](group-chat/) | Group threads: signed roster, member check, mentions (G015) |
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
 | [privacy](privacy/) | What peers, relays, servers and logs learn about a user, and the controls that bound it (first: who gets our IP) |
