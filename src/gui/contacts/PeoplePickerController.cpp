@@ -14,6 +14,7 @@
 #include "lib/people/PeopleLookupFailure.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "common/ValueJson.h"
+#include "common/Utilities.h"
 #include "lib/ui/ShellTypes.h"
 #include "lib/people/ContactReachability.h"
 #include "gui/CallActionsPorts.h"
@@ -25,7 +26,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #include <optional>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -454,6 +454,7 @@ void PeoplePickerController::OnFlowDismissed() {
 }
 
 void PeoplePickerController::ResetState() {
+  ++invite_batch_;  // a batch still in flight must not act on whatever opens next
   rows_.clear();
   member_summary_.clear();
   selected_ids_.clear();
@@ -735,9 +736,7 @@ void PeoplePickerController::SyncGroupMemberRows() {
     for (const GroupRosterMember& member : *roster) {
       roster_identities.insert(member.member_identity);
     }
-    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::system_clock::now().time_since_epoch())
-                               .count();
+    const int64_t now_ms = util::NowUnixMs();
     std::vector<GroupMemberRow> invited;
     for (const PendingGroupInvite& invite : picker_ports_.list_invited_waiting(group_id_)) {
       if (invite.invitee_identity.empty() || invite.invitee_identity == local_identity) {
@@ -791,6 +790,12 @@ void PeoplePickerController::SyncGroupAddRows() {
   for (const GroupRosterMember& member : *roster) {
     roster_identities.insert(member.member_identity);
   }
+  std::unordered_set<std::string> invited_identities;
+  if (picker_ports_.list_invited_waiting) {
+    for (const PendingGroupInvite& invite : picker_ports_.list_invited_waiting(group_id_)) {
+      invited_identities.insert(invite.invitee_identity);
+    }
+  }
   std::string query = search_query_.c_str();
   std::transform(query.begin(), query.end(), query.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -804,7 +809,7 @@ void PeoplePickerController::SyncGroupAddRows() {
     candidates.push_back({contact.id, DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic).peer_identity_value});
     selectable.push_back(contact);
   }
-  const std::vector<std::string> ids = AddMemberCandidateIds(candidates, roster_identities, local_identity);
+  const std::vector<std::string> ids = AddMemberCandidateIds(candidates, roster_identities, local_identity, invited_identities);
   std::vector<Contact> shown;
   for (const Contact& contact : selectable) {
     if (std::find(ids.begin(), ids.end(), contact.id) != ids.end()) {
@@ -1107,8 +1112,17 @@ void PeoplePickerController::OnSearchChanged() {
   DirtyAll();
 }
 
-void PeoplePickerController::OnCancel() {
+void PeoplePickerController::CloseAddMembers() {
+  const std::string thread_id = group_thread_id_;
+  const bool from_list = mode_ == PeoplePickerMode::GroupAddMember && !thread_id.empty();
   Close();
+  if (from_list) {
+    OpenForGroupMembers(thread_id);  // Add members is only opened from the member list
+  }
+}
+
+void PeoplePickerController::OnCancel() {
+  CloseAddMembers();
   NotifySurfaceChanged();
 }
 
@@ -1250,7 +1264,7 @@ void PeoplePickerController::OnInviteFinished(const uint64_t batch, const std::s
               ToastDuration::Long);
   }
   if (still_here) {
-    Close();
+    CloseAddMembers();
   }
   NotifySurfaceChanged();
 }
