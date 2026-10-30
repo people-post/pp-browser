@@ -47,9 +47,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4;
                             # restart_pending: a restored public session starts its next epoch on the next send — additive);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
-                            # threads.unread_mention INTEGER NOT NULL DEFAULT 0 (a live message mentioned this account — set on arrival,
-                            # cleared when the thread is opened; never set by history sync; group-chat G015. Added on open: PRAGMA table_info,
-                            # then ALTER TABLE threads ADD COLUMN when missing — user_version unchanged)
+                            # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
+                            # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
+                            # rows dropped when it is opened, a message's row when that message is deleted (for everyone or here), the thread's
+                            # when it goes; never written by history sync; per device. "You were mentioned" and jump-to-mention read it (additive)
+                            # thread_local_prefs.mute_mentions INTEGER NOT NULL DEFAULT 0 (1: while the thread is muted, mentions are silent too;
+                            # G015. Added on open when missing — user_version unchanged)
                             # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
                             # peer_card_floors (account_id, issued_at — restored from the account backup: no older account card is taken)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed

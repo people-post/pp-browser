@@ -212,7 +212,7 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `contact_card` | `3` |
 | `crypto_tx` | `4` |
 | `attachment` | `5` |
-| `text_mentions` | `6` |
+| `text_spans` | `6` |
 
 **Rules:** unknown `content_type` after successful decrypt → **soft-skip** placeholder (R018 / [COMPATIBILITY.md](COMPATIBILITY.md)); reject malformed tails for known types. Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
 
@@ -257,28 +257,33 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 
 AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b64`.
 
-**`content_type = text_mentions`** (a group message that mentions members; group-chat [G015](../../projects/group-chat/DECISIONS.md)). A message with no mention is still sent as `text` (`0`). Integers are big-endian (the archive's `u8` / `u16` / `u32` / `u64` — see the encoding table above); **LenUtf8** is `u64` BE count + bytes:
+**`content_type = text_spans`** (text with marked ranges — today a group message's mentions; group-chat [G015](../../projects/group-chat/DECISIONS.md)). A message with no span is still sent as `text` (`0`). Integers are big-endian; **LenUtf8** / **LenBytes** as in the encoding table above:
 
 | Field | Encoding | Notes |
 |-------|----------|-------|
 | `sub_version` | `u8` = **`1`** | |
-| `count` | `u16` | at most **50** (the group size limit, G014) |
-| mention × `count` | `account_id` **LenUtf8**, `start` `u32`, `end` `u32` | `[start, end)` is a **UTF-8 byte** range of `text` covering `@name` (the `@` included) |
-| `flags` | `u8` | bit0 = `@everyone`; every other bit must be `0` |
-| `all_start`, `all_end` | `u32`, `u32` | present only when `flags` bit0 is set: the byte range of the inserted `@everyone` text (in the sender's UI language), checked like a mention |
+| `count` | `u8` | spans, at most **64** |
+| span × `count` | `kind` `u8`, `start` `u32`, `end` `u32`, `body` **LenBytes** | `[start, end)` is a **UTF-8 byte** range of `text`; `body` is the kind's own fields |
 
-Full layout: `payload_version(1) | 6 | LenUtf8 text | sub_version(1) | u16 count | count × { LenUtf8 account_id, u32 start, u32 end } | u8 flags | [u32 all_start, u32 all_end when flags bit0]`.
+Full layout: `payload_version(1) | 6 | LenUtf8 text | sub_version(1) | u8 count | count × { u8 kind, u32 start, u32 end, LenBytes body }`.
+
+| `kind` | Name | `body` | Range covers |
+|--------|------|--------|--------------|
+| `1` | mention | `account_id` **LenUtf8**, nothing after | `@` + the member's public nickname as the sender's app inserted it |
+| `2` | everyone | empty (length 0) | the inserted `@everyone` text, in the sender's UI language — display only, the kind carries the meaning |
+
+A kind the receiver does not know is kept (its body as received) and not acted on: the text shows as normal. New kinds (a link, a reply quote, formatting) need no new content type and no "update to view" on older builds.
 
 **Receive checks, two levels:**
 
-1. **Structure** (reject the whole message, like any known type): a length past the end, bytes left after the tail (`ExactEnd`), `count` above 50, an unknown `flags` bit, unknown `sub_version`.
-2. **Ranges** (drop only the offending mention, or only `all`; the text is shown as normal and one log line is written without account id or text): a range outside `text`, `start >= end`, overlapping another range, an end that is not on a UTF-8 character boundary, or `text[start..end)` not starting with `@`.
+1. **Structure** (reject the whole message, like any known type): a length past the end, bytes left after the last span (`ExactEnd`), unknown `sub_version`, `count` above 64, more than **50** mention spans (the group size limit, G014), two mention spans for one `account_id`, more than one everyone span, a known kind whose body is not exactly its fields.
+2. **Ranges** (drop only the offending span; the text is shown as normal and one log line is written without account id or text): a range outside `text`, `start >= end`, overlapping another span, an end not on a UTF-8 character boundary, or a mention / everyone range whose text does not start with `@`.
 
-**Eligibility is not checked at decode.** Mentions that pass both levels are stored as they came. Whether `account_id` is a member of the group, and whether an `all` came from the group **owner**, is checked against the local roster when the message is **displayed** and when the **notification decision** is made; one that fails counts as not there (no highlight, not "mentioned"). A device whose roster arrives late shows the highlight once the roster is complete; the notification decision is made once, on arrival, and is not revisited (stated limit, G015).
+**Eligibility is not checked at decode.** Spans that pass both levels are stored as they came. Mentions count only in a **group** thread (in a direct chat the text shows plain). Whether `account_id` is a member, and whether an everyone span came from the group's **owner** (the owner the signed roster names, G012 — a former owner whose handover we hold cannot use it), is checked against the local roster when the message is **displayed** and when the **notification** is decided; one that fails counts as not there. Notifying, the mention marker and mute: [G015](../../projects/group-chat/DECISIONS.md).
 
-**Local form:** a decoded `text_mentions` is stored as `ChatContentType::Text`; `payload_json` is `{ "text", "mentions": [{ "id", "s", "e" }], "all": { "s", "e" }? }`. Re-encoding a stored message (history answer, resend, forward) writes `6` when it has `mentions` or `all`, else `0`.
+**Local form:** a decoded `text_spans` is stored as `ChatContentType::Text`; `payload_json` is `{ "text", "spans": [{ "k", "s", "e", "id"?, "body"? }] }` — `id` for a mention, `body` (base64) for a kind this build does not know. Re-encoding a stored message for the same chat (history answer, resend) writes the spans back as received, unknown kinds included (`6` when any, else `0`). A copy into another chat (a future forward or quote) drops mention and everyone spans: those members are not that chat's.
 
-Example (logical): `text = "Hi @Li Wei, all set"`, one mention `{ account_id: "acc-li", start: 3, end: 10 }` (`@Li Wei` is 7 bytes), `flags = 0` → `01 06 | LenUtf8 text | 01 | 0001 | LenUtf8 "acc-li", 00000003, 0000000a | 00`. An app before `text_mentions` shows an "update to view" placeholder (R018); all devices of a group are expected on one build (unreleased, no backward compatibility).
+Example (logical): `text = "Hi @Li Wei, all set"`, one mention of `acc-li` over `@Li Wei` (bytes 3–10) → `01 06 | LenUtf8 text | 01 | 01 | 01, 00000003, 0000000a, LenBytes(LenUtf8 "acc-li")`. An app before `text_spans` shows an "update to view" placeholder (R018); all devices of a group are expected on one build (unreleased, no backward compatibility).
 
 **`content_type = contact_card`** (someone's contact, shared in a chat — [ACCOUNT_CARD.md](ACCOUNT_CARD.md)):
 
