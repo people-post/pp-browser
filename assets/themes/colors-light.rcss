@@ -1148,6 +1148,12 @@ select selectbox option:hover {
   border-left: 3dp #d97706;
 }
 
+/* On the tinted row the text sits on the tint: no bubble of its own. */
+.message-row-mentions-me .bubble-assistant {
+  background-color: transparent;
+  border-width: 0;
+}
+
 .sidebar-unread {
   background-color: #3b82f6;
   color: #ffffff;
