@@ -84,91 +84,43 @@ TEST_F(ProfileUnlockGateTest, CancelWithoutVaultReturnsToIdentityFork) {
   EXPECT_FALSE(dismissed);
 }
 
-// A local backup (uninstall-surviving store) turns the fresh-install page into "Restore my account:
-// <nickname>" + the usual two buttons; without one, or when the store cannot be read, the plain fork.
-TEST_F(ProfileUnlockGateTest, FreshInstallOffersRestoreWhenALocalBackupExists) {
+// "Restore with my recovery phrase" (multi-device M023): the phrase restored under the PIN chosen for this device,
+// then unlocked; no first-run wizard (as after a link). A phrase that finds no account leaves the vault absent.
+TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   ASSERT_FALSE(engine_.HasVault());
-  std::string restore_nickname;
-  bool fork_shown = false;
-  ProfileUnlockPorts ports;
-  ports.messaging_initialized = []() { return true; };
-  ports.messaging_ready = []() { return false; };
-  ports.local_backup_nickname = []() -> Roe<std::optional<std::string>> { return std::optional<std::string>("alice"); };
-  ports.ui.show_identity_restore = [&](const std::string& nickname) { restore_nickname = nickname; };
-  ports.ui.show_identity_fork = [&]() { fork_shown = true; };
-  gate_.BindPorts(std::move(ports));
-
-  gate_.BeginDeferredUnlockAfterFirstPresent();
-
-  EXPECT_EQ(restore_nickname, "alice");
-  EXPECT_FALSE(fork_shown);
-}
-
-TEST_F(ProfileUnlockGateTest, FreshInstallFallsBackToTheForkWithoutABackup) {
-  ASSERT_FALSE(engine_.HasVault());
-  int restore_shown = 0;
-  int fork_shown = 0;
-  ProfileUnlockPorts ports;
-  ports.messaging_initialized = []() { return true; };
-  ports.messaging_ready = []() { return false; };
-  ports.local_backup_nickname = []() -> Roe<std::optional<std::string>> { return std::optional<std::string>{}; };
-  ports.ui.show_identity_restore = [&](const std::string&) { ++restore_shown; };
-  ports.ui.show_identity_fork = [&]() { ++fork_shown; };
-  gate_.BindPorts(std::move(ports));
-
-  gate_.BeginDeferredUnlockAfterFirstPresent();
-  EXPECT_EQ(restore_shown, 0);
-  EXPECT_EQ(fork_shown, 1);
-
-  gate_.Cancel(); // "back" from the PIN chooser lands on the same entry page
-  EXPECT_EQ(fork_shown, 2);
-}
-
-// "Restore my account": the default PIN is tried first without asking; when it does not open the
-// backup the PIN page comes up, a wrong PIN keeps it up, the right PIN restores and unlocks, and
-// "back" returns to the restore entry.
-TEST_F(ProfileUnlockGateTest, RestoreTriesTheDefaultPinThenAsksForTheAccountPin) {
-  ASSERT_FALSE(engine_.HasVault());
-  std::vector<std::string> tried;
-  std::vector<bool> pin_page; // show_restore_pin(wrong_pin) calls
-  int entry_shown = 0;
+  std::vector<std::pair<std::string, std::string>> restores;  // pin, phrase
+  int imported_notices = 0;
+  int errors = 0;
   bool dismissed = false;
   std::optional<bool> pin_is_default;
   ProfileUnlockPorts ports;
   ports.messaging_initialized = []() { return true; };
   ports.messaging_ready = []() { return false; };
-  ports.local_backup_nickname = []() -> Roe<std::optional<std::string>> { return std::optional<std::string>("alice"); };
-  ports.restore_local_backup = [&](const std::string& pin) -> Roe<void> {
-    tried.push_back(pin);
-    if (pin != "9876") {
-      return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault");
+  ports.restore_recovery_phrase = [&](const std::string& pin, const std::string& phrase,
+                                      const std::vector<std::string>&) -> Roe<void> {
+    restores.emplace_back(pin, phrase);
+    if (phrase != "the right words") {
+      return Error("No account was found for this recovery phrase");
     }
-    return engine_.Vault()->CreateWithDek(pin, ByteVector(kDataEncryptionKeySize, 0x61));
+    return engine_.Vault()->CreateWithDek(pin, ByteVector(kDataEncryptionKeySize, 0x62));
   };
   ports.set_pin_is_default = [&](const bool is_default) { pin_is_default = is_default; };
-  ports.ui.show_identity_restore = [&](const std::string&) { ++entry_shown; };
-  ports.ui.show_restore_pin = [&](const bool wrong_pin) { pin_page.push_back(wrong_pin); };
+  ports.ui.on_link_imported = [&]() { ++imported_notices; };
+  ports.ui.show_error = [&](const std::string&) { ++errors; };
   ports.ui.dismiss = [&]() { dismissed = true; };
   gate_.BindPorts(std::move(ports));
-  gate_.BeginDeferredUnlockAfterFirstPresent();
-  ASSERT_EQ(entry_shown, 1);
 
-  gate_.CompleteRestoreBackup(std::string(kDefaultProfilePin), /*set_default_pin=*/true);
-  ASSERT_EQ(tried, std::vector<std::string>{std::string(kDefaultProfilePin)});
-  ASSERT_EQ(pin_page, std::vector<bool>{false}); // asked for the PIN, no "wrong PIN" yet
-  EXPECT_FALSE(gate_.IsUnlockInProgress());
+  gate_.CompletePhraseRestore("4321", "unknown words", /*set_default_pin=*/false);
+  EXPECT_EQ(errors, 1);
+  EXPECT_FALSE(engine_.HasVault());
+  EXPECT_FALSE(gate_.IsUnlockInProgress()) << "the user can try again";
 
-  gate_.CompleteRestoreBackup("0000", /*set_default_pin=*/false);
-  ASSERT_EQ(pin_page, (std::vector<bool>{false, true}));
-  EXPECT_FALSE(dismissed);
-
-  gate_.Cancel();
-  EXPECT_EQ(entry_shown, 2);
-
-  gate_.CompleteRestoreBackup("9876", /*set_default_pin=*/false);
-  EXPECT_EQ(pin_page.size(), 2u);
-  EXPECT_TRUE(dismissed);
+  gate_.CompletePhraseRestore("4321", "the right words", /*set_default_pin=*/false);
+  ASSERT_EQ(restores.size(), 2u);
+  EXPECT_EQ(restores.back(), std::make_pair(std::string("4321"), std::string("the right words")));
   EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_TRUE(dismissed);
+  EXPECT_EQ(imported_notices, 1) << "no first-run wizard for an account that came back";
   ASSERT_TRUE(pin_is_default.has_value());
   EXPECT_FALSE(*pin_is_default);
 }

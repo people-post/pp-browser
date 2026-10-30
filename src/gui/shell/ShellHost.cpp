@@ -129,11 +129,11 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
-    ctor.Bind("pin_gate_restore_label", &host.state_.pin_gate.restore_label);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
-    ctor.Bind("pin_gate_restore_pin_mode", &host.state_.pin_gate.restore_pin_mode);
+    ctor.Bind("pin_gate_phrase_flow", &host.state_.pin_gate.phrase_flow);
+    ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
@@ -257,7 +257,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_use_default", DataEvent<>([this]() { PinGateUseDefault(); }));
     ctor.BindEventCallback("pin_gate_identity_new", DataEvent<>([this]() { PinGateIdentityNew(); }));
     ctor.BindEventCallback("pin_gate_identity_link", DataEvent<>([this]() { PinGateIdentityLink(); }));
-    ctor.BindEventCallback("pin_gate_identity_restore", DataEvent<>([this]() { PinGateIdentityRestore(); }));
+    ctor.BindEventCallback("pin_gate_identity_phrase", DataEvent<>([this]() { PinGateIdentityPhrase(); }));
+    ctor.BindEventCallback("pin_gate_use_saved_copy", DataEvent<>([this]() { PinGateUseSavedCopy(); }));
     ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
     ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
@@ -700,7 +701,7 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
-        state_.pin_gate.link_paste_mode || state_.pin_gate.restore_pin_mode) {
+        state_.pin_gate.link_paste_mode) {
       if (pin_gate_actions_.on_cancel) {
         pin_gate_actions_.on_cancel();
       }
@@ -795,11 +796,11 @@ void ShellHost::DirtyFeedback() {
 void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
   DataModelHost::Instance().Dirty("window", "pin_gate_identity_fork_mode");
-  DataModelHost::Instance().Dirty("window", "pin_gate_restore_label");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
-  DataModelHost::Instance().Dirty("window", "pin_gate_restore_pin_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_phrase_flow");
+  DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
@@ -2012,9 +2013,15 @@ void ShellHost::PinGateIdentityLink() {
   }
 }
 
-void ShellHost::PinGateIdentityRestore() {
-  if (pin_gate_actions_.on_identity_restore) {
-    pin_gate_actions_.on_identity_restore();
+void ShellHost::PinGateIdentityPhrase() {
+  if (pin_gate_actions_.on_identity_phrase) {
+    pin_gate_actions_.on_identity_phrase();
+  }
+}
+
+void ShellHost::PinGateUseSavedCopy() {
+  if (pin_gate_actions_.on_use_saved_copy) {
+    pin_gate_actions_.on_use_saved_copy();
   }
 }
 

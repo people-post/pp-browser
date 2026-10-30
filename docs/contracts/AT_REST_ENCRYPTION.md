@@ -14,7 +14,7 @@ Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-cry
 - Random **32-byte DEK** wrapped by a PIN-derived KEK (Argon2id).
 - **XChaCha20-Poly1305** encrypts identity and PSK material under the DEK.
 - Whole-file replaces use **atomic write** (tmp → fsync → rename).
-- **Forgotten PIN:** wipe the profile. No recovery key in v1.
+- **Forgotten PIN:** wipe the profile; the account (not its messages) comes back from its recovery phrase (§ Account recovery).
 - **No migrators** from plaintext layouts — delete data dir when upgrading during development.
 
 ## Algorithms
@@ -61,7 +61,7 @@ AAD examples: `identity|{profile_id}|1`, `psk|{profile_id}|1`.
 
 ### Identity plaintext (inside `identity.enc`)
 
-JSON fields: `schema_version` (**3**), device `public_key_b64` / `private_key_b64` (**ML-DSA-65** — PeerId / Noise), account ML-DSA + `account_id`, **account** `kem_*` (ML-KEM-768 — **M015**), `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`, optional `initiation_floor` (pp_credit minor units; missing → 0).
+JSON fields: `schema_version` (**3**), device `public_key_b64` / `private_key_b64` (**ML-DSA-65** — PeerId / Noise), account ML-DSA + `account_id`, **account** `kem_*` (ML-KEM-768 — **M015**), `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`, optional `initiation_floor` (pp_credit minor units; missing → 0), device `device_kem_*` (M021), optional `recovery_seed_b64` — the 32-byte recovery seed the account ML-DSA and KEM keys derive from (HKDF-SHA256, salt `pp-browser-recovery-v1`, labels `account-ml-dsa` / `account-ml-kem`; [M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §2). Every account minted since M023 s1 has one; one minted before (random keys) or a pp-node (its own seed) has none. Its phrase is the BIP-0039 English encoding of the seed (24 words), never BIP-0039's PBKDF2 seed. A link bundle carries it when present (`recovery_seed_b64`), refused unless it derives the bundle's account keys. Optional `card_intent` (`fresh` / `join`, M021 d4): how the device enters its account's device list on its next card — set by a restore (fresh) or a link (join), cleared once done ([ACCOUNT_CARD § Main device](ACCOUNT_CARD.md)).
 Pre-v3 (Ed25519 device keys) **fail closed** — wipe profile and recreate ([libp2p-pq-transport P004](../../projects/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)). Unsupported **newer** versions fail load.
 (`peer_id` remains in-memory only.)  
 AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_version` field.
@@ -76,7 +76,7 @@ AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_ver
      - **Set a PIN** — create flow with confirm.
      - **Just continue** — create vault with `kDefaultProfilePin` (`123456`), set `pin_is_default`, proceed; toast points to Me → Security.
      - **Not now** — cancel; retry on next secrets action.
-   - **I already have an account** — choose a PIN for *this* device (Set a PIN / Just continue / Not now), then paste a `pp-browser-link-device-v1` payload. Wrap the **shared DEK** (`CreateWithDek`); do not mint a new Brief person first. Me → Security only **copies** a payload (export). If this profile is already a person, **Reset this profile** in Storage, then the same fork.
+   - **I already have an account** — choose a PIN for *this* device (Set a PIN / Just continue / Not now), then paste a `pp-browser-link-device-v1` payload. Wrap the **shared DEK** (`CreateWithDek`); do not mint a new Brief person first. Me → Security only **copies** a payload (export). The payload (`LinkDeviceCodec`, valid 15 minutes) carries the account ML-DSA and KEM key pairs, the DEK, the relay user id, the nickname, the issuing device's account card (required on export: the new device signs itself into it — [ACCOUNT_CARD.md](ACCOUNT_CARD.md)) and the recovery seed when the account has one. It carries **no sessions**: each device opens its own per device pair ([M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)); an older build's `public_psks` key is ignored. If this profile is already a person, **Reset this profile** in Storage, then the same fork.
 5. Optional automation: `--pin` or `PP_BROWSER_PIN` unlocks at bootstrap for tests/CI (takes precedence over silent default unlock).
 6. **Change PIN:** Me → Security when unlocked (`DataKeyVault::ChangePin`); clears `pin_is_default`.
 7. Lock on exit clears DEK (`sodium_memzero`) in the vault and all registered `IDekConsumer`s.
@@ -131,22 +131,9 @@ Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore
 
 Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).
 
-## Local account backup (iOS)
+## Account recovery (recovery phrase, account locker)
 
-**Unsupported in the product** ([A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)):
-no store is configured, so nothing is written to the Keychain and no restore is offered; an item an earlier build
-wrote is deleted once messaging is up. The rest of this section is what the code does when a store is set (the lab's
-file store).
+An account minted since M023 s1 derives its account keys from a 32-byte recovery seed kept in `identity.enc` (§ Identity plaintext); the seed also derives the keys of the **account locker**, the encrypted snapshot of the account's state a provider holds for it ([ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md)). Me → Security shows the recovery phrase (the seed as 24 words) only after the profile PIN is entered. A fresh install restores from the typed phrase under a PIN the user chooses; the DEK is new (nothing sealed under the old one comes back — the locker holds the state). Whoever has the phrase has the account.
 
-The Keychain item described in [DATA_LAYOUT.md](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir)
-keeps only the nickname in the clear. The link-device bundle (DEK, account secret keys) and the contacts are sealed
-under the DEK, and the item carries a copy of `vault.bin`, so opening it needs the profile PIN — holding the unlocked
-phone is not enough. Restore on a fresh install first tries the default PIN in the background (accounts that never set
-one come back without a question — for them, holding the unlocked phone still suffices, by design); otherwise it asks for the PIN the account used (enter, not create). A wrong PIN
-fails before anything is written and keeps the page up; Back returns to the fresh-install choices. The right PIN
-unwraps the copied vault, opens the sealed contents, imports the bundle exactly like a pasted transfer code
-(`LinkDeviceCoordinator::Import`) under that **same** PIN, then upserts the contacts. Its groups come back once
-messaging is up, each checking its members before it sends (group-chat G013). A PIN change rewrites the item; `DataKeyVault::ChangePin` only re-wraps and never clears the live DEK, so a backup
-write running on a worker at the same time cannot observe a zeroed key.
-Known gap: like `vault.bin` itself, the copied vault can be attacked offline by guessing PINs, and the restore page
-does not limit attempts.
+The earlier PIN-sealed local account backup (iOS Keychain) is retired ([A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); an item an earlier build wrote is deleted once messaging is up, until app version 1.1.0 ([DATA_LAYOUT](DATA_LAYOUT.md#retired-local-account-backup-ios-keychain-outside-the-data-dir)).
+

@@ -61,4 +61,43 @@ void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
   SDL_ShowOpenFileDialog(OnDialogComplete, state, window, nullptr, 0, nullptr, false);
 }
 
+namespace {
+
+/** SDL_IOFromFile takes paths and Android content:// URIs alike. */
+bool WriteWhole(const std::string& path, const std::string& bytes) {
+  SDL_IOStream* out = SDL_IOFromFile(path.c_str(), "wb");
+  if (out == nullptr) {
+    return false;
+  }
+  const bool written = SDL_WriteIO(out, bytes.data(), bytes.size()) == bytes.size();
+  return SDL_CloseIO(out) && written;
+}
+
+} // namespace
+
+void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::string bytes,
+                std::function<void(bool saved)> done) {
+  if (!done) {
+    return;
+  }
+  auto* state = new DialogState{.callback = [bytes = std::move(bytes), done](std::vector<std::string> paths) {
+    done(!paths.empty() && WriteWhole(paths.front(), bytes));
+  }};
+  SDL_ShowSaveFileDialog(OnDialogComplete, state, window, nullptr, 0, suggested_name.c_str());
+}
+
+std::optional<std::string> ReadPickedFile(const std::string& path, const size_t max_bytes) {
+  size_t size = 0;
+  void* data = SDL_LoadFile(path.c_str(), &size);
+  if (data == nullptr) {
+    return std::nullopt;
+  }
+  std::optional<std::string> out;
+  if (size <= max_bytes) {
+    out.emplace(static_cast<const char*>(data), size);
+  }
+  SDL_free(data);
+  return out;
+}
+
 } // namespace pbr

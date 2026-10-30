@@ -2,7 +2,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   DirectChatTargetFromContact.cpp
   AvatarGlyph.cpp
   ProfileIconCache.cpp
-  AccountBackupCodec.cpp
+  AccountStateCodec.cpp
   ContactJson.cpp
   ContactIdentity.cpp
   DirectoryHitRank.cpp
@@ -12,8 +12,11 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   IdentityStore.cpp
   LinkDeviceCoordinator.cpp
   LinkDeviceExchange.cpp
-  LocalAccountBackup.cpp
+  AccountLocker.cpp
+  RecoveryBundle.cpp
+  ContactClock.cpp
   RetiredKeychainBackup.cpp
+  SecureBlobStore.cpp
   MeshHopPolicy.cpp
   PeerAccountBook.cpp
   PeopleLookupFailure.cpp

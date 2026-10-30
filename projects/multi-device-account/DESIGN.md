@@ -1,6 +1,6 @@
 # Multi-device account — design
 
-**Status:** Design freeze (m0) + **M009–M020**. Implementation: **m1–m2b** + **m4a–m4b** + **m3** `endpoints[]` done; next **m4c** paste contacts/index (**M018**). Unlink after m3 (**M019**). Device-scoped public PSK filter **M020**.  
+**Status:** Design freeze (m0) + **M009–M020**, then **M021 / M022** (sessions per device pair — supersede the session and link-bundle parts below as d-phases ship) and **M023** (account state: recovery phrase + encrypted locker — supersedes the m4c paste below). Where this file and those decisions differ, the decisions win; current state: [CURRENT_STATE.md](CURRENT_STATE.md).  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/), [at-rest-crypto](../at-rest-crypto/), [chat-storage D096](../chat-storage-and-memory/DECISIONS.md#d096--multi-device-and-sync-amends-d092) / [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) / [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id), [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md).
 
 ## Problem
@@ -27,7 +27,7 @@ Today the product collapses **person**, **device**, and **Brief route** into one
 | Concept | Format / crypto | Role |
 |---------|-----------------|------|
 | **Account ID** | `account:` + base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk)) | Communicating identity: contacts primary, threads, envelopes, AAD, signing-key cache |
-| **Account signing key** | ML-DSA-65 | Register, Brief API auth, envelope signatures |
+| **Account signing key** | ML-DSA-65 | Register, Brief API auth, signs the device list (account card). Envelopes are signed by the **device** key from M021 d2 (M003 superseded); from M023 s1 it derives from the recovery phrase |
 | **Account KEM** | ML-KEM-768 | Public/group auto-key encapsulate-to; copied on link (**M015**) |
 | **Device Peer ID** | libp2p / Ed25519 | Direct streams, dial, call media attach |
 | **Relay user id** | `relay:` + … | Inbox, send route, device↔Brief binding (**M006**) |
@@ -61,6 +61,8 @@ No top-level `peer_id` / `multiaddrs` on directory responses (pre-release hard c
 
 ## Dogfood send (M016)
 
+> **Superseded** by M021 d2 (sessions per device pair): every linked device may send. Kept as history.
+
 Linked devices may all **receive**. **Send from one device at a time.** Seq clash is a soft integrity failure (D015 / D038), not silent merge. Dual-writer is D074 later.
 
 ## Threat notes (short)
@@ -76,9 +78,12 @@ Linked devices may all **receive**. **Send from one device at a time.** Seq clas
 - Multi-relay beyond one Brief (M017 is same-server device endpoints, not extra relays).
 - Account KEM rotation **implementation** (specified as M019 phase 2; after m3 local-forget).
 - Private Secure “add this device” transfer UX (**M014** policy; ritual later).
-- Live sibling public-PSK + chat-index refresh (**M015**); QR primary (**M012**).
+- ~~Live sibling public-PSK + chat-index refresh (**M015**)~~ — sessions per device pair (M021); account state by the M023 change log. QR primary (**M012**).
+- Account recovery: **M023** — recovery phrase + encrypted account locker (decided, not built).
 
-## Link-device bundle (m4b + m4c)
+## Link-device bundle (m4b; m4c superseded by M023)
+
+> **Superseded in part.** From M021 d2 the bundle carries no sessions (`public_psks[]` gone) and, from d4, no account signing key; `contacts[]` / `public_threads[]` (m4c) were never built and are replaced by the M023 locker. The table below is the m4b design as it was.
 
 Transport this pass: **paste** (QR primary still later) (**M012**). JSON format **`pp-browser-link-device-v1`**.
 

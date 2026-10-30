@@ -3,8 +3,10 @@
 #include "lib/messaging/DeleteForEveryone.h"
 #include "domain/node/AppRuntimeMeshExecutors.h"
 
-#include "lib/people/LocalAccountBackup.h"
 #include "lib/people/RetiredKeychainBackup.h"
+#include "lib/people/RecoveryBundle.h"
+#include "lib/people/LinkDeviceCoordinator.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -243,6 +245,9 @@ void ConversationsHub::WireRelayAuthSigner() {
   if (http_blob_) {
     http_blob_->SetAuthSigner(signer);
   }
+  if (http_locker_) {
+    http_locker_->SetAuthSigner(signer);
+  }
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
@@ -320,13 +325,21 @@ void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
       http_registration_url_ = registration_url;
       http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
       http_blob_ = std::make_unique<HttpBlobClient>(http_registration_url_);
+      http_locker_ = std::make_unique<HttpLockerClient>(http_registration_url_);
       WireRelayAuthSigner();
     }
     registration_ = http_registration_.get();
     blob_ = http_blob_.get();
+    if (account_locker_) {
+      account_locker_->SetClient(http_locker_.get());
+    }
   } else {
     http_registration_.reset();
+    if (account_locker_) {
+      account_locker_->SetClient(nullptr);
+    }
     http_blob_.reset();
+    http_locker_.reset();
     http_registration_url_.clear();
     registration_ = nullptr;
     blob_ = nullptr;
@@ -807,6 +820,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetOnSiblingNotice(nullptr);
     mesh_messaging_->SetAttachmentDownloads(nullptr);
   }
   if (inbox_) {
@@ -814,6 +828,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     inbox_->SetAttachmentDownloads(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
+  account_locker_.reset();
   group_membership_.reset();
   // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
   if (secrets_ != nullptr) {
@@ -1101,7 +1116,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         PublishAddressDisclosure();
       }
     });
-    WriteLocalBackupAsync();
+    PublishAccountLockerSoon();
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
@@ -1122,8 +1137,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
-  // The backup keeps every group (G013): rewrite it on any roster change.
-  group_roster_->SetOnChanged([this](const std::string&) { WriteLocalBackupAsync(); });
+  // The account locker keeps every group (G013): republish it on any roster change.
+  group_roster_->SetOnChanged([this](const std::string&) { PublishAccountLockerSoon(); });
   thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
@@ -1251,8 +1266,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   }
   BindPricingFamilies();
   peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
-  // The backup keeps how new each account's newest card is (a restored device refuses older ones).
-  peer_cards_->SetOnNewerCard([this]() { WriteLocalBackupAsync(); });
+  // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
+  peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   account_keys_->LoadKeptCards();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
@@ -1354,6 +1369,26 @@ void ConversationsHub::BuildMessagingObjects() {
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   BindGroupRosterSyncFamily();
+  account_locker_ = std::make_unique<AccountLockerWorkflow>(
+      *identity_, *contacts_,
+      AccountLockerWorkflow::Sources{
+          .groups = [this]() -> Roe<std::vector<AccountStateGroup>> {
+            return group_membership_ ? group_membership_->StateGroups()
+                                     : Roe<std::vector<AccountStateGroup>>(std::vector<AccountStateGroup>{});
+          },
+          .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
+            return peer_cards_ ? peer_cards_->NewestKnown()
+                               : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
+          }});
+  account_locker_->SetClient(http_locker_.get());
+  account_locker_->SetDataDir(data_dir_);
+  // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
+  account_locker_->SetOnWritten([this]() {
+    if (mesh_messaging_) {
+      mesh_messaging_->NudgeSiblings();
+    }
+  });
+  mesh_messaging_->SetOnSiblingNotice([this]() { PublishAccountLockerSoon(); });
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -1538,25 +1573,17 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
 
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
-  const bool restoring = RestorePending();
   messaging_ready_ = true;
   mesh_ready_ = false;
   StartCoordinatorTimers();
   NotifyMessagingReady();
   ScheduleMeshBringUp();
-  if (!restoring) {
-    // Accounts that registered before this build get their backup on the next unlock. (After a restore it is
-    // written once the groups are back, so it never drops them.)
-    WriteLocalBackupAsync();
-  }
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
     AnnounceRestoredDevice();
-    if (backup_store_ == nullptr) {
-      // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
-      if (auto removed = RemoveRetiredKeychainBackup(); !removed) {
-        log().warning << "Retired Keychain backup not removed: " << removed.error().message;
-      }
+    // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
+    if (auto removed = RemoveRetiredKeychainBackup(); !removed) {
+      log().warning << "Retired Keychain backup not removed: " << removed.error().message;
     }
   });
   return {};
@@ -1641,6 +1668,11 @@ void ConversationsHub::StartCoordinatorTimers() {
       TickMesh();
     });
   }
+  if (locker_sync_timer_id_ == 0) {
+    // What another device of the account changed (a contact removed, a remark) arrives through the locker.
+    locker_sync_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds(kLockerSyncIntervalMs),
+                                                                     [this]() { PublishAccountLockerSoon(); });
+  }
   // Relay poll must not depend on ChatController::WireMessagingBindings (can skip if UI
   // wiring races unlock). Own the sync handler here as soon as messaging is ready.
   BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
@@ -1660,6 +1692,10 @@ void ConversationsHub::StartCoordinatorTimers() {
 }
 
 void ConversationsHub::StopCoordinatorTimers() {
+  if (locker_sync_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(locker_sync_timer_id_);
+    locker_sync_timer_id_ = 0;
+  }
   if (hub_policy_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
     hub_policy_timer_id_ = 0;
@@ -1839,7 +1875,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
       return result.error();
     }
   }
-  WriteLocalBackupAsync();
+  PublishAccountLockerSoon();  // the locker keeps the nickname
   return {};
 }
 
@@ -1881,34 +1917,56 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   if (!applied) {
     return applied.error();
   }
-  WriteLocalBackupAsync();
+  PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
   return {};
 }
 
-Roe<std::optional<std::string>> ConversationsHub::LocalBackupNickname() {
-  return LocalAccountBackup::PeekNickname(BackupStore());
-}
-
-Roe<void> ConversationsHub::DeleteLocalBackup() { return LocalAccountBackup::Delete(BackupStore()); }
-
-Roe<void> ConversationsHub::RestoreLocalBackup(const std::string& pin) {
-  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr) {
+Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                                     const std::vector<std::string>& saved_copies) {
+  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || !account_locker_) {
     return Error("Messaging is not ready");
   }
-  AccountBackupExtras extras;
-  if (auto restored = LocalAccountBackup::Restore(BackupStore(), Identity(), *Secrets()->Vault(), *PskStore(),
-                                                  Secrets(), Contacts(), pin, util::NowUnixMs(), &extras);
-      !restored) {
-    return restored.error();
+  auto seed = DecodeRecoveryPhrase(phrase);
+  if (!seed) {
+    return seed.error();
   }
-  log().info << "Account restored from the local backup: contacts and sessions; " << extras.groups.size()
-             << " group(s) and " << extras.card_floors.size() << " card floor(s) once messaging is up";
+  // The locker holds the relay binding (and the rest): without it there is no account to come back to here.
+  auto fetched = account_locker_->Fetch(*seed, saved_copies);
+  if (!fetched) {
+    return Error("Account restore failed: " + fetched.error().message);
+  }
+  if (!*fetched) {
+    return Error("No account was found for this recovery phrase");
+  }
+  AccountLockerState& state = (*fetched)->state;
+  const int64_t now_ms = util::NowUnixMs();
+  auto bundle = BuildRecoveryBundleJson(*seed, state.relay_user_id, state.nickname, now_ms);
+  if (!bundle) {
+    return Error("Account restore failed: " + bundle.error().message);
+  }
+  if (auto imported = LinkDeviceCoordinator::Import(Identity(), *Secrets()->Vault(), Secrets(), *bundle, pin, now_ms);
+      !imported) {
+    return Error("Account restore failed: " + imported.error().message);
+  }
+  for (const Contact& contact : state.contacts) {
+    if (auto upserted = Contacts().Upsert(contact); !upserted) {
+      return Error("Account restore failed: " + upserted.error().message);
+    }
+  }
+  log().info << "Account restored from its recovery phrase: locker version " << (*fetched)->version << ", "
+             << state.contacts.size() << " contact(s); " << state.extras.groups.size() << " group(s) and "
+             << state.extras.card_floors.size() << " card floor(s) once messaging is up";
+  QueueRestoredState(std::move(state.extras));
+  return {};
+}
+
+void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
   {
     std::lock_guard lock(restored_mutex_);
-    for (AccountBackupGroup& group : extras.groups) {
+    for (AccountStateGroup& group : extras.groups) {
       restored_.groups.push_back(std::move(group));
     }
-    for (AccountBackupCardFloor& floor : extras.card_floors) {
+    for (AccountCardFloor& floor : extras.card_floors) {
       restored_.card_floors.push_back(std::move(floor));
     }
     restored_.announce = true;
@@ -1920,16 +1978,39 @@ Roe<void> ConversationsHub::RestoreLocalBackup(const std::string& pin) {
       AnnounceRestoredDevice();
     });
   }
-  return {};
 }
 
-bool ConversationsHub::RestorePending() {
-  std::lock_guard lock(restored_mutex_);
-  return restored_.announce || !restored_.groups.empty() || !restored_.card_floors.empty();
+void ConversationsHub::PublishAccountLockerSoon() {
+  if (!account_locker_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (locker_publish_queued_.exchange(true, std::memory_order_acq_rel)) {
+    return;  // the queued publish reads everything when it runs
+  }
+  // Batched: a burst of changes (a group's roster, its cards) becomes one snapshot.
+  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kLockerPublishDelayMs), [this]() {
+    AppRuntime::PostWorkerNormal([this]() {
+      locker_publish_queued_.store(false, std::memory_order_release);
+      if (!account_locker_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+        return;
+      }
+      auto seed = Identity().RecoverySeed();
+      auto identity = Identity().Get();
+      if (!seed || !*seed || !identity || identity->relay_user_id.empty()) {
+        return;  // an account from before M023, or not registered yet: nothing to publish
+      }
+      if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
+        return;  // M021 d4: a signed-out device no longer speaks for the account
+      }
+      if (auto published = account_locker_->Publish(); !published) {
+        log().info << "Account locker not published: " << published.error().message;
+      }
+    });
+  });
 }
 
 void ConversationsHub::ApplyRestoredCardFloors() {
-  std::vector<AccountBackupCardFloor> restored;
+  std::vector<AccountCardFloor> restored;
   {
     std::lock_guard lock(restored_mutex_);
     restored.swap(restored_.card_floors);
@@ -1939,7 +2020,7 @@ void ConversationsHub::ApplyRestoredCardFloors() {
   }
   std::vector<PeerCardFloor> floors;
   floors.reserve(restored.size());
-  for (const AccountBackupCardFloor& floor : restored) {
+  for (const AccountCardFloor& floor : restored) {
     floors.push_back({floor.account_id, floor.issued_at});
   }
   if (auto raised = peer_cards_->RaiseFloors(floors); !raised) {
@@ -1955,12 +2036,16 @@ void ConversationsHub::AnnounceRestoredDevice() {
     }
     restored_.announce = false;
   }
+  AnnounceOwnDevicesToContacts();
+}
+
+void ConversationsHub::AnnounceOwnDevicesToContacts() {
   if (!IsMessagingReady() || !mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
   auto contacts = Contacts().List();
   if (!contacts) {
-    log().warning << "Restored device not announced: " << contacts.error().message;
+    log().warning << "Own devices not announced: " << contacts.error().message;
     return;
   }
   std::vector<std::string> accounts;
@@ -1977,19 +2062,20 @@ void ConversationsHub::ResumeGroupRosterChecks() {
       shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
-  std::vector<AccountBackupGroup> restored;
+  std::vector<AccountStateGroup> restored;
   {
     std::lock_guard lock(restored_mutex_);
     restored.swap(restored_.groups);
   }
-  for (const AccountBackupGroup& group : restored) {
+  for (const AccountStateGroup& group : restored) {
+    if (group.left) {
+      continue;  // a group the account is out of: nothing to bring back
+    }
     if (auto recreated = group_membership_->RestoreGroup(group); !recreated) {
       log().warning << "Group not restored group=" << group.group_id << ": " << recreated.error().message;
     }
   }
-  if (!restored.empty()) {
-    WriteLocalBackupAsync();  // this device's backup, with the groups back in it
-  }
+  PublishAccountLockerSoon();  // at every start too: the locker catches up with what changed while it was off
   // Every group still checking its members (just restored, or the app quit mid-check) asks again.
   auto ids = group_roster_->ListGroupIds();
   if (!ids) {
@@ -2003,48 +2089,6 @@ void ConversationsHub::ResumeGroupRosterChecks() {
       }
     }
   }
-}
-
-void ConversationsHub::WriteLocalBackupAsync() {
-  if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
-    return;
-  }
-  if (backup_write_queued_.exchange(true, std::memory_order_acq_rel)) {
-    return;  // the queued write reads everything when it runs
-  }
-  AppRuntime::PostWorkerNormal([this]() {
-    backup_write_queued_.store(false, std::memory_order_release);
-    if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire) ||
-        Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr) {
-      return;
-    }
-    AccountBackupExtras extras;
-    if (group_membership_) {
-      if (auto listed = group_membership_->BackupGroups()) {
-        extras.groups = std::move(*listed);
-      } else {
-        log().warning << "Groups not backed up: " << listed.error().message;
-      }
-    }
-    if (peer_cards_) {
-      if (auto newest = peer_cards_->NewestKnown()) {
-        for (const PeerCardFloor& floor : *newest) {
-          extras.card_floors.push_back({floor.account_id, floor.issued_at});
-        }
-      } else {
-        log().warning << "Card floors not backed up: " << newest.error().message;
-      }
-    }
-    const size_t groups = extras.groups.size();
-    const size_t floors = extras.card_floors.size();
-    auto written = LocalAccountBackup::Write(BackupStore(), Identity(), *Secrets()->Vault(), *PskStore(), Contacts(),
-                                             util::NowUnixMs(), std::move(extras));
-    if (!written) {
-      log().warning << "Local account backup not written: " << written.error().message;
-    } else if (BackupStore().Supported()) {
-      log().info << "Local account backup written groups=" << groups << " card_floors=" << floors;
-    }
-  });
 }
 
 Roe<void> ConversationsHub::UploadProfileIconFromPath(const std::string& path) {
@@ -2872,6 +2916,7 @@ void ConversationsHub::Shutdown() {
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetOnSiblingNotice(nullptr);
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
@@ -2928,6 +2973,7 @@ void ConversationsHub::Shutdown() {
   system_controls_.Unbind(kInitiationBillingFamily);
   system_controls_.Unbind(kPaymentPromiseFamily);
   system_controls_.Unbind(kGroupRosterSyncFamily);
+  account_locker_.reset();
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
@@ -3017,6 +3063,60 @@ ProfileSecretsEngine* ConversationsHub::Secrets() {
 
 ContactCardExchange& ConversationsHub::ContactCards() {
   return *contact_cards_;
+}
+
+Roe<OwnDeviceList> ConversationsHub::OwnDevices() {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  return mesh_messaging_->OwnAccountCards().Devices();
+}
+
+Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  auto card = mesh_messaging_->OwnAccountCards().RemoveDevice(peer_id, util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  // Siblings hear through our own mailbox (OwnCards::SetOnChanged) — the removed device too, which then stops;
+  // contacts stop sending to it once they hold this card (M021 limit 4: eventual).
+  log().info << "Device " << peer_id << " taken off the account; " << card->devices.size() << " left";
+  AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
+  return {};
+}
+
+Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  auto card = mesh_messaging_->OwnAccountCards().MakeMaster(peer_id, util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  log().info << "Main device handed to " << peer_id;
+  AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
+  return {};
+}
+
+void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {
+  // The address book first: a device that just became the master may not have synced its contacts yet (its
+  // first sync runs a few seconds after start), and the announce goes to them.
+  if (account_locker_) {
+    if (auto seed = Identity().RecoverySeed(); seed && *seed) {
+      if (auto synced = account_locker_->Publish(); !synced) {
+        log().info << "Account locker not synced before the device announce: " << synced.error().message;
+      }
+    }
+  }
+  AnnounceOwnDevicesToContacts();
+}
+
+void ConversationsHub::ExpectDeviceJoin(const int64_t until_ms) {
+  if (mesh_messaging_) {
+    mesh_messaging_->OwnAccountCards().ExpectJoin(until_ms);
+  }
 }
 
 std::optional<std::string> ConversationsHub::OwnAccountCardJson() {

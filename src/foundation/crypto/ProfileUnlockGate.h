@@ -5,7 +5,6 @@
 #include "common/Module.h"
 
 #include <functional>
-#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -19,13 +18,6 @@ namespace pbr {
 struct ProfileUnlockUiPorts {
   /** No vault yet — I'm new vs I already have an account. Falls back to show_chooser. */
   std::function<void()> show_identity_fork;
-  /** Same page plus "Restore my account: <nickname>" (local backup found). Falls back to show_identity_fork. */
-  std::function<void(const std::string& nickname)> show_identity_restore;
-  /**
-   * Restore: the default PIN did not open the backup — ask for the PIN the account used (one field).
-   * `wrong_pin`: the PIN just entered did not open it either.
-   */
-  std::function<void(bool wrong_pin)> show_restore_pin;
   /** No vault, "I'm new" — three-way PIN chooser. */
   std::function<void()> show_chooser;
   /** Existing vault, custom PIN — blocking unlock modal. */
@@ -55,12 +47,11 @@ struct ProfileUnlockPorts {
   std::function<void(bool is_default)> set_pin_is_default;
   /** Empty-vault link-device: wrap shared DEK with `pin` and apply the bundle. */
   std::function<Roe<void>(const std::string& pin, const std::string& bundle_json)> import_link_device;
-  /**
-   * Local account backup (uninstall-surviving store): nickname when one exists; restore with the PIN
-   * the account used (wrong PIN → Pin-category error).
-   */
-  std::function<Roe<std::optional<std::string>>()> local_backup_nickname;
-  std::function<Roe<void>(const std::string& pin)> restore_local_backup;
+  /** Fresh install: the account back from its recovery phrase (M023) under `pin` for this device. */
+  /** `saved_copies`: saved copies of the account the user picked (exported locker files' text). */
+  std::function<Roe<void>(const std::string& pin, const std::string& phrase,
+                          const std::vector<std::string>& saved_copies)>
+      restore_recovery_phrase;
 
   /**
    * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
@@ -108,21 +99,20 @@ public:
   void CompleteWithDefaultPin();
   /** UI: first-run "I already have an account" after PIN + paste. */
   void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
-  /**
-   * UI: fresh install "Restore my account" with the account's PIN. The UI first passes the default PIN
-   * (`set_default_pin`); if that is not it, show_restore_pin asks for the PIN.
-   */
-  void CompleteRestoreBackup(const std::string& pin, bool set_default_pin);
+  /** "Restore with my recovery phrase": restore under `pin`, then unlock — no first-run wizard, as after a link. */
+  void CompletePhraseRestore(const std::string& pin, const std::string& phrase, bool set_default_pin,
+                             std::vector<std::string> saved_copies = {});
   /** UI: cancel chooser / create / paste. Without a vault this returns to the identity fork. */
   void Cancel();
 
 private:
+  /** A first secrets use that brings an existing account (link / phrase): `import` under `pin`, then unlock. */
+  void CompleteAccountImport(const std::string& pin, bool set_default_pin, std::function<Roe<void>()> import,
+                             const char* mark);
   ProfileSecretsEngine& Secrets();
   Roe<void> UnlockAndReady(const std::string& pin);
   void RunUnlockAndReadyAsync(std::string pin, bool set_default_pin, bool clear_default_pin);
   void RequestShowIdentityFork(std::function<void(bool)> done);
-  /** Fresh install entry: the identity fork, with the restore button when a local backup exists. */
-  void RequestShowFreshInstallEntry();
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);

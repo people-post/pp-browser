@@ -29,7 +29,20 @@
 //   remove_member {thread, account}     the owner removes a member from the group
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
+//   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
+//   locker_publish                      sync this account's state with its locker at the relay: take what another
+//                                       device changed, store what changed here {version} (M023)
+//   contacts                            the address book {contacts: [{account, remark}]}
+//   rename_contact {account, remark}    the user's remark for a contact
+//   remove_contact {account}            take the contact out of the address book
+//   locker_fetch {phrase}               the locker a recovery phrase opens: {found, relay_user_id, nickname,
+//                                       contacts: [account ids], groups: [group ids], card_floors}
+//   locker_export {path}                save the account's state as an exported locker file at path: {version}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
+//   devices                             this account's devices (M021 d4): {devices: [peer ids], main, self,
+//                                       signed_out} — the first is the main device
+//   remove_device {peer_id}             on the main device: take another device off the account
+//   make_main {peer_id}                 on the main device: hand the main role to another device
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
@@ -39,8 +52,8 @@
 //
 // Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
 //
-// --backup-store DIR: the phone's secure store (the account backup) as files in DIR, outside the data dir.
-// --restore-backup: a fresh install restores the account from it before unlocking ("Restore my account").
+// --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
+// --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
 
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
@@ -63,7 +76,9 @@
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "lib/people/LocalAccountBackup.h"
+#include "feature/conversations/AccountLockerWorkflow.h"
+#include "lib/people/ContactClock.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -79,7 +94,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -130,46 +144,6 @@ const char* NoticeKindName(CallNotice::Kind kind) {
   }
   return "?";
 }
-
-/**
- * The phone's secure store (iOS Keychain) as files in a directory outside the data dir: the app writes its
- * account backup there as it would on a phone, and a fresh install (`--restore-backup`) reads it back.
- */
-class FileBlobStore final : public ISecureBlobStore {
-public:
-  explicit FileBlobStore(std::filesystem::path dir) : dir_(std::move(dir)) {}
-  bool Supported() const override { return true; }
-  Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes) override {
-    std::error_code ec;
-    std::filesystem::create_directories(dir_, ec);
-    const std::filesystem::path tmp = dir_ / (name + ".tmp");
-    {
-      std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-      if (!out) {
-        return Error("backup store: write failed");
-      }
-    }
-    std::filesystem::rename(tmp, dir_ / name, ec);
-    return ec ? Roe<void>(Error("backup store: " + ec.message())) : Roe<void>();
-  }
-  Roe<std::optional<std::vector<uint8_t>>> Read(const std::string& name) override {
-    std::ifstream in(dir_ / name, std::ios::binary);
-    if (!in) {
-      return std::optional<std::vector<uint8_t>>{};
-    }
-    return std::optional<std::vector<uint8_t>>(
-        std::vector<uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
-  }
-  Roe<void> Delete(const std::string& name) override {
-    std::error_code ec;
-    std::filesystem::remove(dir_ / name, ec);
-    return {};
-  }
-
-private:
-  std::filesystem::path dir_;
-};
 
 /** One scripted user: the app's objects; its call buttons and call screen are the GUI's (CallPresenter). */
 class Probe {
@@ -389,6 +363,34 @@ public:
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal, [this, nickname]() { return facade_->RegisterIdentity(nickname); },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "devices") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<OwnDeviceList>>(
+          WorkerLane::Normal, [this]() { return facade_->OwnDevices(); },
+          [id](Roe<OwnDeviceList> list) {
+            if (!list) {
+              ReplyError(id, list.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            std::vector<Value> devices;
+            for (const AccountCardDevice& device : list->devices) {
+              devices.emplace_back(device.peer_id);
+            }
+            out.set("main", list->devices.empty() ? std::string() : list->devices.front().peer_id);
+            out.set("devices", ArrayValue(std::move(devices)));
+            out.set("self", list->self_peer_id);
+            out.set("signed_out", list->signed_out);
+            Emit(out);
+          });
+    } else if (cmd == "remove_device" || cmd == "make_main") {
+      const std::string peer_id = request->getString("peer_id").value_or("");
+      const bool remove = cmd == "remove_device";
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal,
+          [this, peer_id, remove]() {
+            return remove ? facade_->RemoveOwnDevice(peer_id) : facade_->MakeMainDevice(peer_id);
+          },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "link_export") {
       AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
           WorkerLane::Normal, [this]() { return facade_->ExportLinkDevice(); },
@@ -399,6 +401,131 @@ public:
             }
             Object out = Reply(id, true);
             out.set("bundle", *bundle);
+            Emit(out);
+          });
+    } else if (cmd == "recovery_phrase") {
+      const std::string pin = request->getString("pin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<std::string>>>(
+          WorkerLane::Normal, [this, pin]() { return facade_->RecoveryPhrase(pin); },
+          [id](Roe<std::optional<std::string>> phrase) {
+            if (!phrase) {
+              ReplyError(id, phrase.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("phrase", phrase->value_or(""));
+            Emit(out);
+          });
+    } else if (cmd == "contacts") {
+      auto listed = Hub().Contacts().List();
+      if (!listed) {
+        ReplyError(id, listed.error().message);
+        return;
+      }
+      std::vector<Value> rows;
+      for (const Contact& contact : *listed) {
+        Object row;
+        row.set("account", ContactClockAccount(contact));
+        row.set("remark", contact.local.display_name);
+        rows.push_back(ObjectValue(std::move(row)));
+      }
+      Object out = Reply(id, true);
+      out.set("contacts", ArrayValue(std::move(rows)));
+      Emit(out);
+    } else if (cmd == "rename_contact" || cmd == "remove_contact") {
+      auto found = Hub().Contacts().FindByIdentity(request->getString("account").value_or(""),
+                                                   mesh::ContactIdKind::Account);
+      if (!found || !*found) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      if (cmd == "remove_contact") {
+        auto removed = Hub().Contacts().Remove((*found)->id);
+        removed ? Emit(Reply(id, true)) : ReplyError(id, removed.error().message);
+        return;
+      }
+      Contact contact = **found;
+      contact.local.display_name = request->getString("remark").value_or("");
+      SyncContactMirrors(contact);
+      auto saved = Hub().Contacts().Upsert(contact);
+      saved ? Emit(Reply(id, true)) : ReplyError(id, saved.error().message);
+    } else if (cmd == "locker_publish") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<uint64_t>>(
+          WorkerLane::Normal,
+          [this]() {
+            AccountLockerWorkflow* locker = Hub().AccountLocker();
+            return locker ? locker->Publish() : Roe<uint64_t>(Error("messaging not ready"));
+          },
+          [id](Roe<uint64_t> version) {
+            if (!version) {
+              ReplyError(id, version.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.setJsonUInt("version", *version);
+            Emit(out);
+          });
+    } else if (cmd == "locker_export") {
+      const std::string path = request->getString("path").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+          WorkerLane::Normal, [this]() { return facade_->ExportAccountCopy(); },
+          [id, path](Roe<std::string> file) {
+            if (!file) {
+              ReplyError(id, file.error().message);
+              return;
+            }
+            auto record = LockerRecordFromFileJson(*file);
+            std::ofstream out_file(path, std::ios::binary | std::ios::trunc);
+            out_file << *file;
+            if (!record || !out_file) {
+              ReplyError(id, "the saved copy was not written");
+              return;
+            }
+            Object out = Reply(id, true);
+            out.setJsonUInt("version", record->version);
+            Emit(out);
+          });
+    } else if (cmd == "locker_fetch") {
+      const std::string phrase = request->getString("phrase").value_or("");
+      using Fetched = std::optional<AccountLockerWorkflow::Fetched>;
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<Fetched>>(
+          WorkerLane::Normal,
+          [this, phrase]() -> Roe<Fetched> {
+            auto seed = DecodeRecoveryPhrase(phrase);
+            if (!seed) {
+              return seed.error();
+            }
+            AccountLockerWorkflow* locker = Hub().AccountLocker();
+            return locker ? locker->Fetch(*seed) : Roe<Fetched>(Error("messaging not ready"));
+          },
+          [id](Roe<Fetched> state) {
+            if (!state) {
+              ReplyError(id, state.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("found", state->has_value());
+            if (*state) {
+              out.setJsonUInt("version", (*state)->version);
+              const AccountLockerState& s = (*state)->state;
+              out.set("relay_user_id", s.relay_user_id);
+              out.set("nickname", s.nickname);
+              std::vector<Value> contacts;
+              for (const Contact& contact : s.contacts) {
+                for (const mesh::ContactId& cid : contact.remote.ids) {
+                  if (cid.kind == mesh::ContactIdKind::Account) {
+                    contacts.emplace_back(cid.value);
+                  }
+                }
+              }
+              out.set("contacts", ArrayValue(std::move(contacts)));
+              std::vector<Value> groups;
+              for (const AccountStateGroup& group : s.extras.groups) {
+                groups.emplace_back(group.group_id);
+              }
+              out.set("groups", ArrayValue(std::move(groups)));
+              out.set("card_floors", static_cast<int64_t>(s.extras.card_floors.size()));
+            }
             Emit(out);
           });
     } else if (cmd == "link_import") {
@@ -1094,22 +1221,22 @@ private:
 int main(int argc, char** argv) {
   std::string pin;
   std::string log_file;
-  std::string backup_store;
-  bool restore_backup = false;
+  std::string restore_phrase_file;
+  std::string restore_saved_copy;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--log-file") == 0 && i + 1 < argc) {
       log_file = argv[++i];
-    } else if (std::strcmp(argv[i], "--backup-store") == 0 && i + 1 < argc) {
-      backup_store = argv[++i];
-    } else if (std::strcmp(argv[i], "--restore-backup") == 0) {
-      restore_backup = true;
+    } else if (std::strcmp(argv[i], "--restore-phrase-file") == 0 && i + 1 < argc) {
+      restore_phrase_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--restore-saved-copy") == 0 && i + 1 < argc) {
+      restore_saved_copy = argv[++i];
     }
   }
-  if (pin.empty() || (restore_backup && backup_store.empty())) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--backup-store DIR "
-                         "[--restore-backup]]\n");
+  if (pin.empty()) {
+    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
+                         "[--restore-saved-copy FILE]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
@@ -1133,17 +1260,18 @@ int main(int argc, char** argv) {
 
   auto probe = std::make_unique<pbr::Probe>();
   probe->Wire();
-  // The phone's account backup (iOS Keychain) — written as the app runs, read back by a fresh install.
-  std::unique_ptr<pbr::FileBlobStore> blob_store;
-  if (!backup_store.empty()) {
-    blob_store = std::make_unique<pbr::FileBlobStore>(backup_store);
-    probe->Hub().SetBackupStore(blob_store.get());
-  }
   pbr::BootstrapOptions options;
   options.argc = argc;
   options.argv = argv;
   options.pin = pin;
-  options.restore_local_backup = restore_backup;
+  if (!restore_phrase_file.empty()) {
+    std::ifstream phrase_in(restore_phrase_file);
+    std::getline(phrase_in, options.restore_recovery_phrase);
+  }
+  if (!restore_saved_copy.empty()) {
+    std::ifstream copy_in(restore_saved_copy, std::ios::binary);
+    options.restore_saved_copies.emplace_back(std::istreambuf_iterator<char>(copy_in), std::istreambuf_iterator<char>());
+  }
   auto booted = pbr::Bootstrap::Run(options, probe->Hub(), probe->Secrets());
   if (!booted) {
     pbr::Object out;

@@ -1196,6 +1196,11 @@ select selectbox option:hover {
   border-top: 1dp #e5e7eb;
 }
 
+.settings-device-badge {
+  background-color: #eef2ff;
+  color: #4338ca;
+}
+
 .me-profile-card {
   background-color: #f8fafc;
   border: 1dp #e5e7eb;

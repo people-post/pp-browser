@@ -26,8 +26,9 @@ TEST(RetiredKeychainBackupTest, TheCleanupIsGoneByItsRemovalVersion) {
   EXPECT_LT(Numeric(AppVersionCoreString()), Numeric(kRetiredKeychainBackupRemoveAt))
       << "App version " << AppVersionCoreString() << " reached " << kRetiredKeychainBackupRemoveAt
       << ": every phone has run the cleanup by now. Remove RemoveRetiredKeychainBackup (lib/people/"
-         "RetiredKeychainBackup.*, its call in ConversationsHub), this test, the iOS Keychain store "
-         "(OsSecureBlobStore, foundation/platform/os/OsSecureBlob*), and update at-rest A011.";
+         "RetiredKeychainBackup.*, its call in ConversationsHub) and this test, and update at-rest A011. "
+         "Keep the iOS Keychain store (foundation/platform/os/OsSecureBlob*): multi-device M023's easy "
+         "recovery tier uses the synced keychain.";
 }
 
 TEST(RetiredKeychainBackupTest, IsANoOpWhereTheOsHasNoStore) {

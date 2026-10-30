@@ -9,6 +9,8 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <SDL3/SDL.h>
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,6 +19,14 @@
 @interface PPPickDelegate : NSObject <PHPickerViewControllerDelegate, UIDocumentPickerDelegate> {
 @public
   pbr::NativeFileDialogCallback callback;
+}
+@end
+
+/** The export picker's delegate: its own, since the pick delegate deletes what it was handed (here: the saved file). */
+@interface PPExportDelegate : NSObject <UIDocumentPickerDelegate> {
+@public
+  std::function<void(bool)> done;
+  NSURL* temp; // retained; removed when the export ends
 }
 @end
 
@@ -149,6 +159,41 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
 
 @end
 
+namespace {
+
+PPExportDelegate* g_export = nil; // like g_active: the picker holds its delegate weakly
+
+void FinishExport(PPExportDelegate* delegate, const bool saved) {
+  std::function<void(bool)> done = std::move(delegate->done);
+  delegate->done = nullptr;
+  if (delegate->temp != nil) {
+    [[NSFileManager defaultManager] removeItemAtURL:delegate->temp error:nil];
+    [delegate->temp release];
+    delegate->temp = nil;
+  }
+  if (g_export == delegate) {
+    [g_export release];
+    g_export = nil;
+  }
+  if (done) {
+    done(saved);
+  }
+}
+
+} // namespace
+
+@implementation PPExportDelegate
+
+- (void)documentPicker:(UIDocumentPickerViewController*)controller didPickDocumentsAtURLs:(NSArray<NSURL*>*)urls {
+  FinishExport(self, urls.count > 0);
+}
+
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController*)controller {
+  FinishExport(self, false);
+}
+
+@end
+
 namespace pbr {
 
 void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
@@ -216,6 +261,48 @@ void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback ca
   }
   // Only what SDL_image decodes here: HEIC files are left out (the photo library converts; a file cannot).
   PresentDocumentPicker(window, std::move(callback), @[ UTTypeJPEG, UTTypePNG, UTTypeGIF, UTTypeWebP ]);
+}
+
+void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::string bytes,
+                std::function<void(bool saved)> done) {
+  if (!done) {
+    return;
+  }
+  @autoreleasepool {
+    UIViewController* host = (g_export == nil && g_active == nil) ? PresentingController(window) : nil;
+    if (host == nil) {
+      done(false);
+      return;
+    }
+    // The picker exports a file that exists: write it under tmp first (removed when the export ends).
+    NSString* dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"pp-exports"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString* name = [NSString stringWithUTF8String:suggested_name.c_str()];
+    NSURL* temp = [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:name.lastPathComponent]];
+    NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+    if (name.length == 0 || ![data writeToURL:temp options:NSDataWritingAtomic error:nil]) {
+      done(false);
+      return;
+    }
+    PPExportDelegate* delegate = [[PPExportDelegate alloc] init]; // released in FinishExport
+    delegate->done = std::move(done);
+    delegate->temp = [temp retain];
+    g_export = delegate;
+    UIDocumentPickerViewController* picker =
+        [[[UIDocumentPickerViewController alloc] initForExportingURLs:@[ temp ] asCopy:YES] autorelease];
+    picker.delegate = delegate;
+    [host presentViewController:picker animated:YES completion:nil];
+  }
+}
+
+std::optional<std::string> ReadPickedFile(const std::string& path, const size_t max_bytes) {
+  @autoreleasepool {
+    NSData* data = [NSData dataWithContentsOfFile:[NSString stringWithUTF8String:path.c_str()]];
+    if (data == nil || data.length > max_bytes) {
+      return std::nullopt;
+    }
+    return std::string(static_cast<const char*>(data.bytes), data.length);
+  }
 }
 
 } // namespace pbr

@@ -58,8 +58,6 @@ class User:
         self.dir = os.path.join(lab.root, name)
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
-        # The phone's secure store (iOS Keychain): the account backup, outside the data dir an uninstall wipes.
-        self.keychain = os.path.join(lab.root, name + ".keychain")
         with open(self.config, "w") as f:
             json.dump(lab.config_for(self.dir, directory, reachable), f, indent=2)
         self.proc = None
@@ -69,17 +67,20 @@ class User:
         self.surface = {"kind": "none"}
         self.history = []  # every event, for the failure report
         self.account = ""
+        self.peer_id = ""  # this device's, as last seen ready (a restore after a crash compares against it)
         self.lock = threading.Condition()
         self.runs = 0
 
     # --- process --------------------------------------------------------------------------------
 
-    def start(self, restore_backup=False):
+    def start(self, restore_phrase_file=None, saved_copy_file=None):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
-        argv = ["--config", self.config, "--pin", PIN, "--log-file", log, "--backup-store", self.keychain]
-        if restore_backup:
-            argv.append("--restore-backup")
+        argv = ["--config", self.config, "--pin", PIN, "--log-file", log]
+        if restore_phrase_file:
+            argv += ["--restore-phrase-file", restore_phrase_file]
+        if saved_copy_file:
+            argv += ["--restore-saved-copy", saved_copy_file]
         if self.container:
             # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
             script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
@@ -150,28 +151,9 @@ class User:
         self.start()
         self.wait_ready()
 
-    def backup_snapshot(self, groups=0, timeout=30):
-        """The account backup as the phone's secure store holds it now, once it was written with at least
-        `groups` groups — what a phone lost at this moment leaves behind."""
-        path = os.path.join(self.keychain, "account-backup")
-
-        def written():
-            counts = re.findall(r"Local account backup written groups=(\d+)", self.log_text())
-            return counts and int(counts[-1]) >= groups and os.path.exists(path)
-        wait_for(written, timeout, "%s: account backup written with %d group(s)" % (self.name, groups))
-        with open(path, "rb") as f:
-            return f.read()
-
-    def restore_account(self, backup=None):
-        """The phone is gone; the account comes back on a fresh install from its backup ("Restore my
-        account", the same PIN): a new device of the account, with its contacts, public sessions and groups
-        but no chats (D014, issue #378; groups check their members, group-chat G013). `backup`: what the
-        secure store held when the phone went (backup_snapshot); default: what it holds now."""
-        if backup is None:
-            backup = self.backup_snapshot()
-        before = self.cmd("whoami")
+    def uninstall(self):
+        """The app and its data dir gone (all but the lab's config and the logs of earlier runs)."""
         self.quit()
-        # The uninstall: the whole data dir but the lab's config (and the logs of earlier runs).
         for entry in os.listdir(self.dir):
             if entry == "config.json" or re.match(r"probe-\d+\.log$", entry):
                 continue
@@ -180,11 +162,26 @@ class User:
                 shutil.rmtree(path, ignore_errors=True)
             else:
                 os.remove(path)
-        os.makedirs(self.keychain, exist_ok=True)
-        with open(os.path.join(self.keychain, "account-backup"), "wb") as f:
-            f.write(backup)
+
+    def restore_from_phrase(self, phrase, saved_copy=None):
+        """Every device is gone; a fresh install restores the account from its recovery phrase (multi-device
+        M023): a new device of the same account, its state from the locker — and from `saved_copy` (an exported
+        locker file's text) when given. The app may already be dead (a crashed or lost phone)."""
+        before = self.cmd("whoami") if self.alive() else {"account": self.account, "peer_id": self.peer_id}
+        self.uninstall()
+        phrase_file = os.path.join(self.dir, "restore-phrase.txt")
+        with open(phrase_file, "w") as f:
+            f.write(phrase + "\n")
+        copy_file = None
+        if saved_copy is not None:
+            copy_file = os.path.join(self.dir, "saved-copy.json")
+            with open(copy_file, "w") as f:
+                f.write(saved_copy)
         self.surface = {"kind": "none"}
-        self.start(restore_backup=True)
+        self.start(restore_phrase_file=phrase_file, saved_copy_file=copy_file)
+        os.remove(phrase_file)
+        if copy_file:
+            os.remove(copy_file)
         who = self.wait_ready()
         if who.get("account") != before.get("account") or who.get("peer_id") == before.get("peer_id"):
             raise ProbeError("%s: restored as %s device %s (was %s device %s)" % (
@@ -261,6 +258,7 @@ class User:
             who = self.cmd("whoami")
             if who.get("messaging_ready"):
                 self.account = who.get("account") or self.account
+                self.peer_id = who.get("peer_id") or self.peer_id
                 return who
             time.sleep(0.25)
         raise ProbeError("%s: messaging never ready" % self.name)
@@ -1652,15 +1650,17 @@ def lab_group_id(owner, threads):
 
 
 def scenario_restored_device_is_heard(lab):
-    """Bob reinstalls and restores his account from the backup (#378): his chat with Alice starts empty
-    and his numbering is gone, while Alice still holds their old chat. His first send starts their next
-    epoch, so every message he sends after the restore reaches her — none taken for one she already
-    has — and her answer reaches him."""
+    """Bob loses his phone and restores his account from his recovery phrase (multi-device M023): a new device
+    with no chats, no sessions and no numbering, while Alice still holds their old chat and session. Every
+    message he sends after the restore reaches her — none taken for one she already has (#378) — and her
+    answer reaches him."""
     a, a_thread, b, b_thread = open_pair(lab)
     for i in range(3):
         sent = b.cmd("send", thread=b_thread, text="before %d" % i)["message_id"]
         wait_for(lambda: transcript_row(a, a_thread, sent), 20, "alice: bob's message %d" % i)
-    b.restore_account()
+    phrase = b.cmd("recovery_phrase", pin=PIN)["phrase"]
+    b.cmd("locker_publish", timeout=60)
+    b.restore_from_phrase(phrase)
     b.wait_mesh()
     b_thread = b.cmd("open_chat", account=a.account)["thread"]
     after = [b.cmd("send", thread=b_thread, text="after %d" % i)["message_id"] for i in range(3)]
@@ -1671,13 +1671,16 @@ def scenario_restored_device_is_heard(lab):
 
 
 def scenario_restored_device_hears_first(lab):
-    """Bob's phone is gone; he restores his account on a new one and has not written yet when Alice does.
-    The restored phone is a new device Alice never heard of: it tells its contacts its card, so her message
-    goes to it, opening a session that brings her card (the restore kept none) — not to the lost phone."""
+    """Bob's phone is gone; he restores his account on a new one from his recovery phrase and has not written
+    yet when Alice does. The restored phone is a new device Alice never heard of: it tells its contacts its
+    card, so her message goes to it, opening a session that brings her card (the restore kept none) — not to
+    the lost phone."""
     a, a_thread, b, b_thread = open_pair(lab)
     hello = a.cmd("send", thread=a_thread, text="before")["message_id"]
     wait_for(lambda: transcript_row(b, b_thread, hello), 20, "bob: alice's message before the restore")
-    b.restore_account()
+    phrase = b.cmd("recovery_phrase", pin=PIN)["phrase"]
+    b.cmd("locker_publish", timeout=60)
+    b.restore_from_phrase(phrase)
     b.wait_mesh()
     wait_for(lambda: "device list sent to 1 of 1" in b.log_text(), 30, "bob: his new device told to alice")
     sent = a.cmd("send", thread=a_thread, text="are you there?")["message_id"]
@@ -1688,6 +1691,143 @@ def scenario_restored_device_hears_first(lab):
                 return True
         return None
     wait_for(heard, 30, "bob: alice's message on his restored phone")
+
+
+def scenario_recovery_phrase_needs_the_pin(lab):
+    """Me → Security → Show recovery phrase (multi-device M023): the PIN must open the vault again — a wrong one
+    shows nothing — and the 24 words are the same each time; a device linked to the account shows the same
+    phrase (the seed travels with the account keys)."""
+    a = lab.user("alice")
+    wrong = a.cmd("recovery_phrase", pin=PIN + "0", check=False)
+    if wrong.get("ok"):
+        raise ProbeError("alice: a wrong PIN showed the recovery phrase")
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    if len(phrase.split()) != 24:
+        raise ProbeError("alice: recovery phrase %r is not 24 words" % phrase)
+    if a.cmd("recovery_phrase", pin=PIN)["phrase"] != phrase:
+        raise ProbeError("alice: the recovery phrase changed")
+    laptop = lab.linked_device(a, "alice-laptop")
+    if laptop.cmd("recovery_phrase", pin=PIN)["phrase"] != phrase:
+        raise ProbeError("alice's laptop: another recovery phrase than her phone's")
+
+
+def scenario_account_locker_round_trip(lab):
+    """Alice's account state sealed into her locker at the relay (multi-device M023 s3): anyone holding only her
+    recovery phrase — here Bob's app, as a restoring device would — finds the locker, checks it is hers and opens
+    her contacts, her group and her card floors; a phrase that never published finds nothing; a sync with nothing
+    new writes nothing, and an edit stores a newer version."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = lab_group_id(a, threads)
+    first = a.cmd("locker_publish", timeout=60)["version"]
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    found = b.cmd("locker_fetch", phrase=phrase, timeout=60)
+    if not found.get("found"):
+        raise ProbeError("bob: no locker for alice's phrase")
+    if sorted(found["contacts"]) != sorted([b.account, c.account]):
+        raise ProbeError("alice's locker: contacts %s (want bob and carol)" % found["contacts"])
+    if group_id not in found["groups"]:
+        raise ProbeError("alice's locker: groups %s lack %s" % (found["groups"], group_id))
+    if found["card_floors"] < 2:
+        raise ProbeError("alice's locker: %d card floors (want her contacts')" % found["card_floors"])
+    # The BIP-0039 test phrase (seed 7f…): a valid phrase no account in the lab uses.
+    unused = ("legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful "
+              "legal winner thank year wave sausage worth title")
+    if b.cmd("locker_fetch", phrase=unused, timeout=60).get("found"):
+        raise ProbeError("bob: a locker for a phrase that never published")
+    # Bob's own app publishes his locker by itself (registered, with a seed), and finding Alice's did not stop it.
+    wait_for(lambda: b.cmd("locker_fetch", phrase=b.cmd("recovery_phrase", pin=PIN)["phrase"],
+                           timeout=60).get("found") or None, 30, "bob: his own locker, published by itself")
+    unchanged = a.cmd("locker_publish", timeout=60)["version"]
+    if unchanged != first:
+        raise ProbeError("alice: nothing changed, yet locker version %d after %d" % (unchanged, first))
+    a.cmd("rename_contact", account=b.account, remark="Bob from the hike")
+    second = a.cmd("locker_publish", timeout=60)["version"]
+    if second <= first:
+        raise ProbeError("alice: locker version %d after %d" % (second, first))
+
+
+def scenario_restore_from_phrase(lab):
+    """Alice loses every device and reinstalls from her recovery phrase alone (multi-device M023): the same account
+    on a new device; her group comes back from her locker, checks its members and is active; Bob's next group
+    message reaches her new device and hers reaches him; the restored app republishes the locker by itself."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = lab_group_id(a, threads)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    roster = checked_roster(a, group_id, "active")
+    if sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
+        raise ProbeError("alice: restored roster %s" % roster["members"])
+    a_thread = group_thread_of(a, group_id)
+    if not a_thread:
+        raise ProbeError("alice: no group chat after the restore")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="welcome back")
+    wait_for(lambda: said_in(a, a_thread, "welcome back"), 40, "alice: bob's message on her restored device")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("compose_send", text="back from my phrase")
+    wait_for(lambda: said_in(b, threads[b.name], "back from my phrase"), 40, "bob: alice's message")
+    wait_for(lambda: a.log_text().count("Account locker published") >= 2, 30, "alice: the locker republished")
+
+
+def scenario_restore_from_a_saved_copy(lab):
+    """Alice keeps a saved copy of her account (an exported locker file, M023 §6 amendment): she names Bob, saves
+    a copy, and her phone dies before her locker caught up. Restored from her phrase and the file, the newer copy —
+    the file — wins: Bob keeps his name; and they still talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    a.cmd("rename_contact", account=b.account, remark="Bob (in the saved copy)")
+    copy_path = os.path.join(a.dir, "exported-copy.json")
+    saved = a.cmd("locker_export", path=copy_path)
+    a.crash()  # before the locker's own sync (5 s after the rename)
+    with open(copy_path) as f:
+        copy_text = f.read()
+    a.restore_from_phrase(phrase, saved_copy=copy_text)
+    if "locker version %d," % saved["version"] not in a.log_text():
+        raise ProbeError("alice: the restore did not use the saved copy (version %d)" % saved["version"])
+    row = next((c for c in a.cmd("contacts")["contacts"] if c["account"] == b.account), None)
+    if row is None or row["remark"] != "Bob (in the saved copy)":
+        raise ProbeError("alice: Bob after the restore %s" % row)
+    a.wait_mesh()
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    a.cmd("send", thread=a_thread, text="back from my saved copy")
+    wait_for(lambda: said_in(b, b_thread, "back from my saved copy"), 40, "bob: alice's message")
+
+
+def scenario_linked_devices_share_contact_edits(lab):
+    """Alice's phone and her newly linked laptop share one address book through her locker (multi-device M023
+    §7): the laptop's first sync brings the phone's contacts (the link carries none); a remark set on the laptop
+    reaches the phone by itself (the laptop's write nudges it); Bob removed on the laptop is removed on the phone too
+    (the removal carries, not undone by the phone's older copy)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("locker_publish", timeout=60)
+    laptop = lab.linked_device(a, "alice-laptop")
+
+    def remark_on(u, account):
+        row = next((c for c in u.cmd("contacts")["contacts"] if c["account"] == account), None)
+        return None if row is None else row["remark"]
+
+    laptop.cmd("locker_publish", timeout=60)
+    if remark_on(laptop, b.account) is None:
+        raise ProbeError("alice's laptop: no Bob after its first sync (%s)" % laptop.cmd("contacts")["contacts"])
+    laptop.cmd("rename_contact", account=b.account, remark="Bob (named on the laptop)")
+    laptop.cmd("locker_publish", timeout=60)
+    # No sync asked on the phone: the laptop's write nudges it (a notice through Alice's own mailbox).
+    wait_for(lambda: remark_on(a, b.account) == "Bob (named on the laptop)", 40,
+             "alice's phone: the laptop's remark for Bob, by itself")
+    laptop.cmd("remove_contact", account=b.account)
+    laptop.cmd("locker_publish", timeout=60)
+    a.cmd("locker_publish", timeout=60)
+    if remark_on(a, b.account) is not None:
+        raise ProbeError("alice's phone: Bob still a contact after the laptop removed him")
+    a.cmd("locker_publish", timeout=60)
+    laptop.cmd("locker_publish", timeout=60)
+    if remark_on(laptop, b.account) is not None:
+        raise ProbeError("alice's laptop: Bob came back from the phone's copy")
 
 
 def scenario_linked_devices_both_send(lab):
@@ -1713,6 +1853,67 @@ def scenario_linked_devices_both_send(lab):
         sent.append(("laptop %d" % i, laptop.cmd("send", thread=l_thread, text="laptop %d" % i)["message_id"]))
     for what, m in sent:
         wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: %s" % what)
+
+
+def assert_signed_out(u, thread):
+    """`u` is signed out of its account (M021 d4): its list says so, and it can no longer send."""
+    wait_for(lambda: u.cmd("devices").get("signed_out") or None, 40, "%s: signed out" % u.name)
+    sent = u.cmd("send", thread=thread, text="from a signed-out device", check=False)
+    if sent.get("ok") or "signed out" not in str(sent.get("error")):
+        raise ProbeError("%s: a signed-out device sent (%s)" % (u.name, sent))
+
+
+def scenario_main_device_signs_a_device_out(lab):
+    """Alice's phone is her main device (M021 d4); her laptop, linked to it, joins at the end of the list and
+    cannot give out a transfer code. The phone hands the main role to the laptop, which then takes the phone off
+    the account: the phone is signed out and can no longer send; Bob learns the shorter list, and he and the
+    laptop keep talking."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    phone_id = a.cmd("whoami")["peer_id"]
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: a.cmd("devices")["devices"] == [phone_id, laptop_id] or None, 40,
+             "phone: the laptop at the end of the list")
+    if laptop.cmd("devices")["main"] != phone_id:
+        raise ProbeError("laptop: main device %s, not the phone" % laptop.cmd("devices"))
+    if laptop.cmd("link_export", check=False).get("ok"):
+        raise ProbeError("laptop: gave out a transfer code though it is not the main device")
+    a.cmd("make_main", peer_id=laptop_id)
+    wait_for(lambda: laptop.cmd("devices")["main"] == laptop_id or None, 40, "laptop: the main device")
+    laptop.cmd("remove_device", peer_id=phone_id)
+    assert_signed_out(a, a_thread)
+    wait_for(lambda: phone_id not in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: Alice's list without the phone")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    m = laptop.cmd("send", thread=l_thread, text="the laptop is the main device now")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: the laptop's message")
+    r = b.cmd("send", thread=b_thread, text="noted")["message_id"]
+    wait_for(lambda: transcript_row(laptop, l_thread, r), 30, "laptop: bob's answer")
+
+
+def scenario_restore_signs_out_the_other_devices(lab):
+    """Alice's laptop is linked to her phone; she restores her account from its recovery phrase on the phone (a new
+    device, M023): it starts a fresh list holding only itself, as the main device (M021 d4); the laptop hears of it
+    through the shared mailbox and is signed out. Bob and the restored phone talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    a.cmd("locker_publish", timeout=60)
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    restored_id = a.cmd("whoami")["peer_id"]
+    wait_for(lambda: a.cmd("devices")["devices"] == [restored_id] or None, 40, "restored phone: a fresh list")
+    assert_signed_out(laptop, l_thread)
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    m = a.cmd("send", thread=a_thread, text="back, and the only device")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, m), 40, "bob: the restored phone's message")
+    r = b.cmd("send", thread=b_thread, text="welcome back")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, r), 40, "restored phone: bob's answer")
 
 
 def scenario_chat_quote_reply(lab):
@@ -2236,19 +2437,22 @@ def remove_and_wait(owner, owner_thread, group_id, member, watchers):
 
 
 def scenario_group_restore_checks_members(lab):
-    """Carol's backup knows Alice (owner), Bob, Carol and Dave. Alice removes Dave; Carol then reinstalls
-    from that backup: her group comes back checking its members, takes the owner's newer roster (no Dave
-    — her stale one would have kept writing to him), and her next message reaches Alice and Bob."""
+    """Carol's locker knows Alice (owner), Bob, Carol and Dave; then her phone is lost. Alice removes Dave;
+    Carol restores from her recovery phrase: her group comes back checking its members, takes the owner's
+    newer roster (no Dave — her stale one would have kept writing to him), and her next message reaches
+    Alice and Bob."""
     users, threads = open_group(lab, 4)
     a, b, c, d = users
     group_id = lab_group_id(a, threads)
-    backup = c.backup_snapshot(groups=1)
-    remove_and_wait(a, threads[a.name], group_id, d, (b, c))
-    c.restore_account(backup)
+    phrase = c.cmd("recovery_phrase", pin=PIN)["phrase"]
+    c.cmd("locker_publish", timeout=60)
+    c.crash()  # the phone is lost: her locker stays as it was
+    remove_and_wait(a, threads[a.name], group_id, d, (b,))
+    c.restore_from_phrase(phrase)
     c.wait_mesh()
     roster = checked_roster(c, group_id, "active")
     if d.account in roster["members"] or sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
-        raise ProbeError("carol: restored roster %s (Dave was removed after her backup)" % roster["members"])
+        raise ProbeError("carol: restored roster %s (Dave was removed after her locker)" % roster["members"])
     thread = group_thread_of(c, group_id)
     if not thread:
         raise ProbeError("carol: no group chat after the restore")
@@ -2259,28 +2463,44 @@ def scenario_group_restore_checks_members(lab):
 
 
 def scenario_group_removed_member_restores(lab):
-    """Dave's backup still has him in the group; Alice removed him after it. When he reinstalls, his
-    group's member check ends removed: read-only, nothing sent."""
+    """Dave's locker still has him in the group: his phone was lost before Alice removed him. When he restores
+    from his recovery phrase, his group's member check ends removed: read-only, nothing sent. His locker then
+    keeps the group as left (M023 s4), so restoring once more does not bring it back."""
     users, threads = open_group(lab, 3)
     a, b, d = users
     group_id = lab_group_id(a, threads)
-    backup = d.backup_snapshot(groups=1)
+    phrase = d.cmd("recovery_phrase", pin=PIN)["phrase"]
+    d.cmd("locker_publish", timeout=60)
+    d.crash()  # the phone is lost: his locker stays as it was
     remove_and_wait(a, threads[a.name], group_id, d, (b,))
-    d.restore_account(backup)
+    d.restore_from_phrase(phrase)
     d.wait_mesh()
     checked_roster(d, group_id, "removed")
+    d.cmd("locker_publish", timeout=60)
+    d.restore_from_phrase(phrase)
+    d.wait_mesh()
+    roster = d.cmd("group_roster", group_id=group_id)
+    if roster.get("sync_state") or roster.get("members"):
+        raise ProbeError("dave: a group he was removed from came back from his locker (%s)" % roster)
 
 
 def scenario_group_restored_owner_takes_newer_roster(lab):
-    """The owner checks too: Alice's backup is from before she removed Dave. Restored, she asks her
-    members; their newer statement — her own signature — wins over her backup, so Dave stays out, and
-    her next message reaches Bob and Carol."""
+    """The owner checks too: Alice removes Dave and her phone dies before her locker caught up (it publishes a
+    few seconds after a change), so her locker still has Dave. Restored from her recovery phrase, she asks her
+    members; their newer statement — her own signature — wins over her locker, so Dave stays out, and her next
+    message reaches Bob and Carol."""
     users, threads = open_group(lab, 4)
     a, b, c, d = users
     group_id = lab_group_id(a, threads)
-    backup = a.backup_snapshot(groups=1)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    time.sleep(6)  # a publish batched from the group's setup has run: the next one is the removal's own
+    a.cmd("locker_publish", timeout=60)
+    mark = len(a.log_text())
     remove_and_wait(a, threads[a.name], group_id, d, (b, c))
-    a.restore_account(backup)
+    a.crash()  # once Bob and Carol hold the removal, and before her locker publishes it
+    if "Account locker published" in a.log_text()[mark:]:
+        raise ProbeError("alice: her locker caught the removal before her phone died; nothing stale to restore")
+    a.restore_from_phrase(phrase)
     a.wait_mesh()
     roster = checked_roster(a, group_id, "active")
     if d.account in roster["members"]:
@@ -2352,6 +2572,13 @@ SCENARIOS = [
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
     ("restored_device_hears_first", scenario_restored_device_hears_first),
+    ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
+    ("account_locker_round_trip", scenario_account_locker_round_trip),
+    ("restore_from_phrase", scenario_restore_from_phrase),
+    ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
+    ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
+    ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
+    ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),

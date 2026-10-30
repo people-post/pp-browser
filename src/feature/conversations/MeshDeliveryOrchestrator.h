@@ -159,6 +159,13 @@ public:
   OwnCards& OwnAccountCards() { return own_cards_; }
   /** Our device list changed (our address goes to our other devices too, M021). */
   void SetOnOwnDevicesChanged(std::function<void()> changed) { on_own_devices_changed_ = std::move(changed); }
+  /** A verified notice from another device of our own account arrived (M023: time to sync the locker). */
+  void SetOnSiblingNotice(std::function<void()> callback) { on_sibling_notice_ = std::move(callback); }
+  /**
+   * Our other devices hear that something of the account changed here (the account locker was written, M023): the
+   * same `device_list` notice through our own mailbox — receiving any sibling notice prompts a sync.
+   */
+  void NudgeSiblings();
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -251,7 +258,7 @@ public:
                         const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
   /**
    * Our card to each of `accounts` on the control lane (the `device_list` notice, as to our siblings): a device
-   * they do not know yet — one restored from the account backup — is on their list before they next write.
+   * they do not know yet — one restored from a recovery phrase — is on their list before they next write.
    */
   void NotifyContactsOfDevices(const std::vector<std::string>& accounts);
   /** Snapshotted link UX for the open thread (header + soft banner). */
@@ -359,6 +366,7 @@ private:
   E2ePublicSessionKeys session_keys_;
   /** Our cards: the key card carried with every key_init, the account card served to who asks. */
   OwnCards own_cards_;
+  std::function<void()> on_sibling_notice_;
   std::function<void()> on_own_devices_changed_;
   AccountCardService card_service_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */

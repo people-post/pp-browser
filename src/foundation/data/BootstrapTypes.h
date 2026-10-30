@@ -5,6 +5,7 @@
 #include "foundation/data/UserPreferences.h"
 
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -25,10 +26,12 @@ struct BootstrapOptions {
   /** Profile unlock PIN; falls back to PP_BROWSER_PIN. */
   std::string pin;
   /**
-   * Tests/automation: before unlocking with `pin`, restore the local account backup under it — what the
-   * unlock gate's "Restore my account" does on a fresh install.
+   * Tests/automation: before unlocking with `pin`, restore the account from this recovery phrase (multi-device M023)
+   * — what "Restore with recovery phrase" does on a fresh install.
    */
-  bool restore_local_backup = false;
+  std::string restore_recovery_phrase;
+  /** With it: saved account copies (exported locker files' text) to restore from as well as the relay's. */
+  std::vector<std::string> restore_saved_copies;
 };
 
 } // namespace pbr

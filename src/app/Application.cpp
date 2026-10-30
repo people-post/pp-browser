@@ -55,6 +55,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
@@ -133,6 +134,9 @@
 namespace pbr {
 
 namespace {
+
+/** A saved copy of the account: a sealed snapshot (at most 1 MiB + 256 bytes) as base64 inside JSON. */
+constexpr size_t kMaxSavedAccountCopyBytes = 2 * 1024 * 1024;
 
 /** Runtime teardown quiesce budgets (THREADING.md § Teardown quiesce). Quit must stay inside
  * AppRuntime::kShutdownDeadlineBudget (3 s watchdog); reset can wait for a slow relay call. */
@@ -357,12 +361,6 @@ Roe<void> Application::ResetActiveProfile() {
   if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
     if (auto revoked = messaging_facade_->RevokeRegistration(); !revoked) {
       log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
-    }
-  }
-  // Reset means "I do not want this account": drop the uninstall-surviving backup too.
-  if (messaging_facade_) {
-    if (auto dropped = messaging_facade_->DeleteLocalBackup(); !dropped) {
-      log().warning << "Local account backup not deleted: " << dropped.error().message;
     }
   }
 
@@ -796,8 +794,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  settings_commands.change_pin = [this, &facade](const std::string& current_pin,
-                                                  const std::string& new_pin) -> Roe<void> {
+  settings_commands.change_pin = [this](const std::string& current_pin, const std::string& new_pin) -> Roe<void> {
     DataKeyVault* vault = secrets_->Vault();
     if (vault == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
@@ -805,10 +802,28 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (auto changed = vault->ChangePin(current_pin, new_pin); !changed) {
       return changed.error();
     }
-    facade.WriteLocalBackupAsync(); // the backup keeps a copy of the vault: refresh it under the new PIN
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  settings_commands.recovery_phrase = [&facade](const std::string& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
+  settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
+  settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {
+    auto list = facade.OwnDevices();
+    if (!list) {
+      return list.error();
+    }
+    std::vector<std::string> peer_ids;
+    peer_ids.reserve(list->devices.size());
+    for (const AccountCardDevice& device : list->devices) {
+      peer_ids.push_back(device.peer_id);
+    }
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out);
+  };
+  settings_commands.remove_own_device = [&facade](const std::string& peer_id) {
+    return facade.RemoveOwnDevice(peer_id);
+  };
+  settings_commands.make_main_device = [&facade](const std::string& peer_id) { return facade.MakeMainDevice(peer_id); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
@@ -1064,8 +1079,27 @@ void Application::WireUnlockPinAndFlow() {
                                                 const bool set_default_pin) {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
-    gate_complete.complete_restore_backup = [this](const std::string& pin, const bool set_default_pin) {
-      unlock_gate_->CompleteRestoreBackup(pin, set_default_pin);
+    gate_complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase,
+                                                   const bool set_default_pin,
+                                                   const std::vector<std::string>& saved_copies) {
+      unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin, saved_copies);
+    };
+    gate_complete.pick_saved_copy = [](std::function<void(std::string, std::optional<std::string>)> picked) {
+      ShowOpenFileDialog(Backend::GetWindow(), [picked = std::move(picked)](std::vector<std::string> paths) {
+        std::string name;
+        std::optional<std::string> text;
+        if (!paths.empty()) {
+          name = std::filesystem::path(paths.front()).filename().string();
+          if (name.empty()) {
+            name = paths.front();
+          }
+          text = ReadPickedFile(paths.front(), kMaxSavedAccountCopyBytes);
+          ReleasePickedFile(paths.front());
+        }
+        AppRuntime::PostUI([picked, name = std::move(name), text = std::move(text)]() mutable {
+          picked(std::move(name), std::move(text));
+        });
+      });
     };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
@@ -1086,10 +1120,6 @@ void Application::WireUnlockPinAndFlow() {
     (void)store_.SaveProfilePrefs(prefs);
   };
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
-  unlock_ports.ui.show_identity_restore = [this](const std::string& nickname) {
-    pin_gate_->ShowIdentityRestore(nickname);
-  };
-  unlock_ports.ui.show_restore_pin = [this](const bool wrong_pin) { pin_gate_->ShowRestorePin(wrong_pin); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
@@ -1110,8 +1140,10 @@ void Application::WireUnlockPinAndFlow() {
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
-  unlock_ports.local_backup_nickname = [&facade]() { return facade.LocalBackupNickname(); };
-  unlock_ports.restore_local_backup = [&facade](const std::string& pin) { return facade.RestoreLocalBackup(pin); };
+  unlock_ports.restore_recovery_phrase = [&facade](const std::string& pin, const std::string& phrase,
+                                                   const std::vector<std::string>& saved_copies) {
+    return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+  };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
@@ -1217,7 +1249,8 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
-    pin_actions.on_identity_restore = [this]() { pin_gate_->OnIdentityRestore(); };
+    pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
+    pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }

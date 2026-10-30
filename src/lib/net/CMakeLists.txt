@@ -5,6 +5,7 @@ pp_browser_add_lib_library(pp_lib_net
     BriefGuestLlmClient.cpp
     ClientCompat.cpp
     HttpBlobClient.cpp
+    HttpLockerClient.cpp
     HttpClient.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp

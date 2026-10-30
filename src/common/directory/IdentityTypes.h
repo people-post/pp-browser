@@ -5,6 +5,10 @@
 
 namespace pbr {
 
+/** LocalIdentity::card_intent values (M021 d4). */
+inline constexpr const char kCardIntentFresh[] = "fresh";
+inline constexpr const char kCardIntentJoin[] = "join";
+
 struct LocalIdentity {
   /**
    * Device ML-DSA-65 public key (base64). Derives Peer ID / libp2p Noise identity (P004).
@@ -28,10 +32,23 @@ struct LocalIdentity {
   std::string kem_private_key_b64;
   /**
    * This device's own ML-KEM-768 key pair (base64; M021): peers open sessions with this device under it.
-   * Never leaves the device (not in a link bundle or a backup); minted on first load.
+   * Never leaves the device (not in a link bundle, nor in the account locker); minted on first load.
    */
   std::string device_kem_public_key_b64;
   std::string device_kem_private_key_b64;
+  /**
+   * The 32-byte recovery seed the account keys derive from (base64; multi-device M023 §2) — the recovery phrase's
+   * content. Empty for an account minted before M023 (random account keys: no phrase) or a pp-node (its own seed).
+   * Under DEK with the rest of identity.enc; travels with the account keys in a link bundle.
+   */
+  std::string recovery_seed_b64;
+  /**
+   * How this device enters its account's device list (M021 d4) on its next card: `fresh` — a list holding only
+   * itself, as the account's master (after a restore from the recovery phrase); `join` — appended to the newest
+   * list (after a link; the master's transfer code is its consent). Empty once done, and for a device already on
+   * the list.
+   */
+  std::string card_intent;
   std::string nickname;
   /** Device endpoint: mesh PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;

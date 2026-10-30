@@ -77,47 +77,39 @@ Roe<std::optional<AccountCard>> OwnCards::NewestLocked() {
   return std::optional<AccountCard>((*kept)->newest_card);
 }
 
-Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, const std::vector<AccountCardDevice>& also,
+namespace {
+
+bool Lists(const std::vector<AccountCardDevice>& devices, const std::string& peer_id) {
+  return std::any_of(devices.begin(), devices.end(),
+                     [&peer_id](const AccountCardDevice& d) { return d.peer_id == peer_id; });
+}
+
+} // namespace
+
+Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, std::vector<AccountCardDevice> devices,
                                        const std::string& nickname, const int64_t now_ms, bool& issued) {
   issued = false;
   auto keys = Keys();
   if (!keys) {
     return keys.error();
   }
-  auto self = Self();
-  if (!self) {
-    return self.error();
-  }
-  // The newest card's devices in its order, this device as it is now (first when it is new to the list), then
-  // any other known one — at most the cap. Nothing new: the same list, so the card stands.
-  std::vector<AccountCardDevice> devices;
-  if (base) {
-    for (const AccountCardDevice& device : base->devices) {
-      devices.push_back(device.peer_id == self->peer_id ? *self : device);
-    }
-  }
-  const auto listed = [&devices](const std::string& peer_id) {
-    return std::any_of(devices.begin(), devices.end(),
-                       [&peer_id](const AccountCardDevice& d) { return d.peer_id == peer_id; });
-  };
-  if (!listed(self->peer_id)) {
-    devices.insert(devices.begin(), *self);
-  }
-  for (const AccountCardDevice& device : also) {
-    if (!listed(device.peer_id)) {
-      devices.push_back(device);
-    }
-  }
   if (devices.size() > kMaxAccountCardDevices) {
-    devices.resize(kMaxAccountCardDevices);
+    return Error("This account already has " + std::to_string(kMaxAccountCardDevices) + " devices");
   }
   if (base && SameKeys(base->keys, *keys) && base->nickname == nickname && base->devices == devices) {
-    return *base;
+    return *base;  // it says it all: the card stands
   }
-  // Newer than any card the account has issued that this device knows, whatever its clock says.
-  const int64_t issued_at = std::max(now_ms, base ? base->issued_at + 1 : now_ms);
+  // Newer than any card of the account this device knows (or knew before a restore: the floor), whatever its
+  // clock says.
+  int64_t issued_at = now_ms;
+  if (base) {
+    issued_at = std::max(issued_at, base->issued_at + 1);
+  }
+  if (const int64_t floor = cards_.CardFloor(keys->account_id); floor > 0) {
+    issued_at = std::max(issued_at, floor + 1);
+  }
   auto signed_card = SignAccountCard(
-      AccountCard{.keys = *keys, .nickname = nickname, .devices = devices, .issued_at = issued_at},
+      AccountCard{.keys = *keys, .nickname = nickname, .devices = std::move(devices), .issued_at = issued_at},
       [this](const ByteVector& bytes) { return identity_.SignBytes(bytes); });
   if (!signed_card) {
     return signed_card.error();
@@ -135,14 +127,40 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     return identity.error();
   }
   bool issued = false;
+  bool intent_done = false;
   Roe<AccountCard> card = [&]() -> Roe<AccountCard> {
     std::lock_guard lock(mutex_);
     auto newest = NewestLocked();
     if (!newest) {
       return newest.error();
     }
-    return IssueLocked(*newest, {}, identity->nickname, now_ms, issued);
+    auto self = Self();
+    if (!self) {
+      return self.error();
+    }
+    std::vector<AccountCardDevice> devices;
+    if (identity->card_intent == kCardIntentFresh || !*newest) {
+      devices = {*self};  // a new account, or restored: a fresh list, this device its master
+    } else if (Lists((*newest)->devices, self->peer_id)) {
+      for (const AccountCardDevice& device : (*newest)->devices) {
+        devices.push_back(device.peer_id == self->peer_id ? *self : device);  // the list as it is, this entry now
+      }
+    } else if (identity->card_intent == kCardIntentJoin) {
+      devices = (*newest)->devices;  // linked: at the end of the master's list
+      devices.push_back(*self);
+    } else {
+      return Error(kSignedOutMessage);
+    }
+    intent_done = !identity->card_intent.empty();
+    return IssueLocked(*newest, std::move(devices), identity->nickname, now_ms, issued);
   }();
+  if (card && intent_done) {
+    LocalIdentity done = *identity;
+    done.card_intent.clear();
+    if (auto updated = identity_.Update(done); !updated) {
+      return updated.error();
+    }
+  }
   if (card && issued && on_changed_) {
     on_changed_(*card);
   }
@@ -176,11 +194,34 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
     if (!now_newest) {
       return now_newest.error();
     }
-    // Whichever is newer is the base; the other one's devices are kept too (see the header).
-    const std::vector<AccountCardDevice> other =
-        ours && *now_newest && now_newest->value() == card ? ours->devices : card.devices;
-    const std::string nickname = *now_newest ? (*now_newest)->nickname : identity->nickname;
-    return IssueLocked(*now_newest, other, nickname, now_ms, issued);
+    if (!*now_newest) {
+      return Error("own card not kept");
+    }
+    // The newest card is the account's word on its devices (M021 d4: only the master changes the list). This
+    // device only brings its own entry up to date there; a device it does not list is signed out — or still
+    // joining / starting a fresh list, which its next Card() does.
+    auto self = Self();
+    if (!self) {
+      return self.error();
+    }
+    const AccountCard& newest_card = **now_newest;
+    if (!Lists(newest_card.devices, self->peer_id) || !identity->card_intent.empty()) {
+      return newest_card;
+    }
+    std::vector<AccountCardDevice> devices;
+    for (const AccountCardDevice& device : newest_card.devices) {
+      devices.push_back(device.peer_id == self->peer_id ? *self : device);
+    }
+    // The master expecting a join takes a device that only this older card lists as the one joining.
+    const bool master = !devices.empty() && devices.front().peer_id == self->peer_id;
+    if (master && !(newest_card == card) && now_ms < join_expected_until_ms_) {
+      for (const AccountCardDevice& device : card.devices) {
+        if (!Lists(devices, device.peer_id)) {
+          devices.push_back(device);
+        }
+      }
+    }
+    return IssueLocked(newest_card, std::move(devices), newest_card.nickname, now_ms, issued);
   }();
   if (!result) {
     return result;
@@ -196,6 +237,85 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
     on_changed_(*result);
   }
   return result;
+}
+
+Roe<OwnDeviceList> OwnCards::Devices() {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  auto self = Self();
+  if (!self) {
+    return self.error();
+  }
+  std::lock_guard lock(mutex_);
+  auto newest = NewestLocked();
+  if (!newest) {
+    return newest.error();
+  }
+  OwnDeviceList list;
+  list.self_peer_id = self->peer_id;
+  if (*newest) {
+    list.devices = (*newest)->devices;
+  }
+  list.signed_out = identity->card_intent.empty() && *newest && !Lists(list.devices, self->peer_id);
+  return list;
+}
+
+bool OwnCards::SignedOut() {
+  auto list = Devices();
+  return list && list->signed_out;
+}
+
+Roe<AccountCard> OwnCards::ChangeList(const std::string& peer_id, const bool make_master, const int64_t now_ms) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  bool issued = false;
+  Roe<AccountCard> card = [&]() -> Roe<AccountCard> {
+    std::lock_guard lock(mutex_);
+    auto newest = NewestLocked();
+    if (!newest) {
+      return newest.error();
+    }
+    auto self = Self();
+    if (!self) {
+      return self.error();
+    }
+    if (!*newest || (*newest)->devices.empty() || (*newest)->devices.front().peer_id != self->peer_id) {
+      return Error("Only your main device can change your devices");
+    }
+    std::vector<AccountCardDevice> devices = (*newest)->devices;
+    const auto target = std::find_if(devices.begin(), devices.end(),
+                                     [&peer_id](const AccountCardDevice& d) { return d.peer_id == peer_id; });
+    if (target == devices.end() || peer_id == self->peer_id) {
+      return Error("That device is not another device of this account");
+    }
+    if (make_master) {
+      std::rotate(devices.begin(), target, target + 1);  // to the front; the rest keep their order
+    } else {
+      devices.erase(target);
+    }
+    return IssueLocked(*newest, std::move(devices), (*newest)->nickname, now_ms, issued);
+  }();
+  if (card && issued && on_changed_) {
+    on_changed_(*card);
+  }
+  return card;
+}
+
+void OwnCards::ExpectJoin(const int64_t until_ms) {
+  std::lock_guard lock(mutex_);
+  join_expected_until_ms_ = std::max(join_expected_until_ms_, until_ms);
+}
+
+Roe<AccountCard> OwnCards::RemoveDevice(const std::string& peer_id, const int64_t now_ms) {
+  return ChangeList(peer_id, /*make_master=*/false, now_ms);
+}
+
+Roe<AccountCard> OwnCards::MakeMaster(const std::string& peer_id, const int64_t now_ms) {
+  return ChangeList(peer_id, /*make_master=*/true, now_ms);
 }
 
 } // namespace pbr

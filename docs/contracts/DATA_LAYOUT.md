@@ -38,14 +38,15 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
-  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor)
+  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
+  account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 2: local + remote + overrides{}; v2 = remarks that copied the nickname are cleared once on load); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   threads/
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4;
-                            # restart_pending: a restored public session starts its next epoch on the next send — additive);
+                            # restart_pending: a public session kept through Reset chats starts its next epoch on the next send — additive);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
@@ -54,7 +55,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # thread_local_prefs.mute_mentions INTEGER NOT NULL DEFAULT 0 (1: while the thread is muted, mentions are silent too;
                             # G015. Added on open when missing — user_version unchanged)
                             # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
-                            # peer_card_floors (account_id, issued_at — restored from the account backup: no older account card is taken)
+                            # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed
                             # roster held and a restored group's member check — group-chat G012/G013, plaintext, additive)
     {thread_id}/
@@ -91,33 +92,9 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
 
 Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
-### Local account backup (iOS Keychain, outside the data dir)
+### Retired: local account backup (iOS Keychain, outside the data dir)
 
-**Unsupported in the product** ([at-rest A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)):
-the app writes no such item and offers no restore; the format below is what the code writes when a store is set
-(the lab's file store). Items written by earlier builds are deleted once messaging is up (until app version 1.1.0).
-
-One generic-password item, service `dev.pp-browser.secure-blob`, account `account-backup`,
-`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (never synced, never in device backups, gone with the device).
-Value: `pp-browser-account-backup` JSON v2 =
-`{ schema, version: 2, updated_at_ms, nickname, profile_id, vault_b64, sealed_b64 }`. Only `nickname` is readable
-without the PIN. `vault_b64` is a copy of `vault.bin` taken at write time (DEK wrapped under the profile PIN, AAD
-bound to `profile_id`); `sealed_b64` is `FileCipher` AEAD under that DEK, AAD
-`FileCipher::BuildAad("account-backup", profile_id, 2)`, over the JSON `{ link_bundle, contacts[], groups[]?, card_floors[]? }` where
-`link_bundle` is a `pp-browser-link-device-v1` bundle with a 100-year expiry (account keys, DEK, relay id, nickname,
-public PSKs), `contacts[]` are `ContactToJson` rows, and the optional `groups[]` (additive: absent in older backups,
-ignored by older apps) are `{ group_id, title, owner, roster_epoch, title_version, policy, members[{ identity, role,
-joined_at, contact_id }], roster_statement }` — no messages, no numbering (group-chat G010/G013; `roster_statement` is
-the owner-signed roster JSON held, or empty). A restored group comes back checking its members before it sends. The
-optional `card_floors[]` are `{ account_id, issued_at }`: per account, the issue time of the newest account card the
-device knew (not the card); restored into `peer_card_floors`, so the new install refuses an older card (a device
-since taken out) though it keeps no cards. After a restore the new device sends its card to every contact (the
-control lane's `device_list` notice), so their next message reaches it.
-Version 1 (plaintext bundle) is not read. Written after registration, nickname changes, contact changes, PIN changes,
-any group roster or metadata change and any account card kept newer (needs the vault unlocked); deleted by profile reset;
-survives an uninstall so a fresh install can offer "Restore my account: <nickname>". Restore needs the PIN the account
-used (see [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md#local-account-backup-ios)). Other platforms have no such store (desktop uninstalls keep the data dir;
-Android pending). See DESIGN-account-recovery §9–10 (local notes).
+Earlier builds kept a PIN-sealed account backup in one Keychain generic-password item (service `dev.pp-browser.secure-blob`, account `account-backup`). It is retired — nothing reads or writes it ([at-rest A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); account state now lives in the encrypted account locker ([ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md)). Once messaging is up the app deletes that item if present (`RemoveRetiredKeychainBackup`), until app version 1.1.0 (`kRetiredKeychainBackupRemoveAt`).
 
 ### PIN-related files (disk only)
 

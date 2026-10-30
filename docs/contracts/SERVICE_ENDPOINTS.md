@@ -117,6 +117,24 @@ Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB w
 
 Chat attachment **file bytes** prefer peer-direct `/pp/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
 
+## HTTP account lockers (multi-device M023)
+
+Same base path as the blobs. Client: `HttpLockerClient` / `ILockerClient`; sealed and checked by `lib/people/AccountLocker` ([M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §4–5). The relay is one locker provider among several: it cannot read a snapshot, and keeps only the newest version.
+
+| HTTP | Purpose |
+|------|---------|
+| `POST /v1/lockers/put` | `{ relay_user_id, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** when the stored version is the same or newer (also when two writers race); **403** `Locker quota reached` past 4 lockers per relay user; body ≤ 2 MiB |
+| `GET /v1/lockers/:locker_id` | `200 { locker: {…} }` or **404**. By id alone — a restoring device is not registered yet; rate-limited per IP |
+
+Two signatures on a write:
+
+| Half | Signed by | Bytes |
+|------|-----------|-------|
+| Relay (quota) | the relay user's account key | `pp-browser:relay-locker-put-v1` ‖ 0 ‖ u8 1 ‖ LenUtf8 `relay_user_id` ‖ LenUtf8 `locker_id` ‖ u64 `version` ‖ i64 `timestamp` |
+| Locker (owner) | the locker ML-DSA-65 key; `locker_id` = lowercase hex of BLAKE2b-256(its public key) | `pp-browser:account-locker-v1` ‖ 0 ‖ u8 1 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(sealed) |
+
+The snapshot (`sealed`, the owner signature, rollback protection) and the state inside it: [ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md). Golden vectors for both sign-byte layouts are shared between `account_locker_test` / `http_locker_client_test` and www `__tests__/AccountLocker.test.ts`. The relay learns which registered user writes which locker (the write is authenticated for its quota); reads carry no identity.
+
 ## Client compatibility discovery
 
 Unauthenticated public GET (directory-style; no identity unlock required):

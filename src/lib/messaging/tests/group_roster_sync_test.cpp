@@ -21,7 +21,7 @@ using test::TestSigner;
 
 constexpr const char kGroup[] = "group:hike";
 
-/** One device's roster store: the group of Alice (owner), Bob, Carol and Dave, as a backup left it. */
+/** One device's roster store: the group of Alice (owner), Bob, Carol and Dave, as a restore from the account locker left it. */
 class GroupRosterSyncTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -51,7 +51,7 @@ protected:
     return group_roster_statement::Sign(signer, signer.Key(), kGroup, epoch, rows, std::move(chain)).value();
   }
 
-  /** The roster as the backup had it, holding `held`. */
+  /** The roster as the account locker had it, holding `held`. */
   void Seed(const GroupRosterStatement& held) {
     GroupMetadata metadata;
     metadata.group_id = kGroup;
@@ -92,7 +92,7 @@ protected:
 };
 
 TEST_F(GroupRosterSyncTest, RestoredMemberTakesTheNewerRosterAndStopsSendingToTheRemovedMember) {
-  Seed(Statement(3, {bob_, carol_, dave_}));  // Carol's backup
+  Seed(Statement(3, {bob_, carol_, dave_}));  // Carol's locker snapshot
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1);
   ASSERT_TRUE(check);
   std::vector<std::string> ask = check->ask;
@@ -102,7 +102,7 @@ TEST_F(GroupRosterSyncTest, RestoredMemberTakesTheNewerRosterAndStopsSendingToTh
   EXPECT_EQ(ask, expected) << "the owner and every member but us";
   EXPECT_FALSE(group_roster_sync::MaySend(Metadata())) << "no send while checking (a stale roster would leak)";
 
-  // Alice removed Dave after the backup; Bob holds her newer statement.
+  // Alice removed Dave after the locker snapshot; Bob holds her newer statement.
   auto outcome = group_roster_sync::ApplyReply(*roster_, ReplyWith(check->request.request_id,
                                                                    Statement(4, {bob_, carol_})),
                                                carol_, bob_);
@@ -124,8 +124,8 @@ TEST_F(GroupRosterSyncTest, AnUnchangedRosterEndsTheCheck) {
       << "same epoch: not dropped as stale";
 }
 
-TEST_F(GroupRosterSyncTest, AMemberRemovedSinceItsBackupEndsRemoved) {
-  Seed(Statement(3, {bob_, carol_, dave_}));  // Dave's backup
+TEST_F(GroupRosterSyncTest, AMemberRemovedSinceItsLockerSnapshotEndsRemoved) {
+  Seed(Statement(3, {bob_, carol_, dave_}));  // Dave's locker snapshot
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, dave_, 1).value();
   EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, Statement(4, {bob_, carol_})),
                                            dave_, bob_),

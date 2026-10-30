@@ -63,13 +63,25 @@ public:
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   Roe<void> SyncPushDevices();
   Roe<std::string> ExportLinkDevice();
+  /**
+   * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the
+   * account has no recovery seed (minted before M023). A wrong PIN is a Pin-category error.
+   */
+  Roe<std::optional<std::string>> RecoveryPhrase(const std::string& pin);
+  /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
+  bool HasRecoveryPhrase();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
-  /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
-  Roe<std::optional<std::string>> LocalBackupNickname();
-  Roe<void> RestoreLocalBackup(const std::string& pin);
-  /** Rewrite the local account backup on a worker (e.g. after a PIN change). Best effort. */
-  void WriteLocalBackupAsync();
-  Roe<void> DeleteLocalBackup();
+  /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
+  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                      const std::vector<std::string>& saved_copies = {});
+  /** The account's state sealed as an exported locker file's text (M023 §6 amendment; the user keeps it). */
+  Roe<std::string> ExportAccountCopy();
+  /** The account's devices (M021 d4): the newest list, its first the main device; whether this one is signed out. */
+  Roe<OwnDeviceList> OwnDevices();
+  /** On the main device: take another device off the account. */
+  Roe<void> RemoveOwnDevice(const std::string& peer_id);
+  /** On the main device: make another device the main one. */
+  Roe<void> MakeMainDevice(const std::string& peer_id);
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

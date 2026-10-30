@@ -10,7 +10,7 @@
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "lib/people/LinkDeviceCoordinator.h"
-#include "lib/people/LocalAccountBackup.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ContactCardExchange.h"
@@ -51,22 +51,74 @@ Roe<void> ConversationsFacade::SyncPushDevices() {
   return PushDeviceCoordinator::Register(hub_);
 }
 
-Roe<std::string> ConversationsFacade::ExportLinkDevice() {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
-      hub_.PskStore() == nullptr) {
+Roe<std::optional<std::string>> ConversationsFacade::RecoveryPhrase(const std::string& pin) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
-  return LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
-                                           util::NowUnixMs(), kLinkDeviceDefaultTtlMs, hub_.OwnAccountCardJson());
+  // Holding the unlocked app is not enough: the phrase is the whole account. The PIN must open the vault again.
+  DataKeyVault& vault = *hub_.Secrets()->Vault();
+  auto vault_bytes = vault.ReadVaultFile();
+  if (!vault_bytes) {
+    return vault_bytes.error();
+  }
+  if (auto opened = DataKeyVault::UnwrapDekFromVaultBytes(*vault_bytes, vault.ProfileId(), pin); !opened) {
+    return opened.error();
+  }
+  auto seed = hub_.Identity().RecoverySeed();
+  if (!seed) {
+    return seed.error();
+  }
+  if (!*seed) {
+    return std::optional<std::string>{};
+  }
+  auto phrase = EncodeRecoveryPhrase(**seed);
+  if (!phrase) {
+    return phrase.error();
+  }
+  return std::optional<std::string>(std::move(*phrase));
+}
+
+bool ConversationsFacade::HasRecoveryPhrase() {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || !hub_.Secrets()->IsUnlocked()) {
+    return false;
+  }
+  auto seed = hub_.Identity().RecoverySeed();
+  return seed && seed->has_value();
+}
+
+Roe<std::string> ConversationsFacade::ExportLinkDevice() {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  // M021 d4: the master's transfer code is its consent — the new device appends itself to the master's list.
+  auto devices = hub_.OwnDevices();
+  if (!devices) {
+    return devices.error();
+  }
+  if (devices->signed_out) {
+    return Error(kSignedOutMessage);
+  }
+  if (!devices->devices.empty() && devices->devices.front().peer_id != devices->self_peer_id) {
+    return Error("Only your main device can add a device");
+  }
+  std::optional<std::string> card = hub_.OwnAccountCardJson();
+  if (!card) {
+    return Error("This device has no account card yet");
+  }
+  const int64_t now = util::NowUnixMs();
+  auto bundle = LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), std::move(*card), now);
+  if (bundle) {
+    hub_.ExpectDeviceJoin(now + kLinkDeviceDefaultTtlMs);
+  }
+  return bundle;
 }
 
 Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const std::string& pin) {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
-      hub_.PskStore() == nullptr) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
-  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
-                                                hub_.Secrets(), bundle_json, pin, util::NowUnixMs());
+  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), hub_.Secrets(),
+                                                bundle_json, pin, util::NowUnixMs());
   if (!imported) {
     return imported.error();
   }
@@ -78,13 +130,24 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
-Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() { return hub_.LocalBackupNickname(); }
+Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                                         const std::vector<std::string>& saved_copies) {
+  return hub_.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+}
 
-Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) { return hub_.RestoreLocalBackup(pin); }
+Roe<OwnDeviceList> ConversationsFacade::OwnDevices() { return hub_.OwnDevices(); }
 
-void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
+Roe<void> ConversationsFacade::RemoveOwnDevice(const std::string& peer_id) { return hub_.RemoveOwnDevice(peer_id); }
 
-Roe<void> ConversationsFacade::DeleteLocalBackup() { return hub_.DeleteLocalBackup(); }
+Roe<void> ConversationsFacade::MakeMainDevice(const std::string& peer_id) { return hub_.MakeMainDevice(peer_id); }
+
+Roe<std::string> ConversationsFacade::ExportAccountCopy() {
+  AccountLockerWorkflow* locker = hub_.AccountLocker();
+  if (!hub_.IsMessagingReady() || !locker) {
+    return Error("Messaging is not ready");
+  }
+  return locker->ExportFileJson();
+}
 
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
 

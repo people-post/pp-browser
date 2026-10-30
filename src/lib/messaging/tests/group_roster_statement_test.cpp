@@ -79,7 +79,7 @@ TEST(GroupRosterStatementTest, OwnerChainLetsAnEarlierOwnersViewTrustTheNewOwner
   auto handed = group_roster_statement::SignTransfer(alice, alice.Key(), "group:g1", bob.Id(), 5);
   ASSERT_TRUE(handed);
   const GroupRosterStatement s = SignedBy(bob, 6, {"account:carol"}, {*handed});
-  EXPECT_TRUE(group_roster_statement::Verify(s, alice.Id())) << "restored from a backup that knew Alice";
+  EXPECT_TRUE(group_roster_statement::Verify(s, alice.Id())) << "restored from a locker that knew Alice";
   EXPECT_TRUE(group_roster_statement::Verify(s, bob.Id()));
   EXPECT_FALSE(group_roster_statement::Verify(s, "account:carol")) << "the chain does not start at Carol";
 

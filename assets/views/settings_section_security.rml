@@ -32,9 +32,53 @@
           <p class="text muted settings-help">{{i18n:settings.security.link_device.help}}</p>
           <p class="text muted settings-help">{{i18n:settings.security.link_device.send_hint}}</p>
           <p class="text muted settings-help">{{i18n:settings.security.link_device.reset_hint}}</p>
-          <button class="btn" type="button" data-if="security_can_export_link"
+          <button class="btn" type="button" data-if="security_can_export_link && !own_devices_not_main"
                   data-event-click="export_link_device()">
             {{i18n:settings.security.link_device.export}}
+          </button>
+        </div>
+        <div class="stack settings-actions" data-if="own_devices_shown">
+          <p class="text">{{i18n:settings.security.devices}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.devices.help}}</p>
+          <p class="text error" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
+          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack">
+            <div class="row settings-device-title">
+              <p class="text">{{device.label}}</p>
+              <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+            </div>
+            <div class="settings-device-actions row" data-if="device.can_manage">
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="remove_own_device(device_index)">{{i18n:settings.security.devices.remove}}</button>
+            </div>
+          </div>
+          <p class="text muted settings-help" data-if="own_devices_not_main && !own_devices_signed_out">
+            {{i18n:settings.security.devices.not_main}}
+          </p>
+        </div>
+        <div class="stack settings-actions" data-if="security_has_recovery_phrase">
+          <p class="text">{{i18n:settings.security.recovery}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.recovery.help}}</p>
+          <div class="stack" data-if="recovery_phrase == ''">
+            <label class="settings-field" data-if="!pin_protection_is_default">
+              <span class="settings-label">{{i18n:settings.security.recovery.pin_label}}</span>
+              <input class="field" type="password" data-value="recovery_phrase_pin" placeholder="{{i18n:settings.security.recovery.pin_placeholder}}"/>
+            </label>
+            <button class="btn" type="button" data-event-click="show_recovery_phrase()">
+              {{i18n:settings.security.recovery.show}}
+            </button>
+          </div>
+          <div class="stack" data-if="recovery_phrase != ''">
+            <p class="text" selectable="text">{{recovery_phrase}}</p>
+            <p class="text muted settings-help">{{i18n:settings.security.recovery.shown_hint}}</p>
+            <button class="btn" type="button" data-event-click="hide_recovery_phrase()">
+              {{i18n:settings.security.recovery.hide}}
+            </button>
+          </div>
+          <p class="text muted settings-help">{{i18n:settings.security.copy.help}}</p>
+          <button class="btn" type="button" data-event-click="save_account_copy()">
+            {{i18n:settings.security.copy.save}}
           </button>
         </div>
         <button class="settings-toggle-row settings-choice-row row" type="button"

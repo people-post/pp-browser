@@ -277,6 +277,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
+  ui_state_.security_has_recovery_phrase = bindings_.security_has_recovery_phrase;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
   ui_state_.call_invite_policy = bindings_.call_invite_policy.c_str();
@@ -373,6 +374,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.pin_protection_not_setup = ui_state_.pin_protection_not_setup;
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
+  bindings_.security_has_recovery_phrase = ui_state_.security_has_recovery_phrase;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
   bindings_.call_invite_policy = ui_state_.call_invite_policy.c_str();
@@ -396,6 +398,9 @@ void SettingsController::PushUiStateToBindings() {
 void SettingsController::SyncBindingsFromSession() {
   if (selected_id_ == "storage") {
     cas_library_.Refresh();
+  }
+  if (selected_id_ == "security") {
+    own_devices_.Refresh();
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -555,6 +560,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("pin_protection_not_setup", &controller.bindings_.pin_protection_not_setup);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
+    ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("call_invite_policy_label", &controller.bindings_.call_invite_policy_label);
@@ -566,6 +572,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
+    own_devices_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
@@ -694,6 +701,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "pin_protection_not_setup");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "security_can_export_link");
+  host.Dirty("settings", "security_has_recovery_phrase");
+  host.Dirty("settings", "recovery_phrase");
+  host.Dirty("settings", "recovery_phrase_pin");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");

@@ -75,6 +75,7 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
     state.pin_protection_not_setup = true;
     state.security_can_change_pin = false;
     state.security_can_export_link = false;
+    state.security_has_recovery_phrase = false;
     return;
   }
   if (bootstrap.profile_prefs.pin_is_default) {
@@ -90,6 +91,8 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
     registered = commands_->load_profile_identity().registered == "yes";
   }
   state.security_can_export_link = pin.unlocked && registered;
+  state.security_has_recovery_phrase =
+      pin.unlocked && commands_ && commands_->has_recovery_phrase && commands_->has_recovery_phrase();
 }
 
 bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state,

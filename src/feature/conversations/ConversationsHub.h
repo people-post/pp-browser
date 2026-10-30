@@ -7,8 +7,9 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/GroupTypes.h"
-#include "lib/people/AccountBackupCodec.h"
-#include "lib/people/LocalAccountBackup.h"
+#include "lib/people/AccountStateCodec.h"
+#include "lib/net/HttpLockerClient.h"
+#include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/ProfileIdentityView.h"
@@ -266,25 +267,24 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   /**
-   * Refresh the local account backup on a worker (registration, nickname, contacts, groups). Best effort;
-   * a write already queued covers later changes.
+   * Fresh install, before unlocking: the account back from its recovery phrase (multi-device M023 §8) — its locker
+   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), imported as a link bundle
+   * the phrase reconstructs (a fresh DEK under `pin`), the contacts put back; groups, card floors and the announce
+   * to contacts follow once messaging is up, as for any restore. `saved_copies`: exported locker files' text — the
+   * newest valid copy among them and the provider's is used (M023 §6 amendment).
    */
-  void WriteLocalBackupAsync();
-  /**
-   * Where the local account backup lives. Unset: nowhere — backup and restore are unsupported in the product
-   * (at-rest A011), so nothing is written and no restore is offered. The lab sets a file store that outlives
-   * the profile it wipes. Set before Initialize.
-   */
-  void SetBackupStore(ISecureBlobStore* store) { backup_store_ = store; }
-  Roe<std::optional<std::string>> LocalBackupNickname();
-  /**
-   * Fresh install, before unlocking: the account, its sessions and contacts back from the local backup
-   * (LocalAccountBackup::Restore, under the account's PIN). The rest is applied once messaging is up: the
-   * card floors before anything is received, then the groups (each checks its members, G013), and this new
-   * device is announced to the contacts.
-   */
-  Roe<void> RestoreLocalBackup(const std::string& pin);
-  Roe<void> DeleteLocalBackup();
+  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+                                      const std::vector<std::string>& saved_copies = {});
+  /** The account's devices as this device knows them (M021 d4); the first is the master. */
+  Roe<OwnDeviceList> OwnDevices();
+  /** On the master: take another device off the account (revoke) and tell siblings and contacts. */
+  Roe<void> RemoveOwnDevice(const std::string& peer_id);
+  /** On the master: hand the role to another device of the account and tell siblings and contacts. */
+  Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** The master gave out a transfer code valid until `until_ms`: a device joining with it is kept (OwnCards). */
+  void ExpectDeviceJoin(int64_t until_ms);
+  /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
+  AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
@@ -500,6 +500,9 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
+  /** The relay as account-locker provider (M023), next to the blob client on the registration base URL. */
+  std::unique_ptr<HttpLockerClient> http_locker_;
+  std::unique_ptr<AccountLockerWorkflow> account_locker_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
@@ -549,29 +552,37 @@ private:
   uint64_t stay_reachable_timer_ = 0;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
-  /** A backup write is queued and has not started (later changes ride on it). */
-  std::atomic<bool> backup_write_queued_{false};
-  ISecureBlobStore* backup_store_ = nullptr;  // null: none (unsupported)
-  ISecureBlobStore& BackupStore() { return backup_store_ ? *backup_store_ : NoSecureBlobStore(); }
   /** What a restore brought back, until messaging is up to apply it. */
   struct PendingRestore {
-    std::vector<AccountBackupGroup> groups;
-    std::vector<AccountBackupCardFloor> card_floors;
+    std::vector<AccountStateGroup> groups;
+    std::vector<AccountCardFloor> card_floors;
     /** Tell the contacts this device's card (the restored phone is a new device of the account). */
     bool announce = false;
   };
   std::mutex restored_mutex_;
   PendingRestore restored_;
-  bool RestorePending();
-  /** Before anything is received: no card older than the newest the backup knew speaks for its account. */
+  /** What a restore brought back beyond the account: applied now, or once messaging is up. */
+  void QueueRestoredState(AccountStateExtras extras);
+  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
+  void PublishAccountLockerSoon();
+  static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
+  /** How often the locker is synced while running (another device's contact edits arrive this way). */
+  static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;
+  uint64_t locker_sync_timer_id_ = 0;
+  std::atomic<bool> locker_publish_queued_{false};
+  /** Before anything is received: no card older than the newest the locker knew speaks for its account. */
   void ApplyRestoredCardFloors();
   /** Recreate the groups a restore brought back, then check the members of every group still checking. */
   void ResumeGroupRosterChecks();
   /**
    * After a restore: each contact hears this device's card on the control lane, so its next message opens a
-   * session with this device (carrying its own card) instead of going to the device the backup came from.
+   * session with this device (carrying its own card) instead of going to the account's earlier device.
    */
   void AnnounceRestoredDevice();
+  /** Our newest card to every contact (the control lane's device_list notice): after a restore, a revoke. */
+  void AnnounceOwnDevicesToContacts();
+  /** After the list changed here: sync the account locker (it brings the contacts), then announce to them. */
+  void SyncLockerThenAnnounceOwnDevices();
   uint64_t hub_policy_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;

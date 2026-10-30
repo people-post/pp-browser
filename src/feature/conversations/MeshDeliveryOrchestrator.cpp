@@ -233,6 +233,16 @@ void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::st
   log().info << "device list sent to " << told << " of " << accounts.size() << " contact(s)";
 }
 
+void MeshDeliveryOrchestrator::NudgeSiblings() {
+  // The device_list notice alone: nothing about our own devices changed, so no disclosure republish.
+  if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
+    return;
+  }
+  if (auto sent = control_lane_.NotifySiblings(DeviceListNotice()); !sent) {
+    log().info << "siblings not nudged: " << sent.error().message;
+  }
+}
+
 void MeshDeliveryOrchestrator::NotifySiblings() {
   if (auto card = own_cards_.Card(util::NowUnixMs())) {
     siblings_told_card_at_.store(card->issued_at);
@@ -251,6 +261,9 @@ bool MeshDeliveryOrchestrator::LinkedTo(const std::string& peer_id) const {
 }
 
 Roe<EnvelopeSender> MeshDeliveryOrchestrator::OwnSender(const LocalIdentity& identity) {
+  if (own_cards_.SignedOut()) {
+    return Error(kSignedOutMessage);  // M021 d4: the account's newest list leaves this device out
+  }
   auto device = own_cards_.DevicePeerId();
   if (!device) {
     return device.error();
@@ -1035,10 +1048,10 @@ Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const ChatTarge
   if (!loaded->has_value() || !(*loaded)->restart_pending) {
     return {};
   }
-  // This device lost its numbering in the pair (restored from a backup, or through a chat reset): the
-  // pair moves to its next epoch at seq 1 instead of rewinding in this one (D014, #378) — for the 1:1 chat
-  // and for every group copy, which are numbered in the pair too (G010). A fresh session opens there with
-  // this send's key_init, which is how the peer follows; the old one is kept retired.
+  // This device lost its numbering in the pair (its sessions kept through *Reset chats*): the pair moves to
+  // its next epoch at seq 1 instead of rewinding in this one (D014, #378) — for the 1:1 chat and for every
+  // group copy, which are numbered in the pair too (G010). A fresh session opens there with this send's
+  // key_init, which is how the peer follows; the old one is kept retired.
   const uint32_t old_epoch = (*loaded)->session_epoch;
   uint32_t new_epoch = old_epoch + 1;
   DirectChatTarget direct{key.peer_identity_kind, key.peer_identity_value, ThreadChannel::E2ePublic};
@@ -1702,6 +1715,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome);
           FollowUpMembershipAfterIngest(groups_, outcome);
+          if (outcome.from_sibling && on_sibling_notice_) {
+            on_sibling_notice_();
+          }
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {
             const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);

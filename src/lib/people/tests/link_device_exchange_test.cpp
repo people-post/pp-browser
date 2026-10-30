@@ -5,9 +5,12 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <optional>
 
 namespace pbr {
 namespace {
+
+constexpr const char kCard[] = R"({"card_version":1})";
 
 ByteVector MakeDek() {
   ByteVector dek(kDataEncryptionKeySize);
@@ -53,7 +56,7 @@ TEST_F(LinkDeviceExchangeTest, ImportKeepsDeviceKeysReplacesAccount) {
   const std::string old_account = saved->account_id;
   const std::string old_peer = saved->peer_id;
   constexpr int64_t kNow = 1'700'000'000'000;
-  auto json = LinkDeviceExchange::ExportJson(*saved, dek, {}, kNow);
+  auto json = LinkDeviceExchange::ExportJson(*saved, dek, kCard, kNow);
   ASSERT_TRUE(json) << json.error().message;
 
   IdentityStore new_store(new_dir_.string(), "new");
@@ -66,6 +69,7 @@ TEST_F(LinkDeviceExchangeTest, ImportKeepsDeviceKeysReplacesAccount) {
   EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
   EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
   EXPECT_TRUE(imported->identity.registered);
+  EXPECT_EQ(imported->account_card_json, std::optional<std::string>(kCard)) << "the new device signs itself in";
   EXPECT_TRUE(new_vault.Exists());
 
   DataKeyVault reopen(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
@@ -88,7 +92,7 @@ TEST_F(LinkDeviceExchangeTest, ImportOntoExistingVaultKeepsNewDevicePeerId) {
   auto saved = old_store.Update(seeded);
   ASSERT_TRUE(saved);
   constexpr int64_t kNow = 1'700'000'000'000;
-  auto json = LinkDeviceExchange::ExportJson(*saved, shared, {}, kNow);
+  auto json = LinkDeviceExchange::ExportJson(*saved, shared, kCard, kNow);
   ASSERT_TRUE(json) << json.error().message;
 
   ByteVector local_dek(kDataEncryptionKeySize);
@@ -124,19 +128,14 @@ TEST_F(LinkDeviceExchangeTest, ImportOntoExistingVaultKeepsNewDevicePeerId) {
   EXPECT_EQ(reloaded->peer_id, new_peer);
 }
 
-TEST_F(LinkDeviceExchangeTest, CaptureRejectsPrivatePsks) {
-  LocalIdentity identity;
-  identity.account_id = "account:x";
-  identity.account_signing_public_key_b64 = "pk";
-  identity.account_signing_private_key_b64 = "sk";
-  identity.relay_user_id = "relay:x";
-  LinkDevicePublicPsk private_row;
-  private_row.key.channel = CryptoChannel::E2e;
-  private_row.key.peer_identity_kind = "account";
-  private_row.key.peer_identity_value = "account:bob";
-  private_row.session_epoch = 1;
-  auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), {private_row}, 1);
-  EXPECT_FALSE(captured);
+TEST_F(LinkDeviceExchangeTest, ExportNeedsAnAccountCard) {
+  IdentityStore store(old_dir_.string(), "old");
+  ASSERT_TRUE(store.SetDek(MakeDek()));
+  LocalIdentity identity = store.LoadOrCreate().value();
+  identity.relay_user_id = "relay:alice";
+  auto json = LinkDeviceExchange::ExportJson(identity, MakeDek(), "", 1'700'000'000'000);
+  ASSERT_FALSE(json) << "the new device has no device list to sign itself into";
+  EXPECT_NE(json.error().message.find("account card"), std::string::npos);
 }
 
 TEST_F(LinkDeviceExchangeTest, CaptureRejectsMissingAccountKem) {
@@ -145,7 +144,7 @@ TEST_F(LinkDeviceExchangeTest, CaptureRejectsMissingAccountKem) {
   identity.account_signing_public_key_b64 = "pk";
   identity.account_signing_private_key_b64 = "sk";
   identity.relay_user_id = "relay:x";
-  auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), {}, 1);
+  auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), 1);
   ASSERT_FALSE(captured);
   EXPECT_NE(captured.error().message.find("account KEM"), std::string::npos);
 }
