@@ -65,7 +65,12 @@ std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSumma
     return next;
   }
   if (mode == SummaryWrite::Final) {
-    return std::nullopt;
+    return std::nullopt;  // it was written when this device left (a restart cleanup would also wipe its talk time)
+  }
+  if (mode == SummaryWrite::EndWhileIn) {
+    // Back in the call after a leave, and in it at the end: the longer stay is the record.
+    const bool longer = next.duration_ms && (!existing->duration_ms || *next.duration_ms > *existing->duration_ms);
+    return longer ? std::optional<CallSummaryDetail>(next) : std::nullopt;
   }
   if (existing->duration_ms && !next.duration_ms) {
     return std::nullopt;  // this stay had no talk time: the earlier record says more

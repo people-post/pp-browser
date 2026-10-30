@@ -70,12 +70,18 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
   if (summary.group && local_only) {
     message_id = GroupCallSummaryMessageId(summary.call_id);
     std::optional<CallSummaryDetail> existing;
-    if (auto row = store_.GetMessage(thread_id, message_id); row && row->has_value()) {
-      if (auto payload = TryParseObject((*row)->payload_json)) {
-        if (auto decoded = CallControlCodec::DecodeSummary(payload->getString("detail").value_or(""))) {
-          existing = *decoded;
-        }
+    auto row = store_.GetMessage(thread_id, message_id);
+    if (!row) {
+      return row.error();  // could not read it: do not write over a record that may be there
+    }
+    if (row->has_value()) {
+      auto payload = TryParseObject((*row)->payload_json);
+      auto decoded = payload ? CallControlCodec::DecodeSummary(payload->getString("detail").value_or(""))
+                             : Roe<CallSummaryDetail>(Error("call record unreadable"));
+      if (!decoded) {
+        return decoded.error();
       }
+      existing = *decoded;
     }
     auto merged = MergeGroupSummary(existing, summary, write);
     if (!merged) {

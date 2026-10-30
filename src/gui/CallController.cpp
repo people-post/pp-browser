@@ -464,11 +464,13 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
   if (connected_at_ms <= 0) {
     return {};
   }
-  const int64_t sec = std::max<int64_t>(0, (util::NowUnixMs() - connected_at_ms) / 1000);
-  const int64_t mins = sec / 60;
-  const int64_t secs = sec % 60;
+  return FormatMinSec((util::NowUnixMs() - connected_at_ms) / 1000);
+}
+
+std::string CallController::FormatMinSec(const int64_t seconds) {
+  const int64_t sec = std::max<int64_t>(0, seconds);
   char buf[32];
-  std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(mins), static_cast<long long>(secs));
+  std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(sec / 60), static_cast<long long>(sec % 60));
   return buf;
 }
 
@@ -744,10 +746,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     break;
   case Status::WaitingForOthers: {
     // V053: everyone else left; counts down to leaving by itself.
-    const int64_t left_s = std::max<int64_t>(0, (screen.alone_until_ms - util::NowUnixMs() + 999) / 1000);
-    char left[16];
-    std::snprintf(left, sizeof(left), "%lld:%02lld", static_cast<long long>(left_s / 60),
-                  static_cast<long long>(left_s % 60));
+    const std::string left = FormatMinSec((screen.alone_until_ms - util::NowUnixMs() + 999) / 1000);
     in_call.subtitle = Tr("call.status.waiting_for_others", {{"time", left}}).c_str();
     break;
   }

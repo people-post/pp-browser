@@ -118,8 +118,8 @@ bool EndedAlone(const CallScreen& before, const CallScreen& after, int64_t now_m
 inline constexpr int64_t kGroupNoMediaEndMs = 30'000;
 /** Media heard this recently counts as arriving. */
 inline constexpr int64_t kMediaArrivingWindowMs = 2'000;
-/** A gap this long between two checks means the app was asleep: the count starts over. */
-inline constexpr int64_t kWatchSleepGapMs = 5'000;
+/** The sweep that ends the alone wait may run this much after the countdown reads 0:00. */
+inline constexpr int64_t kAloneEndLagMs = 2'000;
 
 /** One call's "nothing arrives" count, stepped on every refresh (CallPresenter). */
 struct NoMediaWatch {

@@ -56,6 +56,8 @@ public:
    * a dropped phone to come back, Kenneth 2026-10-30). The app asleep starts it over.
    */
   static constexpr int64_t kAloneInGroupCallMs = 2LL * 60 * 1000;
+  /** Checks run with every UI refresh: a gap this long between two means the app was asleep. */
+  static constexpr int64_t kAppSleptGapMs = 5'000;
   /** V053: a join request nobody in the call answered (with an invite) within this long: it is over. */
   static constexpr int64_t kJoinRequestTimeoutMs = 15000;
 

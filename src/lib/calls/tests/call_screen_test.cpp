@@ -214,6 +214,18 @@ TEST(CallScreenTest, ACallThatHungUpByItselfBeforeConnectingIsReported) {
   EXPECT_FALSE(EndedWithoutConnecting(CallScreen{}, gone, false));
 }
 
+TEST(CallScreenTest, ACallThatWasLiveIsNotLostForGoodWhileItsPathMoves) {
+  for (const CallMediaStatus moving :
+       {CallMediaStatus::Migrating, CallMediaStatus::HopAttaching, CallMediaStatus::HopWaiting}) {
+    InCallSignals s;
+    s.was_connected = true;
+    s.p2p_connect_failed = true;  // latched from the 1:1 path
+    s.media_status = moving;      // a third person joined: the call moves onto a hop
+    EXPECT_NE(Decide(s).status, Status::Disconnected) << static_cast<int>(moving);
+    EXPECT_NE(Decide(s).status, Status::CouldntConnect) << static_cast<int>(moving);
+  }
+}
+
 // --- B97: a live group call where nothing arrives from anyone ends after 30 s --------------------
 
 NoMediaSample LiveGroup(const int64_t now, const int64_t last_rx) {

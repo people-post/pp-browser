@@ -120,6 +120,7 @@ private:
                                            bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
+  static std::string FormatMinSec(int64_t seconds);
 
   CallUiBackend* Backend();
 
