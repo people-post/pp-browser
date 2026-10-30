@@ -40,10 +40,11 @@ public:
   void SetDataDir(std::string data_dir);
 
   /**
-   * Seal the account's state and store it as a version newer than any this device has seen (its clock in ms, or one
-   * past). What the locker already holds is merged in first (MergeForPublish), so another device's additions are
-   * not overwritten. Errors when the account has no recovery seed (minted before M023) or no relay id, and when the
-   * locker cannot be read (publishing blind would drop another device's state).
+   * Sync the account's state with its locker, both ways (M023 §7): note what changed here since the last sync (the
+   * contact clock), take what changed on another device (newer registers win — contacts put in, edited or taken out
+   * here), then store the merged state as a version newer than any seen — unless it is what the locker holds already
+   * (no write). Errors when the account has no recovery seed (minted before M023) or no relay id, and when the locker
+   * cannot be read (writing blind would drop another device's state). The version stored or found.
    */
   Roe<uint64_t> Publish();
 
@@ -68,10 +69,17 @@ private:
   ContactsStore& contacts_;
   Sources sources_;
   void RaiseHighestSeen(const std::string& locker_id_hex, uint64_t version);
+  /** `account_locker.json`: the highest versions seen and the contact clock. */
+  void Save();
+  /** The remote registers that win, applied to the address book. */
+  Roe<void> TakeRemoteContacts(const std::vector<Contact>& local, const AccountLockerState& stored);
 
   ILockerClient* client_ = nullptr;
   std::string data_dir_;
   mutable std::mutex mutex_;
+  /** Serializes Publish (read, merge, write). */
+  std::mutex sync_mutex_;
+  ContactClock clock_;
   /** Per locker (hex id): a provider serving an older copy of one locker says nothing about another. */
   std::map<std::string, uint64_t> highest_seen_;
 };

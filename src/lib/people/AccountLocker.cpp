@@ -8,6 +8,7 @@
 #include "common/ValueJson.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include "common/PbrCompat.h"
 
@@ -102,6 +103,7 @@ std::string StateToJson(const AccountLockerState& state) {
     providers.emplace_back(provider);
   }
   root.set("providers", ArrayValue(std::move(providers)));
+  root.set("contact_clock", ContactClock::EntriesToJson(state.contact_clock));
   return DumpJson(root);
 }
 
@@ -146,6 +148,9 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
         state.providers.push_back(*url);
       }
     }
+  }
+  if (const Array* clock = root->getArray("contact_clock")) {
+    state.contact_clock = ContactClock::EntriesFromJson(*clock);
   }
   return state;
 }
@@ -220,18 +225,62 @@ std::string AccountOf(const Contact& contact) {
 
 } // namespace
 
-AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
-  AccountLockerState merged = ours;
+/** Contacts by their clocks: per account the newer register wins (ours on a tie); without one, either side's row. */
+void MergeContacts(const AccountLockerState& ours, const AccountLockerState& stored, AccountLockerState& merged) {
+  std::map<std::string, std::pair<ContactClockEntry, bool>> winners;  // account → (entry, from stored)
+  for (const ContactClockEntry& entry : ours.contact_clock) {
+    winners[entry.account_id] = {entry, false};
+  }
+  for (const ContactClockEntry& entry : stored.contact_clock) {
+    auto found = winners.find(entry.account_id);
+    if (found == winners.end() || entry.at > found->second.first.at) {
+      winners[entry.account_id] = {entry, true};
+    }
+  }
+  const auto row_of = [](const AccountLockerState& side, const std::string& account) -> const Contact* {
+    for (const Contact& contact : side.contacts) {
+      if (AccountOf(contact) == account) {
+        return &contact;
+      }
+    }
+    return nullptr;
+  };
   std::set<std::string> accounts;
   for (const Contact& contact : ours.contacts) {
     accounts.insert(AccountOf(contact));
   }
   for (const Contact& contact : stored.contacts) {
-    const std::string account = AccountOf(contact);
-    if (!account.empty() && accounts.insert(account).second) {
-      merged.contacts.push_back(contact);
+    accounts.insert(AccountOf(contact));
+  }
+  merged.contacts.clear();
+  for (const std::string& account : accounts) {
+    if (account.empty()) {
+      continue;
+    }
+    const Contact* mine = row_of(ours, account);
+    const Contact* theirs = row_of(stored, account);
+    auto winner = winners.find(account);
+    if (winner == winners.end()) {
+      merged.contacts.push_back(mine ? *mine : *theirs);  // no register on either side (a snapshot before clocks)
+      continue;
+    }
+    if (!winner->second.first.present) {
+      continue;  // removed, on whichever device was last
+    }
+    const Contact* row = winner->second.second ? (theirs ? theirs : mine) : (mine ? mine : theirs);
+    if (row) {
+      merged.contacts.push_back(*row);
     }
   }
+  merged.contact_clock.clear();
+  for (const auto& [account, entry] : winners) {
+    merged.contact_clock.push_back(entry.first);
+  }
+}
+
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
+  AccountLockerState merged = ours;
+  MergeContacts(ours, stored, merged);
   for (const AccountBackupGroup& theirs : stored.extras.groups) {
     auto mine = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
                              [&](const AccountBackupGroup& g) { return g.group_id == theirs.group_id; });

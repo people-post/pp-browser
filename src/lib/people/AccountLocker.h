@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/people/AccountBackupCodec.h"
+#include "lib/people/ContactClock.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/RecoverySeed.h"
 
@@ -26,6 +27,8 @@ struct AccountLockerState {
   AccountBackupExtras extras;
   /** Where else this locker is kept (provider base URLs); the configured relay is always tried first. */
   std::vector<std::string> providers;
+  /** Each contact's sync register (M023 §7): the newest wins per account, a removal is a tombstone. */
+  std::vector<ContactClockEntry> contact_clock;
 };
 
 /**
@@ -79,10 +82,10 @@ std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snap
                                          uint64_t at_least = 0);
 
 /**
- * What to publish when the locker already holds `stored` (another device of the account wrote it): ours, plus what
- * only it has — contacts by Account ID (ours win), groups by id (the higher roster epoch wins, ours on a tie), card
- * floors (the newest per account), providers (union). Removals do not carry (until the change log, M023 s4): a
- * contact removed on one device comes back from another's snapshot.
+ * What to publish when the locker already holds `stored` (another device of the account wrote it): contacts by their
+ * clocks (the newer register per account wins, ours on a tie; a removal is a tombstone and carries; a contact neither
+ * side has a register for is kept from either), groups by id (the higher roster epoch wins, ours on a tie), card
+ * floors (the newest per account), providers (union).
  */
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored);
 

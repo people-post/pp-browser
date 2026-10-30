@@ -1732,8 +1732,8 @@ def scenario_recovery_phrase_needs_the_pin(lab):
 def scenario_account_locker_round_trip(lab):
     """Alice's account state sealed into her locker at the relay (multi-device M023 s3): anyone holding only her
     recovery phrase — here Bob's app, as a restoring device would — finds the locker, checks it is hers and opens
-    her contacts, her group and her card floors; a phrase that never published finds nothing, and a second
-    publish stores a newer version."""
+    her contacts, her group and her card floors; a phrase that never published finds nothing; a sync with nothing
+    new writes nothing, and an edit stores a newer version."""
     users, threads = open_group(lab, 3)
     a, b, c = users
     group_id = lab_group_id(a, threads)
@@ -1756,6 +1756,10 @@ def scenario_account_locker_round_trip(lab):
     # Bob's own app publishes his locker by itself (registered, with a seed), and finding Alice's did not stop it.
     wait_for(lambda: b.cmd("locker_fetch", phrase=b.cmd("recovery_phrase", pin=PIN)["phrase"],
                            timeout=60).get("found") or None, 30, "bob: his own locker, published by itself")
+    unchanged = a.cmd("locker_publish", timeout=60)["version"]
+    if unchanged != first:
+        raise ProbeError("alice: nothing changed, yet locker version %d after %d" % (unchanged, first))
+    a.cmd("rename_contact", account=b.account, remark="Bob from the hike")
     second = a.cmd("locker_publish", timeout=60)["version"]
     if second <= first:
         raise ProbeError("alice: locker version %d after %d" % (second, first))
@@ -1785,6 +1789,38 @@ def scenario_restore_from_phrase(lab):
     a.cmd("compose_send", text="back from my phrase")
     wait_for(lambda: said_in(b, threads[b.name], "back from my phrase"), 40, "bob: alice's message")
     wait_for(lambda: a.log_text().count("Account locker published") >= 2, 30, "alice: the locker republished")
+
+
+def scenario_linked_devices_share_contact_edits(lab):
+    """Alice's phone and her newly linked laptop share one address book through her locker (multi-device M023
+    §7): the laptop's first sync brings the phone's contacts (the link carries none); a remark set on the laptop
+    reaches the phone; Bob removed on the laptop is removed on the phone too (the removal carries, not undone by the
+    phone's older copy)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("locker_publish", timeout=60)
+    laptop = lab.linked_device(a, "alice-laptop")
+
+    def remark_on(u, account):
+        row = next((c for c in u.cmd("contacts")["contacts"] if c["account"] == account), None)
+        return None if row is None else row["remark"]
+
+    laptop.cmd("locker_publish", timeout=60)
+    if remark_on(laptop, b.account) is None:
+        raise ProbeError("alice's laptop: no Bob after its first sync (%s)" % laptop.cmd("contacts")["contacts"])
+    laptop.cmd("rename_contact", account=b.account, remark="Bob (named on the laptop)")
+    laptop.cmd("locker_publish", timeout=60)
+    a.cmd("locker_publish", timeout=60)
+    if remark_on(a, b.account) != "Bob (named on the laptop)":
+        raise ProbeError("alice's phone: Bob's remark %r (the laptop's did not arrive)" % remark_on(a, b.account))
+    laptop.cmd("remove_contact", account=b.account)
+    laptop.cmd("locker_publish", timeout=60)
+    a.cmd("locker_publish", timeout=60)
+    if remark_on(a, b.account) is not None:
+        raise ProbeError("alice's phone: Bob still a contact after the laptop removed him")
+    a.cmd("locker_publish", timeout=60)
+    laptop.cmd("locker_publish", timeout=60)
+    if remark_on(laptop, b.account) is not None:
+        raise ProbeError("alice's laptop: Bob came back from the phone's copy")
 
 
 def scenario_linked_devices_both_send(lab):
@@ -2452,6 +2488,7 @@ SCENARIOS = [
     ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
     ("account_locker_round_trip", scenario_account_locker_round_trip),
     ("restore_from_phrase", scenario_restore_from_phrase),
+    ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),

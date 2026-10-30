@@ -582,6 +582,9 @@ private:
   /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
   void PublishAccountLockerSoon();
   static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
+  /** How often the locker is synced while running (another device's contact edits arrive this way). */
+  static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;
+  uint64_t locker_sync_timer_id_ = 0;
   std::atomic<bool> locker_publish_queued_{false};
   /** Before anything is received: no card older than the newest the backup knew speaks for its account. */
   void ApplyRestoredCardFloors();

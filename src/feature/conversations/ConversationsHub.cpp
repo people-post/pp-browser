@@ -1676,6 +1676,11 @@ void ConversationsHub::StartCoordinatorTimers() {
       TickMesh();
     });
   }
+  if (locker_sync_timer_id_ == 0) {
+    // What another device of the account changed (a contact removed, a remark) arrives through the locker.
+    locker_sync_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds(kLockerSyncIntervalMs),
+                                                                     [this]() { PublishAccountLockerSoon(); });
+  }
   // Relay poll must not depend on ChatController::WireMessagingBindings (can skip if UI
   // wiring races unlock). Own the sync handler here as soon as messaging is ready.
   BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
@@ -1695,6 +1700,10 @@ void ConversationsHub::StartCoordinatorTimers() {
 }
 
 void ConversationsHub::StopCoordinatorTimers() {
+  if (locker_sync_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(locker_sync_timer_id_);
+    locker_sync_timer_id_ = 0;
+  }
   if (hub_policy_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
     hub_policy_timer_id_ = 0;

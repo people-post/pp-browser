@@ -196,9 +196,11 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 ### s4 — Change log
 
 - [x] Interim: each publish first merges what the locker holds (`MergeForPublish`: contacts union by Account ID, groups by the higher roster epoch, card floors max, providers union), so linked devices do not overwrite each other's additions. Removals do not carry yet
-- [ ] Encrypted change entries to our own siblings: own mailbox (M022) and Amp
-- [ ] Per-record last write wins on a hybrid clock, tombstones; group rosters follow the owner's signed statement (G012), never merged
-- [ ] Debounced snapshot rewrite from the merged state
+- [x] Contacts sync through the locker (the change log's medium, decided over a separate sibling message: one channel, offline-safe): a per-contact register (`ContactClock`: present / the user's fields' digest / when; a removal is a tombstone) — `Publish` is a two-way sync: note local edits, take newer remote registers into the address book, store the merged state, write nothing when nothing is new; the registers ride in the locker (`contact_clock`) and in `account_locker.json`
+- [x] Groups need no entries: siblings are members as the same account and receive roster events; rosters follow the owner's signed statement (G012). Card floors: each device learns its own
+- [x] Sync 5 s after local changes, at each start and every 10 min (`kLockerSyncIntervalMs`); lab `linked_devices_share_contact_edits` (a linked laptop's first sync brings the contacts; a remark and a removal on the laptop reach the phone; the removal is not undone)
+- [ ] A nudge to siblings after a write (today they catch up within 10 min or at their next start)
+- [ ] Clocks are device wall clocks: a device far off in time can win or lose an edit wrongly (stated in M023)
 
 ### s5 — Restore and link
 

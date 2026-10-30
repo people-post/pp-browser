@@ -30,7 +30,11 @@
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
-//   locker_publish                      seal this account's state into its locker at the relay {version} (M023)
+//   locker_publish                      sync this account's state with its locker at the relay: take what another
+//                                       device changed, store what changed here {version} (M023)
+//   contacts                            the address book {contacts: [{account, remark}]}
+//   rename_contact {account, remark}    the user's remark for a contact
+//   remove_contact {account}            take the contact out of the address book
 //   locker_fetch {phrase}               the locker a recovery phrase opens: {found, relay_user_id, nickname,
 //                                       contacts: [account ids], groups: [group ids], card_floors}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
@@ -70,6 +74,7 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "lib/people/LocalAccountBackup.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
+#include "lib/people/ContactClock.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
@@ -421,6 +426,39 @@ public:
             out.set("phrase", phrase->value_or(""));
             Emit(out);
           });
+    } else if (cmd == "contacts") {
+      auto listed = Hub().Contacts().List();
+      if (!listed) {
+        ReplyError(id, listed.error().message);
+        return;
+      }
+      std::vector<Value> rows;
+      for (const Contact& contact : *listed) {
+        Object row;
+        row.set("account", ContactClockAccount(contact));
+        row.set("remark", contact.local.display_name);
+        rows.push_back(ObjectValue(std::move(row)));
+      }
+      Object out = Reply(id, true);
+      out.set("contacts", ArrayValue(std::move(rows)));
+      Emit(out);
+    } else if (cmd == "rename_contact" || cmd == "remove_contact") {
+      auto found = Hub().Contacts().FindByIdentity(request->getString("account").value_or(""),
+                                                   mesh::ContactIdKind::Account);
+      if (!found || !*found) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      if (cmd == "remove_contact") {
+        auto removed = Hub().Contacts().Remove((*found)->id);
+        removed ? Emit(Reply(id, true)) : ReplyError(id, removed.error().message);
+        return;
+      }
+      Contact contact = **found;
+      contact.local.display_name = request->getString("remark").value_or("");
+      SyncContactMirrors(contact);
+      auto saved = Hub().Contacts().Upsert(contact);
+      saved ? Emit(Reply(id, true)) : ReplyError(id, saved.error().message);
     } else if (cmd == "locker_publish") {
       AppRuntime::PostWorkerAndReplyOnUI<Roe<uint64_t>>(
           WorkerLane::Normal,

@@ -16,7 +16,7 @@ namespace pbr {
 
 namespace {
 
-constexpr const char kHighestSeenFile[] = "account_locker.json";
+constexpr const char kStateFile[] = "account_locker.json";
 
 Roe<LockerKeys> LockerKeysOf(const ByteVector& seed) {
   auto recovery = DeriveRecoveryKeys(seed);
@@ -115,22 +115,23 @@ void AccountLockerWorkflow::SetDataDir(std::string data_dir) {
   if (data_dir_.empty()) {
     return;
   }
-  std::ifstream in(std::filesystem::path(data_dir_) / kHighestSeenFile);
+  std::ifstream in(std::filesystem::path(data_dir_) / kStateFile);
   std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  const Object* seen = nullptr;
   auto json = TryParseObject(text);
-  if (json) {
-    seen = json->getObject("highest_version_by_locker");
-  }
-  if (!seen) {
+  if (!json) {
     return;
   }
   std::lock_guard lock(mutex_);
-  for (const auto& [locker_id, value] : seen->entries()) {
-    if (auto version = asNonNegInt(value)) {
-      uint64_t& kept = highest_seen_[locker_id];
-      kept = std::max<uint64_t>(kept, *version);
+  if (const Object* seen = json->getObject("highest_version_by_locker")) {
+    for (const auto& [locker_id, value] : seen->entries()) {
+      if (auto version = asNonNegInt(value)) {
+        uint64_t& kept = highest_seen_[locker_id];
+        kept = std::max<uint64_t>(kept, *version);
+      }
     }
+  }
+  if (const Array* clock = json->getArray("contact_clock")) {
+    clock_.LoadEntries(ContactClock::EntriesFromJson(*clock));
   }
 }
 
@@ -141,8 +142,6 @@ uint64_t AccountLockerWorkflow::HighestSeen(const std::string& locker_id_hex) co
 }
 
 void AccountLockerWorkflow::RaiseHighestSeen(const std::string& locker_id_hex, const uint64_t version) {
-  Object json;
-  Object by_locker;
   {
     std::lock_guard lock(mutex_);
     uint64_t& kept = highest_seen_[locker_id_hex];
@@ -150,20 +149,57 @@ void AccountLockerWorkflow::RaiseHighestSeen(const std::string& locker_id_hex, c
       return;
     }
     kept = version;
+  }
+  Save();
+}
+
+void AccountLockerWorkflow::Save() {
+  Object json;
+  {
+    std::lock_guard lock(mutex_);
+    Object by_locker;
     for (const auto& [id, seen] : highest_seen_) {
       by_locker.setJsonUInt(id, seen);
     }
+    json.set("highest_version_by_locker", ObjectValue(std::move(by_locker)));
+    json.set("contact_clock", clock_.ToJson());
   }
   if (data_dir_.empty()) {
     return;
   }
-  json.set("highest_version_by_locker", ObjectValue(std::move(by_locker)));
-  if (auto written = AtomicFileWrite::Write((std::filesystem::path(data_dir_) / kHighestSeenFile).string(), DumpJson(json)); !written) {
-    log().warning << "highest locker version not kept: " << written.error().message;
+  if (auto written = AtomicFileWrite::Write((std::filesystem::path(data_dir_) / kStateFile).string(), DumpJson(json));
+      !written) {
+    log().warning << "account locker state not kept: " << written.error().message;
   }
 }
 
+Roe<void> AccountLockerWorkflow::TakeRemoteContacts(const std::vector<Contact>& local,
+                                                    const AccountLockerState& stored) {
+  ContactClock::Plan plan;
+  {
+    std::lock_guard lock(mutex_);
+    plan = clock_.MergeRemote(stored.contact_clock, stored.contacts, local);
+  }
+  for (const Contact& contact : plan.upsert) {
+    if (auto upserted = contacts_.Upsert(contact); !upserted) {
+      return upserted.error();
+    }
+  }
+  for (const std::string& contact_id : plan.remove_contact_ids) {
+    if (auto removed = contacts_.Remove(contact_id); !removed) {
+      return removed.error();
+    }
+  }
+  if (!plan.empty()) {
+    log().info << "Contacts from another device: " << plan.upsert.size() << " in, " << plan.remove_contact_ids.size()
+               << " out";
+  }
+  return {};
+}
+
 Roe<uint64_t> AccountLockerWorkflow::Publish() {
+  // One sync at a time: it reads the locker, changes the address book and writes the locker.
+  std::lock_guard sync(sync_mutex_);
   if (!client_) {
     return Error("No locker provider configured");
   }
@@ -178,6 +214,26 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (!keys) {
     return keys.error();
   }
+  auto stored = Fetch(**seed);
+  if (!stored) {
+    return Error("Locker not read, not published: " + stored.error().message);
+  }
+  // 1. What changed here since the last sync, then 2. what changed on another device (newer registers win).
+  auto local = contacts_.List();
+  if (!local) {
+    return local.error();
+  }
+  {
+    std::lock_guard lock(mutex_);
+    clock_.Observe(*local, util::NowUnixMs());
+  }
+  if (*stored) {
+    if (auto taken = TakeRemoteContacts(*local, (*stored)->state); !taken) {
+      return taken.error();
+    }
+  }
+  Save();
+
   auto state = CurrentState();
   if (!state) {
     return state.error();
@@ -185,11 +241,14 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (state->relay_user_id.empty()) {
     return Error("Not registered with the relay yet");
   }
-  auto stored = Fetch(**seed);
-  if (!stored) {
-    return Error("Locker not read, not published: " + stored.error().message);
+  {
+    std::lock_guard lock(mutex_);
+    state->contact_clock = clock_.Entries();
   }
   const AccountLockerState merged = *stored ? account_locker::MergeForPublish(*state, (*stored)->state) : *state;
+  if (*stored && account_locker::StateToJson(merged) == account_locker::StateToJson((*stored)->state)) {
+    return (*stored)->version;  // nothing new: no write
+  }
   const std::string locker_id = BytesToHex(keys->locker_id);
   const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), HighestSeen(locker_id) + 1);
   auto snapshot = account_locker::Seal(merged, *keys, version);
