@@ -93,11 +93,18 @@ receiver's clock. Version 1 cards (PeerIds only) are refused.
 **Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname and
 device list; an older card changes nothing. A restored install keeps no cards but knows each account's newest
 issue time from the account locker (`card_floors`, [ACCOUNT_LOCKER](ACCOUNT_LOCKER.md#state-json))
-and refuses older cards. Until only a master device issues cards (M021 d4) every
-linked device holds the account key, so two may issue at once: a device that learns a card of its own
-account listing fewer devices than it knows re-issues with both, and takes the newest card's nickname as
-the account's. A newly linked device gets the linking device's card in the link bundle and signs itself
-in. Revoking a device is a newer list without it, from d4.
+and refuses older cards. A device takes the newest card's nickname as the account's.
+
+**Main device (master, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) d4):** the first device on the list. Only it changes the list: takes a device off
+(revoke: a newer list without it) or hands the role on (another device first). Any listed device re-issues the
+card to bring its own entry or the nickname up to date, the list otherwise as it is. Only the main device gives
+out a transfer code; the new device gets its card in the link bundle and appends itself at the end, once
+(`card_intent` join). While a code is out (15 min), the main device keeps a device that only an older card of
+the account lists — a join that reached it after it issued another card. A device restored from the recovery
+phrase starts a fresh list holding only itself (`card_intent` fresh), newer than any it or the account's card
+floor knew. A device the newest list leaves out is **signed out**: it issues no card, sends nothing, and stops
+syncing the account locker; Me → Security says so. The rule is followed by the account's own devices — each
+still holds the account key, so a stolen device could sign itself back in (M021 limit 4).
 
 **Size:** a key card is about 13 KB as JSON (two 3309-byte signatures and two public keys in base64);
 each device adds about 4 KB to an account card. Too large for a QR code, which is why invites carry a

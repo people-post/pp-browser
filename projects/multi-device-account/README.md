@@ -1,6 +1,6 @@
 # Multi-device account
 
-**Status:** **m1–m3**, **m4a–m4b** and per-device sessions **d1–d2** done; **next: d3–d6 (M021)** and account state **s1–s6 (M023)**. Read **M021** (sessions per device pair; supersedes M003 / M015 §2–3 / M016 / M020 / D074 as its phases ship) and **M023** (recovery phrase + encrypted account locker; supersedes M018 and the local account backup) before anything older. Status detail: [CURRENT_STATE.md](CURRENT_STATE.md)  
+**Status:** **m1–m3**, **m4a–m4b**, per-device sessions **d1–d2**, the master device **d4** (as a policy) and account state **M023** (but its easy tier) done; **next: d3, d5–d6 (M021)**, the M023 easy tier, and the cryptographic d4. Read **M021** (sessions per device pair; supersedes M003 / M015 §2–3 / M016 / M020 / D074 as its phases ship) and **M023** (recovery phrase + encrypted account locker; supersedes M018 and the local account backup) before anything older. Status detail: [CURRENT_STATE.md](CURRENT_STATE.md)  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
@@ -44,8 +44,9 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs** 
 | m4c | Paste contacts + public thread index (M018) | **Superseded** by M023 — not built |
 | m4d | Unlink phase 1 (M019) | Folded into d4 (revoke) |
 | d1–d2 | Device keys + list; sessions per device pair (**M021**, **M022**) | **Done** |
-| d3–d6 | Siblings, master device, calls on every device (**M021**) | **Next** — see PHASES |
-| s1–s6 | Recovery phrase, account locker, change log, restore (**M023**) | **Decided, not built** — see PHASES |
+| d4 | Master device, revoke, restore signs out the others (**M021**) | **Done as a policy** — the account key still on every device (see PHASES) |
+| d3, d5–d6 | Siblings, calls on every device (**M021**) | **Next** — see PHASES |
+| s1–s6 | Recovery phrase, account locker, contact sync, restore, saved copies (**M023**) | **Built** but the easy tier (synced keychain) and device checks of the pickers — see PHASES |
 
 ## Normative promotion
 

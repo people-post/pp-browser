@@ -148,9 +148,15 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 
 ### d4 — Master device
 
-- [ ] Only the master holds the account signing key; two-step link (new device shows its keys, master signs it in)
-- [ ] Revoke = a list without the device; master hand-over while both are online
-- [ ] Restore = a new master with a fresh list; an old master that sees it stops sending — the account key comes from the **recovery phrase** (M023 s1, s5), not the local account backup
+Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the account's own devices; every device still holds the account key (relay API auth, group-owner and payment signatures use it), so a stolen device could sign itself back in. Taking the key off non-master devices is a separate design (relay auth by device + card; the seed off the link bundle).
+
+- [x] Master = the first device on the account card; only it changes the list (`OwnCards`); others re-issue only their own entry / the nickname; newest card wins (the interim union is gone)
+- [x] Link: only the master gives out a transfer code (its consent); the new device appends itself once (`card_intent` join); a join reaching the master after its next card is kept while the code is out (`ExpectJoin`, 15 min)
+- [x] Revoke = a list without the device (`RemoveDevice`); hand-over = another device first (`MakeMaster`); siblings hear through the shared mailbox, contacts by the `device_list` notice
+- [x] Signed out: a device the newest list leaves out issues no card, refuses to send (`kSignedOutMessage`), stops syncing the locker
+- [x] Restore = a new master with a fresh list (`card_intent` fresh, issued above the account's card floor); the old devices that hear it are signed out
+- [x] Me → Security → Your devices (list, main device, Remove… / Make main device… on the master); probe `devices` / `remove_device` / `make_main`; gtest `own_cards_test`; lab `main_device_signs_a_device_out`, `restore_signs_out_the_other_devices`
+- [ ] Only the master holds the account signing key (cryptographic revoke) — design first
 
 ### d5 — Calls on every device
 

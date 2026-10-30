@@ -32,10 +32,30 @@
           <p class="text muted settings-help">{{i18n:settings.security.link_device.help}}</p>
           <p class="text muted settings-help">{{i18n:settings.security.link_device.send_hint}}</p>
           <p class="text muted settings-help">{{i18n:settings.security.link_device.reset_hint}}</p>
-          <button class="btn" type="button" data-if="security_can_export_link"
+          <button class="btn" type="button" data-if="security_can_export_link && !own_devices_not_main"
                   data-event-click="export_link_device()">
             {{i18n:settings.security.link_device.export}}
           </button>
+        </div>
+        <div class="stack settings-actions" data-if="own_devices_shown">
+          <p class="text">{{i18n:settings.security.devices}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.devices.help}}</p>
+          <p class="text error" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
+          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack">
+            <div class="row settings-device-title">
+              <p class="text">{{device.label}}</p>
+              <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+            </div>
+            <div class="settings-device-actions row" data-if="device.can_manage">
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="remove_own_device(device_index)">{{i18n:settings.security.devices.remove}}</button>
+            </div>
+          </div>
+          <p class="text muted settings-help" data-if="own_devices_not_main && !own_devices_signed_out">
+            {{i18n:settings.security.devices.not_main}}
+          </p>
         </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
           <p class="text">{{i18n:settings.security.recovery}}</p>

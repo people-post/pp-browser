@@ -261,6 +261,9 @@ bool MeshDeliveryOrchestrator::LinkedTo(const std::string& peer_id) const {
 }
 
 Roe<EnvelopeSender> MeshDeliveryOrchestrator::OwnSender(const LocalIdentity& identity) {
+  if (own_cards_.SignedOut()) {
+    return Error(kSignedOutMessage);  // M021 d4: the account's newest list leaves this device out
+  }
   auto device = own_cards_.DevicePeerId();
   if (!device) {
     return device.error();

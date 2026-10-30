@@ -275,6 +275,14 @@ public:
    */
   Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
                                       const std::vector<std::string>& saved_copies = {});
+  /** The account's devices as this device knows them (M021 d4); the first is the master. */
+  Roe<OwnDeviceList> OwnDevices();
+  /** On the master: take another device off the account (revoke) and tell siblings and contacts. */
+  Roe<void> RemoveOwnDevice(const std::string& peer_id);
+  /** On the master: hand the role to another device of the account and tell siblings and contacts. */
+  Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** The master gave out a transfer code valid until `until_ms`: a device joining with it is kept (OwnCards). */
+  void ExpectDeviceJoin(int64_t until_ms);
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
@@ -571,6 +579,10 @@ private:
    * session with this device (carrying its own card) instead of going to the account's earlier device.
    */
   void AnnounceRestoredDevice();
+  /** Our newest card to every contact (the control lane's device_list notice): after a restore, a revoke. */
+  void AnnounceOwnDevicesToContacts();
+  /** After the list changed here: sync the account locker (it brings the contacts), then announce to them. */
+  void SyncLockerThenAnnounceOwnDevices();
   uint64_t hub_policy_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;

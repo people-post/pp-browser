@@ -124,6 +124,9 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
     next.nickname = parsed->nickname;
   }
   next.registered = true;
+  // M021 d4: a link bundle carries the master's card — this device joins that list; a bundle without one is a
+  // restore from the recovery phrase — this device starts a fresh list as the master.
+  next.card_intent = parsed->account_card_json.value_or("").empty() ? kCardIntentFresh : kCardIntentJoin;
   next.peer_id = device_peer;
   next.public_key_b64 = device_pk;
   next.private_key_b64 = device_sk;

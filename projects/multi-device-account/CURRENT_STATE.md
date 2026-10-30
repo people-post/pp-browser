@@ -9,7 +9,7 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 | Area | Behavior |
 |------|----------|
 | Identity | Account ML-DSA-65 + account ML-KEM-768 + Account ID; each device its own ML-DSA (Peer ID) and ML-KEM key (M021 §1). A new account's keys derive from a recovery seed kept in `identity.enc` (M023 s1); accounts minted before have random keys and no phrase. No UI shows the phrase yet |
-| Device list | Account card v2 (device entries signed by the account key, newest `issued_at` wins, ≤ 5 devices); every linked device still holds the account key (master device is d4) |
+| Device list | Account card v2 (device entries signed by the account key, newest `issued_at` wins, ≤ 5 devices). Main device (d4, as a policy): the first on the list changes it — link (its transfer code), revoke, hand-over; a device left off is signed out; a restore starts a fresh list. Every device still holds the account key |
 | Sessions | Per device pair for `e2e_public` and group copies (M021 d2); one relay record per account with a copy per device, own-account records allowed (M022, relay deployed) |
 | Link | Paste bundle with the account keys, DEK and the issuing device's card — no sessions, no contacts (m4c superseded by M023) |
 | Siblings | A new device's card reaches siblings by a control-lane `device_list` notice to our own mailbox (once per card version per start). Sent messages do not show on siblings yet (d3) |
@@ -21,7 +21,7 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 
 1. **Account state (M023)** — built: phrase, relay locker, contact sync between siblings (with a nudge), restore from a typed phrase. Saved copies (exported locker files): Me → Security "Save a copy of my account…", "Use a saved copy…" when restoring (iOS / Android pickers not yet tried on devices). Left: the recovery tiers (easy: synced keychain, needs a device; tier switch UI); the relay locker API deploys (www PR #215). pp-node is not a provider (M023 §6 amendment).
 2. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
-3. **d4** — master device (a restored or linked device signs a fresh list as master), revoke.
+3. **d4 (cryptographic)** — only the master holds the account key: relay auth by device key + card, the seed off the link bundle (design first; the policy part is built).
 
 ## Stated limits in force
 

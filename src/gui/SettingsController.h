@@ -8,6 +8,7 @@
 #include "gui/SettingsCasLibrary.h"
 #include "gui/SettingsHost.h"
 #include "gui/SettingsProfileActions.h"
+#include "gui/SettingsOwnDevices.h"
 #include "gui/SettingsSecurityActions.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
@@ -293,6 +294,7 @@ private:
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
+  SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
 
 };

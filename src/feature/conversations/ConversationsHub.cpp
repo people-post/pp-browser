@@ -1999,6 +1999,9 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (!seed || !*seed || !identity || identity->relay_user_id.empty()) {
         return;  // an account from before M023, or not registered yet: nothing to publish
       }
+      if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
+        return;  // M021 d4: a signed-out device no longer speaks for the account
+      }
       if (auto published = account_locker_->Publish(); !published) {
         log().info << "Account locker not published: " << published.error().message;
       }
@@ -2033,12 +2036,16 @@ void ConversationsHub::AnnounceRestoredDevice() {
     }
     restored_.announce = false;
   }
+  AnnounceOwnDevicesToContacts();
+}
+
+void ConversationsHub::AnnounceOwnDevicesToContacts() {
   if (!IsMessagingReady() || !mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
   auto contacts = Contacts().List();
   if (!contacts) {
-    log().warning << "Restored device not announced: " << contacts.error().message;
+    log().warning << "Own devices not announced: " << contacts.error().message;
     return;
   }
   std::vector<std::string> accounts;
@@ -3056,6 +3063,60 @@ ProfileSecretsEngine* ConversationsHub::Secrets() {
 
 ContactCardExchange& ConversationsHub::ContactCards() {
   return *contact_cards_;
+}
+
+Roe<OwnDeviceList> ConversationsHub::OwnDevices() {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  return mesh_messaging_->OwnAccountCards().Devices();
+}
+
+Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  auto card = mesh_messaging_->OwnAccountCards().RemoveDevice(peer_id, util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  // Siblings hear through our own mailbox (OwnCards::SetOnChanged) — the removed device too, which then stops;
+  // contacts stop sending to it once they hold this card (M021 limit 4: eventual).
+  log().info << "Device " << peer_id << " taken off the account; " << card->devices.size() << " left";
+  AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
+  return {};
+}
+
+Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  auto card = mesh_messaging_->OwnAccountCards().MakeMaster(peer_id, util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  log().info << "Main device handed to " << peer_id;
+  AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
+  return {};
+}
+
+void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {
+  // The address book first: a device that just became the master may not have synced its contacts yet (its
+  // first sync runs a few seconds after start), and the announce goes to them.
+  if (account_locker_) {
+    if (auto seed = Identity().RecoverySeed(); seed && *seed) {
+      if (auto synced = account_locker_->Publish(); !synced) {
+        log().info << "Account locker not synced before the device announce: " << synced.error().message;
+      }
+    }
+  }
+  AnnounceOwnDevicesToContacts();
+}
+
+void ConversationsHub::ExpectDeviceJoin(const int64_t until_ms) {
+  if (mesh_messaging_) {
+    mesh_messaging_->OwnAccountCards().ExpectJoin(until_ms);
+  }
 }
 
 std::optional<std::string> ConversationsHub::OwnAccountCardJson() {

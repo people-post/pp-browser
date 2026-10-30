@@ -196,6 +196,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("device_kem_private_key_b64")) {
     identity.device_kem_private_key_b64 = *v;
   }
+  if (auto v = root.getString("card_intent")) {
+    identity.card_intent = *v;
+  }
   if (auto v = root.getString("recovery_seed_b64")) {
     identity.recovery_seed_b64 = *v;
   }
@@ -222,6 +225,9 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("device_kem_private_key_b64", identity.device_kem_private_key_b64);
   if (!identity.recovery_seed_b64.empty()) {
     root.set("recovery_seed_b64", identity.recovery_seed_b64);
+  }
+  if (!identity.card_intent.empty()) {
+    root.set("card_intent", identity.card_intent);
   }
   root.set("nickname", identity.nickname);
   root.set("relay_user_id", identity.relay_user_id);

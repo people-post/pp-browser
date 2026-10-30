@@ -1855,6 +1855,67 @@ def scenario_linked_devices_both_send(lab):
         wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: %s" % what)
 
 
+def assert_signed_out(u, thread):
+    """`u` is signed out of its account (M021 d4): its list says so, and it can no longer send."""
+    wait_for(lambda: u.cmd("devices").get("signed_out") or None, 40, "%s: signed out" % u.name)
+    sent = u.cmd("send", thread=thread, text="from a signed-out device", check=False)
+    if sent.get("ok") or "signed out" not in str(sent.get("error")):
+        raise ProbeError("%s: a signed-out device sent (%s)" % (u.name, sent))
+
+
+def scenario_main_device_signs_a_device_out(lab):
+    """Alice's phone is her main device (M021 d4); her laptop, linked to it, joins at the end of the list and
+    cannot give out a transfer code. The phone hands the main role to the laptop, which then takes the phone off
+    the account: the phone is signed out and can no longer send; Bob learns the shorter list, and he and the
+    laptop keep talking."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    phone_id = a.cmd("whoami")["peer_id"]
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: a.cmd("devices")["devices"] == [phone_id, laptop_id] or None, 40,
+             "phone: the laptop at the end of the list")
+    if laptop.cmd("devices")["main"] != phone_id:
+        raise ProbeError("laptop: main device %s, not the phone" % laptop.cmd("devices"))
+    if laptop.cmd("link_export", check=False).get("ok"):
+        raise ProbeError("laptop: gave out a transfer code though it is not the main device")
+    a.cmd("make_main", peer_id=laptop_id)
+    wait_for(lambda: laptop.cmd("devices")["main"] == laptop_id or None, 40, "laptop: the main device")
+    laptop.cmd("remove_device", peer_id=phone_id)
+    assert_signed_out(a, a_thread)
+    wait_for(lambda: phone_id not in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: Alice's list without the phone")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    m = laptop.cmd("send", thread=l_thread, text="the laptop is the main device now")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: the laptop's message")
+    r = b.cmd("send", thread=b_thread, text="noted")["message_id"]
+    wait_for(lambda: transcript_row(laptop, l_thread, r), 30, "laptop: bob's answer")
+
+
+def scenario_restore_signs_out_the_other_devices(lab):
+    """Alice's laptop is linked to her phone; she restores her account from its recovery phrase on the phone (a new
+    device, M023): it starts a fresh list holding only itself, as the main device (M021 d4); the laptop hears of it
+    through the shared mailbox and is signed out. Bob and the restored phone talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    a.cmd("locker_publish", timeout=60)
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    restored_id = a.cmd("whoami")["peer_id"]
+    wait_for(lambda: a.cmd("devices")["devices"] == [restored_id] or None, 40, "restored phone: a fresh list")
+    assert_signed_out(laptop, l_thread)
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    m = a.cmd("send", thread=a_thread, text="back, and the only device")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, m), 40, "bob: the restored phone's message")
+    r = b.cmd("send", thread=b_thread, text="welcome back")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, r), 40, "restored phone: bob's answer")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2515,6 +2576,8 @@ SCENARIOS = [
     ("account_locker_round_trip", scenario_account_locker_round_trip),
     ("restore_from_phrase", scenario_restore_from_phrase),
     ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
+    ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
+    ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),

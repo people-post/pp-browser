@@ -90,13 +90,27 @@ Roe<std::string> ConversationsFacade::ExportLinkDevice() {
   if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
-  // The new device signs itself into this device's account card (M021): no card, no link.
+  // M021 d4: the master's transfer code is its consent — the new device appends itself to the master's list.
+  auto devices = hub_.OwnDevices();
+  if (!devices) {
+    return devices.error();
+  }
+  if (devices->signed_out) {
+    return Error(kSignedOutMessage);
+  }
+  if (!devices->devices.empty() && devices->devices.front().peer_id != devices->self_peer_id) {
+    return Error("Only your main device can add a device");
+  }
   std::optional<std::string> card = hub_.OwnAccountCardJson();
   if (!card) {
     return Error("This device has no account card yet");
   }
-  return LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), std::move(*card),
-                                           util::NowUnixMs());
+  const int64_t now = util::NowUnixMs();
+  auto bundle = LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), std::move(*card), now);
+  if (bundle) {
+    hub_.ExpectDeviceJoin(now + kLinkDeviceDefaultTtlMs);
+  }
+  return bundle;
 }
 
 Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const std::string& pin) {
@@ -120,6 +134,12 @@ Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phra
                                                          const std::vector<std::string>& saved_copies) {
   return hub_.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
 }
+
+Roe<OwnDeviceList> ConversationsFacade::OwnDevices() { return hub_.OwnDevices(); }
+
+Roe<void> ConversationsFacade::RemoveOwnDevice(const std::string& peer_id) { return hub_.RemoveOwnDevice(peer_id); }
+
+Roe<void> ConversationsFacade::MakeMainDevice(const std::string& peer_id) { return hub_.MakeMainDevice(peer_id); }
 
 Roe<std::string> ConversationsFacade::ExportAccountCopy() {
   AccountLockerWorkflow* locker = hub_.AccountLocker();

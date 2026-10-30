@@ -76,6 +76,12 @@ public:
                                       const std::vector<std::string>& saved_copies = {});
   /** The account's state sealed as an exported locker file's text (M023 §6 amendment; the user keeps it). */
   Roe<std::string> ExportAccountCopy();
+  /** The account's devices (M021 d4): the newest list, its first the main device; whether this one is signed out. */
+  Roe<OwnDeviceList> OwnDevices();
+  /** On the main device: take another device off the account. */
+  Roe<void> RemoveOwnDevice(const std::string& peer_id);
+  /** On the main device: make another device the main one. */
+  Roe<void> MakeMainDevice(const std::string& peer_id);
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

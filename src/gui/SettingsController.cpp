@@ -399,6 +399,9 @@ void SettingsController::SyncBindingsFromSession() {
   if (selected_id_ == "storage") {
     cas_library_.Refresh();
   }
+  if (selected_id_ == "security") {
+    own_devices_.Refresh();
+  }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
@@ -569,6 +572,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
+    own_devices_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));

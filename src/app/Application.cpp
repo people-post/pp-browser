@@ -55,6 +55,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
@@ -807,6 +808,22 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.recovery_phrase = [&facade](const std::string& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
+  settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {
+    auto list = facade.OwnDevices();
+    if (!list) {
+      return list.error();
+    }
+    std::vector<std::string> peer_ids;
+    peer_ids.reserve(list->devices.size());
+    for (const AccountCardDevice& device : list->devices) {
+      peer_ids.push_back(device.peer_id);
+    }
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out);
+  };
+  settings_commands.remove_own_device = [&facade](const std::string& peer_id) {
+    return facade.RemoveOwnDevice(peer_id);
+  };
+  settings_commands.make_main_device = [&facade](const std::string& peer_id) { return facade.MakeMainDevice(peer_id); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };

@@ -39,6 +39,10 @@
 //                                       contacts: [account ids], groups: [group ids], card_floors}
 //   locker_export {path}                save the account's state as an exported locker file at path: {version}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
+//   devices                             this account's devices (M021 d4): {devices: [peer ids], main, self,
+//                                       signed_out} — the first is the main device
+//   remove_device {peer_id}             on the main device: take another device off the account
+//   make_main {peer_id}                 on the main device: hand the main role to another device
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
@@ -358,6 +362,34 @@ public:
       const std::string nickname = request->getString("nickname").value_or("");
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal, [this, nickname]() { return facade_->RegisterIdentity(nickname); },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "devices") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<OwnDeviceList>>(
+          WorkerLane::Normal, [this]() { return facade_->OwnDevices(); },
+          [id](Roe<OwnDeviceList> list) {
+            if (!list) {
+              ReplyError(id, list.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            std::vector<Value> devices;
+            for (const AccountCardDevice& device : list->devices) {
+              devices.emplace_back(device.peer_id);
+            }
+            out.set("main", list->devices.empty() ? std::string() : list->devices.front().peer_id);
+            out.set("devices", ArrayValue(std::move(devices)));
+            out.set("self", list->self_peer_id);
+            out.set("signed_out", list->signed_out);
+            Emit(out);
+          });
+    } else if (cmd == "remove_device" || cmd == "make_main") {
+      const std::string peer_id = request->getString("peer_id").value_or("");
+      const bool remove = cmd == "remove_device";
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal,
+          [this, peer_id, remove]() {
+            return remove ? facade_->RemoveOwnDevice(peer_id) : facade_->MakeMainDevice(peer_id);
+          },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "link_export") {
       AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(

@@ -86,6 +86,12 @@ struct SettingsCommands {
   std::function<bool()> has_recovery_phrase;
   /** The account's state as a saved copy's text (an exported locker file, M023 §6 amendment). */
   std::function<Roe<std::string>()> export_account_copy;
+  /** The account's devices (M021 d4): the main device first; whether this one is signed out. */
+  std::function<Roe<OwnDevicesView>()> own_devices;
+  /** On the main device: take another device off the account (it stops working until linked again). */
+  std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
+  /** On the main device: make another device the main one (this one can then no longer add or remove devices). */
+  std::function<Roe<void>(const std::string& peer_id)> make_main_device;
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
