@@ -48,7 +48,10 @@ struct ProfileUnlockPorts {
   /** Empty-vault link-device: wrap shared DEK with `pin` and apply the bundle. */
   std::function<Roe<void>(const std::string& pin, const std::string& bundle_json)> import_link_device;
   /** Fresh install: the account back from its recovery phrase (M023) under `pin` for this device. */
-  std::function<Roe<void>(const std::string& pin, const std::string& phrase)> restore_recovery_phrase;
+  /** `saved_copies`: saved copies of the account the user picked (exported locker files' text). */
+  std::function<Roe<void>(const std::string& pin, const std::string& phrase,
+                          const std::vector<std::string>& saved_copies)>
+      restore_recovery_phrase;
 
   /**
    * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
@@ -97,7 +100,8 @@ public:
   /** UI: first-run "I already have an account" after PIN + paste. */
   void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
   /** "Restore with my recovery phrase": restore under `pin`, then unlock — no first-run wizard, as after a link. */
-  void CompletePhraseRestore(const std::string& pin, const std::string& phrase, bool set_default_pin);
+  void CompletePhraseRestore(const std::string& pin, const std::string& phrase, bool set_default_pin,
+                             std::vector<std::string> saved_copies = {});
   /** UI: cancel chooser / create / paste. Without a vault this returns to the identity fork. */
   void Cancel();
 

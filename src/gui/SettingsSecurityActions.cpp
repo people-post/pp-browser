@@ -3,6 +3,8 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "gui/UserFeedback.h"
 #include "lib/ui/DataEvent.h"
@@ -11,6 +13,7 @@
 #include <ui/data/DataModelHandle.h>
 
 #include <chrono>
+#include <ctime>
 #include <utility>
 
 namespace pbr {
@@ -29,6 +32,7 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("recovery_phrase_pin", &recovery_phrase_pin_);
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
   ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
+  ctor.BindEventCallback("save_account_copy", DataEvent<>([this]() { SaveAccountCopy(); }));
   ctor.BindEventCallback("clear_undelivered_older_than", DataEvent<>([this]() { ClearUndeliveredOlderThan(); }));
   ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { ResetToolPermissions(); }));
   ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { ResetProfile(); }));
@@ -187,6 +191,46 @@ void SettingsSecurityActions::HideRecoveryPhrase() {
   recovery_phrase_pin_ = "";
   ++recovery_shown_count_;
   host_.PushToView(false);
+}
+
+namespace {
+
+/** `pp-account-2026-10-30.json`: the day it was saved, so copies sort and the newest is easy to tell. */
+std::string AccountCopyFileName() {
+  const std::time_t now = std::time(nullptr);
+  std::tm local{};
+#if defined(_WIN32)
+  localtime_s(&local, &now);
+#else
+  localtime_r(&now, &local);
+#endif
+  char day[16] = {};
+  std::strftime(day, sizeof(day), "%Y-%m-%d", &local);
+  return std::string("pp-account-") + day + ".json";
+}
+
+} // namespace
+
+void SettingsSecurityActions::SaveAccountCopy() {
+  EnsureUnlocked(Tr("settings.security.copy.not_ready"), [this]() {
+    AppRuntime::PostWorkerNormal([this]() {
+      auto copy = commands_.export_account_copy ? commands_.export_account_copy()
+                                                : Roe<std::string>(Error("Messaging is not ready"));
+      AppRuntime::PostUI([this, copy = std::move(copy)]() mutable {
+        if (!copy) {
+          host_.ReportFailure(copy.error());
+          return;
+        }
+        SaveFileAs(Backend::GetWindow(), AccountCopyFileName(), std::move(*copy), [](const bool saved) {
+          AppRuntime::PostUI([saved]() {
+            if (saved) {
+              UserFeedback::Ok(Tr("settings.security.copy.saved"));
+            }
+          });
+        });
+      });
+    });
+  });
 }
 
 void SettingsSecurityActions::ClearUndeliveredOlderThan() {

@@ -78,12 +78,14 @@ struct SettingsCommands {
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
   std::function<Roe<void>(const std::string& current_pin, const std::string& new_pin)> change_pin;
-  /** Copy a time-limited link-device payload (account keys + shared DEK + public PSKs). */
+  /** Copy a time-limited link-device payload (account keys, shared DEK, account card; no sessions — M021). */
   std::function<Roe<std::string>()> export_link_device;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
   std::function<Roe<std::optional<std::string>>(const std::string& pin)> recovery_phrase;
   /** Whether the account has a recovery phrase (vault unlocked). */
   std::function<bool()> has_recovery_phrase;
+  /** The account's state as a saved copy's text (an exported locker file, M023 §6 amendment). */
+  std::function<Roe<std::string>()> export_account_copy;
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;

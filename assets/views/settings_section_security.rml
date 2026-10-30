@@ -56,6 +56,10 @@
               {{i18n:settings.security.recovery.hide}}
             </button>
           </div>
+          <p class="text muted settings-help">{{i18n:settings.security.copy.help}}</p>
+          <button class="btn" type="button" data-event-click="save_account_copy()">
+            {{i18n:settings.security.copy.save}}
+          </button>
         </div>
         <button class="settings-toggle-row settings-choice-row row" type="button"
                 data-event-click="on_choose_group_invite_policy()">

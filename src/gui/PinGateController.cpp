@@ -174,6 +174,8 @@ void PinGateController::ShowLinkPaste() {
   pin_state_.phrase_flow = phrase_flow_;
   pin_state_.error = "";
   pin_state_.link_payload = "";
+  pin_state_.saved_copy_name = "";
+  saved_copy_.clear();
   pin_state_.title = (phrase_flow_ ? Tr("pin.phrase_paste_title") : Tr("pin.link_paste_title")).c_str();
   pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_paste_message") : Tr("pin.link_paste_message")).c_str();
   ApplyPinGate();
@@ -202,6 +204,28 @@ void PinGateController::OnIdentityPhrase() {
   }
   phrase_flow_ = true;
   ShowLinkChooser();
+}
+
+void PinGateController::OnUseSavedCopy() {
+  if (!pin_state_.active || !pin_state_.link_paste_mode || !phrase_flow_ || !gate_complete_.pick_saved_copy) {
+    return;
+  }
+  PullBoundPinFields();  // keep the words typed so far
+  gate_complete_.pick_saved_copy([this](std::string name, std::optional<std::string> text) {
+    if (name.empty() || !pin_state_.active || !pin_state_.link_paste_mode || !phrase_flow_) {
+      return;
+    }
+    PullBoundPinFields();
+    if (!text) {
+      pin_state_.error = Tr("pin.phrase_saved_copy_unreadable").c_str();
+    } else {
+      pin_state_.error = "";
+      saved_copy_ = std::move(*text);
+      pin_state_.saved_copy_name = name.c_str();
+    }
+    ApplyPinGate();
+    DirtyPinFields();
+  });
 }
 
 void PinGateController::OnForgotToggle() {
@@ -270,7 +294,11 @@ void PinGateController::OnSubmit() {
     DirtyPinFields();
     if (phrase_flow_) {
       if (gate_complete_.complete_phrase_restore) {
-        gate_complete_.complete_phrase_restore(pending_link_pin_, payload, pending_link_default_pin_);
+        std::vector<std::string> saved_copies;
+        if (!saved_copy_.empty()) {
+          saved_copies.push_back(saved_copy_);
+        }
+        gate_complete_.complete_phrase_restore(pending_link_pin_, payload, pending_link_default_pin_, saved_copies);
       }
       return;
     }

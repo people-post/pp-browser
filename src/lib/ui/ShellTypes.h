@@ -154,6 +154,8 @@ struct PinGateState {
   bool link_paste_mode = false;
   /** The paste page asks for a recovery phrase (multi-device M023) instead of a transfer code. */
   bool phrase_flow = false;
+  /** On the phrase page: the saved copy picked to restore from as well (its file name; empty: none). */
+  ui::String saved_copy_name;
   /** Plain unlock (vault exists): shows the "Forgot PIN?" link; `forgot_open` expands its explanation. */
   bool unlock_mode = false;
   bool forgot_open = false;

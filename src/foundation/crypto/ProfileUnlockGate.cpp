@@ -331,13 +331,16 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
 }
 
 void ProfileUnlockGate::CompletePhraseRestore(const std::string& pin, const std::string& phrase,
-                                              const bool set_default_pin) {
+                                              const bool set_default_pin, std::vector<std::string> saved_copies) {
   if (!ports_.restore_recovery_phrase) {
     ReportError("Restore from a recovery phrase is not available");
     return;
   }
   CompleteAccountImport(
-      pin, set_default_pin, [this, pin, phrase]() { return ports_.restore_recovery_phrase(pin, phrase); },
+      pin, set_default_pin,
+      [this, pin, phrase, saved_copies = std::move(saved_copies)]() {
+        return ports_.restore_recovery_phrase(pin, phrase, saved_copies);
+      },
       "phrase_restore");
 }
 

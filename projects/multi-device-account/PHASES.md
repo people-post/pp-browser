@@ -192,7 +192,8 @@ Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-
 - [x] When to publish: 5 s after a burst of contact / group / card changes, and at every start (`ConversationsHub::PublishAccountLockerSoon`) — only with a recovery seed and a relay id
 - ~~pp-node provider~~ — dropped (M023 §6 amendment: nodes are stateless, caches only)
 - [x] Exported file provider (core): `AccountLockerWorkflow::ExportFileJson` / `Fetch(seed, saved_copies)`, `ConversationsFacade::ExportAccountCopy`, restore with saved copies; probe `locker_export {path}` / `--restore-saved-copy`; gtest `account_locker_workflow_test`; lab `restore_from_a_saved_copy` (the file newer than the relay's copy wins)
-- [ ] Saved copy UI: Me → Security "Save a copy of my account…" (desktop save dialog; mobile share sheet — new platform code) and "Use a saved copy…" on the phrase restore page (the open dialog exists)
+- [x] Saved copy UI: Me → Security "Save a copy of my account…" (`SaveFileAs`: SDL save dialog on desktop / Android create-document, Files export picker on iOS) and "Use a saved copy…" on the phrase restore page (`ReadPickedFile`); gtest `pin_gate_controller_test` (the copy rides with the words); restore page checked on screen (Xvfb)
+- [ ] Check the save / pick on devices: iOS export picker (`NativeFileDialog_Ios.mm`, not compiled here), Android content:// write and read
 - [ ] Provider list in the state; the configured relay tried first
 
 ### s4 — Change log

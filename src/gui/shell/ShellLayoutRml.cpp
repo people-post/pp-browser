@@ -329,6 +329,12 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow\" "
          "data-value=\"pin_gate_link_payload\" placeholder=\""
       << Tr("pin.phrase_paste_placeholder") << "\"></textarea>";
+  out << "<p class=\"text muted shell-pin-gate-note\" "
+         "data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && pin_gate_saved_copy_name != ''\">"
+      << Tr("pin.phrase_saved_copy") << " {{pin_gate_saved_copy_name}}</p>";
+  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow\" "
+         "data-event-click=\"pin_gate_use_saved_copy()\">"
+      << Tr("pin.phrase_use_saved_copy") << "</button>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
          "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode\" "
          "data-value=\"pin_gate_pin\" placeholder=\""

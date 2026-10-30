@@ -17,6 +17,8 @@ struct PinGateActionPorts {
   std::function<void()> on_identity_link;
   /** "Restore with my recovery phrase" (M023): a PIN for this device, then the 24 words. */
   std::function<void()> on_identity_phrase;
+  /** The phrase page's "Use a saved copy…". */
+  std::function<void()> on_use_saved_copy;
   std::function<void()> on_forgot_toggle;
 };
 

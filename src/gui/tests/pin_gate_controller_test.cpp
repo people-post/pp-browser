@@ -26,8 +26,13 @@ protected:
     };
     controller_.BindShellPinGate(std::move(shell));
     UnlockGateCompletePorts complete;
-    complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase, bool is_default) {
+    complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase, bool is_default,
+                                              const std::vector<std::string>& saved_copies) {
       phrase_restore_ = std::make_tuple(pin, phrase, is_default);
+      saved_copies_ = saved_copies;
+    };
+    complete.pick_saved_copy = [this](std::function<void(std::string, std::optional<std::string>)> picked) {
+      picked(pick_name_, pick_text_);
     };
     complete.complete_link_device = [this](const std::string& pin, const std::string& bundle, bool is_default) {
       link_ = std::make_tuple(pin, bundle, is_default);
@@ -40,6 +45,9 @@ protected:
   std::string typed_payload_;
   std::optional<std::tuple<std::string, std::string, bool>> phrase_restore_;
   std::optional<std::tuple<std::string, std::string, bool>> link_;
+  std::vector<std::string> saved_copies_;
+  std::string pick_name_;
+  std::optional<std::string> pick_text_;
 };
 
 TEST_F(PinGateControllerTest, ThePhrasePathAsksForAPinThenTheWords) {
@@ -59,6 +67,28 @@ TEST_F(PinGateControllerTest, ThePhrasePathAsksForAPinThenTheWords) {
   ASSERT_TRUE(phrase_restore_);
   EXPECT_EQ(*phrase_restore_, std::make_tuple(std::string(kDefaultProfilePin), typed_payload_, true));
   EXPECT_FALSE(link_);
+}
+
+TEST_F(PinGateControllerTest, ASavedCopyPickedOnThePhrasePageRidesWithTheWords) {
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityPhrase();
+  controller_.OnUseDefaultPin();
+  typed_payload_ = "legal winner thank year";
+
+  pick_name_ = "pp-account-2026-10-30.json";  // unreadable (no text): said, nothing kept
+  controller_.OnUseSavedCopy();
+  EXPECT_FALSE(std::string(shown_.error.c_str()).empty());
+  EXPECT_TRUE(std::string(shown_.saved_copy_name.c_str()).empty());
+
+  pick_text_ = "{\"format\":\"pp-browser-account-locker-file-v1\"}";
+  controller_.OnUseSavedCopy();
+  EXPECT_EQ(std::string(shown_.saved_copy_name.c_str()), pick_name_);
+  EXPECT_TRUE(std::string(shown_.error.c_str()).empty());
+  EXPECT_EQ(std::string(shown_.link_payload.c_str()), typed_payload_) << "the words typed so far stay";
+
+  controller_.OnSubmit();
+  ASSERT_TRUE(phrase_restore_);
+  EXPECT_EQ(saved_copies_, std::vector<std::string>{*pick_text_});
 }
 
 TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {

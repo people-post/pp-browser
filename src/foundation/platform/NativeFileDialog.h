@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,5 +29,16 @@ void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback ca
  * stay on disk unencrypted. Anything else (desktop originals, other paths) is left alone.
  */
 void ReleasePickedFile(const std::string& path);
+
+/**
+ * Save `bytes` as a file where the user chooses: the system save dialog offering `suggested_name` (desktop; Android's
+ * create-document picker), the Files export picker on iOS. `done(saved)` — false on cancel or a failed write — may
+ * run on any thread.
+ */
+void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::string bytes,
+                std::function<void(bool saved)> done);
+
+/** A picked file's bytes (a path, or an Android content:// URI); nullopt when unreadable or over `max_bytes`. */
+std::optional<std::string> ReadPickedFile(const std::string& path, size_t max_bytes);
 
 } // namespace pbr

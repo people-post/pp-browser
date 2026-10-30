@@ -134,6 +134,9 @@ namespace pbr {
 
 namespace {
 
+/** A saved copy of the account: a sealed snapshot (at most 1 MiB + 256 bytes) as base64 inside JSON. */
+constexpr size_t kMaxSavedAccountCopyBytes = 2 * 1024 * 1024;
+
 /** Runtime teardown quiesce budgets (THREADING.md § Teardown quiesce). Quit must stay inside
  * AppRuntime::kShutdownDeadlineBudget (3 s watchdog); reset can wait for a slow relay call. */
 constexpr std::chrono::milliseconds kQuitQuiesceBudget{2000};
@@ -803,6 +806,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
   settings_commands.recovery_phrase = [&facade](const std::string& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
+  settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
@@ -1059,8 +1063,26 @@ void Application::WireUnlockPinAndFlow() {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
     gate_complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase,
-                                                   const bool set_default_pin) {
-      unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin);
+                                                   const bool set_default_pin,
+                                                   const std::vector<std::string>& saved_copies) {
+      unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin, saved_copies);
+    };
+    gate_complete.pick_saved_copy = [](std::function<void(std::string, std::optional<std::string>)> picked) {
+      ShowOpenFileDialog(Backend::GetWindow(), [picked = std::move(picked)](std::vector<std::string> paths) {
+        std::string name;
+        std::optional<std::string> text;
+        if (!paths.empty()) {
+          name = std::filesystem::path(paths.front()).filename().string();
+          if (name.empty()) {
+            name = paths.front();
+          }
+          text = ReadPickedFile(paths.front(), kMaxSavedAccountCopyBytes);
+          ReleasePickedFile(paths.front());
+        }
+        AppRuntime::PostUI([picked, name = std::move(name), text = std::move(text)]() mutable {
+          picked(std::move(name), std::move(text));
+        });
+      });
     };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
@@ -1101,8 +1123,9 @@ void Application::WireUnlockPinAndFlow() {
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
-  unlock_ports.restore_recovery_phrase = [&facade](const std::string& pin, const std::string& phrase) {
-    return facade.RestoreFromRecoveryPhrase(phrase, pin);
+  unlock_ports.restore_recovery_phrase = [&facade](const std::string& pin, const std::string& phrase,
+                                                   const std::vector<std::string>& saved_copies) {
+    return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
   };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {
@@ -1210,6 +1233,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
     pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
+    pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }

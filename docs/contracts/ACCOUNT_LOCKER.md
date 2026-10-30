@@ -100,6 +100,8 @@ as JSON `{format: "pp-browser-account-locker-file-v1", exported_at, locker: {loc
 signing_public_key_b64, sealed_b64, signature_b64}}` (the record the relay stores). Restore takes the phrase and
 any saved copies: the newest valid snapshot among them and the provider's wins (same checks as above); with a
 saved copy an unreachable provider is not an error. A file of another phrase, or not a saved account, is refused.
+UI: Me → Security → **Save a copy of my account…** (`pp-account-YYYY-MM-DD.json`, the platform save / export
+picker); the restore page's **Use a saved copy…** (the open picker).
 
 ## On disk
 

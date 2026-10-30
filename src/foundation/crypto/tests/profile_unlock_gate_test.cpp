@@ -96,7 +96,8 @@ TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   ProfileUnlockPorts ports;
   ports.messaging_initialized = []() { return true; };
   ports.messaging_ready = []() { return false; };
-  ports.restore_recovery_phrase = [&](const std::string& pin, const std::string& phrase) -> Roe<void> {
+  ports.restore_recovery_phrase = [&](const std::string& pin, const std::string& phrase,
+                                      const std::vector<std::string>&) -> Roe<void> {
     restores.emplace_back(pin, phrase);
     if (phrase != "the right words") {
       return Error("No account was found for this recovery phrase");

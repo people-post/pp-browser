@@ -19,7 +19,7 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 
 ## Next
 
-1. **Account state (M023)** — built: phrase, relay locker, contact sync between siblings (with a nudge), restore from a typed phrase. Saved copies (exported locker files) work in code and the probe, not in the UI yet. Left: the saved-copy UI; the recovery tiers (easy: synced keychain, needs a device; tier switch UI); the relay locker API deploys (www PR #215). pp-node is not a provider (M023 §6 amendment).
+1. **Account state (M023)** — built: phrase, relay locker, contact sync between siblings (with a nudge), restore from a typed phrase. Saved copies (exported locker files): Me → Security "Save a copy of my account…", "Use a saved copy…" when restoring (iOS / Android pickers not yet tried on devices). Left: the recovery tiers (easy: synced keychain, needs a device; tier switch UI); the relay locker API deploys (www PR #215). pp-node is not a provider (M023 §6 amendment).
 2. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
 3. **d4** — master device (a restored or linked device signs a fresh list as master), revoke.
 

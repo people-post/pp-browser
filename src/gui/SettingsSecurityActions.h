@@ -38,6 +38,8 @@ private:
   /** Me → Security → Show recovery phrase: the PIN again (unless the app default), then the 24 words for a while. */
   void ShowRecoveryPhrase();
   void HideRecoveryPhrase();
+  /** Me → Security → Save a copy of my account: the sealed account state to a file the user picks (M023). */
+  void SaveAccountCopy();
   void ClearUndeliveredOlderThan();
   void ResetToolPermissions();
   void ResetProfile();
