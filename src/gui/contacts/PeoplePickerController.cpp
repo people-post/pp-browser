@@ -687,8 +687,11 @@ void PeoplePickerController::SyncGroupMemberRows() {
       continue;
     }
     if (member.member_identity == local_identity) {
-      self_row = BuildGroupMemberRow(member, std::nullopt, false);
-      self_row->title = Tr("people_picker.you");
+      GroupMemberRow self = BuildGroupMemberRow(member, std::nullopt, false);
+      self.title = Tr("people_picker.you");
+      if (MatchesIdentityQuery(self.title, self.identity, query)) {
+        self_row = std::move(self);
+      }
       continue;
     }
     GroupMemberRow row = BuildGroupMemberRow(member, ContactForMember(member), unreachable.count(member.member_identity) > 0);
@@ -1150,32 +1153,35 @@ void PeoplePickerController::OnInviteMembers() {
   if (group_sending_ || group_id_.empty() || !picker_ports_.invite_members_async) {
     return;
   }
-  std::vector<std::string> contact_ids;
+  // Everyone picked, also those a later search hides.
+  std::vector<std::string> contact_ids(selected_ids_.begin(), selected_ids_.end());
   std::unordered_map<std::string, std::string> names;
-  for (const PickerRow& row : rows_) {
-    if (selected_ids_.count(row.id.c_str()) > 0) {
-      contact_ids.push_back(row.id.c_str());
-      names[row.id.c_str()] = row.title.c_str();
+  for (const std::string& contact_id : contact_ids) {
+    if (contacts_ports_.get_contact) {
+      if (auto loaded = contacts_ports_.get_contact(contact_id); loaded && *loaded) {
+        names[contact_id] = FormatContactTitle(**loaded);
+      }
     }
   }
   if (contact_ids.empty()) {
     return;
   }
   group_sending_ = true;
+  const uint64_t batch = ++invite_batch_;
   UpdateCta();
   DirtyAll();
   const std::string group_id = group_id_;
   picker_ports_.invite_members_async(group_id, std::move(contact_ids),
-                                     [this, group_id, names](GroupInviteBatchResult result) {
-                                       OnInviteFinished(group_id, names, result);
+                                     [this, batch, group_id, names](GroupInviteBatchResult result) {
+                                       OnInviteFinished(batch, group_id, names, result);
                                      });
 }
 
-void PeoplePickerController::OnInviteFinished(const std::string& group_id,
+void PeoplePickerController::OnInviteFinished(const uint64_t batch, const std::string& group_id,
                                               const std::unordered_map<std::string, std::string>& names,
                                               const GroupInviteBatchResult& result) {
-  const bool still_here =
-      layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupAddMember && group_id_ == group_id;
+  const bool still_here = layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupAddMember &&
+                          group_id_ == group_id && invite_batch_ == batch;
   if (still_here) {
     group_sending_ = false;
   }
@@ -1227,9 +1233,9 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
                        [this, row]() { AddMemberAsContact(row); }, "../icons/contacts.svg"});
   }
   if (group_is_owner_) {
-    if (kGroupReinviteEnabled && row.IsContact()) {
+    if (row.IsContact()) {
       actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
-                         [this, contact_id = row.contact_id]() { ReinviteMember(contact_id); },
+                         [this, row]() { ReinviteMember(row); },
                          "../icons/group.svg"});
     }
     actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
@@ -1238,16 +1244,15 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
   ContextMenuHost::Instance().ShowActions(menu_position, std::move(actions));
 }
 
-void PeoplePickerController::ReinviteMember(const std::string& contact_id) {
-  if (group_sending_ || group_id_.empty() || !picker_ports_.invite_members_async) {
+void PeoplePickerController::ReinviteMember(const GroupMemberRow& row) {
+  if (group_id_.empty() || !picker_ports_.invite_members_async) {
     return;
   }
-  group_sending_ = true;
-  picker_ports_.invite_members_async(group_id_, {contact_id}, [this](GroupInviteBatchResult result) {
-    group_sending_ = false;
+  picker_ports_.invite_members_async(group_id_, {row.contact_id}, [this, name = row.title](GroupInviteBatchResult result) {
     if (!result.failed.empty()) {
       log().warning << "Group re-invite not sent: " << result.failed.front().second;
-      UserFeedback::Fail(Tr("contacts.err.add"));
+      ShowToast(Tr("people_picker.invite_partial", {{"ok", "0"}, {"failed", "1"}, {"names", name}}),
+                ToastDuration::Long);
       return;
     }
     ShowToast(Tr("people_picker.reinvite_sent"), ToastDuration::Long);
@@ -1260,11 +1265,11 @@ void PeoplePickerController::RemoveMember(const GroupMemberRow& row) {
   }
   shell_feedback_.show_confirm(
       Tr("chat.group.remove_member_title"), Tr("chat.group.remove_member_confirm", {{"name", row.title}}),
-      [this, identity = row.identity](const bool ok) {
-        if (!ok || group_id_.empty() || !picker_ports_.remove_member_by_identity) {
+      [this, group_id = group_id_, identity = row.identity](const bool ok) {
+        if (!ok || group_id.empty() || !picker_ports_.remove_member_by_identity) {
           return;
         }
-        if (auto removed = picker_ports_.remove_member_by_identity(group_id_, identity); !removed) {
+        if (auto removed = picker_ports_.remove_member_by_identity(group_id, identity); !removed) {
           UserFeedback::Fail(removed.error().message);
           return;
         }
