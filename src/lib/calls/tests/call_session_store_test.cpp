@@ -131,6 +131,43 @@ TEST_F(CallSessionStoreTest, UpsertPreservesFirstJoinedAt) {
   EXPECT_EQ(*parts->front().joined_at, 1000);
 }
 
+TEST_F(CallSessionStoreTest, JoiningAgainAfterLeavingStartsANewStay) {
+  // B102 (#410): the first stay's stamp made the rejoin look stale to everyone who stayed.
+  CallSession session;
+  session.call_id = "call:rejoin-stamp";
+  session.origin_thread_id = "thread-1";
+  session.media_mode = CallMediaMode::Voice;
+  session.state = CallSessionState::Active;
+  session.created_at = 1000;
+  session.media_epoch = 1;
+  session.media_key_id = "mk:1";
+  ASSERT_TRUE(calls_->UpsertSession(session));
+
+  CallParticipant guest;
+  guest.call_id = session.call_id;
+  guest.identity = "account:guest";
+  guest.state = CallParticipantState::Joined;
+  guest.joined_at = 1000;
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+  guest.state = CallParticipantState::Left;
+  guest.joined_at.reset();
+  guest.left_at = 2000;
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+  ASSERT_EQ(calls_->ListParticipants(session.call_id)->front().joined_at, std::optional<int64_t>(1000))
+      << "a leave keeps the stay's stamp (a stale roster is judged against it)";
+
+  guest.state = CallParticipantState::Joined;
+  guest.joined_at = 3000;
+  guest.left_at.reset();
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+  EXPECT_EQ(calls_->ListParticipants(session.call_id)->front().joined_at, std::optional<int64_t>(3000));
+
+  // Within the new stay the earliest stamp still wins (a later restamp on fan-out does not move it).
+  guest.joined_at = 4000;
+  ASSERT_TRUE(calls_->UpsertParticipant(guest));
+  EXPECT_EQ(calls_->ListParticipants(session.call_id)->front().joined_at, std::optional<int64_t>(3000));
+}
+
 TEST_F(CallSessionStoreTest, UpsertTakesEarlierJoinedAtFromRoster) {
   CallSession session;
   session.call_id = "call:earlier-stamp";

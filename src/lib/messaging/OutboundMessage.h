@@ -138,7 +138,11 @@ inline constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
  */
 bool OutboxSendStillWanted(bool control_lane, int64_t age_ms, bool thread_paused);
 
-/** After another failed relay attempt (`attempts` so far): queue it again, or give up (failed). */
-bool OutboxRetryAgain(int attempts);
+/**
+ * After another failed relay attempt (`attempts` so far, the last ending in `failure`): queue it again, or
+ * give up (failed) — at once when the relay refused the request itself (#391: a rejected notice was sent
+ * again on every poll).
+ */
+bool OutboxRetryAgain(int attempts, const Error& failure);
 
 } // namespace pbr

@@ -5,7 +5,7 @@
 
 namespace pbr {
 
-bool IsContactReachableForMessaging(const Contact& contact, bool relay_configured) {
+bool IsContactReachableForMessaging(const Contact& contact, bool relay_configured, bool account_keys_known) {
   if (contact.trust == TrustLevel::Blocked) {
     return false;
   }
@@ -13,6 +13,9 @@ bool IsContactReachableForMessaging(const Contact& contact, bool relay_configure
       PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).empty() &&
       PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).empty()) {
     return false;
+  }
+  if (account_keys_known && !PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).empty()) {
+    return true;
   }
   for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty() && relay_configured) {

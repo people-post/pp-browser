@@ -9,6 +9,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/error/AppError.h"
 
 #include <algorithm>
 #include <utility>
@@ -321,8 +322,10 @@ bool OutboxSendStillWanted(const bool control_lane, const int64_t age_ms, const 
   return control_lane ? age_ms <= kControlRetryWindowMs : !thread_paused;
 }
 
-bool OutboxRetryAgain(const int attempts) {
-  return attempts < kMaxOutboxRetryAttempts;
+bool OutboxRetryAgain(const int attempts, const Error& failure) {
+  const bool refused = AppError::CategoryOf(failure) == ErrorCategory::Network &&
+                       static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected;
+  return !refused && attempts < kMaxOutboxRetryAttempts;
 }
 
 } // namespace pbr

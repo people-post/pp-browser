@@ -232,6 +232,9 @@ void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::st
 }
 
 void MeshDeliveryOrchestrator::NotifySiblings() {
+  if (auto card = own_cards_.Card(util::NowUnixMs())) {
+    siblings_told_card_at_.store(card->issued_at);
+  }
   if (auto sent = control_lane_.NotifySiblings(DeviceListNotice()); !sent) {
     log().info << "siblings not told of the device list: " << sent.error().message;
   }
@@ -1794,9 +1797,13 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
     chat_sync_->SetPeerHistoryClient(transports_.History());
   }
   card_service_.Attach(transports_.AccountCards());
-  // Once a start, with other devices on our list: they hear our card again (a notice lost to a restart).
+  // Once a start, with other devices on our list: they hear our card again (a notice lost to a restart). A
+  // mesh that comes up again later (network change, foreground) does not repeat it for the same card (#391:
+  // one notice per bring-up, each refused and retried).
   AppRuntime::PostWorkerNormal([this]() {
-    if (auto card = own_cards_.Card(util::NowUnixMs()); card && card->devices.size() > 1) {
+    if (auto card = own_cards_.Card(util::NowUnixMs()); card && card->devices.size() > 1 &&
+                                                        siblings_told_card_at_.exchange(card->issued_at) !=
+                                                            card->issued_at) {
       NotifySiblings();
     }
   });

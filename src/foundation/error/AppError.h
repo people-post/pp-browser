@@ -39,6 +39,8 @@ enum class Network : int32_t {
   DnsFailed = 4,
   ConnectFailed = 5,
   TlsFailed = 6,
+  /** The server refused the request itself (HTTP 4xx but 408 / 429): sending it again will not help. */
+  HttpRejected = 7,
 };
 
 enum class Pin : int32_t {

@@ -47,7 +47,9 @@ Error RelayHttpStatusError(const char* action, long status_code, const std::stri
     detail += " body=" + TruncateForLog(body, 200);
   }
   logging::getLogger("HttpRelayClient").warning << detail;
-  return AppError::Network(Err::Network::HttpError, detail);
+  // A 4xx (but a timeout or a rate limit) is the relay refusing this request: final, not a hiccup.
+  const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
+  return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
 }
 
 } // namespace
