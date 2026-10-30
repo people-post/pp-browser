@@ -2494,6 +2494,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_thread_actions_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
+        ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
         ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { peer_sheet_.Open(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
         ctor.BindEventCallback("retry_gap_sync", DataEvent([this] { OnRetryGapSync(); }));

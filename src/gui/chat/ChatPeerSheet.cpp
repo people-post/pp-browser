@@ -39,6 +39,18 @@ void ChatPeerSheet::Open(ui::Event& ev) {
   ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions));
 }
 
+void ChatPeerSheet::OpenGroupMembers() {
+  ConversationsFacade* facade = host_.Facade();
+  if (!host_.MessagingIsReady() || !facade || !people_picker_notify_.open_group_members) {
+    return;
+  }
+  auto thread = facade->GetActiveThread();
+  if (!thread || thread->kind != ThreadKind::Group || !thread->group_id) {
+    return;
+  }
+  people_picker_notify_.open_group_members(thread->id);
+}
+
 std::vector<ContextMenuAction> ChatPeerSheet::DirectActions(const Thread& thread) {
   ConversationsFacade* facade = host_.Facade();
   std::vector<ContextMenuAction> actions;
@@ -122,6 +134,13 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
   const std::string current_local = thread.local_title;
   const std::string shared_default = facade->ResolveThreadLabel(thread).shared_title.value_or(thread.title);
 
+  actions.push_back({
+      "group_members",
+      Tr("chat.menu.group_members"),
+      nullptr,
+      [this]() { OpenGroupMembers(); },
+      "../icons/group.svg",
+  });
   actions.push_back({
       "rename_for_me",
       Tr("chat.group.rename_for_me"),

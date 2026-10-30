@@ -3,7 +3,9 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/SessionMenu.h"
+#include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/people/ContactTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -77,6 +79,26 @@ struct ChatGroupSheet {
   /** Members the owner may remove for being unreachable (never this device): identity, then the name to show. */
   std::vector<std::pair<std::string, std::string>> unreachable_members;
 };
+
+/** One person on the group's member list, before any text is chosen for the badges. */
+struct GroupMemberRow {
+  std::string identity;
+  /** Contact name, else the server nickname, else the short account id. */
+  std::string title;
+  /** The saved contact's id; empty for someone who is not a contact yet. */
+  std::string contact_id;
+  bool is_owner = false;
+  bool unreachable = false;
+
+  bool IsContact() const { return !contact_id.empty(); }
+  bool operator==(const GroupMemberRow&) const = default;
+};
+
+/** `contact`: the saved contact for this member, when there is one. */
+GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
+                                   bool unreachable);
+/** Unreachable members first (the owner re-invites them), then the owner, then by name. */
+void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);

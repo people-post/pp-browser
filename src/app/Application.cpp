@@ -935,7 +935,13 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  people_picker_->BindPickerPorts(product_->PeoplePickerPorts());
+  MessagingPeoplePickerPorts picker_ports = product_->PeoplePickerPorts();
+  picker_ports.invite_members_async = [facade = messaging_facade_.get()](
+                                          const std::string& group_id, std::vector<std::string> contact_ids,
+                                          std::function<void(GroupInviteBatchResult)> done) {
+    facade->InviteMembersAsync(group_id, std::move(contact_ids), std::move(done));
+  };
+  people_picker_->BindPickerPorts(std::move(picker_ports));
   people_picker_->BindShellNavigation(shell_navigation);
   people_picker_->BindShellFeedback(shared_feedback);
   people_picker_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "people_picker_chrome"));
@@ -1366,6 +1372,9 @@ bool Application::MountPresenters(ui::Context* context) {
   PeoplePickerNotifyPorts chat_people_picker_notify;
   chat_people_picker_notify.open_free = [this]() { people_picker_->OpenFree(); };
   chat_people_picker_notify.open_from_dm = [this](const std::string& id) { people_picker_->OpenFromDm(id); };
+  chat_people_picker_notify.open_group_members = [this](const std::string& thread_id) {
+    people_picker_->OpenForGroupMembers(thread_id);
+  };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
   EmojiPickerNotifyPorts emoji_notify;

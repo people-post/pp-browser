@@ -13,6 +13,7 @@
 #include "lib/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
 #include <utility>
@@ -29,6 +30,34 @@ std::string ChatSessionKindName(const Thread& thread) {
     return thread.channel == ThreadChannel::E2e ? "private" : "public";
   }
   return "public";
+}
+
+GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
+                                   const bool unreachable) {
+  GroupMemberRow row;
+  row.identity = member.member_identity;
+  row.is_owner = member.role == MemberRole::Owner;
+  row.unreachable = unreachable;
+  if (contact) {
+    row.contact_id = contact->id;
+    row.title = FormatContactTitle(*contact);
+  }
+  if (row.title.empty()) {
+    row.title = ShortRelayId(member.member_identity);
+  }
+  return row;
+}
+
+void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
+  std::stable_sort(rows.begin(), rows.end(), [](const GroupMemberRow& a, const GroupMemberRow& b) {
+    if (a.unreachable != b.unreachable) {
+      return a.unreachable;
+    }
+    if (a.is_owner != b.is_owner) {
+      return a.is_owner;
+    }
+    return a.title < b.title;
+  });
 }
 
 bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,

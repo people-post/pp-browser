@@ -15,6 +15,8 @@ struct PeoplePickerNotifyPorts {
   std::function<void(const std::string& locked_contact_id)> open_from_dm;
   std::function<void(const std::string& thread_id, bool video_allowed)> open_for_group_call;
   std::function<void(const std::string& call_id)> open_for_call_add_guest;
+  /** The member list of the group chat `thread_id`. */
+  std::function<void(const std::string& thread_id)> open_group_members;
 };
 
 } // namespace pbr
