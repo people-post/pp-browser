@@ -374,8 +374,9 @@ std::string OneLine(std::string text) {
   return text;
 }
 
+// `mentions_me`: set when the text @-mentions this account (the whole row is then tinted).
 std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
-                       const std::optional<CallSummaryRow>& call_row) {
+                       const std::optional<CallSummaryRow>& call_row, bool& mentions_me) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -441,10 +442,8 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mentions) + "</p>";
   }
-  const bool mentions_me =
-      std::any_of(mentions.begin(), mentions.end(), [](const TranscriptMention& m) { return m.me; });
-  std::string body = badges + "<div class=\"bubble " + bubble_class + (mentions_me ? " bubble-mentions-me" : "") +
-                     "\" selectable=\"text\">" + text_rml + "</div>";
+  mentions_me = std::any_of(mentions.begin(), mentions.end(), [](const TranscriptMention& m) { return m.me; });
+  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.
@@ -504,7 +503,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     const ThreadMessage& message = entry.message;
     // A call summary: decoded once, its side is the starter's (a group's is written locally).
     const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
-    std::string content = MessageRml(entry, facts, call_row);
+    bool mentions_me = false;
+    std::string content = MessageRml(entry, facts, call_row, mentions_me);
     if (content.empty()) {
       continue;
     }
@@ -529,6 +529,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.content_rml = content.c_str();
     row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
                              : RowClass(message.sender_contact_id).c_str();
+    row.mentions_me = mentions_me;
     if (!entry.control) {
       row.time_label = MessageTimeLabel(message.timestamp, util::NowUnixMs()).c_str();
     }

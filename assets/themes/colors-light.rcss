@@ -1137,21 +1137,15 @@ select selectbox option:hover {
   background-color: #e0e7ff;
 }
 
-.chat-mention--me {
-  color: #92400e;
-  background-color: #fde68a;
-}
-
 /* In our own (blue) bubble the text stays white; only the chip shows. */
 .bubble-user .chat-mention {
   color: #ffffff;
   background-color: #ffffff40;
 }
 
-/* A message that @-mentions this account: a tinted bubble with a bar on its left. */
-.bubble-assistant.bubble-mentions-me {
-  background-color: #fdf6ec;
-  border-left: 3dp #b45309;
+.message-row-mentions-me {
+  background-color: #fdf3e1;
+  border-left: 3dp #d97706;
 }
 
 .sidebar-unread {
