@@ -122,6 +122,7 @@ public:
   bool P2pConnectSeedUnreachable() const { return State()->p2p_connect_seed_unreachable; }
   std::string PeekMediaActivity() const { return State()->media_activity; }
   CallHopHealth HopHealth() const { return State()->hop_health; }
+  int64_t AloneUntilMs() const { return State()->alone_until_ms; }
   std::string MediaPathKind() const { return State()->media_path_kind; }
   /** The call's link: the relay's when a hop is attached, else the 1:1 call-media link. */
   CallLinkCounters MediaLinkCounters() const {

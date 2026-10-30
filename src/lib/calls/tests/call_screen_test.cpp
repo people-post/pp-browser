@@ -214,5 +214,117 @@ TEST(CallScreenTest, ACallThatHungUpByItselfBeforeConnectingIsReported) {
   EXPECT_FALSE(EndedWithoutConnecting(CallScreen{}, gone, false));
 }
 
+// --- B97: a live group call where nothing arrives from anyone ends after 30 s --------------------
+
+NoMediaSample LiveGroup(const int64_t now, const int64_t last_rx) {
+  NoMediaSample sample;
+  sample.call_id = "call:g";
+  sample.group = true;
+  sample.media_live = true;
+  sample.others_joined = 2;
+  sample.last_rx_ms = last_rx;
+  sample.now_ms = now;
+  return sample;
+}
+
+/** Steps once a second from `from` to `to` (inclusive); true as soon as a step says end. */
+bool StepEverySecond(NoMediaWatch& watch, int64_t from, const int64_t to, NoMediaSample sample) {
+  for (; from <= to; from += 1'000) {
+    sample.now_ms = from;
+    if (StepNoMediaWatch(watch, sample)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+TEST(NoMediaWatchTest, NothingFromAnyoneForThirtySecondsEnds) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 39'000, LiveGroup(0, 5'000)));
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(40'000, 5'000)));
+}
+
+TEST(NoMediaWatchTest, MutedPeersStillSendSoTheCallGoesOn) {
+  NoMediaWatch watch;
+  for (int64_t now = 10'000; now <= 120'000; now += 1'000) {
+    EXPECT_FALSE(StepNoMediaWatch(watch, LiveGroup(now, now - 20))) << "silent frames keep arriving";
+  }
+}
+
+TEST(NoMediaWatchTest, SomethingArrivingStartsTheCountOver) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 35'000, LiveGroup(0, 9'000)));
+  EXPECT_FALSE(StepNoMediaWatch(watch, LiveGroup(36'000, 35'500)));
+  EXPECT_FALSE(StepEverySecond(watch, 37'000, 66'000, LiveGroup(0, 35'500)));
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(68'000, 35'500)));
+}
+
+TEST(NoMediaWatchTest, MovingOrReconnectingPausesTheCount) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 30'000, LiveGroup(0, 9'000)));
+  NoMediaSample moving = LiveGroup(0, 9'000);
+  moving.media_live = false;
+  EXPECT_FALSE(StepEverySecond(watch, 31'000, 90'000, moving));
+  EXPECT_FALSE(StepEverySecond(watch, 91'000, 120'000, LiveGroup(0, 9'000))) << "counted from 0 again";
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(121'000, 9'000)));
+}
+
+TEST(NoMediaWatchTest, TheAppAsleepDoesNotCount) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 20'000, LiveGroup(0, 9'000)));
+  // Backgrounded for 40 s: no refresh ran. Back in front, the count starts from 0.
+  EXPECT_FALSE(StepNoMediaWatch(watch, LiveGroup(60'000, 9'000)));
+  EXPECT_FALSE(StepEverySecond(watch, 61'000, 89'000, LiveGroup(0, 9'000)));
+  EXPECT_TRUE(StepNoMediaWatch(watch, LiveGroup(91'000, 9'000)));
+}
+
+TEST(NoMediaWatchTest, OnlyAGroupCallWithOthersInItCounts) {
+  NoMediaWatch watch;
+  NoMediaSample one_to_one = LiveGroup(0, 9'000);
+  one_to_one.group = false;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 100'000, one_to_one));
+  NoMediaSample alone = LiveGroup(0, 9'000);
+  alone.others_joined = 0;  // waiting alone: V053's own wait applies
+  EXPECT_FALSE(StepEverySecond(watch, 101'000, 200'000, alone));
+}
+
+TEST(NoMediaWatchTest, AnotherCallStartsAFreshCount) {
+  NoMediaWatch watch;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 35'000, LiveGroup(0, 9'000)));
+  NoMediaSample other = LiveGroup(36'000, 9'000);
+  other.call_id = "call:h";
+  EXPECT_FALSE(StepEverySecond(watch, 36'000, 65'000, other));
+  other.now_ms = 66'000;
+  EXPECT_TRUE(StepNoMediaWatch(watch, other));
+}
+
+// --- V053: waiting alone in a group call ------------------------------------------------------------
+
+CallScreen WaitingAlone(const int64_t until) {
+  CallScreen s;
+  s.kind = CallScreen::Kind::InCall;
+  s.call_id = "call:g";
+  s.group = true;
+  s.media_connected = true;
+  s.members = {{"me", true}};
+  s.status = Status::WaitingForOthers;
+  s.alone_until_ms = until;
+  return s;
+}
+
+TEST(WaitingAloneTest, TheWaitLineIsNotHiddenByTheParticipantCount) {
+  EXPECT_FALSE(ShowsParticipantCount(WaitingAlone(120'000)));
+}
+
+TEST(WaitingAloneTest, TheCallGoingAwayAtTheEndOfTheWaitIsToldOnce) {
+  const CallScreen gone;
+  EXPECT_TRUE(EndedAlone(WaitingAlone(120'000), gone, 120'400));
+  EXPECT_FALSE(EndedAlone(WaitingAlone(120'000), gone, 60'000)) << "the user's own End, early";
+  EXPECT_FALSE(EndedAlone(WaitingAlone(120'000), WaitingAlone(120'000), 121'000)) << "still in it";
+  CallScreen live = WaitingAlone(0);
+  live.status = Status::Connected;
+  EXPECT_FALSE(EndedAlone(live, gone, 200'000)) << "was not waiting";
+}
+
 } // namespace
 } // namespace pbr

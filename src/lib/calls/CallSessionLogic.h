@@ -51,8 +51,11 @@ public:
   static CallSessionState TransitionOnLeave(CallSessionState current, size_t remaining_joined, bool group = false);
   /** V053: group rules apply — a group's call, or one that has had more than two people offered it. */
   static bool IsGroupCall(const CallSession& session, size_t offered_participants);
-  /** V053: a group call's last participant leaves by itself after this long alone. */
-  static constexpr int64_t kAloneInGroupCallMs = 5LL * 60 * 1000;
+  /**
+   * V053: a group call's last participant leaves by itself after this long alone (2 min: long enough for
+   * a dropped phone to come back, Kenneth 2026-10-30). The app asleep starts it over.
+   */
+  static constexpr int64_t kAloneInGroupCallMs = 2LL * 60 * 1000;
   /** V053: a join request nobody in the call answered (with an invite) within this long: it is over. */
   static constexpr int64_t kJoinRequestTimeoutMs = 15000;
 

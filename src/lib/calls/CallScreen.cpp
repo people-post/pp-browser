@@ -40,13 +40,16 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
     return "activity";
   case CallScreen::Status::Raw:
     return "raw";
+  case CallScreen::Status::WaitingForOthers:
+    return "waiting_for_others";
   }
   return "?";
 }
 
 bool ShowsParticipantCount(const CallScreen& screen) {
   using Status = CallScreen::Status;
-  if (!screen.group || screen.members.empty() || screen.status == Status::Activity) {
+  if (!screen.group || screen.members.empty() || screen.status == Status::Activity ||
+      screen.status == Status::WaitingForOthers) {
     return false;
   }
   if (screen.media_connected) {
@@ -67,6 +70,37 @@ bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, c
   }
   return before.status == Status::CouldntConnect || before.status == Status::Connecting ||
          before.status == Status::SettingUpGroup || before.status == Status::WaitingForMediaPath;
+}
+
+bool EndedAlone(const CallScreen& before, const CallScreen& after, const int64_t now_ms) {
+  if (before.kind != CallScreen::Kind::InCall || before.status != CallScreen::Status::WaitingForOthers ||
+      before.alone_until_ms <= 0 || before.call_id.empty()) {
+    return false;
+  }
+  if (after.kind == CallScreen::Kind::InCall && after.call_id == before.call_id) {
+    return false;
+  }
+  // The user's own End clears the screen first; this is the wait running out (a sweep may lag a little).
+  return now_ms >= before.alone_until_ms - kMediaArrivingWindowMs;
+}
+
+bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
+  if (watch.call_id != sample.call_id) {
+    watch = {};
+    watch.call_id = sample.call_id;
+  }
+  const bool woke = watch.last_step_ms > 0 && sample.now_ms - watch.last_step_ms > kWatchSleepGapMs;
+  watch.last_step_ms = sample.now_ms;
+  const bool arriving = sample.last_rx_ms > 0 && sample.now_ms - sample.last_rx_ms < kMediaArrivingWindowMs;
+  if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live || woke ||
+      arriving) {
+    watch.silent_since_ms = 0;
+    return false;
+  }
+  if (watch.silent_since_ms == 0) {
+    watch.silent_since_ms = sample.now_ms;
+  }
+  return sample.now_ms - watch.silent_since_ms >= kGroupNoMediaEndMs;
 }
 
 InCallStatus DecideInCallStatus(const InCallSignals& s) {

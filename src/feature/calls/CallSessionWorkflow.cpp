@@ -877,6 +877,8 @@ namespace {
 // After a rotation the key goes again at these times: CallMediaKey has no ack, and a member that missed
 // it would seal with the old epoch for the rest of the call (#381). Receiving it again is harmless.
 constexpr int64_t kMediaKeyResendAfterMs[] = {2'000, 6'000, 15'000};
+// Sweeps come with every UI refresh; a gap this long means the app was asleep.
+constexpr int64_t kAloneSweepSleepGapMs = 5'000;
 } // namespace
 
 void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identity, const int64_t now) {
@@ -1926,6 +1928,11 @@ void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity,
   group_members_seen_ = std::move(seen);
 }
 
+int64_t CallSessionWorkflow::AloneUntilMs(const std::string& call_id) const {
+  auto it = alone_since_ms_.find(call_id);
+  return it == alone_since_ms_.end() ? 0 : it->second + CallSessionLogic::kAloneInGroupCallMs;
+}
+
 void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_identity, const int64_t now) {
   DropWhoLeftTheGroup(local_identity, now);
   ResendRotatedMediaKeys(local_identity, now);
@@ -1953,7 +1960,14 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     it = join_requested_until_ms_.erase(it);
     host_.wire.notify_ring_changed();
   }
+  const bool slept = last_alone_sweep_ms_ > 0 && now - last_alone_sweep_ms_ > kAloneSweepSleepGapMs;
+  last_alone_sweep_ms_ = now;
   for (auto it = alone_since_ms_.begin(); it != alone_since_ms_.end();) {
+    // Asleep (backgrounded): the wait starts over. (Someone ringing is not waited on: an offer nobody
+    // answers stays Invited with no end, and the wait is longer than a ring anyway.)
+    if (slept) {
+      it->second = now;
+    }
     if (now - it->second < CallSessionLogic::kAloneInGroupCallMs) {
       ++it;
       continue;
@@ -1961,7 +1975,8 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     const std::string call_id = it->first;
     it = alone_since_ms_.erase(it);
     if (call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
-      log().info << "Alone in group call for 5 min — leaving call_id=" << call_id;
+      log().info << "Alone in group call for " << CallSessionLogic::kAloneInGroupCallMs / 1000
+                 << " s — leaving call_id=" << call_id;
       (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
     }
   }
