@@ -1,3 +1,4 @@
+#include "lib/messaging/GroupMentions.h"
 #include "lib/messaging/ReactionTypes.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
@@ -183,6 +184,135 @@ TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip
   EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("Peer called"), std::string::npos);
   EXPECT_TRUE(rows[1].sender_label.empty());
   EXPECT_TRUE(rows[1].time_label.empty());
+}
+
+
+// --- @mention highlight (G015) --------------------------------------------------------------------
+
+TranscriptRow MentionRow(const std::string& text, const std::vector<MentionRange>& ranges) {
+  TranscriptRow row;
+  row.message.id = "mm1";
+  row.message.thread_id = "thread-1";
+  row.message.sender_contact_id = "acct-peer";
+  row.message.content_type = ChatContentType::Text;
+  row.message.text = text;
+  MentionsPayload payload;
+  payload.mentions = ranges;
+  row.message.payload_json = BuildMentionsPayloadJson(text, payload);
+  return row;
+}
+
+TEST(TranscriptMentionTest, HighlightsTheRangeAndMarksSelf) {
+  const auto row = MentionRow("hi @Ann and @Bob!", {{"a", 3, 7}, {"b", 12, 16}});
+  TranscriptFacts facts;
+  facts.mentions = [](const ThreadMessage&) {
+    return std::vector<TranscriptMention>{{3, 7, false}, {12, 16, true}};
+  };
+  const auto rows = RenderTranscript({row}, facts);
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_NE(rml.find("hi <span class=\"chat-mention\">@Ann</span> and "
+                     "<span class=\"chat-mention chat-mention--me\">@Bob</span>!"),
+            std::string::npos)
+      << rml;
+}
+
+TEST(TranscriptMentionTest, EscapesNamesAndSurroundingText) {
+  const auto row = MentionRow("a&b @<i>x&y", {{"a", 4, 11}});
+  TranscriptFacts facts;
+  facts.mentions = [](const ThreadMessage&) { return std::vector<TranscriptMention>{{4, 11, false}}; };
+  const auto rows = RenderTranscript({row}, facts);
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_NE(rml.find("a&amp;b <span class=\"chat-mention\">@&lt;i&gt;x&amp;y</span>"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("<i>"), std::string::npos);
+}
+
+TEST(TranscriptMentionTest, BadRangesAndNoFactsLeaveThePlainText) {
+  const auto row = MentionRow("hello @x", {{"a", 6, 8}});
+  EXPECT_EQ(std::string(RenderTranscript({row}, TranscriptFacts{})[0].content_rml.c_str()).find("chat-mention"),
+            std::string::npos);
+  TranscriptFacts facts;
+  facts.mentions = [](const ThreadMessage&) { return std::vector<TranscriptMention>{{6, 99, false}}; };
+  EXPECT_EQ(std::string(RenderTranscript({row}, facts)[0].content_rml.c_str()).find("chat-mention"), std::string::npos);
+}
+
+// Eligibility is checked at render time from the roster the device holds then: non-members and a non-owner's
+// @all are not highlighted, and a roster that arrives late shows on the next render.
+TEST(TranscriptMentionTest, RosterDecidesAndALateRosterAppearsOnReRender) {
+  const auto dir = std::filesystem::temp_directory_path() / "pp_browser_transcript_mention_test";
+  std::filesystem::remove_all(dir);
+  SqliteThreadStore store(dir.string());
+  ASSERT_TRUE(store.SetDek(ByteVector(32, 0xa5)));
+  ContactsStore contacts(dir.string());
+  MockDirectoryClient directory;
+  DirectoryShadowCache shadows(directory);
+  PeerDisplayResolver labels(contacts, PeerDisplaySourcesFrom(shadows));
+  InboxController inbox(store, contacts, labels, &shadows);
+
+  std::vector<GroupRosterMember> roster;  // not known yet
+  inbox.SetMentionContext([] { return std::string("acct-me"); }, [&roster](const std::string&) { return roster; });
+  Thread thread;
+  thread.id = "thread-1";
+  thread.kind = ThreadKind::Group;
+  thread.group_id = "group:1";
+  ASSERT_TRUE(store.UpsertThread(thread));
+
+  ThreadMessage message = Text("m1", "acct-owner", "yo @Me and @All");
+  MentionsPayload payload;
+  payload.mentions.push_back({"acct-me", 3, 6});
+  payload.mentions.push_back({"acct-stranger", 3, 6});
+  payload.all = MentionRange{"", 11, 15};
+  message.payload_json = BuildMentionsPayloadJson(message.text, payload);
+  ASSERT_TRUE(store.AppendMessage(message));
+
+  const auto render = [&]() {
+    const auto rows = RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts());
+    return std::string(rows.at(0).content_rml.c_str());
+  };
+  EXPECT_EQ(render().find("chat-mention"), std::string::npos);
+
+  GroupRosterMember owner;
+  owner.member_identity = "acct-owner";
+  owner.role = MemberRole::Owner;
+  GroupRosterMember me;
+  me.member_identity = "acct-me";
+  roster = {owner, me};
+  const std::string after = render();
+  EXPECT_NE(after.find("<span class=\"chat-mention chat-mention--me\">@Me</span>"), std::string::npos) << after;
+  EXPECT_NE(after.find("<span class=\"chat-mention chat-mention--me\">@All</span>"), std::string::npos) << after;
+  EXPECT_EQ(after.find("acct-stranger"), std::string::npos);
+}
+
+TEST(TranscriptMentionTest, AllFromANonOwnerIsNotHighlighted) {
+  const auto dir = std::filesystem::temp_directory_path() / "pp_browser_transcript_mention_all_test";
+  std::filesystem::remove_all(dir);
+  SqliteThreadStore store(dir.string());
+  ASSERT_TRUE(store.SetDek(ByteVector(32, 0xa5)));
+  ContactsStore contacts(dir.string());
+  MockDirectoryClient directory;
+  DirectoryShadowCache shadows(directory);
+  PeerDisplayResolver labels(contacts, PeerDisplaySourcesFrom(shadows));
+  InboxController inbox(store, contacts, labels, &shadows);
+  GroupRosterMember owner;
+  owner.member_identity = "acct-owner";
+  owner.role = MemberRole::Owner;
+  GroupRosterMember pal;
+  pal.member_identity = "acct-pal";
+  inbox.SetMentionContext([] { return std::string("acct-me"); },
+                          [&](const std::string&) { return std::vector<GroupRosterMember>{owner, pal}; });
+  Thread thread;
+  thread.id = "thread-1";
+  thread.kind = ThreadKind::Group;
+  thread.group_id = "group:1";
+  ASSERT_TRUE(store.UpsertThread(thread));
+  ThreadMessage message = Text("m1", "acct-pal", "hey @All");
+  MentionsPayload payload;
+  payload.all = MentionRange{"", 4, 8};
+  message.payload_json = BuildMentionsPayloadJson(message.text, payload);
+  ASSERT_TRUE(store.AppendMessage(message));
+  const auto rows = RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts());
+  EXPECT_EQ(std::string(rows.at(0).content_rml.c_str()).find("chat-mention"), std::string::npos);
 }
 
 } // namespace

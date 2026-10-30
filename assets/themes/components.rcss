@@ -3075,6 +3075,19 @@ input.checkbox {
   border-radius: 4dp;
 }
 
+/* "Someone @-mentioned you": a short label in front of the preview. */
+.sidebar-mention {
+  flex-shrink: 0;
+  margin-right: 4dp;
+  font-size: 12dp;
+  font-weight: bold;
+}
+
+/* An @mention inside a message bubble; --me when it is this account. */
+.chat-mention {
+  font-weight: bold;
+}
+
 /* Opens the archived threads, or returns to the list; shown only when something is archived. */
 .sidebar-archived-entry {
   align-items: center;

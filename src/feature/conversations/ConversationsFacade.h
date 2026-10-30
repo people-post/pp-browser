@@ -144,7 +144,7 @@ public:
                                    const std::string& emoji);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
-  void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback);
+  void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback);
   void SyncInboxFromWake(bool force);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);

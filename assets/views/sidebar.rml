@@ -43,6 +43,7 @@
           <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
         </div>
         <div class="sidebar-session-line">
+          <span class="sidebar-mention" data-if="session.mention_badge">{{i18n:chat.list.mentioned_you}}</span>
           <p class="sidebar-session-preview">{{session.preview}}</p>
           <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
           <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>

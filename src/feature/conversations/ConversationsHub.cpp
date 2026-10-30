@@ -811,6 +811,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
+    inbox_->SetMentionContext(nullptr, nullptr);
     inbox_->SetAttachmentDownloads(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
@@ -1352,6 +1353,15 @@ void ConversationsHub::BuildMessagingObjects() {
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
+  inbox_->SetMentionContext(
+      [this]() {
+        auto identity = identity_->Get();
+        return identity ? identity->account_id : std::string{};
+      },
+      [this](const std::string& group_id) {
+        auto roster = group_roster_->ListMembers(group_id);
+        return roster ? *roster : std::vector<GroupRosterMember>{};
+      });
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   BindGroupRosterSyncFamily();
   NotifyMessagingBuilt();
@@ -2867,6 +2877,7 @@ void ConversationsHub::Shutdown() {
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
+    inbox_->SetMentionContext(nullptr, nullptr);
   }
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnTeardownStarting();

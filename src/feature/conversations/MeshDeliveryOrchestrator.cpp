@@ -502,7 +502,8 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
     if (outcome.persisted_message) {
       preview = outcome.persisted_message->text;
     }
-    inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
+    inbox_.OnInboundMessagePersisted(outcome.thread_id, preview,
+                                     outcome.persisted_message ? &*outcome.persisted_message : nullptr);
     MaybeEnqueueAttachmentDownload(outcome);
   }
   if (outcome.persisted || outcome.thread_changed) {
@@ -1694,6 +1695,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           std::string title;
           std::string body;
           std::string thread_id;
+          bool mentioned = false;
         };
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
@@ -1724,12 +1726,16 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           if (outcome.persisted_message) {
             preview = outcome.persisted_message->text;
           }
-          inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
+          inbox_.OnInboundMessagePersisted(resolved_thread_id, preview,
+                                           outcome.persisted_message ? &*outcome.persisted_message : nullptr);
           MaybeEnqueueAttachmentDownload(outcome);
           if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
             std::string notice_title = "New message";
+            bool mentioned = false;
             if (auto thread = store_.GetThread(resolved_thread_id)) {
               if (*thread) {
+                mentioned = outcome.persisted_message && (*thread)->kind == ThreadKind::Group && (*thread)->group_id &&
+                            inbox_.MessageMentionsMe(*(*thread)->group_id, *outcome.persisted_message);
                 notice_title = inbox_.ResolveThreadLabel(**thread).title;
                 if (notice_title.empty()) {
                   notice_title = "New message";
@@ -1740,6 +1746,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
                 .title = std::move(notice_title),
                 .body = preview && !preview->empty() ? *preview : "You have a new message",
                 .thread_id = resolved_thread_id,
+                .mentioned = mentioned,
             });
           }
         }
@@ -1770,7 +1777,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
                                     for (auto& notice : notices) {
                                       on_background_unread_(std::move(notice.title),
                                                             std::move(notice.body),
-                                                            std::move(notice.thread_id));
+                                                            std::move(notice.thread_id), notice.mentioned);
                                     }
                                   });
         }
@@ -1846,7 +1853,7 @@ void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const Deli
 }
 
 void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
-    std::function<void(std::string title, std::string body, std::string thread_id)> callback) {
+    std::function<void(std::string title, std::string body, std::string thread_id, bool mentioned)> callback) {
   on_background_unread_ = std::move(callback);
 }
 

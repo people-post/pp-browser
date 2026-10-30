@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/chat/SystemControl.h"
+#include "lib/messaging/GroupTypes.h"
 
 #include "common/Module.h"
 #include "lib/people/ContactsStore.h"
@@ -11,6 +12,7 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "domain/peers/PeerDisplaySources.h"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -30,12 +32,21 @@ struct TranscriptAttachmentView {
   std::string poster_path;
 };
 
+/** One @mention to highlight in a message text: UTF-8 byte range [start, end); `me` when it is this account. */
+struct TranscriptMention {
+  uint32_t start = 0;
+  uint32_t end = 0;
+  bool me = false;
+};
+
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
 struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
+  /** The message's @mentions that count by the roster now (members; `all` only from the owner). None: no highlight. */
+  std::function<std::vector<TranscriptMention>(const ThreadMessage&)> mentions;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -47,6 +58,9 @@ public:
                   DirectoryShadowCache* shadows = nullptr);
 
   void SetGroupMembership(GroupMembershipWorkflow* groups);
+  /** Who this account is and a group's current roster: what @mentions are checked against (when shown / arriving). */
+  void SetMentionContext(std::function<std::string()> self_account_id,
+                         std::function<std::vector<GroupRosterMember>(const std::string& group_id)> roster);
   /** The system-control families features bind: how their messages show (hidden, worded). Not owned. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
 
@@ -86,8 +100,14 @@ public:
   void MarkThreadRead(const std::string& thread_id);
   /** `even_if_active`: count it although it is the active thread (the user left its page, e.g. back to the list). */
   void IncrementUnread(const std::string& thread_id, int delta = 1, bool even_if_active = false);
-  void OnInboundMessagePersisted(const std::string& thread_id,
-                                 const std::optional<std::string>& preview = std::nullopt);
+  /**
+   * `message`: the stored message, so an @mention of this account can be told (by the roster as it is now).
+   * `live`: false for messages that only fill in history (sync): they never set the "mentioned you" marker.
+   */
+  void OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview = std::nullopt,
+                                 const ThreadMessage* message = nullptr, bool live = true);
+  /** True when `message` (stored in a group thread) @-mentions this account by the roster as it is now. */
+  bool MessageMentionsMe(const std::string& group_id, const ThreadMessage& message) const;
   int SumUnread() const;
   int SumUnreadForContact(const std::string& contact_id) const;
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
@@ -128,6 +148,8 @@ private:
   const SystemControlRegistry* controls_ = nullptr;
   DirectoryShadowCache* shadows_ = nullptr;
   GroupMembershipWorkflow* groups_ = nullptr;
+  std::function<std::string()> mention_self_account_id_;
+  std::function<std::vector<GroupRosterMember>(const std::string& group_id)> mention_roster_;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string active_thread_id_;

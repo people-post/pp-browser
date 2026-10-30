@@ -197,6 +197,7 @@ void ChatPresenter::Refresh() {
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
+    row.mention_badge = thread.unread_mention;
     row.pinned = thread_prefs.pinned_at != 0;
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);

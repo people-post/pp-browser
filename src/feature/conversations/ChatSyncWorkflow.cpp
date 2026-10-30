@@ -121,7 +121,8 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
       ++result.ingested;
       changed = true;
       if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
-        inbox_.OnInboundMessagePersisted(outcome.thread_id);
+        // History filling in: never marks "mentioned you" (live = false).
+        inbox_.OnInboundMessagePersisted(outcome.thread_id, std::nullopt, nullptr, false);
         // The stored, decrypted message — never the wire payload (ciphertext).
         if (attachment_downloads_ && outcome.persisted_message &&
             outcome.persisted_message->content_type == ChatContentType::Attachment) {

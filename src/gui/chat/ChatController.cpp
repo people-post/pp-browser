@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "lib/ui/MentionNotifyPolicy.h"
 #include "gui/chat/ApprovalCard.h"
 
 #include "gui/chat/DeliveryNoticeText.h"
@@ -897,6 +898,7 @@ void ChatController::ApplySessionList() {
     row.pinned = from.pinned;
     row.muted = from.muted;
     row.unread_dot = from.unread_dot;
+    row.mention_badge = from.mention_badge;
     shell_.sessions.push_back(std::move(row));
   }
 }
@@ -2275,14 +2277,21 @@ void ChatController::WireMessagingBindings() {
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread(
-      [this](std::string title, std::string body, std::string thread_id) {
-        if (!Store().Snapshot().profile_prefs.show_notifications) {
+      [this](std::string title, std::string body, std::string thread_id, bool mentioned) {
+        // A muted thread still counts as unread in the list; it notifies only for an @mention of us, at most
+        // once a minute per thread (G015).
+        const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
+        const int64_t now_ms = util::NowUnixMs();
+        const bool muted = prefs && ThreadIsMuted(prefs->muted_until, now_ms);
+        const auto last = last_mention_notify_ms_.find(thread_id);
+        if (!ShouldNotifyBackgroundMessage(Store().Snapshot().profile_prefs.show_notifications, muted, mentioned,
+                                           last == last_mention_notify_ms_.end() ? std::nullopt
+                                                                                  : std::optional<int64_t>(last->second),
+                                           now_ms)) {
           return;
         }
-        // A muted thread still counts as unread in the list; it just does not notify.
-        const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
-        if (prefs && ThreadIsMuted(prefs->muted_until, util::NowUnixMs())) {
-          return;
+        if (muted) {
+          last_mention_notify_ms_[thread_id] = now_ms;
         }
         // A stranger's first message arrives before the directory answered, so the title would be a bare
         // id. Give the lookup a moment and use whatever name is known by then.

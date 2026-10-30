@@ -1051,6 +1051,7 @@
     "sidebar.archived.back": "返回会话",
     "sidebar.error.prefs_failed": "设置保存失败",
     "sidebar.empty": "暂无对话。",
+    "chat.list.mentioned_you": "有人@你",
     "preview.empty": "助手生成的结果、表单和列表会显示在这里。",
     "emoji.category.smileys": "表情与情绪",
     "emoji.category.people": "人物与身体",
