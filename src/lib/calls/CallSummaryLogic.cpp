@@ -67,15 +67,13 @@ std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSumma
   if (mode == SummaryWrite::Final) {
     return std::nullopt;  // it was written when this device left (a restart cleanup would also wipe its talk time)
   }
-  if (mode == SummaryWrite::EndWhileIn) {
-    // Back in the call after a leave, and in it at the end: the longer stay is the record.
-    const bool longer = next.duration_ms && (!existing->duration_ms || *next.duration_ms > *existing->duration_ms);
-    return longer ? std::optional<CallSummaryDetail>(next) : std::nullopt;
+  // Leave or EndWhileIn after an earlier leave: this stay's talk time is added to the record.
+  if (!next.duration_ms) {
+    return std::nullopt;  // this stay had no talk time: the record stands
   }
-  if (existing->duration_ms && !next.duration_ms) {
-    return std::nullopt;  // this stay had no talk time: the earlier record says more
-  }
-  return next;  // from the first join to this leave
+  CallSummaryDetail merged = next;
+  merged.duration_ms = existing->duration_ms.value_or(0) + *next.duration_ms;
+  return merged;
 }
 
 } // namespace pbr
