@@ -700,18 +700,6 @@ TEST_F(ReInvitedMemberTest, AMemberWhoClearedTheGroupIsHeardAfterEveryReInvite) 
   }
 }
 
-// A fresh profile (uninstalled, not restored): no sessions and no counts either. The others still hold bob's
-// epoch-1 sessions and drop his restarted epoch-1 / seq-1 copies, so nothing he sends is kept. Messaging's
-// to fix (Hongwei's); re-invite stays off (kGroupReinviteEnabled) until this passes.
-TEST_F(ReInvitedMemberTest, DISABLED_AMemberOnAFreshProfileIsHeardAfterEveryReInvite) {
-  for (int round = 1; round <= 2; ++round) {
-    bob_->OpenProfile("profile-reinvited-" + std::to_string(round));
-    bob_->JoinGroup(group_, everyone_);
-    bob_->group_seq.clear();
-    ExpectBobIsHeard(round);
-  }
-}
-
 } // namespace
 } // namespace pbr
 

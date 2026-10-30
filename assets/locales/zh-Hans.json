@@ -479,6 +479,7 @@
     "people_picker.title_group_members": "群成员",
     "people_picker.add_members": "添加成员",
     "people_picker.badge_owner": "群主",
+    "people_picker.you": "你",
     "people_picker.badge_unreachable": "失联",
     "people_picker.cta_invite": "邀请（{count}）",
     "people_picker.cta_inviting": "邀请中…",
