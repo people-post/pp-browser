@@ -121,12 +121,22 @@ Roe<std::vector<uint8_t>> AccountBackupCodec::SerializeContents(const AccountBac
   Object out;
   out.set("link_bundle", *bundle);
   out.set("contacts", ArrayValue(std::move(contacts)));
-  if (!contents.groups.empty()) {
+  if (!contents.extras.groups.empty()) {
     std::vector<Value> groups;
-    for (const AccountBackupGroup& group : contents.groups) {
+    for (const AccountBackupGroup& group : contents.extras.groups) {
       groups.push_back(ObjectValue(GroupToJson(group)));
     }
     out.set("groups", ArrayValue(std::move(groups)));
+  }
+  if (!contents.extras.card_floors.empty()) {
+    std::vector<Value> floors;
+    for (const AccountBackupCardFloor& floor : contents.extras.card_floors) {
+      Object row;
+      row.set("account_id", floor.account_id);
+      row.set("issued_at", floor.issued_at);
+      floors.push_back(ObjectValue(std::move(row)));
+    }
+    out.set("card_floors", ArrayValue(std::move(floors)));
   }
   const std::string json = DumpJson(out);
   return std::vector<uint8_t>(json.begin(), json.end());
@@ -154,8 +164,22 @@ Roe<AccountBackupContents> AccountBackupCodec::ParseContents(const std::vector<u
     for (const Value& item : groups->elements) {
       if (const Object* group = asObject(item)) {
         if (auto parsed = GroupFromJson(*group)) {
-          contents.groups.push_back(std::move(*parsed));
+          contents.extras.groups.push_back(std::move(*parsed));
         }
+      }
+    }
+  }
+  if (const Array* floors = root->getArray("card_floors")) {
+    for (const Value& item : floors->elements) {
+      const Object* row = asObject(item);
+      if (row == nullptr) {
+        continue;
+      }
+      AccountBackupCardFloor floor;
+      floor.account_id = row->getString("account_id").value_or("");
+      floor.issued_at = row->getIf<int64_t>("issued_at").value_or(0);
+      if (!floor.account_id.empty() && floor.issued_at > 0) {
+        contents.extras.card_floors.push_back(std::move(floor));
       }
     }
   }

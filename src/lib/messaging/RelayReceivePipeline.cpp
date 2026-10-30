@@ -531,12 +531,14 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
   std::optional<AccountCard> kept = account_cards_ ? account_cards_(target.peer_identity_value) : std::nullopt;
   // The opening message of a session carries the sender's card: one that proves itself for this sender and
   // is newer than the kept one (a new device, a newer list) speaks for the sender, and is kept once the
-  // envelope it came with has verified. An older one does not undo a newer list (a device taken out).
+  // envelope it came with has verified. An older one does not undo a newer list (a device taken out) — nor
+  // one older than the newest this device knew before a restore (its floor).
   std::optional<AccountCard> carried;
   if (const auto& card_json = envelope.body.e2e.sender_card) {
+    const int64_t floor = account_card_floor_ ? account_card_floor_(target.peer_identity_value) : 0;
     if (auto card = AccountCardFromJson(*card_json);
         card && card->keys.account_id == target.peer_identity_value && VerifyAccountCard(*card, util::NowUnixMs()) &&
-        (!kept || card->issued_at > kept->issued_at)) {
+        card->issued_at >= floor && (!kept || card->issued_at > kept->issued_at)) {
       carried = std::move(card.value());
     }
   }

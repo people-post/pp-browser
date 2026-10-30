@@ -246,6 +246,11 @@ public:
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
                         const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
+  /**
+   * Our card to each of `accounts` on the control lane (the `device_list` notice, as to our siblings): a device
+   * they do not know yet — one restored from the account backup — is on their list before they next write.
+   */
+  void NotifyContactsOfDevices(const std::vector<std::string>& accounts);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */

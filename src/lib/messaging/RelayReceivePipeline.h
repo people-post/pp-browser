@@ -124,6 +124,13 @@ public:
    */
   void SetOnSenderCard(std::function<void(const AccountCard&)> callback) { on_sender_card_ = std::move(callback); }
   /**
+   * The issue time a carried card of an account must reach to speak for it (PeerCardStore::Floor): a restored
+   * device keeps no cards, only how new the ones it had were. None: 0.
+   */
+  void SetAccountCardFloor(std::function<int64_t(const std::string& account_id)> floor) {
+    account_card_floor_ = std::move(floor);
+  }
+  /**
    * Another member as the group owner's roster (member_joined) gives them: their card — keep it if it
    * proves itself (docs/contracts/ACCOUNT_CARD.md) — and their relay route.
    */
@@ -146,6 +153,7 @@ private:
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const AccountCard&)> on_sender_card_;
+  std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,

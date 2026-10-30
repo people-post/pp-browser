@@ -39,13 +39,31 @@ struct AccountBackupGroup {
   std::string roster_statement_json;
 };
 
+/**
+ * How new the newest account card of one account was on the device that wrote the backup (issue time only,
+ * not the card). A restored device keeps no cards; with this it still refuses an older card than it had seen
+ * — one listing a device taken out since (ACCOUNT_CARD § Newest wins).
+ */
+struct AccountBackupCardFloor {
+  std::string account_id;
+  int64_t issued_at = 0;
+
+  bool operator==(const AccountBackupCardFloor&) const = default;
+};
+
+/** What the backup keeps beyond the account and its contacts; each part optional on the wire. */
+struct AccountBackupExtras {
+  std::vector<AccountBackupGroup> groups;
+  std::vector<AccountBackupCardFloor> card_floors;
+};
+
 /** The secret part of the backup: sealed under the profile DEK, never stored in the clear. */
 struct AccountBackupContents {
   /** Serialized `LinkDeviceBundleV1` (account keys, DEK, relay id, nickname, public PSKs). */
   std::string link_bundle_json;
   std::vector<Contact> contacts;
-  /** Optional `groups` (absent in backups before it; an older app ignores it). */
-  std::vector<AccountBackupGroup> groups;
+  /** Optional `groups` and `card_floors` (absent in backups before them; an older app ignores them). */
+  AccountBackupExtras extras;
 };
 
 /**

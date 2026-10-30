@@ -21,6 +21,7 @@ import json
 import os
 import queue
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -57,6 +58,8 @@ class User:
         self.dir = os.path.join(lab.root, name)
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
+        # The phone's secure store (iOS Keychain): the account backup, outside the data dir an uninstall wipes.
+        self.keychain = os.path.join(lab.root, name + ".keychain")
         with open(self.config, "w") as f:
             json.dump(lab.config_for(self.dir, directory, reachable), f, indent=2)
         self.proc = None
@@ -71,10 +74,12 @@ class User:
 
     # --- process --------------------------------------------------------------------------------
 
-    def start(self):
+    def start(self, restore_backup=False):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
-        argv = ["--config", self.config, "--pin", PIN, "--log-file", log]
+        argv = ["--config", self.config, "--pin", PIN, "--log-file", log, "--backup-store", self.keychain]
+        if restore_backup:
+            argv.append("--restore-backup")
         if self.container:
             # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
             script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
@@ -145,20 +150,45 @@ class User:
         self.start()
         self.wait_ready()
 
-    def restore_account(self, groups=None):
-        """A reinstall restored from the account backup: the same account, contacts and public sessions,
-        but no chats — threads and message numbering start over, so each pair starts its next epoch with
-        the first send (D014, issue #378). `groups`: what `backup_groups` returned when the backup was
-        written; they come back checking their members (group-chat G013)."""
-        bundle = self.cmd("backup_sessions")["bundle"]
+    def backup_snapshot(self, groups=0, timeout=30):
+        """The account backup as the phone's secure store holds it now, once it was written with at least
+        `groups` groups — what a phone lost at this moment leaves behind."""
+        path = os.path.join(self.keychain, "account-backup")
+
+        def written():
+            counts = re.findall(r"Local account backup written groups=(\d+)", self.log_text())
+            return counts and int(counts[-1]) >= groups and os.path.exists(path)
+        wait_for(written, timeout, "%s: account backup written with %d group(s)" % (self.name, groups))
+        with open(path, "rb") as f:
+            return f.read()
+
+    def restore_account(self, backup=None):
+        """The phone is gone; the account comes back on a fresh install from its backup ("Restore my
+        account", the same PIN): a new device of the account, with its contacts, public sessions and groups
+        but no chats (D014, issue #378; groups check their members, group-chat G013). `backup`: what the
+        secure store held when the phone went (backup_snapshot); default: what it holds now."""
+        if backup is None:
+            backup = self.backup_snapshot()
+        before = self.cmd("whoami")
         self.quit()
-        shutil.rmtree(os.path.join(self.dir, "profiles", "default", "threads"), ignore_errors=True)
+        # The uninstall: the whole data dir but the lab's config (and the logs of earlier runs).
+        for entry in os.listdir(self.dir):
+            if entry == "config.json" or re.match(r"probe-\d+\.log$", entry):
+                continue
+            path = os.path.join(self.dir, entry)
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                os.remove(path)
+        os.makedirs(self.keychain, exist_ok=True)
+        with open(os.path.join(self.keychain, "account-backup"), "wb") as f:
+            f.write(backup)
         self.surface = {"kind": "none"}
-        self.start()
-        self.wait_ready()
-        self.cmd("restore_sessions", bundle=bundle)
-        if groups is not None:
-            self.cmd("restore_groups", groups=groups)
+        self.start(restore_backup=True)
+        who = self.wait_ready()
+        if who.get("account") != before.get("account") or who.get("peer_id") == before.get("peer_id"):
+            raise ProbeError("%s: restored as %s device %s (was %s device %s)" % (
+                self.name, who.get("account"), who.get("peer_id"), before.get("account"), before.get("peer_id")))
 
     def log_text(self):
         """Everything this user's app has logged, every run."""
@@ -1640,6 +1670,26 @@ def scenario_restored_device_is_heard(lab):
     wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer after the restore")
 
 
+def scenario_restored_device_hears_first(lab):
+    """Bob's phone is gone; he restores his account on a new one and has not written yet when Alice does.
+    The restored phone is a new device Alice never heard of: it tells its contacts its card, so her message
+    goes to it, opening a session that brings her card (the restore kept none) — not to the lost phone."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    hello = a.cmd("send", thread=a_thread, text="before")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, hello), 20, "bob: alice's message before the restore")
+    b.restore_account()
+    b.wait_mesh()
+    wait_for(lambda: "device list sent to 1 of 1" in b.log_text(), 30, "bob: his new device told to alice")
+    sent = a.cmd("send", thread=a_thread, text="are you there?")["message_id"]
+
+    def heard():
+        for t in b.cmd("threads")["threads"]:
+            if transcript_row(b, t["id"], sent):
+                return True
+        return None
+    wait_for(heard, 30, "bob: alice's message on his restored phone")
+
+
 def scenario_linked_devices_both_send(lab):
     """Alice's phone and her newly linked laptop are two devices of one account (M021). The laptop's first
     message brings Bob its device list; from then on Bob's answers reach both devices, and both keep writing
@@ -2178,13 +2228,6 @@ def checked_roster(u, group_id, state, timeout=60):
     return wait_for(settled, timeout, "%s: group check ends %s" % (u.name, state))
 
 
-def backup_with_group(u, group_id):
-    groups = u.cmd("backup_groups")["groups"]
-    if not any(g["group_id"] == group_id for g in groups):
-        raise ProbeError("%s: the group is not in its backup (%s)" % (u.name, groups))
-    return groups
-
-
 def remove_and_wait(owner, owner_thread, group_id, member, watchers):
     owner.cmd("remove_member", thread=owner_thread, account=member.account)
     for u in watchers:
@@ -2199,9 +2242,9 @@ def scenario_group_restore_checks_members(lab):
     users, threads = open_group(lab, 4)
     a, b, c, d = users
     group_id = lab_group_id(a, threads)
-    backup = backup_with_group(c, group_id)
+    backup = c.backup_snapshot(groups=1)
     remove_and_wait(a, threads[a.name], group_id, d, (b, c))
-    c.restore_account(groups=backup)
+    c.restore_account(backup)
     c.wait_mesh()
     roster = checked_roster(c, group_id, "active")
     if d.account in roster["members"] or sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
@@ -2221,9 +2264,9 @@ def scenario_group_removed_member_restores(lab):
     users, threads = open_group(lab, 3)
     a, b, d = users
     group_id = lab_group_id(a, threads)
-    backup = backup_with_group(d, group_id)
+    backup = d.backup_snapshot(groups=1)
     remove_and_wait(a, threads[a.name], group_id, d, (b,))
-    d.restore_account(groups=backup)
+    d.restore_account(backup)
     d.wait_mesh()
     checked_roster(d, group_id, "removed")
 
@@ -2235,9 +2278,9 @@ def scenario_group_restored_owner_takes_newer_roster(lab):
     users, threads = open_group(lab, 4)
     a, b, c, d = users
     group_id = lab_group_id(a, threads)
-    backup = backup_with_group(a, group_id)
+    backup = a.backup_snapshot(groups=1)
     remove_and_wait(a, threads[a.name], group_id, d, (b, c))
-    a.restore_account(groups=backup)
+    a.restore_account(backup)
     a.wait_mesh()
     roster = checked_roster(a, group_id, "active")
     if d.account in roster["members"]:
@@ -2308,6 +2351,7 @@ SCENARIOS = [
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
+    ("restored_device_hears_first", scenario_restored_device_hears_first),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),

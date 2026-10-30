@@ -129,6 +129,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "sender's account card not kept: " << kept.error().message;
     }
   });
+  receive_pipeline_->SetAccountCardFloor(
+      [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
   // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
   // hear, through our own mailbox (M022).
   own_cards_.SetOnChanged([this](const AccountCard& card) {
@@ -202,14 +204,35 @@ std::optional<Object> MeshDeliveryOrchestrator::OwnCardJson() {
   return AccountCardToJson(*card);
 }
 
-void MeshDeliveryOrchestrator::NotifySiblings() {
+namespace {
+
+/** A system message the receiver takes nothing from but the card its envelope carries. */
+ThreadMessage DeviceListNotice() {
   ThreadMessage notice;
   notice.id = util::GenerateUuid();
   notice.content_type = ChatContentType::System;
   notice.text = "Device list";
   notice.payload_json = R"({"control_type":"device_list"})";
   notice.timestamp = util::NowUnixMs();
-  if (auto sent = control_lane_.NotifySiblings(notice); !sent) {
+  return notice;
+}
+
+} // namespace
+
+void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::string>& accounts) {
+  size_t told = 0;
+  for (const std::string& account : accounts) {
+    if (auto sent = control_lane_.Send(account, DeviceListNotice()); !sent) {
+      log().info << "device list not sent to " << account << ": " << sent.error().message;
+      continue;
+    }
+    ++told;
+  }
+  log().info << "device list sent to " << told << " of " << accounts.size() << " contact(s)";
+}
+
+void MeshDeliveryOrchestrator::NotifySiblings() {
+  if (auto sent = control_lane_.NotifySiblings(DeviceListNotice()); !sent) {
     log().info << "siblings not told of the device list: " << sent.error().message;
   }
   if (on_own_devices_changed_) {

@@ -8,6 +8,7 @@
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AccountBackupCodec.h"
+#include "lib/people/LocalAccountBackup.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/ProfileIdentityView.h"
@@ -270,10 +271,20 @@ public:
    */
   void WriteLocalBackupAsync();
   /**
-   * Groups the account backup brought back (G013): recreated once messaging is ready, then each checks
-   * its members; with messaging already ready, now.
+   * Where the local account backup lives. Unset: nowhere — backup and restore are unsupported in the product
+   * (at-rest A011), so nothing is written and no restore is offered. The lab sets a file store that outlives
+   * the profile it wipes. Set before Initialize.
    */
-  void RestoreGroupsWhenReady(std::vector<AccountBackupGroup> groups);
+  void SetBackupStore(ISecureBlobStore* store) { backup_store_ = store; }
+  Roe<std::optional<std::string>> LocalBackupNickname();
+  /**
+   * Fresh install, before unlocking: the account, its sessions and contacts back from the local backup
+   * (LocalAccountBackup::Restore, under the account's PIN). The rest is applied once messaging is up: the
+   * card floors before anything is received, then the groups (each checks its members, G013), and this new
+   * device is announced to the contacts.
+   */
+  Roe<void> RestoreLocalBackup(const std::string& pin);
+  Roe<void> DeleteLocalBackup();
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
@@ -538,10 +549,27 @@ private:
   std::atomic<bool> shutdown_requested_{false};
   /** A backup write is queued and has not started (later changes ride on it). */
   std::atomic<bool> backup_write_queued_{false};
-  std::mutex restored_groups_mutex_;
-  std::vector<AccountBackupGroup> restored_groups_;
+  ISecureBlobStore* backup_store_ = nullptr;  // null: none (unsupported)
+  ISecureBlobStore& BackupStore() { return backup_store_ ? *backup_store_ : NoSecureBlobStore(); }
+  /** What a restore brought back, until messaging is up to apply it. */
+  struct PendingRestore {
+    std::vector<AccountBackupGroup> groups;
+    std::vector<AccountBackupCardFloor> card_floors;
+    /** Tell the contacts this device's card (the restored phone is a new device of the account). */
+    bool announce = false;
+  };
+  std::mutex restored_mutex_;
+  PendingRestore restored_;
+  bool RestorePending();
+  /** Before anything is received: no card older than the newest the backup knew speaks for its account. */
+  void ApplyRestoredCardFloors();
   /** Recreate the groups a restore brought back, then check the members of every group still checking. */
   void ResumeGroupRosterChecks();
+  /**
+   * After a restore: each contact hears this device's card on the control lane, so its next message opens a
+   * session with this device (carrying its own card) instead of going to the device the backup came from.
+   */
+  void AnnounceRestoredDevice();
   uint64_t hub_policy_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;

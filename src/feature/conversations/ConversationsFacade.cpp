@@ -75,31 +75,13 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
-Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() {
-  return LocalAccountBackup::PeekNickname(OsSecureBlobStore());
-}
+Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() { return hub_.LocalBackupNickname(); }
 
-Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
-      hub_.PskStore() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  std::vector<AccountBackupGroup> groups;
-  auto restored = LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
-                                              *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin,
-                                              util::NowUnixMs(), &groups);
-  if (!restored) {
-    return restored.error();
-  }
-  hub_.RestoreGroupsWhenReady(std::move(groups));
-  return {};
-}
+Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) { return hub_.RestoreLocalBackup(pin); }
 
 void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
 
-Roe<void> ConversationsFacade::DeleteLocalBackup() {
-  return LocalAccountBackup::Delete(OsSecureBlobStore());
-}
+Roe<void> ConversationsFacade::DeleteLocalBackup() { return hub_.DeleteLocalBackup(); }
 
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
 

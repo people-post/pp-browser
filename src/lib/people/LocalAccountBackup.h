@@ -30,6 +30,11 @@ public:
 
 /** `pbr::os::SecureBlob*` behind the interface. */
 ISecureBlobStore& OsSecureBlobStore();
+/**
+ * No store: backup and restore are unsupported (the product's default until restore is ready — nothing is
+ * written, nothing is offered). The lab sets a store of its own to keep the code exercised.
+ */
+ISecureBlobStore& NoSecureBlobStore();
 
 /**
  * Local account backup (DESIGN-account-recovery §9–10, PLAN-local-account-backup): the account as a
@@ -49,20 +54,19 @@ public:
    */
   static Roe<void> Write(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
                          IPskSessionStore& psk_store, ContactsStore& contacts, int64_t now_ms,
-                         std::vector<AccountBackupGroup> groups = {});
+                         AccountBackupExtras extras = {});
   /** Nickname of the stored account; nullopt when nothing usable is stored. */
   static Roe<std::optional<std::string>> PeekNickname(ISecureBlobStore& store);
   /**
    * Fresh install: `pin` must be the PIN the account used (it opens the stored vault copy; wrong
    * PIN → Pin-category error, nothing written). Then imports the bundle under that same PIN (vault +
    * account + public PSKs, like a pasted transfer code) and puts the contacts back. Fails when
-   * nothing is stored. The groups it kept go to `restored_groups`, for the caller to recreate once
-   * messaging is up (each then checks its members, G013).
+   * nothing is stored. What else it kept goes to `restored` for the caller to apply once messaging is up:
+   * the groups (each then checks its members, G013) and the card floors (before anything is received).
    */
   static Roe<void> Restore(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
                            IPskSessionStore& psk_store, ProfileSecretsEngine* secrets, ContactsStore& contacts,
-                           std::string_view pin, int64_t now_ms,
-                           std::vector<AccountBackupGroup>* restored_groups = nullptr);
+                           std::string_view pin, int64_t now_ms, AccountBackupExtras* restored = nullptr);
   static Roe<void> Delete(ISecureBlobStore& store);
 };
 

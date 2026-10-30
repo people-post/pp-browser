@@ -24,6 +24,11 @@ struct BootstrapOptions {
   std::string profile_override;
   /** Profile unlock PIN; falls back to PP_BROWSER_PIN. */
   std::string pin;
+  /**
+   * Tests/automation: before unlocking with `pin`, restore the local account backup under it — what the
+   * unlock gate's "Restore my account" does on a fresh install.
+   */
+  bool restore_local_backup = false;
 };
 
 } // namespace pbr

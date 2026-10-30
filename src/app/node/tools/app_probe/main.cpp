@@ -29,9 +29,6 @@
 //   remove_member {thread, account}     the owner removes a member from the group
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
-//   backup_sessions                     what the account backup keeps of the chats: the public sessions
-//   restore_sessions {bundle}           put them back as a backup restore does (each pair marked to
-//                                       start its next epoch)
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
@@ -41,6 +38,9 @@
 //   crash                               the process dies now (force-quit, OOM kill)
 //
 // Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
+//
+// --backup-store DIR: the phone's secure store (the account backup) as files in DIR, outside the data dir.
+// --restore-backup: a fresh install restores the account from it before unlocking ("Restore my account").
 
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
@@ -62,10 +62,8 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
-#include "foundation/crypto/LinkDeviceCodec.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "foundation/crypto/PskSessionRestart.h"
-#include "lib/people/LinkDeviceCoordinator.h"
+#include "lib/people/LocalAccountBackup.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -81,7 +79,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -129,6 +130,46 @@ const char* NoticeKindName(CallNotice::Kind kind) {
   }
   return "?";
 }
+
+/**
+ * The phone's secure store (iOS Keychain) as files in a directory outside the data dir: the app writes its
+ * account backup there as it would on a phone, and a fresh install (`--restore-backup`) reads it back.
+ */
+class FileBlobStore final : public ISecureBlobStore {
+public:
+  explicit FileBlobStore(std::filesystem::path dir) : dir_(std::move(dir)) {}
+  bool Supported() const override { return true; }
+  Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes) override {
+    std::error_code ec;
+    std::filesystem::create_directories(dir_, ec);
+    const std::filesystem::path tmp = dir_ / (name + ".tmp");
+    {
+      std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+      if (!out) {
+        return Error("backup store: write failed");
+      }
+    }
+    std::filesystem::rename(tmp, dir_ / name, ec);
+    return ec ? Roe<void>(Error("backup store: " + ec.message())) : Roe<void>();
+  }
+  Roe<std::optional<std::vector<uint8_t>>> Read(const std::string& name) override {
+    std::ifstream in(dir_ / name, std::ios::binary);
+    if (!in) {
+      return std::optional<std::vector<uint8_t>>{};
+    }
+    return std::optional<std::vector<uint8_t>>(
+        std::vector<uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
+  }
+  Roe<void> Delete(const std::string& name) override {
+    std::error_code ec;
+    std::filesystem::remove(dir_ / name, ec);
+    return {};
+  }
+
+private:
+  std::filesystem::path dir_;
+};
 
 /** One scripted user: the app's objects; its call buttons and call screen are the GUI's (CallPresenter). */
 class Probe {
@@ -661,70 +702,6 @@ public:
       }
       Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
       Emit(Reply(id, true));
-    } else if (cmd == "backup_groups") {
-      // The groups half of LocalAccountBackup (the OS store it seals into is not on Linux).
-      auto groups = Hub().Groups().BackupGroups();
-      if (!groups) {
-        ReplyError(id, groups.error().message);
-        return;
-      }
-      std::vector<Value> rows;
-      for (const AccountBackupGroup& group : *groups) {
-        rows.push_back(ObjectValue(AccountBackupCodec::GroupToJson(group)));
-      }
-      Object out = Reply(id, true);
-      out.set("groups", ArrayValue(std::move(rows)));
-      Emit(out);
-    } else if (cmd == "restore_groups") {
-      // What RestoreLocalBackup hands the hub: the groups come back once messaging is up and check
-      // their members (G013).
-      std::vector<AccountBackupGroup> groups;
-      if (const Array* rows = request->getArray("groups")) {
-        for (const Value& item : rows->elements) {
-          if (const Object* row = asObject(item)) {
-            if (auto group = AccountBackupCodec::GroupFromJson(*row)) {
-              groups.push_back(std::move(*group));
-            }
-          }
-        }
-      }
-      Hub().RestoreGroupsWhenReady(std::move(groups));
-      Emit(Reply(id, true));
-    } else if (cmd == "backup_sessions") {
-      // The link bundle the local account backup seals (LocalAccountBackup::Write).
-      if (!Hub().IsMessagingReady() || Secrets().Vault() == nullptr || Hub().PskStore() == nullptr) {
-        ReplyError(id, "messaging not ready");
-        return;
-      }
-      auto bundle = LinkDeviceCoordinator::ExportJson(Hub().Identity(), *Secrets().Vault(), *Hub().PskStore(),
-                                                      util::NowUnixMs(), 60 * 60 * 1000);
-      if (!bundle) {
-        ReplyError(id, bundle.error().message);
-        return;
-      }
-      Object out = Reply(id, true);
-      out.set("bundle", *bundle);
-      Emit(out);
-    } else if (cmd == "restore_sessions") {
-      // The sessions half of LocalAccountBackup::Restore (the account itself is still here).
-      if (!Hub().IsMessagingReady() || Hub().PskStore() == nullptr) {
-        ReplyError(id, "messaging not ready");
-        return;
-      }
-      auto bundle = LinkDeviceCodec::Parse(request->getString("bundle").value_or(""));
-      if (!bundle) {
-        ReplyError(id, bundle.error().message);
-        return;
-      }
-      if (auto applied = LinkDeviceCoordinator::ApplyPublicPsks(*Hub().PskStore(), bundle->public_psks); !applied) {
-        ReplyError(id, applied.error().message);
-        return;
-      }
-      if (auto marked = MarkPublicSessionsForRestart(*Hub().PskStore()); !marked) {
-        ReplyError(id, marked.error().message);
-        return;
-      }
-      Emit(Reply(id, true));
     } else if (cmd == "quit") {
       Emit(Reply(id, true));
       quit_ = true;
@@ -1117,15 +1094,22 @@ private:
 int main(int argc, char** argv) {
   std::string pin;
   std::string log_file;
+  std::string backup_store;
+  bool restore_backup = false;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--log-file") == 0 && i + 1 < argc) {
       log_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--backup-store") == 0 && i + 1 < argc) {
+      backup_store = argv[++i];
+    } else if (std::strcmp(argv[i], "--restore-backup") == 0) {
+      restore_backup = true;
     }
   }
-  if (pin.empty()) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE]\n");
+  if (pin.empty() || (restore_backup && backup_store.empty())) {
+    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--backup-store DIR "
+                         "[--restore-backup]]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
@@ -1149,10 +1133,17 @@ int main(int argc, char** argv) {
 
   auto probe = std::make_unique<pbr::Probe>();
   probe->Wire();
+  // The phone's account backup (iOS Keychain) — written as the app runs, read back by a fresh install.
+  std::unique_ptr<pbr::FileBlobStore> blob_store;
+  if (!backup_store.empty()) {
+    blob_store = std::make_unique<pbr::FileBlobStore>(backup_store);
+    probe->Hub().SetBackupStore(blob_store.get());
+  }
   pbr::BootstrapOptions options;
   options.argc = argc;
   options.argv = argv;
   options.pin = pin;
+  options.restore_local_backup = restore_backup;
   auto booted = pbr::Bootstrap::Run(options, probe->Hub(), probe->Secrets());
   if (!booted) {
     pbr::Object out;
