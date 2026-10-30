@@ -2,6 +2,7 @@
 
 #include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/messaging/ReactionTypes.h"
 
@@ -84,6 +85,10 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
     const auto family = controls ? controls->Find(message) : std::nullopt;
     if (family && family->on_lane && family->on_lane(message)) {
       continue;  // lane signaling is never a transcript row (an old store may still hold some)
+    }
+    if (const auto membership = GroupMembershipCodec::ControlTypeFromMessage(message);
+        membership && IsGroupRosterSyncControl(*membership)) {
+      continue;  // roster bookkeeping between members (G012 / G013), not something to read
     }
     TranscriptRow entry;
     entry.message = message;

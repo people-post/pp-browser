@@ -51,7 +51,8 @@ ISecureBlobStore& OsSecureBlobStore() {
 }
 
 Roe<void> LocalAccountBackup::Write(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
-                                    IPskSessionStore& psk_store, ContactsStore& contacts, const int64_t now_ms) {
+                                    IPskSessionStore& psk_store, ContactsStore& contacts, const int64_t now_ms,
+                                    std::vector<AccountBackupGroup> groups) {
   if (!store.Supported()) {
     return {};
   }
@@ -78,7 +79,7 @@ Roe<void> LocalAccountBackup::Write(ISecureBlobStore& store, IdentityStore& iden
   if (!vault_bytes) {
     return vault_bytes.error();
   }
-  auto contents = AccountBackupCodec::SerializeContents({std::move(*bundle), std::move(*list)});
+  auto contents = AccountBackupCodec::SerializeContents({std::move(*bundle), std::move(*list), std::move(groups)});
   if (!contents) {
     return contents.error();
   }
@@ -112,7 +113,8 @@ Roe<std::optional<std::string>> LocalAccountBackup::PeekNickname(ISecureBlobStor
 
 Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
                                       IPskSessionStore& psk_store, ProfileSecretsEngine* secrets,
-                                      ContactsStore& contacts, const std::string_view pin, const int64_t now_ms) {
+                                      ContactsStore& contacts, const std::string_view pin, const int64_t now_ms,
+                                      std::vector<AccountBackupGroup>* restored_groups) {
   auto backup = ReadBackup(store);
   if (!backup) {
     return backup.error();
@@ -149,6 +151,9 @@ Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& id
     if (auto upserted = contacts.Upsert(contact); !upserted) {
       return Error("Account restore failed: " + upserted.error().message);
     }
+  }
+  if (restored_groups) {
+    *restored_groups = std::move(contents->groups);  // recreated once messaging is up (they check their members)
   }
   return {};
 }

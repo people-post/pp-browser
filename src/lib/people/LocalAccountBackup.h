@@ -48,18 +48,21 @@ public:
    * Needs the vault unlocked (seals under its DEK). Rewrite after a PIN change.
    */
   static Roe<void> Write(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
-                         IPskSessionStore& psk_store, ContactsStore& contacts, int64_t now_ms);
+                         IPskSessionStore& psk_store, ContactsStore& contacts, int64_t now_ms,
+                         std::vector<AccountBackupGroup> groups = {});
   /** Nickname of the stored account; nullopt when nothing usable is stored. */
   static Roe<std::optional<std::string>> PeekNickname(ISecureBlobStore& store);
   /**
    * Fresh install: `pin` must be the PIN the account used (it opens the stored vault copy; wrong
    * PIN → Pin-category error, nothing written). Then imports the bundle under that same PIN (vault +
    * account + public PSKs, like a pasted transfer code) and puts the contacts back. Fails when
-   * nothing is stored.
+   * nothing is stored. The groups it kept go to `restored_groups`, for the caller to recreate once
+   * messaging is up (each then checks its members, G013).
    */
   static Roe<void> Restore(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
                            IPskSessionStore& psk_store, ProfileSecretsEngine* secrets, ContactsStore& contacts,
-                           std::string_view pin, int64_t now_ms);
+                           std::string_view pin, int64_t now_ms,
+                           std::vector<AccountBackupGroup>* restored_groups = nullptr);
   static Roe<void> Delete(ISecureBlobStore& store);
 };
 

@@ -7,6 +7,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/AccountBackupCodec.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/ProfileIdentityView.h"
@@ -263,8 +264,16 @@ public:
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
-  /** Refresh the local account backup on a worker (registration, nickname, contacts). Best effort. */
+  /**
+   * Refresh the local account backup on a worker (registration, nickname, contacts, groups). Best effort;
+   * a write already queued covers later changes.
+   */
   void WriteLocalBackupAsync();
+  /**
+   * Groups the account backup brought back (G013): recreated once messaging is ready, then each checks
+   * its members; with messaging already ready, now.
+   */
+  void RestoreGroupsWhenReady(std::vector<AccountBackupGroup> groups);
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
@@ -364,6 +373,8 @@ public:
 private:
   /** Bind the billing and payment-promise families (after the signing-key resolver exists). */
   void BindPricingFamilies();
+  /** G013: the member check's request / reply on the control lane (bound once the workflow exists). */
+  void BindGroupRosterSyncFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const AppConfig& config);
@@ -525,6 +536,12 @@ private:
   uint64_t stay_reachable_timer_ = 0;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
+  /** A backup write is queued and has not started (later changes ride on it). */
+  std::atomic<bool> backup_write_queued_{false};
+  std::mutex restored_groups_mutex_;
+  std::vector<AccountBackupGroup> restored_groups_;
+  /** Recreate the groups a restore brought back, then check the members of every group still checking. */
+  void ResumeGroupRosterChecks();
   uint64_t hub_policy_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;

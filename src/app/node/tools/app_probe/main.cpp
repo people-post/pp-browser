@@ -432,6 +432,15 @@ public:
         if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
           out.set("owner", *owner);
         }
+        // G013: a restored group's member check (active / checking / removed) and the roster epoch.
+        if (GroupRosterStore* rosters = Hub().GroupRosterOrNull()) {
+          if (auto metadata = rosters->LoadMetadata(request->getString("group_id").value_or(""));
+              metadata && *metadata) {
+            out.set("sync_state", GroupSyncStateToString((*metadata)->sync_state));
+            out.setJsonUInt("roster_epoch", (*metadata)->roster_epoch);
+            out.set("statement", !(*metadata)->roster_statement_json.empty());
+          }
+        }
         Emit(out);
       }
     } else if (cmd == "remove_member") {
@@ -651,6 +660,35 @@ public:
         return;
       }
       Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
+      Emit(Reply(id, true));
+    } else if (cmd == "backup_groups") {
+      // The groups half of LocalAccountBackup (the OS store it seals into is not on Linux).
+      auto groups = Hub().Groups().BackupGroups();
+      if (!groups) {
+        ReplyError(id, groups.error().message);
+        return;
+      }
+      std::vector<Value> rows;
+      for (const AccountBackupGroup& group : *groups) {
+        rows.push_back(ObjectValue(AccountBackupCodec::GroupToJson(group)));
+      }
+      Object out = Reply(id, true);
+      out.set("groups", ArrayValue(std::move(rows)));
+      Emit(out);
+    } else if (cmd == "restore_groups") {
+      // What RestoreLocalBackup hands the hub: the groups come back once messaging is up and check
+      // their members (G013).
+      std::vector<AccountBackupGroup> groups;
+      if (const Array* rows = request->getArray("groups")) {
+        for (const Value& item : rows->elements) {
+          if (const Object* row = asObject(item)) {
+            if (auto group = AccountBackupCodec::GroupFromJson(*row)) {
+              groups.push_back(std::move(*group));
+            }
+          }
+        }
+      }
+      Hub().RestoreGroupsWhenReady(std::move(groups));
       Emit(Reply(id, true));
     } else if (cmd == "backup_sessions") {
       // The link bundle the local account backup seals (LocalAccountBackup::Write).

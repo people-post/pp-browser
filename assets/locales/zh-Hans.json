@@ -568,6 +568,8 @@
     "chat.group.remove_member_title": "移除成员",
     "chat.group.remove_member_confirm": "要将 {name} 移出此群组吗？其他成员会收到通知。",
     "chat.group.owner_only": "只有群主可以执行此操作 — 请查看聊天中的提示",
+    "chat.group.checking_members": "正在确认群成员……确认后即可发送。",
+    "chat.group.removed": "你已不是本群成员。",
     "chat.clear_history": "清除聊天记录？",
     "chat.jump_to_latest": "最新",
     "chat.copy": "复制",

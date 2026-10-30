@@ -74,6 +74,13 @@ enum class ReplyOutcome {
 Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
                              const std::string& local_identity, const std::string& replier);
 
+/** An unanswered check is asked again when a group message shows a member is online (G013 amendment). */
+inline constexpr int64_t kCheckRetryMs = 15000;
+
+/** Why a group send was refused (i18n keys the GUI words). */
+inline constexpr const char kGroupCheckingError[] = "chat.group.checking_members";
+inline constexpr const char kGroupRemovedError[] = "chat.group.removed";
+
 /** A group may send only while active (not checking its members, not removed). */
 bool MaySend(const GroupMetadata& metadata);
 

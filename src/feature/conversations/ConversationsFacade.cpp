@@ -84,8 +84,15 @@ Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
       hub_.PskStore() == nullptr) {
     return Error("Messaging is not ready");
   }
-  return LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
-                                     *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin, util::NowUnixMs());
+  std::vector<AccountBackupGroup> groups;
+  auto restored = LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
+                                              *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin,
+                                              util::NowUnixMs(), &groups);
+  if (!restored) {
+    return restored.error();
+  }
+  hub_.RestoreGroupsWhenReady(std::move(groups));
+  return {};
 }
 
 void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }

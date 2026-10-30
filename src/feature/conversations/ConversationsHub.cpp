@@ -10,6 +10,7 @@
 #include "lib/pricing/PaymentPromiseAvoid.h"
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 #include "lib/pricing/PricingControlFamilies.h"
+#include "lib/messaging/GroupRosterSyncFamily.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/ValueJson.h"
@@ -811,6 +812,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     inbox_->SetGroupMembership(nullptr);
     inbox_->SetAttachmentDownloads(nullptr);
   }
+  system_controls_.Unbind(kGroupRosterSyncFamily);
   group_membership_.reset();
   // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
   if (secrets_ != nullptr) {
@@ -1112,6 +1114,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+  // The backup keeps every group (G013): rewrite it on any roster change.
+  group_roster_->SetOnChanged([this](const std::string&) { WriteLocalBackupAsync(); });
   thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
@@ -1334,6 +1338,7 @@ void ConversationsHub::BuildMessagingObjects() {
                                                                *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
+  BindGroupRosterSyncFamily();
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -1523,6 +1528,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   ScheduleMeshBringUp();
   // Accounts that registered before this build get their backup on the next unlock.
   WriteLocalBackupAsync();
+  AppRuntime::PostWorkerNormal([this]() { ResumeGroupRosterChecks(); });
   return {};
 }
 
@@ -1841,17 +1847,71 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   return {};
 }
 
+void ConversationsHub::RestoreGroupsWhenReady(std::vector<AccountBackupGroup> groups) {
+  {
+    std::lock_guard lock(restored_groups_mutex_);
+    for (AccountBackupGroup& group : groups) {
+      restored_groups_.push_back(std::move(group));
+    }
+  }
+  if (IsMessagingReady()) {
+    AppRuntime::PostWorkerNormal([this]() { ResumeGroupRosterChecks(); });
+  }
+}
+
+void ConversationsHub::ResumeGroupRosterChecks() {
+  if (!IsMessagingReady() || !group_membership_ || !group_roster_ ||
+      shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  std::vector<AccountBackupGroup> restored;
+  {
+    std::lock_guard lock(restored_groups_mutex_);
+    restored.swap(restored_groups_);
+  }
+  for (const AccountBackupGroup& group : restored) {
+    if (auto recreated = group_membership_->RestoreGroup(group); !recreated) {
+      log().warning << "Group not restored group=" << group.group_id << ": " << recreated.error().message;
+    }
+  }
+  // Every group still checking its members (just restored, or the app quit mid-check) asks again.
+  auto ids = group_roster_->ListGroupIds();
+  if (!ids) {
+    return;
+  }
+  for (const std::string& group_id : *ids) {
+    auto metadata = group_roster_->LoadMetadata(group_id);
+    if (metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking) {
+      if (auto asked = group_membership_->StartRosterCheck(group_id); !asked) {
+        log().warning << "Roster check not started group=" << group_id << ": " << asked.error().message;
+      }
+    }
+  }
+}
+
 void ConversationsHub::WriteLocalBackupAsync() {
   if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
+  if (backup_write_queued_.exchange(true, std::memory_order_acq_rel)) {
+    return;  // the queued write reads everything when it runs
+  }
   AppRuntime::PostWorkerNormal([this]() {
+    backup_write_queued_.store(false, std::memory_order_release);
     if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire) ||
         Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr) {
       return;
     }
+    std::vector<AccountBackupGroup> groups;
+    if (group_membership_) {
+      if (auto listed = group_membership_->BackupGroups()) {
+        groups = std::move(*listed);
+      } else {
+        log().warning << "Groups not backed up: " << listed.error().message;
+      }
+    }
     auto written = LocalAccountBackup::Write(OsSecureBlobStore(), Identity(), *Secrets()->Vault(), *PskStore(),
-                                             Contacts(), util::NowUnixMs());
+                                             Contacts(), util::NowUnixMs(), std::move(groups));
     if (!written) {
       log().warning << "Local account backup not written: " << written.error().message;
     } else if (OsSecureBlobStore().Supported()) {
@@ -2236,6 +2296,28 @@ AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
     }
     return Base64Decode(record->signing_public_key_b64);
   };
+}
+
+void ConversationsHub::BindGroupRosterSyncFamily() {
+  system_controls_.Bind(MakeGroupRosterSyncFamily(
+      *group_roster_,
+      [identity = identity_.get()]() -> std::optional<std::string> {
+        auto account = identity->GetAccountId();
+        if (!account || account->empty()) {
+          return std::nullopt;
+        }
+        return *account;
+      },
+      [this](group_roster_sync_codec::RosterRequest request, std::string asker) {
+        // Off the ingest: the owner signs its answer.
+        AppRuntime::PostWorkerNormal([this, request = std::move(request), asker = std::move(asker)]() {
+          if (group_membership_) {
+            if (auto answered = group_membership_->AnswerRosterRequest(request, asker); !answered) {
+              log().warning << "Roster answer to " << asker << " failed: " << answered.error().message;
+            }
+          }
+        });
+      }));
 }
 
 void ConversationsHub::BindPricingFamilies() {
@@ -2718,6 +2800,7 @@ void ConversationsHub::Shutdown() {
   // Nothing receives any more: the pricing families may let go of their stores.
   system_controls_.Unbind(kInitiationBillingFamily);
   system_controls_.Unbind(kPaymentPromiseFamily);
+  system_controls_.Unbind(kGroupRosterSyncFamily);
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();

@@ -1,4 +1,6 @@
 #include "lib/messaging/GroupRosterSync.h"
+#include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterSyncFamily.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/tests/TestRosterSigner.h"
@@ -247,6 +249,44 @@ TEST_F(GroupRosterSyncTest, CodecRoundTripsTheControlsAndTheEventFields) {
   ASSERT_TRUE(transferred);
   ASSERT_TRUE(group_roster_sync_codec::TransferIn(*transferred));
   EXPECT_EQ(group_roster_sync_codec::TransferIn(*transferred)->to_identity, bob.Id());
+}
+
+TEST_F(GroupRosterSyncTest, TheCheckRidesTheControlLane) {
+  Seed(Statement(3, {bob_, carol_, dave_}));
+  std::vector<std::pair<std::string, std::string>> answered;  // request id, asker
+  SystemControlFamily family = MakeGroupRosterSyncFamily(
+      *roster_, [this]() -> std::optional<std::string> { return carol_; },
+      [&answered](group_roster_sync_codec::RosterRequest request, std::string asker) {
+        answered.emplace_back(request.request_id, asker);
+      });
+  auto control = [](GroupMembershipControlType type, const std::string& detail) {
+    return GroupMembershipCodec::BuildSystemMessage(std::string(), type, "", detail, "").value();
+  };
+
+  // Bookkeeping between two devices: on the lane (an account copy with the sender's card, never stored).
+  ThreadMessage request = control(GroupMembershipControlType::GroupRosterRequest,
+                                  group_roster_sync_codec::EncodeRequest({kGroup, "r1", 3}));
+  ASSERT_TRUE(family.owns(request));
+  EXPECT_TRUE(family.on_lane(request));
+  ThreadMessage statement = control(GroupMembershipControlType::GroupRosterStatement,
+                                    group_roster_sync_codec::EncodeStatement(Statement(4, {bob_, carol_})));
+  EXPECT_FALSE(family.owns(statement)) << "the owner's statement stays a roster event in the chat stream";
+
+  // A member's check is handed on to be answered; a stranger's is not ours to answer.
+  ASSERT_TRUE(family.apply(request, SystemControlContext{.sender_identity = bob_}));
+  ASSERT_TRUE(family.apply(request, SystemControlContext{.sender_identity = carol_}));
+  ASSERT_EQ(answered.size(), 1u);
+  EXPECT_EQ(answered[0], std::make_pair(std::string("r1"), bob_));
+
+  // A reply to our open check settles it.
+  auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1).value();
+  ThreadMessage reply = control(GroupMembershipControlType::GroupRosterReply,
+                                group_roster_sync_codec::EncodeReply(
+                                    ReplyWith(check.request.request_id, Statement(4, {bob_, carol_}))));
+  EXPECT_TRUE(family.on_lane(reply));
+  ASSERT_TRUE(family.apply(reply, SystemControlContext{.sender_identity = bob_}));
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
+  EXPECT_EQ(Metadata().roster_epoch, 4u);
 }
 
 } // namespace

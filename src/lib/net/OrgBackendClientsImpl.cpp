@@ -157,15 +157,21 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
       if (item->contains("blob_b64")) {
         auto inbound = ParseRelayInboundRecord(*item);
         if (!inbound) {
+          logging::getLogger("HttpRelayClient").warning << "inbox record skipped: " << inbound.error().message;
           continue;
         }
         auto envelope = RelayEnvelopeFromInboundRecord(*inbound);
-        if (envelope) {
-          if (result.server_time_ms) {
-            envelope->relay_server_time_ms = result.server_time_ms;
-          }
-          result.messages.push_back(*envelope);
+        if (!envelope) {
+          // The cursor moves past it: an envelope we cannot read is never seen again.
+          logging::getLogger("HttpRelayClient").warning << "inbox record skipped sender=" << inbound->sender_contact_id
+                                                        << " stream=" << inbound->stream_id << ": "
+                                                        << envelope.error().message;
+          continue;
         }
+        if (result.server_time_ms) {
+          envelope->relay_server_time_ms = result.server_time_ms;
+        }
+        result.messages.push_back(*envelope);
       } else {
         auto envelope = ParseRelayEnvelope(*item);
         if (envelope) {

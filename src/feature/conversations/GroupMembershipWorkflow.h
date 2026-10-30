@@ -2,6 +2,8 @@
 
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/GroupRosterSync.h"
+#include "lib/people/AccountBackupCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -77,6 +79,27 @@ public:
   Roe<void> ResolveOwnerUnreachableAdvisory(const std::string& group_id);
   Roe<Thread> OpenOwnerDirectMessage(const std::string& owner_identity);
 
+  /**
+   * G012: sign the group's roster as its owner and hold it — with `handed`, the transfer that made us
+   * owner, added to the owner chain. Errors when we do not own the group.
+   */
+  Roe<GroupRosterStatement> SignRoster(const std::string& group_id,
+                                       const std::optional<GroupOwnerTransfer>& handed = std::nullopt);
+  /** G012: sign the roster and send it to the members (after a member left, or once we took the group over). */
+  Roe<void> SignAndSendRoster(const std::string& group_id,
+                              const std::optional<GroupOwnerTransfer>& handed = std::nullopt);
+  /** G013: answer a member's roster check; as the owner, with a statement signed now. */
+  Roe<void> AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request, const std::string& asker);
+  /** G013: check the group's members — ask the owner and every member we know; no sends until answered. */
+  Roe<void> StartRosterCheck(const std::string& group_id);
+  /** Groups as the account backup keeps them. */
+  Roe<std::vector<AccountBackupGroup>> BackupGroups() const;
+  /**
+   * A group from the account backup: metadata, roster, the statement held and its chat (no messages),
+   * checking its members (G013). The caller then starts the check once messaging is up.
+   */
+  Roe<void> RestoreGroup(const AccountBackupGroup& group);
+
 private:
   Roe<std::string> ResolveRelayIdentity(const std::string& contact_id) const;
   Roe<std::string> LocalRelayIdentity() const;
@@ -91,9 +114,15 @@ private:
   Roe<void> SendMembershipDirectMessage(const std::string& peer_identity, GroupMembershipControlType control_type,
                                         const std::string& detail_json, const std::string& display,
                                         const std::optional<std::string>& stored_detail_json = std::nullopt);
+  /** G013: a roster request / reply, on the control lane. */
+  Roe<void> SendRosterControl(const std::string& peer_identity, GroupMembershipControlType control_type,
+                              const std::string& detail_json, const std::string& display,
+                              const std::string& local_identity);
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  /** `detail_json` with the roster we now sign as owner added (G012); unchanged if it cannot be signed. */
+  std::string WithSignedRoster(const std::string& group_id, const std::string& detail_json);
   Roe<void> FanOutMembershipEvent(const std::string& group_id, GroupMembershipControlType control_type,
                                   const std::string& detail_json, const std::string& display,
                                   const std::string& skip_identity,

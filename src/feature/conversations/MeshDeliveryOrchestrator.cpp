@@ -6,6 +6,7 @@
 #include "domain/delivery/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
 
 #include "foundation/crypto/CryptoTypes.h"
@@ -354,16 +355,25 @@ void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_
 
 namespace {
 
-void MaybePublishMemberJoinedAfterIngest(GroupMembershipWorkflow* groups, const RelayReceiveOutcome& outcome) {
-  if (!outcome.publish_member_joined_group_id || !outcome.publish_member_joined_member_identity) {
-    return;
-  }
+/** What an applied membership message leaves this device to do (the pipeline decides; the workflow sends). */
+void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayReceiveOutcome& outcome) {
   if (!groups) {
     return;
   }
-  (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
-                                    *outcome.publish_member_joined_member_identity,
-                                    outcome.publish_member_joined_epoch);
+  if (outcome.publish_member_joined_group_id && outcome.publish_member_joined_member_identity) {
+    (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
+                                      *outcome.publish_member_joined_member_identity,
+                                      outcome.publish_member_joined_epoch);
+  }
+  if (outcome.resign_roster_group_id) {
+    (void)groups->SignAndSendRoster(*outcome.resign_roster_group_id);
+  }
+  if (outcome.took_ownership_group_id) {
+    (void)groups->SignAndSendRoster(*outcome.took_ownership_group_id, outcome.took_ownership_transfer);
+  }
+  if (outcome.restart_roster_check_group_id) {
+    (void)groups->StartRosterCheck(*outcome.restart_roster_check_group_id);
+  }
 }
 
 } // namespace
@@ -453,7 +463,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
   if (outcome.sender_verified) {
     card_service_.NoteDevice(envelope.sender_contact_id, from_peer_id);
   }
-  MaybePublishMemberJoinedAfterIngest(groups_, outcome);
+  FollowUpMembershipAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
     auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
@@ -1282,6 +1292,13 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
     return Error("Not a group thread");
   }
+  // G013: a restored group checks its members before it sends (a stale roster would encrypt to someone
+  // removed since); a group we were removed from is read-only. Refused before anything is stored.
+  if (auto metadata = group_roster_.LoadMetadata(*(*thread)->group_id);
+      metadata && *metadata && !group_roster_sync::MaySend(**metadata)) {
+    return Error((*metadata)->sync_state == GroupSyncState::Removed ? group_roster_sync::kGroupRemovedError
+                                                                        : group_roster_sync::kGroupCheckingError);
+  }
 
   auto identity = identity_.Get();
   if (!identity || identity->relay_user_id.empty()) {
@@ -1655,7 +1672,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome);
-          MaybePublishMemberJoinedAfterIngest(groups_, outcome);
+          FollowUpMembershipAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {
             const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);

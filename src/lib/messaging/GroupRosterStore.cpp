@@ -129,6 +129,16 @@ Roe<void> GroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
   return {};
 }
 
+void GroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
+  on_changed_ = std::move(on_changed);
+}
+
+void GroupRosterStore::NotifyChanged(const std::string& group_id) const {
+  if (on_changed_) {
+    on_changed_(group_id);
+  }
+}
+
 std::unique_lock<std::recursive_mutex> GroupRosterStore::LockForUpdate() {
   static std::recursive_mutex mutex;
   return std::unique_lock<std::recursive_mutex>(mutex);
@@ -183,6 +193,7 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   }
   sqlite3_finalize(stmt);
   sqlite3_close(db);
+  NotifyChanged(metadata.group_id);
   return {};
 }
 
@@ -282,6 +293,7 @@ Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const Grou
   }
   sqlite3_finalize(stmt);
   sqlite3_close(db);
+  NotifyChanged(group_id);
   return {};
 }
 
@@ -302,6 +314,7 @@ Roe<void> GroupRosterStore::RemoveMember(const std::string& group_id, const std:
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   sqlite3_close(db);
+  NotifyChanged(group_id);
   return {};
 }
 
