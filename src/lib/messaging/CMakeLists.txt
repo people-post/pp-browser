@@ -39,6 +39,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupRosterStore.cpp
     GroupTypes.cpp
     OutboundMessage.cpp
+    SentCopy.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp

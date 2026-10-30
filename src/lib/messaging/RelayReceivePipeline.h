@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/messaging/SentCopy.h"
+
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
@@ -168,6 +170,14 @@ private:
    * that sends it on the lane while fresh and not seen before. Never stored.
    */
   RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
+  /**
+   * A sibling's control notice (M022: our own account writes to itself), signature already checked: a sent-message
+   * copy (M021 d3) is opened and filed as a message we sent; anything else is only its card (the device list).
+   */
+  void ApplySiblingNotice(const RelayEnvelope& envelope, const std::string& local_account_id,
+                          const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome);
+  /** File a sibling's sent message in its chat (public direct, or group), once per message id. */
+  void FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope, RelayReceiveOutcome& outcome);
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */

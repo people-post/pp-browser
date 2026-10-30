@@ -142,7 +142,8 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 
 ### d3 — Siblings
 
-- [ ] Copies to our own siblings (sent messages show on every device)
+- [x] Copies to our own siblings: a `sent_copy` control-lane notice to our own account per sent public direct / group message (texts, attachments, cards); a sibling files it as ours (`RelayReceivePipeline::FileSentCopy`), opening the chat if needed; M022 §2 amended. gtest `sent_copy_test`; lab `linked_devices_see_what_each_sent`
+- [ ] Reactions and deletes on siblings (annotations: their effects on arrival); attachments' bytes fetched on a sibling like a received one
 - [ ] Missing copy: ask the sender's device to send one (M021 §9)
 - [x] A new device is introduced to the account's contacts: a restored one announces itself (`AnnounceRestoredDevice`); for a linked one the **master** does it when it takes in the card that adds it (`OwnCards::SetOnDeviceJoined` → `AnnounceOwnDevicesToContacts`) — the master has the contacts, the new device may not yet (its first locker sync may find none). Lab `linked_device_introduces_itself` (Bob's message reaches the laptop before the laptop wrote to anyone)
 

@@ -7,6 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/messaging/SentCopy.h"
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/PeerKemKeyStore.h"
@@ -166,6 +167,11 @@ public:
    * same `device_list` notice through our own mailbox — receiving any sibling notice prompts a sync.
    */
   void NudgeSiblings();
+  /**
+   * What we sent shows on our other devices (M021 d3): a sent-copy notice to our own mailbox, when our card lists
+   * other devices. Off the caller's thread.
+   */
+  void MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target);
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},

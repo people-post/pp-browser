@@ -1,5 +1,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 
+#include "lib/messaging/SentCopy.h"
+
 #include "lib/messaging/AccountCard.h"
 
 #include "lib/messaging/DeliveryNotice.h"
@@ -709,6 +711,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     outcome.sender_verified = verified && *verified;
     outcome.from_sibling = outcome.sender_verified;
     outcome.decision = IngestDecision::SilentDiscard;
+    if (outcome.sender_verified) {
+      ApplySiblingNotice(envelope, local_relay_user_id, inbound_target, outcome);
+    }
     return outcome;
   }
   auto verified = VerifySignature(envelope, inbound_target);
@@ -779,6 +784,83 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   }
   outcome.decision = IngestDecision::AcceptControl;
   return outcome;
+}
+
+void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, const std::string& local_account_id,
+                                              const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome) {
+  if (local_keys_.device_peer_id) {
+    if (auto self = local_keys_.device_peer_id(); self && envelope.sender_device == *self) {
+      return;  // our own notice, back from the shared mailbox
+    }
+  }
+  auto kem_private = CopyKemPrivateKey(envelope);
+  if (!kem_private) {
+    return;
+  }
+  // A one-off opener to our account KEM (ControlLane::NotifySiblings): read, no session kept between siblings.
+  const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
+  AutoKeyRead read;
+  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_,
+                                                         *kem_private, &read);
+  if (!decrypted) {
+    log().info << "sibling notice not read message_id=" << envelope.message_id << ": " << decrypted.error().message;
+    return;
+  }
+  auto copy = sent_copy::Parse(*decrypted);
+  if (!copy) {
+    log().warning << "sibling's sent copy refused message_id=" << envelope.message_id << ": " << copy.error().message;
+    return;
+  }
+  if (*copy) {
+    outcome.from_sibling = false;  // a sent message, not news about the account's state (no locker sync)
+    FileSentCopy(**copy, envelope, outcome);
+  }
+}
+
+void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope,
+                                        RelayReceiveOutcome& outcome) {
+  std::string thread_id;
+  if (!copy.target.group_id.empty()) {
+    auto thread = store_.FindGroupThread(copy.target.group_id);
+    if (!thread || !*thread) {
+      return;  // a group this device does not hold
+    }
+    thread_id = (*thread)->id;
+  } else {
+    // Public chats only (private Secure stays on one device, M014). A chat this device has not opened yet is.
+    const DirectChatTarget target{.peer_identity_kind = "account",
+                                  .peer_identity_value = copy.target.peer_account,
+                                  .channel = ThreadChannel::E2ePublic};
+    const std::string title = ShortRelayId(copy.target.peer_account);
+    auto thread = store_.FindOrCreateDirectThread(target, "", title.empty() ? copy.target.peer_account : title);
+    if (!thread) {
+      log().warning << "sibling's sent copy: no chat: " << thread.error().message;
+      return;
+    }
+    thread_id = thread->id;
+    outcome.thread_changed = true;
+  }
+  if (auto seen = store_.HasMessageId(thread_id, copy.message.id); !seen || *seen) {
+    outcome.decision = IngestDecision::BenignDuplicate;
+    return;
+  }
+  ThreadMessage message = copy.message;
+  message.thread_id = thread_id;
+  message.sender_contact_id = kLocalSelfContactId;  // ours, from another of our devices
+  message.sender_device = envelope.sender_device;
+  message.delivery = MessageDelivery::Relayed;
+  message.transport = MessageTransport::Relay;
+  message.relay_visible = true;
+  auto stored = store_.AppendMessage(message);
+  if (!stored) {
+    log().warning << "sibling's sent copy not stored: " << stored.error().message;
+    return;
+  }
+  outcome.decision = IngestDecision::AcceptControl;
+  outcome.persisted = true;
+  outcome.thread_id = thread_id;
+  outcome.persisted_message = *stored;
+  outcome.suppress_inbox_chrome = true;  // what we sent ourselves: no unread count, no notice
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,

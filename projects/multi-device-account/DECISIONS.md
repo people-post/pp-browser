@@ -373,7 +373,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M022 — One relay record per account carries every device's copy; an account writes to itself
 
 **Date:** 2026-10-25  
-**Status:** Accepted (Hongwei, 2026-10-25): split delivery; the mailbox cap raised. Amends [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §5, §7, §9 (d2/d3) and [M013](#m013--soft-inbox-ack-shared-mailbox-no-sibling-starve) §3 (the cap).
+**Status:** Accepted (Hongwei, 2026-10-25): split delivery; the mailbox cap raised. *Amended 2026-10-30 (d3 as built):* §2's copies of a send for our other devices are one **control-lane notice** to our own account (`sent_copy`: the sent row and where it went, sealed to the account KEM, signed by the device) instead of entries numbered in sibling device pairs — no sessions or numbering between siblings, one record per send whatever the device count ([WIRE_SCHEMAS § Sent-message copies](../../docs/contracts/WIRE_SCHEMAS.md)). Amends [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §5, §7, §9 (d2/d3) and [M013](#m013--soft-inbox-ack-shared-mailbox-no-sibling-starve) §3 (the cap).
 
 **Problem:** with per-device sessions (M021) a message to an account is one copy per device. As separate relay records each device downloads all of them anyway (one mailbox per account), the relay refuses an account's records to itself (no sibling channel: card notices, sent messages on our other devices), and a device that is not addressed cannot tell a copy is missing.
 

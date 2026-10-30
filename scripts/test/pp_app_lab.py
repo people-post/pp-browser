@@ -1931,6 +1931,30 @@ def scenario_linked_device_introduces_itself(lab):
     wait_for(lambda: transcript_row(laptop, l_thread, m), 30, "laptop: bob's message")
 
 
+def scenario_linked_devices_see_what_each_sent(lab):
+    """What one of Alice's devices sends shows on her others (M021 d3), as hers: the phone writes to Bob and the
+    laptop shows it in its chat with Bob; the laptop writes back and the phone shows that. Bob reads each once."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    from_phone = a.cmd("send", thread=a_thread, text="sent on the phone")["message_id"]
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 40, "laptop: a chat with bob")
+    row = wait_for(lambda: transcript_row(laptop, l_thread, from_phone), 40, "laptop: the phone's message")
+    if row["from"] != "local:self" or row["text"] != "sent on the phone":
+        raise ProbeError("laptop: the phone's message as %s" % row)
+    from_laptop = laptop.cmd("send", thread=l_thread, text="sent on the laptop")["message_id"]
+    row = wait_for(lambda: transcript_row(a, a_thread, from_laptop), 40, "phone: the laptop's message")
+    if row["from"] != "local:self":
+        raise ProbeError("phone: the laptop's message as %s" % row)
+    for m in (from_phone, from_laptop):
+        wait_for(lambda m=m: transcript_row(b, b_thread, m), 30, "bob: alice's message")
+    ids = [r["id"] for r in b.cmd("transcript", thread=b_thread)["rows"]]
+    if ids.count(from_phone) != 1 or ids.count(from_laptop) != 1:
+        raise ProbeError("bob: alice's messages not once each (%s)" % ids)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2593,6 +2617,7 @@ SCENARIOS = [
     ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
     ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
     ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
+    ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

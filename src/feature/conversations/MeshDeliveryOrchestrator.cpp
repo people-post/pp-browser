@@ -243,6 +243,25 @@ void MeshDeliveryOrchestrator::NudgeSiblings() {
   }
 }
 
+void MeshDeliveryOrchestrator::MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target) {
+  if (!sent_copy::Mirrored(sent)) {
+    return;
+  }
+  AppRuntime::PostWorkerNormal([this, sent, target = std::move(target)]() {
+    if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
+      return;  // no other device, or signed out
+    }
+    auto notice = sent_copy::BuildNotice(sent, target);
+    if (!notice) {
+      log().warning << "sent copy not built message_id=" << sent.id << ": " << notice.error().message;
+      return;
+    }
+    if (auto copied = control_lane_.NotifySiblings(*notice); !copied) {
+      log().info << "sent copy not sent message_id=" << sent.id << ": " << copied.error().message;
+    }
+  });
+}
+
 void MeshDeliveryOrchestrator::NotifySiblings() {
   if (auto card = own_cards_.Card(util::NowUnixMs())) {
     siblings_told_card_at_.store(card->issued_at);
@@ -1255,6 +1274,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   }
   if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
     (void)public_lock_.NoteTraffic(thread_id);
+    // Public chats only: a private Secure chat stays on its device (M014).
+    MirrorToSiblings(wire, SentCopyTarget{.peer_account = amp_peer_key});
   }
   return *appended;
 }
@@ -1500,6 +1521,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
+  MirrorToSiblings(message, SentCopyTarget{.group_id = *(*thread)->group_id});
   return *appended;
 }
 
