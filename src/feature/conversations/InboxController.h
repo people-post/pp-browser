@@ -44,12 +44,27 @@ struct TranscriptAttachmentView {
   int download_percent = -1;
 };
 
+/** What a voice message's bubble shows while it plays (all zero when it is not the one playing). */
+struct VoiceBubbleState {
+  bool playing = false;
+  bool paused = false;
+  int64_t position_ms = 0;
+  int64_t duration_ms = 0;
+};
+
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
 struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
+  /**
+   * Voice messages: drawn as a play / pause bubble when this build can play them (false on Linux: a file row),
+   * with the length clamped to `voice_max_seconds` and the progress `voice_state` gives. The GUI sets these.
+   */
+  bool voice_supported = false;
+  int voice_max_seconds = 120;
+  std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */

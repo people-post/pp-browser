@@ -3,6 +3,8 @@
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
+#include "gui/chat/VoiceBubble.h"
+#include "lib/media/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -251,6 +253,16 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
 
   std::string html = "<div class=\"chat-card chat-attachment-card\">";
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
+  // A voice message (audio/ogg named voice-<ms>.ogg, at most 1 MB declared) is a bubble; any other audio is a file row.
+  // Only the declared values decide here: the file itself is not looked at until the person taps play.
+  const VoiceBubbleView voice =
+      ready && facts.voice_supported
+          ? DecideVoiceBubble(fields->mime, fields->filename, fields->byte_length, facts.voice_max_seconds)
+          : VoiceBubbleView{};
+  if (voice.bubble) {
+    return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
+                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+  }
   if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {

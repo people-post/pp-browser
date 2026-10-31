@@ -10,6 +10,8 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/VoiceBubble.h"
+#include "lib/media/VoiceSupport.h"
 #include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
@@ -326,6 +328,58 @@ ChatController::ChatController()
              messaging_ready_,
              mesh_ready_) {
   redirectLogger("ChatController");
+  VoiceComposerPorts voice_ports;
+  voice_ports.limits = [this]() { return facade_ ? facade_->CurrentAttachmentLimits() : AttachmentLimits{}; };
+  voice_ports.out_dir = [this]() {
+    // blobs_view/voice-rec under a reserved name that is not a chat: wiped at start and when the vault locks.
+    return facade_ ? (std::filesystem::path(AttachmentViewRoot(facade_->ProfileDataDir(), kVoiceViewThread)) / "voice-rec")
+                         .string()
+                   : std::string();
+  };
+  voice_ports.send = [this](const std::string& path) {
+    if (chat_.attachment_uploading) {
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+      UserFeedback::Fail(Tr("chat.voice.upload_busy"));
+      return;
+    }
+    StartAttachmentUpload(path, OutgoingPickSource::File, /*remove_after_read=*/true);
+  };
+  voice_ports.eligible = [this]() {
+    return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() &&
+           !chat_.attachment_uploading && !ActiveThreadId().empty();
+  };
+  voice_ports.dirty = [this]() {
+    SyncComposerInputState(); // the input is off while recording
+    DirtyChatChrome();
+    DirtyChatHeader();
+  };
+  voice_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
+  voice_ = std::make_unique<VoiceComposer>(chat_, std::move(voice_ports));
+
+  VoicePlaybackPorts playback_ports;
+  playback_ports.max_seconds = [this]() {
+    return facade_ ? facade_->CurrentAttachmentLimits().voice_max_seconds : AttachmentLimits{}.voice_max_seconds;
+  };
+  playback_ports.resolve = [this](const std::string& message_id,
+                                  std::function<void(std::optional<std::string>)> done) {
+    if (!facade_) {
+      done(std::nullopt);
+      return;
+    }
+    const std::string thread_id = ActiveThreadId();
+    // Making the plaintext view of a stored copy is blocking work: off the UI thread.
+    AppRuntime::PostWorkerNormal([this, thread_id, message_id, done = std::move(done)]() mutable {
+      auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+      AppRuntime::PostUI([done = std::move(done), path = std::move(path)]() mutable { done(std::move(path)); });
+    });
+  };
+  playback_ports.element = [this](const std::string& element_id) -> ui::Element* {
+    return context_ && context_->GetDocument(0) ? context_->GetDocument(0)->GetElementById(element_id) : nullptr;
+  };
+  playback_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
+  voice_playback_ = std::make_unique<VoicePlayback>(std::move(playback_ports));
+
   presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
@@ -998,11 +1052,19 @@ void ChatController::OnLockPublicToThisDevice() {
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
   RefreshPendingAttachmentChip(/*force=*/false);
+  if (const std::string thread_id = ActiveThreadId(); thread_id != voice_thread_) {
+    // Another chat is open: a recording in the one before can no longer be followed, and a clip is not its bubble's.
+    voice_thread_ = thread_id;
+    voice_->Lost();
+    voice_playback_->Stop();
+  }
+  voice_->Refresh();
   SyncComposerInputState();
 }
 
 void ChatController::SyncComposerInputState() {
-  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing;
+  chat_.composer_input_disabled =
+      chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing || chat_.voice_recording;
 }
 
 void ChatController::OnAttachFile(ui::Event* ev) {
@@ -1180,7 +1242,8 @@ void ChatController::OnRetryAttachmentSend() {
       [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
 }
 
-void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source) {
+void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
+                                           const bool remove_after_read) {
   if (!facade_ || chat_.attachment_uploading) {
     return;
   }
@@ -1214,9 +1277,15 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
   const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
-  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading]() {
+  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading,
+                                remove_after_read]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
     ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
+    if (remove_after_read) {
+      // A voice recording: its bytes are in memory and, from the send on, staged encrypted for a retry.
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
     AppRuntime::PostUI([this, thread_id, finish_uploading, prepared = std::move(prepared)]() mutable {
       if (!prepared) {
         finish_uploading();
@@ -1289,9 +1358,13 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   if (!facade_) {
     return {};
   }
+  TranscriptFacts facts = facade_->TranscriptFactsFor();
+  facts.voice_supported = VoiceMessagesSupported();
+  facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
+  facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   std::vector<MessageDisplayRow> rows =
-      RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive),
-                       facade_->TranscriptFactsFor(), presenter_.MentionRosterOf(thread_id));
+      RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
+                       presenter_.MentionRosterOf(thread_id));
   agent_.DecorateAiImageRows(rows);
   return rows;
 }
@@ -1359,6 +1432,7 @@ void ChatController::DownloadAttachment(const std::string& message_id) {
 
 void ChatController::UpdatePeerLinkChrome() {
   chrome_.UpdatePeerLink();
+  voice_->Refresh(); // a call starting or ending greys / frees the microphone
   DirtyChatHeader();
 }
 
@@ -2448,6 +2522,9 @@ void ChatController::CancelQueuedHere() {
 }
 
 ChatController::ComposerEscape ChatController::OnComposerEscape() {
+  if (voice_ && voice_->OnEscape()) {
+    return ComposerEscape::Handled; // Esc cancels a recording (the composer is not focused during one)
+  }
   if (!context_) {
     return ComposerEscape::NotInComposer;
   }
@@ -2755,6 +2832,12 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
         ctor.BindEventCallback("attach_file", DataEventAt([this](ui::Event& ev) { OnAttachFile(&ev); }));
+        ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
+        ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));
+        ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
+        ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
+        ctor.BindEventCallback("play_voice", DataEvent<std::string>(
+            [this](const std::string& message_id) { voice_playback_->Toggle(message_id); }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
@@ -2926,6 +3009,9 @@ void ChatController::OnMeshReady() {
 
 void ChatController::OnApplicationPause() {
   agent_.Cancel();
+  // Going to the background loses a held press (no release will come) and ends a clip: cancel, never send.
+  voice_->Lost();
+  voice_playback_->Stop();
 }
 
 
@@ -2954,6 +3040,8 @@ void ChatController::AfterLayout() {
 }
 
 void ChatController::Shutdown() {
+  voice_->Shutdown();
+  voice_playback_->Shutdown();
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   lifecycle_background_id_ = 0;
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);

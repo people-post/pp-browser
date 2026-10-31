@@ -8,6 +8,8 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/VoiceComposer.h"
+#include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatPeerSheet.h"
@@ -180,7 +182,8 @@ private:
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile(ui::Event* ev = nullptr);
-  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source);
+  /** `remove_after_read`: the file is a temporary one of ours (a voice recording): deleted once its bytes are read. */
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool remove_after_read = false);
   /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
   void OnRetryAttachmentSend();
   void OnDiscardAttachmentSend();
@@ -340,6 +343,11 @@ private:
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
+  /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */
+  std::unique_ptr<VoiceComposer> voice_;
+  std::unique_ptr<VoicePlayback> voice_playback_;
+  /** The chat the voice parts last saw: another one cancels a recording and stops a clip. */
+  std::string voice_thread_;
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

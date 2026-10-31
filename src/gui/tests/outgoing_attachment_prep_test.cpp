@@ -1,5 +1,6 @@
 #include "foundation/platform/ImageMetadata.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "lib/media/VoiceFile.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
@@ -355,6 +356,22 @@ TEST_F(OutgoingAttachmentPrepTest, AHugePictureIsRefusedBeforeDecoding) {
   auto out = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::File);
   ASSERT_FALSE(out);
   EXPECT_EQ(out.error().code, static_cast<int32_t>(OutgoingAttachmentError::ImageFailed));
+}
+
+// A voice recording goes as a plain attachment: the name and the type are the whole wire convention.
+TEST_F(OutgoingAttachmentPrepTest, ARecordedVoiceMessageIsAudioOggNamedByItsLength) {
+  const std::vector<uint8_t> ogg = {'O', 'g', 'g', 'S', 0, 2, 1, 2, 3, 4, 5, 6, 7, 8};
+  const std::string path = (dir_ / VoiceFileName(4200)).string();
+  WriteFile(path, ogg);
+  auto out = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::File);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->filename, "voice-4200.ogg");
+  EXPECT_EQ(out->mime, kVoiceMime);
+  EXPECT_EQ(out->mime, "audio/ogg");
+  EXPECT_EQ(out->bytes, ogg);          // not re-encoded, not shrunk
+  EXPECT_FALSE(out->image_is_shrunk);
+  // The receiver's bubble decision accepts exactly what was sent.
+  EXPECT_TRUE(DecideVoiceBubble(out->mime, out->filename, out->bytes.size(), limits_.voice_max_seconds).bubble);
 }
 
 } // namespace

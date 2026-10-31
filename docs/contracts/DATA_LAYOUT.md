@@ -91,6 +91,10 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
   threads/ai-images/    # reserved name, NOT a thread (no thread.db): blobs_view/ only
     blobs_view/         # pre-send preview of the image the user is about to send to the AI; removed on send / discard, cleared at startup
                         # (sent AI images live in cas/private + the AI thread's own blobs_view, referenced by the message)
+  threads/voice/        # reserved name, NOT a thread (no thread.db): blobs_view/ only
+    blobs_view/voice-rec/  # the voice recording before it is sent: written when the recording ends (nothing on disk before, and a cancelled
+                        # one leaves nothing), deleted once it has been read for the send (the staged ciphertext is the retry path),
+                        # emptied when the next recording starts, cleared at startup and when the vault locks (like all blobs_view/)
 ```
 
 | Realm | At rest | Object id | How it gets bytes |

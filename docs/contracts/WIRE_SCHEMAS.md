@@ -327,6 +327,8 @@ Top-level `text` is the display glyph for `reaction` (may be empty for `reaction
 | `content_key` | **LenBytes** — 32-byte AEAD key for file ciphertext |
 | `blob_nonce` | **LenBytes** — 24-byte XChaCha20-Poly1305 nonce |
 
+**Voice messages** are ordinary attachments, with no field of their own: `mime` = `audio/ogg`, `filename` = `voice-<duration in ms>.ogg`, content a mono 48 kHz Opus stream in a standard Ogg container (about 24 kbps; at most the voice limit, 120 s by default, so well under 1 MB). The name is a display convention only: a receiver draws a play bubble when `mime` is `audio/ogg`, the name is exactly `voice-<digits>.ogg` and the declared `byte_length` is at most 1 000 000; the length it shows comes from the name, clamped to its voice limit. Anything else (any other name, a larger file) is a plain file row. The receiver does not read the file before the person taps play; it then parses the Ogg as untrusted input (limits on pages, packet size and length) and shows "cannot play" when it fails. A client that does not know the convention shows the file row.
+
 Top-level `text` is display fallback (usually `filename`). File bytes are AEAD-encrypted separately and uploaded as `application/octet-stream` (R006). See [relay blob DESIGN](../../projects/relay-blob-upload/DESIGN.md).
 
 Rich types: further sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
