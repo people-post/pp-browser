@@ -1,5 +1,9 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
 
+#include "common/Diag.h"
+#include "foundation/diagnostics/DiagnosticsSelfCheck.h"
+#include "foundation/diagnostics/LogFile.h"
+
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "common/runtime/AppRuntime.h"
@@ -7,6 +11,8 @@
 #include "foundation/runtime/ProductOwners.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include "feature/product/tests/call_media_inbound_fake.h"
 #include "feature/product/tests/calls_loopback_outbox.h"
@@ -266,6 +272,153 @@ TEST_F(CallMediaConnectCoordinatorTest, GivesUpAfterAllAttempts) {
   EXPECT_EQ(result_->error().GetCode(), transport_->fail_code) << "the last attempt's code, not its text";
   EXPECT_EQ(transport_->connect_calls, 5);
   EXPECT_FALSE(connect_->InFlight());
+}
+
+// --- the connect sequence's lines of the Diag channel (docs/contracts/DIAGNOSTICS.md) ------------------------
+
+/** A circuit step that finds the target parked on no relay, as the field reports of #416 read. */
+class RefusingCircuitReach final : public mesh::ICircuitHopReach {
+public:
+  mesh::CircuitReachRoe TryEnsureHopReachable(const std::string&) override { return {}; }
+  mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string&) override { return {}; }
+  void TryEnsurePeerReachableAsync(const std::string&, mesh::CircuitReachDone on_done, bool) override {
+    on_done(mesh::CircuitReachFailure::Of(
+        mesh::CircuitReachErr::TargetNotReserved,
+        "circuit hop reach failed [tunnel: circuit-relay: refused [relay: circuit target peer endpoint not registered]]"));
+  }
+};
+
+class CallConnectDiagSequenceTest : public CallMediaConnectCoordinatorTest {
+protected:
+  void SetUp() override {
+    CallMediaConnectCoordinatorTest::SetUp();
+    dir_ = std::filesystem::temp_directory_path() /
+           (std::string("pp-browser-call-diag-") + ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+    std::filesystem::create_directories(dir_ / "logs", ec);
+    diag_path_ = LogFile::InstallDiag(LogFile::DefaultPath(dir_.string()));
+    CallConnectEnv env;
+    env.local.v4_private = 1;
+    env.local.v6_global = 2;
+    env.attachment_known = true;
+    env.attachment.online = true;
+    env.attachment.cellular = true;
+    env.relays_surface = 9;
+    env.relays_connected = 4;
+    env.relays_held_down = 2;
+    env.peer_state = mesh::PeerReachState::Down;
+    env.peer_fail = mesh::PeerReachFailure::NoAnswer;
+    env.peer_fails_in_row = 3;
+    env.peer_pref_family = 6;
+    connect_->SetDiagProbe([env](const std::string&) { return env; });
+  }
+  void TearDown() override {
+    CallMediaConnectCoordinatorTest::TearDown();
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+  }
+
+  CallMediaConnectRequest RequestFor(const std::string& call_id) const {
+    CallMediaConnectRequest r = Request();
+    r.params.call_id = call_id;
+    return r;
+  }
+
+  /** The event lines of this run, each without its timestamp prefix. */
+  std::vector<std::string> Lines() const {
+    std::ifstream in(diag_path_);
+    std::vector<std::string> out;
+    for (std::string line; std::getline(in, line);) {
+      const auto at = line.find("[Diag] ");
+      if (at != std::string::npos) {
+        out.push_back(line.substr(at + 7));
+      }
+    }
+    return out;
+  }
+
+  std::filesystem::path dir_;
+  std::string diag_path_;
+};
+
+TEST_F(CallConnectDiagSequenceTest, SuccessWritesNetReachAndResult) {
+  OnCallsOwner([&] { connect_->Start(RequestFor("call:5ca1ab0100000000"), Hooks()); });
+  ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(5)));
+  ASSERT_TRUE(result_ && *result_);
+  const std::vector<std::string> lines = Lines();
+  ASSERT_EQ(lines.size(), 3u) << ::testing::PrintToString(lines);
+  EXPECT_EQ(lines[0],
+            "event=call.net call=5ca1ab01 role=caller known=1 online=1 cellular=1 expensive=0 v4_private=1 "
+            "v4_public=0 v6_global=2 v6_other=0 relays=9 relays_up=4 relays_down=2 peer_state=down "
+            "peer_fail=no_answer peer_fails=3");
+  EXPECT_EQ(lines[1].rfind("event=call.reach call=5ca1ab01 role=caller attempt=1 ok=1 kind=direct family=6 reused=1 ms=", 0), 0u)
+      << lines[1];
+  EXPECT_EQ(lines[2].rfind("event=call.result call=5ca1ab01 role=caller ok=1 attempts=1 ms=", 0), 0u) << lines[2];
+  EXPECT_NE(lines[2].find(" kind=direct family=6"), std::string::npos) << lines[2];
+  EXPECT_EQ(lines[2].find("err="), std::string::npos) << "a success carries no failure keys";
+}
+
+TEST_F(CallConnectDiagSequenceTest, GiveUpWritesOneReachLinePerAttemptAndTheReason) {
+  transport_->fail_first_n = 100;
+  transport_->fail_code = CallMediaErr::Timeout;
+  OnCallsOwner([&] { connect_->Start(RequestFor("call:5ca1ab0200000000"), Hooks()); });
+  ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(20)));
+  ASSERT_TRUE(result_ && !*result_);
+  const std::vector<std::string> lines = Lines();
+  ASSERT_EQ(lines.size(), 7u) << ::testing::PrintToString(lines);  // net, five attempts, result
+  EXPECT_EQ(lines.front().rfind("event=call.net ", 0), 0u);
+  for (size_t i = 1; i <= 5; ++i) {
+    EXPECT_EQ(lines[i].rfind("event=call.reach call=5ca1ab02 role=caller attempt=" + std::to_string(i) + " ok=1", 0), 0u)
+        << lines[i];
+  }
+  EXPECT_EQ(lines.back().rfind("event=call.result call=5ca1ab02 role=caller ok=0 attempts=5 ms=", 0), 0u) << lines.back();
+  EXPECT_NE(lines.back().find(" err=timeout reach_err=none why=none relays=9 relays_up=4 peer_state=down "
+                              "peer_fail=no_answer peer_fails=3"),
+            std::string::npos)
+      << lines.back();
+}
+
+TEST_F(CallConnectDiagSequenceTest, ARefusedCircuitIsNamedWithoutItsText) {
+  dial_->connected.clear();
+  RefusingCircuitReach refusing;
+  reach_->SetDeps(mesh::PeerReachPorts{dial_.get(), &refusing, AppRuntime::MakeLaneForTesting()});
+  OnCallsOwner([&] { connect_->Start(RequestFor("call:5ca1ab0300000000"), Hooks()); });
+  ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(20)));
+  ASSERT_TRUE(result_ && !*result_);
+  const std::vector<std::string> lines = Lines();
+  ASSERT_GE(lines.size(), 3u) << ::testing::PrintToString(lines);
+  EXPECT_NE(lines[1].find("event=call.reach call=5ca1ab03 role=caller attempt=1 ok=0 err="), std::string::npos) << lines[1];
+  EXPECT_NE(lines.back().find("ok=0 attempts=1"), std::string::npos) << lines.back();
+  EXPECT_NE(lines.back().find(" err=unreachable reach_err="), std::string::npos) << lines.back();
+  for (const std::string& line : lines) {
+    EXPECT_EQ(line.find("endpoint"), std::string::npos) << "no message text in a line: " << line;
+  }
+}
+
+// Whatever the sequence wrote must pass the gate every send goes through, or no send happens at all.
+TEST_F(CallConnectDiagSequenceTest, TheLinesPassTheBundleSelfCheck) {
+  OnCallsOwner([&] { connect_->Start(RequestFor("call:5ca1ab0400000000"), Hooks()); });
+  ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(5)));
+  std::ifstream in(diag_path_);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  ASSERT_FALSE(text.empty());
+  EXPECT_EQ(SelfCheck(text, {}), std::nullopt) << text;
+}
+
+// A retry loop cannot flood the file: each event is capped per call.
+TEST_F(CallConnectDiagSequenceTest, ARestartLoopIsBoundedPerCall) {
+  for (int i = 0; i < 20; ++i) {
+    finished_ = 0;
+    OnCallsOwner([&] { connect_->Start(RequestFor("call:5ca1ab0500000000"), Hooks()); });
+    ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(5)));
+    transport_->active = false;
+  }
+  size_t nets = 0;
+  for (const std::string& line : Lines()) {
+    nets += line.rfind("event=call.net ", 0) == 0 ? 1 : 0;
+  }
+  EXPECT_EQ(nets, static_cast<size_t>(CallDiagBudget::kPerEventPerCall)) << ::testing::PrintToString(Lines());
 }
 
 // A peer reach that found no link ends the sequence with this layer's code (the reach's chain kept).

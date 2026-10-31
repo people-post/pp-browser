@@ -1,5 +1,6 @@
 #include "feature/calls/CallReachSignals.h"
 
+#include "feature/calls/CallConnectDiag.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallMobility.h"
 
@@ -33,7 +34,26 @@ void CallReachSignals::BindExchangePorts() {
       done(Error("signaling punch burst unavailable"));
       return;
     }
-    mesh_.punch_burst(addrs, window_ms, std::move(done));
+    // The result may come from another thread; the line needs only the call, the window and the clock.
+    const auto active = ActiveCallPeer();
+    if (!active || !CallDiagBudget::Shared().Allow(active->first, CallDiagEvent::Punch)) {
+      mesh_.punch_burst(addrs, window_ms, std::move(done));
+      return;
+    }
+    CallPunchLine("burst_start", active->first, window_ms, addrs.size(), 0).Emit();
+    mesh_.punch_burst(addrs, window_ms,
+                      [call_id = active->first, window_ms, count = addrs.size(), started = std::chrono::steady_clock::now(),
+                       done = std::move(done)](Roe<void> result) {
+                        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                            std::chrono::steady_clock::now() - started)
+                                            .count();
+                        if (CallDiagBudget::Shared().Allow(call_id, CallDiagEvent::Punch)) {
+                          CallPunchLine(result ? ShareWord("burst_ok") : ShareWord("burst_fail"), call_id, window_ms, count,
+                                        ms)
+                              .Emit();
+                        }
+                        done(std::move(result));
+                      });
   };
   punch.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
     if (call_.register_listen) {
@@ -74,6 +94,9 @@ void CallReachSignals::BindExchangePorts() {
     }
     log().info << "CallCircuitR1 sent call_id=" << target->first << " peer=" << target->second
                << " r1=" << circuit_r1;
+    if (CallDiagBudget::Shared().Allow(target->first, CallDiagEvent::Relay)) {
+      CallRelayLine("out", target->first, circuit_r1).Emit();
+    }
     return true;
   };
   r1.prefer_late_reserve = [this](const std::string& circuit_r1) {
@@ -121,6 +144,11 @@ Roe<void> CallReachSignals::SendPunch(const CallControlType type, const mesh::Pu
   }
   log().info << (type == CallControlType::CallPunchOffer ? "CallPunchOffer" : "CallPunchAnswer") << " sent call_id=" << target->first
              << " peer=" << target->second << " epoch=" << signal.epoch_id;
+  if (CallDiagBudget::Shared().Allow(target->first, CallDiagEvent::Punch)) {
+    CallPunchLine(type == CallControlType::CallPunchOffer ? ShareWord("offer_out") : ShareWord("answer_out"),
+                  target->first, signal.window_ms, signal.addrs.size(), 0)
+        .Emit();
+  }
   return {};
 }
 
@@ -158,6 +186,9 @@ Roe<void> CallReachSignals::HandleInboundCircuitR1(const std::string& detail_jso
     return {};
   }
   log().info << "CallCircuitR1 inbound call_id=" << decoded->call_id << " r1=" << decoded->circuit_r1;
+  if (CallDiagBudget::Shared().Allow(decoded->call_id, CallDiagEvent::Relay)) {
+    CallRelayLine("in", decoded->call_id, decoded->circuit_r1).Emit();
+  }
   r1_.OnInbound(decoded->circuit_r1);
   return {};
 }
@@ -201,6 +232,9 @@ Roe<void> CallReachSignals::HandleInboundPunchOffer(const std::string& detail_js
     log().info << "CallPunchOffer ignored; no matching active call call_id=" << decoded->call_id;
     return {};
   }
+  if (CallDiagBudget::Shared().Allow(decoded->call_id, CallDiagEvent::Punch)) {
+    CallPunchLine("offer_in", decoded->call_id, decoded->window_ms, decoded->addrs.size(), 0).Emit();
+  }
   return punch_.OnOffer(SignalFromDetail(std::move(*decoded)), sender_identity);
 }
 
@@ -208,6 +242,9 @@ Roe<void> CallReachSignals::HandleInboundPunchAnswer(const std::string& detail_j
   auto decoded = CallControlCodec::DecodePunch(detail_json);
   if (!decoded) {
     return decoded.error();
+  }
+  if (IsActiveCall(decoded->call_id) && CallDiagBudget::Shared().Allow(decoded->call_id, CallDiagEvent::Punch)) {
+    CallPunchLine("answer_in", decoded->call_id, decoded->window_ms, decoded->addrs.size(), 0).Emit();
   }
   return punch_.OnAnswer(SignalFromDetail(std::move(*decoded)));
 }

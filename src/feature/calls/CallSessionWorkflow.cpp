@@ -1,5 +1,6 @@
 #include "feature/calls/CallSessionWorkflow.h"
 
+#include "feature/calls/CallConnectDiag.h"
 #include "lib/calls/CallSessionQueries.h"
 #include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallListenAddrsLogic.h"
@@ -518,6 +519,9 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   if (!accept) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << accept.error().message;
     return accept.error();
+  }
+  if (CallDiagBudget::Shared().Allow(call_id, CallDiagEvent::Signal)) {
+    CallSignalLine("accept_out", call_id, accept->listen_multiaddrs, util::NowUnixMs() - row.created_at, false).Emit();
   }
   if (auto joined = CommitLocalJoin(row, local_identity); !joined) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << joined.error().message;
@@ -1198,6 +1202,9 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
                                   sender_identity, "CallInvite");
   SeedInviteRoster(*invite, inviter, *session, local_identity);
   NoteInviterReach(*invite, inviter);
+  if (CallDiagBudget::Shared().Allow(invite->call_id, CallDiagEvent::Signal)) {
+    CallSignalLine("invite_in", invite->call_id, invite->listen_multiaddrs, 0, false).Emit();
+  }
   std::vector<std::string> peers{inviter};
   for (const CallRosterEntry& entry : invite->participants) {
     if (entry.identity != local_identity) {
@@ -1461,6 +1468,11 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept,
     log().info << "Inbound CallAccept ignored (ended session) call_id=" << accept.call_id << " from=" << identity;
     host_.wire.notify_ring_changed();
     return {};
+  }
+  if (session->has_value() && CallDiagBudget::Shared().Allow(accept.call_id, CallDiagEvent::Signal)) {
+    CallSignalLine("accept_in", accept.call_id, accept.listen_multiaddrs, util::NowUnixMs() - (*session)->created_at,
+                   implicit)
+        .Emit();
   }
   live_calls_.AddPeer(accept.call_id, identity);
   alone_since_ms_.erase(accept.call_id);

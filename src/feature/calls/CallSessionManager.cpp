@@ -617,6 +617,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     direct_path_->SetReachDeps(deps.Reach());
   }
   CallMediaBridge& path = *direct_path_;
+  path.SetConnectDiagProbe(std::move(deps.diag_env));
   path.SetSeedWarm(std::move(deps.seed_warm));
   path.SetSeedReserve(std::move(deps.seed_reserve));
   path.SetSeedParkAwait(std::move(deps.seed_park_await));
@@ -630,6 +631,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
 void CallSessionManager::DetachDirectPathReach() {
   if (direct_path_) {
     direct_path_->SetReachDeps({});
+    direct_path_->SetConnectDiagProbe({});  // it reads the dial registry the reach just let go
   }
 }
 

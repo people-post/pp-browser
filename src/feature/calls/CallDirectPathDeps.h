@@ -3,6 +3,7 @@
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/calls/CallPathPolicy.h"
+#include "feature/calls/CallConnectDiag.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include <functional>
@@ -31,6 +32,8 @@ struct CallDirectPathDeps {
   std::function<void()> seed_reserve;
   std::function<void(std::function<void(bool)> done, int timeout_ms)> seed_park_await;
   std::function<CallPathPolicy(const std::string& call_id)> path_policy;
+  /** Read by the connect sequence's Diag lines on the calls owner (this device and the mesh as it stands). */
+  CallConnectEnvProbe diag_env;
 
   bool IsUsable() const { return transport && dial; }
   mesh::PeerReachPorts Reach() const { return {dial, circuit_reach, lane, local_listen_addrs}; }

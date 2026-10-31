@@ -117,6 +117,31 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   deps.local_listen_addrs = [connectivity = connectivity_]() {
     return connectivity->LocalView()->advertised_listen_multiaddrs;  // a published snapshot: any thread
   };
+  // The connect sequence's Diag lines (a handful of reads per call, on the calls owner). The dial registry
+  // is the one handed to the reach: the stack detaches this probe where it detaches the reach.
+  deps.diag_env = [connectivity = connectivity_, dial = deps.dial](const std::string& peer_key) {
+    CallConnectEnv env;
+    env.local = CountAddrs(connectivity->LocalView()->advertised_listen_multiaddrs);
+    const int64_t now_ms = mesh::PeerReachRecord::NowMs();
+    for (const mesh::MeshHopCandidate& hop : connectivity->HopPolicy()->Rendezvous()) {
+      ++env.relays_surface;
+      if (dial && dial->IsConnected(hop.peer_id)) {
+        ++env.relays_connected;
+      } else if (mesh::ReachHeldDown(connectivity->ReachFacts(hop.peer_id), now_ms)) {
+        ++env.relays_held_down;
+      }
+    }
+    const mesh::PeerReachFacts peer = connectivity->ReachFacts(peer_key);
+    env.peer_state = peer.state;
+    env.peer_fail = peer.last_failure;
+    env.peer_fails_in_row = peer.fails_in_row;
+    if (dial) {
+      if (const auto preferred = dial->PreferredMultiaddr(peer_key)) {
+        env.peer_pref_family = AddrFamily(*preferred);
+      }
+    }
+    return env;
+  };
   mesh::CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
   deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
   deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };
