@@ -31,6 +31,9 @@ Object AccountStateCodec::GroupToJson(const AccountStateGroup& group) {
   if (group.left) {
     json.set("left", true);
   }
+  if (group.dissolved) {
+    json.set("dissolved", true);
+  }
   return json;
 }
 
@@ -61,6 +64,7 @@ std::optional<AccountStateGroup> AccountStateCodec::GroupFromJson(const Object& 
   }
   group.roster_statement_json = json.getString("roster_statement").value_or("");
   group.left = json.getIf<bool>("left").value_or(false);
+  group.dissolved = json.getIf<bool>("dissolved").value_or(false);
   return group;
 }
 

@@ -6,6 +6,7 @@
 #include "domain/delivery/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include "lib/messaging/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
@@ -697,7 +698,7 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   }
   if (outcome.refuse_invite_group_id) {
     (void)groups->RefuseInvite(*outcome.refuse_invite_group_id, outcome.refuse_invite_nonce,
-                               outcome.refuse_invite_member);
+                               outcome.refuse_invite_member, outcome.refuse_invite_reason);
   }
   if (outcome.took_ownership_group_id) {
     (void)groups->SignAndSendRoster(*outcome.took_ownership_group_id, outcome.took_ownership_transfer);
@@ -2215,8 +2216,14 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
   if (!outcome.dissolved_group_thread_id) {
     return std::nullopt;
   }
-  const std::string& thread_id = *outcome.dissolved_group_thread_id;
-  inbox_.OnInboundMessagePersisted(thread_id, outcome.dissolved_group_text);
+  return NoticeGroupDissolvedIn(*outcome.dissolved_group_thread_id);
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeGroupDissolvedIn(
+    const std::string& thread_id) {
+  // In the reader's language: the preview is kept as written, the notice shown once.
+  const std::string text = Tr("chat.group.dissolved_preview");
+  inbox_.OnInboundMessagePersisted(thread_id, text);
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
   }
@@ -2227,10 +2234,28 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
       notice.title = std::move(label);
     }
   }
-  notice.body = outcome.dissolved_group_text;
+  notice.body = text;
   notice.thread_id = thread_id;
   notice.mentions_us = false;
   return notice;
+}
+
+void MeshDeliveryOrchestrator::SurfaceGroupDissolved(const std::string& thread_id) {
+  auto notice = NoticeGroupDissolvedIn(thread_id);
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() {
+      if (on_messages_changed_) {
+        on_messages_changed_();
+      }
+    });
+  }
+  if (notice && on_background_unread_) {
+    AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+      if (on_background_unread_) {
+        on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id), false);
+      }
+    });
+  }
 }
 
 void MeshDeliveryOrchestrator::NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account) {

@@ -70,6 +70,8 @@ struct RelayReceiveOutcome {
   std::optional<std::string> refuse_invite_group_id;
   std::string refuse_invite_nonce;
   std::string refuse_invite_member;
+  /** Why (`group_full`, or `group_dissolved` for an accept that came after the owner ended the group, G016). */
+  std::string refuse_invite_reason;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
   /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
@@ -87,7 +89,6 @@ struct RelayReceiveOutcome {
    * notice — unread count, preview, an OS notice if away — and the DM that carried it none (`suppress_inbox_chrome`).
    */
   std::optional<std::string> dissolved_group_thread_id;
-  std::string dissolved_group_text;
   /** G016: invites to the dissolved group, now void: (inviter, nonce) — the invite cards in the DMs to close. */
   std::vector<std::pair<std::string, std::string>> voided_invite_cards;
   /** G013: a group message arrived while our check went unanswered — ask again (its sender is online). */
@@ -216,7 +217,7 @@ private:
   void FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope, RelayReceiveOutcome& outcome);
   /** G014 invitee side: the owner refused our accept (the group was full) — drop the group we made on accept. */
   Roe<void> ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
-                               const std::string& local_account) const;
+                               const std::string& local_account, RelayReceiveOutcome* outcome) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */

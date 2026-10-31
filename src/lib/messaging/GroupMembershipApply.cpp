@@ -1,6 +1,7 @@
 #include "lib/messaging/GroupMembershipApply.h"
 
 #include "lib/messaging/GroupRosterStatement.h"
+#include "lib/messaging/GroupRosterSync.h"
 
 #include "common/Utilities.h"
 
@@ -38,7 +39,7 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
     return Error("Invite accept for a group this device does not own");
   }
   if ((*metadata)->sync_state == GroupSyncState::Dissolved) {
-    return false;  // G016: the group is over; a late accept adds no one and needs no notice
+    return Error(group_roster_sync::kGroupDissolvedError);  // G016: the group is over; the caller refuses the accept as it does a full one
   }
   if (invite.status == InviteStatus::Accepted) {
     // Re-delivered (or re-sent) accept: it was applied once. A member removed since, or one who
@@ -296,47 +297,31 @@ Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembers
 }
 
 Roe<GroupDissolvedApplied> EndGroupInRoster(GroupRosterStore& roster, const std::string& group_id,
-                                           const std::string& owner_identity, const uint64_t roster_epoch) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+                                           const std::string& owner_identity, const uint64_t roster_epoch,
+                                           const std::string& statement_json,
+                                           const std::vector<PendingGroupSend>& sends) {
+  GroupEnding ending;
+  ending.owner_identity = owner_identity;
+  ending.roster_epoch = roster_epoch;
+  ending.statement_json = statement_json;
+  ending.sends = sends;
+  auto ended = roster.EndGroup(group_id, ending);
+  if (!ended) {
+    return ended.error();
+  }
   GroupDissolvedApplied result;
-  auto metadata = roster.LoadMetadata(group_id);
-  if (!metadata) {
-    return metadata.error();
+  if (*ended) {
+    result.applied = true;
+    result.voided_invites = std::move(**ended);
   }
-  if (!*metadata || (*metadata)->sync_state == GroupSyncState::Dissolved) {
-    return result;
-  }
-  auto members = roster.ListMembers(group_id);
-  if (!members) {
-    return members.error();
-  }
-  for (const GroupRosterMember& m : *members) {
-    if (auto removed = roster.RemoveMember(group_id, m.member_identity); !removed) {
-      return removed.error();
-    }
-  }
-  (void)roster.ClearGroupTarget(group_id);
-  if (auto voided = roster.ExpirePendingInvitesOf(group_id)) {
-    result.voided_invites = std::move(*voided);
-  }
-  GroupMetadata updated = **metadata;
-  updated.owner_identity = owner_identity;
-  updated.roster_epoch = std::max(updated.roster_epoch, roster_epoch);
-  updated.sync_state = GroupSyncState::Dissolved;
-  updated.sync_request_id.clear();
-  updated.sync_requested_at = 0;
-  updated.roster_statement_json.clear();  // an ended group holds no roster to hand on
-  if (auto saved = roster.UpsertMetadata(updated); !saved) {
-    return saved.error();
-  }
-  result.applied = true;
   return result;
 }
 
-Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(GroupRosterStore& roster,
-                                                       const GroupRosterStatement& statement,
-                                                       const std::string& actor_identity,
-                                                       const std::string& local_identity) {
+namespace {
+
+/** The shared rule; `actor` (the DM's sender) must be the owner it names when given. */
+Roe<GroupDissolvedApplied> ApplyDissolved(GroupRosterStore& roster, const GroupRosterStatement& statement,
+                                          const std::string& local_identity, const std::string* actor) {
   const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
   GroupDissolvedApplied result;
   auto metadata = roster.LoadMetadata(statement.group_id);
@@ -356,15 +341,75 @@ Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(GroupRosterStore& roster,
   if (!statement.dissolved) {
     return Error("Dissolve rejected: the statement does not say the group ended");
   }
-  if (actor_identity.empty() || statement.owner_identity != actor_identity) {
+  if (actor && (actor->empty() || statement.owner_identity != *actor)) {
     return Error("Dissolve rejected: actor is not the owner who signed it");
   }
   // The owner we know, or one it handed the group to (the chain): the same check as any owner statement.
   if (auto valid = group_roster_statement::Verify(statement, (*metadata)->owner_identity); !valid) {
     return Error("Dissolve rejected: " + valid.error().message);
   }
+  if (statement.roster_epoch < (*metadata)->roster_epoch) {
+    return Error("Dissolve rejected: older than the roster we hold");
+  }
+  // A former owner, or a stale chain: weighed against every transfer we hold and the statement shows.
+  std::vector<GroupOwnerTransfer> known = statement.owner_chain;
+  if (auto held = group_roster_sync::Held(**metadata)) {
+    known.insert(known.end(), held->owner_chain.begin(), held->owner_chain.end());
+  }
+  if (group_roster_statement::OwnerHandedOn(known, statement)) {
+    return Error("Dissolve rejected: its owner had already handed the group on");
+  }
+  return EndGroupInRoster(roster, statement.group_id, statement.owner_identity, statement.roster_epoch,
+                          DumpJson(group_roster_statement::ToJson(statement)));
+}
 
-  return EndGroupInRoster(roster, statement.group_id, statement.owner_identity, statement.roster_epoch);
+} // namespace
+
+Roe<GroupDissolvedApplied> ApplyDissolvedStatement(GroupRosterStore& roster, const GroupRosterStatement& statement,
+                                                   const std::string& local_identity) {
+  return ApplyDissolved(roster, statement, local_identity, nullptr);
+}
+
+Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(GroupRosterStore& roster, const GroupRosterStatement& statement,
+                                                       const std::string& actor_identity,
+                                                       const std::string& local_identity) {
+  return ApplyDissolved(roster, statement, local_identity, &actor_identity);
+}
+
+Roe<std::optional<std::string>> EnsureDissolvedLine(IThreadStore& store, const std::string& group_id,
+                                                    const std::string& owner_identity,
+                                                    const std::string& sender_identity) {
+  auto thread = store.FindGroupThread(group_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return std::optional<std::string>{};  // the chat was deleted: nothing to keep
+  }
+  auto page = store.GetMessagesPage((*thread)->id, std::nullopt, 500);
+  if (!page) {
+    return page.error();
+  }
+  for (const ThreadMessage& m : *page) {
+    const auto type = GroupMembershipCodec::ControlTypeFromMessage(m);
+    if (type && *type == GroupMembershipControlType::GroupDissolved) {
+      return std::optional<std::string>{};
+    }
+  }
+  auto detail = GroupMembershipCodec::EncodeGroupDissolved(group_id, owner_identity);
+  if (!detail) {
+    return detail.error();
+  }
+  auto line = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupDissolved,
+                                                       "Group dissolved", *detail, sender_identity);
+  if (!line) {
+    return line.error();
+  }
+  auto appended = store.AppendMessage(*line);
+  if (!appended) {
+    return appended.error();
+  }
+  return std::optional<std::string>((*thread)->id);
 }
 
 } // namespace pbr

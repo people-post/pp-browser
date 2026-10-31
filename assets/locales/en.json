@@ -629,6 +629,7 @@
     "chat.group.dissolve_confirm": "Dissolve this group? It ends for everyone in it. The chat stays on each person’s device to read, and they can delete it.",
     "chat.group.dissolved": "This group was dissolved.",
     "chat.group.dissolved_composer": "This group was dissolved",
+    "chat.group.dissolved_preview": "Group dissolved",
     "chat.group.dissolved_line": "{name} dissolved this group",
     "chat.group.dissolved_by_you": "You dissolved this group",
     "chat.group.dissolved_line_unnamed": "This group was dissolved",

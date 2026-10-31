@@ -188,21 +188,31 @@ Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known
                known_owner + ") or one it handed the group to");
 }
 
-std::optional<GroupRosterStatement> Pick(const std::vector<GroupRosterStatement>& valid) {
-  // An owner that handed the group on at epoch e is no longer its owner from e on.
-  std::map<std::string, uint64_t> handed_on_at;
-  for (const GroupRosterStatement& s : valid) {
-    for (const GroupOwnerTransfer& t : s.owner_chain) {
-      auto [it, inserted] = handed_on_at.emplace(t.from_identity, t.roster_epoch);
-      if (!inserted) {
-        it->second = std::min(it->second, t.roster_epoch);
-      }
+bool OwnerHandedOn(const std::vector<GroupOwnerTransfer>& known, const GroupRosterStatement& candidate) {
+  for (const GroupOwnerTransfer& away : known) {
+    if (away.from_identity != candidate.owner_identity || away.roster_epoch > candidate.roster_epoch) {
+      continue;
     }
+    const bool back = std::any_of(known.begin(), known.end(), [&](const GroupOwnerTransfer& again) {
+      return again.to_identity == candidate.owner_identity && again.roster_epoch > away.roster_epoch &&
+             again.roster_epoch <= candidate.roster_epoch;
+    });
+    if (!back) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::optional<GroupRosterStatement> Pick(const std::vector<GroupRosterStatement>& valid) {
+  // An owner that handed the group on by epoch e (and did not get it back) is no longer its owner at e.
+  std::vector<GroupOwnerTransfer> known;
+  for (const GroupRosterStatement& s : valid) {
+    known.insert(known.end(), s.owner_chain.begin(), s.owner_chain.end());
   }
   const GroupRosterStatement* best = nullptr;
   for (const GroupRosterStatement& s : valid) {
-    auto it = handed_on_at.find(s.owner_identity);
-    if (it != handed_on_at.end() && s.roster_epoch >= it->second) {
+    if (OwnerHandedOn(known, s)) {
       continue;
     }
     if (!best || s.roster_epoch > best->roster_epoch) {

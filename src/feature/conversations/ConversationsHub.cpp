@@ -1392,6 +1392,13 @@ void ConversationsHub::BuildMessagingObjects() {
           .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
             return peer_cards_ ? peer_cards_->NewestKnown()
                                : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
+          },
+          .take_dissolved = [this](const std::vector<AccountStateGroup>& groups) {
+            if (group_membership_) {
+              for (const AccountStateGroup& group : groups) {
+                group_membership_->EndDissolvedFromLocker(group);
+              }
+            }
           }});
   account_locker_->SetClient(http_locker_.get());
   account_locker_->SetDataDir(data_dir_);
@@ -2078,14 +2085,16 @@ void ConversationsHub::ResumeGroupRosterChecks() {
       shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
+  // G016: a dissolve or a refusal that did not get sent (the app quit, or messaging was down) goes now.
+  group_membership_->ResumePendingGroupSends();
   std::vector<AccountStateGroup> restored;
   {
     std::lock_guard lock(restored_mutex_);
     restored.swap(restored_.groups);
   }
   for (const AccountStateGroup& group : restored) {
-    if (group.left) {
-      continue;  // a group the account is out of: nothing to bring back
+    if (group.left || group.dissolved) {
+      continue;  // a group the account is out of, or one that ended: nothing to bring back
     }
     if (auto recreated = group_membership_->RestoreGroup(group); !recreated) {
       log().warning << "Group not restored group=" << group.group_id << ": " << recreated.error().message;
@@ -2524,6 +2533,14 @@ void ConversationsHub::BindGroupRosterSyncFamily() {
             if (auto answered = group_membership_->AnswerRosterRequest(request, asker); !answered) {
               log().warning << "Roster answer to " << asker << " failed: " << answered.error().message;
             }
+          }
+        });
+      },
+      [this](GroupDissolvedEnd end) {
+        // G016: a group ended by an answer to our check, or by our own other device: its line and notice, off the ingest.
+        AppRuntime::PostWorkerNormal([this, end = std::move(end)]() {
+          if (group_membership_) {
+            group_membership_->OnGroupDissolvedElsewhere(end);
           }
         });
       }));

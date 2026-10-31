@@ -18,7 +18,8 @@ std::optional<GroupMembershipControlType> LaneTypeOf(const ThreadMessage& messag
     return std::nullopt;
   }
   const auto kind = GroupMembershipCodec::ControlTypeFromMessage(message);
-  if (kind != GroupMembershipControlType::GroupRosterRequest && kind != GroupMembershipControlType::GroupRosterReply) {
+  if (kind != GroupMembershipControlType::GroupRosterRequest && kind != GroupMembershipControlType::GroupRosterReply &&
+      kind != GroupMembershipControlType::GroupDissolvedSibling) {
     return std::nullopt;
   }
   return kind;
@@ -44,21 +45,47 @@ Roe<void> ApplyRequest(GroupRosterStore& roster, const std::string& local_accoun
   return {};
 }
 
+using DissolvedFn = std::function<void(GroupDissolvedEnd)>;
+
 Roe<void> ApplyReply(GroupRosterStore& roster, const std::string& local_account, const std::string& detail,
-                     const std::string& replier) {
+                     const std::string& replier, const DissolvedFn& on_dissolved) {
   // A reply may reach a member the replier says was removed: no membership check here.
   auto reply = group_roster_sync_codec::DecodeReply(detail);
   if (!reply) {
     return reply.error();
   }
-  auto applied = group_roster_sync::ApplyReply(roster, *reply, local_account, replier);
+  GroupDissolvedApplied dissolved;
+  auto applied = group_roster_sync::ApplyReply(roster, *reply, local_account, replier, &dissolved);
   if (!applied) {
     return applied.error();
   }
-  static constexpr const char* kOutcome[] = {"ignored", "active", "removed"};
+  if (*applied == group_roster_sync::ReplyOutcome::Dissolved && on_dissolved && reply->statement) {
+    on_dissolved({reply->group_id, reply->statement->owner_identity, std::move(dissolved.voided_invites)});
+  }
+  static constexpr const char* kOutcome[] = {"ignored", "active", "removed", "dissolved"};
   logging::getLogger(kGroupRosterSyncLogger).info << "Roster reply group_id=" << reply->group_id << " from=" << replier
              << " statement=" << (reply->statement ? reply->statement->roster_epoch : 0)
              << " removed=" << reply->removed << " -> " << kOutcome[static_cast<int>(*applied)];
+  return {};
+}
+
+/** The owner's other device says it dissolved a group (G016): the same dissolve, from our own account. */
+Roe<void> ApplySiblingDissolved(GroupRosterStore& roster, const std::string& local_account, const std::string& detail,
+                                const std::string& sender, const DissolvedFn& on_dissolved) {
+  if (sender != local_account) {
+    return {};  // only our own devices speak for our account
+  }
+  auto statement = group_roster_sync_codec::DecodeStatement(detail);
+  if (!statement) {
+    return statement.error();
+  }
+  auto ended = ApplyDissolvedStatement(roster, *statement, local_account);
+  if (!ended) {
+    return ended.error();
+  }
+  if (ended->applied && on_dissolved) {
+    on_dissolved({statement->group_id, statement->owner_identity, std::move(ended->voided_invites)});
+  }
   return {};
 }
 
@@ -66,12 +93,14 @@ Roe<void> ApplyReply(GroupRosterStore& roster, const std::string& local_account,
 
 SystemControlFamily MakeGroupRosterSyncFamily(
     GroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
-    std::function<void(group_roster_sync_codec::RosterRequest request, std::string asker)> answer) {
+    std::function<void(group_roster_sync_codec::RosterRequest request, std::string asker)> answer,
+    std::function<void(GroupDissolvedEnd end)> on_dissolved) {
   SystemControlFamily family;
   family.name = kGroupRosterSyncFamily;
   family.owns = [](const ThreadMessage& message) { return LaneTypeOf(message).has_value(); };
   family.on_lane = [](const ThreadMessage& message) { return LaneTypeOf(message).has_value(); };
-  family.apply = [&roster, local_account = std::move(local_account), answer = std::move(answer)](
+  family.apply = [&roster, local_account = std::move(local_account), answer = std::move(answer),
+                  on_dissolved = std::move(on_dissolved)](
                      ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
     const auto kind = LaneTypeOf(message);
     const std::optional<std::string> local = local_account ? local_account() : std::nullopt;
@@ -85,7 +114,10 @@ SystemControlFamily MakeGroupRosterSyncFamily(
     if (*kind == GroupMembershipControlType::GroupRosterRequest) {
       return ApplyRequest(roster, *local, *detail, context.sender_identity, answer);
     }
-    return ApplyReply(roster, *local, *detail, context.sender_identity);
+    if (*kind == GroupMembershipControlType::GroupDissolvedSibling) {
+      return ApplySiblingDissolved(roster, *local, *detail, context.sender_identity, on_dissolved);
+    }
+    return ApplyReply(roster, *local, *detail, context.sender_identity, on_dissolved);
   };
   return family;
 }

@@ -8,9 +8,14 @@
 #include "lib/messaging/SendRelayOptions.h"
 #include "lib/people/ContactJson.h"
 
+#include "foundation/i18n/LocalizationService.h"
+#include "foundation/runtime/AppRuntime.h"
+
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <chrono>
+#include <iterator>
 #include <optional>
 #include <vector>
 
@@ -27,6 +32,12 @@ namespace {
  * sends the first ones and its other members are keyed as before (a first message, the directory).
  */
 constexpr size_t kRosterCardsBudgetBytes = 128 * 1024;
+
+/** The line an app that does not know `group_invite_refused` shows for it. */
+std::string RefusedDisplay(const std::string& reason) {
+  return reason == kInviteRefusedGroupDissolved ? "Group invitation refused: the group was dissolved"
+                                                : "Group invitation refused: the group is full";
+}
 
 } // namespace
 
@@ -250,13 +261,14 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
 }
 
 Roe<void> GroupMembershipWorkflow::RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
-                                               const std::string& invitee_identity) {
-  auto detail = GroupMembershipCodec::EncodeInviteRefused(invite_nonce, group_id, kInviteRefusedGroupFull);
+                                               const std::string& invitee_identity, const std::string& reason) {
+  const std::string why = reason.empty() ? std::string(kInviteRefusedGroupFull) : reason;
+  auto detail = GroupMembershipCodec::EncodeInviteRefused(invite_nonce, group_id, why);
   if (!detail) {
     return detail.error();
   }
   return SendMembershipDirectMessage(invitee_identity, GroupMembershipControlType::GroupInviteRefused, *detail,
-                                     "Group invitation refused: the group is full");
+                                     RefusedDisplay(why));
 }
 
 Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::string& inviter_identity,
@@ -720,18 +732,52 @@ bool GroupMembershipWorkflow::IsDissolved(const std::string& group_id) const {
 
 void GroupMembershipWorkflow::AppendDissolvedLine(const std::string& group_id, const std::string& owner_identity,
                                                   const std::string& sender_identity) {
-  auto thread = store_.FindGroupThread(group_id);
-  if (!thread || !*thread) {
-    return;  // the chat was deleted: nothing to keep
+  auto added = EnsureDissolvedLine(store_, group_id, owner_identity, sender_identity);
+  if (!added || !*added) {
+    return;  // the chat was deleted, or already says so
   }
-  if (auto detail = GroupMembershipCodec::EncodeGroupDissolved(group_id, owner_identity)) {
-    (void)AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::GroupDissolved, "Group dissolved",
-                                      *detail, sender_identity);
+  if (auto thread = store_.GetThread(**added); thread && *thread) {
+    Thread row = **thread;
+    row.preview = Tr("chat.group.dissolved_preview");
+    row.updated_at = util::NowUnixMs();
+    (void)store_.UpsertThread(row);
   }
-  Thread row = **thread;
-  row.preview = "Group dissolved";
-  row.updated_at = util::NowUnixMs();
-  (void)store_.UpsertThread(row);
+}
+
+void GroupMembershipWorkflow::OnGroupDissolvedElsewhere(const GroupDissolvedEnd& end) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return;
+  }
+  // The owner's other device sees "You dissolved this group"; anyone else the owner's name.
+  auto added = EnsureDissolvedLine(store_, end.group_id, end.owner_identity,
+                                   end.owner_identity == *local ? std::string(kLocalSelfContactId) : end.owner_identity);
+  if (added && *added) {
+    mesh_messaging_.SurfaceGroupDissolved(**added);
+  }
+  for (const PendingGroupInvite& invite : end.voided_invites) {
+    if (!invite.outbound) {
+      (void)ResolveInviteCard(invite.inviter_identity, invite.invite_nonce, InviteStatus::Expired,
+                              "This group was dissolved");
+    }
+  }
+  log().info << "Group dissolved elsewhere group=" << end.group_id;
+}
+
+void GroupMembershipWorkflow::EndDissolvedFromLocker(const AccountStateGroup& group) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return;
+  }
+  auto member = roster_.IsMember(group.group_id, *local);
+  if (!member || !*member || IsDissolved(group.group_id)) {
+    return;  // not a group we are in, or already over
+  }
+  // Our own locker, written only by our own devices: no statement to check. It cannot be undone, so no epoch gate.
+  auto ended = EndGroupInRoster(roster_, group.group_id, group.owner_identity, group.roster_epoch);
+  if (ended && ended->applied) {
+    OnGroupDissolvedElsewhere({group.group_id, group.owner_identity, std::move(ended->voided_invites)});
+  }
 }
 
 Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
@@ -739,8 +785,7 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
   if (!local) {
     return local.error();
   }
-  std::vector<std::string> recipients;
-  std::string detail;
+  std::string sibling_detail;
   {
     auto update = GroupRosterStore::LockForUpdate();  // the roster we sign and the one we end, as one
     auto metadata = LoadMetadataOrError(group_id);
@@ -751,57 +796,100 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
       return Error("Only the group owner may dissolve the group");
     }
     if (metadata->sync_state == GroupSyncState::Dissolved) {
+      update.unlock();
+      ResumePendingGroupSends();  // asked again: finish what an earlier go left
       return {};
     }
     auto members = roster_.ListMembers(group_id);
     if (!members) {
       return members.error();
     }
+    std::vector<std::string> recipients;
     for (const GroupRosterMember& m : *members) {
       if (m.member_identity != *local) {
         recipients.push_back(m.member_identity);
       }
     }
+    // Signed before anything changes here: without a key nobody could be told, and the group would end for us alone.
     const uint64_t epoch = metadata->roster_epoch + 1;
-    if (!recipients.empty()) {
-      // Signed before anything changes here: without a key nobody could be told, and the group would end for us alone.
-      auto identity = identity_.Get();
-      if (!identity) {
-        return identity.error();
-      }
-      if (identity->account_signing_public_key_b64.empty()) {
-        return Error("No account signing key yet");
-      }
-      std::vector<GroupRosterStatementMember> rows;
-      rows.reserve(members->size());
-      for (const GroupRosterMember& m : *members) {
-        rows.push_back({m.member_identity, m.role, m.joined_at});
-      }
-      std::vector<GroupOwnerTransfer> chain;
-      if (auto held = group_roster_sync::Held(*metadata)) {
-        chain = held->owner_chain;
-      }
-      auto statement = group_roster_statement::Sign(identity_, identity->account_signing_public_key_b64, group_id,
-                                                    epoch, std::move(rows), std::move(chain), /*dissolved=*/true);
-      if (!statement) {
-        return statement.error();
-      }
-      detail = group_roster_sync_codec::EncodeStatement(*statement);
+    auto statement = SignDissolved(*metadata, *members, epoch);
+    if (!statement && !recipients.empty()) {
+      return statement.error();
     }
-    auto ended = EndGroupInRoster(roster_, group_id, *local, epoch);
+    std::string statement_json;
+    std::string detail;
+    if (statement) {
+      statement_json = DumpJson(group_roster_statement::ToJson(*statement));
+      detail = group_roster_sync_codec::EncodeStatement(*statement);
+      sibling_detail = detail;
+    }
+    // What still has to be sent, written with the ending itself (one transaction): the dissolve to each member, and a
+    // refusal to each invitee whose invite is still out, so none of them accepts into a group that is over.
+    std::vector<PendingGroupSend> sends;
+    for (const std::string& member : recipients) {
+      sends.push_back({group_id, member, GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupDissolved),
+                       detail, "The group owner dissolved this group"});
+    }
+    for (const PendingGroupInvite& invite : ListInvitedWaiting(group_id)) {
+      auto refusal = GroupMembershipCodec::EncodeInviteRefused(invite.invite_nonce, group_id, kInviteRefusedGroupDissolved);
+      if (refusal) {
+        sends.push_back({group_id, invite.invitee_identity,
+                         GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInviteRefused), *refusal,
+                         RefusedDisplay(kInviteRefusedGroupDissolved)});
+      }
+    }
+    auto ended = EndGroupInRoster(roster_, group_id, *local, epoch, statement_json, sends);
     if (!ended) {
       return ended.error();
     }
+    log().info << "Group dissolved group=" << group_id << " sends=" << sends.size();
   }
   AppendDissolvedLine(group_id, *local, kLocalSelfContactId);  // our own line reads "You dissolved…"
-  log().info << "Group dissolved group=" << group_id << " members_to_tell=" << recipients.size();
-  // Best-effort: each copy goes through the outbox, which retries; one member we cannot reach holds nobody back.
-  (void)FanOutPairwise(SelectPairwiseFanoutTargets(recipients, *local), PairwiseFanoutMode::BestEffort,
-                       [&](const std::string& identity) {
-                         return SendMembershipDirectMessage(identity, GroupMembershipControlType::GroupDissolved,
-                                                            detail, "The group owner dissolved this group");
-                       });
+  // Our other devices end it too (M021 sibling lane; best effort — a device that was off finds the locker's tombstone).
+  if (!sibling_detail.empty()) {
+    if (auto notice = GroupMembershipCodec::BuildSystemMessage(std::string(), GroupMembershipControlType::GroupDissolvedSibling,
+                                                               "Group dissolved", sibling_detail, *local)) {
+      if (auto sent = mesh_messaging_.NotifyOwnDevices(*notice); !sent) {
+        log().info << "Group dissolve not sent to our other devices: " << sent.error().message;
+      }
+    }
+  }
+  // Best-effort, through the outbox: each copy goes when it can; a member we cannot reach holds nobody back.
+  ResumePendingGroupSends();
   return {};
+}
+
+void GroupMembershipWorkflow::ResumePendingGroupSends(const size_t attempt) {
+  constexpr int64_t kRetryDelaysMs[] = {30'000, 120'000, 600'000};
+  if (AppRuntime::IsShuttingDown()) {
+    return;
+  }
+  auto pending = roster_.ListPendingSends();
+  if (!pending) {
+    log().warning << "Pending group sends not read: " << pending.error().message;
+    return;
+  }
+  bool all_sent = true;
+  for (const PendingGroupSend& send : *pending) {
+    const auto type = GroupMembershipControlTypeFromWire(send.control_type);
+    if (!type) {
+      (void)roster_.DeletePendingSend(send);  // a type this app does not know cannot be sent
+      continue;
+    }
+    // Done once the copy has reached the outbox (SendUserMessage keeps it and retries until it is delivered).
+    if (auto sent = SendMembershipDirectMessage(send.recipient, *type, send.detail_json, send.display); sent) {
+      (void)roster_.DeletePendingSend(send);
+    } else {
+      all_sent = false;
+      log().warning << "Group send to " << send.recipient << " not queued (" << send.control_type
+                    << "): " << sent.error().message;
+    }
+  }
+  if (!all_sent && attempt < std::size(kRetryDelaysMs)) {
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRetryDelaysMs[attempt]), [this, attempt]() {
+      AppRuntime::PostWorkerNormal([this, attempt]() { ResumePendingGroupSends(attempt + 1); });
+    });
+  }
 }
 
 void GroupMembershipWorkflow::MarkMemberUnreachable(const std::string& group_id, const std::string& member_identity) {
@@ -1271,8 +1359,24 @@ std::string GroupMembershipWorkflow::WithSignedRoster(const std::string& group_i
   return with ? *with : detail_json;
 }
 
-Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string& group_id,
-                                                              const std::optional<GroupOwnerTransfer>& handed) {
+GroupMembershipWorkflow::RosterParts GroupMembershipWorkflow::RosterPartsOf(
+    const GroupMetadata& metadata, const std::vector<GroupRosterMember>& members,
+    const std::optional<GroupOwnerTransfer>& handed) const {
+  RosterParts parts;
+  parts.rows.reserve(members.size());
+  for (const GroupRosterMember& m : members) {
+    parts.rows.push_back({m.member_identity, m.role, m.joined_at});
+  }
+  if (auto held = group_roster_sync::Held(metadata)) {
+    parts.chain = held->owner_chain;
+  }
+  if (handed) {
+    parts.chain.push_back(*handed);
+  }
+  return parts;
+}
+
+Roe<std::string> GroupMembershipWorkflow::SigningKey() const {
   auto identity = identity_.Get();
   if (!identity) {
     return identity.error();
@@ -1280,32 +1384,46 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string&
   if (identity->account_signing_public_key_b64.empty()) {
     return Error("No account signing key yet");
   }
+  return identity->account_signing_public_key_b64;
+}
+
+Roe<GroupRosterStatement> GroupMembershipWorkflow::SignDissolved(const GroupMetadata& metadata,
+                                                                 const std::vector<GroupRosterMember>& members,
+                                                                 const uint64_t epoch) {
+  auto key = SigningKey();
+  if (!key) {
+    return key.error();
+  }
+  RosterParts parts = RosterPartsOf(metadata, members);
+  return group_roster_statement::Sign(identity_, *key, metadata.group_id, epoch, std::move(parts.rows),
+                                      std::move(parts.chain), /*dissolved=*/true);
+}
+
+Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string& group_id,
+                                                              const std::optional<GroupOwnerTransfer>& handed) {
+  auto key = SigningKey();
+  if (!key) {
+    return key.error();
+  }
+  auto account = identity_.GetAccountId();
+  if (!account) {
+    return account.error();
+  }
   auto update = GroupRosterStore::LockForUpdate();  // the roster read and the statement kept, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
   }
-  if (metadata->owner_identity != identity->account_id) {
+  if (metadata->owner_identity != *account) {
     return Error("Only the group owner signs its roster");
   }
   auto members = roster_.ListMembers(group_id);
   if (!members) {
     return members.error();
   }
-  std::vector<GroupRosterStatementMember> rows;
-  rows.reserve(members->size());
-  for (const GroupRosterMember& m : *members) {
-    rows.push_back({m.member_identity, m.role, m.joined_at});
-  }
-  std::vector<GroupOwnerTransfer> chain;
-  if (auto held = group_roster_sync::Held(*metadata)) {
-    chain = held->owner_chain;
-  }
-  if (handed) {
-    chain.push_back(*handed);
-  }
-  auto statement = group_roster_statement::Sign(identity_, identity->account_signing_public_key_b64, group_id,
-                                                metadata->roster_epoch, std::move(rows), std::move(chain));
+  RosterParts parts = RosterPartsOf(*metadata, *members, handed);
+  auto statement = group_roster_statement::Sign(identity_, *key, group_id, metadata->roster_epoch,
+                                                std::move(parts.rows), std::move(parts.chain));
   if (!statement) {
     return statement.error();
   }
@@ -1352,7 +1470,21 @@ Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_c
     return {};
   }
   group_roster_sync_codec::RosterReply reply;
-  if ((*metadata)->owner_identity == *local && (*metadata)->sync_state == GroupSyncState::Active) {
+  if ((*metadata)->sync_state == GroupSyncState::Dissolved && (*metadata)->owner_identity == *local) {
+    // G016: the owner answers with its dissolve, signed again over the roster it held (else the one it kept).
+    reply.group_id = request.group_id;
+    reply.request_id = request.request_id;
+    const auto held = group_roster_sync::Held(**metadata);
+    std::vector<GroupRosterMember> stated;
+    for (const GroupRosterStatementMember& m : held ? held->members : std::vector<GroupRosterStatementMember>{}) {
+      stated.push_back({m.identity, std::string(), m.role, m.joined_at});
+    }
+    if (auto fresh = SignDissolved(**metadata, stated, (*metadata)->roster_epoch)) {
+      reply.statement = std::move(*fresh);
+    } else {
+      reply.statement = held;
+    }
+  } else if ((*metadata)->owner_identity == *local && (*metadata)->sync_state == GroupSyncState::Active) {
     // The owner answers with the roster as it is now.
     auto statement = SignRoster(request.group_id);
     if (!statement) {
@@ -1431,8 +1563,13 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
     const bool member = local && std::any_of(members->begin(), members->end(), [&](const GroupRosterMember& m) {
                           return m.member_identity == *local;
                         });
-    if ((*metadata)->sync_state == GroupSyncState::Removed || (*metadata)->sync_state == GroupSyncState::Dissolved ||
-        (local && !member)) {
+    if ((*metadata)->sync_state == GroupSyncState::Dissolved) {
+      group.left = true;
+      group.dissolved = true;  // terminal: no copy of the group, whatever its epoch, brings it back (G016)
+      groups.push_back(std::move(group));
+      continue;
+    }
+    if ((*metadata)->sync_state == GroupSyncState::Removed || (local && !member)) {
       group.left = true;  // a tombstone: an older copy where we were in must not bring it back
       groups.push_back(std::move(group));
       continue;

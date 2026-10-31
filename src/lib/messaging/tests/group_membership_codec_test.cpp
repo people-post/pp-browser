@@ -204,8 +204,8 @@ TEST(GroupMembershipCodecTest, GroupDissolvedHasItsOwnWireNameAndIsNotRosterBook
   auto message = GroupMembershipCodec::BuildSystemMessage("t1", GroupMembershipControlType::GroupDissolved,
                                                           "Group dissolved", *detail, "account:alice");
   ASSERT_TRUE(message);
-  EXPECT_EQ(GroupMembershipCodec::GroupDissolvedOwner(*message), "account:alice");
-  EXPECT_TRUE(GroupMembershipCodec::GroupDissolvedOwner(ThreadMessage{}).empty());
+  EXPECT_EQ(GroupMembershipCodec::ControlTypeFromMessage(*message), GroupMembershipControlType::GroupDissolved);
+  EXPECT_EQ(GroupMembershipControlTypeFromWire("group_dissolved_sibling"), GroupMembershipControlType::GroupDissolvedSibling);
 }
 
 } // namespace

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupRosterStatement.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
@@ -63,16 +64,20 @@ enum class ReplyOutcome {
   Ignored,
   Active,
   Removed,
+  /** The answer was the owner's dissolve (G016): the group is over, its chat stays. */
+  Dissolved,
 };
 
 /**
  * Apply `replier`'s reply to our check (G013): only one for our latest request; a statement must verify
  * for the owner we know. The winning statement becomes the roster when it is not older than ours; the
  * check ends active when it lists us, removed when not. With no statement, only the owner's `removed`
- * counts. Later replies to the same request still apply (the owner's own reply wins when it arrives).
+ * counts. Later replies to the same request still apply (the owner's own reply wins when it arrives). A statement
+ * that is the owner's dissolve (G016) ends the group (`Dissolved`; what it voided in `dissolved`).
  */
 Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
-                             const std::string& local_identity, const std::string& replier);
+                             const std::string& local_identity, const std::string& replier,
+                             GroupDissolvedApplied* dissolved = nullptr);
 
 /** An unanswered check is asked again when a group message shows a member is online (G013 amendment). */
 inline constexpr int64_t kCheckRetryMs = 15000;

@@ -889,7 +889,7 @@ TEST_F(GroupDissolvedIngestTest, TheOwnersDissolveEmptiesTheRosterAndKeepsTheCha
   ASSERT_EQ(messages.size(), 2u);
   EXPECT_EQ(messages.front().text, "see you at eight");
   EXPECT_EQ(DissolvedLines(messages), 1u);
-  EXPECT_EQ(GroupMembershipCodec::GroupDissolvedOwner(messages.back()), alice_.Id());
+  EXPECT_EQ(messages.back().sender_contact_id, alice_.Id()) << "the owner is the line's sender";
 }
 
 TEST_F(GroupDissolvedIngestTest, TheGroupGetsTheOneNoticeAndTheDirectChatNone) {
@@ -1028,6 +1028,93 @@ TEST_F(GroupDissolvedIngestTest, ADeletedChatStaysGoneAndTheMarkerSurvivesAResta
   ASSERT_TRUE(metadata);
   EXPECT_EQ(metadata->sync_state, GroupSyncState::Dissolved);
   EXPECT_TRUE(reopened.ListMembers(kGroup).value().empty());
+}
+
+
+TEST_F(GroupDissolvedIngestTest, ARedeliveryFinishesADissolveThatCrashedBeforeItsLine) {
+  // The group ended (one transaction) but the process died before its chat got the line.
+  ASSERT_TRUE(EndGroupInRoster(bob_.roster, kGroup, alice_.Id(), 4));
+  ASSERT_EQ(DissolvedLines(GroupMessages()), 0u);
+
+  const RelayReceiveOutcome again = Receive(Statement(alice_));
+  EXPECT_FALSE(again.receive_failure);
+  ASSERT_TRUE(again.dissolved_group_thread_id) << "the line, and so the one notice, comes now";
+  EXPECT_EQ(DissolvedLines(GroupMessages()), 1u);
+  EXPECT_FALSE(Receive(Statement(alice_)).dissolved_group_thread_id) << "and only once";
+  EXPECT_EQ(DissolvedLines(GroupMessages()), 1u);
+}
+
+TEST_F(GroupDissolvedIngestTest, AnAcceptThatCameAfterTheDissolveIsRefusedLikeAFullGroup) {
+  PartyHarness owner("late_accept", "account:alice", "account:dave");
+  GroupMetadata metadata;
+  metadata.group_id = kGroup;
+  metadata.owner_identity = "account:alice";
+  metadata.roster_epoch = 3;
+  ASSERT_TRUE(owner.roster.UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "account:alice";
+  alice.role = MemberRole::Owner;
+  ASSERT_TRUE(owner.roster.UpsertMember(kGroup, alice));
+  PendingGroupInvite invite;
+  invite.invite_nonce = "late";
+  invite.group_id = kGroup;
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:dave";
+  invite.status = InviteStatus::Pending;
+  invite.created_at = util::NowUnixMs();
+  invite.outbound = true;
+  ASSERT_TRUE(owner.roster.UpsertPendingInvite(invite));
+  ASSERT_TRUE(EndGroupInRoster(owner.roster, kGroup, "account:alice", 4));
+
+  auto detail = GroupMembershipCodec::EncodeInviteResponse("late", kGroup);
+  ASSERT_TRUE(detail);
+  const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(
+      owner.MakeSystemEnvelope("group_invite_accept", *detail, "Accepted group invitation", 1), "account:alice");
+  EXPECT_FALSE(outcome.publish_member_joined_group_id) << "no one joins a group that is over";
+  ASSERT_TRUE(outcome.refuse_invite_group_id);
+  EXPECT_EQ(outcome.refuse_invite_nonce, "late");
+  EXPECT_EQ(outcome.refuse_invite_member, "account:dave");
+  EXPECT_EQ(outcome.refuse_invite_reason, kInviteRefusedGroupDissolved);
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_TRUE(owner.roster.ListMembers(kGroup).value().empty());
+}
+
+TEST(GroupInviteIngestTest, AnInviteRefusedBecauseTheGroupWasDissolvedEndsTheInviteesGroupAndItsCard) {
+  PartyHarness invitee("invitee_dissolved", "account:bob", "account:alice");
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-gone";
+  pending.group_id = "group:hike";
+  pending.inviter_identity = "account:alice";
+  pending.invitee_identity = "account:bob";
+  pending.status = InviteStatus::Accepted;  // bob accepted: its group exists, the owner's end beat the accept
+  pending.created_at = util::NowUnixMs();
+  ASSERT_TRUE(invitee.roster.UpsertPendingInvite(pending));
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "account:alice";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(invitee.roster.UpsertMetadata(metadata));
+  for (const char* who : {"account:alice", "account:bob"}) {
+    GroupRosterMember member;
+    member.member_identity = who;
+    ASSERT_TRUE(invitee.roster.UpsertMember("group:hike", member));
+  }
+  auto thread = invitee.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {});
+  ASSERT_TRUE(thread);
+
+  auto detail = GroupMembershipCodec::EncodeInviteRefused("nonce-gone", "group:hike", kInviteRefusedGroupDissolved);
+  ASSERT_TRUE(detail);
+  const RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(
+      invitee.MakeSystemEnvelope("group_invite_refused", *detail, "Group invitation refused", 1), "account:bob");
+  EXPECT_FALSE(outcome.receive_failure);
+  auto after = invitee.roster.LoadMetadata("group:hike");
+  ASSERT_TRUE(after && *after);
+  EXPECT_EQ((*after)->sync_state, GroupSyncState::Dissolved) << "dissolved, not merely removed";
+  EXPECT_TRUE(invitee.roster.ListMembers("group:hike").value().empty());
+  ASSERT_TRUE(outcome.dissolved_group_thread_id);
+  EXPECT_EQ(*outcome.dissolved_group_thread_id, thread->id);
+  ASSERT_EQ(outcome.voided_invite_cards.size(), 1u) << "the invite's card ends";
+  EXPECT_EQ(outcome.voided_invite_cards.front().second, "nonce-gone");
 }
 
 } // namespace

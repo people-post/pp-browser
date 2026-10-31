@@ -1,5 +1,7 @@
 #include "lib/messaging/GroupRosterSync.h"
 
+#include "lib/messaging/GroupMembershipApply.h"
+
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -184,13 +186,13 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore
   if (!metadata) {
     return metadata.error();
   }
-  if (!metadata->has_value() || (*metadata)->sync_state == GroupSyncState::Dissolved) {
-    return std::optional<group_roster_sync_codec::RosterReply>{};  // not ours, or ended (G016): nothing to say
+  if (!metadata->has_value()) {
+    return std::optional<group_roster_sync_codec::RosterReply>{};
   }
   group_roster_sync_codec::RosterReply reply;
   reply.group_id = request.group_id;
   reply.request_id = request.request_id;
-  reply.statement = Held(**metadata);
+  reply.statement = Held(**metadata);  // for a dissolved group (G016): the owner's dissolve, which ends the asker's check
   if ((*metadata)->sync_state == GroupSyncState::Active) {
     auto member = roster.IsMember(request.group_id, asker);
     if (!member) {
@@ -202,7 +204,8 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore
 }
 
 Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
-                             const std::string& local_identity, const std::string& replier) {
+                             const std::string& local_identity, const std::string& replier,
+                             GroupDissolvedApplied* dissolved) {
   auto lock = GroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, reply.group_id);
   if (!metadata) {
@@ -232,7 +235,16 @@ Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_c
   }
   const GroupRosterStatement& statement = *reply.statement;
   if (statement.dissolved) {
-    return ReplyOutcome::Ignored;
+    // G016: the owner ended the group (a member relays its dissolve, or the owner answers with it). Authority as for
+    // any dissolve; one that does not hold tells us nothing.
+    auto ended = ApplyDissolvedStatement(roster, statement, local_identity);
+    if (!ended || !ended->applied) {
+      return ReplyOutcome::Ignored;
+    }
+    if (dissolved) {
+      *dissolved = std::move(*ended);
+    }
+    return ReplyOutcome::Dissolved;
   }
   if (auto valid = group_roster_statement::Verify(statement, metadata->owner_identity); !valid) {
     return ReplyOutcome::Ignored;

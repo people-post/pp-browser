@@ -173,6 +173,8 @@ public:
   /** Our device list changed (our address goes to our other devices too, M021). */
   void SetOnOwnDevicesChanged(std::function<void()> changed) { on_own_devices_changed_ = std::move(changed); }
   /** A verified notice from another device of our own account arrived (M023: time to sync the locker). */
+  /** G016: a group ended by an answer or another device of ours: its chat gets the one unread count, preview and notice. */
+  void SurfaceGroupDissolved(const std::string& thread_id);
   void SetOnSiblingNotice(std::function<void()> callback) { on_sibling_notice_ = std::move(callback); }
   /**
    * Our other devices hear that something of the account changed here (the account locker was written, M023): the
@@ -392,6 +394,7 @@ private:
    * the DM that carried the news gets none. None when the outcome dissolved no group.
    */
   std::optional<BackgroundNotice> NoticeGroupDissolved(const RelayReceiveOutcome& outcome);
+  std::optional<BackgroundNotice> NoticeGroupDissolvedIn(const std::string& thread_id);
   /** A live message that mentions us is marked (unless its chat is open); one that cannot be decided is held. */
   void NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account);
   struct HeldMention {

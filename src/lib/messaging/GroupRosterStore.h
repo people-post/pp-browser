@@ -16,6 +16,29 @@ struct sqlite3;
 
 namespace pbr {
 
+/**
+ * A control message still to go to one recipient when a group ended (G016): the dissolve to a member, a refusal to an
+ * invitee. Written in the same transaction that ends the group, so a crash or an offline start loses neither; a row
+ * goes once its copy has reached the outbox.
+ */
+struct PendingGroupSend {
+  std::string group_id;
+  std::string recipient;
+  /** Wire `control_type`: `group_dissolved` or `group_invite_refused`. */
+  std::string control_type;
+  std::string detail_json;
+  std::string display;
+};
+
+/** What ends a group in one transaction (G016). */
+struct GroupEnding {
+  std::string owner_identity;
+  uint64_t roster_epoch = 0;
+  /** The owner-signed dissolve, held to answer member checks; empty when the owner never signed one (solo). */
+  std::string statement_json;
+  std::vector<PendingGroupSend> sends;
+};
+
 /** Group roster + metadata persistence in profile.db. */
 class GroupRosterStore {
 public:
@@ -55,6 +78,18 @@ public:
   Roe<void> ExpireOutboundInvitesTo(const std::string& group_id, const std::string& invitee_identity) const;
   /** Voids every pending invite to or from this group (it was dissolved, G016); returns the ones voided. */
   Roe<std::vector<PendingGroupInvite>> ExpirePendingInvitesOf(const std::string& group_id) const;
+  /**
+   * G016: end the group in ONE transaction — roster emptied, send target dropped, pending invites voided, metadata
+   * `dissolved` (owner, epoch raised to at least `ending.roster_epoch`, `statement_json` held) and `ending.sends`
+   * recorded — so a crash leaves all of it or none. Nullopt (nothing changed) when the group is unknown or already
+   * dissolved; else the invites voided.
+   */
+  Roe<std::optional<std::vector<PendingGroupInvite>>> EndGroup(const std::string& group_id,
+                                                               const GroupEnding& ending) const;
+  /** The sends still to make, for one group or (empty `group_id`) all. */
+  Roe<std::vector<PendingGroupSend>> ListPendingSends(const std::string& group_id = {}) const;
+  /** One send done: its copy reached the outbox. */
+  Roe<void> DeletePendingSend(const PendingGroupSend& send) const;
   /**
    * The group's invites this device sent that are still Pending and not expired at `now_ms`: the latest
    * one per invitee, newest first.

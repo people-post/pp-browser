@@ -193,6 +193,32 @@ TEST(AccountLockerTest, AGroupLeftOnOneDeviceStaysLeft) {
   EXPECT_FALSE(merged.extras.groups[0].left) << "a newer roster with us in it wins over the tombstone";
 }
 
+TEST(AccountLockerTest, ADissolvedGroupStaysDissolvedWhateverTheOtherCopySays) {
+  // G016: the owner ended the hike group at epoch 4. A copy at a higher epoch, or one where we were a member, does not
+  // bring it back — whichever side of the merge holds the tombstone.
+  AccountLockerState dissolved = SampleState();
+  dissolved.extras.groups[0].roster_epoch = 4;
+  dissolved.extras.groups[0].left = true;
+  dissolved.extras.groups[0].dissolved = true;
+  AccountLockerState live = SampleState();
+  live.extras.groups[0].roster_epoch = 9;  // a device that never heard of it
+
+  AccountLockerState merged = account_locker::MergeForPublish(live, dissolved);
+  ASSERT_EQ(merged.extras.groups.size(), 1u);
+  EXPECT_TRUE(merged.extras.groups[0].dissolved) << "stored dissolved beats our higher-epoch live copy";
+  EXPECT_TRUE(merged.extras.groups[0].left);
+  merged = account_locker::MergeForPublish(dissolved, live);
+  EXPECT_TRUE(merged.extras.groups[0].dissolved) << "ours dissolved beats the stored higher-epoch live copy";
+  EXPECT_EQ(merged.extras.groups[0].roster_epoch, 4u);
+
+  // Two dissolved copies keep the higher epoch.
+  AccountLockerState later = dissolved;
+  later.extras.groups[0].roster_epoch = 6;
+  merged = account_locker::MergeForPublish(dissolved, later);
+  EXPECT_TRUE(merged.extras.groups[0].dissolved);
+  EXPECT_EQ(merged.extras.groups[0].roster_epoch, 6u);
+}
+
 TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
   ByteVector locker_id(32);

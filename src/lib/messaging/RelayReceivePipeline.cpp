@@ -231,22 +231,17 @@ Roe<void> RelayReceivePipeline::ApplyGroupDissolved(const ThreadMessage& message
   if (!applied) {
     return applied.error();
   }
-  if (!applied->applied) {
-    return {};  // not our group, or already over
+  if (applied->applied) {
+    log().info << "group dissolved group_id=" << statement->group_id;
   }
-  log().info << "group dissolved group_id=" << statement->group_id;
-  auto thread = store_.FindGroupThread(statement->group_id);
-  if (thread && *thread) {
-    const std::string text = "Group dissolved";
-    if (auto line = GroupMembershipCodec::EncodeGroupDissolved(statement->group_id, actor_identity)) {
-      if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupDissolved,
-                                                              text, *line, actor_identity)) {
-        (void)store_.AppendMessage(*sys);
-      }
-    }
-    if (outcome) {
-      outcome->dissolved_group_thread_id = (*thread)->id;
-      outcome->dissolved_group_text = text;
+  // The line is written after the roster is: a copy redelivered after a crash in between finishes it. Only the
+  // owner's own copy of a dissolve may do so, whatever else arrives for a group that is over.
+  auto metadata = group_roster_.LoadMetadata(statement->group_id);
+  if (metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved &&
+      (*metadata)->owner_identity == actor_identity) {
+    if (auto added = EnsureDissolvedLine(store_, statement->group_id, actor_identity, actor_identity);
+        added && *added && outcome) {
+      outcome->dissolved_group_thread_id = *added;
     }
   }
   if (outcome) {
@@ -266,7 +261,8 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
 }
 
 Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
-                                                  const std::string& local_account) const {
+                                                  const std::string& local_account,
+                                                  RelayReceiveOutcome* outcome) const {
   auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   if (!refused) {
     return refused.error();
@@ -278,6 +274,21 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     return Error("group_invite_refused for no invite of ours from its sender");
   }
   (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
+  if (refused->reason == kInviteRefusedGroupDissolved) {
+    // G016: the owner ended the group before our accept reached it. If we had already made the group on accept, it
+    // ends here too — the chat stays, saying so; the invite's card ends either way.
+    auto ended = EndGroupInRoster(group_roster_, refused->group_id, actor_identity, 0);
+    if (ended && ended->applied) {
+      if (auto added = EnsureDissolvedLine(store_, refused->group_id, actor_identity, actor_identity);
+          added && *added && outcome) {
+        outcome->dissolved_group_thread_id = *added;
+      }
+    }
+    if (outcome) {
+      outcome->voided_invite_cards.emplace_back(actor_identity, refused->invite_nonce);
+    }
+    return {};
+  }
   // G014: we were never added — drop the group we made on accept; its chat stays, read-only, saying why.
   if (!local_account.empty()) {
     (void)group_roster_.RemoveMember(refused->group_id, local_account);
@@ -326,7 +337,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   };
 
   if (kind == GroupMembershipControlType::GroupInviteRefused) {
-    return ApplyInviteRefused(message, actor_identity, local_account);
+    return ApplyInviteRefused(message, actor_identity, local_account, outcome);
   }
   if (kind == GroupMembershipControlType::GroupInviteAccept ||
       kind == GroupMembershipControlType::GroupInviteDecline) {
@@ -338,11 +349,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
       auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
                                                response->group_id, local_account, util::NowUnixMs());
-      if (!applied && applied.error().message == kGroupFullError) {
+      if (!applied && (applied.error().message == kGroupFullError ||
+                       applied.error().message == group_roster_sync::kGroupDissolvedError)) {
         if (outcome) {
           outcome->refuse_invite_group_id = response->group_id;
           outcome->refuse_invite_nonce = response->invite_nonce;
           outcome->refuse_invite_member = actor_identity;
+          outcome->refuse_invite_reason = applied.error().message == kGroupFullError ? kInviteRefusedGroupFull
+                                                                                      : kInviteRefusedGroupDissolved;
         }
         return {};
       }

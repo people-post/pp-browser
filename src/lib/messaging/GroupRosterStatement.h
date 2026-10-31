@@ -89,6 +89,14 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
 Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known_owner);
 
 /**
+ * Whether `candidate`'s owner had already handed the group on by the candidate's epoch, as far as `known` — the
+ * transfers any statement we hold or are weighing shows — tells: a transfer from the owner at or before the
+ * candidate's epoch, with no transfer back to it after that and by that epoch. So a former owner loses to its
+ * successor, and an owner who got the group back (A to B to A) wins again.
+ */
+bool OwnerHandedOn(const std::vector<GroupOwnerTransfer>& known, const GroupRosterStatement& candidate);
+
+/**
  * The statement to adopt among valid ones (G013): drop any signed by an owner a chain shows had
  * already handed the group on at that epoch (a former owner cannot outbid its successor), then the
  * highest roster epoch. Nullopt when none is left.

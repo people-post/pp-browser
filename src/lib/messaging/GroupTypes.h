@@ -43,6 +43,8 @@ enum class GroupMembershipControlType {
   GroupInviteRefused,
   /** Owner → members: the owner ended the group for everyone (G016); carries the owner-signed roster with `dissolved`. */
   GroupDissolved,
+  /** Owner's device → the owner's other devices (control lane, M021): the same dissolve, so they end the group too. */
+  GroupDissolvedSibling,
 };
 
 /** G014: a group has at most this many active members (the owner included; pending invites do not count). */
@@ -51,6 +53,8 @@ inline constexpr size_t kMaxGroupMembers = 50;
 inline constexpr const char kGroupFullError[] = "This group is full (50 members)";
 /** `group_invite_refused` reason. */
 inline constexpr const char kInviteRefusedGroupFull[] = "group_full";
+/** `group_invite_refused` reason (G016): the group was dissolved before the invite could be accepted. */
+inline constexpr const char kInviteRefusedGroupDissolved[] = "group_dissolved";
 
 /**
  * G013: a restored group checks its members before it sends again. `Dissolved` (G016): the owner ended the

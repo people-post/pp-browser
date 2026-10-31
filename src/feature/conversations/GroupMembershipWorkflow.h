@@ -3,6 +3,7 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/GroupRosterSync.h"
+#include "lib/messaging/GroupRosterSyncFamily.h"
 #include "lib/people/AccountStateCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/ContactsStore.h"
@@ -56,6 +57,19 @@ public:
   Roe<void> DissolveGroup(const std::string& group_id);
   /** G016: the owner ended this group (its chat stays, read-only). */
   bool IsDissolved(const std::string& group_id) const;
+  /**
+   * G016: send what a dissolve still has to send — each member's `group_dissolved`, each invitee's refusal — through
+   * the outbox, forgetting a row once its copy is there; a row that fails is tried again later (30 s, 2 min, 10 min)
+   * and at every start. Called when messaging comes up.
+   */
+  void ResumePendingGroupSends(size_t attempt = 0);
+  /**
+   * G016: a group ended here without the owner's DM (an answer to our member check, or our own other device): its
+   * chat gets the line and the one notice, and invite cards for it are closed.
+   */
+  void OnGroupDissolvedElsewhere(const GroupDissolvedEnd& end);
+  /** G016: the account locker says another device of ours saw this group dissolved — end it here too, if we are in it. */
+  void EndDissolvedFromLocker(const AccountStateGroup& group);
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
                         const std::vector<std::string>& member_contact_ids);
   /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
@@ -75,7 +89,7 @@ public:
    */
   /** G014: an accept came when the group was full — tell the invitee (`group_invite_refused`, reason group_full). */
   Roe<void> RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
-                         const std::string& invitee_identity);
+                         const std::string& invitee_identity, const std::string& reason = kInviteRefusedGroupFull);
   Roe<void> PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
                                 uint64_t roster_epoch);
 
@@ -134,6 +148,18 @@ private:
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  struct RosterParts {
+    std::vector<GroupRosterStatementMember> rows;
+    std::vector<GroupOwnerTransfer> chain;
+  };
+  /** The members as statement rows and the owner chain (the held one, plus the transfer that made us owner). */
+  RosterParts RosterPartsOf(const GroupMetadata& metadata, const std::vector<GroupRosterMember>& members,
+                            const std::optional<GroupOwnerTransfer>& handed = std::nullopt) const;
+  /** Our account signing key (base64), or why there is none. */
+  Roe<std::string> SigningKey() const;
+  /** G016: the dissolve statement, signed by us as owner at `epoch`, over `members` as stated. */
+  Roe<GroupRosterStatement> SignDissolved(const GroupMetadata& metadata, const std::vector<GroupRosterMember>& members,
+                                          uint64_t epoch);
   /** G016: the group's chat gets its one "dissolved" line, and the thread list its preview. */
   void AppendDissolvedLine(const std::string& group_id, const std::string& owner_identity,
                            const std::string& sender_identity);

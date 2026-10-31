@@ -85,6 +85,8 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "group_invite_refused";
   case GroupMembershipControlType::GroupDissolved:
     return "group_dissolved";
+  case GroupMembershipControlType::GroupDissolvedSibling:
+    return "group_dissolved_sibling";
   }
   return "group_invite";
 }
@@ -134,6 +136,9 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   }
   if (value == "group_dissolved") {
     return GroupMembershipControlType::GroupDissolved;
+  }
+  if (value == "group_dissolved_sibling") {
+    return GroupMembershipControlType::GroupDissolvedSibling;
   }
   return std::nullopt;
 }

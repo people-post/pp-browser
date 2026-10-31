@@ -195,7 +195,7 @@ TEST(InboxControllerTest, ADissolvedGroupChatReadsWithItsLineAndDeletes) {
 
   const auto group_rows = env.inbox->BuildTranscript(group->id, std::nullopt, std::nullopt);
   ASSERT_EQ(group_rows.size(), 2u);
-  EXPECT_EQ(GroupMembershipCodec::GroupDissolvedOwner(group_rows.back().message), "account:alice");
+  EXPECT_EQ(group_rows.back().message.sender_contact_id, "account:alice");
   EXPECT_TRUE(env.inbox->BuildTranscript(dm->id, std::nullopt, std::nullopt).empty());
 
   ASSERT_TRUE(env.inbox->CloseThread(group->id));

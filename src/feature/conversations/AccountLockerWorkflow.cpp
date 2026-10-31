@@ -233,6 +233,17 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     if (auto taken = TakeRemoteContacts(*local, (*stored)->state); !taken) {
       return taken.error();
     }
+    if (sources_.take_dissolved) {
+      std::vector<AccountStateGroup> dissolved;
+      for (const AccountStateGroup& group : (*stored)->state.extras.groups) {
+        if (group.dissolved) {
+          dissolved.push_back(group);
+        }
+      }
+      if (!dissolved.empty()) {
+        sources_.take_dissolved(dissolved);
+      }
+    }
   }
   Save();
 
