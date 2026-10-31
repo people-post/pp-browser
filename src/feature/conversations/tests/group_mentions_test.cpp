@@ -353,6 +353,19 @@ TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
   }
 }
 
+TEST(GroupMentionsTest, NamesThatDifferOnlyInAsciiCaseCollide) {
+  const auto names = [](const std::string& account) {
+    return account == kBob ? std::string("Bob") : account == kAlice ? std::string("bob") : NameOf(account);
+  };
+  const auto lines = MentionCandidates(Roster(), kMe, false, names, "bob");
+  ASSERT_EQ(lines.size(), 2u);
+  for (const MentionCandidate& line : lines) {
+    EXPECT_FALSE(line.short_id.empty()) << line.name;
+    EXPECT_EQ(line.Token(), "@" + line.name) << "what is inserted stays the name, as typed";
+  }
+  EXPECT_NE(lines[0].Label(), lines[1].Label());
+}
+
 // --- a member named "ai" ------------------------------------------------------------------------
 
 TEST(GroupMentionsTest, ATextThatStartsAtAiIsTheAgentsEvenAfterAPickedMemberNamedAi) {

@@ -89,7 +89,7 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
     if (candidate.name.empty()) {
       continue;
     }
-    ++name_counts[candidate.name];
+    ++name_counts[AsciiLower(candidate.name)];
     all.push_back(std::move(candidate));
   }
   std::vector<MentionCandidate> members;
@@ -97,7 +97,7 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
     if (!NameMatches(candidate.name, lowered)) {
       continue;
     }
-    if (name_counts[candidate.name] > 1) {
+    if (name_counts[AsciiLower(candidate.name)] > 1) {
       candidate.short_id = ShortRelayId(candidate.account_id);
     }
     members.push_back(std::move(candidate));
