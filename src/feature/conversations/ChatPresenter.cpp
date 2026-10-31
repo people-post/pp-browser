@@ -5,6 +5,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/ReactionTypes.h"
@@ -536,7 +537,7 @@ std::optional<std::string> GroupIdOf(ConversationsFacade* facade, const std::str
 
 bool ChatPresenter::SendsWithMentions(const std::string& thread_id, const std::string& text,
                                       const std::vector<TextSpan>& spans) {
-  return !spans.empty() && GroupIdOf(facade_, thread_id) && !AsksTheAi(text, spans);
+  return !spans.empty() && GroupIdOf(facade_, thread_id) && !ParseAtAiPrefix(text).is_ai_invoke;
 }
 
 Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const std::string& text,
