@@ -157,6 +157,41 @@ public class MainActivity extends SDLActivity {
         ensureNotificationChannel();
         InboxSyncWorker.schedule(this, true);
         PpLinkBridge.deliver(getIntent());
+        PpCameraCapture.clearScratch(this);
+    }
+
+    /** Called from native (CameraCapture_Android.cpp) from any thread: opens the system camera. */
+    public static void startCameraCapture(final int kind, final int maxSeconds, final long maxBytes) {
+        final SDLActivity activity = mSingleton;
+        if (!(activity instanceof MainActivity)) {
+            PpCameraCapture.deliver(PpCameraCapture.OUTCOME_UNAVAILABLE, null);
+            return;
+        }
+        activity.runOnUiThread(() -> PpCameraCapture.start(activity, kind, maxSeconds, maxBytes));
+    }
+
+    /** Called from native: {@code <cacheDir>/capture}, where captured files are written. */
+    public static String captureScratchDir() {
+        final SDLActivity activity = mSingleton;
+        return activity == null ? null : PpCameraCapture.captureDir(activity).getAbsolutePath();
+    }
+
+    /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (PpCameraCapture.onActivityResult(this, requestCode, resultCode, data)) {
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    /** Same rule: SDL's call permission requests depend on super for every code that is not ours. */
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (PpCameraCapture.onPermissionsResult(this, requestCode, grantResults)) {
+            return;
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     @Override
