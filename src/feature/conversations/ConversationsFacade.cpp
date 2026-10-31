@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsFacade.h"
+#include "feature/conversations/GroupMentions.h"
 
 #include <algorithm>
 
@@ -259,7 +260,20 @@ std::vector<TranscriptRow> ConversationsFacade::BuildTranscript(const std::strin
 }
 
 TranscriptFacts ConversationsFacade::TranscriptFactsFor() {
-  return hub_.Inbox().Facts();
+  TranscriptFacts facts = hub_.Inbox().Facts();
+  facts.member_name = [this](const std::string& account_id) { return MemberPublicNameOf(account_id); };
+  if (auto identity = GetIdentity()) {
+    facts.local_account = identity->account_id;
+  }
+  return facts;
+}
+
+std::string ConversationsFacade::MemberPublicNameOf(const std::string& account_id) {
+  std::optional<Contact> contact;
+  if (auto found = FindContactByIdentity(account_id, mesh::ContactIdKind::Account); found && *found) {
+    contact = **found;
+  }
+  return MemberPublicName(account_id, KeptCardNickname(account_id), contact);
 }
 
 const std::string& ConversationsFacade::ProfileDataDir() const {

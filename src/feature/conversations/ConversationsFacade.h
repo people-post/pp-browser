@@ -224,6 +224,8 @@ public:
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();
+  /** A group member's public name — what a mention inserts and a group line shows (GroupMentions.h). */
+  std::string MemberPublicNameOf(const std::string& account_id);
   Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, mesh::ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
   std::optional<mesh::DirectoryHit> GetDirectoryShadow(const std::string& peer_id);

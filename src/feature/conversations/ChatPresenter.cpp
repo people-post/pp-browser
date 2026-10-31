@@ -587,13 +587,7 @@ std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::str
     return {};
   }
   ConversationsFacade* facade = facade_;
-  const auto public_name = [facade](const std::string& account_id) {
-    std::optional<Contact> contact;
-    if (auto found = facade->FindContactByIdentity(account_id, mesh::ContactIdKind::Account); found && *found) {
-      contact = **found;
-    }
-    return MemberPublicName(account_id, facade->KeptCardNickname(account_id), contact);
-  };
+  const auto public_name = [facade](const std::string& account_id) { return facade->MemberPublicNameOf(account_id); };
   // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
   const bool local_is_owner = roster->owner == roster->local_account;
   return AllMentionCandidates(*members, roster->local_account, local_is_owner, public_name,

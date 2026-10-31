@@ -37,6 +37,10 @@ struct TranscriptFacts {
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
+  /** A group member's public name (card nickname, then directory nickname, then short id; never a local remark). */
+  std::function<std::string(const std::string& account_id)> member_name;
+  /** This account's id: a group line about it reads "you". */
+  std::string local_account;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
