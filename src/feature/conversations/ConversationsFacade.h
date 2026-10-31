@@ -207,6 +207,8 @@ public:
   Roe<void> LeaveGroup(const std::string& group_id);
   Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
   Roe<std::string> OwnerIdentity(const std::string& group_id);
+  /** The nickname on the account card kept for `account_id` (a member's own, public); empty if none. */
+  std::string KeptCardNickname(const std::string& account_id);
   bool IsOwnerUnreachable(const std::string& group_id);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);

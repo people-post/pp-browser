@@ -97,6 +97,8 @@ struct SessionDisplayRow {
   bool muted = false;
   /** Marked unread by hand and no real unread count: show a dot, not a number. */
   bool unread_dot = false;
+  /** An unread message here mentions us (group-chat G015): the preview line leads with "You were mentioned". */
+  bool mentioned = false;
 };
 
 struct TurnWidgetState {

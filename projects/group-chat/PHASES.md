@@ -51,14 +51,14 @@ L (size limit, G014) — independent
 **m4 — Mention marker**
 - [x] `thread_mentions` rows (`ThreadMentionsStore`, DATA_LAYOUT): written by both live ingest paths (`NoteMention`; not when the chat is open; never by history sync), dropped on thread open, on message delete (for everyone or here), with the thread; gtest `thread_mentions_store_test`; lab `muted_group_alerts_on_a_mention` checks the marker comes and goes
 - [x] Chat list row flag `ChatSessionRow::mentioned` (`ConversationsFacade::ThreadsWithMentions`), `OldestMention(thread)` for the jump
-- [ ] Chat list shows "You were mentioned"; opening jumps to the oldest unread mention (UI)
+- [x] Chat list shows "You were mentioned" (`sidebar.rml`, `.sidebar-session-mention`); opening jumps to the oldest unread mention (`ChatPresenter::OpenedAtMention`, `ChatTranscriptScroller::JumpToMessage`)
 
 **m5 — Sending and display**
 - [x] `ConversationsFacade::SendGroupText(thread, text, spans)`: spans checked, kept in `payload_json`; a group send with spans carries the full ChatPayload (type 6) — it used to send only rich non-text content that way
-- [ ] Composer: `@` opens a member picker; inserts `@` + the member's **public nickname** (their card's, else the roster's) — never the user's private remark; owner sees `@everyone`
-- [ ] Transcript: highlight eligible spans (member / owner check at display, so a late roster restores them); tap opens the member
-- [ ] Re-encode rule: same chat keeps spans; any future forward / quote drops mention and everyone spans
+- [x] Composer: `@` opens a member picker (`ChatMentionPicker`; at the start, after whitespace or non-ASCII text); inserts `@` + the member's **public nickname** (`ConversationsFacade::KeptCardNickname`, else the contact's directory nickname, else a short id) — never the private remark; owner sees `@everyone`; spans recomputed from the final text at send (`MentionSpansForDraft`)
+- [x] Transcript: eligible spans highlighted (`EligibleMentionRuns`: members of the roster now, `@everyone` from its owner; UTF-8 byte ranges; links win); tap opens the member's contact
+- [x] Re-encode rule: quote / share build fresh plain text (no spans carried); a quoted part's spans are never highlighted or matched at send
 
 **m6 — Proof and promotion**
 - [x] Probe `send_mentions`, `mute_mentions` / `allow_mentions`, a `notice` event (kind message: `mentions_us`, `alerts`); lab `muted_group_alerts_on_a_mention` (a plain message silent, a mention alerts, a member's `@everyone` does not, mentions muted too: silent)
-- [ ] Promote: WIRE_SCHEMAS already normative; DATA_LAYOUT `thread_mentions` / `mute_mentions` lines describe m3 / m4 — confirm against the code when they land; G015 status → implemented
+- [x] Promote: WIRE_SCHEMAS normative; DATA_LAYOUT `thread_mentions` / `mute_mentions` lines match the code; G015 status → implemented. gtests `group_mentions_test`, `transcript_mentions_test`; the mention flows not yet seen on screen (a group needs other users)

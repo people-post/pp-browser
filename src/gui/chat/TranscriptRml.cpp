@@ -14,6 +14,7 @@
 #include "lib/messaging/PlainTextLinks.h"
 #include "lib/messaging/PskRotateCodec.h"
 #include "lib/messaging/QuoteReply.h"
+#include "lib/messaging/TextSpans.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -303,21 +304,55 @@ std::string UnsupportedRml() {
          "message.</p></div>";
 }
 
-// Escaped text with its https links tappable. The click carries the message id and the link's index;
-// the handler finds the URL again in the stored text (PlainTextLinks.h), so none sits in the markup.
-// `text` must be the message text or a prefix of it, so the indexes agree.
-std::string LinkedTextRml(const std::string& text, const std::string& id_arg) {
+/** One tappable or highlighted piece of a message's text: a link, or a mention the roster allows. */
+struct TextMark {
+  size_t begin = 0;
+  size_t end = 0;
+  std::string rml_open;
+  /** What it shows: a link's display form; a mention, exactly the bytes it covers. */
+  std::string shown;
+};
+
+// Escaped text with its https links tappable and its eligible mentions highlighted. A link's click carries
+// the message id and the link's index; the handler finds the URL again in the stored text (PlainTextLinks.h),
+// so none sits in the markup. A mention's click carries its index among `mentions` (EligibleMentionRuns), so
+// the handler finds the account again the same way. `text` must be the message text or a prefix of it, so the
+// indexes agree. Ranges are UTF-8 bytes; a mention that crosses a link is not highlighted (the link wins).
+std::string LinkedTextRml(const std::string& text, const std::string& id_arg,
+                          const std::vector<MentionRun>& mentions = {}) {
   const std::vector<PlainTextLink> links = FindPlainTextLinks(text);
-  if (links.empty() || id_arg.empty()) {
+  if ((links.empty() && mentions.empty()) || id_arg.empty()) {
     return StructuredTextParser::EscapeText(text);
   }
+  std::vector<TextMark> marks;
+  for (size_t i = 0; i < links.size(); ++i) {
+    marks.push_back({links[i].begin, links[i].end,
+                     "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " +
+                         std::to_string(i) + ")\">",
+                     links[i].display});
+  }
+  for (size_t i = 0; i < mentions.size(); ++i) {
+    const MentionRun& run = mentions[i];
+    const bool crosses_link = std::any_of(links.begin(), links.end(), [&run](const PlainTextLink& link) {
+      return run.begin < link.end && link.begin < run.end;
+    });
+    if (crosses_link || run.end > text.size()) {
+      continue;
+    }
+    marks.push_back({run.begin, run.end,
+                     run.kind == TextSpanKind::Mention
+                         ? "<span class=\"chat-mention\" data-event-click=\"open_mention('" + id_arg + "', " +
+                               std::to_string(i) + ")\">"
+                         : std::string("<span class=\"chat-mention chat-mention--everyone\">"),
+                     text.substr(run.begin, run.end - run.begin)});
+  }
+  std::sort(marks.begin(), marks.end(), [](const TextMark& a, const TextMark& b) { return a.begin < b.begin; });
   std::string out;
   size_t pos = 0;
-  for (size_t i = 0; i < links.size(); ++i) {
-    out += StructuredTextParser::EscapeText(text.substr(pos, links[i].begin - pos));
-    out += "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " + std::to_string(i) +
-           ")\">" + StructuredTextParser::EscapeText(links[i].display) + "</span>";
-    pos = links[i].end;
+  for (const TextMark& mark : marks) {
+    out += StructuredTextParser::EscapeText(text.substr(pos, mark.begin - pos));
+    out += mark.rml_open + StructuredTextParser::EscapeText(mark.shown) + "</span>";
+    pos = mark.end;
   }
   out += StructuredTextParser::EscapeText(text.substr(pos));
   return out;
@@ -330,8 +365,19 @@ std::string OneLine(std::string text) {
   return text;
 }
 
+/** A group text's mentions the roster allows now (G015); none in a direct chat, where they are plain text. */
+std::vector<MentionRun> MentionRunsOf(const ThreadMessage& message, const std::optional<MentionRoster>& roster) {
+  if (!roster || message.content_type != ChatContentType::Text || message.payload_json.empty()) {
+    return {};
+  }
+  const std::string sender =
+      message.sender_contact_id == kLocalSelfContactId ? roster->local_account : message.sender_contact_id;
+  return EligibleMentionRuns(message.text, MentionTextLimit(message.text),
+                             text_spans::FromPayloadJson(message.payload_json), *roster, sender);
+}
+
 std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
-                       const std::optional<CallSummaryRow>& call_row) {
+                       const std::optional<CallSummaryRow>& call_row, const std::optional<MentionRoster>& mentions) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -385,13 +431,15 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
   }
   // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
+  // Mentions mark the reply's own words only (MentionTextLimit), so their byte offsets hold in either branch.
+  const std::vector<MentionRun> mention_runs = MentionRunsOf(message, mentions);
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
     text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
                "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
-               paragraph + LinkedTextRml(parts->reply, id_arg) + "</p>";
+               paragraph + LinkedTextRml(parts->reply, id_arg, mention_runs) + "</p>";
   } else {
-    text_rml = paragraph + LinkedTextRml(message.text, id_arg) + "</p>";
+    text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
   std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
@@ -442,7 +490,8 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
 } // namespace
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
-                                                const TranscriptFacts& facts) {
+                                                const TranscriptFacts& facts,
+                                                const std::optional<MentionRoster>& mentions) {
   std::vector<MessageDisplayRow> rows;
   rows.reserve(entries.size());
   for (const TranscriptRow& entry : entries) {
@@ -453,7 +502,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     const ThreadMessage& message = entry.message;
     // A call summary: decoded once, its side is the starter's (a group's is written locally).
     const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
-    std::string content = MessageRml(entry, facts, call_row);
+    std::string content = MessageRml(entry, facts, call_row, mentions);
     if (content.empty()) {
       continue;
     }

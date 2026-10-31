@@ -539,6 +539,10 @@ Roe<std::string> ConversationsFacade::OwnerIdentity(const std::string& group_id)
   return hub_.Groups().OwnerIdentity(group_id);
 }
 
+std::string ConversationsFacade::KeptCardNickname(const std::string& account_id) {
+  return hub_.KeptCardNickname(account_id);
+}
+
 bool ConversationsFacade::IsOwnerUnreachable(const std::string& group_id) {
   return hub_.Groups().IsOwnerUnreachable(group_id);
 }

@@ -7,6 +7,7 @@
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
@@ -242,6 +243,11 @@ private:
   void CancelQueuedHere();
   /** Same decision SendUserText makes, before the composer is cleared: false = keep the draft. */
   bool ComposerSendAllowed(const std::string& text);
+  /** The composer's send of a group text with mentions (`reply`: the typed text; `out`: with any quote). */
+  void SendWithMentions(const std::string& thread_id, const std::string& reply, const std::string& out,
+                        std::vector<TextSpan> spans);
+  /** Enter / Tab choose the `@` picker's first line while it is open over the composer. */
+  void RegisterMentionPickerKeys();
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
@@ -315,6 +321,8 @@ private:
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
+  /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
+  ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

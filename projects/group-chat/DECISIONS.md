@@ -147,7 +147,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G015 — Mentions in group messages
 
 **Date:** 2026-10-30  
-**Status:** Accepted (Hongwei, 2026-10-30), with the review amendments folded in (generic spans, composer names, held notifications, per-message marker, mute level, stated limits)  
+**Status:** Accepted (Hongwei, 2026-10-30), with the review amendments folded in (generic spans, composer names, held notifications, per-message marker, mute level, stated limits); **implemented** 2026-10-30 (phases m1–m6, [PHASES](PHASES.md)). The composer also opens the picker after non-ASCII text (a Chinese draft has no space before `@`).  
 **Decision:**
 
 | Part | Rule |
