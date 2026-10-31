@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <utility>
 
 namespace pbr {
@@ -77,7 +78,8 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
                                                 const std::function<std::string(const std::string& account_id)>& public_name,
                                                 const std::string& query) {
   const std::string lowered = AsciiLower(query);
-  std::vector<MentionCandidate> members;
+  std::vector<MentionCandidate> all;
+  std::map<std::string, int> name_counts;
   for (const GroupRosterMember& member : roster) {
     if (member.member_identity.empty() || member.member_identity == local_account) {
       continue;
@@ -85,17 +87,30 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
     MentionCandidate candidate;
     candidate.account_id = member.member_identity;
     candidate.name = public_name ? public_name(member.member_identity) : ShortRelayId(member.member_identity);
-    if (candidate.name.empty() || !NameMatches(candidate.name, lowered)) {
+    if (candidate.name.empty()) {
       continue;
+    }
+    ++name_counts[candidate.name];
+    all.push_back(std::move(candidate));
+  }
+  std::vector<MentionCandidate> members;
+  for (MentionCandidate& candidate : all) {
+    if (!NameMatches(candidate.name, lowered)) {
+      continue;
+    }
+    if (name_counts[candidate.name] > 1) {
+      candidate.short_id = ShortRelayId(candidate.account_id);
     }
     members.push_back(std::move(candidate));
   }
   std::stable_sort(members.begin(), members.end(), [](const MentionCandidate& a, const MentionCandidate& b) {
-    return AsciiLower(a.name) < AsciiLower(b.name);
+    const std::string la = AsciiLower(a.name);
+    const std::string lb = AsciiLower(b.name);
+    return la != lb ? la < lb : a.account_id < b.account_id;
   });
   std::vector<MentionCandidate> lines;
   if (local_is_owner && NameMatches("everyone", lowered)) {
-    lines.push_back({TextSpanKind::Everyone, {}, "everyone"});
+    lines.push_back({TextSpanKind::Everyone, {}, "everyone", {}});
   }
   lines.insert(lines.end(), members.begin(), members.end());
   return lines;

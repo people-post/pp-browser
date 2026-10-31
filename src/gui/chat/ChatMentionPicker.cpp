@@ -89,7 +89,7 @@ void ChatMentionPicker::Show(const std::vector<MentionCandidate>& lines) {
   for (size_t i = 0; i < lines.size(); ++i) {
     const MentionCandidate& line = lines[i];
     const bool everyone = line.kind == TextSpanKind::Everyone;
-    actions.push_back({"mention_" + std::to_string(i), everyone ? Tr("chat.mention.everyone") : line.name, nullptr,
+    actions.push_back({"mention_" + std::to_string(i), everyone ? Tr("chat.mention.everyone") : line.Label(), nullptr,
                        [this, line]() { Choose(line); }, everyone ? "../icons/group.svg" : "../icons/contacts.svg"});
   }
   // Over the composer, so the list does not hide what is being typed.
