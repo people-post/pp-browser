@@ -30,8 +30,13 @@ UTF-8 boundary and order checks, `reply` with root and parent, content warning, 
 S027 extension section on every entry, with their limits; report sign bytes (S025). Vectors regenerated:
 a full post, a reply that quotes, an entry with extensions, and two reports. 21 unit tests.
 
+**Relay for P2 (2026-10-30):** the new format in the relay
+([app-posts#2](https://github.com/nfsc-brief-web3/app-posts/pull/2), merged); withheld stubs, suspended authors,
+the scan step before media is served, reports, refusal codes, the single-entry read and the operator's
+`moderate` CLI ([app-posts#3](https://github.com/nfsc-brief-web3/app-posts/pull/3), in review); the gateway
+serving registered accounts only, refusing other authors' writes as `not_served`
+([app-static-api#217](https://github.com/nfsc-brief-reader/app-static-api/pull/217), in review).
+
 **Next:**
-1. The relay before it is deployed: the new format
-   ([app-posts#2](https://github.com/nfsc-brief-web3/app-posts/pull/2), checked against the vectors), then the
-   P2 relay additions (served authors only, refusal codes, withheld stubs, the scan step, reports).
+1. Merge and deploy the relay (app-posts ECR repository and service, `BRF_WWW_POSTS_URI`).
 2. The client side of P2.
