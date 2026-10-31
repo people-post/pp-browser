@@ -1,3 +1,5 @@
+#include "foundation/platform/CameraCapture.h"
+#include "foundation/platform/CapturePathRules.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/PickedFileName.h"
 
@@ -77,6 +79,65 @@ TEST_F(ImportPickedFileTest, AnUnreadableUriOrNoScratchFolderIsNothing) {
   RemoveImportedPick(ImportedPick{});  // nothing to remove: no effect
   RemoveImportedPick(ImportedPick{.path = source_, .name = "movie.mov", .copied = false});
   EXPECT_TRUE(std::filesystem::exists(source_)) << "a plain pick is never deleted";
+}
+
+// ReleasePickedFile deletes only what the camera wrote under CaptureScratchDir(); the desktop has none, so a user's
+// own folder that happens to be called "capture" is never touched.
+class ReleasePickedFileTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    root_ = std::filesystem::temp_directory_path() / ("pp_release_pick_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::create_directories(root_ / "capture");
+    std::filesystem::create_directories(root_ / "capture2");
+    std::filesystem::create_directories(root_ / "Movies" / "capture");
+  }
+  void TearDown() override {
+    std::error_code ec;
+    std::filesystem::remove_all(root_, ec);
+  }
+  std::string Make(const std::filesystem::path& file) {
+    std::ofstream(file, std::ios::binary) << "x";
+    return file.string();
+  }
+  std::filesystem::path root_;
+};
+
+TEST_F(ReleasePickedFileTest, TheDesktopHasNoCaptureDirAndNeverDeletesAUserFileCalledCapture) {
+  ASSERT_TRUE(CaptureScratchDir().empty()) << "this test target is a desktop build";
+  const std::string mine = Make(root_ / "Movies" / "capture" / "x.mp4");
+  ReleasePickedFile(mine);
+  EXPECT_TRUE(std::filesystem::exists(mine));
+}
+
+TEST_F(ReleasePickedFileTest, ThePrefixRuleDeletesOnlyBelowTheScratchDir) {
+  const std::string scratch = (root_ / "capture").string();
+  const std::string inside = Make(root_ / "capture" / "a.mp4");
+  const std::string sibling = Make(root_ / "capture2" / "b.mp4");
+  const std::string user = Make(root_ / "Movies" / "capture" / "x.mp4");
+  EXPECT_TRUE(IsInsideScratchDir(inside, scratch));
+  EXPECT_FALSE(IsInsideScratchDir(sibling, scratch)) << "a longer name sharing the prefix is another directory";
+  EXPECT_FALSE(IsInsideScratchDir(user, scratch));
+  EXPECT_FALSE(IsInsideScratchDir(inside, "")) << "no scratch dir (desktop): nothing matches";
+  EXPECT_FALSE(IsInsideScratchDir("", scratch));
+  EXPECT_FALSE(IsInsideScratchDir(scratch, scratch)) << "the directory itself is not a file inside it";
+}
+
+TEST_F(ReleasePickedFileTest, DotDotCannotEscapeTheScratchDir) {
+  const std::string scratch = (root_ / "capture").string();
+  const std::string escaped = Make(root_ / "Movies" / "keep.mp4");
+  const std::string sneaky = scratch + "/../Movies/keep.mp4";
+  ASSERT_TRUE(std::filesystem::exists(sneaky));
+  EXPECT_FALSE(IsInsideScratchDir(sneaky, scratch));
+  EXPECT_FALSE(IsInsideScratchDir(scratch + "/nothere/../../capture2/b.mp4", scratch));
+  EXPECT_TRUE(std::filesystem::exists(escaped));
+}
+
+TEST_F(ReleasePickedFileTest, ACaptureFileWithADotDotThatStaysInsideStillCounts) {
+  const std::string scratch = (root_ / "capture").string();
+  std::filesystem::create_directories(root_ / "capture" / "sub");
+  const std::string inside = Make(root_ / "capture" / "a.mp4");
+  EXPECT_TRUE(IsInsideScratchDir(scratch + "/sub/../a.mp4", scratch));
+  EXPECT_TRUE(std::filesystem::exists(inside));
 }
 
 } // namespace
