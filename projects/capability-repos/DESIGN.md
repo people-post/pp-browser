@@ -38,19 +38,18 @@ that is not.
 
 ### Edges against the order
 
-Include sites, tests included (a capability's tests move with it). These are the allowlist the gate starts
-from (`scripts/check/capability_edges_allowlist.txt`); P1 cuts them. 67 sites in all.
+Include sites, tests included (a capability's tests move with it). The gate started from 11 edges, 67 sites;
+moving misplaced tests (P1) took it to 10 edges, 53 sites (`scripts/check/capability_edges_allowlist.txt`).
 
 | Edge | Sites | What it is |
 |------|-------|------------|
-| people → messaging | 21 | thread / chat types and the direct-message port used from identity code |
+| people → messaging | 21 | thread / chat types and the direct-message port used from identity code; `AccountCard` (identity) lives in `lib/messaging` |
 | net → messaging | 10 | chat DTOs the backend client carries (relay envelope, history) |
-| messaging → calls | 9 | mostly calls logic tests filed under `feature/conversations/tests`; `CallTypes` and the call media protocol id in the hub's ports |
-| base → messaging | 7 | thread / payload types from `common/` and `foundation/runtime/BackgroundSyncScheduler`; tests of `common/chat` filed under `common/tests` |
+| messaging → calls | 2 | `CallTypes` and the call media protocol id in the hub's ports |
+| base → messaging | 2 | `foundation/runtime/BackgroundSyncScheduler` (stays app-side) and `common/thread`'s history types naming the relay envelope |
 | people → net | 5 | directory and blob clients for profile icons |
 | messaging → app | 5 | AI's tool registry and structured text, `lib/ui` types, from the conversations feature |
 | messaging → node | 3 | the hub naming node services and mesh executors |
-| base → app | 2 | tests of `common/ui` filed under `common/tests` |
 | node → messaging | 2 | `NodeMetrics` reading chat types |
 | calls → broadcast | 2 | calls naming broadcast |
 | node → calls | 1 | |

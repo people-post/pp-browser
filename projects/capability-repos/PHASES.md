@@ -14,8 +14,8 @@ Ordering only; status lives in [CURRENT_STATE.md](CURRENT_STATE.md). Design: [DE
 
 One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order](DESIGN.md#edges-against-the-order)):
 
-- [ ] Misplaced tests first (cheap): calls logic tests under `feature/conversations/tests` → `lib/calls/tests`;
-      `common/chat` and `common/ui` tests under `common/tests` → beside their code.
+- [x] Misplaced tests first: calls logic tests under `feature/conversations/tests` → `lib/calls/tests`;
+      `common/chat` and `common/ui` tests under `common/tests` → `common/chat/tests`, `common/ui/tests` (14 sites).
 - [ ] people → messaging (21), net → messaging (10), base → messaging (7)
 - [ ] people → net (5): a port identity declares, the app or net implements
 - [ ] messaging → app (5): messaging declares the ports AI and the shell implement (CR007)
