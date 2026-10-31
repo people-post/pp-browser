@@ -90,3 +90,6 @@ packaging/ios/*.mobileprovision
 # iOS local artifacts (see scripts/platform/ios_build.sh — IOS_OUT_DIR)
 out-ios/
 dist/
+
+# CTest scratch output when ctest runs from the source root
+/Testing/
