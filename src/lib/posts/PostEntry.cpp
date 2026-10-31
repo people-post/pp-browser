@@ -16,6 +16,9 @@ namespace {
 const std::string kEntryDomain("pp-browser:post-entry-v1\0", 25);
 const std::string kHeadDomain("pp-browser:post-head-v1\0", 24);
 const std::string kMediaDomain("pp-browser:post-media-v1\0", 25);
+const std::string kReportDomain("pp-browser:post-report-v1\0", 26);
+constexpr uint8_t kReportSubjectEntry = 1;
+constexpr uint8_t kReportSubjectMedia = 2;
 constexpr uint8_t kEntryVersion = 1;
 constexpr uint8_t kHeadVersion = 1;
 
@@ -47,6 +50,39 @@ Roe<void> CheckAccountSignature(const std::string& account_id, const ByteVector&
   return {};
 }
 
+/** At most 16, tags strictly increasing: one canonical form (S027). */
+bool ReadExtensions(post_wire::Reader& r, std::vector<PostExtension>& out) {
+  const uint64_t count = r.U64();
+  if (r.failed() || count > kMaxPostExtensions) {
+    return false;
+  }
+  for (uint64_t i = 0; i < count; ++i) {
+    PostExtension extension;
+    extension.tag = r.U16();
+    extension.value = r.Bytes();
+    if (r.failed() || (!out.empty() && out.back().tag >= extension.tag)) {
+      return false;
+    }
+    out.push_back(std::move(extension));
+  }
+  return true;
+}
+
+void WriteReportHeader(post_wire::Writer& w, const std::string& reporter, const uint8_t subject_kind) {
+  w.Raw(kReportDomain);
+  w.U8(1);
+  w.Utf8(reporter);
+  w.U8(subject_kind);
+}
+
+ByteVector ReportTail(post_wire::Writer& w, const std::string& reason, const std::string& note,
+                      const int64_t issued_at) {
+  w.Utf8(reason);
+  w.Utf8(note);
+  w.I64(issued_at);
+  return w.Take();
+}
+
 } // namespace
 
 bool IsKnownPostKind(const uint8_t kind) {
@@ -64,6 +100,11 @@ ByteVector PostEntryCanonicalBytes(const PostEntry& entry) {
   w.I64(entry.claimed_at);
   w.U8(entry.kind);
   w.Bytes(entry.body);
+  w.U64(entry.extensions.size());
+  for (const PostExtension& extension : entry.extensions) {
+    w.U16(extension.tag);
+    w.Bytes(extension.value);
+  }
   return w.Take();
 }
 
@@ -83,7 +124,7 @@ Roe<PostEntry> ParsePostEntry(const ByteVector& canonical) {
   entry.claimed_at = r.I64();
   entry.kind = r.U8();
   entry.body = r.Bytes();
-  if (!r.AtEnd()) {
+  if (!ReadExtensions(r, entry.extensions) || !r.AtEnd()) {
     return Error("post: malformed entry");
   }
   return entry;
@@ -94,6 +135,12 @@ PostHash PostEntryHash(const ByteVector& canonical) {
 }
 
 Roe<SignedPostEntry> SignPostEntry(const PostEntry& entry, const PostSigner& signer) {
+  if (entry.extensions.size() > kMaxPostExtensions ||
+      std::adjacent_find(entry.extensions.begin(), entry.extensions.end(), [](const auto& a, const auto& b) {
+        return a.tag >= b.tag;
+      }) != entry.extensions.end()) {
+    return Error("post: extensions must be at most 16, tags increasing");
+  }
   SignedPostEntry signed_entry;
   signed_entry.canonical = PostEntryCanonicalBytes(entry);
   if (signed_entry.canonical.size() > kMaxPostEntryBytes) {
@@ -287,6 +334,22 @@ ByteVector PostMediaPresignSignBytes(const std::string& account_id, const PostHa
   w.Utf8(mime);
   w.I64(issued_at);
   return w.Take();
+}
+
+ByteVector PostEntryReportSignBytes(const std::string& reporter, const PostRef& entry, const std::string& reason,
+                                    const std::string& note, const int64_t issued_at) {
+  post_wire::Writer w;
+  WriteReportHeader(w, reporter, kReportSubjectEntry);
+  w.Ref(entry);
+  return ReportTail(w, reason, note, issued_at);
+}
+
+ByteVector PostMediaReportSignBytes(const std::string& reporter, const PostHash& content_id, const std::string& reason,
+                                    const std::string& note, const int64_t issued_at) {
+  post_wire::Writer w;
+  WriteReportHeader(w, reporter, kReportSubjectMedia);
+  w.Hash(content_id);
+  return ReportTail(w, reason, note, issued_at);
 }
 
 } // namespace pbr
