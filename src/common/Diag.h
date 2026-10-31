@@ -21,7 +21,7 @@ inline logging::Logger& DiagLog() {
   return log;
 }
 
-/** `DiagLine("relay.http_failed").Pick("action", action, {"send", "poll"}).Add("status", status).Emit();` */
+/** `DiagLine("relay.http_failed").Add("action", "send").Add("status", status).Emit();` */
 class DiagLine : public ShareableLine {
 public:
   explicit DiagLine(ShareWord event) : ShareableLine(DiagLog(), event) {}

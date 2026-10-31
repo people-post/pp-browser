@@ -14,8 +14,7 @@ namespace pbr {
  * before matching), English ones are space-separated tokens.
  */
 struct AppActionWords {
-  /** A word of the source code: the metrics name the tool by it (ShareableLine). */
-  ShareWord tool;
+  std::string_view tool;
   /** A bare settings-read phrase on its own ("supported languages") counts as a request. */
   bool settings_read = false;
   std::vector<std::string_view> zh_verbs, zh_objects, zh_phrases;
@@ -216,14 +215,31 @@ inline const std::vector<AppActionWords>& AppActionTable() {
   return table;
 }
 
+/**
+ * The table's tools as words for a shareable line (common/ShareableLine.h). A constexpr list of its own: MSVC
+ * rejects a ShareWord built inside the table's runtime initializer (C7595). app_action_classifier_test checks
+ * that every table tool is here.
+ */
+inline constexpr ShareWord kAppActionToolWords[] = {
+    "search_people", "list_contacts", "add_contact", "list_conversations",
+    "open_conversation", "start_conversation", "register_user", "update_profile_nickname",
+    "get_profile_identity", "get_preferences", "get_security_status", "get_network_settings",
+    "get_reachability", "get_llm_settings", "get_integrations", "list_locales",
+    "set_appearance", "set_language", "set_notifications", "set_reduce_transparency",
+    "set_group_invite_policy", "set_auto_renew_registration", "set_call_diagnostics", "set_node_enabled",
+    "set_mesh_capabilities", "probe_reachability", "reset_tool_permissions", "open_support"};
+
 /** `tool` as a word for a shareable line: one of the table's tools, else `other` (a tool from an MCP server). */
 inline ShareWord AppActionToolWord(std::string_view tool) {
-  for (const AppActionWords& words : AppActionTable()) {
-    if (words.tool.view() == tool) {
-      return words.tool;
+  if (tool.empty()) {
+    return ShareWord("none");
+  }
+  for (const ShareWord& word : kAppActionToolWords) {
+    if (word.view() == tool) {
+      return word;
     }
   }
-  return tool.empty() ? ShareWord("none") : ShareWord("other");
+  return ShareWord("other");
 }
 
 } // namespace pbr

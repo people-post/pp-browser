@@ -80,7 +80,7 @@ const std::vector<ZhEntry>& ZhTable() {
     };
     std::vector<ZhEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(ZhEntry{w.tool.view(), w.settings_read, w.bare_command, w.bare_object, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
+      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
     }
     return t;
   }();
@@ -390,7 +390,7 @@ const std::vector<EnEntry>& EnTable() {
     };
     std::vector<EnEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(EnEntry{w.tool.view(), w.settings_read, w.bare_command, w.bare_object, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
+      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
     }
     return t;
   }();

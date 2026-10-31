@@ -17,7 +17,7 @@ namespace {
 std::vector<std::string> AllTools() {
   std::vector<std::string> names;
   for (const AppActionWords& words : AppActionTable()) {
-    names.emplace_back(words.tool.view());
+    names.emplace_back(words.tool);
   }
   // The client declares no add_contact tool: add requests reach search_people. set_call_invite_policy has no
   // wordlist entry.

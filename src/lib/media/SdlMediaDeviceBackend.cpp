@@ -18,6 +18,13 @@
 namespace pbr {
 namespace {
 
+/** Camera formats a metric may name (constexpr: see ShareableLine::Pick); any other reads `other`. */
+constexpr ShareWord kCameraFormats[] = {
+    "SDL_PIXELFORMAT_NV12",     "SDL_PIXELFORMAT_NV21",     "SDL_PIXELFORMAT_YUY2",     "SDL_PIXELFORMAT_UYVY",
+    "SDL_PIXELFORMAT_YVYU",     "SDL_PIXELFORMAT_MJPG",     "SDL_PIXELFORMAT_IYUV",     "SDL_PIXELFORMAT_YV12",
+    "SDL_PIXELFORMAT_P010",     "SDL_PIXELFORMAT_XRGB8888", "SDL_PIXELFORMAT_ARGB8888", "SDL_PIXELFORMAT_RGBA8888",
+    "SDL_PIXELFORMAT_BGRA8888", "SDL_PIXELFORMAT_UNKNOWN"};
+
 class SdlAudioEndpoint final : public IAudioEndpoint {
 public:
   explicit SdlAudioEndpoint(SDL_AudioStream* stream) : stream_(stream) {}
@@ -356,11 +363,7 @@ public:
             .Add("cam_fps", have_spec && got.framerate_denominator > 0
                                 ? got.framerate_numerator / got.framerate_denominator
                                 : -1)
-            .Pick("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "",
-                  {"SDL_PIXELFORMAT_NV12", "SDL_PIXELFORMAT_NV21", "SDL_PIXELFORMAT_YUY2", "SDL_PIXELFORMAT_UYVY",
-                   "SDL_PIXELFORMAT_YVYU", "SDL_PIXELFORMAT_MJPG", "SDL_PIXELFORMAT_IYUV", "SDL_PIXELFORMAT_YV12",
-                   "SDL_PIXELFORMAT_P010", "SDL_PIXELFORMAT_XRGB8888", "SDL_PIXELFORMAT_ARGB8888",
-                   "SDL_PIXELFORMAT_RGBA8888", "SDL_PIXELFORMAT_BGRA8888", "SDL_PIXELFORMAT_UNKNOWN"})
+            .Pick("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "", kCameraFormats)
             .Add("native_min_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
                 SDL_GetCameraProperties(camera), "SDL.camera.coremedia.min_frame_ns", 0)))
             .Add("native_max_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(

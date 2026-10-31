@@ -26,7 +26,7 @@ Every line in those files is a `ShareableLine`: `event=<name> k=v k=v…`. Its b
 |-------|--------|------------|
 | A word of the source code — a literal | `Add(key, "word")` (`ShareWord`, checked at compile time: letters, digits, `_ . - : < >`) | the word |
 | A number, bool, duration | `Add(key, n)` | `n`, `1`/`0`, whole ms |
-| A runtime string from a fixed list | `Pick(key, value, {"a", "b"})` | the listed word, `other`, or `-` when empty |
+| A runtime string from a fixed list | `Pick(key, value, kWords)` with `constexpr ShareWord kWords[] = {"a", "b"}` (a braced list at the call is refused: MSVC cannot build it, C7595) | the listed word, `other`, or `-` when empty |
 | An id (account, device, peer, relay user, thread) | `Ref(key, id)` | 8 hex of a keyed hash; the key is random per process and kept in memory only, so refs join lines of one run and nothing else |
 | A random call id | `Call(key, call_id)` | its first 8 hex (both sides log the same, to join them) |
 | An error | `Fail(key, error)` | `category.code` — never the message |

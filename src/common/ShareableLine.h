@@ -6,7 +6,7 @@
 #include <chrono>
 #include <concepts>
 #include <cstdint>
-#include <initializer_list>
+#include <span>
 #include <string>
 #include <string_view>
 #include "common/PbrCompat.h"
@@ -78,8 +78,12 @@ public:
     return AddInt(key, static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(value).count()));
   }
 
-  /** `value` when it is one of `words`, else `other` (`-` when empty): a runtime string from a fixed vocabulary. */
-  ShareableLine& Pick(ShareWord key, std::string_view value, std::initializer_list<ShareWord> words);
+  /**
+   * `value` when it is one of `words`, else `other` (`-` when empty): a runtime string from a fixed vocabulary.
+   * `words` is a `constexpr ShareWord[]` (or std::array): MSVC rejects a ShareWord converted inside a braced
+   * list that is not itself a constant expression (C7595), so a `{"a", "b"}` list here does not compile.
+   */
+  ShareableLine& Pick(ShareWord key, std::string_view value, std::span<const ShareWord> words);
 
   /**
    * An id (account, device, peer, relay user, thread, message) as 8 hex of a keyed hash. The key is random per

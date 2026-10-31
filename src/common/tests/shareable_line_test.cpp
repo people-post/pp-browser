@@ -33,11 +33,13 @@ TEST(ShareableLineTest, WritesEventThenKeyValuePairs) {
   EXPECT_EQ(text, "event=relay.http_failed action=send status=503 big=18446744073709551615 ok=0 rate=2.2 waited=2000");
 }
 
+constexpr ShareWord kRoutes[] = {"server", "local"};
+
 TEST(ShareableLineTest, PickKeepsOnlyTheListedWords) {
-  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "local", {"server", "local"}).str(), "event=ai.turn route=local");
-  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "Alice's phone", {"server", "local"}).str(),
+  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "local", kRoutes).str(), "event=ai.turn route=local");
+  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "Alice's phone", kRoutes).str(),
             "event=ai.turn route=other");
-  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "", {"server"}).str(), "event=ai.turn route=-");
+  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "", kRoutes).str(), "event=ai.turn route=-");
 }
 
 TEST(ShareableLineTest, RefJoinsOneRunWithoutShowingTheId) {

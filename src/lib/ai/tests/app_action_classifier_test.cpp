@@ -16,7 +16,7 @@ namespace {
 std::vector<std::string> AllTools() {
   std::vector<std::string> names;
   for (const AppActionWords& words : AppActionTable()) {
-    names.emplace_back(words.tool.view());
+    names.emplace_back(words.tool);
   }
   return names;
 }
@@ -212,6 +212,15 @@ const std::vector<std::string> kEnNegatives = {
 std::string Describe(const std::string& message) { return "message: " + message.substr(0, 60); }
 
 } // namespace
+
+// The metrics name a tool by kAppActionToolWords; a tool missing there would read `other`.
+TEST(AppActionClassifierTest, EveryTableToolHasAMetricsWord) {
+  for (const AppActionWords& words : AppActionTable()) {
+    EXPECT_EQ(AppActionToolWord(words.tool).view(), words.tool);
+  }
+  EXPECT_EQ(AppActionToolWord("some_mcp_tool").view(), "other");
+  EXPECT_EQ(AppActionToolWord("").view(), "none");
+}
 
 TEST(AppActionClassifierTest, EveryToolHasAChineseAndAnEnglishPositive) {
   ASSERT_EQ(AllTools().size(), 28u);

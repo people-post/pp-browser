@@ -86,7 +86,7 @@ ShareableLine& ShareableLine::AddDouble(const ShareWord key, const double value)
 }
 
 ShareableLine& ShareableLine::Pick(const ShareWord key, const std::string_view value,
-                                   const std::initializer_list<ShareWord> words) {
+                                   const std::span<const ShareWord> words) {
   if (value.empty()) {
     return AddRaw(key, "-");
   }

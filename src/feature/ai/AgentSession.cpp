@@ -79,6 +79,9 @@ const LocalPlanContact* FindLocalContact(const LocalPlanContext& ctx, const std:
   return nullptr;
 }
 
+/** brief_AI's answer routes a metric may name (constexpr: see ShareableLine::Pick); any other reads `other`. */
+constexpr ShareWord kTurnRoutes[] = {"none", "web", "chat", "app_action", "news", "image"};
+
 /** "ai.local_action": tool, outcome and whether parameters were taken; never their content. */
 void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const ShareWord outcome,
                            const bool has_args) {
@@ -1151,7 +1154,7 @@ namespace {
 /** A settings-read tool: "我的设置是什么" is a request for it, not a how-to question. */
 bool ToolIsSettingsRead(const std::string& tool) {
   for (const AppActionWords& words : AppActionTable()) {
-    if (words.tool.view() == tool) {
+    if (words.tool == tool) {
       return words.settings_read;
     }
   }
@@ -1555,8 +1558,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     };
     MetricsLine("ai.turn")
         .Add("outcome", outcome)
-        .Pick("route", stats->route.empty() ? std::string_view("none") : std::string_view(stats->route),
-              {"none", "web", "chat", "app_action", "news", "image"})
+        .Pick("route", stats->route.empty() ? std::string_view("none") : std::string_view(stats->route), kTurnRoutes)
         .Add("first_token_ms", stats->first_token ? ms(stats->started, *stats->first_token) : int64_t{-1})
         .Add("total_ms", ms(stats->started, now))
         .Add("deltas", static_cast<int64_t>(stats->deltas))

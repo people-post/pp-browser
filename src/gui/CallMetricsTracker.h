@@ -11,6 +11,12 @@
 
 namespace pbr {
 
+// Fixed vocabularies for Pick (constexpr: see ShareableLine::Pick).
+inline constexpr ShareWord kCallRoles[] = {"caller", "callee"};
+/** CallMediaBridge::MediaPathKind. */
+inline constexpr ShareWord kCallPaths[] = {"direct", "punched", "circuit"};
+inline constexpr ShareWord kAudioIo[] = {"vpio", "sdl", "none"};
+
 /**
  * Per-call operational metrics (DEV/PLAN-client-metrics.md). The UI feeds what it already knows —
  * ring, accept, outbound start, media ticks, device vitals, frame ticks — and gets back the Metrics
@@ -225,7 +231,7 @@ private:
 
   ShareableLine SetupLine(const ShareWord result, int64_t now_ms) const {
     MetricsLine line("call.setup");
-    line.Call("call", call_.id).Pick("role", call_.role, {"caller", "callee"}).Add("video", call_.video).Add("result", result);
+    line.Call("call", call_.id).Pick("role", call_.role, kCallRoles).Add("video", call_.video).Add("result", result);
     if (call_.ring_ms && call_.accept_ms) {
       line.Add("answer_ms", call_.accept_ms - call_.ring_ms);
     }
@@ -235,7 +241,7 @@ private:
       if (from) {
         line.Add("connect_ms", call_.connected_ms - from);
       }
-      line.Pick("path", call_.path, {"direct", "punched", "circuit"});
+      line.Pick("path", call_.path, kCallPaths);
     } else {
       const int64_t from = call_.accept_ms ? call_.accept_ms : (call_.outbound_ms ? call_.outbound_ms : call_.ring_ms);
       line.Add("waited_ms", now_ms - from);
@@ -262,15 +268,15 @@ private:
     const double secs = static_cast<double>(duration_ms) / 1000.0;
     MetricsLine line("call.summary");
     line.Call("call", call_.id)
-        .Pick("role", call_.role, {"caller", "callee"})
+        .Pick("role", call_.role, kCallRoles)
         .Add("video", call_.video)
         .Add("duration_s", secs)
-        .Pick("path", call_.path, {"direct", "punched", "circuit"})
+        .Pick("path", call_.path, kCallPaths)
         .Add("path_changes", call_.path_changes)
         .Add("reconnects", call_.reconnects)
         .Add("first_audio_ms", call_.first_audio_ms)
         .Add("first_video_ms", call_.first_video_ms)
-        .Pick("audio_io", l.audio_io, {"vpio", "sdl", "none"})
+        .Pick("audio_io", l.audio_io, kAudioIo)
         .Add("rx_audio", Delta(l.rx_audio_frames, b.rx_audio_frames))
         .Add("tx_audio", Delta(l.tx_audio_frames, b.tx_audio_frames))
         .Add("underrun", Delta(l.playout_underruns, b.playout_underruns))
