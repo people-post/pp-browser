@@ -23,7 +23,7 @@ ComposerMention Mention(const std::string& account, const std::string& nickname)
 }
 
 ComposerMention Everyone() {
-  return {TextSpanKind::Everyone, {}, kEveryoneMentionToken};
+  return {TextSpanKind::Everyone, {}, "@everyone"};
 }
 
 TextSpan Span(TextSpanKind kind, size_t start, size_t end, const std::string& account = {}) {
@@ -288,6 +288,50 @@ TEST(GroupMentionsTest, TheSharedAiFormsFollowTheSameRule) {
   // Not an AI call at all (no prompt, or another word): never one.
   EXPECT_FALSE(AsksTheAi("@ai", {}));
   EXPECT_FALSE(AsksTheAi("@Bob hi", {Span(TextSpanKind::Mention, 0, 4, kBob)}));
+}
+
+// --- the everyone line in the user's language --------------------------------------------------
+
+TEST(GroupMentionsTest, EveryoneInChineseIsFoundByAPrefixOfItsWordOrByEveryone) {
+  const std::string word = "\xE6\x89\x80\xE6\x9C\x89\xE4\xBA\xBA";  // 所有人
+  for (const char* query : {"", "\xE6\x89\x80", "\xE6\x89\x80\xE6\x9C\x89", "\xE6\x9C\x89\xE4\xBA\xBA", "every"}) {
+    const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, query, word);
+    ASSERT_FALSE(lines.empty()) << query;
+    EXPECT_TRUE(lines[0].kind == TextSpanKind::Everyone) << query;
+    EXPECT_EQ(lines[0].Token(), "@" + word) << "what is inserted is the Chinese word";
+  }
+  // Not the owner, or a query that matches neither word: no line.
+  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "\xE6\x89\x80", word).empty());
+  const auto other = MentionCandidates(Roster(), kOwner, true, NameOf, "\xE5\xBC\xA0", word);
+  ASSERT_EQ(other.size(), 1u);
+  EXPECT_EQ(other[0].account_id, kZhang);
+}
+
+TEST(GroupMentionsTest, EveryoneInEnglishStaysEveryone) {
+  for (const char* query : {"", "every", "EVERY", "one"}) {
+    const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, query);
+    ASSERT_FALSE(lines.empty()) << query;
+    EXPECT_EQ(lines[0].Token(), "@everyone");
+  }
+  EXPECT_TRUE(MentionCandidates(Roster(), kOwner, true, NameOf, "\xE6\x89\x80").empty()) << "no Chinese word in English";
+}
+
+TEST(GroupMentionsTest, TheInsertedChineseEveryoneBecomesTheEveryoneSpan) {
+  const std::string word = "\xE6\x89\x80\xE6\x9C\x89\xE4\xBA\xBA";  // 所有人
+  const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, "", word);
+  ASSERT_FALSE(lines.empty());
+  const ComposerMention recorded{lines[0].kind, lines[0].account_id, lines[0].Token()};
+  // What the picker leaves in the draft: "@所有人 " then the typed words; also directly followed by Chinese text.
+  for (const std::string& text : {"@" + word + " \xE5\x90\x83\xE9\xA5\xAD", "\xE5\xA4\xA7\xE5\xAE\xB6 @" + word + "\xE5\x90\x83\xE9\xA5\xAD"}) {
+    const auto spans = MentionSpansForDraft(text, {recorded});
+    ASSERT_EQ(spans.size(), 1u) << text;
+    EXPECT_TRUE(spans[0].Is(TextSpanKind::Everyone));
+    EXPECT_EQ(Covered(text, spans[0]), "@" + word);
+    EXPECT_TRUE(spans[0].account_id.empty()) << "the Everyone span has an empty body";
+    EXPECT_TRUE(text_spans::CheckStructure(spans));
+  }
+  // The English line in an English UI still works the same way.
+  EXPECT_EQ(MentionSpansForDraft("@everyone hi", {Everyone()}).size(), 1u);
 }
 
 // --- what a transcript highlights -----------------------------------------------------------

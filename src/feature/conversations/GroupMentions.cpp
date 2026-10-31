@@ -76,7 +76,7 @@ std::string MemberPublicName(const std::string& account_id, const std::string& c
 std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
                                                 const std::string& local_account, const bool local_is_owner,
                                                 const std::function<std::string(const std::string& account_id)>& public_name,
-                                                const std::string& query) {
+                                                const std::string& query, const std::string& everyone_word) {
   const std::string lowered = AsciiLower(query);
   std::vector<MentionCandidate> all;
   std::map<std::string, int> name_counts;
@@ -109,8 +109,9 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
     return la != lb ? la < lb : a.account_id < b.account_id;
   });
   std::vector<MentionCandidate> lines;
-  if (local_is_owner && NameMatches("everyone", lowered)) {
-    lines.push_back({TextSpanKind::Everyone, {}, "everyone", {}});
+  if (local_is_owner && !everyone_word.empty() &&
+      (NameMatches(everyone_word, lowered) || NameMatches(kEveryoneMentionWord, lowered))) {
+    lines.push_back({TextSpanKind::Everyone, {}, everyone_word, {}});
   }
   lines.insert(lines.end(), members.begin(), members.end());
   return lines;
