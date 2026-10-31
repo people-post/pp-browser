@@ -16,6 +16,12 @@ namespace pbr {
  */
 Roe<void> CheckBlobResponse(const HttpResponse& response);
 
+/**
+ * The typed error for a failed blob-service answer: status code and the server's `error` text pick the
+ * Err::Blob code; the log detail is "HTTP <status>: <text>".
+ */
+Error ClassifyBlobFailure(int status_code, const std::string& detail);
+
 class HttpBlobClient : public IBlobClient {
 public:
   explicit HttpBlobClient(std::string base_url);

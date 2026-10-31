@@ -17,7 +17,7 @@ std::string HttpFailureMessage(const HttpResponse& response) {
       return *error;
     }
   }
-  return "HTTP request failed with status " + std::to_string(response.status_code);
+  return std::string();
 }
 
 
@@ -64,19 +64,43 @@ RelayBlobRecord ParseBlobRecord(const Object& item) {
 
 } // namespace
 
+Error ClassifyBlobFailure(const int status_code, const std::string& detail) {
+  const std::string logged = "HTTP " + std::to_string(status_code) + (detail.empty() ? "" : ": " + detail);
+  // The relay answers 503 `{ "error": "Blob upload is not configured" }` when its bucket is unset
+  // (an older gateway used 400, B77): the text, not the status, tells this apart from "down".
+  if (detail == "Blob upload is not configured") {
+    return AppError::Blob(Err::Blob::UploadNotConfigured, logged);
+  }
+  switch (status_code) {
+  case 429:
+    // The same status carries three causes; only a full space is answered by freeing space.
+    if (detail == "Rate limit exceeded" || detail == "Too many pending uploads") {
+      return AppError::Blob(Err::Blob::RateLimited, logged);
+    }
+    return AppError::Blob(Err::Blob::QuotaExceeded, logged);
+  case 413:
+    return AppError::Blob(Err::Blob::TooLarge, logged);
+  case 403:
+    return AppError::Blob(Err::Blob::UploadRejected, logged);
+  case 404:
+    return AppError::Blob(Err::Blob::Expired, logged);
+  default:
+    break;
+  }
+  if (status_code == 400 && detail == "File exceeds size limit") {
+    return AppError::Blob(Err::Blob::TooLarge, logged);
+  }
+  if (status_code >= 500) {
+    return AppError::Blob(Err::Blob::Unavailable, logged);
+  }
+  return AppError::Blob(Err::Blob::Generic, logged);
+}
+
 Roe<void> CheckBlobResponse(const HttpResponse& response) {
   if (response.status_code >= 200 && response.status_code < 300) {
     return Roe<void>{};
   }
-  const std::string detail = HttpFailureMessage(response);
-  if (response.status_code == 429) {
-    return AppError::Blob(Err::Blob::QuotaExceeded, detail);
-  }
-  // Gateway without an upload bucket answers 400 `{ "error": "Blob upload is not configured" }` (B77).
-  if (detail == "Blob upload is not configured") {
-    return AppError::Blob(Err::Blob::UploadNotConfigured, detail);
-  }
-  return AppError::Blob(Err::Blob::Generic, detail);
+  return ClassifyBlobFailure(response.status_code, HttpFailureMessage(response));
 }
 
 HttpBlobClient::HttpBlobClient(std::string base_url) : base_url_(std::move(base_url)) {}
@@ -286,8 +310,16 @@ Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::st
   if (!response) {
     return response.error();
   }
-  if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Blob PUT failed with status " + std::to_string(response.value().status_code));
+  const int status = response.value().status_code;
+  if (status < 200 || status >= 300) {
+    // The storage service, not the relay, answers a PUT: 403 is an expired or mismatched signed URL.
+    if (status == 403) {
+      return AppError::Blob(Err::Blob::UploadRejected, "Blob PUT failed with status 403");
+    }
+    if (status >= 500) {
+      return AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status " + std::to_string(status));
+    }
+    return Error("Blob PUT failed with status " + std::to_string(status));
   }
   return Roe<void>{};
 }

@@ -11,6 +11,8 @@ namespace pbr {
 struct BlobQuotaRecoveryPlan {
   RelayBlobRecord blob_to_delete;
   BlobUsageSummary usage;
+  /** The small tier's file limit for the "used / total" line; the list answer has none (0: not known). */
+  uint64_t small_max_objects = 0;
 };
 
 bool IsBlobQuotaError(const Error& err);
