@@ -1,7 +1,7 @@
 #include "gui/chat/VoicePlayback.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "gui/chat/VoiceBubble.h"
 #include "lib/media/VoiceFile.h"
 

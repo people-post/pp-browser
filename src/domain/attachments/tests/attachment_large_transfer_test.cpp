@@ -5,7 +5,7 @@
 #include "common/tests/LocalHttpServer.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "lib/messaging/ChatPayloadCodec.h"

@@ -2,7 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "lib/media/VoiceSupport.h"
 
 #include <ui/dom/Element.h>

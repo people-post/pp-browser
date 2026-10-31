@@ -10,7 +10,7 @@
 #include "lib/people/ContactJson.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include "common/Utilities.h"
 
