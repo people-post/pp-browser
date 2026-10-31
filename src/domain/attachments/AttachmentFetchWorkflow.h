@@ -3,6 +3,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
+#include "domain/attachments/LargeTransferLane.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
@@ -38,6 +39,8 @@ public:
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
   void SetBacklogDrainActive(bool active);
+  /** Where downloads above the direct size run (null: on the drain's own worker, as small ones do). */
+  void SetTransferLane(LargeTransferLane* lane) { lane_ = lane; }
   /** The receive-side limits (size, automatic-download pace and disk cap); default AttachmentLimits{}. */
   void SetLimits(const AttachmentLimits& limits);
   AttachmentLimits Limits() const;
@@ -47,6 +50,8 @@ public:
   void SetStoreScanForTest(std::function<uint64_t()> scan);
   /** Time source for the per-sender window (ms); tests only. */
   void SetClockForTest(std::function<int64_t()> now_ms);
+  /** Tests only: let a download use a plain-http loopback url. */
+  void SetAllowLocalCdnForTest(bool allow) { allow_local_cdn_for_test_ = allow; }
   /**
    * Whether this sender may start one more download by itself now: false when the store is over the disk cap
    * or the sender is over its count / byte limit for the minute. A yes is recorded against the sender.
@@ -112,7 +117,7 @@ public:
   void ForgetThread(const std::string& thread_id);
 
   /** Best-effort video poster under blobs_view (R012); ignores errors. */
-  void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields);
+  void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields, bool after_open = false);
 
   DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                          uint64_t byte_length) const;
@@ -167,6 +172,8 @@ private:
   /** Held back by the automatic-download limits: stays a "Download" row until the person taps it. */
   std::unordered_set<std::string> throttled_;
   std::unordered_map<std::string, int> progress_;
+  LargeTransferLane* lane_ = nullptr;
+  bool allow_local_cdn_for_test_ = false;
   AttachmentLimits limits_ = DefaultAttachmentLimits();
   AutoDownloadBudget budget_;
   AutoDownloadBudget push_budget_;

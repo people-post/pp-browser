@@ -45,6 +45,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <functional>
 #include <utility>
@@ -230,6 +231,8 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
+  std::unordered_set<std::string> opening_message_ids_;
   std::string pending_chip_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,

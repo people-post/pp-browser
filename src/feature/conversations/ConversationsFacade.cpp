@@ -1,5 +1,6 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "domain/attachments/AttachmentMetrics.h"
+#include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -841,37 +842,57 @@ void ConversationsFacade::RetryAttachmentDownload(const std::string& thread_id, 
   hub_.Attachments().RetryDownload(thread_id, message_id, hub_.Store());
 }
 
-std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(const std::string& thread_id,
-                                                                          const std::string& message_id) {
-  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
+namespace {
+std::optional<ChatAttachmentFields> AttachmentFieldsOfMessage(ConversationsHub& hub, const std::string& thread_id,
+                                                              const std::string& message_id) {
+  auto page = hub.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!page) {
     return std::nullopt;
   }
   for (const ThreadMessage& message : *page) {
-    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
-      continue;
-    }
-    auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
-    if (!fields) {
-      return std::nullopt;
-    }
-    const int64_t open_started_ms = util::NowUnixMs();
-    if (auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, fields->content_hash, fields->mime,
-                                                            fields->filename)) {
-      if (!view->empty()) {
-        // Opening decrypts the stored copy into the session view: its memory is part of the large-file numbers.
-        EmitAttachmentTransferMetric("open", fields->byte_length, util::NowUnixMs() - open_started_ms, true);
-        return *view;
+    if (message.id == message_id && message.content_type == ChatContentType::Attachment) {
+      if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
+        return std::move(*fields);
       }
-    }
-    const std::string path =
-        AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime, fields->filename);
-    if (path.empty()) {
       return std::nullopt;
     }
-    return path;
   }
   return std::nullopt;
+}
+} // namespace
+
+std::optional<uint64_t> ConversationsFacade::AttachmentByteLengthForMessage(const std::string& thread_id,
+                                                                            const std::string& message_id) {
+  if (auto fields = AttachmentFieldsOfMessage(hub_, thread_id, message_id)) {
+    return fields->byte_length;
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(const std::string& thread_id,
+                                                                          const std::string& message_id) {
+  auto fields = AttachmentFieldsOfMessage(hub_, thread_id, message_id);
+  if (!fields) {
+    return std::nullopt;
+  }
+  // A view made earlier this session is just used (no work, no metric line).
+  if (const std::string existing = AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash,
+                                                        fields->mime, fields->filename);
+      !existing.empty()) {
+    return existing;
+  }
+  // Opening decrypts the stored copy into the session view: its time, memory and failure are measured.
+  const int64_t open_started_ms = util::NowUnixMs();
+  auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, fields->content_hash, fields->mime, fields->filename);
+  const bool ok = view && !view->empty();
+  EmitAttachmentTransferMetric("open", fields->byte_length, util::NowUnixMs() - open_started_ms, ok);
+  if (!ok) {
+    return std::nullopt;
+  }
+  if (fields->byte_length > kMaxDirectAttachmentBytes) {
+    hub_.Attachments().MaybeBuildPoster(thread_id, *fields, /*after_open=*/true); // a large video's first poster
+  }
+  return *view;
 }
 
 Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,

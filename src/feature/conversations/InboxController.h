@@ -35,6 +35,11 @@ struct TranscriptAttachmentView {
    * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
    */
   bool inline_image_ok = true;
+  /**
+   * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
+   * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
+   */
+  bool on_demand = false;
   /** Percent of a download in progress (0..100), -1 when not downloading or not yet known. */
   int download_percent = -1;
 };

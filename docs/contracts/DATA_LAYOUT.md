@@ -76,7 +76,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
     public/blocks/{aa}/{bb}/{content_id_hex}   # clear published bytes (v1)
   object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
   threads/{thread_id}/
-    blobs_view/         # optional session plaintext materialization (not source of truth)
+    blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
+                        # a file above 4 MiB appears here only after an explicit Open
     # blobs/            # not used; durable bytes live in cas/private only
   blob_cipher/
     outgoing/           # <id> = AEAD ciphertext of an attachment being sent, <id>.rec = its record (content key, fields,

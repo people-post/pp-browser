@@ -30,6 +30,8 @@ struct HttpFileDownload {
 
 class HttpClient {
 public:
+  /** Tests only: the speed floor of PutFile / GetToFile (default 2048 B/s over 30 s); 0, 0 restores it. */
+  static void SetStreamingStallLimitForTest(long min_bytes_per_s, long window_s);
   /**
    * PUT the file's bytes read straight from disk (never the whole file in memory). No total time limit, only a
    * stall limit (no byte moved for 60 s fails), so a large upload on a slow link can finish. The response body

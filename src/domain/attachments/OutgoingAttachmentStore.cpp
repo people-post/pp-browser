@@ -105,16 +105,16 @@ Roe<OutgoingAttachmentRecord> OutgoingAttachmentStore::Load(const std::string& i
   }
   std::ifstream in(RecordPath(id), std::ios::binary);
   if (!in) {
-    return Error("Outgoing attachment record is gone");
+    return Error(kLoadGone, "Outgoing attachment record is gone");
   }
   const ByteVector sealed((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   auto opened = FileCipher::Decrypt(dek, sealed, FileCipher::BuildAad(kAadPurpose, profile_id_));
   if (!opened) {
-    return opened.error();
+    return Error(kLoadDamaged, "Outgoing attachment record cannot be opened");
   }
   auto json = TryParseObject(std::string(opened->begin(), opened->end()));
   if (!json) {
-    return Error("Outgoing attachment record is damaged");
+    return Error(kLoadDamaged, "Outgoing attachment record is damaged");
   }
   OutgoingAttachmentRecord record;
   record.id = json->getString("id").value_or("");
@@ -124,7 +124,7 @@ Roe<OutgoingAttachmentRecord> OutgoingAttachmentStore::Load(const std::string& i
   record.created_ms = static_cast<int64_t>(json->getNonNegInt("created_ms").value_or(0));
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(json->getString("fields").value_or(""));
   if (record.id != id || !fields) {
-    return Error("Outgoing attachment record is damaged");
+    return Error(kLoadDamaged, "Outgoing attachment record is damaged");
   }
   record.fields = std::move(*fields);
   return record;

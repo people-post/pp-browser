@@ -352,6 +352,15 @@ void AttachmentFetchWorkflow::DrainQueue() {
     queue_.erase(queue_.begin());
     active_.insert(JobKey(job));
   }
+  if (lane_ && job.fields.byte_length > kMaxDirectAttachmentBytes) {
+    // A large download goes to its own lane (one at a time) and the drain goes on with the small ones: the
+    // queue is not held for minutes by one big file.
+    lane_->Post(LargeTransferLane::Direction::Download, [this, job = std::move(job)]() mutable {
+      RunJobAsync(std::move(job), []() {});
+    });
+    ContinueDrainOnWorker();
+    return;
+  }
   RunJobAsync(std::move(job), [this]() { ContinueDrainOnWorker(); });
 }
 
@@ -374,8 +383,12 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   context.identity = identity_;
   context.peer_client = peer_client_;
   context.profile_data_dir = profile_dir_;
+  context.allow_local_cdn_for_test = allow_local_cdn_for_test_;
   // Percent of the CDN download for the card; a deleted message (no longer active) cancels the transfer.
   context.progress = [this, key](const uint64_t done, const uint64_t total) {
+    if (lane_ && lane_->Stopping()) {
+      return false; // the app is shutting down
+    }
     {
       std::lock_guard lock(mutex_);
       if (!active_.contains(key)) {
@@ -386,8 +399,11 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
     return true;
   };
 
+  // A copy of the fields for the call: the callback below moves `job` away, and the arguments of one call are
+  // evaluated before it runs (reading job.fields there found them already moved-from: no url, no hash).
+  const ChatAttachmentFields fields = job.fields;
   FetchAndDecryptAttachmentAsync(
-      job.fields, context,
+      fields, context,
       [this, key, job = std::move(job), on_done = std::move(on_done), started_ms,
        declared_bytes](Roe<std::vector<uint8_t>> plaintext) mutable {
         auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
@@ -396,20 +412,25 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           const auto report = [&](const bool ok) {
             EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
           };
-          if (!plaintext) {
-            report(false);
-            MarkFailed(key);
+          // First: a message deleted (or history cleared) meanwhile cancelled this job, and a cancelled transfer
+          // that came back as an error is not a failure to show; its percent is gone with the job.
+          bool cancelled = false;
+          {
+            std::lock_guard lock(mutex_);
+            cancelled = !active_.contains(key);
+            if (cancelled) {
+              progress_.erase(key);
+            }
+          }
+          if (cancelled) {
             if (on_done) {
               on_done();
             }
             return;
           }
-          bool cancelled = false;
-          {
-            std::lock_guard lock(mutex_);
-            cancelled = !active_.contains(key); // message / thread deleted or history cleared meanwhile
-          }
-          if (cancelled) {
+          if (!plaintext) {
+            report(false);
+            MarkFailed(key);
             if (on_done) {
               on_done();
             }
@@ -435,7 +456,10 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             return;
           }
           const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
-          if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint, Limits().max_receive_bytes)) {
+          // A small file is ready to show at once. A large one is stored encrypted only: its plaintext view (and a
+          // video's poster) is made when the person opens it, on a worker, and only for that session.
+          if (size_hint <= kMaxDirectAttachmentBytes &&
+              AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint, Limits().max_receive_bytes)) {
             // From the bytes just decrypted, not read back from the store (that held the file two more times).
             (void)StoreAttachmentViewBytes(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
                                            job.fields.filename, bytes);
@@ -735,10 +759,13 @@ void AttachmentFetchWorkflow::CancelJobsLocked(const std::function<bool(const st
   std::erase_if(progress_, [&](const auto& entry) { return matches(entry.first); });
 }
 
-void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id,
-                                                 const ChatAttachmentFields& fields) {
+void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields,
+                                               const bool after_open) {
   if (!IsAttachmentVideoMime(fields.mime) || profile_dir_.empty() || thread_id.empty()) {
     return;
+  }
+  if (fields.byte_length > kMaxDirectAttachmentBytes && !after_open) {
+    return; // a large video gets its poster from the first open (that decrypts it for the session anyway)
   }
   const ByteVector dek_copy = CopyDek();
   if (dek_copy.empty() || profile_id_.empty()) {

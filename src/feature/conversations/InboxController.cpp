@@ -610,7 +610,9 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   }
   const uint64_t max_receive_bytes =
       attachment_downloads_ ? attachment_downloads_->Limits().max_receive_bytes : DefaultAttachmentLimits().max_receive_bytes;
-  if (AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length, max_receive_bytes)) {
+  // Rendering never decrypts a large file: its plaintext view is made by an explicit Open (on a worker).
+  view.on_demand = fields->byte_length > kMaxDirectAttachmentBytes;
+  if (!view.on_demand && AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length, max_receive_bytes)) {
     if (attachment_downloads_) {
       if (auto local = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
                                                                  fields->filename)) {
@@ -621,7 +623,7 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
                                             fields->filename);
     }
   } else if (!profile_data_dir_.empty()) {
-    // Large private video: keep plaintext off disk until explicit open.
+    // Large file: plaintext stays off disk until an explicit Open; a view made by an earlier Open is used.
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }

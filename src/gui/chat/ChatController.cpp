@@ -1138,29 +1138,33 @@ void ChatController::OnRetryAttachmentSend() {
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
-  facade_->ResumeAttachmentAsync(
-      thread_id, record_id,
+  // Same dialog as a first send when the space is full: free the oldest file, then send the staged ciphertext again.
+  BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
+      [this, thread_id, record_id](std::function<void(Roe<ThreadMessage>)> done) {
+        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress());
+      },
       [this](Roe<ThreadMessage> sent) {
-        AppRuntime::PostUI([this, sent = std::move(sent)]() mutable {
-          chat_.attachment_uploading = false;
-          chat_.attachment_status = "";
-          chat_.attachment_draft_name = "";
-          failed_record_id_.clear();
-          SyncComposerInputState();
-          if (!sent) {
-            UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
-            RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone: nothing shown
-            return;
-          }
-          RefreshPendingAttachmentChip(/*force=*/true);
+        chat_.attachment_uploading = false;
+        chat_.attachment_status = "";
+        chat_.attachment_draft_name = "";
+        failed_record_id_.clear();
+        SyncComposerInputState();
+        const bool stale_chip = !sent && sent.error().category == 0 &&
+                                sent.error().code == OutgoingAttachmentStore::kWrongThread;
+        if (!sent && !stale_chip) {
+          UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+        }
+        RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone or sent: nothing shown
+        if (sent) {
           SyncDisplayFromThread();
           scroller_.RequestScrollToLatest();
           UpdateSidebarPreview(sent->text);
-          DirtyChatChrome();
-          DirtyChatHeader();
-        });
+        }
+        DirtyChatChrome();
+        DirtyChatHeader();
       },
-      MakeSendProgress());
+      [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
+      [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source) {
@@ -1203,11 +1207,22 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
         UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
         return;
       }
-      // Shared: the same bytes go again if the person frees space after a "full" answer.
+      // The bytes go to the hub once (moved: no second whole-file copy here). If the space is full the dialog's
+      // retry sends the staged ciphertext (resume), so nothing is kept here after the first attempt.
       auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
+      auto attempts = std::make_shared<int>(0);
       BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-          [this, thread_id, attachment](std::function<void(Roe<ThreadMessage>)> done) {
-            facade_->SendAttachmentAsync(thread_id, *attachment, std::move(done), MakeSendProgress());
+          [this, thread_id, attachment, attempts](std::function<void(Roe<ThreadMessage>)> done) {
+            if ((*attempts)++ == 0) {
+              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress());
+              return;
+            }
+            const auto staged = facade_->PendingOutgoingAttachments(thread_id);
+            if (staged.empty()) {
+              done(Error("The attachment is no longer staged").WithUser(Tr("chat.attachment.pick_again")));
+              return;
+            }
+            facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress());
           },
           [this, thread_id, finish_uploading](Roe<ThreadMessage> sent) {
             finish_uploading();
@@ -1270,27 +1285,43 @@ void ChatController::OpenAttachment(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
     return;
   }
+  // Once: a second tap while the first is still making the file does nothing.
+  if (!opening_message_ids_.insert(message_id).second) {
+    return;
+  }
   const std::string thread_id = ActiveThreadId();
-  auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
-  if (!path) {
-    UserFeedback::Fail(Tr("chat.attachment.not_ready"));
-    return;
+  const auto size = facade_->AttachmentByteLengthForMessage(thread_id, message_id);
+  if (size && *size > kMaxDirectAttachmentBytes) {
+    UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
   }
-  const auto open_file = [path = *path]() {
-    if (!PlatformOpenFile(path)) {
-      UserFeedback::Fail(Tr("chat.attachment.open_failed"));
-    }
-  };
-  if (facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id)) {
-    ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
-                [open_file](const bool ok) {
-                  if (ok) {
-                    open_file();
-                  }
-                });
-    return;
-  }
-  open_file();
+  // The decrypt of a stored copy is blocking work (seconds for a large file): off the UI thread.
+  AppRuntime::PostWorkerNormal([this, thread_id, message_id]() {
+    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+    const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
+    AppRuntime::PostUI([this, thread_id, message_id, path = std::move(path), needs_confirm]() {
+      opening_message_ids_.erase(message_id);
+      if (!path) {
+        UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+        return;
+      }
+      SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
+      const auto open_file = [path = *path]() {
+        if (!PlatformOpenFile(path)) {
+          UserFeedback::Fail(Tr("chat.attachment.open_failed"));
+        }
+      };
+      if (needs_confirm) {
+        ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
+                    [open_file](const bool ok) {
+                      if (ok) {
+                        open_file();
+                      }
+                    });
+        return;
+      }
+      open_file();
+    });
+  });
 }
 
 void ChatController::RetryAttachmentDownload(const std::string& message_id) {

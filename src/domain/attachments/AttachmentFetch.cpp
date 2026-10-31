@@ -1,5 +1,6 @@
 #include "domain/attachments/AttachmentFetch.h"
 
+#include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/error/AppError.h"
@@ -158,7 +159,11 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
     }
   }
 
-  if (context.peer_client && context.store && context.contacts && context.identity && !context.thread_id.empty()) {
+  // A large file with a server copy is fetched from the server: the direct path has a short timeout and the
+  // sender's device is not asked to stream it.
+  const bool large_with_url = fields.byte_length > kMaxDirectAttachmentBytes && !fields.url.empty();
+  if (!large_with_url && context.peer_client && context.store && context.contacts && context.identity &&
+      !context.thread_id.empty()) {
     FetchAttachmentCiphertextFromPeerAsync(fields, context, [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) {
       if (peer_bytes) {
         finish(std::move(peer_bytes));

@@ -10,6 +10,7 @@
 
 #include <curl/curl.h>
 
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <limits>
@@ -112,11 +113,18 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   return HttpResponse{.status_code = status_code, .body = std::move(response_body.body)};
 }
 
-/** Streaming transfers have no total time limit; a link that moves nothing for a minute is a failure. */
+std::atomic<long> g_min_bytes_per_s{2048};
+std::atomic<long> g_speed_window_s{30};
+
+/**
+ * Streaming transfers have no total time limit, but a link that connects slowly (15 s) or averages under
+ * 2 KB/s over 30 s is a failure: a drip must not hold a transfer thread for hours.
+ */
 void ApplyStallLimit(CURL* curl) {
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
-  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
+  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, g_min_bytes_per_s.load());
+  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, g_speed_window_s.load());
 }
 
 void ApplyPublicOnly(CURL* curl) {
@@ -183,6 +191,11 @@ size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* so
 }
 
 } // namespace
+
+void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const long window_s) {
+  g_min_bytes_per_s.store(min_bytes_per_s > 0 ? min_bytes_per_s : 2048);
+  g_speed_window_s.store(window_s > 0 ? window_s : 30);
+}
 
 Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string& path,
                                       const std::map<std::string, std::string>& headers,

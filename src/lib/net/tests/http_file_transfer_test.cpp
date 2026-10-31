@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -44,6 +45,7 @@ public:
   int get_status = 200;
   uint64_t get_body_bytes = 0;
   bool get_send_content_length = true;  // false: the body is delimited by closing the connection
+  int get_drip_ms = 0;                  // > 0: 10 bytes, then this long a pause, again and again
   // PUT result.
   int put_status = 200;
   std::atomic<uint64_t> put_received{0};
@@ -102,7 +104,11 @@ private:
       std::string chunk(64 * 1024, 'x');
       uint64_t left = get_body_bytes;
       while (left > 0 && !ec) {
-        const size_t n = static_cast<size_t>(std::min<uint64_t>(left, chunk.size()));
+        size_t n = static_cast<size_t>(std::min<uint64_t>(left, chunk.size()));
+        if (get_drip_ms > 0) {
+          n = std::min<size_t>(n, 10);
+          std::this_thread::sleep_for(std::chrono::milliseconds(get_drip_ms));
+        }
         asio::write(socket, asio::buffer(chunk.data(), n), ec);
         left -= n;
       }
@@ -225,6 +231,30 @@ TEST_F(HttpFileTransferTest, ANon2xxAnswerWritesNothing) {
   EXPECT_EQ(result->status_code, 404);
   EXPECT_EQ(result->bytes, 0u);
   EXPECT_FALSE(std::filesystem::exists(dest));
+}
+
+// A server that trickles bytes must not hold the transfer: the speed floor aborts it (shortened for the test).
+TEST_F(HttpFileTransferTest, ADrippingServerIsAbortedByTheSpeedLimitAndLeavesNothing) {
+  HttpClient::SetStreamingStallLimitForTest(5000, 1);  // under 5 KB/s for 1 s
+  server_.get_body_bytes = 1024 * 1024;
+  server_.get_drip_ms = 100;  // 100 B/s
+  const std::string dest = (dir_ / "drip.bin").string();
+  const auto started = std::chrono::steady_clock::now();
+  auto result = HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16);
+  const auto took = std::chrono::steady_clock::now() - started;
+  HttpClient::SetStreamingStallLimitForTest(0, 0);
+  ASSERT_FALSE(result);
+  EXPECT_LT(took, std::chrono::seconds(10)) << "aborted by the floor, not after a megabyte at 100 B/s";
+  EXPECT_FALSE(std::filesystem::exists(dest));
+}
+
+TEST_F(HttpFileTransferTest, AFastUploadIsNotCaughtByTheSpeedFloor) {
+  HttpClient::SetStreamingStallLimitForTest(5000, 1);
+  const std::string path = Write("fast.bin", 2 * 1024 * 1024);
+  auto response = HttpClient::PutFile(server_.Url(), path);
+  HttpClient::SetStreamingStallLimitForTest(0, 0);
+  ASSERT_TRUE(response) << response.error().message;
+  EXPECT_EQ(server_.put_received.load(), 2u * 1024u * 1024u);
 }
 
 TEST_F(HttpFileTransferTest, GetToFileCanBeCancelledAndLeavesNothing) {

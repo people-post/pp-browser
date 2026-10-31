@@ -15,6 +15,8 @@
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "domain/attachments/AttachmentMetrics.h"
+#include "common/chat/MessagingLimits.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
@@ -120,6 +122,21 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(CopyAttachmentPlaintext(dir.string(), profile_id, "g1", *result, plaintext, Dek(), size));
     std::ofstream(fields_path) << ChatPayloadCodec::AttachmentFieldsToJson(*result);
     Report("send", size, util::NowUnixMs() - started);
+  } else if (phase == "resume") {
+    // A resumed send has no plaintext in memory: the CAS copy is rebuilt from the staged ciphertext and its key
+    // (what the hub does after a Retry), with the consuming decrypt.
+    OutgoingAttachmentStore store(dir.string(), profile_id);
+    const auto staged = store.ListForThread("g1", Dek());
+    ASSERT_FALSE(staged.empty());
+    auto cipher = store.ReadCipher(staged.front().id);
+    ASSERT_TRUE(cipher);
+    const ChatAttachmentFields& f = staged.front().fields;
+    auto plain = AttachmentContentCipher::Decrypt(f.content_key, f.blob_nonce, std::move(*cipher), f.content_hash);
+    ASSERT_TRUE(plain) << plain.error().message;
+    const std::filesystem::path resumed = dir / "resumed";
+    std::filesystem::create_directories(resumed);
+    ASSERT_TRUE(CopyAttachmentPlaintext(resumed.string(), profile_id, "g1", f, *plain, Dek(), size));
+    Report("resume", size, util::NowUnixMs() - started);
   } else if (phase == "receive") {
     std::ifstream in(fields_path);
     const std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -147,7 +164,9 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     const ByteVector bytes = std::move(*plaintext);
     ASSERT_TRUE(SaveAttachmentPlaintext(receiver.string(), profile_id, fields->content_hash, fields->mime, bytes,
                                         fields->filename, Dek()));
-    ASSERT_TRUE(StoreAttachmentViewBytes(receiver.string(), "g1", fields->content_hash, fields->mime, fields->filename, bytes));
+    if (size <= kMaxDirectAttachmentBytes) {  // a large file's view is made by an Open only
+      ASSERT_TRUE(StoreAttachmentViewBytes(receiver.string(), "g1", fields->content_hash, fields->mime, fields->filename, bytes));
+    }
     Report("receive", size, util::NowUnixMs() - started);
   } else if (phase == "open") {
     std::ifstream in(fields_path);

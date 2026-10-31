@@ -1,5 +1,6 @@
 #include "domain/attachments/AttachmentContent.h"
 
+#include "common/chat/MessagingLimits.h"
 #include "lib/content/PrivateContent.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
@@ -68,8 +69,9 @@ Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, std::string_vi
       !saved) {
     return saved.error();
   }
-  if (AttachmentAllowsInlinePrivateView(fields.mime, fields.byte_length > 0 ? fields.byte_length : plaintext.size(),
-                                        max_receive_bytes)) {
+  const uint64_t size = fields.byte_length > 0 ? fields.byte_length : plaintext.size();
+  // A large file we sent is kept encrypted only; its view is made by an Open, as for a received one.
+  if (size <= kMaxDirectAttachmentBytes && AttachmentAllowsInlinePrivateView(fields.mime, size, max_receive_bytes)) {
     (void)StoreAttachmentViewBytes(profile_dir, thread_id, fields.content_hash, fields.mime, fields.filename,
                                    plaintext);
   }

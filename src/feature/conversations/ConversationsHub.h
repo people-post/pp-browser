@@ -37,6 +37,7 @@
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
+#include "domain/attachments/LargeTransferLane.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
@@ -549,6 +550,11 @@ private:
     uint64_t bytes = 0;
   };
   Roe<Thread> AttachmentTargetThread(const std::string& thread_id);
+  void ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress);
+  std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
+      std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
                             const std::function<void(Roe<ThreadMessage>)>& finish);
   std::string http_relay_url_;
@@ -649,6 +655,12 @@ private:
   bool mobile_ephemeral_stop_inflight_ = false;
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
+  /**
+   * Where large attachment transfers run (see LargeTransferLane): one upload thread and one download thread,
+   * one job at a time each. Declared last so it is destroyed first, and stopped + joined in Shutdown() and the
+   * destructor before anything a job uses goes away.
+   */
+  LargeTransferLane transfer_lane_;
 };
 
 /** Preferred name for the app messaging assembler (holds MeshHost; calls and broadcast participate). */

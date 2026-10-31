@@ -11,6 +11,7 @@ pp_browser_add_domain_library(pp_domain_attachments
     AttachmentFetch.cpp
     AttachmentFetchWorkflow.cpp
     ChatBlobRequest.cpp
+    LargeTransferLane.cpp
     OutgoingAttachmentStore.cpp
   PUBLIC_LIBS
     pp_lib_messaging

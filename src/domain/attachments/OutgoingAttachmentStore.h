@@ -32,6 +32,12 @@ struct OutgoingAttachmentRecord {
  */
 class OutgoingAttachmentStore {
 public:
+  /** Error::code of a failed Load: the record file is not there / is there but cannot be opened or parsed. */
+  static constexpr int32_t kLoadGone = 1;
+  static constexpr int32_t kLoadDamaged = 2;
+  /** Error::code a resume reports for a record that belongs to another thread (nothing is touched). */
+  static constexpr int32_t kWrongThread = 3;
+
   OutgoingAttachmentStore(std::string profile_dir, std::string profile_id);
 
   static constexpr int64_t kMaxAgeMs = 24LL * 60LL * 60LL * 1000LL;

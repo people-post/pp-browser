@@ -270,7 +270,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
             JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
     html += "</div>";
-  } else if (ready && !local_path.empty()) {
+  } else if (ready && (!local_path.empty() || view.on_demand)) {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields->byte_length > 0) {
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +

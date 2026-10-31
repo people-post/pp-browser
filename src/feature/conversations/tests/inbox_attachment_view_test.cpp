@@ -1,6 +1,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "domain/peers/PeerDisplaySources.h"
 #include "feature/conversations/InboxController.h"
+#include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
@@ -47,20 +48,22 @@ protected:
   }
 
   /** A received picture whose view file (`blobs_view/<hash>.png`) holds `bytes`. */
-  TranscriptAttachmentView ViewOf(const uint8_t seed, const std::vector<uint8_t>& bytes) {
+  TranscriptAttachmentView ViewOf(const uint8_t seed, const std::vector<uint8_t>& bytes, const uint64_t declared = 0,
+                                  const bool write_view = true) {
     ChatAttachmentFields fields;
     fields.url = "https://cdn.example/pic";
     fields.mime = "image/png";
     fields.filename = "pic.png";
-    fields.byte_length = bytes.size();
+    fields.byte_length = declared > 0 ? declared : bytes.size();
     fields.content_hash.assign(32, seed);
     fields.content_key.assign(kSessionKeySize, 1);
     fields.blob_nonce.assign(kAeadNonceSize, 2);
     const auto view_dir = std::filesystem::path(AttachmentViewRoot(data_dir_.string(), "t1"));
     std::filesystem::create_directories(view_dir);
-    std::ofstream out(view_dir / (AttachmentHashHex(fields.content_hash) + ".png"), std::ios::binary);
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    out.close();
+    if (write_view) {
+      std::ofstream out(view_dir / (AttachmentHashHex(fields.content_hash) + ".png"), std::ios::binary);
+      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
     ThreadMessage message;
     message.id = "m" + std::to_string(seed);
     message.thread_id = "t1";
@@ -100,6 +103,23 @@ TEST_F(InboxAttachmentViewTest, AHeaderClaiming30000By30000IsAFileRowAndNeverDec
 TEST_F(InboxAttachmentViewTest, AnUnreadableHeadIsAFileRowToo) {
   const auto view = ViewOf(3, {'n', 'o', 't', ' ', 'a', ' ', 'p', 'i', 'c', 't', 'u', 'r', 'e'});
   EXPECT_FALSE(view.inline_image_ok);
+}
+
+// A file above the direct size is never decrypted by drawing the card: no view, a file row / video placeholder with
+// Open, until an Open has made the view for this session.
+TEST_F(InboxAttachmentViewTest, ALargeFileHasNoViewUntilItIsOpened) {
+  const uint64_t large = kMaxDirectAttachmentBytes + 1;
+  const auto before = ViewOf(4, PngHeader(10, 10), large, /*write_view=*/false);
+  EXPECT_TRUE(before.on_demand);
+  EXPECT_TRUE(before.local_path.empty());
+  EXPECT_TRUE(before.inline_image_ok);
+
+  const auto after = ViewOf(4, PngHeader(10, 10), large, /*write_view=*/true);  // an Open made it
+  EXPECT_TRUE(after.on_demand);
+  EXPECT_FALSE(after.local_path.empty());
+
+  const auto small = ViewOf(5, PngHeader(10, 10), 1000, /*write_view=*/true);
+  EXPECT_FALSE(small.on_demand);
 }
 
 } // namespace

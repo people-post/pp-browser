@@ -664,6 +664,7 @@
     "chat.attachment.pick_again": "这个文件无法重发，请重新选择。",
     "chat.attachment.open": "打开",
     "chat.attachment.not_ready": "附件尚未就绪",
+    "chat.attachment.opening": "正在打开…",
     "chat.attachment.open_failed": "无法打开附件",
     "chat.attachment.open_confirm_title": "打开此文件？",
     "chat.attachment.open_confirm_body": "此文件将在您设备上的其他应用中打开。",

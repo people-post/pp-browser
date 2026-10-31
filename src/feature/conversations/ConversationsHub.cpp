@@ -1,6 +1,7 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
+#include "common/chat/MessagingLimits.h"
 #include "domain/attachments/AttachmentMetrics.h"
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
@@ -232,6 +233,7 @@ void ConversationsHub::NotifyPolicyPrefs(const PolicyPrefs& prefs) {
 }
 
 ConversationsHub::~ConversationsHub() {
+  transfer_lane_.Shutdown(); // before any member a transfer job uses goes away
   Shutdown();
 }
 
@@ -2441,30 +2443,54 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
   upload_opts.thread = active;
   upload_opts.thread_id = thread_id;
   upload_opts.max_plaintext_bytes = max_bytes;
-  upload_opts.progress = std::move(progress);
+  upload_opts.progress = LaneAwareProgress(std::move(progress));
   if (!job->dek.empty() && !profile_id_.empty()) {
     upload_opts.outgoing = store.get(); // staged: a failed send can be resumed without the original file
     upload_opts.dek = job->dek;
     upload_opts.on_staged = [job](const OutgoingAttachmentRecord& record) { job->record_id = record.id; };
   }
 
-  UploadChatAttachmentAsync(
-      *blob_, Identity(), *job->plaintext, attachment.filename, attachment.mime, std::move(upload_opts),
-      [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
-        auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
-          FinishAttachmentSend(job, std::move(fields), finish);
-        };
-        if (AppRuntime::IsRunning()) {
-          AppRuntime::PostWorkerNormal(std::move(continue_send));
-        } else {
-          continue_send();
-        }
-      });
+  auto run = [this, job, finish, name = attachment.filename, mime = attachment.mime,
+              upload_opts = std::move(upload_opts)]() mutable {
+    UploadChatAttachmentAsync(
+        *blob_, Identity(), *job->plaintext, name, mime, std::move(upload_opts),
+        [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
+          auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
+            FinishAttachmentSend(job, std::move(fields), finish);
+          };
+          if (AppRuntime::IsRunning()) {
+            AppRuntime::PostWorkerNormal(std::move(continue_send));
+          } else {
+            continue_send();
+          }
+        });
+  };
+  // A large file is encrypted, staged and uploaded on the upload lane, not on a shared worker (minutes).
+  if (job->bytes > kMaxDirectAttachmentBytes && AppRuntime::IsRunning()) {
+    transfer_lane_.Post(LargeTransferLane::Direction::Upload, std::move(run));
+  } else {
+    run();
+  }
 }
 
 void ConversationsHub::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                                              std::function<void(Roe<ThreadMessage>)> on_done,
                                              std::function<bool(uint64_t done, uint64_t total)> progress) {
+  // Never on the caller's thread (the UI's): the record is read, a small file may be pushed straight to the
+  // contact, and the upload itself is blocking work. A large file goes to the upload lane.
+  auto body = [this, thread_id, record_id, on_done = std::move(on_done), progress = std::move(progress)]() mutable {
+    ResumeAttachmentNow(thread_id, record_id, std::move(on_done), std::move(progress));
+  };
+  if (AppRuntime::IsRunning()) {
+    AppRuntime::PostWorkerNormal(std::move(body));
+  } else {
+    body();
+  }
+}
+
+void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
+                                           std::function<void(Roe<ThreadMessage>)> on_done,
+                                           std::function<bool(uint64_t done, uint64_t total)> progress) {
   auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
     if (on_done) {
       on_done(std::move(value));
@@ -2476,13 +2502,36 @@ void ConversationsHub::ResumeAttachmentAsync(const std::string& thread_id, const
     return;
   }
   const ByteVector dek = Attachments().CopyDek();
+  if (dek.empty()) {
+    // Locked: nothing is wrong with the record, it just cannot be read now. Kept; unlock and retry.
+    finish(AppError::Pin(Err::Pin::Required, "Unlock the profile to send the attachment again"));
+    return;
+  }
   auto store = std::make_shared<OutgoingAttachmentStore>(data_dir_, profile_id_);
-  auto record = dek.empty() ? Roe<OutgoingAttachmentRecord>(Error("Profile is locked")) : store->Load(record_id, dek);
-  if (!record || record->thread_id != thread_id || (!record->delivered && !store->HasCipher(record_id))) {
-    // Nothing to resume from (cleaned after a day, or damaged): the person picks the file again.
-    store->Remove(record_id);
-    finish(AppError::Blob(Err::Blob::Expired, "Outgoing attachment is gone")
-               .WithUser(Tr("chat.attachment.pick_again")));
+  const auto pick_again = [&](const std::string& why) {
+    return AppError::Blob(Err::Blob::Expired, why).WithUser(Tr("chat.attachment.pick_again"));
+  };
+  auto record = store->Load(record_id, dek);
+  if (!record) {
+    // Only a record that is confirmed gone or damaged is deleted; any other failure leaves it for a later try.
+    if (record.error().code == OutgoingAttachmentStore::kLoadGone) {
+      finish(pick_again("Outgoing attachment record is gone"));
+    } else if (record.error().code == OutgoingAttachmentStore::kLoadDamaged) {
+      store->Remove(record_id);
+      finish(pick_again("Outgoing attachment record is damaged"));
+    } else {
+      finish(record.error());
+    }
+    return;
+  }
+  if (record->thread_id != thread_id) {
+    // A chip left over from another thread: nothing is changed.
+    finish(Error(OutgoingAttachmentStore::kWrongThread, "Outgoing attachment belongs to another thread"));
+    return;
+  }
+  if (!record->delivered && !store->HasCipher(record_id)) {
+    store->Remove(record_id); // the encrypted copy is confirmed lost: the person picks the file again
+    finish(pick_again("Outgoing attachment ciphertext is gone"));
     return;
   }
   auto job = std::make_shared<AttachmentSendJob>();
@@ -2499,21 +2548,39 @@ void ConversationsHub::ResumeAttachmentAsync(const std::string& thread_id, const
   upload_opts.contacts = contacts_.get();
   upload_opts.thread = *target;
   upload_opts.thread_id = thread_id;
-  upload_opts.progress = std::move(progress);
+  upload_opts.progress = LaneAwareProgress(std::move(progress));
   upload_opts.outgoing = store.get();
   upload_opts.dek = dek;
-  ResumeChatAttachmentAsync(
-      *blob_, Identity(), *record, std::move(upload_opts),
-      [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
-        auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
-          FinishAttachmentSend(job, std::move(fields), finish);
-        };
-        if (AppRuntime::IsRunning()) {
-          AppRuntime::PostWorkerNormal(std::move(continue_send));
-        } else {
-          continue_send();
-        }
-      });
+  auto run = [this, job, finish, record = std::move(*record), upload_opts = std::move(upload_opts)]() mutable {
+    ResumeChatAttachmentAsync(
+        *blob_, Identity(), record, std::move(upload_opts),
+        [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
+          auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
+            FinishAttachmentSend(job, std::move(fields), finish);
+          };
+          if (AppRuntime::IsRunning()) {
+            AppRuntime::PostWorkerNormal(std::move(continue_send));
+          } else {
+            continue_send();
+          }
+        });
+  };
+  if (job->bytes > kMaxDirectAttachmentBytes && AppRuntime::IsRunning()) {
+    transfer_lane_.Post(LargeTransferLane::Direction::Upload, std::move(run));
+  } else {
+    run();
+  }
+}
+
+std::function<bool(uint64_t done, uint64_t total)> ConversationsHub::LaneAwareProgress(
+    std::function<bool(uint64_t done, uint64_t total)> progress) {
+  // Shutdown aborts a transfer in flight at its next progress tick.
+  return [this, progress = std::move(progress)](const uint64_t done, const uint64_t total) {
+    if (transfer_lane_.Stopping()) {
+      return false;
+    }
+    return progress ? progress(done, total) : true;
+  };
 }
 
 std::vector<OutgoingAttachmentRecord> ConversationsHub::PendingOutgoingAttachments(const std::string& thread_id) {
@@ -2534,6 +2601,7 @@ void ConversationsHub::CleanStaleAttachmentFiles() {
   }
   OutgoingAttachmentStore(data_dir_, profile_id_).CleanupStale(OutgoingAttachmentStore::kMaxAgeMs);
   CleanIncomingCiphertext(data_dir_); // a download that never finished
+  (void)WipeAllAttachmentViewCaches(data_dir_); // plaintext views live for a session only: none from the last one
 }
 
 void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job,
@@ -2545,9 +2613,10 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
     if (IsBlobQuotaError(fields.error())) {
       CheckBlobSpace(/*after_quota_error=*/true);
     }
-    // A full space is answered by the delete-and-retry dialog, which sends again from the bytes it holds; a
-    // size the server refuses cannot succeed by retrying. Every other failure keeps the ciphertext for "Retry".
-    const bool keep = !IsBlobQuotaError(fields.error()) && fields.error().code != static_cast<int32_t>(Err::Blob::TooLarge);
+    // A full space is answered by the delete-and-retry dialog, which resumes from this staged ciphertext (so it
+    // stays); a size the server refuses cannot succeed by retrying. Every other failure keeps it for "Retry".
+    const bool keep = !(fields.error().category == static_cast<int32_t>(ErrorCategory::Blob) &&
+                        fields.error().code == static_cast<int32_t>(Err::Blob::TooLarge));
     if (!keep && !job->record_id.empty()) {
       job->store->Remove(job->record_id);
     }
@@ -2571,8 +2640,8 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
       } else if (!job->record_id.empty()) {
         // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key.
         if (auto cipher = job->store->ReadCipher(job->record_id)) {
-          if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce, *cipher,
-                                                            fields->content_hash)) {
+          if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce,
+                                                            std::move(*cipher), fields->content_hash)) {
             (void)CopyAttachmentPlaintext(data_dir_, profile_id_, job->thread_id, *fields, *plain, attachment_dek,
                                           max_receive_bytes);
           }
@@ -2622,6 +2691,7 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetProfileDataDir(data_dir_);
   attachment_downloads_->SetProfileId(profile_id_);
   attachment_downloads_->SetLimits(CurrentAttachmentLimits());
+  attachment_downloads_->SetTransferLane(&transfer_lane_);
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
                                                   mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
@@ -3152,6 +3222,7 @@ void ConversationsHub::Shutdown() {
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
+  transfer_lane_.Shutdown(); // aborts a transfer at its next progress tick and joins both lane threads
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   AppLifecycle::RemoveListener(lifecycle_foreground_id_);
   lifecycle_background_id_ = 0;

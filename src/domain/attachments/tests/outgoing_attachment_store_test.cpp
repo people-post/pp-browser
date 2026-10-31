@@ -109,6 +109,20 @@ TEST_F(OutgoingStoreTest, ListsOnlyThisThreadsWhoseCiphertextIsStillThereOldestF
   EXPECT_TRUE(store_->ListForThread("t1", Dek(2)).empty()) << "locked / wrong key: none";
 }
 
+// A resume deletes a record only when it is confirmed damaged: the load says which of the two it is.
+TEST_F(OutgoingStoreTest, ALoadTellsAGoneRecordFromADamagedOne) {
+  auto gone = store_->Load("never-existed", Dek(1));
+  ASSERT_FALSE(gone);
+  EXPECT_EQ(gone.error().code, OutgoingAttachmentStore::kLoadGone);
+
+  ASSERT_TRUE(store_->Begin(Record("dmg", "t1"), {1, 2, 3}, Dek(1)));
+  std::ofstream(store_->CipherPath("dmg") + ".rec", std::ios::binary | std::ios::trunc) << "not a sealed record";
+  auto damaged = store_->Load("dmg", Dek(1));
+  ASSERT_FALSE(damaged);
+  EXPECT_EQ(damaged.error().code, OutgoingAttachmentStore::kLoadDamaged);
+  EXPECT_TRUE(store_->HasCipher("dmg")) << "Load itself deletes nothing";
+}
+
 TEST_F(OutgoingStoreTest, RemoveDeletesBothFilesAndRefusesUnsafeIds) {
   ASSERT_TRUE(store_->Begin(Record("id-4", "t1"), {1}, Dek(1)));
   store_->Remove("id-4");
