@@ -1,5 +1,7 @@
 #include "feature/conversations/GroupMentions.h"
 
+#include "feature/conversations/ChatPresenter.h"
+#include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 
 #include <gtest/gtest.h>
@@ -288,6 +290,21 @@ TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
   for (const MentionCandidate& line : MentionCandidates(Roster(), kMe, false, NameOf, "")) {
     EXPECT_TRUE(line.short_id.empty());
   }
+}
+
+// --- a member named "ai" ------------------------------------------------------------------------
+
+TEST(GroupMentionsTest, ATextThatStartsAtAiIsTheAgentsEvenAfterAPickedMemberNamedAi) {
+  // A member called "ai" was picked once (the pick is still recorded); the user then typed "@ai question" by hand.
+  const std::string text = "@ai question";
+  const auto spans = MentionSpansForDraft(text, {Mention(kAlice, "ai")});
+  ASSERT_EQ(spans.size(), 1u) << "the composer cannot tell the pick from the typing";
+  EXPECT_TRUE(ParseAtAiPrefix(text).is_ai_invoke);
+  EXPECT_FALSE(ChatPresenter::KeepsMentionSpans(text, spans)) << "the spans drop: the question goes to the AI only";
+  EXPECT_FALSE(ChatPresenter::KeepsMentionSpans("  @ai+ question", spans));
+  // Any other text keeps its spans, and no span means nothing to send.
+  EXPECT_TRUE(ChatPresenter::KeepsMentionSpans("hi @ai", MentionSpansForDraft("hi @ai", {Mention(kAlice, "ai")})));
+  EXPECT_FALSE(ChatPresenter::KeepsMentionSpans("hello", {}));
 }
 
 // --- the everyone line in the user's language --------------------------------------------------
