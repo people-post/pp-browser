@@ -1027,6 +1027,7 @@ private:
         row.set("preview", shown.preview);
         row.set("unread", static_cast<int64_t>(shown.unread_count));
         row.set("unread_dot", shown.unread_dot);
+        row.set("mentioned", shown.mentioned);
         row.set("pinned", shown.pinned);
         row.set("muted", shown.muted);
         row.set("active", shown.active);

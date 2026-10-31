@@ -16,6 +16,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
+#include <set>
 #include <utility>
 
 namespace pbr {
@@ -230,6 +231,7 @@ void ChatPresenter::Refresh() {
   }
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
+  const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
     if (thread_prefs.archived != next.showing_archived) {
@@ -244,6 +246,7 @@ void ChatPresenter::Refresh() {
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
+    row.mentioned = mentioned.count(thread.id) > 0;
     row.pinned = thread_prefs.pinned_at != 0;
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);

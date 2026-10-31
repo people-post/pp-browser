@@ -35,6 +35,8 @@ struct ChatSessionRow {
   int unread_count = 0;
   /** Marked unread by hand with no real unread count: a dot, not a number. */
   bool unread_dot = false;
+  /** An unread message here mentions us (G015): the row says "You were mentioned". */
+  bool mentioned = false;
   bool pinned = false;
   bool muted = false;
   std::string date_label;

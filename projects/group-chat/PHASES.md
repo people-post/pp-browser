@@ -41,7 +41,7 @@ L (size limit, G014) — independent
 **m2 — Who a mention reaches; alerts**
 - [x] `MessageMentionsUs` (`lib/messaging/MentionAlert.*`): our account mentioned, or everyone from the signed roster's owner; never own / blocked sender / direct chat / removed / checking group
 - [x] Background notices carry `mentions_us`; a muted group alerts on a mention at most once a minute per group (`ChatController`, `kMutedMentionAlertGapMs`)
-- [ ] **Held mentions:** a mention in a group still checking its members (or before its roster is known) is held, then decided when the check settles if the message is under 10 min old (`ConversationsHub::ResumeGroupRosterChecks` / the roster sync family's settle is where the check ends)
+- [x] **Held mentions:** `MentionVerdictFor` tells a mention that cannot be decided yet (`Held`: the group is checking, or its roster unknown) from one that does not reach us; the orchestrator holds it in memory and decides it when the group's roster changes (`GroupRosterStore::SetOnChanged` → `DecideHeldMentions`) — marked and alerted like a fresh one if under `kHeldMentionMaxAgeMs` (10 min), else dropped. gtest for the verdict; no lab case yet (a restore's check settles too fast to mention into reliably)
 - [x] Alerts for group messages that arrive over Amp too: both ingest paths raise the background notice through one helper (`MeshDeliveryOrchestrator::BackgroundNoticeFor`); the alert decision is one function (`NoticeAlerts`, used by `ChatController` and the probe)
 
 **m3 — Mute mentions too**
@@ -49,8 +49,9 @@ L (size limit, G014) — independent
 - [x] Menu choice on a muted group: "Mute mentions too" / "Alert on mentions" (`SessionMenuItem::MuteMentions` / `AllowMentions`, `ChatPresenter::SetMuteMentions`), en + zh-Hans
 
 **m4 — Mention marker**
-- [ ] `thread_mentions` rows (DATA_LAYOUT): written when a live message mentions us (not by history sync), dropped on thread open, on message delete (for everyone or here), with the thread
-- [ ] Chat list: "You were mentioned" (`ChatPresenter` row), opening jumps to the oldest unread mention
+- [x] `thread_mentions` rows (`ThreadMentionsStore`, DATA_LAYOUT): written by both live ingest paths (`NoteMention`; not when the chat is open; never by history sync), dropped on thread open, on message delete (for everyone or here), with the thread; gtest `thread_mentions_store_test`; lab `muted_group_alerts_on_a_mention` checks the marker comes and goes
+- [x] Chat list row flag `ChatSessionRow::mentioned` (`ConversationsFacade::ThreadsWithMentions`), `OldestMention(thread)` for the jump
+- [ ] Chat list shows "You were mentioned"; opening jumps to the oldest unread mention (UI)
 
 **m5 — Sending and display**
 - [x] `ConversationsFacade::SendGroupText(thread, text, spans)`: spans checked, kept in `payload_json`; a group send with spans carries the full ChatPayload (type 6) — it used to send only rich non-text content that way

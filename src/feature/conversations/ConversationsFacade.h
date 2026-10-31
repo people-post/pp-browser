@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -145,6 +146,10 @@ public:
    * is dropped, the text stays) and sent in the ChatPayload (type 6); the row keeps them in `payload_json`.
    */
   Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
+  /** The chats with an unread message that mentions us (G015 marker); empty when unknown. */
+  std::set<std::string> ThreadsWithMentions();
+  /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
+  std::optional<std::string> OldestMention(const std::string& thread_id);
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */

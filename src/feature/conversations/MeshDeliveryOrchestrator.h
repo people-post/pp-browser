@@ -7,6 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/messaging/ThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterStore.h"
@@ -138,6 +139,13 @@ public:
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
+  /** Where a live message that mentions us is marked (G015); null: not marked. */
+  void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
+  /**
+   * A group's member check settled (its roster changed): its held mentions are decided — those still under
+   * kHeldMentionMaxAgeMs that reach us are marked and alert like a fresh one; the rest are dropped.
+   */
+  void DecideHeldMentions(const std::string& group_id);
   /**
    * Bind Amp chat/history/blob on an existing orchestrator.
    * Prefer this over destroying/recreating the orchestrator after messaging is ready —
@@ -357,6 +365,18 @@ private:
   };
   std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
                                                       const std::string& local_account);
+  /** A live message that mentions us is marked (unless its chat is open); one that cannot be decided is held. */
+  void NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account);
+  struct HeldMention {
+    std::string group_id;
+    std::string thread_id;
+    ThreadMessage message;
+    std::string local_account;
+    int64_t held_at_ms = 0;
+  };
+  ThreadMentionsStore* mentions_ = nullptr;
+  std::mutex held_mentions_mutex_;
+  std::vector<HeldMention> held_mentions_;
   bool InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message, const std::string& local_account);
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;

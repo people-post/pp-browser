@@ -327,6 +327,24 @@ Roe<ThreadMessage> ConversationsFacade::SendGroupText(const std::string& thread_
   return hub_.MeshMessaging().SendGroupMessage(thread_id, text, opts);
 }
 
+std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
+  ThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return {};
+  }
+  auto threads = mentions->Threads();
+  return threads ? std::move(*threads) : std::set<std::string>{};
+}
+
+std::optional<std::string> ConversationsFacade::OldestMention(const std::string& thread_id) {
+  ThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return std::nullopt;
+  }
+  auto oldest = mentions->Oldest(thread_id);
+  return oldest ? *oldest : std::nullopt;
+}
+
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
   return hub_.ShareContact(thread_id, contact_id);
 }

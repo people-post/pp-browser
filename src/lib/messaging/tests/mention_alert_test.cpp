@@ -57,6 +57,9 @@ protected:
   bool Reaches(const ThreadMessage& message, bool blocked = false) {
     return MessageMentionsUs(message, kGroup, kMe, *roster_, blocked);
   }
+  MentionVerdict Verdict(const ThreadMessage& message) {
+    return MentionVerdictFor(message, kGroup, kMe, *roster_, false);
+  }
 
   void SetSyncState(GroupSyncState state) {
     GroupMetadata metadata = roster_->LoadMetadata(kGroup).value().value();
@@ -95,6 +98,18 @@ TEST_F(MentionAlertTest, NotWhileTheGroupIsCheckingOrAfterWeWereRemoved) {
   EXPECT_FALSE(Reaches(From(kBob, "@C hi", {MentionOf(kMe)}))) << "the roster may be stale (G013)";
   SetSyncState(GroupSyncState::Removed);
   EXPECT_FALSE(Reaches(From(kOwner, "@everyone", {Everyone()})));
+}
+
+TEST_F(MentionAlertTest, AMentionWhileTheGroupIsCheckingIsHeldNotDropped) {
+  SetSyncState(GroupSyncState::Checking);
+  EXPECT_EQ(Verdict(From(kBob, "@C hi", {MentionOf(kMe)})), MentionVerdict::Held);
+  EXPECT_EQ(Verdict(From(kOwner, "@everyone", {Everyone()})), MentionVerdict::Held);
+  EXPECT_EQ(Verdict(From(kBob, "plain", {})), MentionVerdict::No) << "nothing to hold";
+  EXPECT_EQ(Verdict(From(kBob, "@A hi", {MentionOf(kOwner)})), MentionVerdict::No) << "someone else";
+  SetSyncState(GroupSyncState::Active);
+  EXPECT_EQ(Verdict(From(kBob, "@C hi", {MentionOf(kMe)})), MentionVerdict::Us) << "decided once it settles";
+  SetSyncState(GroupSyncState::Removed);
+  EXPECT_EQ(Verdict(From(kBob, "@C hi", {MentionOf(kMe)})), MentionVerdict::No);
 }
 
 TEST(MutedMentionAlertTest, AMutedChatAlertsOnlyOnAMentionUnlessMentionsAreMutedToo) {

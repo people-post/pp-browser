@@ -18,6 +18,21 @@ namespace pbr {
 bool MessageMentionsUs(const ThreadMessage& message, const std::string& group_id, const std::string& local_account,
                        GroupRosterStore& roster, bool sender_blocked);
 
+enum class MentionVerdict {
+  No,
+  Us,
+  /**
+   * It would reach us, but the group is still checking its members or its roster is not known yet: decided when
+   * the check settles, if the message is under kHeldMentionMaxAgeMs old then (G015).
+   */
+  Held,
+};
+/** MessageMentionsUs, telling a mention that cannot be decided yet (Held) from one that does not reach us. */
+MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string& group_id,
+                                 const std::string& local_account, GroupRosterStore& roster, bool sender_blocked);
+/** A held mention older than this when its group's check settles is dropped: no marker, no alert. */
+inline constexpr int64_t kHeldMentionMaxAgeMs = 10 * 60 * 1000;
+
 /**
  * A muted group still alerts on a mention, at most once per this many ms per group (G015): one member cannot
  * flood a muted group with mentions.
