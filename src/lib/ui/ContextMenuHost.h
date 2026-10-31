@@ -46,6 +46,8 @@ ui::Vector2i MenuPositionBelow(ui::Element* element, float gap_px = 4.f);
 /** Anchor a float menu below an element, right-aligned to ~menu_min_width_px. */
 ui::Vector2i MenuPositionBelowRightAligned(ui::Element* element, float menu_min_width_px = 180.f,
                                             float gap_px = 4.f);
+/** Anchor a float menu that ends just above an element (left-aligned): a menu over the composer's buttons. */
+ui::Vector2i MenuPositionAboveEvent(ui::Event& ev, float gap_px = 4.f);
 /** Resolve current/target element from an event, then MenuPositionBelow. */
 ui::Vector2i MenuPositionBelowEvent(ui::Event& ev, float gap_px = 4.f);
 /** Resolve current/target element from an event, then MenuPositionBelowRightAligned. */

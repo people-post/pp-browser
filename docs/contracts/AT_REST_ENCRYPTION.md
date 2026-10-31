@@ -132,6 +132,8 @@ Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{con
 | `{profile}/blob_cipher/outgoing/<id>.rec` | record: thread, attachment fields **including the content key and nonce**, size, time | `FileCipher` under the profile DEK, AAD purpose `outgoing-attachment` (`OutgoingAttachmentStore`) |
 | `{profile}/blob_cipher/incoming/<hash>.part` | ciphertext of a CDN download in progress | not wrapped (ciphertext) |
 
+`{profile}/picked/<unique>/<name>` (Android only) is the one place the **plaintext** of a file the person is sending sits unencrypted in the profile: the copy of a `content://` pick, streamed there so image decoders and file reads can open it, deleted when the attachment has been prepared and wiped at start (iOS has the same property in `tmp/pp-picks`, removed by `ReleasePickedFile`).
+
 The key never sits next to the ciphertext in the clear. Plaintext of a sent or received file is never written here; it goes to the private CAS and `blobs_view/` as before. The `.rec` is the one place a content key is kept before the message exists (the message row, with the key in its DEK-encrypted `thread.db`, is only created once the ciphertext has been delivered): while locked the record cannot be read, so a retry waits for the unlock.
 
 ## Test fixtures

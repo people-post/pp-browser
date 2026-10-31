@@ -10,6 +10,7 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -1004,12 +1005,18 @@ void ChatController::SyncComposerInputState() {
   chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing;
 }
 
-void ChatController::OnAttachFile() {
+void ChatController::OnAttachFile(ui::Event* ev) {
   if (!messaging_ready_ || !facade_) {
     return;
   }
   if (chat_.composer_input_disabled || chat_.attachment_uploading || !chat_.show_attach_button) {
     return;
+  }
+  // B90: the menu opens at the attach button, not at a fixed corner (which was behind the keyboard on a phone).
+  if (ev) {
+    const ui::Vector2i anchor = MenuPositionAboveEvent(*ev);
+    attach_menu_x_ = anchor.x;
+    attach_menu_y_ = anchor.y;
   }
   if (InAiComposerContext()) {
     agent_.OnAttachAiImage();
@@ -1034,6 +1041,12 @@ void ChatController::OnAttachFile() {
   const auto pick_image = [picked](const OutgoingPickSource source) {
     return [on_picked = picked(source)]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
   };
+  // "Photo" on a phone: the library with pictures and videos.
+  const auto pick_photo_or_video = [picked]() {
+    return [on_picked = picked(OutgoingPickSource::Photo)]() {
+      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked);
+    };
+  };
   const auto pick_file = [picked]() {
     return [on_picked = picked(OutgoingPickSource::File)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
   };
@@ -1042,12 +1055,12 @@ void ChatController::OnAttachFile() {
   // "File" and "Original photo".
   std::vector<ContextMenuAction> actions;
   if (Platform::IsMobile()) {
-    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_image(OutgoingPickSource::Photo)});
+    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video()});
   }
   actions.push_back({"attach_original", Tr("chat.attach.original"), nullptr, pick_image(OutgoingPickSource::Original)});
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
   actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
 }
 
 std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress() {
@@ -1179,7 +1192,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   chat_.attachment_uploading = true;
   chat_.attachment_failed = false;
   failed_record_id_.clear();
-  chat_.attachment_draft_name = std::filesystem::path(path).filename().string().c_str();
+  const std::string shown_name = DisplayNameFromPickedPath(path);  // a content:// URI is not a name
+  chat_.attachment_draft_name =
+      (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
   chat_.status = Tr("chat.attachment.uploading").c_str();
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
@@ -1198,8 +1213,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
 
   // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
-  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, finish_uploading]() {
-    auto prepared = PrepareOutgoingAttachment(path, limits, source);
+  const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
+  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading]() {
+    auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
     ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
     AppRuntime::PostUI([this, thread_id, finish_uploading, prepared = std::move(prepared)]() mutable {
       if (!prepared) {
@@ -1258,7 +1274,7 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
   actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
   actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
 }
 
 namespace {
@@ -1290,24 +1306,27 @@ void ChatController::OpenAttachment(const std::string& message_id) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  const auto size = facade_->AttachmentByteLengthForMessage(thread_id, message_id);
-  if (size && *size > kMaxDirectAttachmentBytes) {
+  const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
+  const bool is_video = info && IsAttachmentVideoMime(info->mime);
+  if (info && info->byte_length > kMaxDirectAttachmentBytes) {
     UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
   }
   // The decrypt of a stored copy is blocking work (seconds for a large file): off the UI thread.
-  AppRuntime::PostWorkerNormal([this, thread_id, message_id]() {
+  AppRuntime::PostWorkerNormal([this, thread_id, message_id, is_video]() {
     auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
-    AppRuntime::PostUI([this, thread_id, message_id, path = std::move(path), needs_confirm]() {
+    AppRuntime::PostUI([this, thread_id, message_id, is_video, path = std::move(path), needs_confirm]() {
       opening_message_ids_.erase(message_id);
       if (!path) {
         UserFeedback::Fail(Tr("chat.attachment.not_ready"));
         return;
       }
       SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
-      const auto open_file = [path = *path]() {
+      const auto open_file = [path = *path, is_video]() {
         if (!PlatformOpenFile(path)) {
-          UserFeedback::Fail(Tr("chat.attachment.open_failed"));
+          // A video this device has no player for (an iPhone's HEVC .mov on an Android phone or a Windows PC,
+          // a codec the system lacks): say so plainly instead of a generic failure.
+          UserFeedback::Fail(Tr(is_video ? "chat.attachment.video_unplayable" : "chat.attachment.open_failed"));
         }
       };
       if (needs_confirm) {
@@ -2735,7 +2754,7 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& message_id, const std::string& emoji) { ToggleReaction(message_id, emoji); }));
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
-        ctor.BindEventCallback("attach_file", DataEvent([this] { OnAttachFile(); }));
+        ctor.BindEventCallback("attach_file", DataEventAt([this](ui::Event& ev) { OnAttachFile(&ev); }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));

@@ -192,6 +192,50 @@ std::string AttachmentMimeFromFilename(const std::string& filename) {
   return found == kMimeByExtension.end() ? std::string("application/octet-stream") : found->second;
 }
 
+std::string AttachmentExtensionFromContent(const std::vector<uint8_t>& head) {
+  const auto starts = [&](const size_t at, const char* text) {
+    const size_t n = std::strlen(text);
+    return head.size() >= at + n && std::memcmp(head.data() + at, text, n) == 0;
+  };
+  if (head.size() >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) {
+    return "jpg";
+  }
+  if (starts(0, "\x89PNG\r\n\x1a\n")) {
+    return "png";
+  }
+  if (starts(0, "GIF87a") || starts(0, "GIF89a")) {
+    return "gif";
+  }
+  if (starts(0, "RIFF") && starts(8, "WEBP")) {
+    return "webp";
+  }
+  if (starts(0, "RIFF") && starts(8, "WAVE")) {
+    return "wav";
+  }
+  if (starts(4, "ftyp")) {
+    if (starts(8, "qt  ")) {
+      return "mov";
+    }
+    if (starts(8, "M4A ")) {
+      return "m4a";
+    }
+    return "mp4";
+  }
+  if (starts(0, "\x1a\x45\xdf\xa3")) {
+    return "webm";
+  }
+  if (starts(0, "OggS")) {
+    return "ogg";
+  }
+  if (starts(0, "ID3") || (head.size() >= 2 && head[0] == 0xFF && (head[1] & 0xE0) == 0xE0)) {
+    return "mp3";
+  }
+  if (starts(0, "%PDF-")) {
+    return "pdf";
+  }
+  return {};
+}
+
 std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
   // Known mimes map to a fixed extension. Beyond them the peer-supplied filename is trusted only
   // for mimes that open after a confirm (AttachmentOpenNeedsConfirm) and only for an inert

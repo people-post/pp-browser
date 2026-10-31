@@ -308,8 +308,12 @@ public:
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
-  /** Declared size of an attachment message (none: not an attachment). */
-  std::optional<uint64_t> AttachmentByteLengthForMessage(const std::string& thread_id, const std::string& message_id);
+  struct AttachmentInfo {
+    std::string mime;
+    uint64_t byte_length = 0;
+  };
+  /** Declared type and size of an attachment message (none: not an attachment). */
+  std::optional<AttachmentInfo> AttachmentInfoForMessage(const std::string& thread_id, const std::string& message_id);
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
                                                            const std::string& message_id);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);

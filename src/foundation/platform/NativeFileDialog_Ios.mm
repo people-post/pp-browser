@@ -56,6 +56,23 @@ std::string CopyIntoPickRoot(NSURL* source, NSString* name) {
   return std::string(dest.fileSystemRepresentation);
 }
 
+/** A HEIC / HEIF photo (what the library gives when asked for the current representation) as a JPEG next to it. */
+std::string ConvertHeicToJpeg(const std::string& path) {
+  NSString* file = [NSString stringWithUTF8String:path.c_str()];
+  NSString* ext = file.pathExtension.lowercaseString;
+  if (![ext isEqualToString:@"heic"] && ![ext isEqualToString:@"heif"]) {
+    return path;
+  }
+  UIImage* image = [UIImage imageWithContentsOfFile:file];
+  NSData* jpeg = image != nil ? UIImageJPEGRepresentation(image, 0.92) : nil;
+  NSString* dest = [[file stringByDeletingPathExtension] stringByAppendingPathExtension:@"jpg"];
+  if (jpeg == nil || ![jpeg writeToFile:dest atomically:YES]) {
+    return path; // left as the HEIC: the consumer shows it as a file
+  }
+  [[NSFileManager defaultManager] removeItemAtPath:file error:nil];
+  return std::string(dest.fileSystemRepresentation);
+}
+
 void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   pbr::NativeFileDialogCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
@@ -117,7 +134,9 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
   // Ask for the JPEG / PNG the "compatible" mode offers: SDL_image cannot decode the HEIC originals here
   // (2026-10-20 device: photos failed as "not an image"). Any image only as a last resort.
   NSString* type = UTTypeImage.identifier;
-  if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
+  if ([provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
+    type = UTTypeMovie.identifier; // a video from the library picker: its file as it is (.mov, HEVC)
+  } else if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
     type = UTTypeJPEG.identifier;
   } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
     type = UTTypePNG.identifier;
@@ -131,6 +150,7 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
                                     if (url != nil) {
                                       std::string copied = CopyIntoPickRoot(url, name);
                                       if (!copied.empty()) {
+                                        copied = ConvertHeicToJpeg(copied);
                                         paths.push_back(std::move(copied));
                                       }
                                     }
@@ -217,6 +237,29 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   }
 }
 
+void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+  if (!callback) {
+    return;
+  }
+  @autoreleasepool {
+    UIViewController* host = nil;
+    PPPickDelegate* delegate = BeginPick(window, std::move(callback), &host);
+    if (delegate == nil) {
+      return;
+    }
+    PHPickerConfiguration* config = [[[PHPickerConfiguration alloc] init] autorelease];
+    config.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter],
+                                                                    [PHPickerFilter videosFilter] ]];
+    config.selectionLimit = 1;
+    // Current: a video arrives as the library has it (HEVC .mov is not transcoded to H.264, which on a long clip
+    // takes minutes); a HEIC photo then arrives as HEIC and ConvertHeicToJpeg makes the JPEG.
+    config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
+    PHPickerViewController* picker = [[[PHPickerViewController alloc] initWithConfiguration:config] autorelease];
+    picker.delegate = delegate;
+    [host presentViewController:picker animated:YES completion:nil];
+  }
+}
+
 namespace {
 
 void PresentDocumentPicker(SDL_Window* window, NativeFileDialogCallback callback, NSArray<UTType*>* types) {
@@ -294,6 +337,17 @@ void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::stri
     [host presentViewController:picker animated:YES completion:nil];
   }
 }
+
+std::optional<ImportedPick> ImportPickedFile(const std::string& picked, const std::string& /*scratch_dir*/,
+                                             bool /*force_copy*/) {
+  // iOS picks are already private files (tmp/pp-picks); there are no content:// URIs.
+  ImportedPick pick;
+  pick.path = picked;
+  pick.name = [[NSString stringWithUTF8String:picked.c_str()] lastPathComponent].UTF8String;
+  return pick;
+}
+
+void RemoveImportedPick(const ImportedPick& /*pick*/) {}
 
 std::optional<std::string> ReadPickedFile(const std::string& path, const size_t max_bytes) {
   @autoreleasepool {

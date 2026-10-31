@@ -32,6 +32,7 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.attachment.pick_again", {}},
       {"chat.attachment.retry", {}},
       {"chat.attachment.opening", {}},
+      {"chat.attachment.video_unplayable", {}},
       {"chat.attachment.space_warning", {"{{percent}}"}},
       {"errors.blob.not_configured", {}},
       {"errors.blob.upload_rejected", {}},

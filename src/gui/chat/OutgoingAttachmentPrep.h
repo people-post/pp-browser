@@ -36,9 +36,12 @@ inline constexpr int kShrunkImageLongEdge = 2048;
  * sends it as it is instead, but a JPEG loses its location and camera data (`StripJpegLocation`). Fail closed:
  * a picture from "Photo" that cannot be decoded, or a JPEG from "Original" that cannot be cleaned, is refused
  * (ImageUnprocessable), never sent. From "File" an undecodable picture goes as the plain file the person chose.
- * A GIF and every other kind go as plain files.
+ * A GIF and every other kind go as plain files (a video as it is: .mov / HEVC are not transcoded).
+ *
+ * `path` may be an Android content:// URI: it is first streamed into `scratch_dir` (removed again before this
+ * returns) because decoders and ifstream cannot open it. A pick that carries no name is named from its content.
  */
 Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const AttachmentLimits& limits,
-                                                  OutgoingPickSource source);
+                                                  OutgoingPickSource source, const std::string& scratch_dir = {});
 
 } // namespace pbr

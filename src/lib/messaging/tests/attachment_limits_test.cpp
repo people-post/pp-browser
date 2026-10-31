@@ -136,6 +136,24 @@ TEST(AttachmentMimeTest, TypeTableCoversTheFourKinds) {
   EXPECT_EQ(AttachmentMimeFromFilename("noext"), "application/octet-stream");
 }
 
+TEST(AttachmentMimeTest, AFileWithNoNameIsTypedByItsFirstBytes) {
+  const auto bytes = [](const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); };
+  const auto raw = [](const char* s, const size_t n) { return std::vector<uint8_t>(s, s + n); };
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18" "ftypqt  \0\0\0\0", 16))), "mov");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18" "ftypisom\0\0\0\0", 16))), "mp4");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18" "ftypM4A \0\0\0\0", 16))), "m4a");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes("\x1a\x45\xdf\xa3 more")), "webm");
+  EXPECT_EQ(AttachmentExtensionFromContent(raw("OggS\0\2", 6)), "ogg");
+  EXPECT_EQ(AttachmentExtensionFromContent(raw("RIFF\0\0\0\0WAVEfmt ", 16)), "wav");
+  EXPECT_EQ(AttachmentExtensionFromContent(raw("RIFF\0\0\0\0WEBPVP8 ", 16)), "webp");
+  EXPECT_EQ(AttachmentExtensionFromContent(raw("ID3\3\0", 5)), "mp3");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes("%PDF-1.7")), "pdf");
+  EXPECT_EQ(AttachmentExtensionFromContent({0xFF, 0xD8, 0xFF, 0xE0}), "jpg");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes("GIF89a..")), "gif");
+  EXPECT_EQ(AttachmentExtensionFromContent(raw("MZ\x90\0 an executable", 16)), "") << "unknown stays unnamed";
+  EXPECT_EQ(AttachmentExtensionFromContent({}), "");
+}
+
 TEST(AttachmentMimeTest, NewTypesKeepTheirExtensionOnDisk) {
   EXPECT_EQ(AttachmentExtensionFromMime("video/quicktime", "x.exe"), "mov") << "mapped mimes ignore the filename";
   EXPECT_EQ(AttachmentExtensionFromMime("audio/mpeg", "song.mp3"), "mp3");

@@ -4,8 +4,13 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_dialog.h>
 
+#include "foundation/platform/PickedFileName.h"
+
+#include <cstdio>
+#include <filesystem>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace pbr {
 
@@ -47,6 +52,18 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   SDL_ShowOpenFileDialog(OnDialogComplete, state, window, include_heic ? filters_heic : filters, 2, nullptr, false);
 }
 
+void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+  if (!callback) {
+    return;
+  }
+  static const SDL_DialogFileFilter filters[] = {
+      {"Photos and videos", "png;jpg;jpeg;webp;gif;mp4;mov;m4v;webm;3gp"},
+      {"All files", "*"},
+  };
+  auto* state = new DialogState{.callback = std::move(callback)};
+  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, filters, 2, nullptr, false);
+}
+
 void ReleasePickedFile(const std::string& /*path*/) {} // the dialog returns the user's own file
 
 void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
@@ -84,6 +101,65 @@ void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::stri
     done(!paths.empty() && WriteWhole(paths.front(), bytes));
   }};
   SDL_ShowSaveFileDialog(OnDialogComplete, state, window, nullptr, 0, suggested_name.c_str());
+}
+
+std::optional<ImportedPick> ImportPickedFile(const std::string& picked, const std::string& scratch_dir,
+                                             const bool force_copy) {
+  const bool is_uri = picked.rfind("content://", 0) == 0;
+  ImportedPick pick;
+  pick.name = DisplayNameFromPickedPath(picked);
+  if (!is_uri && !force_copy) {
+    pick.path = picked;
+    if (pick.name.empty()) {
+      pick.name = std::filesystem::path(picked).filename().string();
+    }
+    return pick;
+  }
+  if (scratch_dir.empty()) {
+    return std::nullopt;
+  }
+  SDL_IOStream* in = SDL_IOFromFile(picked.c_str(), "rb");
+  if (in == nullptr) {
+    return std::nullopt;
+  }
+  std::error_code ec;
+  const std::filesystem::path dir = std::filesystem::path(scratch_dir) /
+                                    (std::to_string(SDL_GetTicksNS()) + "-" + std::to_string(reinterpret_cast<uintptr_t>(in)));
+  std::filesystem::create_directories(dir, ec);
+  const std::string file_name = pick.name.empty() ? std::string("attachment") : pick.name;
+  const std::filesystem::path dest = dir / file_name;
+  std::FILE* out = ec ? nullptr : std::fopen(dest.string().c_str(), "wb");
+  bool ok = out != nullptr;
+  if (ok) {
+    std::vector<char> buffer(1 << 20);
+    while (true) {
+      const size_t n = SDL_ReadIO(in, buffer.data(), buffer.size());
+      if (n == 0) {
+        break;
+      }
+      if (std::fwrite(buffer.data(), 1, n, out) != n) {
+        ok = false;
+        break;
+      }
+    }
+    ok = (std::fclose(out) == 0) && ok;
+  }
+  SDL_CloseIO(in);
+  if (!ok) {
+    std::filesystem::remove_all(dir, ec);
+    return std::nullopt;
+  }
+  pick.path = dest.string();
+  pick.copied = true;
+  return pick;
+}
+
+void RemoveImportedPick(const ImportedPick& pick) {
+  if (!pick.copied || pick.path.empty()) {
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(std::filesystem::path(pick.path).parent_path(), ec);
 }
 
 std::optional<std::string> ReadPickedFile(const std::string& path, const size_t max_bytes) {

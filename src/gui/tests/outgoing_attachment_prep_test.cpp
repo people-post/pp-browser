@@ -151,6 +151,53 @@ TEST_F(OutgoingAttachmentPrepTest, OriginalPngGoesAsItIs) {
   EXPECT_EQ(out->mime, "image/png");
 }
 
+// "Photo" now offers videos on a phone: a .mov (HEVC) goes as it is, typed as video, never transcoded or refused.
+TEST_F(OutgoingAttachmentPrepTest, AVideoFromThePhotoLibraryGoesAsItIsAsAFile) {
+  limits_.max_video_bytes = 100'000'000;
+  std::vector<uint8_t> mov = {0, 0, 0, 0x18, 'f', 't', 'y', 'p', 'q', 't', ' ', ' ', 0, 0, 0, 0};
+  mov.resize(5000, 0x5a);
+  const std::string path = (dir_ / "IMG_0042.MOV").string();
+  WriteFile(path, mov);
+  auto out = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::Photo);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->mime, "video/quicktime");
+  EXPECT_EQ(out->filename, "IMG_0042.MOV");
+  EXPECT_EQ(out->bytes, mov);
+  EXPECT_FALSE(out->image_is_shrunk);
+}
+
+// A pick that carries no name (an Android media-store URI, copied to a file called "attachment") is named by what
+// is in it, so a video is a video and a photo a photo.
+TEST_F(OutgoingAttachmentPrepTest, ANamelessPickIsTypedByItsContent) {
+  limits_.max_video_bytes = 100'000'000;
+  std::vector<uint8_t> mp4 = {0, 0, 0, 0x18, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0};
+  mp4.resize(4000, 0x11);
+  const std::string path = (dir_ / "attachment").string();
+  WriteFile(path, mp4);
+  auto out = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::Photo);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->mime, "video/mp4");
+  EXPECT_EQ(out->filename, "attachment.mp4");
+}
+
+// The content:// route end to end on a plain file: the pick is copied to the scratch folder, prepared from the
+// copy, and the copy is gone afterwards (the person's file is untouched).
+TEST_F(OutgoingAttachmentPrepTest, ACopiedPickIsPreparedAndTheCopyRemoved) {
+  const std::string path = (dir_ / "note.pdf").string();
+  WriteFile(path, std::vector<uint8_t>(300, 7));
+  const std::string scratch = (dir_ / "picked").string();
+  // A plain path is used where it is; the scratch folder stays unused.
+  auto out = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::File, scratch);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->filename, "note.pdf");
+  EXPECT_FALSE(std::filesystem::exists(scratch));
+  // An unreadable content:// pick is an error the person can read, not a crash.
+  auto gone = PrepareOutgoingAttachment("content://nowhere/document/video%3A1", limits_, OutgoingPickSource::Photo, scratch);
+  ASSERT_FALSE(gone);
+  EXPECT_EQ(gone.error().code, static_cast<int32_t>(OutgoingAttachmentError::Unreadable));
+  EXPECT_FALSE(gone.error().user.empty());
+}
+
 TEST_F(OutgoingAttachmentPrepTest, AGifIsNeverShrunk) {
   std::vector<uint8_t> gif = {'G', 'I', 'F', '8', '9', 'a', 4, 0, 4, 0, 0, 0, 0, ';'};
   const std::string path = (dir_ / "loop.gif").string();

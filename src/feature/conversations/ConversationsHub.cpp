@@ -2601,6 +2601,8 @@ void ConversationsHub::CleanStaleAttachmentFiles() {
   }
   OutgoingAttachmentStore(data_dir_, profile_id_).CleanupStale(OutgoingAttachmentStore::kMaxAgeMs);
   CleanIncomingCiphertext(data_dir_); // a download that never finished
+  std::error_code picks_ec;
+  std::filesystem::remove_all(std::filesystem::path(data_dir_) / "picked", picks_ec); // copies of content:// picks
   (void)WipeAllAttachmentViewCaches(data_dir_); // plaintext views live for a session only: none from the last one
 }
 

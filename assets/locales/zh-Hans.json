@@ -665,6 +665,7 @@
     "chat.attachment.open": "打开",
     "chat.attachment.not_ready": "附件尚未就绪",
     "chat.attachment.opening": "正在打开…",
+    "chat.attachment.video_unplayable": "这台设备打不开这个视频——它的格式在这里不受支持。可以请对方换个格式再发。",
     "chat.attachment.open_failed": "无法打开附件",
     "chat.attachment.open_confirm_title": "打开此文件？",
     "chat.attachment.open_confirm_body": "此文件将在您设备上的其他应用中打开。",

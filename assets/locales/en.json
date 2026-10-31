@@ -665,6 +665,7 @@
     "chat.attachment.open": "Open",
     "chat.attachment.not_ready": "Attachment isn't ready yet",
     "chat.attachment.opening": "Opening…",
+    "chat.attachment.video_unplayable": "This device can't open this video — its format isn't supported here. Ask the sender to send it in another format.",
     "chat.attachment.open_failed": "Couldn't open attachment",
     "chat.attachment.open_confirm_title": "Open this file?",
     "chat.attachment.open_confirm_body": "This file will open in another app on your device.",

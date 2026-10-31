@@ -61,6 +61,15 @@ ui::Vector2i MenuPositionBelowRightAligned(ui::Element* element, float menu_min_
   return position;
 }
 
+ui::Vector2i MenuPositionAboveEvent(ui::Event& ev, const float gap_px) {
+  ui::Element* element = EventAnchorElement(ev);
+  if (!element) {
+    return {0, 0};
+  }
+  const ui::Vector2f offset = element->GetAbsoluteOffset(ui::BoxArea::Border);
+  return {static_cast<int>(offset.x), static_cast<int>(offset.y - gap_px)};
+}
+
 ui::Vector2i MenuPositionBelowEvent(ui::Event& ev, float gap_px) {
   return MenuPositionBelow(EventAnchorElement(ev), gap_px);
 }

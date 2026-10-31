@@ -861,10 +861,10 @@ std::optional<ChatAttachmentFields> AttachmentFieldsOfMessage(ConversationsHub& 
 }
 } // namespace
 
-std::optional<uint64_t> ConversationsFacade::AttachmentByteLengthForMessage(const std::string& thread_id,
-                                                                            const std::string& message_id) {
+std::optional<ConversationsFacade::AttachmentInfo> ConversationsFacade::AttachmentInfoForMessage(
+    const std::string& thread_id, const std::string& message_id) {
   if (auto fields = AttachmentFieldsOfMessage(hub_, thread_id, message_id)) {
-    return fields->byte_length;
+    return AttachmentInfo{.mime = fields->mime, .byte_length = fields->byte_length};
   }
   return std::nullopt;
 }

@@ -179,7 +179,7 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
-  void OnAttachFile();
+  void OnAttachFile(ui::Event* ev = nullptr);
   void StartAttachmentUpload(const std::string& path, OutgoingPickSource source);
   /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
   void OnRetryAttachmentSend();
@@ -231,6 +231,9 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
+  int attach_menu_x_ = 12;
+  int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
   std::string pending_chip_thread_;

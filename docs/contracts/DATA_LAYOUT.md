@@ -79,6 +79,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
     blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
                         # a file above 4 MiB appears here only after an explicit Open
     # blobs/            # not used; durable bytes live in cas/private only
+  picked/               # Android: <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as
+                        # the attachment is prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
   blob_cipher/
     outgoing/           # <id> = AEAD ciphertext of an attachment being sent, <id>.rec = its record (content key, fields,
                         # thread) sealed under the profile DEK. Removed when the message is sent, when the person

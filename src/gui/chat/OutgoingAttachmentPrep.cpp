@@ -3,6 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AiImagePrep.h"
 #include "foundation/platform/ImageMetadata.h"
+#include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/AttachmentCache.h"
 
 #include <filesystem>
@@ -64,13 +65,30 @@ Roe<std::vector<uint8_t>> ReadAll(const std::string& path, const uint64_t max_by
 
 } // namespace
 
-Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const AttachmentLimits& limits,
-                                                  const OutgoingPickSource source) {
-  OutgoingAttachment out;
-  out.filename = std::filesystem::path(path).filename().string();
-  if (out.filename.empty()) {
-    out.filename = "attachment";
+namespace {
+
+/** The name to send under: the pick's own, else "attachment" with the extension its first bytes imply. */
+std::string NameForPick(const std::string& path, const std::string& picked_name) {
+  std::string name = picked_name.empty() ? std::filesystem::path(path).filename().string() : picked_name;
+  if (name.empty()) {
+    name = "attachment";
   }
+  if (std::filesystem::path(name).extension().empty()) {
+    std::ifstream in(path, std::ios::binary);
+    std::vector<uint8_t> head(32);
+    in.read(reinterpret_cast<char*>(head.data()), static_cast<std::streamsize>(head.size()));
+    head.resize(static_cast<size_t>(in.gcount()));
+    if (const std::string ext = AttachmentExtensionFromContent(head); !ext.empty()) {
+      name += "." + ext;
+    }
+  }
+  return name;
+}
+
+Roe<OutgoingAttachment> PrepareFromLocalFile(const std::string& path, const std::string& picked_name,
+                                             const AttachmentLimits& limits, const OutgoingPickSource source) {
+  OutgoingAttachment out;
+  out.filename = NameForPick(path, picked_name);
   out.mime = AttachmentMimeFromFilename(out.filename);
 
   // The content decides what it is; the name only says what the sender called it.
@@ -132,6 +150,20 @@ Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const
   }
   out.bytes = std::move(*bytes);
   return out;
+}
+
+} // namespace
+
+Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const AttachmentLimits& limits,
+                                                  const OutgoingPickSource source, const std::string& scratch_dir) {
+  auto picked = ImportPickedFile(path, scratch_dir);
+  if (!picked) {
+    return PrepError(OutgoingAttachmentError::Unreadable, "Could not read the picked file",
+                     Tr("chat.attachment.read_failed"));
+  }
+  auto result = PrepareFromLocalFile(picked->path, picked->name, limits, source);
+  RemoveImportedPick(*picked); // the private copy of a content:// pick
+  return result;
 }
 
 } // namespace pbr

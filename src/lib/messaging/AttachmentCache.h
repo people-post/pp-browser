@@ -30,6 +30,12 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
  */
 std::string AttachmentMimeFromFilename(const std::string& filename);
 
+/**
+ * The extension a file's first bytes say it has (png, jpg, gif, webp, mp4, mov, m4a, webm, ogg, wav, mp3, pdf), or
+ * empty when they say nothing. For a pick that carries no name (an Android media-store URI), so it can be typed.
+ */
+std::string AttachmentExtensionFromContent(const std::vector<uint8_t>& head);
+
 bool IsAttachmentImageMime(const std::string& mime);
 bool IsAttachmentVideoMime(const std::string& mime);
 bool AttachmentOpenNeedsConfirm(const std::string& mime);
