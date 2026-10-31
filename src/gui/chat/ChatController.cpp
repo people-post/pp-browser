@@ -937,8 +937,7 @@ void ChatController::RefreshFromMessaging() {
   const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();
   SyncDisplayFromThread();
-  chrome_.Update();
-  SyncComposerInputState();
+  UpdateThreadChrome(); // also refreshes the microphone button: show_voice follows messaging_ready_ and the chat
   if (badge_notify_.refresh) {
     badge_notify_.refresh();
   }
@@ -3094,7 +3093,7 @@ void ChatController::OnMessagingReady() {
   } else if (messaging_ui_.snapshot) {
     mesh_ready_ = messaging_ui_.snapshot().call_ready;
   }
-  chrome_.Update();
+  UpdateThreadChrome();
   DirtyChatChrome();
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
     OnHomeTabActivated();
@@ -3110,7 +3109,7 @@ void ChatController::OnMeshReady() {
   } else {
     mesh_ready_ = false;
   }
-  chrome_.Update();
+  UpdateThreadChrome();
   DirtyChatChrome();
   NotifySurfaceChanged();
 }
