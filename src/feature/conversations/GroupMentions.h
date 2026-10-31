@@ -17,7 +17,7 @@ namespace pbr {
 // Mentions in a group chat (group-chat G015), the parts the GUI needs without a GUI: what the composer's
 // `@` picker lists and inserts, the spans a draft is sent with, and which spans a transcript highlights.
 
-/** What the composer inserts for an everyone mention when no localized word is given. */
+/** The English everyone word: the everyone line always answers to it, whatever language it inserts. */
 inline constexpr const char* kEveryoneMentionWord = "everyone";
 
 /**
@@ -54,8 +54,7 @@ struct MentionCandidate {
 std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
                                                 const std::string& local_account, bool local_is_owner,
                                                 const std::function<std::string(const std::string& account_id)>& public_name,
-                                                const std::string& query,
-                                                const std::string& everyone_word = kEveryoneMentionWord);
+                                                const std::string& query, const std::string& everyone_word);
 
 /**
  * The `@` the user just typed that opens the picker: `after` is `before` with one `@` added, at the start of the

@@ -217,7 +217,7 @@ std::string NameOf(const std::string& account) {
 }
 
 TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly) {
-  const auto lines = MentionCandidates(Roster(), kMe, /*local_is_owner=*/false, NameOf, "");
+  const auto lines = MentionCandidates(Roster(), kMe, /*local_is_owner=*/false, NameOf, "", kEveryoneMentionWord);
   ASSERT_EQ(lines.size(), 4u);
   EXPECT_EQ(lines[0].name, "alice");  // ASCII case does not split the order
   EXPECT_EQ(lines[1].name, "Bob");
@@ -229,7 +229,7 @@ TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly)
   }
   EXPECT_EQ(lines[1].Token(), "@Bob");
 
-  const auto owner_lines = MentionCandidates(Roster(), kOwner, /*local_is_owner=*/true, NameOf, "");
+  const auto owner_lines = MentionCandidates(Roster(), kOwner, /*local_is_owner=*/true, NameOf, "", kEveryoneMentionWord);
   ASSERT_FALSE(owner_lines.empty());
   EXPECT_TRUE(owner_lines[0].kind == TextSpanKind::Everyone);
   EXPECT_EQ(owner_lines[0].Token(), "@everyone");
@@ -237,17 +237,17 @@ TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly)
 }
 
 TEST(GroupMentionsTest, PickerFiltersByTheTypedQuery) {
-  const auto bo = MentionCandidates(Roster(), kOwner, true, NameOf, "BO");
+  const auto bo = MentionCandidates(Roster(), kOwner, true, NameOf, "BO", kEveryoneMentionWord);
   ASSERT_EQ(bo.size(), 1u);
   EXPECT_EQ(bo[0].account_id, kBob);
-  const auto ev = MentionCandidates(Roster(), kOwner, true, NameOf, "ev");
+  const auto ev = MentionCandidates(Roster(), kOwner, true, NameOf, "ev", kEveryoneMentionWord);
   ASSERT_EQ(ev.size(), 1u);
   EXPECT_TRUE(ev[0].kind == TextSpanKind::Everyone);
-  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "ev").empty()) << "not the owner: no @everyone";
-  const auto zh = MentionCandidates(Roster(), kMe, false, NameOf, "\xE5\xBC\xA0");
+  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "ev", kEveryoneMentionWord).empty()) << "not the owner: no @everyone";
+  const auto zh = MentionCandidates(Roster(), kMe, false, NameOf, "\xE5\xBC\xA0", kEveryoneMentionWord);
   ASSERT_EQ(zh.size(), 1u);
   EXPECT_EQ(zh[0].account_id, kZhang);
-  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "ai").empty());
+  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "ai", kEveryoneMentionWord).empty());
 }
 
 TEST(GroupMentionsTest, ThePublicNameNeverTheSendersPrivateRemark) {
@@ -328,7 +328,7 @@ TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
   GroupRosterMember twin;
   twin.member_identity = kBob2;
   roster.push_back(twin);
-  const auto lines = MentionCandidates(roster, kMe, false, twin_name, "");
+  const auto lines = MentionCandidates(roster, kMe, false, twin_name, "", kEveryoneMentionWord);
   size_t bobs = 0;
   for (const MentionCandidate& line : lines) {
     if (line.name == "Bob") {
@@ -343,12 +343,12 @@ TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
   }
   EXPECT_EQ(bobs, 2u);
   // Narrowed by the query to one of them: still told apart (names collide in the group, not in the list).
-  const auto bo = MentionCandidates(roster, kMe, false, twin_name, "bo");
+  const auto bo = MentionCandidates(roster, kMe, false, twin_name, "bo", kEveryoneMentionWord);
   ASSERT_EQ(bo.size(), 2u);
   EXPECT_NE(bo[0].Label(), bo[1].Label());
   EXPECT_EQ(bo[0].account_id, kBob) << "same name: ordered by account id";
   // No twins: no short id at all.
-  for (const MentionCandidate& line : MentionCandidates(Roster(), kMe, false, NameOf, "")) {
+  for (const MentionCandidate& line : MentionCandidates(Roster(), kMe, false, NameOf, "", kEveryoneMentionWord)) {
     EXPECT_TRUE(line.short_id.empty());
   }
 }
@@ -357,7 +357,7 @@ TEST(GroupMentionsTest, NamesThatDifferOnlyInAsciiCaseCollide) {
   const auto names = [](const std::string& account) {
     return account == kBob ? std::string("Bob") : account == kAlice ? std::string("bob") : NameOf(account);
   };
-  const auto lines = MentionCandidates(Roster(), kMe, false, names, "bob");
+  const auto lines = MentionCandidates(Roster(), kMe, false, names, "bob", kEveryoneMentionWord);
   ASSERT_EQ(lines.size(), 2u);
   for (const MentionCandidate& line : lines) {
     EXPECT_FALSE(line.short_id.empty()) << line.name;
@@ -400,11 +400,11 @@ TEST(GroupMentionsTest, EveryoneInChineseIsFoundByAPrefixOfItsWordOrByEveryone) 
 
 TEST(GroupMentionsTest, EveryoneInEnglishStaysEveryone) {
   for (const char* query : {"", "every", "EVERY", "one"}) {
-    const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, query);
+    const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, query, kEveryoneMentionWord);
     ASSERT_FALSE(lines.empty()) << query;
     EXPECT_EQ(lines[0].Token(), "@everyone");
   }
-  EXPECT_TRUE(MentionCandidates(Roster(), kOwner, true, NameOf, "\xE6\x89\x80").empty()) << "no Chinese word in English";
+  EXPECT_TRUE(MentionCandidates(Roster(), kOwner, true, NameOf, "\xE6\x89\x80", kEveryoneMentionWord).empty()) << "no Chinese word in English";
 }
 
 TEST(GroupMentionsTest, TheInsertedChineseEveryoneBecomesTheEveryoneSpan) {
