@@ -246,6 +246,9 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
     return cleared.error();
   }
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);  // the messages that mentioned us are gone: so is "You were mentioned"
+  }
   if (attachment_downloads_ && before) {
     attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
   }

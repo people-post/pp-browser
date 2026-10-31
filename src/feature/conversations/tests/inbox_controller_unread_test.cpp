@@ -137,6 +137,30 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   EXPECT_EQ(loaded->value().preview, "ping");
 }
 
+TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
+  InboxTestEnv env("clear_drops_mentions");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  ThreadMentionsStore mentions(env.store->ProfileDbPath());
+  env.inbox->SetThreadMentions(&mentions);
+
+  Thread group;
+  group.id = "thread-group-1";
+  group.kind = ThreadKind::Group;
+  group.title = "Hike";
+  group.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(group));
+  Thread other = group;
+  other.id = "thread-group-2";
+  ASSERT_TRUE(env.store->UpsertThread(other));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(mentions.Add(other.id, "m-2", 1000));
+  ASSERT_EQ(*mentions.Threads(), (std::set<std::string>{group.id, other.id}));
+
+  ASSERT_TRUE(env.inbox->ClearThreadHistory(group.id, /*forget_memory=*/false));
+  EXPECT_EQ(*mentions.Threads(), (std::set<std::string>{other.id})) << "only the cleared chat loses its marker";
+  EXPECT_FALSE(mentions.Oldest(group.id).value());
+}
+
 TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
   InboxTestEnv env("ai_session_lifecycle");
 
