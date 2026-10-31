@@ -172,16 +172,16 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G016 — The owner dissolves a group for everyone
 
 **Date:** 2026-10-31
-**Status:** Proposed (Kenneth; Hongwei to accept or amend)
+**Status:** Accepted (Kenneth, 2026-10-31); Hongwei may amend
 **Decision:** The owner's choice is "dissolve the group", which ends it for every member. It replaces "dismiss on this device only" (G009) for a group with other members; leaving with a transfer stays as it is.
 
 1. **Wire:** new membership `control_type` `group_dissolved`, sent by the owner as a DM to every roster member and carrying the owner-signed roster statement form (G012) with the group id and a `dissolved` marker, so a receiver checks it the same way as other owner events.
 2. **Receiver:** only from the owner the signed roster names, in a group it is in. It empties the roster and marks the group dissolved. **The thread and its messages stay**, read-only, with one line: "{owner} dissolved this group". The composer is off; the user removes the thread when they want to. Late or repeated copies do nothing. Traffic for a dissolved group is dropped. An unanswered invite to it is void.
-3. **Offline members** get it from the inbox like other membership events. A member who missed it and sends again gets no delivery from peers who dissolved; to close that gap, a member receiving traffic for a dissolved group may answer with the statement it kept (open: keep a small tombstone per group id, or rely on the inbox only).
+3. **Offline members** get it from the inbox like other membership events. A member who missed it and sends again gets no delivery from peers who dissolved; the inbox delivers the dissolve when they come back, and that is enough.
 4. **Owner:** confirm once with plain wording, then fan out and remove locally. If some sends fail, the rest still go; retries use the outbox.
 5. **Solo owner:** same choice, nothing to send.
 
 **Rationale:** On device test, an owner used "dismiss on this device only". The owner was removed from its own roster and its thread was deleted, nothing was sent, and the other members kept fanning out to it, so the group was left with no owner and silent drops. Kenneth: dissolving ends the group for everyone; each member keeps the chat with a line saying so, and deletes it themselves.
 **Alternatives:** Keep the local dismiss (the case above); transfer only (a group can never end while one other member remains, and that member becomes owner unasked).
-**Open:** the tombstone in 3 (the kept thread already marks the group dissolved, which may be enough).
+**Tombstone:** none. The kept thread and the dissolved marker on the group are enough; a member who deleted the chat has no thread, so later traffic is rejected as for any unknown group.
 

@@ -234,7 +234,7 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `control_type` | **LenUtf8** |
 | `detail` | **LenUtf8** (empty = zero length) |
 
-**Proposed, group-chat G016 (not implemented):** `group_dissolved`, from the owner, with the signed roster statement form and a `dissolved` marker.
+**Group-chat G016:** `group_dissolved`, from the owner, with the signed roster statement form and a `dissolved` marker.
 
 **Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `group_invite_refused`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`, and the roster sync controls `group_roster_statement`, `group_roster_request`, `group_roster_reply` (below). Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
 
