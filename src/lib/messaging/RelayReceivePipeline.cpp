@@ -707,6 +707,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
   if (!selected) {
     RelayReceiveOutcome outcome;
     outcome.decision = IngestDecision::SilentDiscard;
+    const bool chat = received.route.kind == kRelayRouteGroup || received.route.kind == kRelayRouteDirect;
+    if (chat && self && !received.sender_contact_id.empty() && received.sender_contact_id != local_relay_user_id &&
+        !received.sender_device.empty() && !received.message_id.empty()) {
+      outcome.missing_copy = RelayReceiveOutcome::MissingCopy{.sender_account = received.sender_contact_id,
+                                                              .sender_device = received.sender_device,
+                                                              .message_id = received.message_id,
+                                                              .group_id = received.route.group_id.value_or("")};
+    }
     return outcome;
   }
   const RelayEnvelope& envelope = *selected;
@@ -916,6 +924,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
   outcome.thread_id = thread_id;
   outcome.persisted_message = *stored;
   outcome.suppress_inbox_chrome = true;  // what we sent ourselves: no unread count, no notice
+  outcome.sibling_copy = true;
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,

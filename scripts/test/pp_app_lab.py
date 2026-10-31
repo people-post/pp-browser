@@ -389,10 +389,12 @@ class Lab:
             raise ProbeError("%s: no account after register" % u.name)
         return u
 
-    def linked_device(self, of, name):
+    def linked_device(self, of, name, bundle=None):
         """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
-        Security → Copy link payload), then starts on it — the same account, a device of its own."""
-        bundle = of.cmd("link_export")["bundle"]
+        Security → Copy link payload), then starts on it — the same account, a device of its own. `bundle`: one
+        exported earlier (`of` may be gone by now)."""
+        if bundle is None:
+            bundle = of.cmd("link_export")["bundle"]
         u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
         self.users.append(u)
         u.start()
@@ -2020,6 +2022,29 @@ def scenario_muted_group_alerts_on_a_mention(lab):
         raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
 
 
+def scenario_a_device_asks_for_a_copy_it_missed(lab):
+    """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
+    before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
+    only. The laptop sees it in her mailbox, asks Bob's device for its own (its card going with the ask), and
+    Bob's device seals it one: the message shows on the laptop."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    hello = a.cmd("send", thread=a_thread, text="hi bob")["message_id"]  # her card (the phone alone) reaches Bob
+    wait_for(lambda: transcript_row(b, b_thread, hello), 30, "bob: alice's hello")
+    if len(b.cmd("kept_card", account=a.account)["devices"]) != 1:
+        raise ProbeError("bob: alice's card does not list her phone alone")
+    bundle = a.cmd("link_export")["bundle"]
+    a.quit()
+    laptop = lab.linked_device(a, "alice-laptop", bundle=bundle)
+    laptop.wait_mesh()
+    m = b.cmd("send", thread=b_thread, text="for every one of alice's devices")["message_id"]
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 90, "laptop: a chat with bob")
+    row = wait_for(lambda: transcript_row(laptop, l_thread, m), 90, "laptop: bob's message, asked for")
+    if row["text"] != "for every one of alice's devices":
+        raise ProbeError("laptop: bob's message as %s" % row)
+    if "copy asked for message_id=%s" % m not in laptop.log_text():
+        raise ProbeError("laptop: the message came without an ask — nothing was missing")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2683,6 +2708,7 @@ SCENARIOS = [
     ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
     ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
     ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
+    ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),

@@ -263,6 +263,220 @@ void MeshDeliveryOrchestrator::MirrorToSiblings(const ThreadMessage& sent, SentC
   });
 }
 
+void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::MissingCopy& missing) {
+  {
+    std::lock_guard lock(asked_copies_mutex_);
+    if (asked_copies_.size() > 1000) {
+      asked_copies_.clear();
+    }
+    if (!asked_copies_.insert(missing.message_id).second) {
+      return;
+    }
+  }
+  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kMissingCopyWaitMs), [this, missing]() {
+    AppRuntime::PostWorkerNormal([this, missing]() {
+      // Arrived another way meanwhile (a copy over a link, or the sender learned of us): nothing to ask.
+      Roe<std::optional<Thread>> thread = std::optional<Thread>{};
+      if (!missing.group_id.empty()) {
+        thread = store_.FindGroupThread(missing.group_id);
+      } else {
+        thread = store_.FindDirectThread(DirectChatTarget{.peer_identity_kind = "account",
+                                                          .peer_identity_value = missing.sender_account,
+                                                          .channel = ThreadChannel::E2ePublic});
+      }
+      if (thread && *thread) {
+        if (auto seen = store_.HasMessageId((*thread)->id, missing.message_id); seen && *seen) {
+          return;
+        }
+      }
+      auto self = own_cards_.DevicePeerId();
+      if (!self) {
+        return;
+      }
+      auto notice = copy_ask::BuildNotice(CopyAsk{.message_id = missing.message_id,
+                                                  .group_id = missing.group_id,
+                                                  .to_device = missing.sender_device,
+                                                  .from_device = *self});
+      if (!notice) {
+        return;
+      }
+      if (auto asked = control_lane_.Send(missing.sender_account, *notice); !asked) {
+        log().info << "copy not asked for message_id=" << missing.message_id << ": " << asked.error().message;
+        return;
+      }
+      log().info << "copy asked for message_id=" << missing.message_id << " from " << missing.sender_device;
+    });
+  });
+}
+
+void MeshDeliveryOrchestrator::AnswerCopyAsk(const CopyAsk& ask, const std::string& asker_account) {
+  auto self = own_cards_.DevicePeerId();
+  if (!self || *self != ask.to_device) {
+    return;  // another device of ours sent it (each holds its own sessions)
+  }
+  Roe<std::optional<Thread>> thread = std::optional<Thread>{};
+  if (!ask.group_id.empty()) {
+    thread = store_.FindGroupThread(ask.group_id);
+  } else {
+    thread = store_.FindDirectThread(DirectChatTarget{.peer_identity_kind = "account",
+                                                      .peer_identity_value = asker_account,
+                                                      .channel = ThreadChannel::E2ePublic});
+  }
+  if (!thread || !*thread) {
+    return;
+  }
+  auto found = store_.GetMessage((*thread)->id, ask.message_id);
+  if (!found || !*found) {
+    return;
+  }
+  const ThreadMessage& message = **found;
+  // Ours, sent from this device (not a sibling's copy), and chat content.
+  if (message.sender_contact_id != kLocalSelfContactId || message.sender_device ||
+      message.content_type == ChatContentType::System || message.content_type == ChatContentType::Deleted) {
+    return;
+  }
+  if (!ask.group_id.empty()) {
+    auto member = group_roster_.IsMember(ask.group_id, asker_account);
+    if (!member || !*member) {
+      return;  // not one of the group's: no copy of its messages
+    }
+  }
+  // The asking device as the asker's account card lists it (the ask carried the card: just learned).
+  std::optional<AccountCardDevice> device;
+  for (const AccountCardDevice& listed : PeerDevices(asker_account)) {
+    if (listed.peer_id == ask.from_device) {
+      device = listed;
+    }
+  }
+  if (!device) {
+    log().info << "copy ask from a device not on " << asker_account << "'s card: " << ask.from_device;
+    return;
+  }
+  auto sent = ask.group_id.empty() ? ResendDirectCopy(**thread, message, asker_account, *device)
+                                   : ResendGroupCopy(**thread, message, asker_account, *device);
+  if (!sent) {
+    log().warning << "copy not resent message_id=" << ask.message_id << ": " << sent.error().message;
+    return;
+  }
+  log().info << "copy resent message_id=" << ask.message_id << " to " << device->peer_id;
+}
+
+namespace {
+
+/** What a stored message's send carried (its content beyond the text), for sealing it again. */
+SendRelayOptions ResendOptions(const ThreadMessage& message) {
+  SendRelayOptions options;
+  if (message.content_type != ChatContentType::Text) {
+    options.content_type = message.content_type;
+  }
+  if (!message.payload_json.empty()) {
+    options.payload_json = message.payload_json;
+  }
+  return options;
+}
+
+} // namespace
+
+Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const ThreadMessage& message,
+                                                     const std::string& asker, const AccountCardDevice& device) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  auto sender = OwnSender(*identity);
+  if (!sender) {
+    return sender.error();
+  }
+  auto device_kem = Base64Decode(device.kem_public_key_b64);
+  if (!device_kem) {
+    return device_kem.error();
+  }
+  const SendRelayOptions options = ResendOptions(message);
+  const ChatTargetKey pair = GroupE2ePayloadCodec::PairTargetKey(asker, device.peer_id);
+  auto copy = SealPairCopy(message, identity->account_id, options, psk_store_, pair, *device_kem);
+  if (!copy) {
+    return copy.error();
+  }
+  auto peer_relay_id = routes_.ResolveWithDirectory(thread);
+  const std::string route_party = peer_relay_id ? *peer_relay_id : asker;
+  RelayEnvelope envelope = BuildDirectEnvelope(message, *sender, thread.channel, route_party,
+                                               {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
+  if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
+    return signed_ok.error();
+  }
+  const bool linked = LinkedTo(device.peer_id);
+  outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
+                               .thread_id = thread.id,
+                               .message_id = message.id,
+                               .amp_peer_key = linked ? device.peer_id : (peer_relay_id ? std::string() : asker),
+                               .relay_route = peer_relay_id,
+                               .copy_device = device.peer_id});
+  return {};
+}
+
+Roe<void> MeshDeliveryOrchestrator::ResendGroupCopy(const Thread& thread, const ThreadMessage& message,
+                                                    const std::string& asker, const AccountCardDevice& device) {
+  if (!thread.group_id) {
+    return Error("Not a group thread");
+  }
+  const std::string& group_id = *thread.group_id;
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  auto sender = OwnSender(*identity);
+  if (!sender) {
+    return sender.error();
+  }
+  GroupMemberTarget target;
+  target.member_identity = asker;
+  target.target_key = GroupE2ePayloadCodec::PairTargetKey(asker, device.peer_id);
+  auto pair = psk_store_.Load(target.target_key);
+  target.session_epoch = pair && pair->has_value() ? (*pair)->session_epoch : 1;
+  auto seq = group_roster_.AllocateMemberSeq(group_id, asker, target.session_epoch, device.peer_id);
+  if (!seq) {
+    return seq.error();
+  }
+  target.sender_seq = *seq;
+  std::optional<std::vector<uint8_t>> rich_plaintext;
+  if (message.content_type != ChatContentType::Text || !text_spans::FromPayloadJson(message.payload_json).empty()) {
+    auto plaintext = ChatPayloadCodec::EncodeToRow(message);
+    if (!plaintext) {
+      return plaintext.error();
+    }
+    rich_plaintext = std::move(*plaintext);
+  }
+  auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
+  auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(message.text, group_id, identity->account_id, message.id,
+                                                           message.timestamp, {target}, psk_store_, resolve_kem,
+                                                           rich_plaintext);
+  if (!encrypted) {
+    return encrypted.error();
+  }
+  if (encrypted->copies.empty() || !encrypted->copies.front()) {
+    return Error("No copy could be sealed");
+  }
+  RelayCopy copy;
+  copy.recipient_device = device.peer_id;
+  copy.session_epoch = target.session_epoch;
+  copy.sender_seq = target.sender_seq;
+  copy.key_init_b64 = encrypted->copies.front()->key_init_b64;
+  copy.payload_b64 = encrypted->copies.front()->payload_b64;
+  const std::optional<std::string> relay_route = routes_.ResolveAccountWithDirectory(asker);
+  RelayEnvelope envelope = BuildGroupMemberEnvelope(message, *sender, group_id, asker, relay_route.value_or(asker),
+                                                    {std::move(copy)}, NextRelayOrderKey());
+  if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
+    return signed_ok.error();
+  }
+  outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
+                               .thread_id = thread.id,
+                               .message_id = message.id,
+                               .amp_peer_key = LinkedTo(device.peer_id) ? device.peer_id : std::string(),
+                               .relay_route = relay_route,
+                               .group_member = asker});
+  return {};
+}
+
 void MeshDeliveryOrchestrator::NotifySiblings() {
   if (auto card = own_cards_.Card(util::NowUnixMs())) {
     siblings_told_card_at_.store(card->issued_at);
@@ -1752,6 +1966,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             on_sibling_notice_();
           }
           MaybeSurfaceReceiveFailure(outcome);
+          if (outcome.missing_copy) {
+            NoteMissingCopy(*outcome.missing_copy);
+          }
           if (outcome.decision == IngestDecision::AcceptGap) {
             const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
             auto thread = store_.FindDirectThread(inbound_target);
@@ -1768,7 +1985,11 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           }
           const std::string& resolved_thread_id = outcome.thread_id;
           if (outcome.suppress_inbox_chrome) {
-            // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread.
+            // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread. A sibling's sent
+            // attachment still has its bytes fetched, as a received one does.
+            if (outcome.sibling_copy) {
+              MaybeEnqueueAttachmentDownload(outcome);
+            }
             continue;
           }
           std::optional<std::string> preview;

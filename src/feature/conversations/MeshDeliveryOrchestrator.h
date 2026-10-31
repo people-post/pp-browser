@@ -7,6 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/messaging/CopyAsk.h"
 #include "lib/messaging/ThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
 #include "lib/messaging/DeliveryNotice.h"
@@ -44,6 +45,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -180,6 +182,17 @@ public:
    * other devices. Off the caller's thread.
    */
   void MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target);
+  /**
+   * A copy may be missing for this device (M021 §9): once kMissingCopyWaitMs passed without the message arriving
+   * another way (a copy over a link), ask the sending device for one (`copy_ask`, carrying our card). Once per
+   * message.
+   */
+  void NoteMissingCopy(const RelayReceiveOutcome::MissingCopy& missing);
+  /**
+   * Another account's device asks for a copy of a message we sent: if this device sent it and the asking device
+   * is on the asker's card, seal it one copy in their device pair and send it (direct or group).
+   */
+  void AnswerCopyAsk(const CopyAsk& ask, const std::string& asker_account);
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -375,6 +388,14 @@ private:
     int64_t held_at_ms = 0;
   };
   ThreadMentionsStore* mentions_ = nullptr;
+  /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
+  static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
+  std::mutex asked_copies_mutex_;
+  std::set<std::string> asked_copies_;  // message ids asked for (bounded)
+  Roe<void> ResendDirectCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
+                             const AccountCardDevice& device);
+  Roe<void> ResendGroupCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
+                            const AccountCardDevice& device);
   std::mutex held_mentions_mutex_;
   std::vector<HeldMention> held_mentions_;
   bool InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message, const std::string& local_account);

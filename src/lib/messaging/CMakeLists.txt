@@ -40,6 +40,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupTypes.cpp
     OutboundMessage.cpp
     SentCopy.cpp
+    CopyAsk.cpp
     ThreadMentionsStore.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp

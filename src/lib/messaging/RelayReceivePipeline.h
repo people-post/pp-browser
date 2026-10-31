@@ -46,6 +46,19 @@ struct RelayReceiveOutcome {
    * (call MediaKey / SFU / mid-call roster, etc.).
    */
   bool suppress_inbox_chrome = false;
+  /** A message another of our devices sent, filed here (M021 d3): no inbox chrome, but its attachment is fetched. */
+  bool sibling_copy = false;
+  /**
+   * A chat record from another account with copies for our other devices but none for this one (M021 §9): the
+   * sending device may not know this device yet — or sent our copy over a link. The caller waits, then asks.
+   */
+  struct MissingCopy {
+    std::string sender_account;
+    std::string sender_device;
+    std::string message_id;
+    std::string group_id;
+  };
+  std::optional<MissingCopy> missing_copy;
   /**
    * When set, the local user (owner) should publish owner-signed member_joined after ingest.
    * Filled on successful group_invite_accept apply.

@@ -391,6 +391,8 @@ private:
   void BindPricingFamilies();
   /** G013: the member check's request / reply on the control lane (bound once the workflow exists). */
   void BindGroupRosterSyncFamily();
+  /** M021 §9: answers other accounts' devices asking for a copy they never got. */
+  void BindCopyAskFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const AppConfig& config);
