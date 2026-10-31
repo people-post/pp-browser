@@ -58,6 +58,9 @@ public:
   static Roe<std::string> EncodeVideoRefresh(const CallVideoRefreshDetail& detail);
   static Roe<CallVideoRefreshDetail> DecodeVideoRefresh(const std::string& detail_json);
 
+  static Roe<std::string> EncodeConnectGiveUp(const CallConnectGiveUpDetail& detail);
+  static Roe<CallConnectGiveUpDetail> DecodeConnectGiveUp(const std::string& detail_json);
+
   static Roe<std::string> EncodeCircuitR1(const CallCircuitR1Detail& detail);
   static Roe<CallCircuitR1Detail> DecodeCircuitR1(const std::string& detail_json);
   static Roe<std::string> EncodeCapsUpdate(const CallCapsUpdateDetail& detail);

@@ -124,6 +124,8 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_video_refresh"), CallControlType::CallVideoRefresh);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallCircuitR1), "call_circuit_r1");
   EXPECT_EQ(CallControlTypeFromWire("call_circuit_r1"), CallControlType::CallCircuitR1);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallConnectGiveUp), "call_connect_give_up");
+  EXPECT_EQ(CallControlTypeFromWire("call_connect_give_up"), CallControlType::CallConnectGiveUp);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallPunchOffer), "call_punch_offer");
   EXPECT_EQ(CallControlTypeFromWire("call_punch_offer"), CallControlType::CallPunchOffer);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallPunchAnswer), "call_punch_answer");
@@ -395,6 +397,41 @@ TEST(CallControlCodecTest, CircuitR1RoundTrip) {
   EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1"})"));
   EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1","circuit_r1":""})"));
   EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallCircuitR1));
+}
+
+// H013: the answerer says where it is parked — relay PeerIds only, at most the caller's bridge cap.
+TEST(CallControlCodecTest, AcceptCarriesTheParkedRelays) {
+  CallAcceptDetail accept;
+  accept.call_id = "call:parked";
+  accept.circuit_parked = {"QmRelayA", "QmRelayB", "QmRelayA", std::string(200, 'x'), "QmRelayC", "QmRelayD",
+                           "QmRelayE"};
+  auto encoded = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeAccept(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->circuit_parked, (std::vector<std::string>{"QmRelayA", "QmRelayB", "QmRelayC", "QmRelayD"}))
+      << "distinct, PeerId-sized, at most kCallMaxAdvertisedCircuitRelays";
+
+  CallAcceptDetail plain;
+  plain.call_id = "call:plain";
+  auto plain_json = CallControlCodec::EncodeAccept(plain);
+  ASSERT_TRUE(plain_json);
+  EXPECT_EQ(plain_json->find("circuit_parked"), std::string::npos) << "absent when not parked (old peers unchanged)";
+  EXPECT_TRUE(CallControlCodec::DecodeAccept(*plain_json)->circuit_parked.empty());
+}
+
+TEST(CallControlCodecTest, ConnectGiveUpRoundTrip) {
+  CallConnectGiveUpDetail detail;
+  detail.call_id = "call:gave-up";
+  detail.identity = "account:caller";
+  auto encoded = CallControlCodec::EncodeConnectGiveUp(detail);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeConnectGiveUp(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->identity, detail.identity);
+  EXPECT_FALSE(CallControlCodec::DecodeConnectGiveUp(R"({"identity":"account:caller"})"));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallConnectGiveUp));
 }
 
 TEST(CallControlTypeTest, PunchWireRoundTrip) {

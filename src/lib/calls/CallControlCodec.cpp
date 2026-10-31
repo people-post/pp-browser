@@ -4,6 +4,8 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
+#include <algorithm>
+
 namespace pbr {
 namespace {
 
@@ -18,6 +20,22 @@ std::vector<std::string> ReadStringArray(const Object& json, const char* key) {
       if (!value->empty()) {
         out.push_back(*value);
       }
+    }
+  }
+  return out;
+}
+
+/** H013: a parked-relay list as the wire carries it — PeerId-sized, distinct, at most the cap. */
+std::vector<std::string> ParkedRelaysForWire(const std::vector<std::string>& relays) {
+  constexpr size_t kMaxPeerIdBytes = 128;
+  std::vector<std::string> out;
+  for (const std::string& relay : relays) {
+    if (out.size() >= kCallMaxAdvertisedCircuitRelays) {
+      break;
+    }
+    if (!relay.empty() && relay.size() <= kMaxPeerIdBytes &&
+        std::find(out.begin(), out.end(), relay) == out.end()) {
+      out.push_back(relay);
     }
   }
   return out;
@@ -212,6 +230,7 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
   }
   WriteStringArray(json, "reachable_hops", detail.hop_report.reachable_hops);
   WriteStringArray(json, "unreachable_hops", detail.hop_report.unreachable_hops);
+  WriteStringArray(json, "circuit_parked", ParkedRelaysForWire(detail.circuit_parked));
   return DumpJson(json);
 }
 
@@ -237,6 +256,7 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.hop_report.planned_hop_ok = json->getIf<bool>("planned_hop_ok");
   detail.hop_report.reachable_hops = ReadStringArray(*json, "reachable_hops");
   detail.hop_report.unreachable_hops = ReadStringArray(*json, "unreachable_hops");
+  detail.circuit_parked = ParkedRelaysForWire(ReadStringArray(*json, "circuit_parked"));
   return detail;
 }
 
@@ -562,6 +582,25 @@ Roe<CallVideoRefreshDetail> CallControlCodec::DecodeVideoRefresh(const std::stri
     return Error("Invalid call_video_refresh detail");
   }
   CallVideoRefreshDetail detail;
+  detail.call_id = *call_id;
+  detail.identity = json->getString("identity").value_or("");
+  return detail;
+}
+
+Roe<std::string> CallControlCodec::EncodeConnectGiveUp(const CallConnectGiveUpDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("identity", detail.identity);
+  return DumpJson(json);
+}
+
+Roe<CallConnectGiveUpDetail> CallControlCodec::DecodeConnectGiveUp(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  if (!json || !call_id || call_id->empty()) {
+    return Error("Invalid call_connect_give_up detail");
+  }
+  CallConnectGiveUpDetail detail;
   detail.call_id = *call_id;
   detail.identity = json->getString("identity").value_or("");
   return detail;

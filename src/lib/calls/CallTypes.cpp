@@ -176,6 +176,8 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_answered_elsewhere";
   case CallControlType::CallCapsUpdate:
     return "call_caps_update";
+  case CallControlType::CallConnectGiveUp:
+    return "call_connect_give_up";
   }
   return "call_invite";
 }
@@ -240,6 +242,9 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_caps_update") {
     return CallControlType::CallCapsUpdate;
+  }
+  if (value == "call_connect_give_up") {
+    return CallControlType::CallConnectGiveUp;
   }
   return std::nullopt;
 }

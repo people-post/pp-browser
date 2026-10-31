@@ -827,6 +827,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   circuit_->dial = nullptr;
 
   bridge_->SetDialWaitBudgetMsForTest(400);
+  bridge_->SetAnswererAwaitHoldMsForTest(400);  // H013: the answerer's own limit, shortened
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
@@ -846,6 +847,40 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   EXPECT_TRUE(bridge_->IsMeshConnectFailed());
   EXPECT_FALSE(media_->IsActive()) << "ConnectFailed must StopMeshMedia (no zombie TX)";
   EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// H013: the answerer waits for the caller's circuit (here past the whole test), until the caller says
+// it gave up: then it stops at once, as at its own limit — both screens leave "connecting" together.
+TEST_F(CallMediaBridgeAnswererStartTest, TheCallersGiveUpEndsTheAnswerersWait) {
+  const std::string call_id = "call:caller-gave-up";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->ensure_result = false;
+  dial_->connected["account:peer"] = false;
+  circuit_->call_media_result = false;
+  circuit_->dial = nullptr;
+  bridge_->SetDialWaitBudgetMsForTest(400);  // the hold stays 60 s
+  Answered(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
+  for (int i = 0; i < 100; ++i) {  // ~1 s: past the dial budget, still waiting
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_NE(host_->live.Phase(), CallPhase::ConnectFailed) << "still waiting for the caller";
+  ASSERT_TRUE(bridge_->IsConnectWorkerInflight());
+
+  OnCallsOwner([&] { bridge_->OnPeerGaveUpReaching("call:another"); });
+  EXPECT_TRUE(bridge_->IsConnectWorkerInflight()) << "a give-up for another call is not ours";
+  OnCallsOwner([&] { bridge_->OnPeerGaveUpReaching(call_id); });
+  for (int i = 0; i < 100 && host_->live.Phase() != CallPhase::ConnectFailed; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(host_->live.Phase(), CallPhase::ConnectFailed);
+  EXPECT_TRUE(bridge_->IsMeshConnectFailed());
+  EXPECT_FALSE(media_->IsActive()) << "the wait's end stops media like any connect give-up";
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

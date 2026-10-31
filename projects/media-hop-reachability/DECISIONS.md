@@ -75,7 +75,7 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 ## H007 — No app-layer hop candidate exchange as product path
 
-**Status:** Accepted (updated 2026-09-21 — narrow R1 announce carve-out)  
+**Status:** Accepted (updated 2026-09-21 — narrow R1 announce carve-out; amended 2026-10-31 by [H013](#h013--the-callee-advertises-where-it-is-parked) — the callee's parked relays in CallAccept)  
 **Date:** 2026-07-31  
 **Decision:** Do **not** ship or reintroduce **`call_hop_addrs`** (or similar call-signaling **multiaddr / candidate-list** gather) as the durable hop reachability design. Uncommitted prototypes were removed. Temporary dogfood hacks need an explicit ADR if ever revived. Candidate exchange for punch belongs **in-stack** via introducer Sessions ([H009](#h009--amp-coordinated-punch-acp)), not call signaling.
 
@@ -123,7 +123,7 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 ## H010 — Circuit StartBridge attempt budget (not exhaustive search)
 
-**Status:** Accepted  
+**Status:** Accepted; amended 2026-10-31 by [H013](#h013--the-callee-advertises-where-it-is-parked) — advertised relays first, and the same-relay not-reg retry only on an advertised relay, once  
 **Date:** 2026-09-21  
 **Decision:** First-connect `EnsureViaCircuit` treats dialable relays as a **ranked queue with a spend limit**, not an exhaustive walk.
 
@@ -171,7 +171,7 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle s
 
 ## H011 — Circuit R1 rendezvous (dialer-authoritative)
 
-**Status:** Accepted — **L3.1a–d landed** (shared surface, sticky park, `call_circuit_r1`, hard-w5 STACK)  
+**Status:** Accepted — **L3.1a–d landed** (shared surface, sticky park, `call_circuit_r1`, hard-w5 STACK); amended 2026-10-31 by [H013](#h013--the-callee-advertises-where-it-is-parked) — the dialer stays the chooser, informed by the callee's parked relays instead of a guessed shared surface  
 **Date:** 2026-09-21  
 **Decision:** Immediate circuit relay (**R1**) for nested call-media is a **dialer-authoritative rendezvous**, not bilateral hop consensus.
 
@@ -212,3 +212,52 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle s
 **Spec:** [HOLE_PUNCH.md](HOLE_PUNCH.md#signaling-introducer-fallback-h012). **Phase:** [L3.25d](PHASES.md#l325--amp-coordinated-punch).
 
 ---
+
+## H013 — The callee advertises where it is parked
+
+**Status:** Accepted (2026-10-31)  
+**Date:** 2026-10-31
+
+**Context:** Issue #416. The callee parks on at most 2 relays (`kRendezvousLiveTarget`); the caller walks up to
+4 of its own 7 in its own order (sticky, then its Connected relays), with no knowledge of the callee's set.
+H011's shared surface assumed both sides derive the same ordered list, but the dialer reorders it, the callee
+stops at 2 (not K = 4), and each side builds the list from its own directory, DHT and contacts. The fallback
+(`call_circuit_r1`, then a late reserve) rides the HTTPS inbox and arrives long after the relay's far-leg
+wait (about 3.25 s per StartBridge, not the 14 s envelope). Meanwhile the answerer — Await without punch for
+a mobile pair (K013) — gave up about 31 s after answering, while the caller only starts once CallAccept
+crossed the inbox (up to 19 s on cellular). Calls `ddc19c94` / `e067fb4e` never tried either relay the
+callee held.
+
+**Decision:**
+- **CallAccept carries `circuit_parked`:** the relay PeerIds holding a reservation for the callee when it
+  answers (at most 4 = the caller's StartBridge cap; relay ids only, never addresses). Read from the mesh's
+  published view (`MeshLocalView::parked_relays`), which republishes as reservations change.
+- **The caller tries them first,** in the callee's order, ahead of its own ranking (sticky, Connected, the
+  refusal demotion). The dialer is still the sole chooser (H011); it is now informed.
+- **Same-relay retry on `not registered` only on an advertised relay, once** (its reservation may be
+  renewing). A relay the callee did not advertise is advanced past at once: nothing would make the callee
+  appear there in time (amends H010's "repeat until max bridges").
+- **The answerer waits for the caller** (`await_hold_ms` = 60 s from the start of its reach). The wait ends
+  on whichever comes first: a link comes up; the caller sends **`call_connect_give_up`** `{call_id, identity}`
+  when its own connect gives up (both screens leave "connecting" together); or the 60 s hold.
+- Both additions are additive: old callers ignore `circuit_parked` and old answerers ignore
+  `call_connect_give_up` (each keeps today's behaviour); a new caller facing an old callee orders as before.
+
+**Rationale:** The callee knows where it is reachable; the caller can only guess, and every miss costs
+3–4 s of a 14 s envelope. Advertising facts the callee already holds is not the candidate gathering H007
+forbids (no addresses, no STUN, no pre-choice hop shopping), and the caller learns only which public relays
+the callee uses. Aligning the answerer's wait with the caller's real start costs the answerer nothing — on
+this path it only listens.
+
+**Alternatives:** Publish parked relays in the mesh (directory / peer record, like libp2p circuit addresses)
+— rejected for now: only as fresh as a heartbeat while reservations last 15 s, needs directory-server work,
+and publishes the parking set to anyone; a possible later generalisation beyond calls. Deterministic shared
+ordering with K = 4 coverage — rejected: double the reservations, still fails when the callee cannot reach
+some of the four, still assumes the same directory on both sides.
+
+**Code:** pp-cpp-mesh `PutAdvertisedRelaysFirst` / `CircuitShouldRetrySameRelayOnNotReg`
+(`CircuitHopAttemptBudget.h`), `PeerReachRequest::advertised_relays` / `await_hold_ms`,
+`CircuitClientCoordinator::ParkedRelays`, `MeshLocalView::parked_relays`; pp-browser
+`CallAcceptDetail::circuit_parked`, `CallControlType::CallConnectGiveUp`,
+`CallMediaBridge::BuildReachRequest` / `OnPeerGaveUpReaching`.
+

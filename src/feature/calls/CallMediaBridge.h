@@ -43,6 +43,8 @@ struct CallDirectArmingPorts {
   /** The 1:1 stream ended because the call moves onto a hop not attached yet (nothing is live). */
   std::function<void(const std::string& call_id)> on_handed_to_hop;
   std::function<void(const std::string& call_id)> on_connect_failed;
+  /** H013: we placed this 1:1 call and stopped trying to reach the peer — tell it, so it stops waiting. */
+  std::function<void(const std::string& call_id, const std::string& peer_identity)> on_gave_up_reaching;
   /** A connection for this call came up after it failed (the peer's retry); lifecycle decides. */
   std::function<void(const std::string& call_id)> on_peer_reconnected;
   std::function<void(const std::string& call_id)> on_media_deferred;
@@ -118,6 +120,8 @@ public:
   void SetMediaKeyInboxPollRoundsForTest(int rounds);
   /** Shrink the peer-reach direct-dial budget for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
+  /** Tests: the answerer's wait for the caller's circuit (kCallAnswererAwaitHoldMs). */
+  void SetAnswererAwaitHoldMsForTest(int64_t hold_ms) { answerer_await_hold_ms_ = hold_ms; }
   void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
   /** Retry delay between re-anchor attempts while reconnecting (production 2 s). */
   void SetReanchorRetryMsForTest(int delay_ms) { reanchor_retry_ms_ = delay_ms; }
@@ -138,6 +142,14 @@ public:
    */
   using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
   void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
+  /** H013: the relays the call's answerer advertised in its CallAccept (the caller's reach tries them first). */
+  using AdvertisedRelaysProvider = std::function<std::vector<std::string>(const std::string& call_id)>;
+  void SetAdvertisedRelaysProvider(AdvertisedRelaysProvider provider) { advertised_relays_ = std::move(provider); }
+  /**
+   * H013: the caller of `call_id` stopped trying to reach us. An answerer still waiting for its circuit
+   * stops too (ConnectFailed, as at its own limit); anything else ignores it.
+   */
+  void OnPeerGaveUpReaching(const std::string& call_id);
   /** Where the path reports its events (its parent binds it); its timers are delayed events. */
   void SetOutbox(OwnerOutbox<DirectPathEvent> outbox);
   /** An event it reported, back from the calls owner's queue. */
@@ -412,6 +424,8 @@ private:
   /** Past Amp's network-change grace (2 s): the links left are the ones that answered. */
   int network_settle_ms_ = 2500;
   PathPolicyProvider path_policy_;
+  AdvertisedRelaysProvider advertised_relays_;
+  int64_t answerer_await_hold_ms_ = kCallAnswererAwaitHoldMs;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

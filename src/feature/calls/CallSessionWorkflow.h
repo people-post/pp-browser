@@ -108,6 +108,10 @@ public:
         note_caps_for_identity;
     /** The peer's caps for this call (invite / accept) — mobility feeds the call's path policy. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> note_call_peer_caps;
+    /** H013: the relays we are parked on now — our CallAccept advertises them. */
+    std::function<std::vector<std::string>()> parked_relays;
+    /** H013: the relays the call's answerer advertised in its CallAccept (the caller tries them first). */
+    std::function<void(const std::string& call_id, const std::vector<std::string>& relays)> note_call_peer_parked_relays;
     std::function<void(const std::string& identity)> prefetch_reach;
     /** Kick mesh circuit park (composition projects MeshConnectivity rendezvous ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
