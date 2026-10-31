@@ -62,14 +62,15 @@ flowchart LR
 
 ### Heartbeat
 
-pp-node proves liveness so a stopped node drops out of `GET /v1/mesh/nodes` before its registration expires.
+pp-node proves liveness so a stopped node drops out of `GET /v1/mesh/nodes` before its registration expires. **Opt-in** (`mesh.mesh_heartbeat` / `PP_NODE_MESH_HEARTBEAT`, off by default; org seeds) — privacy [P011](../privacy/DECISIONS.md#p011--a-nodes-uptime-is-not-public-by-role); to be replaced by signed node records ([N031](DECISIONS.md#n031--node-liveness-short-lived-signed-records-observed-by-the-mesh), [NODE_LIVENESS.md](NODE_LIVENESS.md)).
 
 - `POST {registration.base_url}/v1/mesh/heartbeat` `{relay_user_id, peer_id, state, timestamp, signature}`; `state` ∈ `active` | `draining` | `retiring`; `timestamp` is Unix ms.
 - Signature: ML-DSA-65 by the **account** key over `"pp-browser:relay-heartbeat-v1" 0x00 | u8(1) | u64be(len)+relay_user_id | u64be(len)+peer_id | u64be(len)+state | i64be(timestamp)` (`BuildRelayHeartbeatSignBytes`).
 - The server accepts ±15 min of clock skew and only a timestamp strictly greater than the stored one; pp-node keeps its own timestamps strictly increasing.
 - Cadence: every 5 minutes and immediately on a state change; `retiring` once on shutdown (3 s timeout).
 - Replies: `200 {success, server_time, state, last_seen_at, expires_at}`. `404 not_registered` / `registration_expired` ⇒ pp-node re-registers through the normal publish path (backoff 10 s doubling to 5 min); `404 unknown_peer`, `409 stale_timestamp`, `429`, 5xx and network errors ⇒ retry next period; `401` ⇒ logged as an error (with a clock-skew hint when `server_time` differs by more than 60 s).
-- A heartbeat extends the registration; a node silent past its expiry must register again.
+- A heartbeat extends the registration; a node silent past its expiry must register again. It sets `last_seen_at`, `node_state` and `last_heartbeat_ts` only — not `endpoints[].updated_at` (when the addresses changed).
+- Listing (P011): `GET /v1/mesh/nodes` carries `state` but no `last_seen_at`. With `MESH_STALE_FILTER_ENABLED` the stale cut-off applies only to nodes that have sent a heartbeat (`last_heartbeat_ts`); a node without heartbeats is listed until its registration expires. www logs the heartbeat path without IP, user agent or request id.
 - Operator control and series: [CONFIGURATION](../../docs/ops/CONFIGURATION.md), [NODE_METRICS](../../docs/contracts/NODE_METRICS.md).
 
 ### Client config

@@ -23,7 +23,8 @@ services:
       PP_NODE_DATA_DIR: /var/lib/pp-node
       # Admin HTTP for console/probes (ADDR alone is enough to bind non-loopback).
       PP_NODE_STATUS_ADDR: ${PP_NODE_STATUS_ADDR:-0.0.0.0:18518}
-      # Optional: PP_NODE_STATUS_TOKEN, PP_NODE_BOOTSTRAP_PEERS, PP_NODE_CAP_*
+      # Optional: PP_NODE_STATUS_TOKEN, PP_NODE_BOOTSTRAP_PEERS, PP_NODE_CAP_*,
+      # PP_NODE_MESH_HEARTBEAT=1 (org seeds only: tells the directory when the node is up — privacy P011)
     volumes:
       - pp-node-data:/var/lib/pp-node
     ports:

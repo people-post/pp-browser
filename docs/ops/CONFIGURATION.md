@@ -38,6 +38,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
+| `PP_NODE_MESH_HEARTBEAT` | `libp2p.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
 | `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. sandbox `https://www-en.qa.peoplepost.org/api/relay`) |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
@@ -47,7 +48,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
 | `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/develop/docs/architecture/PLATFORM_INTEGRATION.md)) |
 
-**Mesh heartbeat:** with `mesh_publish` on and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (no switch, fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405; JSON `Content-Type` required, requests with an `Origin` header or a non-loopback `Host` get 403):
+**Mesh heartbeat (opt-in):** with `mesh_publish` **and** `mesh_heartbeat` on (`PP_NODE_MESH_HEARTBEAT=1`; off by default — it tells the directory when this node is up and from which address, so it is meant for org-run seeds: privacy P011) and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405; JSON `Content-Type` required, requests with an `Origin` header or a non-loopback `Host` get 403):
 
 ```
 curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' http://127.0.0.1:18518/control/state
