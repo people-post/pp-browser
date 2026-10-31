@@ -681,6 +681,25 @@ bool CallControlCodec::IsCallControlMessage(const ThreadMessage& message) {
   return ControlTypeFromMessage(message).has_value();
 }
 
+Roe<std::string> CallControlCodec::EncodeAnsweredElsewhere(const std::string& call_id, const bool accepted) {
+  if (call_id.empty()) {
+    return Error("call_answered_elsewhere: no call");
+  }
+  Object json;
+  json.set("call_id", call_id);
+  json.set("accepted", accepted);
+  return DumpJson(json);
+}
+
+Roe<std::pair<std::string, bool>> CallControlCodec::DecodeAnsweredElsewhere(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  const std::string call_id = json ? json->getString("call_id").value_or("") : std::string();
+  if (call_id.empty()) {
+    return Error("call_answered_elsewhere: malformed");
+  }
+  return std::make_pair(call_id, json->getIf<bool>("accepted").value_or(true));
+}
+
 bool CallControlCodec::TravelsOnLane(const CallControlType type) {
   return type != CallControlType::CallSummary;
 }

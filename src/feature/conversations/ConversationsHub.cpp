@@ -829,6 +829,8 @@ void ConversationsHub::DiscardMessagingBringUp() {
     inbox_->SetAttachmentDownloads(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
+  system_controls_.Unbind(kCopyAskFamily);
+  system_controls_.Unbind(kCardAskFamily);
   account_locker_.reset();
   group_membership_.reset();
   // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
@@ -1378,6 +1380,8 @@ void ConversationsHub::BuildMessagingObjects() {
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   BindGroupRosterSyncFamily();
+  BindCopyAskFamily();
+  BindCardAskFamily();
   account_locker_ = std::make_unique<AccountLockerWorkflow>(
       *identity_, *contacts_,
       AccountLockerWorkflow::Sources{
@@ -2481,6 +2485,28 @@ AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
   };
 }
 
+void ConversationsHub::BindCardAskFamily() {
+  // M021 d6: another account was told our list is newer than the one it keeps — it asks; we send the card.
+  system_controls_.Bind(card_ask::MakeFamily([this](std::string to_device, std::string asker) {
+    AppRuntime::PostWorkerNormal([this, to_device = std::move(to_device), asker = std::move(asker)]() {
+      if (mesh_messaging_) {
+        mesh_messaging_->AnswerCardAsk(to_device, asker);
+      }
+    });
+  }));
+}
+
+void ConversationsHub::BindCopyAskFamily() {
+  // M021 §9: another account's device asks for a copy of what we sent it never got — answered off the ingest.
+  system_controls_.Bind(copy_ask::MakeFamily([this](CopyAsk ask, std::string asker) {
+    AppRuntime::PostWorkerNormal([this, ask = std::move(ask), asker = std::move(asker)]() {
+      if (mesh_messaging_) {
+        mesh_messaging_->AnswerCopyAsk(ask, asker);
+      }
+    });
+  }));
+}
+
 void ConversationsHub::BindGroupRosterSyncFamily() {
   system_controls_.Bind(MakeGroupRosterSyncFamily(
       *group_roster_,
@@ -2986,6 +3012,8 @@ void ConversationsHub::Shutdown() {
   system_controls_.Unbind(kInitiationBillingFamily);
   system_controls_.Unbind(kPaymentPromiseFamily);
   system_controls_.Unbind(kGroupRosterSyncFamily);
+  system_controls_.Unbind(kCopyAskFamily);
+  system_controls_.Unbind(kCardAskFamily);
   account_locker_.reset();
   group_membership_.reset();
   group_invite_gate_.reset();

@@ -148,6 +148,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 |---------|------|------|
 | Relay directory | key card fields (+ endpoints) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
 | Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) or is an account copy (the control lane, a first contact): whoever reads it can check the sending device; a new device's first message to anyone brings its account's newer list; a restored device sends it to every contact (`device_list` notice) |
+| Envelope hint | how new the sender's list is, `body.e2e.sender_card_at` | on every envelope (M021 d6): a receiver holding an older card asks the sending device for the newer one (`card_ask` → a `device_list` notice), so a device taken out stops getting copies from peers the main device's announcement did not reach (a group member who is not a contact) |
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |

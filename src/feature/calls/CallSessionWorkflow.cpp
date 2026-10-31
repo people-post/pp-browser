@@ -1733,6 +1733,21 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
   return {};
 }
 
+Roe<void> CallSessionWorkflow::StopRingingAnsweredElsewhere(const std::string& call_id,
+                                                           const std::string& local_identity) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return {};
+  }
+  const LiveCall* live = live_calls_.Find(call_id);
+  if (!live || live->State() != LiveCallState::Ringing) {
+    return {};  // not ringing here (taken here too, or already over): nothing to stop
+  }
+  (void)sessions_.UpdateInviteStatus(call_id, local_identity, "expired");
+  log().info << "call answered on another of our devices: ringing stopped call_id=" << call_id;
+  return EndCallLocal(**session, std::nullopt, LiveCallEndReason::AnsweredElsewhere);
+}
+
 Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json,
                                                  const std::string& local_identity) {
   auto ended = CallControlCodec::DecodeEnded(detail_json);

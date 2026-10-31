@@ -90,6 +90,11 @@ enum class CallControlType {
    * lasts; a participant answers with a fresh CallInvite. Additive — old peers ignore it.
    */
   CallJoinRequest,
+  /**
+   * M021 d5: to our own other devices — this device took (or declined) an incoming call, so theirs stop ringing.
+   * Honoured only from our own account. Additive — old devices ignore it.
+   */
+  CallAnsweredElsewhere,
 };
 
 struct CallParticipantMedia {

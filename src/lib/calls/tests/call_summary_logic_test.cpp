@@ -1,6 +1,8 @@
 // The history entry a device writes when a call ends.
 #include "lib/calls/CallSummaryLogic.h"
 
+#include "lib/calls/CallControlCodec.h"
+
 #include <gtest/gtest.h>
 
 namespace pbr {
@@ -55,6 +57,15 @@ TEST(CallSummaryLogicTest, AGroupNotesTheCallAsItWentHere) {
   auto declined =
       PlanCallSummary(Session("owner", true), {Joined("owner", 1'000)}, "me", LiveCallEndReason::Declined, 0);
   EXPECT_EQ(declined->detail.outcome, CallOutcome::Declined);
+}
+
+TEST(CallSummaryLogicTest, ACallAnsweredOnAnotherOfOurDevicesLeavesNoHistoryHere) {
+  // M021 d5: the device that took it (and the caller) keep the history; a sibling that only rang writes no
+  // "missed call" — in a group either.
+  EXPECT_FALSE(PlanCallSummary(Session("owner", true), {Joined("owner", 1'000)}, "me",
+                               LiveCallEndReason::AnsweredElsewhere, 0));
+  EXPECT_FALSE(PlanCallSummary(Session("me", false), {Joined("me", 1'000)}, "me", LiveCallEndReason::AnsweredElsewhere,
+                               0));
 }
 
 TEST(CallSummaryLogicTest, AGroupRecordHasOneFixedIdPerCall) {
@@ -123,6 +134,19 @@ TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceWasBackInRunsToTheEnd) {
   CallSummaryDetail no_talk = left;
   no_talk.duration_ms.reset();
   EXPECT_FALSE(MergeGroupSummary(left, no_talk, SummaryWrite::EndWhileIn));
+}
+
+TEST(CallControlCodecTest, AnsweredElsewhereNamesTheCallAndHowItWasAnswered) {
+  auto detail = CallControlCodec::EncodeAnsweredElsewhere("call:1", false);
+  ASSERT_TRUE(detail);
+  auto decoded = CallControlCodec::DecodeAnsweredElsewhere(*detail);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->first, "call:1");
+  EXPECT_FALSE(decoded->second) << "declined there";
+  EXPECT_FALSE(CallControlCodec::DecodeAnsweredElsewhere("{}"));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallAnsweredElsewhere));
+  EXPECT_EQ(CallControlTypeFromWire(CallControlTypeToWire(CallControlType::CallAnsweredElsewhere)),
+            CallControlType::CallAnsweredElsewhere);
 }
 
 } // namespace

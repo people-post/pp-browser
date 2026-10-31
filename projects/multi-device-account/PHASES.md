@@ -144,8 +144,8 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 
 - [x] Copies to our own siblings: a `sent_copy` control-lane notice to our own account per sent public direct / group message (texts, attachments, cards); a sibling files it as ours (`RelayReceivePipeline::FileSentCopy`), opening the chat if needed; M022 §2 amended. gtest `sent_copy_test`; lab `linked_devices_see_what_each_sent`
 - [x] Reactions and deletes on siblings: annotations are copied and applied as a peer's are (`FileSentCopy`: the annotation cap, a delete arriving first tombstones the message, a retract deletes it)
-- [ ] Attachments' bytes fetched on a sibling like a received one (the copy is filed with no inbox chrome, so no download is queued)
-- [ ] Missing copy: ask the sender's device to send one (M021 §9)
+- [x] Attachments' bytes fetched on a sibling like a received one (`RelayReceiveOutcome::sibling_copy`: no inbox chrome, but the download is queued) — build-checked only: the probe and lab have no attachment path
+- [x] Missing copy: ask the sender's device to send one (M021 §9) — `copy_ask` on the control lane after a 20 s wait (a copy over a link is not missing), answered only by the sending device, to a device on the asker's card (`MeshDeliveryOrchestrator::NoteMissingCopy` / `AnswerCopyAsk`, direct and group); gtest `copy_ask_test`; lab `a_device_asks_for_a_copy_it_missed` (the main device off, so nobody told Bob of the laptop)
 - [x] A new device is introduced to the account's contacts: a restored one announces itself (`AnnounceRestoredDevice`); for a linked one the **master** does it when it takes in the card that adds it (`OwnCards::SetOnDeviceJoined` → `AnnounceOwnDevicesToContacts`) — the master has the contacts, the new device may not yet (its first locker sync may find none). Lab `linked_device_introduces_itself` (Bob's message reaches the laptop before the laptop wrote to anyone)
 
 ### d4 — Master device
@@ -162,12 +162,12 @@ Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the
 
 ### d5 — Calls on every device
 
-- [ ] Ring every device; the first answer wins; the others stop
+- [x] Ring every device (the invite is an account copy); the first answer wins; the others stop — `call_answered_elsewhere` to our own devices on accept / decline, a sibling still ringing ends it locally with no history (`CallSessionWorkflow::StopRingingAnsweredElsewhere`); gtests (codec, no summary); lab `a_call_rings_every_device_and_stops_once_answered` ([CALLS.md](../../docs/architecture/CALLS.md))
 
 ### d6 — Later
 
 - [ ] Directory carries the card (first contact without the account KEM)
-- [ ] Card version in every envelope (peers fetch a newer list: faster revoke)
+- [x] Card version in every envelope (`body.e2e.sender_card_at`, unsigned hint); a receiver with an older card asks the sending device through the relay (`card_ask` → `device_list` notice) — a direct fetch was tried first and is refused by a non-contact's privacy gate. gtests (wire, codec); lab `a_newer_device_list_follows_the_messages` (a group member who is not a contact gets the shorter list after a revoke)
 - [ ] Re-decide E027 device-lock on per-device sessions
 
 ## s — Account state (M023)

@@ -1058,7 +1058,48 @@ void CallSessionManager::SetPendingAcceptVoiceOnly(const bool voice_only) {
 
 void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                                            InitiationChargeDecision charge_decision) {
-  workflow_.AcceptInviteAsync(call_id, charge_decision, std::move(on_done));
+  workflow_.AcceptInviteAsync(call_id, charge_decision,
+                              [this, call_id, on_done = std::move(on_done)](Roe<void> accepted) {
+                                if (accepted) {
+                                  TellOwnDevicesAnswered(call_id, true);
+                                }
+                                if (on_done) {
+                                  on_done(std::move(accepted));
+                                }
+                              });
+}
+
+void CallSessionManager::TellOwnDevicesAnswered(const std::string& call_id, const bool accepted) {
+  if (!delivery_.notify_own_devices) {
+    return;
+  }
+  auto local = TopologyLocalIdentity();
+  auto detail = CallControlCodec::EncodeAnsweredElsewhere(call_id, accepted);
+  if (!local || !detail) {
+    return;
+  }
+  auto control = CallControlCodec::BuildSystemMessage("", CallControlType::CallAnsweredElsewhere,
+                                                      accepted ? "Answered on another device" : "Declined on another device",
+                                                      *detail, *local);
+  if (!control) {
+    return;
+  }
+  if (auto told = delivery_.notify_own_devices(*control); !told) {
+    log().info << "own devices not told the call was answered call_id=" << call_id << ": " << told.error().message;
+  }
+}
+
+Roe<void> CallSessionManager::HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
+                                                      const std::string& local_identity) {
+  if (sender_identity != local_identity) {
+    log().info << "call_answered_elsewhere dropped: not from our own account (" << sender_identity << ")";
+    return {};
+  }
+  auto answered = CallControlCodec::DecodeAnsweredElsewhere(detail_json);
+  if (!answered) {
+    return answered.error();
+  }
+  return workflow_.StopRingingAnsweredElsewhere(answered->first, local_identity);
 }
 
 
@@ -1066,7 +1107,11 @@ void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::func
 
 
 Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
-  return workflow_.DeclineInvite(call_id);
+  auto declined = workflow_.DeclineInvite(call_id);
+  if (declined) {
+    TellOwnDevicesAnswered(call_id, false);
+  }
+  return declined;
 }
 
 
@@ -1337,6 +1382,10 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   // Everything but an invite (and the stream's summary) speaks about a call the sender is in: its
   // initiator or a current participant. A peer who declined or left it, or never was in it, does not
   // end it, change its roster or steer its media.
+  // M021 d5: from our own account only — before the in-call gate (our own account is not a peer of the call).
+  if (*type == CallControlType::CallAnsweredElsewhere) {
+    return HandleAnsweredElsewhere(*detail, sender_identity, *local);
+  }
   // V053: who dropped out of a group call may ask to join it, and its end reaches them too.
   const bool from_offered = (*type == CallControlType::CallJoinRequest || *type == CallControlType::CallEnded) &&
                             SenderMayJoin(detail_json, sender_identity);
@@ -1393,6 +1442,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallSummary:
     return {};  // history in the chat stream, not signaling
+  case CallControlType::CallAnsweredElsewhere:
+    return {};  // handled above, from our own account only
   }
   return {};
 }

@@ -605,6 +605,11 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
   if (verified && *verified && carried && on_sender_card_) {
     on_sender_card_(*carried);
   }
+  // M021 d6: the sender says its list is newer than the one we checked with — fetch it from the sending device.
+  if (verified && *verified && on_sender_card_version_ && envelope.body.e2e.sender_card_at &&
+      *envelope.body.e2e.sender_card_at > card->issued_at) {
+    on_sender_card_version_(target.peer_identity_value, envelope.sender_device, *envelope.body.e2e.sender_card_at);
+  }
   return verified;
 }
 
@@ -707,6 +712,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
   if (!selected) {
     RelayReceiveOutcome outcome;
     outcome.decision = IngestDecision::SilentDiscard;
+    const bool chat = received.route.kind == kRelayRouteGroup || received.route.kind == kRelayRouteDirect;
+    if (chat && self && !received.sender_contact_id.empty() && received.sender_contact_id != local_relay_user_id &&
+        !received.sender_device.empty() && !received.message_id.empty()) {
+      outcome.missing_copy = RelayReceiveOutcome::MissingCopy{.sender_account = received.sender_contact_id,
+                                                              .sender_device = received.sender_device,
+                                                              .message_id = received.message_id,
+                                                              .group_id = received.route.group_id.value_or("")};
+    }
     return outcome;
   }
   const RelayEnvelope& envelope = *selected;
@@ -863,6 +876,32 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
   if (*copy) {
     outcome.from_sibling = false;  // a sent message, not news about the account's state (no locker sync)
     FileSentCopy(**copy, envelope, outcome);
+    return;
+  }
+  // Another lane notice of ours (M021 d5: a call taken on a sibling): its family applies it, fresh and once,
+  // as any lane message — the family knows it is from our own account (the context's sender).
+  ThreadMessage message = std::move(*decrypted);
+  const auto family = controls_ ? controls_->Find(message) : std::nullopt;
+  if (!family || !family->on_lane || !family->on_lane(message)) {
+    return;  // the device list notice: its card is what counts (taken above)
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (!ControlLaneFresh(envelope, family->lane_max_age_ms, now_ms)) {
+    return;
+  }
+  if (control_lane_seen_) {
+    auto first = control_lane_seen_->FirstSight(envelope.sender_contact_id, envelope.message_id, now_ms);
+    if (!first || !*first) {
+      return;
+    }
+  }
+  outcome.from_sibling = false;  // not a nudge to sync the locker
+  message.id = envelope.message_id;
+  message.thread_id.clear();
+  message.sender_contact_id = envelope.sender_contact_id;
+  message.timestamp = envelope.timestamp;
+  if (auto applied = ApplyInboundControl(message, envelope, &outcome); applied) {
+    outcome.decision = IngestDecision::AcceptControl;
   }
 }
 
@@ -916,6 +955,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
   outcome.thread_id = thread_id;
   outcome.persisted_message = *stored;
   outcome.suppress_inbox_chrome = true;  // what we sent ourselves: no unread count, no notice
+  outcome.sibling_copy = true;
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,

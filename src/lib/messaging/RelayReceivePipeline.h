@@ -46,6 +46,19 @@ struct RelayReceiveOutcome {
    * (call MediaKey / SFU / mid-call roster, etc.).
    */
   bool suppress_inbox_chrome = false;
+  /** A message another of our devices sent, filed here (M021 d3): no inbox chrome, but its attachment is fetched. */
+  bool sibling_copy = false;
+  /**
+   * A chat record from another account with copies for our other devices but none for this one (M021 §9): the
+   * sending device may not know this device yet — or sent our copy over a link. The caller waits, then asks.
+   */
+  struct MissingCopy {
+    std::string sender_account;
+    std::string sender_device;
+    std::string message_id;
+    std::string group_id;
+  };
+  std::optional<MissingCopy> missing_copy;
   /**
    * When set, the local user (owner) should publish owner-signed member_joined after ingest.
    * Filled on successful group_invite_accept apply.
@@ -135,6 +148,14 @@ public:
    */
   void SetOnSenderCard(std::function<void(const AccountCard&)> callback) { on_sender_card_ = std::move(callback); }
   /**
+   * A verified envelope whose sender says its account card is newer (`sender_card_at`) than the one it was
+   * checked with (M021 d6): `(account, sending device, issued_at)` — the caller fetches the newer card.
+   */
+  void SetOnSenderCardVersion(
+      std::function<void(const std::string& account, const std::string& device, int64_t issued_at)> callback) {
+    on_sender_card_version_ = std::move(callback);
+  }
+  /**
    * The issue time a carried card of an account must reach to speak for it (PeerCardStore::Floor): a restored
    * device keeps no cards, only how new the ones it had were. None: 0.
    */
@@ -164,6 +185,7 @@ private:
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const AccountCard&)> on_sender_card_;
+  std::function<void(const std::string&, const std::string&, int64_t)> on_sender_card_version_;
   std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 

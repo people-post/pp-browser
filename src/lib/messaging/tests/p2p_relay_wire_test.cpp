@@ -122,6 +122,33 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   EXPECT_TRUE(parsed_copy->recipient_device.empty()) << "an account copy names no recipient device";
 }
 
+TEST(P2pRelayWireTest, EveryEnvelopeMaySayHowNewItsSendersListIs) {
+  // M021 d6: `sender_card_at` on any copy, card or not; not signed (a false value costs one card ask).
+  using namespace pbr;
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440002";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice";
+  envelope.sender_device = "QmAlicePhone";
+  envelope.recipient_device = "QmBobLaptop";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2ePublic;
+  envelope.body.e2e.payload_b64 = "cGF5bG9hZA==";
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  envelope.body.e2e.sender_card_at = 1'761'235'200'000;
+  EXPECT_EQ(EnvelopeSigner::BuildSignBytes(envelope).value(), unsigned_bytes.value());
+  auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
+  ASSERT_TRUE(parsed) << parsed.error().message << " — a device copy with no key_init may say it";
+  EXPECT_EQ(parsed.value().body.e2e.sender_card_at, std::optional<int64_t>(1'761'235'200'000));
+  envelope.body.e2e.sender_card_at.reset();
+  auto without = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
+  ASSERT_TRUE(without);
+  EXPECT_FALSE(without.value().body.e2e.sender_card_at) << "optional";
+}
+
 TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
   using namespace pbr;
 

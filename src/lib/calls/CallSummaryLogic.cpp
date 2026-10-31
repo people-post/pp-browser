@@ -8,8 +8,9 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
                                                const std::vector<CallParticipant>& participants,
                                                const std::string& local_identity, const LiveCallEndReason reason,
                                                const int64_t now_ms) {
-  if (reason == LiveCallEndReason::Merged) {
-    return std::nullopt;  // gave way to the call both sides are now in: that one is the history
+  if (reason == LiveCallEndReason::Merged || reason == LiveCallEndReason::AnsweredElsewhere) {
+    // Gave way to the call both sides are now in, or another of our devices has the call: that one is the history.
+    return std::nullopt;
   }
   const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
   const bool started = session.initiator_identity == local_identity;

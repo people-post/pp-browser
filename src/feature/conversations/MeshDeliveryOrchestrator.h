@@ -7,6 +7,8 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/messaging/CardAsk.h"
+#include "lib/messaging/CopyAsk.h"
 #include "lib/messaging/ThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
 #include "lib/messaging/DeliveryNotice.h"
@@ -43,7 +45,9 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <map>
 #include <mutex>
+#include <set>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -176,10 +180,28 @@ public:
    */
   void NudgeSiblings();
   /**
+   * A control notice to our own account's other devices (one record to our own mailbox, sealed to the account
+   * KEM): applied there by its family (M021 d5: a call taken here). Nothing when our card lists only us.
+   */
+  Roe<void> NotifyOwnDevices(const ThreadMessage& control);
+  /**
    * What we sent shows on our other devices (M021 d3): a sent-copy notice to our own mailbox, when our card lists
    * other devices. Off the caller's thread.
    */
   void MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target);
+  /**
+   * A copy may be missing for this device (M021 §9): once kMissingCopyWaitMs passed without the message arriving
+   * another way (a copy over a link), ask the sending device for one (`copy_ask`, carrying our card). Once per
+   * message.
+   */
+  void NoteMissingCopy(const RelayReceiveOutcome::MissingCopy& missing);
+  /**
+   * Another account's device asks for a copy of a message we sent: if this device sent it and the asking device
+   * is on the asker's card, seal it one copy in their device pair and send it (direct or group).
+   */
+  void AnswerCopyAsk(const CopyAsk& ask, const std::string& asker_account);
+  /** M021 d6: another account asks for our newer card (`card_ask`): the device named sends it (`device_list`). */
+  void AnswerCardAsk(const std::string& to_device, const std::string& asker_account);
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -375,6 +397,18 @@ private:
     int64_t held_at_ms = 0;
   };
   ThreadMentionsStore* mentions_ = nullptr;
+  /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
+  static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
+  std::mutex asked_copies_mutex_;
+  std::set<std::string> asked_copies_;  // message ids asked for (bounded)
+  /** M021 d6: an envelope said its sender's list is newer than ours — ask that device for it, through the relay. */
+  void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at);
+  std::mutex card_asks_mutex_;
+  std::map<std::string, int64_t> card_asks_;  // account → the newest list asked for
+  Roe<void> ResendDirectCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
+                             const AccountCardDevice& device);
+  Roe<void> ResendGroupCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
+                            const AccountCardDevice& device);
   std::mutex held_mentions_mutex_;
   std::vector<HeldMention> held_mentions_;
   bool InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message, const std::string& local_account);

@@ -31,6 +31,13 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
       }
       return messaging->SendControl(peer_identity, control, key_init_b64, urgent);
     };
+    deps.delivery.notify_own_devices = [&hub](const ThreadMessage& control) -> Roe<void> {
+      auto* messaging = hub.MeshMessagingOrNull();
+      if (!messaging) {
+        return Error("Messaging not ready");
+      }
+      return messaging->NotifyOwnDevices(control);
+    };
     deps.delivery.send_to_thread = [&hub](const std::string& thread_id, const std::string& text,
                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {
       auto* messaging = hub.MeshMessagingOrNull();

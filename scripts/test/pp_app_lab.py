@@ -389,10 +389,12 @@ class Lab:
             raise ProbeError("%s: no account after register" % u.name)
         return u
 
-    def linked_device(self, of, name):
+    def linked_device(self, of, name, bundle=None):
         """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
-        Security → Copy link payload), then starts on it — the same account, a device of its own."""
-        bundle = of.cmd("link_export")["bundle"]
+        Security → Copy link payload), then starts on it — the same account, a device of its own. `bundle`: one
+        exported earlier (`of` may be gone by now)."""
+        if bundle is None:
+            bundle = of.cmd("link_export")["bundle"]
         u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
         self.users.append(u)
         u.start()
@@ -2020,6 +2022,85 @@ def scenario_muted_group_alerts_on_a_mention(lab):
         raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
 
 
+def scenario_a_device_asks_for_a_copy_it_missed(lab):
+    """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
+    before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
+    only. The laptop sees it in her mailbox, asks Bob's device for its own (its card going with the ask), and
+    Bob's device seals it one: the message shows on the laptop."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    hello = a.cmd("send", thread=a_thread, text="hi bob")["message_id"]  # her card (the phone alone) reaches Bob
+    wait_for(lambda: transcript_row(b, b_thread, hello), 30, "bob: alice's hello")
+    if len(b.cmd("kept_card", account=a.account)["devices"]) != 1:
+        raise ProbeError("bob: alice's card does not list her phone alone")
+    bundle = a.cmd("link_export")["bundle"]
+    a.quit()
+    laptop = lab.linked_device(a, "alice-laptop", bundle=bundle)
+    laptop.wait_mesh()
+    m = b.cmd("send", thread=b_thread, text="for every one of alice's devices")["message_id"]
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 90, "laptop: a chat with bob")
+    row = wait_for(lambda: transcript_row(laptop, l_thread, m), 90, "laptop: bob's message, asked for")
+    if row["text"] != "for every one of alice's devices":
+        raise ProbeError("laptop: bob's message as %s" % row)
+    if "copy asked for message_id=%s" % m not in laptop.log_text():
+        raise ProbeError("laptop: the message came without an ask — nothing was missing")
+
+
+def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
+    """A call rings every device of the account (M021 d5): Bob calls Alice; her phone and her laptop both ring.
+    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    a.wait_surface("ringing", 40, call_id=call_id)
+    laptop.wait_surface("ringing", 40, call_id=call_id)
+    a.cmd("accept_voice")
+    laptop.wait_surface("none", 15)
+    b.wait_surface("in_call", 40, call_id=call_id)
+    a.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(b, a, timeout=40)
+    if "ringing stopped call_id=%s" % call_id not in laptop.log_text():
+        raise ProbeError("laptop: stopped ringing, but not because the phone answered")
+    b.cmd("leave")
+    assert_idle(a, b, laptop, timeout=40)
+
+
+def scenario_a_newer_device_list_follows_the_messages(lab):
+    """Every envelope says how new its sender's device list is (M021 d6): Carol shares a group with Bob but is
+    not his contact, so what his main device announces never reaches her. Bob links a laptop: his next group
+    message brings Carol his newer list (with the laptop: his first copy to her opens their pair, carrying his
+    card). He takes the laptop off: his next message only says his list is newer, Carol asks his device for it
+    through the relay (his privacy gate refuses her a direct link), and she stops writing to the laptop."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    # Bob and Carol talk first: Bob learns Carol's devices from her message, and his answer opens their device
+    # pair — so his later copies to her carry no card, only how new his list is.
+    c.cmd("show_chat", thread=threads[c.name])
+    c.cmd("compose_send", text="hello from carol")
+    wait_for(lambda: said_in(b, threads[b.name], "hello from carol"), 40, "bob: carol's first message")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="hello group")
+    wait_for(lambda: said_in(c, threads[c.name], "hello group"), 40, "carol: bob's first message")
+    laptop = lab.linked_device(b, "bob-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in b.cmd("devices")["devices"] or None, 40, "bob: the laptop on his list")
+    if laptop_id in c.cmd("kept_card", account=b.account)["devices"]:
+        raise ProbeError("carol: knew bob's laptop before any message said so")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="now on two devices")
+    wait_for(lambda: laptop_id in c.cmd("kept_card", account=b.account)["devices"] or None, 60,
+             "carol: bob's list with the laptop, from his message")
+    b.cmd("remove_device", peer_id=laptop_id)
+    b.cmd("compose_send", text="back to one")
+    wait_for(lambda: laptop_id not in c.cmd("kept_card", account=b.account)["devices"] or None, 60,
+             "carol: bob's list without the laptop, from his message")
+    if "newer card asked of %s" % b.account not in c.log_text():
+        raise ProbeError("carol: bob's shorter list did not come from what his message said")
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2683,6 +2764,9 @@ SCENARIOS = [
     ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
     ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
     ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
+    ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
+    ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
+    ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
