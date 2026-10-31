@@ -233,6 +233,14 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
       call_peer_caps_sink_(call_id, caps);
     }
   };
+  ports.parked_relays = [this]() -> std::vector<std::string> {
+    return parked_relays_ ? parked_relays_() : std::vector<std::string>{};
+  };
+  ports.note_call_peer_parked_relays = [this](const std::string& call_id, const std::vector<std::string>& relays) {
+    if (call_peer_parked_relays_sink_) {
+      call_peer_parked_relays_sink_(call_id, relays);
+    }
+  };
   ports.prefetch_reach = [this](const std::string& identity) {
     PrefetchReachForIdentity(prefetch_reach_, identity);
   };
@@ -564,6 +572,9 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
   ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
   ports.on_handed_to_hop = [this](const std::string& call_id) { live_calls_.NoteDirectHandedToHop(call_id); };
   ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
+  ports.on_gave_up_reaching = [this](const std::string& call_id, const std::string& peer_identity) {
+    SendConnectGiveUp(call_id, peer_identity);
+  };
   ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
   ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
   ports.on_media_key_ready = [this](const std::string& call_id) { live_calls_.NoteMediaKeyReady(call_id); };
@@ -621,6 +632,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
   path.SetSeedReserve(std::move(deps.seed_reserve));
   path.SetSeedParkAwait(std::move(deps.seed_park_await));
   path.SetPathPolicyProvider(std::move(deps.path_policy));
+  path.SetAdvertisedRelaysProvider(std::move(deps.advertised_relays));
   path.SetDirectArmingPorts(DirectArmingPorts());
   path.SetSeatPorts(DirectSeatPorts());
   SetDirectMediaPorts(MakeDirectMediaPorts());
@@ -939,6 +951,10 @@ void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
 }
 
 void CallSessionManager::SetCallPeerCapsSink(CallPeerCapsSink sink) { call_peer_caps_sink_ = std::move(sink); }
+void CallSessionManager::SetParkedRelaysProvider(ParkedRelaysProvider provider) { parked_relays_ = std::move(provider); }
+void CallSessionManager::SetCallPeerParkedRelaysSink(CallPeerParkedRelaysSink sink) {
+  call_peer_parked_relays_sink_ = std::move(sink);
+}
 
 void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
   local_mesh_peer_id_ = std::move(callback);
@@ -1444,7 +1460,43 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return {};  // history in the chat stream, not signaling
   case CallControlType::CallAnsweredElsewhere:
     return {};  // handled above, from our own account only
+  case CallControlType::CallConnectGiveUp:
+    return HandleInboundConnectGiveUp(detail_json, sender_identity);
   }
+  return {};
+}
+
+void CallSessionManager::SendConnectGiveUp(const std::string& call_id, const std::string& peer_identity) {
+  CallConnectGiveUpDetail detail;
+  detail.call_id = call_id;
+  if (auto local = control_.LocalRelayIdentity()) {
+    detail.identity = *local;
+  }
+  auto encoded = CallControlCodec::EncodeConnectGiveUp(detail);
+  if (!encoded) {
+    return;
+  }
+  if (auto sent = control_.SendDirect(peer_identity, CallControlType::CallConnectGiveUp, *encoded, ""); !sent) {
+    log().warning << "CallConnectGiveUp send failed call_id=" << call_id << " err=" << sent.error().message;
+    return;
+  }
+  log().info << "CallConnectGiveUp sent call_id=" << call_id << " peer=" << peer_identity;
+}
+
+Roe<void> CallSessionManager::HandleInboundConnectGiveUp(const std::string& detail_json,
+                                                         const std::string& sender_identity) {
+  auto detail = CallControlCodec::DecodeConnectGiveUp(detail_json);
+  if (!detail) {
+    return detail.error();
+  }
+  const LiveCall* call = live_calls_.Find(detail->call_id);
+  const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
+  if (!peer || *peer != sender_identity || !direct_path_) {
+    log().info << "CallConnectGiveUp ignored call_id=" << detail->call_id << " from=" << sender_identity;
+    return {};
+  }
+  log().info << "CallConnectGiveUp inbound call_id=" << detail->call_id << " from=" << sender_identity;
+  direct_path_->OnPeerGaveUpReaching(detail->call_id);
   return {};
 }
 

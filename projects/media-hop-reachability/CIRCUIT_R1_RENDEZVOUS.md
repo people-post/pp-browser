@@ -6,6 +6,8 @@
 **Multi-hop (orthogonal):** [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) / [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned)  
 **No addr gather:** [H007](DECISIONS.md#h007--no-app-layer-hop-candidate-exchange-as-product-path)
 
+> **2026-10-31:** the shared-surface guess below is superseded for calls by [H013](DECISIONS.md#h013--the-callee-advertises-where-it-is-parked): the callee's CallAccept names the relays it is parked on (`circuit_parked`), the dialer tries those first, and the same-relay not-reg retry applies only to them. Kept for history; the dialer is still the sole chooser.
+
 ## Problem
 
 Nested call-media through a circuit hop requires **both** ends to meet on the **same** immediate relay PeerId **R1**:

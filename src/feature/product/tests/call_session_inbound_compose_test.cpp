@@ -742,6 +742,83 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   EXPECT_EQ((*peer)->state, CallParticipantState::Joined);
 }
 
+// H013: the callee's CallAccept says where it is parked, so the caller's circuit tries those first.
+TEST_F(CallSessionInboundComposeTest, AcceptAdvertisesTheRelaysWeAreParkedOn) {
+  const std::string call_id = "call:advertise-parked";
+  OnCallsOwner([&] {
+    csm_->SetParkedRelaysProvider([]() { return std::vector<std::string>{"QmRelayA", "QmRelayB"}; });
+    return Roe<void>{};
+  });
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  std::optional<Roe<void>> accepted;
+  OnCallsOwner([&] { return csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); }); });
+  ASSERT_TRUE(accepted.has_value());
+  ASSERT_TRUE(*accepted) << accepted->error().message;
+
+  auto sent = DecodeSentAccept(last_sent_accept_payload_);
+  ASSERT_TRUE(sent);
+  EXPECT_EQ(sent->circuit_parked, (std::vector<std::string>{"QmRelayA", "QmRelayB"}));
+}
+
+// H013: the caller keeps what the answerer advertised for the call's reach.
+TEST_F(CallSessionInboundComposeTest, InboundAcceptReportsTheAnswerersParkedRelays) {
+  const std::string call_id = "call:peer-parked";
+  SeedOffererRingingCall(call_id);
+  struct SpyDriver final : CallDirectDriver {
+    void ScheduleDirectStart(const std::string&, const std::string&, bool) override {}
+    void ReleaseDirectTransport(const CallMediaSeat::Token&) override {}
+    void ReleaseDirectTransport() override {}
+    void StopMeshMedia(const std::string&) override {}
+    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
+    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
+  } spy;
+  csm_->SetDirectDriver(&spy);
+  std::string noted_call;
+  std::vector<std::string> noted_relays;
+  OnCallsOwner([&] {
+    csm_->SetCallPeerParkedRelaysSink([&](const std::string& cid, const std::vector<std::string>& relays) {
+      noted_call = cid;
+      noted_relays = relays;
+    });
+    return csm_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  });
+
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = "account:peer";
+  accept.circuit_parked = {"QmRelayC", "QmRelayD"};
+  auto detail = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  csm_->SetDirectDriver(bridge_);
+  EXPECT_EQ(noted_call, call_id);
+  EXPECT_EQ(noted_relays, (std::vector<std::string>{"QmRelayC", "QmRelayD"}));
+}
+
+// H013: a give-up counts only from the call's own peer.
+TEST_F(CallSessionInboundComposeTest, AConnectGiveUpFromSomeoneElseIsIgnored) {
+  const std::string call_id = "call:give-up-other";
+  auto invite = MakeInviteMessage(call_id);
+  ASSERT_TRUE(invite);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*invite, "account:peer"); }));
+  CallConnectGiveUpDetail give_up;
+  give_up.call_id = call_id;
+  give_up.identity = "account:mallory";
+  auto detail = CallControlCodec::EncodeConnectGiveUp(give_up);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:x", CallControlType::CallConnectGiveUp, "", *detail,
+                                                  "account:mallory");
+  ASSERT_TRUE(msg);
+  EXPECT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:mallory"); }));
+  EXPECT_FALSE(csm_->IsP2pConnectFailed());
+}
+
 // video-voice-choice: callee answers an incoming video invite as voice-only. AcceptInvite must
 // narrow its own session and send Accept.video_allowed=false.
 TEST_F(CallSessionInboundComposeTest, VoiceOnlyAnswerNarrowsCalleeSessionAndSendsFalse) {
