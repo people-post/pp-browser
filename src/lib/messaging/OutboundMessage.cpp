@@ -263,6 +263,9 @@ RelayEnvelope EnvelopeFrom(const ThreadMessage& message, const EnvelopeSender& s
   if (introduces) {
     envelope.body.e2e.sender_card = sender.card;
   }
+  if (sender.card) {
+    envelope.body.e2e.sender_card_at = sender.card->getIf<int64_t>("issued_at");  // M021 d6: on every envelope
+  }
   if (copies.size() == 1) {
     const RelayCopy only = copies.front();
     envelope = WithSingleRelayCopy(std::move(envelope), only);

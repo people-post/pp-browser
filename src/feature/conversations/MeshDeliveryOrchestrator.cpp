@@ -132,6 +132,15 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "sender's account card not kept: " << kept.error().message;
     }
   });
+  // M021 d6: a sender whose list is newer than ours (a device taken out): ask its device for the card.
+  receive_pipeline_->SetOnSenderCardVersion(
+      [this](const std::string& account, const std::string& device, const int64_t issued_at) {
+        auto own = identity_.Get();
+        if (own && account == own->account_id) {
+          return;  // our own list arrives by the device_list notice
+        }
+        AskForNewerCard(account, device, issued_at);
+      });
   receive_pipeline_->SetAccountCardFloor(
       [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
   // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
@@ -268,6 +277,42 @@ Roe<void> MeshDeliveryOrchestrator::NotifyOwnDevices(const ThreadMessage& contro
     return {};
   }
   return control_lane_.NotifySiblings(control);
+}
+
+void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const std::string& device,
+                                               const int64_t issued_at) {
+  {
+    std::lock_guard lock(card_asks_mutex_);
+    int64_t& asked = card_asks_[account];
+    if (asked >= issued_at) {
+      return;  // asked for this list already (or a newer one)
+    }
+    asked = issued_at;
+  }
+  AppRuntime::PostWorkerNormal([this, account, device]() {
+    auto notice = card_ask::BuildNotice(device);
+    if (!notice) {
+      return;
+    }
+    // Through the relay: a direct link may be refused by the peer's privacy gate (not a contact of theirs).
+    if (auto asked = control_lane_.Send(account, *notice); !asked) {
+      log().info << "newer card not asked of " << account << ": " << asked.error().message;
+      return;
+    }
+    log().info << "newer card asked of " << account << " device=" << device;
+  });
+}
+
+void MeshDeliveryOrchestrator::AnswerCardAsk(const std::string& to_device, const std::string& asker_account) {
+  auto self = own_cards_.DevicePeerId();
+  if (!self || *self != to_device) {
+    return;  // the device named answers (its siblings hold the same list)
+  }
+  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice()); !sent) {
+    log().info << "card not sent to " << asker_account << ": " << sent.error().message;
+    return;
+  }
+  log().info << "card sent to " << asker_account << " (it asked for the newer list)";
 }
 
 void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::MissingCopy& missing) {

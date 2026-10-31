@@ -167,7 +167,7 @@ Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the
 ### d6 — Later
 
 - [ ] Directory carries the card (first contact without the account KEM)
-- [ ] Card version in every envelope (peers fetch a newer list: faster revoke)
+- [x] Card version in every envelope (`body.e2e.sender_card_at`, unsigned hint); a receiver with an older card asks the sending device through the relay (`card_ask` → `device_list` notice) — a direct fetch was tried first and is refused by a non-contact's privacy gate. gtests (wire, codec); lab `a_newer_device_list_follows_the_messages` (a group member who is not a contact gets the shorter list after a revoke)
 - [ ] Re-decide E027 device-lock on per-device sessions
 
 ## s — Account state (M023)

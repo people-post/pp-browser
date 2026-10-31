@@ -605,6 +605,11 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
   if (verified && *verified && carried && on_sender_card_) {
     on_sender_card_(*carried);
   }
+  // M021 d6: the sender says its list is newer than the one we checked with — fetch it from the sending device.
+  if (verified && *verified && on_sender_card_version_ && envelope.body.e2e.sender_card_at &&
+      *envelope.body.e2e.sender_card_at > card->issued_at) {
+    on_sender_card_version_(target.peer_identity_value, envelope.sender_device, *envelope.body.e2e.sender_card_at);
+  }
   return verified;
 }
 

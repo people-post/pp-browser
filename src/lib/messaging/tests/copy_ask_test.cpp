@@ -1,4 +1,5 @@
 #include "lib/messaging/CopyAsk.h"
+#include "lib/messaging/CardAsk.h"
 
 #include "lib/messaging/ChatPayloadCodec.h"
 
@@ -46,6 +47,23 @@ TEST(CopyAskTest, TheFamilyAnswersOnlyAsksWithTheirAsker) {
   other.content_type = ChatContentType::System;
   other.payload_json = R"({"control_type":"device_list"})";
   EXPECT_FALSE(family.owns(other));
+}
+
+TEST(CardAskTest, AnAskNamesTheDeviceThatSaidItsListIsNewer) {
+  auto notice = card_ask::BuildNotice("QmBobPhone");
+  ASSERT_TRUE(notice);
+  auto parsed = card_ask::Parse(OverTheWire(*notice));
+  ASSERT_TRUE(parsed && parsed->has_value());
+  EXPECT_EQ(**parsed, "QmBobPhone");
+  EXPECT_FALSE(card_ask::BuildNotice(""));
+  std::vector<std::pair<std::string, std::string>> answered;
+  SystemControlFamily family =
+      card_ask::MakeFamily([&](std::string device, std::string asker) { answered.emplace_back(device, asker); });
+  ThreadMessage ask = OverTheWire(*notice);
+  ASSERT_TRUE(family.on_lane(ask));
+  ASSERT_TRUE(family.apply(ask, SystemControlContext{.sender_identity = "account:carol"}));
+  ASSERT_EQ(answered.size(), 1u);
+  EXPECT_EQ(answered[0], std::make_pair(std::string("QmBobPhone"), std::string("account:carol")));
 }
 
 } // namespace
