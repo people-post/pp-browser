@@ -84,6 +84,19 @@ TEST(GroupMembershipCodecTest, DecodeInviteResponseFromMessage) {
   EXPECT_EQ(declined->control_type, GroupMembershipControlType::GroupInviteDecline);
 }
 
+TEST(GroupMembershipCodecTest, InviteRefusedCarriesItsReason) {
+  auto detail = GroupMembershipCodec::EncodeInviteRefused("nonce-9", "group:abc", kInviteRefusedGroupFull);
+  ASSERT_TRUE(detail);
+  ThreadMessage message;
+  message.content_type = ChatContentType::System;
+  message.payload_json = ControlPayload("group_invite_refused", *detail);
+  auto decoded = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->control_type, GroupMembershipControlType::GroupInviteRefused);
+  EXPECT_EQ(decoded->invite_nonce, "nonce-9");
+  EXPECT_EQ(decoded->reason, "group_full");
+}
+
 TEST(GroupMembershipCodecTest, OwnerTransferredLeavePreviousRoundTrip) {
   auto encoded = GroupMembershipCodec::EncodeOwnerTransferred("group:g", "relay:bob", 4, true);
   ASSERT_TRUE(encoded);

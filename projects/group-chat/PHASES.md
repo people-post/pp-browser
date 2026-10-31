@@ -26,11 +26,11 @@ L (size limit, G014) — independent
 - [x] Groups and card floors in the local account backup; lab `group_restore_checks_members`, `group_removed_member_restores`, `group_restored_owner_takes_newer_roster`
 - Restore itself is unsupported in the product ([at-rest A011](../at-rest-crypto/DECISIONS.md)): the member check only runs in the lab until restore returns
 
-## L — Group size limit (G014, proposed)
+## L — Group size limit (G014)
 
-- [ ] Owner refuses create / invite beyond 50 active members
-- [ ] `group_invite_refused { group_id, invite_nonce, reason: "group_full" }` for an accept that arrives when full; the invitee drops its local group
-- [ ] Wire doc + lab case
+- [x] Owner refuses create / invite beyond 50 active members (`kMaxGroupMembers`, `kGroupFullError`)
+- [x] `group_invite_refused { group_id, invite_nonce, reason: "group_full" }` for an accept that arrives when full (`ApplyInviteAcceptToRoster` closes the invite; `GroupMembershipWorkflow::RefuseInvite`); the invitee drops its local group (`RelayReceivePipeline::ApplyInviteRefused`: removed, read-only, a line saying why) — only for its own invite from that sender
+- [x] Wire doc (WIRE_SCHEMAS § Group size); gtests (apply, ingest both sides, codec). No lab case: it needs 51 users
 
 ## M — Mentions (G015)
 

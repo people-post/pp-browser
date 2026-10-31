@@ -13,12 +13,12 @@ Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.m
 | Owner-signed roster (G012) | `lib/messaging/GroupRosterStatement.*`; roster events carry the statement, `owner_transferred` the signed hand-over; re-signed after `member_left` (#411) |
 | Member check (G013) | `lib/messaging/GroupRosterSync.*`; request / reply on the control lane (`GroupRosterSyncFamily`); sends refused while checking / removed (#411) |
 | Groups in the account locker | Groups ride in the encrypted account locker (multi-device M023): a restore from the recovery phrase brings them back checking their members (G013); a group left is kept as a tombstone |
+| Size limit (G014) | 50 active members; the owner refuses create / invite past it and refuses a late accept (`group_invite_refused`); the invitee's group goes read-only |
 | Mentions (G015, m1–m6) | Wire `text_spans` (type 6); `SendGroupText`; who a mention reaches (`MentionVerdictFor`, held while a group checks, decided on settle); alerts through a mute once a minute unless mentions are muted too (`NoticeAlerts`, `thread_local_prefs.mute_mentions`); both ingest paths notice; the `thread_mentions` marker ("You were mentioned", jump to the oldest); composer `@` picker with public nicknames; transcript highlight checked at display. Lab `muted_group_alerts_on_a_mention` |
 
 ## Open (next first)
 
-1. **G014** size limit (proposed, independent — awaiting a decision to build).
-2. The mention flows seen on screen (picker, highlight, jump), and a lab case for a held mention.
+1. The mention flows seen on screen (picker, highlight, jump), and a lab case for a held mention.
 
 ## Notes for whoever picks this up
 

@@ -356,7 +356,7 @@ private:
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
   /** Whether a stored inbound message in `thread_id` mentions us (G015). */
-  /** A persisted message's notice for a user who is away (not attentive, another chat open); none otherwise. */
+  /** A persisted message's notice for a user who is away (not attentive — the open chat too); none otherwise. */
   struct BackgroundNotice {
     std::string title;
     std::string body;

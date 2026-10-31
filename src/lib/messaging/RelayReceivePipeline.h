@@ -51,6 +51,10 @@ struct RelayReceiveOutcome {
    * Filled on successful group_invite_accept apply.
    */
   std::optional<std::string> publish_member_joined_group_id;
+  /** G014: an accept came when the group was full — the owner tells the invitee (`group_invite_refused`). */
+  std::optional<std::string> refuse_invite_group_id;
+  std::string refuse_invite_nonce;
+  std::string refuse_invite_member;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
   /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
@@ -178,6 +182,9 @@ private:
                           const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome);
   /** File a sibling's sent message in its chat (public direct, or group), once per message id. */
   void FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope, RelayReceiveOutcome& outcome);
+  /** G014 invitee side: the owner refused our accept (the group was full) — drop the group we made on accept. */
+  Roe<void> ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
+                               const std::string& local_account) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */

@@ -65,6 +65,9 @@ public:
    * After a validated invite accept on the owner device: append local system line and fan out
    * owner-signed member_joined DMs (peer-facing membership commit).
    */
+  /** G014: an accept came when the group was full — tell the invitee (`group_invite_refused`, reason group_full). */
+  Roe<void> RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
+                         const std::string& invitee_identity);
   Roe<void> PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
                                 uint64_t roster_epoch);
 

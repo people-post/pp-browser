@@ -81,6 +81,8 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "group_roster_request";
   case GroupMembershipControlType::GroupRosterReply:
     return "group_roster_reply";
+  case GroupMembershipControlType::GroupInviteRefused:
+    return "group_invite_refused";
   }
   return "group_invite";
 }
@@ -94,6 +96,9 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   }
   if (value == "group_invite_decline") {
     return GroupMembershipControlType::GroupInviteDecline;
+  }
+  if (value == "group_invite_refused") {
+    return GroupMembershipControlType::GroupInviteRefused;
   }
   if (value == "member_joined") {
     return GroupMembershipControlType::MemberJoined;

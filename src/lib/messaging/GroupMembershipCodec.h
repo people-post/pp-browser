@@ -21,10 +21,15 @@ public:
 
   static Roe<std::string> EncodeInviteResponse(const std::string& invite_nonce, const std::string& group_id);
   static Roe<std::pair<std::string, std::string>> DecodeInviteResponse(const std::string& detail_json);
+  /** `group_invite_refused` (G014): `{ group_id, invite_nonce, reason }`. */
+  static Roe<std::string> EncodeInviteRefused(const std::string& invite_nonce, const std::string& group_id,
+                                              const std::string& reason);
   struct InviteResponsePayload {
     std::string invite_nonce;
     std::string group_id;
     GroupMembershipControlType control_type = GroupMembershipControlType::GroupInviteAccept;
+    /** A refusal's reason (`group_full`); empty for an accept or decline. */
+    std::string reason;
   };
   static Roe<InviteResponsePayload> DecodeInviteResponseFromMessage(const ThreadMessage& message);
 

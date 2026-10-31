@@ -1987,7 +1987,7 @@ def scenario_muted_group_alerts_on_a_mention(lab):
     """Mentions in a muted group (group-chat G015): Carol mutes the group and puts the app away. Bob's plain
     message is silent; Bob mentioning her alerts and marks the chat "You were mentioned" until she opens it;
     Bob's `@everyone` does not reach her (only the owner's does); once she mutes its mentions too, even Alice's
-    mention is silent."""
+    mention is silent — noticed, with the group open while she is away, but not alerting."""
     users, threads = open_group(lab, 3)
     a, b, c = users
     c_thread = threads[c.name]
@@ -2012,7 +2012,7 @@ def scenario_muted_group_alerts_on_a_mention(lab):
     c.cmd("show_chat", thread=c_thread)  # read: the marker goes
     if next(t for t in c.cmd("threads")["threads"] if t["id"] == c_thread).get("mentioned"):
         raise ProbeError("carol: still marked mentioned after opening the group")
-    c.cmd("show_chat", thread=c.cmd("open_chat", account=a.account)["thread"])
+    c.cmd("minimize")  # the group stays open: away, it still notifies
     c.cmd("mute_mentions", thread=c_thread)
     a.cmd("send_mentions", thread=threads[a.name], text="@%s now" % c.name, mentions=[c.account])
     notice = next_message_notice(c, c_thread, seen)

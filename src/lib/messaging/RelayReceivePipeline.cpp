@@ -219,6 +219,44 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
   }
 }
 
+Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
+                                                  const std::string& local_account) const {
+  auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
+  if (!refused) {
+    return refused.error();
+  }
+  // Only for an invite we received from this owner, for this group: anyone else's word drops nothing.
+  auto pending = group_roster_.LoadPendingInvite(refused->invite_nonce);
+  if (!pending || !*pending || (*pending)->outbound || (*pending)->inviter_identity != actor_identity ||
+      (*pending)->group_id != refused->group_id) {
+    return Error("group_invite_refused for no invite of ours from its sender");
+  }
+  (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
+  // G014: we were never added — drop the group we made on accept; its chat stays, read-only, saying why.
+  if (!local_account.empty()) {
+    (void)group_roster_.RemoveMember(refused->group_id, local_account);
+  }
+  (void)group_roster_.ClearGroupTarget(refused->group_id);
+  if (auto metadata = group_roster_.LoadMetadata(refused->group_id); metadata && *metadata) {
+    GroupMetadata removed = **metadata;
+    removed.sync_state = GroupSyncState::Removed;
+    (void)group_roster_.UpsertMetadata(removed);
+  }
+  if (auto thread = store_.FindGroupThread(refused->group_id); thread && *thread) {
+    auto detail = GroupMembershipCodec::EncodeInviteRefused(refused->invite_nonce, refused->group_id,
+                                                           refused->reason);
+    if (detail) {
+      if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupInviteRefused,
+                                                              "The group is full: you were not added", *detail,
+                                                              actor_identity)) {
+        (void)store_.AppendMessage(*sys);
+      }
+    }
+  }
+  log().info << "group invite refused group_id=" << refused->group_id << " reason=" << refused->reason;
+  return {};
+}
+
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
                                                               const std::string& actor_identity,
                                                               RelayReceiveOutcome* outcome) const {
@@ -241,6 +279,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return !*is_member; // true => ignore
   };
 
+  if (kind == GroupMembershipControlType::GroupInviteRefused) {
+    return ApplyInviteRefused(message, actor_identity, local_account);
+  }
   if (kind == GroupMembershipControlType::GroupInviteAccept ||
       kind == GroupMembershipControlType::GroupInviteDecline) {
     auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
@@ -251,6 +292,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
       auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
                                                response->group_id, local_account, util::NowUnixMs());
+      if (!applied && applied.error().message == kGroupFullError) {
+        if (outcome) {
+          outcome->refuse_invite_group_id = response->group_id;
+          outcome->refuse_invite_nonce = response->invite_nonce;
+          outcome->refuse_invite_member = actor_identity;
+        }
+        return {};
+      }
       if (!applied) {
         return applied.error();
       }

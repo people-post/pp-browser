@@ -137,7 +137,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G014 — Group size limit 50 and refused accept
 
 **Date:** 2026-10-25  
-**Status:** Proposed — a separate change (not part of the restore work)  
+**Status:** Accepted (Hongwei, 2026-10-30); **implemented** 2026-10-30 — `kMaxGroupMembers`, the refusal in `ApplyInviteAcceptToRoster`, `group_invite_refused` ([WIRE_SCHEMAS § Group size](../../docs/contracts/WIRE_SCHEMAS.md)). The invitee keeps the group's chat, read-only (sync state removed) with a line saying why, rather than deleting it.  
 **Decision:** Limit 50, counting the active roster only (not pending invites). The owner refuses create/invite beyond 50. An invite sent while not full but accepted when full: the owner refuses the accept and sends `group_invite_refused` `{ group_id, invite_nonce, reason: "group_full" }`, so the invitee does not believe it joined. Kenneth decided 50.  
 **Rationale:** Send cost is N pairwise ciphertexts per message (G008) and the `member_joined` snapshot carries every member's card; both grow with size. Without a refusal message the invitee, who creates its local group on accept, would show a group the owner never added.  
 **Alternatives:** No limit; count pending invites against the limit (blocks invites that may never be accepted).

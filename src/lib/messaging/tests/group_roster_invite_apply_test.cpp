@@ -490,6 +490,33 @@ TEST_F(GroupRosterInviteApplyTest, OnlyANewerOwnerRenameChangesTheTitle) {
   EXPECT_EQ((*meta)->title_version, 2u);
 }
 
+// G014: at most 50 active members. An invite sent while there was room but accepted once the group is full
+// is refused — the member is not added and the invite closes (the owner then tells the invitee).
+TEST_F(GroupRosterInviteApplyTest, AnAcceptWhenTheGroupIsFullIsRefused) {
+  SeedOwnedGroup(1);
+  for (size_t i = 0; i + 1 < kMaxGroupMembers; ++i) {  // 49 members: room for one more
+    GroupRosterMember member;
+    member.member_identity = "relay:m" + std::to_string(i);
+    member.role = i == 0 ? MemberRole::Owner : MemberRole::Member;
+    ASSERT_TRUE(roster_->UpsertMember("group:hike", member));
+  }
+  PendingGroupInvite last = MakePending();
+  ASSERT_TRUE(roster_->UpsertPendingInvite(last));
+  PendingGroupInvite late = MakePending();
+  late.invite_nonce = "nonce-late";
+  late.invitee_identity = "relay:carol";
+  ASSERT_TRUE(roster_->UpsertPendingInvite(late));
+
+  ASSERT_TRUE(Accept("nonce-1", "relay:bob")) << "the 50th member";
+  auto refused = Accept("nonce-late", "relay:carol");
+  ASSERT_FALSE(refused);
+  EXPECT_EQ(refused.error().message, kGroupFullError);
+  EXPECT_FALSE(IsMember("relay:carol"));
+  auto invite = roster_->LoadPendingInvite("nonce-late");
+  ASSERT_TRUE(invite && *invite);
+  EXPECT_EQ((*invite)->status, InviteStatus::Expired) << "closed: a re-sent accept is not applied later";
+}
+
 // Two accepts in one inbox poll are applied on two workers at once: both members land and the
 // epoch counts both (it used to lose one — "Failed to upsert group metadata" under a busy
 // profile.db, after the member and the invite status were already written).

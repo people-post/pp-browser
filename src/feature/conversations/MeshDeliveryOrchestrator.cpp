@@ -429,6 +429,10 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   if (outcome.resign_roster_group_id) {
     (void)groups->SignAndSendRoster(*outcome.resign_roster_group_id);
   }
+  if (outcome.refuse_invite_group_id) {
+    (void)groups->RefuseInvite(*outcome.refuse_invite_group_id, outcome.refuse_invite_nonce,
+                               outcome.refuse_invite_member);
+  }
   if (outcome.took_ownership_group_id) {
     (void)groups->SignAndSendRoster(*outcome.took_ownership_group_id, outcome.took_ownership_transfer);
   }
@@ -1887,7 +1891,9 @@ void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
 
 std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::BackgroundNoticeFor(
     const RelayReceiveOutcome& outcome, const std::string& local_account) {
-  if (outcome.thread_id.empty() || AppLifecycle::IsUserAttentive() || inbox_.ActiveThreadId() == outcome.thread_id) {
+  // The user is away (minimized, another window focused, a phone in the background): every chat notifies, the
+  // one left open too — it is not being looked at.
+  if (outcome.thread_id.empty() || AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
   }
   BackgroundNotice notice;
