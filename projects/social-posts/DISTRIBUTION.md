@@ -73,7 +73,9 @@ target is `https://www.brief.global/api/relay/v1`.
   a head, a media presign and a report, signed by `lib/posts`; every implementation (the relay) must parse,
   hash and verify them alike.
 - The relay enforces the protocol limits (S014) and **its quotas per author**, stated in its `post_relay`
-  terms. A relay may also require registration on its own terms; the default relay serves registered accounts.
+  terms. A relay may also require registration on its own terms; the default relay serves registered accounts — its
+  gateway reads the author an entry, head or presign claims and refuses unregistered ones as `not_served`
+  before app-posts sees them (app-posts then verifies the signature against that author's key).
 - **Forks** are stored side by side (both entries are proof) and flagged on the author (S019).
 - **Deletes:** a `delete` entry stubs its target — bytes dropped, place and hash kept — and unpins the
   target's media once no kept entry names them.
