@@ -34,11 +34,19 @@ public:
 
   /**
    * Rotate and attach `MetricsPath(log_path)` to the "Metrics" logger (common/Metrics.h), so
-   * operational metrics are written at any root log level and live in a file of their own —
-   * the only one a collector should read (no account ids, PeerIds or addresses). Returns the path
-   * in use, or empty when the file could not be opened.
+   * operational metrics are written at any root log level and live in a file of their own. Returns
+   * the path in use, or empty when the file could not be opened.
    */
   static std::string InstallMetrics(const std::string& log_path, std::size_t keep = kDefaultKeep);
+
+  /** `diag.log` next to the log file at `log_path`. */
+  static std::string DiagPath(const std::string& log_path);
+
+  /**
+   * Rotate and attach `DiagPath(log_path)` to the "Diag" logger (common/Diag.h): the troubleshooting
+   * events a user may send (docs/contracts/DIAGNOSTICS.md), written at any root log level.
+   */
+  static std::string InstallDiag(const std::string& log_path, std::size_t keep = kDefaultKeep);
 };
 
 } // namespace pbr

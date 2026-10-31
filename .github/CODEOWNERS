@@ -11,6 +11,12 @@ cmake/PpCppMesh.cmake                @yhw1630
 android/                             @yhw1630
 docs/contracts/                      @yhw1630 @gzdemon77
 
+# What may leave the device (docs/contracts/DIAGNOSTICS.md): both.
+src/common/ShareableLine.*           @yhw1630 @gzdemon77
+src/common/Secret.h                  @yhw1630 @gzdemon77
+src/foundation/diagnostics/Diagnostics*  @yhw1630 @gzdemon77
+src/app/DiagnosticsUpload.*          @yhw1630 @gzdemon77
+
 # Identity, crypto, registration, local backup: both.
 src/foundation/crypto/               @yhw1630 @gzdemon77
 src/foundation/identity/             @yhw1630 @gzdemon77

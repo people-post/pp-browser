@@ -240,7 +240,7 @@ Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../a
 
 ## Log file
 
-Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` … `pp-browser.5.log`. Files are owner-only (`0600`) and stay local — crash-report upload does not include them. Code: `foundation/diagnostics/LogFile.*`.
+Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` … `pp-browser.5.log`. Files are owner-only (`0600`) and never leave the device — neither crash reports nor Send diagnostics read them. Code: `foundation/diagnostics/LogFile.*`.
 
 | Flag | Effect |
 |------|--------|
@@ -249,7 +249,12 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
-Operational metrics (`common/Metrics.h`: `event=… k=v` lines with timings, rates and device load, never account ids, PeerIds or addresses) go to their own file next to it, `{data_dir}/logs/metrics.log`, rotated the same way. They are written at any log level; with `--debug` they also appear in the main log. A collector should read only this file.
+Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, no free text or raw ids) to files of their own next to it, rotated the same way and written at any log level (with `--debug` they also appear in the main log):
+
+- `{data_dir}/logs/metrics.log` — operational metrics (`common/Metrics.h`): timings, rates and device load.
+- `{data_dir}/logs/diag.log` — troubleshooting events (`common/Diag.h`).
+
+These two files and the pending crash record are all that Me → Security → Send diagnostics sends: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 
 The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `--sandbox` or `XDG_DATA_HOME`.
 
@@ -262,6 +267,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_CONFIG` | Explicit config file path |
 | `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
+| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<brief origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |

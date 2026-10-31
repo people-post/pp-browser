@@ -133,6 +133,7 @@ int main(int argc, char** argv) {
       root.warning << "Log file " << log_path << " version=" << pbr::AppVersionString()
                 << " level=" << LevelName(root.getLevel());
       pbr::LogFile::InstallMetrics(log_path);
+      pbr::LogFile::InstallDiag(log_path);
     }
   }
 

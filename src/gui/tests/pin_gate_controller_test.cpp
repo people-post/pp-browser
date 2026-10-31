@@ -26,16 +26,16 @@ protected:
     };
     controller_.BindShellPinGate(std::move(shell));
     UnlockGateCompletePorts complete;
-    complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase, bool is_default,
+    complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase, bool is_default,
                                               const std::vector<std::string>& saved_copies) {
-      phrase_restore_ = std::make_tuple(pin, phrase, is_default);
+      phrase_restore_ = std::make_tuple(pin.Reveal(), phrase.Reveal(), is_default);
       saved_copies_ = saved_copies;
     };
     complete.pick_saved_copy = [this](std::function<void(std::string, std::optional<std::string>)> picked) {
       picked(pick_name_, pick_text_);
     };
-    complete.complete_link_device = [this](const std::string& pin, const std::string& bundle, bool is_default) {
-      link_ = std::make_tuple(pin, bundle, is_default);
+    complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle, bool is_default) {
+      link_ = std::make_tuple(pin.Reveal(), bundle, is_default);
     };
     controller_.BindGateComplete(std::move(complete));
   }

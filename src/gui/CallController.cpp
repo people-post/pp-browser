@@ -270,9 +270,9 @@ const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
   return vitals_;
 }
 
-void CallController::EmitMetrics(const std::vector<std::string>& lines) {
-  for (const std::string& line : lines) {
-    MetricsLog().info << line;
+void CallController::EmitMetrics(const std::vector<ShareableLine>& lines) {
+  for (const ShareableLine& line : lines) {
+    line.Emit();
   }
 }
 

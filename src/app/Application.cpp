@@ -5,6 +5,9 @@
 #include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
+#include "app/DiagnosticsUpload.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "lib/net/BriefGuestLlmClient.h"
 
 #include "foundation/crypto/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
@@ -794,18 +797,18 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  settings_commands.change_pin = [this](const std::string& current_pin, const std::string& new_pin) -> Roe<void> {
+  settings_commands.change_pin = [this](const SecretText& current_pin, const SecretText& new_pin) -> Roe<void> {
     DataKeyVault* vault = secrets_->Vault();
     if (vault == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
     }
-    if (auto changed = vault->ChangePin(current_pin, new_pin); !changed) {
+    if (auto changed = vault->ChangePin(current_pin.Reveal(), new_pin.Reveal()); !changed) {
       return changed.error();
     }
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
-  settings_commands.recovery_phrase = [&facade](const std::string& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
   settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {
@@ -827,7 +830,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
-  settings_commands.open_support_chat = [this, &facade]() -> Roe<void> {
+  settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
     if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
       return Error(Tr("support.unavailable"));
     }
@@ -884,12 +887,68 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     if (chat_) {
       chat_->FinalizeThreadDisplay();
+      chat_->PrefillDraft(prefilled_text);
     }
     return {};
   };
+  settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
+    DiagnosticsUploadDeps deps;
+    deps.data_dir = store_.Snapshot().data_dir;
+    // The bundle's self-check refuses to send when any of these appears in it (a line that got past the shareable rule).
+    if (auto identity = facade.GetIdentity()) {
+      deps.known_identifiers = {identity->account_id, identity->peer_id, identity->relay_user_id};
+    }
+    // The self-check strips a leading scheme itself; the bare ids are passed too so either form is caught.
+    auto add_bare = [&deps](const std::string& id) {
+      for (const char* scheme : {"account:", "relay:", "peer:", "call:"}) {
+        const std::string prefix = scheme;
+        if (id.compare(0, prefix.size(), prefix) == 0 && id.size() > prefix.size()) {
+          deps.known_identifiers.push_back(id.substr(prefix.size()));
+          return;
+        }
+      }
+    };
+    for (const std::string& id : std::vector<std::string>(deps.known_identifiers)) {
+      add_bare(id);
+    }
+    if (auto contacts = Conversations().Contacts().List()) {
+      for (const Contact& contact : *contacts) {
+        for (const auto& id : contact.ids) {
+          deps.known_identifiers.push_back(id.value);
+          add_bare(id.value);
+        }
+      }
+    }
+    // The AI stream's key: registered, else guest, else mint a guest key now (same helpers as the chat).
+    deps.bearer = [&facade]() -> Roe<std::string> {
+      auto identity = facade.GetIdentity();
+      if (!identity) {
+        return Error("Messaging is not ready");
+      }
+      std::string key = ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
+      if (!key.empty()) {
+        return key;
+      }
+      auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
+      if (!minted) {
+        return minted.error();
+      }
+      LocalIdentity updated = *identity;
+      updated.brief_llm_guest_api_key = minted->llm_api_key;
+      (void)facade.UpdateLocalIdentity(updated);
+      return minted->llm_api_key.Reveal();
+    };
+    SendDiagnostics(std::move(deps), std::move(on_done));
+  };
+  settings_commands.last_diagnostics_id = [this]() -> std::string {
+    const auto last = ReadLastUpload(store_.Snapshot().data_dir);
+    return last ? last->upload_id : std::string();
+  };
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
-  settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() { return RunOnUiAndWait(open); };
+  settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {
+    return RunOnUiAndWait([open]() { return open({}); });
+  };
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
@@ -1071,15 +1130,15 @@ void Application::WireUnlockPinAndFlow() {
   unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
-    gate_complete.complete_with_pin = [this](const std::string& pin, const bool create_mode) {
+    gate_complete.complete_with_pin = [this](const SecretText& pin, const bool create_mode) {
       unlock_gate_->CompleteWithPin(pin, create_mode);
     };
     gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
-    gate_complete.complete_link_device = [this](const std::string& pin, const std::string& bundle_json,
+    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle_json,
                                                 const bool set_default_pin) {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
-    gate_complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase,
+    gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
                                                    const bool set_default_pin,
                                                    const std::vector<std::string>& saved_copies) {
       unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin, saved_copies);
@@ -1136,11 +1195,11 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
-  unlock_ports.import_link_device = [&facade](const std::string& pin,
+  unlock_ports.import_link_device = [&facade](const SecretText& pin,
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
-  unlock_ports.restore_recovery_phrase = [&facade](const std::string& pin, const std::string& phrase,
+  unlock_ports.restore_recovery_phrase = [&facade](const SecretText& pin, const SecretText& phrase,
                                                    const std::vector<std::string>& saved_copies) {
     return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
   };

@@ -96,13 +96,13 @@ TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   ProfileUnlockPorts ports;
   ports.messaging_initialized = []() { return true; };
   ports.messaging_ready = []() { return false; };
-  ports.restore_recovery_phrase = [&](const std::string& pin, const std::string& phrase,
+  ports.restore_recovery_phrase = [&](const SecretText& pin, const SecretText& phrase,
                                       const std::vector<std::string>&) -> Roe<void> {
-    restores.emplace_back(pin, phrase);
-    if (phrase != "the right words") {
+    restores.emplace_back(pin.Reveal(), phrase.Reveal());
+    if (phrase.Reveal() != "the right words") {
       return Error("No account was found for this recovery phrase");
     }
-    return engine_.Vault()->CreateWithDek(pin, ByteVector(kDataEncryptionKeySize, 0x62));
+    return engine_.Vault()->CreateWithDek(pin.Reveal(), ByteVector(kDataEncryptionKeySize, 0x62));
   };
   ports.set_pin_is_default = [&](const bool is_default) { pin_is_default = is_default; };
   ports.ui.on_link_imported = [&]() { ++imported_notices; };

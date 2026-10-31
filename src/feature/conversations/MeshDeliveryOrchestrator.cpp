@@ -7,6 +7,7 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
+#include "common/Diag.h"
 #include "lib/messaging/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/GroupRosterSync.h"
@@ -721,6 +722,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
   notice.detail = outcome.receive_failure_detail;
   log().warning << "Inbound receive failure sender=" << notice.peer << " reason=" << ReceiveFailureWire(notice.receive)
                 << " family=" << notice.family << " detail=" << notice.detail;
+  DiagLine("chat.receive_failed").Add("reason", ReceiveFailureWord(notice.receive)).Ref("sender", notice.peer).Emit();
 
   // One toast/system line per sender+reason within the cooldown — old relay backlog must not flood UI.
   const std::string rate_key = notice.peer + "|" + ReceiveFailureWire(notice.receive) + "|" + notice.family;
@@ -1217,6 +1219,7 @@ void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const S
   DeliveryNotice notice;
   notice.kind = DeliveryNotice::Kind::SendFailed;
   notice.send = SendFailureForThread(failure, ResolveThreadTrust(thread) == TrustLevel::Friendly);
+  DiagLine("chat.send_failed").Add("failure", SendFailureWord(notice.send)).Ref("thread", thread.id).Emit();
   notice.detail = detail;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
@@ -1982,6 +1985,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       auto poll = relay_->PollInbox(identity->relay_user_id, cursor);
       if (!poll) {
         log().warning << "PollInbox failed: " << poll.error().message;
+        DiagLine("relay.poll_failed").Fail("error", poll.error()).Emit();
         brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Failed),
                                   std::memory_order_relaxed);
         continue;
@@ -1990,6 +1994,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       std::string next_cursor = poll->next_cursor;
       if (poll->messages.size() > kMaxPollBatchMessages) {
         log().warning << "PollInbox batch too large n=" << poll->messages.size() << " — skip advance";
+        DiagLine("relay.poll_too_large").Add("n", poll->messages.size()).Emit();
         continue;
       }
       // Advance cursor on the poll worker before re-poll so a follow-up HTTP does not

@@ -32,26 +32,26 @@ public:
 
   struct MediaTick {
     bool connected = false;
-    std::string path;  // direct / punched / relayed / hop …
+    std::string path;  // CallMediaBridge::MediaPathKind: direct / punched / circuit
     CallPathQuality quality = CallPathQuality::Good;
     CallMediaEngineHealth health;
   };
 
   /** Placing a call. Returns the previous call's final line if one was still tracked. */
-  std::vector<std::string> NoteOutbound(const std::string& call_id, bool video, int64_t now_ms,
+  std::vector<ShareableLine> NoteOutbound(const std::string& call_id, bool video, int64_t now_ms,
                                         const DeviceVitals& vitals) {
-    std::vector<std::string> out = Begin(call_id, "caller", video, now_ms, vitals);
+    std::vector<ShareableLine> out = Begin(call_id, "caller", video, now_ms, vitals);
     call_.outbound_ms = now_ms;
     return out;
   }
 
   /** The ring dialog for an incoming call. Returns the previous call's final line, if any. */
-  std::vector<std::string> NoteRing(const std::string& call_id, bool video, int64_t now_ms,
+  std::vector<ShareableLine> NoteRing(const std::string& call_id, bool video, int64_t now_ms,
                                     const DeviceVitals& vitals) {
     if (call_.id == call_id) {
       return {};
     }
-    std::vector<std::string> out = Begin(call_id, "callee", video, now_ms, vitals);
+    std::vector<ShareableLine> out = Begin(call_id, "callee", video, now_ms, vitals);
     call_.ring_ms = now_ms;
     return out;
   }
@@ -73,9 +73,9 @@ public:
   }
 
   /** Each media-health tick of the active call; returns lines to emit (call.setup on connect). */
-  std::vector<std::string> NoteMedia(const std::string& call_id, const MediaTick& tick, int64_t now_ms,
+  std::vector<ShareableLine> NoteMedia(const std::string& call_id, const MediaTick& tick, int64_t now_ms,
                                      const DeviceVitals& vitals) {
-    std::vector<std::string> out;
+    std::vector<ShareableLine> out;
     if (call_.id != call_id || call_id.empty()) {
       return out;
     }
@@ -124,15 +124,15 @@ public:
   }
 
   /** How late the UI thread ran a probe task (UiLatencyProbe). Returns ui.stall when long. */
-  std::vector<std::string> NoteUiLatency(int64_t latency_ms) {
-    std::vector<std::string> out;
+  std::vector<ShareableLine> NoteUiLatency(int64_t latency_ms) {
+    std::vector<ShareableLine> out;
     if (call_.id.empty() || latency_ms < kStallMs || latency_ms >= kStallMaxMs) {
       return out;
     }
     ++call_.stalls;
     call_.stall_max_ms = std::max(call_.stall_max_ms, latency_ms);
     out.push_back(
-        MetricsLine("ui.stall").Add("call", MetricsCallId(call_.id)).Add("stuck_ms", latency_ms).str());
+        MetricsLine("ui.stall").Call("call", call_.id).Add("stuck_ms", latency_ms));
     return out;
   }
 
@@ -140,8 +140,8 @@ public:
    * Every UI frame. call_live: a call is still under way (lifecycle not Idle, or the UI shows one).
    * Returns the final line once no call has been live for kEndGraceMs.
    */
-  std::vector<std::string> Tick(bool call_live, int64_t now_ms, const DeviceVitals& vitals) {
-    std::vector<std::string> out;
+  std::vector<ShareableLine> Tick(bool call_live, int64_t now_ms, const DeviceVitals& vitals) {
+    std::vector<ShareableLine> out;
     if (call_.id.empty()) {
       return out;
     }
@@ -194,9 +194,9 @@ private:
 
   static uint64_t Delta(uint64_t now, uint64_t base) { return now >= base ? now - base : now; }
 
-  std::vector<std::string> Begin(const std::string& call_id, const char* role, bool video, int64_t now_ms,
+  std::vector<ShareableLine> Begin(const std::string& call_id, const char* role, bool video, int64_t now_ms,
                                  const DeviceVitals& vitals) {
-    std::vector<std::string> out;
+    std::vector<ShareableLine> out;
     if (!call_.id.empty() && call_.id != call_id) {
       out.push_back(EndLine(call_.last_seen_ms, vitals));
     }
@@ -211,22 +211,21 @@ private:
     return out;
   }
 
-  void NoteVitals(const DeviceVitals& vitals, std::vector<std::string>& out) {
+  void NoteVitals(const DeviceVitals& vitals, std::vector<ShareableLine>& out) {
     if (vitals.thermal < 0 || vitals.thermal == call_.thermal_last) {
       return;
     }
     out.push_back(MetricsLine("device.thermal")
-                      .Add("call", MetricsCallId(call_.id))
+                      .Call("call", call_.id)
                       .Add("state", ThermalStateName(vitals.thermal))
-                      .Add("from", ThermalStateName(call_.thermal_last))
-                      .str());
+                      .Add("from", ThermalStateName(call_.thermal_last)));
     call_.thermal_last = vitals.thermal;
     call_.thermal_max = std::max(call_.thermal_max, vitals.thermal);
   }
 
-  std::string SetupLine(const char* result, int64_t now_ms) const {
+  ShareableLine SetupLine(const ShareWord result, int64_t now_ms) const {
     MetricsLine line("call.setup");
-    line.Add("call", MetricsCallId(call_.id)).Add("role", call_.role).Add("video", call_.video).Add("result", result);
+    line.Call("call", call_.id).Pick("role", call_.role, {"caller", "callee"}).Add("video", call_.video).Add("result", result);
     if (call_.ring_ms && call_.accept_ms) {
       line.Add("answer_ms", call_.accept_ms - call_.ring_ms);
     }
@@ -236,20 +235,20 @@ private:
       if (from) {
         line.Add("connect_ms", call_.connected_ms - from);
       }
-      line.Add("path", call_.path);
+      line.Pick("path", call_.path, {"direct", "punched", "circuit"});
     } else {
       const int64_t from = call_.accept_ms ? call_.accept_ms : (call_.outbound_ms ? call_.outbound_ms : call_.ring_ms);
       line.Add("waited_ms", now_ms - from);
     }
-    return line.str();
+    return line;
   }
 
-  std::string EndLine(int64_t end_ms, const DeviceVitals& vitals) const {
+  ShareableLine EndLine(int64_t end_ms, const DeviceVitals& vitals) const {
     if (call_.connected_ms == 0) {
-      const char* result = call_.declined                               ? "declined"
-                           : call_.role == "callee" && !call_.accept_ms ? "missed"
-                           : call_.role == "callee"                     ? "failed"
-                                                                        : "not_connected";
+      const ShareWord result = call_.declined                               ? ShareWord("declined")
+                               : call_.role == "callee" && !call_.accept_ms ? ShareWord("missed")
+                               : call_.role == "callee"                     ? ShareWord("failed")
+                                                                            : ShareWord("not_connected");
       return SetupLine(result, end_ms);
     }
     const CallMediaEngineHealth& b = call_.base;
@@ -262,16 +261,16 @@ private:
     auto pct = [&](int64_t ms) { return quality_total > 0 ? static_cast<int64_t>(ms * 100 / quality_total) : 0; };
     const double secs = static_cast<double>(duration_ms) / 1000.0;
     MetricsLine line("call.summary");
-    line.Add("call", MetricsCallId(call_.id))
-        .Add("role", call_.role)
+    line.Call("call", call_.id)
+        .Pick("role", call_.role, {"caller", "callee"})
         .Add("video", call_.video)
         .Add("duration_s", secs)
-        .Add("path", call_.path)
+        .Pick("path", call_.path, {"direct", "punched", "circuit"})
         .Add("path_changes", call_.path_changes)
         .Add("reconnects", call_.reconnects)
         .Add("first_audio_ms", call_.first_audio_ms)
         .Add("first_video_ms", call_.first_video_ms)
-        .Add("audio_io", l.audio_io)
+        .Pick("audio_io", l.audio_io, {"vpio", "sdl", "none"})
         .Add("rx_audio", Delta(l.rx_audio_frames, b.rx_audio_frames))
         .Add("tx_audio", Delta(l.tx_audio_frames, b.tx_audio_frames))
         .Add("underrun", Delta(l.playout_underruns, b.playout_underruns))
@@ -302,7 +301,7 @@ private:
           .Add("battery_end", vitals.battery_pct)
           .Add("charging", call_.vitals_start.charging || vitals.charging);
     }
-    return line.str();
+    return line;
   }
 
   Call call_;

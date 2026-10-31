@@ -6,7 +6,7 @@ pp-browser **shared language**: tiny helpers and **contracts** (ports / vocabula
 app → feature → domain → lib → foundation → common → pp_common
 ```
 
-**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON), and other `common/` headers. It must **never** `#include` `foundation/`, `lib/`, `feature/`, or `app/`.
+**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON and the keyed hash of `ShareableLine::Ref`), and other `common/` headers. It must **never** `#include` `foundation/`, `lib/`, `feature/`, or `app/`.
 
 Repo-wide North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
@@ -18,7 +18,7 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 
 | Subdir | Contents |
 |--------|----------|
-| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `MeshAlias` (`mesh::` = pp-cpp-mesh's `pp::mesh`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText` |
+| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `MeshAlias` (`mesh::` = pp-cpp-mesh's `pp::mesh`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText`, `ShareableLine` + its channels `Metrics` / `Diag` (lines that may leave the device — docs/contracts/DIAGNOSTICS.md), `Secret` (`SecretText`: a secret that cannot be logged) |
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
 | [`directory/`](directory/) | Phone-book glue: `DirectoryJson`, `IdentityTypes`, trust / signing access ports. The rows themselves (`DirectoryTypes`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`) are pp-cpp-mesh's vocabulary, `mesh/types/` |
 | [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |

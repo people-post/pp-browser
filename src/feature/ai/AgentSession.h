@@ -6,6 +6,7 @@
 #include "lib/ai/ToolRegistry.h"
 #include "lib/ai/TurnPlan.h"
 #include "lib/ai/TurnTrace.h"
+#include "common/ShareableLine.h"
 #include "lib/ai/conversation/ConversationTypes.h"
 #include "lib/ai/mcp/McpClient.h"
 #include "foundation/data/Config.h"
@@ -191,7 +192,7 @@ private:
                             const std::string& reason);
   /** Acts on a local plan: execute, ask back, list candidates or say it cannot. `outcome` is the metric for a plan. */
   static void HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan plan, const std::string& tool,
-                              const char* outcome, bool asked_twice = false);
+                              ShareWord outcome, bool asked_twice = false);
   static void RunDirectAction(const std::shared_ptr<Impl>& state, const std::string& tool, const Object& args);
   static LocalPlanContext BuildLocalPlanContext(const std::shared_ptr<Impl>& state, const std::string& tool);
   /** Ends the turn with a host-built answer; `keep_out_of_history`: an app-action turn (never sent to a model). */

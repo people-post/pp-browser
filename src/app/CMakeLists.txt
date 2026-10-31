@@ -11,6 +11,7 @@ set(PP_BROWSER_APP_SOURCES
   Application.cpp
   Bootstrap.cpp
   CrashReportUpload.cpp
+  DiagnosticsUpload.cpp
   ConfigApplyBridge.cpp
   ContactsShellBridge.cpp
   ChatShellBridge.cpp

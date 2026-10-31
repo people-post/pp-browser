@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/ShareableLine.h"
+
 namespace pbr {
 
 /** Device load for operational metrics (Metrics.h): what a call costs the device. -1 = unknown. */
@@ -16,7 +18,7 @@ struct DeviceVitals {
 /** UI thread (iOS reads UIDevice). Cheap enough for once every couple of seconds. */
 DeviceVitals ReadDeviceVitals();
 
-inline const char* ThermalStateName(const int thermal) {
+inline ShareWord ThermalStateName(const int thermal) {
   switch (thermal) {
   case 0:
     return "nominal";

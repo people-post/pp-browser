@@ -74,7 +74,7 @@ TEST_F(IdentityStoreTest, ANewAccountDerivesFromARecoverySeedItKeeps) {
     account_id = identity->account_id;
     auto seed = store.RecoverySeed();
     ASSERT_TRUE(seed && *seed) << "M023: a new account has a recovery seed";
-    phrase = EncodeRecoveryPhrase(**seed).value();
+    phrase = EncodeRecoveryPhrase(**seed).value().Reveal();
   }
   // The phrase alone names the account (as a restore will find it).
   const ByteVector seed = DecodeRecoveryPhrase(phrase).value();

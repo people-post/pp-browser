@@ -16,7 +16,7 @@ namespace {
 std::vector<std::string> AllTools() {
   std::vector<std::string> names;
   for (const AppActionWords& words : AppActionTable()) {
-    names.emplace_back(words.tool);
+    names.emplace_back(words.tool.view());
   }
   return names;
 }

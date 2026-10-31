@@ -98,6 +98,8 @@ jobs:
         run: ./scripts/check/check_platform_ifdefs.sh
       - name: RML text bindings
         run: ./scripts/check/check_rml_bindings.sh
+      - name: Shareable channels (what Send diagnostics reads)
+        run: ./scripts/check/check_shareable_channels.sh
 
   build:
     needs: changes

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/LinkDeviceCodec.h"
@@ -39,7 +41,7 @@ public:
    * under the current DEK.
    */
   static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault,
-                                            const std::string& bundle_json, std::string_view pin,
+                                            const std::string& bundle_json, const SecretText& pin,
                                             int64_t now_ms);
 };
 

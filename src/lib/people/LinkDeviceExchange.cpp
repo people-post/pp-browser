@@ -30,14 +30,14 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   LinkDeviceBundleV1 bundle;
   bundle.account_id = identity.account_id;
   bundle.account_ml_dsa_pk_b64 = identity.account_signing_public_key_b64;
-  bundle.account_ml_dsa_sk_b64 = identity.account_signing_private_key_b64;
+  bundle.account_ml_dsa_sk_b64 = identity.account_signing_private_key_b64.Reveal();
   bundle.account_kem_pk_b64 = identity.kem_public_key_b64;
-  bundle.account_kem_sk_b64 = identity.kem_private_key_b64;
+  bundle.account_kem_sk_b64 = identity.kem_private_key_b64.Reveal();
   bundle.dek_b64 = Base64Encode(dek);
   bundle.relay_user_id = identity.relay_user_id;
   bundle.nickname = identity.nickname;
   if (!identity.recovery_seed_b64.empty()) {
-    bundle.recovery_seed_b64 = identity.recovery_seed_b64;  // M023: the new device shows the same phrase
+    bundle.recovery_seed_b64 = identity.recovery_seed_b64.Reveal();  // M023: the new device shows the same phrase
   }
   bundle.created_at_ms = now_ms;
   bundle.expires_at_ms = now_ms + ttl_ms;
@@ -62,7 +62,7 @@ Roe<std::string> LinkDeviceExchange::ExportJson(const LocalIdentity& identity, c
 }
 
 Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, DataKeyVault& vault,
-                                                       const std::string& bundle_json, const std::string_view pin,
+                                                       const std::string& bundle_json, const SecretText& pin,
                                                        const int64_t now_ms) {
   auto parsed = LinkDeviceCodec::Parse(bundle_json);
   if (!parsed) {
@@ -72,7 +72,7 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
     return valid.error();
   }
 
-  auto dek = Base64Decode(parsed->dek_b64);
+  auto dek = Base64Decode(parsed->dek_b64.Reveal());
   if (!dek) {
     return dek.error();
   }
@@ -85,10 +85,10 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
       return existing.error();
     }
     loaded = *existing;
-    if (auto wrapped = vault.ReplaceWithDek(pin, *dek); !wrapped) {
+    if (auto wrapped = vault.ReplaceWithDek(pin.Reveal(), *dek); !wrapped) {
       return wrapped.error();
     }
-  } else if (auto wrapped = vault.CreateWithDek(pin, *dek); !wrapped) {
+  } else if (auto wrapped = vault.CreateWithDek(pin.Reveal(), *dek); !wrapped) {
     return wrapped.error();
   }
   if (had_vault) {
@@ -109,7 +109,7 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   LocalIdentity next = *loaded;
   const std::string device_peer = next.peer_id;
   const std::string device_pk = next.public_key_b64;
-  const std::string device_sk = next.private_key_b64;
+  const std::string device_sk = next.private_key_b64.Reveal();
 
   next.account_id = parsed->account_id;
   next.account_signing_public_key_b64 = parsed->account_ml_dsa_pk_b64;

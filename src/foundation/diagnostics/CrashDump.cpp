@@ -213,6 +213,10 @@ void OnTerminate() {
 
 } // namespace
 
+const char* CrashDump::OsLabel() {
+  return CrashOsLabel();
+}
+
 std::string CrashDump::PendingPath(const std::string& data_dir) {
   return (std::filesystem::path(data_dir) / "diagnostics" / "crash_pending.txt").string();
 }

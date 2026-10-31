@@ -18,7 +18,7 @@ namespace pbr {
 namespace {
 
 Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsEngine& secrets,
-                                    const std::string& pin) {
+                                    const SecretText& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
   return UnlockProfileSecretsAndReady(secrets, pin,
                                       [&messaging]() { return messaging.EnsureMessagingReady(); });
@@ -94,7 +94,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
 
   // Optional CLI/env unlock for tests/automation only. Interactive / silent default unlock
   // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
-  if (auto pin = PinResolver::Resolve(options.pin); pin) {
+  if (auto pin = PinResolver::Resolve(options.pin.Reveal()); pin) {
     if (!options.restore_recovery_phrase.empty()) {
       if (auto restored = messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin,
                                                                   options.restore_saved_copies);

@@ -1,5 +1,6 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 
+#include "common/Diag.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -15,7 +16,7 @@ ProfileUnlockGate::ProfileUnlockGate() {
   redirectLogger("ProfileUnlockGate");
 }
 
-Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsEngine& secrets, const std::string& pin,
+Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsEngine& secrets, const SecretText& pin,
                                        const std::function<Roe<void>()>& ensure_messaging_ready) {
   {
     StartupPhase phase("ProfileUnlockGate::VaultUnlock");
@@ -44,7 +45,7 @@ ProfileSecretsEngine& ProfileUnlockGate::Secrets() {
   return *secrets_;
 }
 
-Roe<void> ProfileUnlockGate::UnlockAndReady(const std::string& pin) {
+Roe<void> ProfileUnlockGate::UnlockAndReady(const SecretText& pin) {
   return UnlockProfileSecretsAndReady(Secrets(), pin, ports_.ensure_messaging_ready);
 }
 
@@ -67,6 +68,7 @@ void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
 }
 
 void ProfileUnlockGate::Finish(const bool unlocked) {
+  DiagLine("unlock.done").Add("unlocked", unlocked).Emit();
   SetUnlockInProgress(false);
   if (ports_.ui.dismiss) {
     ports_.ui.dismiss();
@@ -76,6 +78,7 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
 
 void ProfileUnlockGate::ReportError(const std::string& message) {
   log().warning << "Unlock failed: " << message;
+  DiagLine("unlock.failed").Add("wrong_pin", false).Add("silent", !showing_).Emit();
   SetUnlockInProgress(false);
   if (!showing_) {
     // Silent unlock failed with no modal yet — open unlock so the user can retry.
@@ -90,10 +93,12 @@ void ProfileUnlockGate::ReportError(const Error& error) {
   // The vault's text ("Incorrect PIN or corrupt vault") is English; the log keeps it, the screen
   // gets our wording. A silent unlock (no PIN typed) opens the unlock screen without that line.
   if (!IsWrongPinError(error)) {
+    DiagLine("unlock.error").Fail("error", error).Emit();
     ReportError(error.message);
     return;
   }
   log().warning << "Unlock failed: " << error.message;
+  DiagLine("unlock.failed").Add("wrong_pin", true).Add("silent", !showing_).Emit();
   SetUnlockInProgress(false);
   const bool silent = !showing_;
   if (silent) {
@@ -151,7 +156,7 @@ void ProfileUnlockGate::RequestShowUnlock(std::function<void(bool)> done) {
   }
 }
 
-void ProfileUnlockGate::RunUnlockAndReadyAsync(std::string pin, const bool set_default_pin,
+void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_default_pin,
                                                const bool clear_default_pin) {
   if (unlock_in_progress_) {
     return;
@@ -310,7 +315,7 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   RequestShowUnlock(nullptr);
 }
 
-void ProfileUnlockGate::CompleteWithPin(const std::string& pin, const bool create_mode) {
+void ProfileUnlockGate::CompleteWithPin(const SecretText& pin, const bool create_mode) {
   RunUnlockAndReadyAsync(pin, /*set_default_pin=*/false, /*clear_default_pin=*/create_mode);
 }
 
@@ -319,7 +324,7 @@ void ProfileUnlockGate::CompleteWithDefaultPin() {
                          /*clear_default_pin=*/false);
 }
 
-void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::string& bundle_json,
+void ProfileUnlockGate::CompleteLinkDevice(const SecretText& pin, const std::string& bundle_json,
                                            const bool set_default_pin) {
   if (!ports_.import_link_device) {
     ReportError("Link import is not available");
@@ -330,7 +335,7 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
       "link_device_import");
 }
 
-void ProfileUnlockGate::CompletePhraseRestore(const std::string& pin, const std::string& phrase,
+void ProfileUnlockGate::CompletePhraseRestore(const SecretText& pin, const SecretText& phrase,
                                               const bool set_default_pin, std::vector<std::string> saved_copies) {
   if (!ports_.restore_recovery_phrase) {
     ReportError("Restore from a recovery phrase is not available");
@@ -344,7 +349,7 @@ void ProfileUnlockGate::CompletePhraseRestore(const std::string& pin, const std:
       "phrase_restore");
 }
 
-void ProfileUnlockGate::CompleteAccountImport(const std::string& pin, const bool set_default_pin,
+void ProfileUnlockGate::CompleteAccountImport(const SecretText& pin, const bool set_default_pin,
                                               std::function<Roe<void>()> import, const char* mark) {
   if (unlock_in_progress_) {
     return;

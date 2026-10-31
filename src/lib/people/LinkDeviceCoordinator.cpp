@@ -19,7 +19,7 @@ Roe<std::string> LinkDeviceCoordinator::ExportJson(IdentityStore& identity, Data
 
 Roe<LinkDeviceImportResult> LinkDeviceCoordinator::Import(IdentityStore& identity, DataKeyVault& vault,
                                                           ProfileSecretsEngine* secrets,
-                                                          const std::string& bundle_json, const std::string_view pin,
+                                                          const std::string& bundle_json, const SecretText& pin,
                                                           const int64_t now_ms) {
   auto imported = LinkDeviceExchange::Import(identity, vault, bundle_json, pin, now_ms);
   if (!imported) {

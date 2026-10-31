@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/Config.h"
 #include "lib/people/IdentityStore.h"
@@ -17,7 +19,7 @@ namespace pbr {
 struct NodeBootstrapOptions {
   int argc = 0;
   char** argv = nullptr;
-  std::string pin;
+  SecretText pin;
   std::string profile_override;
 };
 

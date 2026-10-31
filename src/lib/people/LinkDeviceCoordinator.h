@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "lib/people/IdentityStore.h"
@@ -26,7 +28,7 @@ public:
   /** Vault + account import, then the DEK fan-out (`secrets` may be null in tests). */
   static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault,
                                             ProfileSecretsEngine* secrets, const std::string& bundle_json,
-                                            std::string_view pin, int64_t now_ms);
+                                            const SecretText& pin, int64_t now_ms);
 };
 
 } // namespace pbr
