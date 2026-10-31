@@ -23,6 +23,8 @@ AttachmentKind AttachmentKindOfMime(const std::string& mime) {
   return AttachmentKind::File;
 }
 
+bool VideoWithinLimit(const uint64_t bytes, const AttachmentLimits& limits) { return bytes <= limits.max_video_bytes; }
+
 uint64_t MaxAttachmentSendBytes(const AttachmentLimits& limits, const std::string& mime, const bool image_is_shrunk) {
   switch (AttachmentKindOfMime(mime)) {
   case AttachmentKind::Image:

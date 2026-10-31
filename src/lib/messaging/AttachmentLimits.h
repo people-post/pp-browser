@@ -36,6 +36,12 @@ struct AttachmentLimits {
   /** A received attachment whose declared size is above this is never downloaded. */
   uint64_t max_receive_bytes = kDefaultAttachmentReceiveMaxBytes;
   int voice_max_seconds = 120;
+  /**
+   * The longest clip the system camera is asked to record (iOS `videoMaximumDuration`, Android
+   * `EXTRA_DURATION_LIMIT`). Set from device measurements (worst-case bit rate of an iPhone 11 / vivo S15e,
+   * 70% of `max_video_bytes`), so it moves together with `max_video_bytes` when the 100 MB limit is switched on.
+   */
+  int video_max_seconds = 12;
   /** A send of at least this many bytes tells the person to stay in the app until it is done. */
   uint64_t stay_hint_bytes = 10ULL * kAttachmentMegabyte;
   /** Server space warnings, in percent of the space in use. */
@@ -69,6 +75,9 @@ AttachmentKind AttachmentKindOfMime(const std::string& mime);
  * automatic shrink (a GIF and an "original" did not).
  */
 uint64_t MaxAttachmentSendBytes(const AttachmentLimits& limits, const std::string& mime, bool image_is_shrunk);
+
+/** A recorded video of `bytes` may be sent: the camera does not always honour the size limit it was given. */
+bool VideoWithinLimit(uint64_t bytes, const AttachmentLimits& limits);
 
 /** "4 MB", "100 MB": a limit as it is written to people. */
 std::string FormatAttachmentLimit(uint64_t bytes);

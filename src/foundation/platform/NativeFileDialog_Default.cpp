@@ -4,6 +4,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_dialog.h>
 
+#include "foundation/platform/CameraCapture.h"
+#include "foundation/platform/CapturePathRules.h"
 #include "foundation/platform/PickedFileName.h"
 
 #include <cstdio>
@@ -64,7 +66,15 @@ void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback cal
   SDL_ShowOpenFileDialog(OnDialogComplete, state, window, filters, 2, nullptr, false);
 }
 
-void ReleasePickedFile(const std::string& /*path*/) {} // the dialog returns the user's own file
+// The dialog returns the user's own file; only what the camera wrote under CaptureScratchDir() (Android's cache
+// `capture/`; empty on the desktop, so nothing there) is ours to delete.
+void ReleasePickedFile(const std::string& path) {
+  if (!IsInsideScratchDir(path, CaptureScratchDir())) {
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+}
 
 void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
   ShowOpenImageFileDialog(window, std::move(callback), include_heic);

@@ -7,6 +7,16 @@
 namespace pbr {
 namespace {
 
+TEST(AttachmentLimitsTest, VideoSecondsDefaultToTwelveAndVideoWithinLimitIsInclusive) {
+  AttachmentLimits limits = DefaultAttachmentLimits();
+  EXPECT_EQ(limits.video_max_seconds, 12);
+  EXPECT_TRUE(VideoWithinLimit(0, limits));
+  EXPECT_TRUE(VideoWithinLimit(limits.max_video_bytes, limits));
+  EXPECT_FALSE(VideoWithinLimit(limits.max_video_bytes + 1, limits));
+  limits.max_video_bytes = kLargeAttachmentMaxBytes;
+  EXPECT_TRUE(VideoWithinLimit(kLargeAttachmentMaxBytes - 1, limits)) << "follows the video limit, not the 4 MB default";
+}
+
 TEST(AttachmentLimitsTest, ShippingDefaultsAreFourMegabytesAndTheLargeSizeIsNamed) {
   const AttachmentLimits limits = DefaultAttachmentLimits();
   // Step 1 ships the small size for send and receive; the 100 MB default arrives with streaming (step 2),
