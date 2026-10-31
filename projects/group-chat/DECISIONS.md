@@ -166,3 +166,22 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Stated limits:** (1) Each member gets its own ciphertext (G008), so a sender can give different members different spans — e.g. tell one member alone they are mentioned. Low harm; not detected. (2) The marker is per device: opening the chat on one device leaves the others' (no read state between devices yet). (3) A mention held past 10 min, or one whose roster never settles, is never notified (it still shows highlighted).  
 **Alternatives:** Match `@nickname` in the text at the receiver (misattribution, bypasses mute on a guess); a mention-only content type (every later text feature costs another type and an "update to view"); put spans in a JSON tail (JSON is forbidden in signed/hashed bytes, WIRE_SCHEMAS); check membership at decode (drops highlights when the roster is late); decide notifications once on arrival (a restored or new member misses them); a per-thread flag (stays set after the mentioning message is deleted); let any member use `@everyone` (spam of a whole group); no way to mute mentions (a muted group can still ring every 60 s).  
 **Cross-link:** [WIRE_SCHEMAS § text_spans](../../docs/contracts/WIRE_SCHEMAS.md), [DATA_LAYOUT § profile.db](../../docs/contracts/DATA_LAYOUT.md), G008 (per-member ciphertexts), G012 (owner-signed roster), G013 (roster check), G014 (size limit 50).
+
+---
+
+## G016 — The owner dissolves a group for everyone
+
+**Date:** 2026-10-31
+**Status:** Proposed (Kenneth; Hongwei to accept or amend)
+**Decision:** The owner's choice is "dissolve the group", which ends it for every member. It replaces "dismiss on this device only" (G009) for a group with other members; leaving with a transfer stays as it is.
+
+1. **Wire:** new membership `control_type` `group_dissolved`, sent by the owner as a DM to every roster member and carrying the owner-signed roster statement form (G012) with the group id and a `dissolved` marker, so a receiver checks it the same way as other owner events.
+2. **Receiver:** only from the owner the signed roster names, in a group it is in. It removes the group, its roster and the thread with its messages, and shows one notice: "{owner} dissolved {group}". Late or repeated copies do nothing. Traffic for a dissolved group is dropped. An unanswered invite to it is void.
+3. **Offline members** get it from the inbox like other membership events. A member who missed it and sends again gets no delivery from peers who dissolved; to close that gap, a member receiving traffic for a dissolved group may answer with the statement it kept (open: keep a small tombstone per group id, or rely on the inbox only).
+4. **Owner:** confirm once with plain wording, then fan out and remove locally. If some sends fail, the rest still go; retries use the outbox.
+5. **Solo owner:** same choice, nothing to send.
+
+**Rationale:** On device test, an owner used "dismiss on this device only". The owner was removed from its own roster and its thread was deleted, nothing was sent, and the other members kept fanning out to it, so the group was left with no owner and silent drops. Kenneth: dissolving should remove the group for everyone; that is the simplest thing a user expects.
+**Alternatives:** Keep the local dismiss (the case above); transfer only (a group can never end while one other member remains, and that member becomes owner unasked).
+**Open:** the tombstone in 3; whether a kept copy of messages is wanted (Kenneth: the group disappears, so no).
+
