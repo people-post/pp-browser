@@ -60,6 +60,7 @@ selection {
 
 .btn-primary,
 .prompt-send-btn,
+.prompt-stop-btn,
 .sidebar-new-chat,
 .contacts-find-btn,
 .chat-suggestion-primary {
@@ -70,6 +71,7 @@ selection {
 .btn-primary:hover,
 .btn-primary:focus,
 .prompt-send-btn:hover,
+.prompt-stop-btn:hover,
 .sidebar-new-chat:hover,
 .contacts-find-btn:hover,
 .chat-suggestion-primary:hover {
@@ -78,6 +80,7 @@ selection {
 
 .btn-primary svg,
 .prompt-send-btn svg,
+.prompt-stop-btn svg,
 .sidebar-new-chat svg,
 .contacts-find-btn svg,
 .contacts-action-secure svg {
@@ -120,6 +123,14 @@ selection {
 }
 
 .prompt-attach-btn:hover svg {
+  image-color: #374151;
+}
+
+.prompt-capture-btn svg {
+  image-color: #6b7280;
+}
+
+.prompt-capture-btn:hover svg {
   image-color: #374151;
 }
 
@@ -270,7 +281,7 @@ select selectbox option:hover {
   color: #333333;
 }
 
-.prompt-composer {
+.prompt-composer-pill {
   background-color: #ffffff;
   border: 1dp #e5e7eb;
   box-shadow: 0 2dp 8dp #00000014;
@@ -795,7 +806,7 @@ select selectbox option:hover {
   border-top: 1dp #e5e7eb;
 }
 
-.shell-composer-mount.surface-chrome .prompt-composer {
+.shell-composer-mount.surface-chrome .prompt-composer-pill {
   background-color: #ffffff;
   border: 1dp #e5e7eb;
   box-shadow: none;
@@ -1421,7 +1432,7 @@ select selectbox option:hover {
   border-radius: 0 6dp 6dp 0;
 }
 
-.prompt-composer--e2e {
+.prompt-composer--e2e .prompt-composer-pill {
   border-color: #99f6e4;
 }
 

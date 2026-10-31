@@ -8,69 +8,82 @@
 <div class="prompt-composer" keep-focus="" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
      data-class-prompt-composer--disabled="composer_input_disabled">
-  <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" max-rows="6"
-            maxlength="65536" data-if="!voice_mode"
-            data-value="draft" data-event-change="draft_changed()" data-attr-placeholder="draft_placeholder"
-            data-attrif-disabled="composer_input_disabled"></textarea>
-  <!-- Voice mode (WeChat style): one wide bar takes the input's place. A phone presses and holds on it (mousedown
-       starts, the document sees the release); the desktop clicks, then uses Send / Cancel below. -->
-  <button class="prompt-voice-bar" type="button" data-if="voice_mode && show_voice"
-          data-class-prompt-voice-bar--blocked="voice_blocked"
-          data-class-prompt-voice-bar--active="voice_recording" data-attr-title="voice_title"
-          data-event-mousedown="voice_press()" data-event-click="voice_click()">
-    <span class="prompt-voice-bar-hold" data-if="!voice_click_mode">{{i18n:chat.voice.hold_to_talk}}</span>
-    <span class="prompt-voice-bar-click" data-if="voice_click_mode">{{i18n:chat.voice.click_to_talk}}</span>
-  </button>
-  <div class="prompt-composer-footer">
-    <div class="prompt-composer-leading">
-      <button class="prompt-voice-toggle-btn" type="button" data-if="show_voice && !voice_mode && !voice_recording"
-              data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
-              title="{{i18n:chat.voice.mode_voice}}">
-        <svg src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
-      </button>
-      <button class="prompt-voice-toggle-btn" type="button" data-if="show_voice && voice_mode && !voice_recording"
-              data-event-click="voice_mode_toggle()" title="{{i18n:chat.voice.mode_keyboard}}">
-        <svg src="../icons/keyboard.svg" width="18" height="18" crop-to-content="true"></svg>
-      </button>
-      <button class="prompt-emoji-btn" type="button" data-if="!voice_recording" data-event-click="open_emoji_insert()"
-              data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">
-        <svg src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
-      </button>
-      <button class="prompt-attach-btn" type="button" data-if="show_attach_button && !voice_recording"
+  <!-- Status row above the input, only when something needs saying: an attachment uploading / failed (Retry, Cancel),
+       the AI picture, the AI answer's stop key. -->
+  <div class="prompt-composer-status"
+       data-if="!voice_recording && (attachment_uploading || attachment_failed || image_chip || loading)">
+    <div class="prompt-attachment-chip" data-if="attachment_uploading || attachment_failed">
+      <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
+      <span class="prompt-attachment-chip-status" data-value="attachment_status"></span>
+      <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
+              data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
+      <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
+              data-event-click="discard_attachment_send()">{{i18n:common.cancel}}</button>
+    </div>
+    <div class="prompt-attachment-chip" data-if="image_chip">
+      <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on
+           any picture (Kenneth 2026-10-28). -->
+      <div class="prompt-image-thumb-wrap">
+        <img class="prompt-image-thumb" data-if="image_thumb_ready" data-attr-src="image_thumb_src"/>
+        <div class="prompt-image-thumb-placeholder" data-if="!image_thumb_ready"></div>
+        <div class="prompt-image-remove-badge" data-event-click="remove_image()" title="{{i18n:chat.image.remove}}">
+          <svg src="../icons/close.svg" width="8" height="8" crop-to-content="true"></svg>
+        </div>
+      </div>
+      <span class="prompt-attachment-chip-name" data-value="image_draft_name"></span>
+      <span class="prompt-attachment-chip-status" data-if="image_preparing">{{i18n:chat.image.preparing}}</span>
+    </div>
+    <button class="prompt-stop-btn" type="button" data-if="loading" data-event-click="stop_turn()"
+            title="{{i18n:chat.stop}}">
+      <svg src="../icons/stop.svg" width="14" height="14" crop-to-content="true"></svg>
+    </button>
+  </div>
+  <div class="prompt-composer-row">
+    <button class="prompt-voice-toggle-btn" type="button" data-if="show_voice && !voice_mode && !voice_recording"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
+            title="{{i18n:chat.voice.mode_voice}}">
+      <svg src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
+    </button>
+    <button class="prompt-voice-toggle-btn" type="button" data-if="show_voice && voice_mode && !voice_recording"
+            data-event-click="voice_mode_toggle()" title="{{i18n:chat.voice.mode_keyboard}}">
+      <svg src="../icons/keyboard.svg" width="18" height="18" crop-to-content="true"></svg>
+    </button>
+    <button class="prompt-emoji-btn" type="button" data-if="!voice_mode" data-event-click="open_emoji_insert()"
+            data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">
+      <svg src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
+    </button>
+    <!-- The input is one pill: the text grows from one line to five (then scrolls), the paperclip and the camera sit
+         inside its right end. -->
+    <div class="prompt-composer-pill" data-if="!voice_mode">
+      <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="1" max-rows="5"
+                maxlength="65536"
+                data-value="draft" data-event-change="draft_changed()" data-attr-placeholder="draft_placeholder"
+                data-attrif-disabled="composer_input_disabled"></textarea>
+      <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
               data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
       </button>
+      <button class="prompt-capture-btn" type="button" data-if="show_capture && !voice_mode && !voice_recording"
+              data-event-click="attach_capture()" data-attrif-disabled="composer_input_disabled"
+              title="{{i18n:chat.attach.capture}}">
+        <svg src="../icons/camera.svg" width="18" height="18" crop-to-content="true"></svg>
+      </button>
+    </div>
+    <!-- Voice mode (WeChat style): one wide bar takes the pill's place. A phone presses and holds on it (mousedown
+         starts, the document sees the release); the desktop clicks, then uses Cancel / Send beside it. While
+         recording it shows the red dot, the timer and the hint. -->
+    <button class="prompt-voice-bar" type="button" data-if="voice_mode && show_voice"
+            data-class-prompt-voice-bar--blocked="voice_blocked"
+            data-class-prompt-voice-bar--active="voice_recording" data-attr-title="voice_title"
+            data-event-mousedown="voice_press()" data-event-click="voice_click()">
+      <span class="prompt-voice-bar-hold" data-if="!voice_recording && !voice_click_mode">{{i18n:chat.voice.hold_to_talk}}</span>
+      <span class="prompt-voice-bar-click" data-if="!voice_recording && voice_click_mode">{{i18n:chat.voice.click_to_talk}}</span>
       <div class="prompt-voice-status" data-if="voice_recording">
         <div class="prompt-voice-dot"></div>
         <span class="prompt-voice-timer" data-class-prompt-voice-timer--countdown="voice_countdown" data-value="voice_timer"></span>
         <span class="prompt-voice-hint" data-class-prompt-voice-hint--cancel="voice_cancel_zone" data-value="voice_hint"></span>
       </div>
-      <div class="prompt-attachment-chip" data-if="(attachment_uploading || attachment_failed) && !voice_recording">
-        <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
-        <span class="prompt-attachment-chip-status" data-value="attachment_status"></span>
-        <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
-                data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
-        <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
-                data-event-click="discard_attachment_send()">{{i18n:common.cancel}}</button>
-      </div>
-      <div class="prompt-attachment-chip" data-if="image_chip && !voice_recording">
-        <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on
-             any picture (Kenneth 2026-10-28). -->
-        <div class="prompt-image-thumb-wrap">
-          <img class="prompt-image-thumb" data-if="image_thumb_ready" data-attr-src="image_thumb_src"/>
-          <div class="prompt-image-thumb-placeholder" data-if="!image_thumb_ready"></div>
-          <div class="prompt-image-remove-badge" data-event-click="remove_image()" title="{{i18n:chat.image.remove}}">
-            <svg src="../icons/close.svg" width="8" height="8" crop-to-content="true"></svg>
-          </div>
-        </div>
-        <span class="prompt-attachment-chip-name" data-value="image_draft_name"></span>
-        <span class="prompt-attachment-chip-status" data-if="image_preparing">{{i18n:chat.image.preparing}}</span>
-      </div>
-    </div>
-    <button class="prompt-send-btn" type="button" data-if="loading" data-event-click="stop_turn()"
-            title="{{i18n:chat.stop}}">
-      <svg src="../icons/stop.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
     <!-- Desktop recording (started by a click on the voice bar): Cancel / Send. -->
     <button class="prompt-voice-cancel-btn" type="button" data-if="voice_recording && voice_click_mode"
@@ -79,8 +92,8 @@
             data-event-click="voice_send()" title="{{i18n:chat.voice.send}}">
       <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
-    <button class="prompt-send-btn" type="button"
-            data-if="!loading && !voice_recording && !(voice_mode && show_voice)"
+    <!-- Send appears only when there is something to send. -->
+    <button class="prompt-send-btn" type="button" data-if="!voice_mode && draft != '' && !loading"
             data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
       <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
