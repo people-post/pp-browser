@@ -18,7 +18,7 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 
 | Subdir | Contents |
 |--------|----------|
-| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `MeshAlias` (`mesh::` = pp-cpp-mesh's `pp::mesh`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText`, `ShareableLine` + its channels `Metrics` / `Diag` (lines that may leave the device — docs/contracts/DIAGNOSTICS.md) |
+| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `MeshAlias` (`mesh::` = pp-cpp-mesh's `pp::mesh`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText`, `ShareableLine` + its channels `Metrics` / `Diag` (lines that may leave the device — docs/contracts/DIAGNOSTICS.md), `Secret` (`SecretText`: a secret that cannot be logged) |
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
 | [`directory/`](directory/) | Phone-book glue: `DirectoryJson`, `IdentityTypes`, trust / signing access ports. The rows themselves (`DirectoryTypes`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`) are pp-cpp-mesh's vocabulary, `mesh/types/` |
 | [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |

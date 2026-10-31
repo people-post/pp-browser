@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "common/chat/SystemControl.h"
 
 #include "foundation/data/Config.h"
@@ -276,7 +278,7 @@ public:
    * to contacts follow once messaging is up, as for any restore. `saved_copies`: exported locker files' text — the
    * newest valid copy among them and the provider's is used (M023 §6 amendment).
    */
-  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+  Roe<void> RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
                                       const std::vector<std::string>& saved_copies = {});
   /** The account's devices as this device knows them (M021 d4); the first is the master. */
   Roe<OwnDeviceList> OwnDevices();

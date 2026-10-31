@@ -229,7 +229,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
   // A profile on the app default PIN gets its phrase as it gets everything else (by design: the unlocked app is
   // enough there); a chosen PIN is asked for again.
   const bool default_pin = host_.Store().Snapshot().profile_prefs.pin_is_default;
-  const std::string pin = default_pin ? std::string(kDefaultProfilePin) : std::string(recovery_phrase_pin_.c_str());
+  const SecretText pin = default_pin ? SecretText(kDefaultProfilePin) : SecretText(recovery_phrase_pin_.c_str());
   if (pin.empty()) {
     host_.ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.recovery.pin_required")));
     return;
@@ -237,7 +237,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
   recovery_phrase_pin_ = "";
   AppRuntime::PostWorkerNormal([this, pin]() {
     auto phrase = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
-                                            : Roe<std::optional<std::string>>(Error("Messaging is not ready"));
+                                            : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
     AppRuntime::PostUI([this, phrase = std::move(phrase)]() mutable {
       if (!phrase) {
         host_.ReportFailure(phrase.error());
@@ -248,7 +248,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
         host_.ReportFailure(Error("No recovery phrase").WithUser(Tr("settings.security.recovery.none")));
         return;
       }
-      recovery_phrase_ = phrase->value().c_str();
+      recovery_phrase_ = phrase->value().Reveal().c_str();  // shown to its owner, on their screen
       host_.PushToView(false);
       // Not left on screen: it hides by itself.
       const uint64_t shown = ++recovery_shown_count_;

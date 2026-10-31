@@ -116,4 +116,8 @@ Anything that may leave it goes through a **shareable line** (`common/ShareableL
 
 Never emit them through a module logger. When a shareable line needs a detail it cannot hold (an error message, a reason text), log that detail to the developer log beside it. The list of events and what Send diagnostics reads: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 
-Changelog: 2026-09-09 — conventions + Runtime.* wiring for shutdown-latency work. 2026-09-30 — Metrics channel. 2026-10-30 — shareable lines, Diag channel (privacy P009).
+## Secrets
+
+A PIN, a recovery phrase, a private key or seed and an API key are `SecretText` (`common/Secret.h`): no `operator<<`, no conversion to a string, so streaming one into any logger does not compile. `Reveal()` is the one way to the text, for the code that uses the secret (a KDF, a cipher, a codec, an HTTP header) — never into a log line. Text converts into a `SecretText` freely, so take it as one where it enters (a typed field, an env var, a decoded file).
+
+Changelog: 2026-09-09 — conventions + Runtime.* wiring for shutdown-latency work. 2026-09-30 — Metrics channel. 2026-10-30 — shareable lines, Diag channel (privacy P009); secrets as `SecretText` (P010).

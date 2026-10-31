@@ -20,23 +20,23 @@ ByteVector Filled(uint8_t byte) { return ByteVector(kRecoverySeedBytes, byte); }
 
 // BIP-0039 reference vectors for 256-bit entropy (trezor/python-mnemonic vectors.json).
 TEST(RecoveryPhraseTest, MatchesTheBip39Vectors) {
-  EXPECT_EQ(*EncodeRecoveryPhrase(Filled(0x00)),
+  EXPECT_EQ(EncodeRecoveryPhrase(Filled(0x00))->Reveal(),
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon "
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art");
-  EXPECT_EQ(*EncodeRecoveryPhrase(Filled(0x7f)),
+  EXPECT_EQ(EncodeRecoveryPhrase(Filled(0x7f))->Reveal(),
             "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful "
             "legal winner thank year wave sausage worth title");
-  EXPECT_EQ(*EncodeRecoveryPhrase(Filled(0x80)),
+  EXPECT_EQ(EncodeRecoveryPhrase(Filled(0x80))->Reveal(),
             "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic "
             "avoid letter advice cage absurd amount doctor acoustic bless");
-  EXPECT_EQ(*EncodeRecoveryPhrase(Filled(0xff)),
+  EXPECT_EQ(EncodeRecoveryPhrase(Filled(0xff))->Reveal(),
             "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote");
 }
 
 TEST(RecoveryPhraseTest, ATypedPhraseComesBackAsTheSeed) {
   for (int i = 0; i < 20; ++i) {
     const ByteVector seed = GenerateRecoverySeed();
-    const std::string phrase = EncodeRecoveryPhrase(seed).value();
+    const std::string phrase = EncodeRecoveryPhrase(seed).value().Reveal();
     EXPECT_EQ(DecodeRecoveryPhrase(phrase).value(), seed);
   }
   // As people type it: other spacing, capitals, a trailing newline.
@@ -47,7 +47,7 @@ TEST(RecoveryPhraseTest, ATypedPhraseComesBackAsTheSeed) {
 }
 
 TEST(RecoveryPhraseTest, AMistypedPhraseIsRefusedAndSaysWhy) {
-  const std::string good = EncodeRecoveryPhrase(Filled(0x7f)).value();
+  const std::string good = EncodeRecoveryPhrase(Filled(0x7f)).value().Reveal();
   EXPECT_FALSE(DecodeRecoveryPhrase("legal winner thank")) << "too few words";
   auto unknown = DecodeRecoveryPhrase("legal winnar thank year wave sausage worth useful legal winner thank year wave "
                                       "sausage worth useful legal winner thank year wave sausage worth title");

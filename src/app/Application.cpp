@@ -797,18 +797,18 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  settings_commands.change_pin = [this](const std::string& current_pin, const std::string& new_pin) -> Roe<void> {
+  settings_commands.change_pin = [this](const SecretText& current_pin, const SecretText& new_pin) -> Roe<void> {
     DataKeyVault* vault = secrets_->Vault();
     if (vault == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
     }
-    if (auto changed = vault->ChangePin(current_pin, new_pin); !changed) {
+    if (auto changed = vault->ChangePin(current_pin.Reveal(), new_pin.Reveal()); !changed) {
       return changed.error();
     }
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
-  settings_commands.recovery_phrase = [&facade](const std::string& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
   settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {
@@ -925,7 +925,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (!identity) {
         return Error("Messaging is not ready");
       }
-      std::string key = ResolveBriefLlmApiKey(identity->brief_llm_api_key, identity->brief_llm_guest_api_key);
+      std::string key = ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
       if (!key.empty()) {
         return key;
       }
@@ -936,7 +936,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       LocalIdentity updated = *identity;
       updated.brief_llm_guest_api_key = minted->llm_api_key;
       (void)facade.UpdateLocalIdentity(updated);
-      return minted->llm_api_key;
+      return minted->llm_api_key.Reveal();
     };
     SendDiagnostics(std::move(deps), std::move(on_done));
   };
@@ -1130,15 +1130,15 @@ void Application::WireUnlockPinAndFlow() {
   unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
-    gate_complete.complete_with_pin = [this](const std::string& pin, const bool create_mode) {
+    gate_complete.complete_with_pin = [this](const SecretText& pin, const bool create_mode) {
       unlock_gate_->CompleteWithPin(pin, create_mode);
     };
     gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
-    gate_complete.complete_link_device = [this](const std::string& pin, const std::string& bundle_json,
+    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle_json,
                                                 const bool set_default_pin) {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
-    gate_complete.complete_phrase_restore = [this](const std::string& pin, const std::string& phrase,
+    gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
                                                    const bool set_default_pin,
                                                    const std::vector<std::string>& saved_copies) {
       unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin, saved_copies);
@@ -1195,11 +1195,11 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
-  unlock_ports.import_link_device = [&facade](const std::string& pin,
+  unlock_ports.import_link_device = [&facade](const SecretText& pin,
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
-  unlock_ports.restore_recovery_phrase = [&facade](const std::string& pin, const std::string& phrase,
+  unlock_ports.restore_recovery_phrase = [&facade](const SecretText& pin, const SecretText& phrase,
                                                    const std::vector<std::string>& saved_copies) {
     return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
   };

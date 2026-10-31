@@ -245,8 +245,8 @@ bool AgentTurnController::AgentHasCredentials() const {
     std::string guest;
     if (host_.MessagingReady() && host_.Facade()) {
       if (auto identity = host_.Facade()->GetIdentity()) {
-        registered = identity->brief_llm_api_key;
-        guest = identity->brief_llm_guest_api_key;
+        registered = identity->brief_llm_api_key.Reveal();
+        guest = identity->brief_llm_guest_api_key.Reveal();
       }
     }
     std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
@@ -254,7 +254,7 @@ bool AgentTurnController::AgentHasCredentials() const {
       AppConfig last_probe;
       last_probe.llm = last_agent_runtime_.llm;
       if (ResolvePreset(last_probe) == "brief") {
-        brief_key = last_agent_runtime_.llm.api_key;
+        brief_key = last_agent_runtime_.llm.api_key.Reveal();
       }
     }
     return !brief_key.empty();
@@ -1165,8 +1165,8 @@ void AgentTurnController::RefreshLlmSetupBanner() {
     std::string guest;
     if (host_.MessagingReady()) {
       if (auto identity = host_.Facade()->GetIdentity()) {
-        registered = identity->brief_llm_api_key;
-        guest = identity->brief_llm_guest_api_key;
+        registered = identity->brief_llm_api_key.Reveal();
+        guest = identity->brief_llm_guest_api_key.Reveal();
       }
     }
     const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
@@ -1252,7 +1252,7 @@ void AgentTurnController::ApplyConfig(const AgentConfig& config) {
     std::string brief_key;
     if (host_.MessagingInitialized() && host_.MessagingReady()) {
       if (auto identity = host_.Facade()->GetIdentity()) {
-        brief_key = ResolveBriefLlmApiKey(identity->brief_llm_api_key, identity->brief_llm_guest_api_key);
+        brief_key = ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
       }
     }
     if (!brief_key.empty()) {
