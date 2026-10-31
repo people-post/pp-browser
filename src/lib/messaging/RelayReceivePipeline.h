@@ -46,6 +46,14 @@ struct RelayReceiveOutcome {
    * (call MediaKey / SFU / mid-call roster, etc.).
    */
   bool suppress_inbox_chrome = false;
+  /**
+   * An event in a group that is about this account (it was removed; its accept met a full group): the GROUP thread
+   * counts it unread and notifies, though the direct message that carried it stays quiet. Other people's joins,
+   * leaves and renames are not.
+   */
+  enum class AboutUs { None, Removed, GroupFull };
+  AboutUs about_us = AboutUs::None;
+  std::string about_us_group_thread_id;
   /** A message another of our devices sent, filed here (M021 d3): no inbox chrome, but its attachment is fetched. */
   bool sibling_copy = false;
   /**
@@ -206,7 +214,7 @@ private:
   void FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope, RelayReceiveOutcome& outcome);
   /** G014 invitee side: the owner refused our accept (the group was full) — drop the group we made on accept. */
   Roe<void> ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
-                               const std::string& local_account) const;
+                               const std::string& local_account, RelayReceiveOutcome* outcome) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */

@@ -127,6 +127,55 @@ TEST_P(GroupEventLineTest, AHostileNameAndTitleAreEscapedAndNeverFilledIntoEachO
   EXPECT_NE(joined.find("&lt;b&gt;"), std::string::npos) << joined;
 }
 
+TEST_P(GroupEventLineTest, DeclinedOwnershipGroupFullAndForkedAreWordedToo) {
+  const std::string declined = Line(GroupMembershipControlType::GroupInviteDecline,
+                                    GroupMembershipCodec::EncodeInviteResponse("nonce-1", kGroup), kAnn);
+  EXPECT_NE(declined.find(zh_ ? "Ann \xE6\x8B\x92\xE7\xBB\x9D\xE4\xBA\x86\xE9\x82\x80\xE8\xAF\xB7"
+                              : "Ann declined the invitation"),
+            std::string::npos)
+      << declined;
+  const std::string owner = Line(GroupMembershipControlType::OwnerTransferred,
+                                 GroupMembershipCodec::EncodeOwnerTransferred(kGroup, kAnn, 3), kMe);
+  EXPECT_NE(owner.find(zh_ ? "Ann \xE6\x88\x90\xE4\xB8\xBA\xE4\xBA\x86\xE6\x96\xB0\xE7\xBE\xA4\xE4\xB8\xBB"
+                           : "Ann is now the group owner"),
+            std::string::npos)
+      << owner;
+  const std::string you_owner = Line(GroupMembershipControlType::OwnerTransferred,
+                                     GroupMembershipCodec::EncodeOwnerTransferred(kGroup, kMe, 3, true), kAnn);
+  EXPECT_NE(you_owner.find(zh_ ? "\xE4\xBD\xA0\xE6\x88\x90\xE4\xB8\xBA\xE4\xBA\x86\xE6\x96\xB0\xE7\xBE\xA4\xE4\xB8\xBB"
+                               : "You are now the group owner; the previous owner left"),
+            std::string::npos)
+      << you_owner;
+  const std::string full = Line(GroupMembershipControlType::GroupInviteRefused,
+                                GroupMembershipCodec::EncodeInviteRefused("nonce-1", kGroup, "group_full"), kAnn);
+  EXPECT_NE(full.find(zh_ ? "\xE7\xBE\xA4\xE8\x81\x8A\xE5\xB7\xB2\xE6\xBB\xA1" : "The group is full"),
+            std::string::npos)
+      << full;
+}
+
+TEST(GroupEventLineFallbackTest, ANameIsLookedUpOncePerBuild) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  int lookups = 0;
+  TranscriptFacts facts = Facts();
+  facts.member_name = [&lookups](const std::string& account) {
+    ++lookups;
+    return account;
+  };
+  std::vector<TranscriptRow> rows;
+  for (int i = 0; i < 20; ++i) {
+    auto message = GroupMembershipCodec::BuildSystemMessage(
+        "t", GroupMembershipControlType::MemberLeft, "Member left",
+        *GroupMembershipCodec::EncodeMemberLeft(kGroup, kAnn, 3), kAnn);
+    ASSERT_TRUE(message);
+    message->id = "m" + std::to_string(i);
+    TranscriptRow row;
+    row.message = *message;
+    rows.push_back(row);
+  }
+  EXPECT_EQ(RenderTranscript(rows, facts).size(), 20u);
+  EXPECT_EQ(lookups, 1) << "twenty lines about one person: one lookup";
+}
+
 TEST(GroupEventLineFallbackTest, WithoutNamesOrADecodableDetailTheStoredTextShows) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   TranscriptFacts bare;  // no member_name: an old caller
@@ -137,9 +186,8 @@ TEST(GroupEventLineFallbackTest, WithoutNamesOrADecodableDetailTheStoredTextShow
   EXPECT_NE(Line(GroupMembershipControlType::MemberLeft, Roe<std::string>(std::string("not json")), kAnn)
                 .find("Stored English text"),
             std::string::npos);
-  // A kind with no wording here (a transfer) keeps its stored text.
-  EXPECT_NE(Line(GroupMembershipControlType::OwnerTransferred,
-                 GroupMembershipCodec::EncodeOwnerTransferred(kGroup, kAnn, 3), kMe)
+  // A kind with no wording here keeps its stored text.
+  EXPECT_NE(Line(GroupMembershipControlType::GroupRosterRequest, Roe<std::string>(std::string("{}")), kMe)
                 .find("Stored English text"),
             std::string::npos);
 }

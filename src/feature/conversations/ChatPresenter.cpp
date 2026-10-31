@@ -1,6 +1,7 @@
 #include "feature/conversations/ChatPresenter.h"
 
 #include "feature/conversations/ConversationsFacade.h"
+#include "feature/conversations/GroupEventText.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/ChatPayloadCodec.h"
@@ -234,6 +235,10 @@ void ChatPresenter::Refresh() {
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
   const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
+  std::string local_account;
+  if (auto identity = facade_->GetIdentity()) {
+    local_account = identity->account_id;
+  }
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
     if (thread_prefs.archived != next.showing_archived) {
@@ -244,7 +249,7 @@ void ChatPresenter::Refresh() {
     row.title = facade_->ResolveThreadLabel(thread).title;
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
-    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(thread.preview));
+    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(GroupEventPreviewOr(thread, local_account)));
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
@@ -296,6 +301,23 @@ void ChatPresenter::ShowHome() {
 void ChatPresenter::ToggleArchived() {
   showing_archived_ = !showing_archived_;
   Refresh();
+}
+
+std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+  // A group whose latest row is a membership line previews the same words as its transcript shows (the stored
+  // preview is the English text). Only a preview that is such a text costs a read of the latest message.
+  if (thread.kind != ThreadKind::Group || !IsStoredGroupEventText(thread.preview)) {
+    return thread.preview;
+  }
+  auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+  if (!page || page->empty()) {
+    return thread.preview;
+  }
+  ConversationsFacade* facade = facade_;
+  const auto line = GroupEventText(
+      page->back(), [facade](const std::string& account) { return facade->MemberPublicNameOf(account); },
+      local_account);
+  return line ? *line : thread.preview;
 }
 
 void ChatPresenter::SetPinned(const std::string& thread_id, const bool pinned) {

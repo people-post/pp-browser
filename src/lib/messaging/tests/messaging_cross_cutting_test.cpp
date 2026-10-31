@@ -706,6 +706,98 @@ TEST(MessagingCrossCuttingTest, AnAcceptInTheDirectChatShowsNothingThere) {
   ExpectQuietInDirectChat(harness, outcome);
 }
 
+TEST(MessagingCrossCuttingTest, ADeclineLeavesALineInTheGroupForTheInviter) {
+  PipelineHarness harness("event_decline", ThreadChannel::E2e);
+  GroupMetadata metadata;
+  metadata.group_id = kHikeGroup;
+  metadata.owner_identity = harness.local_account_id;
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(harness.roster_store.UpsertMetadata(metadata));
+  GroupRosterMember owner;
+  owner.member_identity = harness.local_account_id;
+  owner.role = MemberRole::Owner;
+  owner.joined_at = 1;
+  ASSERT_TRUE(harness.roster_store.UpsertMember(kHikeGroup, owner));
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-2";
+  pending.group_id = kHikeGroup;
+  pending.group_title = "Weekend hike";
+  pending.inviter_identity = harness.local_account_id;
+  pending.invitee_identity = "account:peer";
+  pending.roster_epoch = 1;
+  pending.created_at = 1;
+  pending.outbound = true;
+  ASSERT_TRUE(harness.roster_store.UpsertPendingInvite(pending));
+  auto group = harness.store.FindOrCreateGroupThread(kHikeGroup, "Weekend hike", {});
+  ASSERT_TRUE(group);
+  auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-2", kHikeGroup);
+  ASSERT_TRUE(detail);
+  const auto outcome = harness.pipeline.ProcessEnvelope(
+      EventFromPeer(harness, GroupMembershipControlType::GroupInviteDecline, *detail, 1), harness.local_account_id);
+  ExpectQuietInDirectChat(harness, outcome);
+  const auto lines = Shown(harness, group->id, false);
+  ASSERT_EQ(lines.size(), 1u) << "hiding the direct message removed the only record: the group keeps one";
+  EXPECT_EQ(lines[0].message.sender_contact_id, "account:peer");
+  EXPECT_EQ(GroupMembershipCodec::ControlTypeFromMessage(lines[0].message),
+            std::optional<GroupMembershipControlType>(GroupMembershipControlType::GroupInviteDecline));
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::None) << "a decline is the inviter's news only in the group";
+}
+
+TEST(MessagingCrossCuttingTest, OnlyEventsAboutThisAccountAreNewsInTheGroup) {
+  PipelineHarness harness("event_about_us", ThreadChannel::E2e);
+  const Thread group = SeedPeerOwnedGroup(harness);
+  const auto run = [&](const GroupMembershipControlType type, const std::string& detail, const uint64_t seq) {
+    return harness.pipeline.ProcessEnvelope(EventFromPeer(harness, type, detail, seq), harness.local_account_id);
+  };
+  // Other people's events: quiet.
+  EXPECT_EQ(run(GroupMembershipControlType::GroupRenamed, *GroupMembershipCodec::EncodeGroupRenamed(kHikeGroup, "X", 2, 1), 1)
+                .about_us,
+            RelayReceiveOutcome::AboutUs::None);
+  EXPECT_EQ(run(GroupMembershipControlType::MemberJoined,
+                *GroupMembershipCodec::EncodeMemberJoined(kHikeGroup, "account:dave", MemberRole::Member, 3), 2)
+                .about_us,
+            RelayReceiveOutcome::AboutUs::None);
+  EXPECT_EQ(run(GroupMembershipControlType::MemberRemoved, *GroupMembershipCodec::EncodeMemberRemoved(kHikeGroup, "account:carol", 4), 3)
+                .about_us,
+            RelayReceiveOutcome::AboutUs::None);
+  // This account removed: news in the GROUP thread.
+  const auto removed = run(GroupMembershipControlType::MemberRemoved,
+                           *GroupMembershipCodec::EncodeMemberRemoved(kHikeGroup, harness.local_account_id, 5), 4);
+  EXPECT_EQ(removed.about_us, RelayReceiveOutcome::AboutUs::Removed);
+  EXPECT_EQ(removed.about_us_group_thread_id, group.id);
+  EXPECT_TRUE(removed.suppress_inbox_chrome) << "the direct message itself stays quiet";
+}
+
+TEST(MessagingCrossCuttingTest, AGroupFullRefusalIsNewsInTheGroup) {
+  PipelineHarness harness("event_full", ThreadChannel::E2e);
+  GroupMetadata metadata;
+  metadata.group_id = kHikeGroup;
+  metadata.owner_identity = "account:peer";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(harness.roster_store.UpsertMetadata(metadata));
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-3";
+  pending.group_id = kHikeGroup;
+  pending.group_title = "Weekend hike";
+  pending.inviter_identity = "account:peer";
+  pending.invitee_identity = harness.local_account_id;
+  pending.roster_epoch = 1;
+  pending.created_at = 1;
+  pending.outbound = false;
+  ASSERT_TRUE(harness.roster_store.UpsertPendingInvite(pending));
+  auto group = harness.store.FindOrCreateGroupThread(kHikeGroup, "Weekend hike", {});
+  ASSERT_TRUE(group);
+  auto detail = GroupMembershipCodec::EncodeInviteRefused("nonce-3", kHikeGroup, "group_full");
+  ASSERT_TRUE(detail);
+  const auto outcome = harness.pipeline.ProcessEnvelope(
+      EventFromPeer(harness, GroupMembershipControlType::GroupInviteRefused, *detail, 1), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::GroupFull);
+  EXPECT_EQ(outcome.about_us_group_thread_id, group->id);
+}
+
 TEST(MessagingCrossCuttingTest, AGroupInvitationStillShowsAndCountsInTheDirectChat) {
   PipelineHarness harness("event_invite", ThreadChannel::E2e);
   GroupInvitePayload invite;

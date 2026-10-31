@@ -263,6 +263,8 @@ public:
   std::optional<std::string> MentionedContact(const std::string& message_id, size_t run_index);
 
 private:
+  /** A group's list preview: its latest membership line in the transcript's words, else the stored preview. */
+  std::string GroupEventPreviewOr(const Thread& thread, const std::string& local_account);
   /**
    * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store
    * can be listed, then kept in step with every write. Empty, and read again next time, while it

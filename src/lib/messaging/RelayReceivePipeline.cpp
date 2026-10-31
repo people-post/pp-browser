@@ -225,7 +225,8 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
 }
 
 Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
-                                                  const std::string& local_account) const {
+                                                  const std::string& local_account,
+                                                  RelayReceiveOutcome* outcome) const {
   auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   if (!refused) {
     return refused.error();
@@ -255,6 +256,10 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
                                                               "The group is full: you were not added", *detail,
                                                               actor_identity)) {
         (void)store_.AppendMessage(*sys);
+        if (outcome) {
+          outcome->about_us = RelayReceiveOutcome::AboutUs::GroupFull;
+          outcome->about_us_group_thread_id = (*thread)->id;
+        }
       }
     }
   }
@@ -285,7 +290,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   };
 
   if (kind == GroupMembershipControlType::GroupInviteRefused) {
-    return ApplyInviteRefused(message, actor_identity, local_account);
+    return ApplyInviteRefused(message, actor_identity, local_account, outcome);
   }
   if (kind == GroupMembershipControlType::GroupInviteAccept ||
       kind == GroupMembershipControlType::GroupInviteDecline) {
@@ -323,6 +328,17 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
                                                    response->group_id);
         !declined) {
       return declined.error();
+    }
+    // The decline arrived in the direct chat, where it is not shown: the inviter's record of it is a line in the
+    // group's thread.
+    if (auto thread = store_.FindGroupThread(response->group_id); thread && *thread) {
+      if (auto detail = GroupMembershipCodec::EncodeInviteResponse(response->invite_nonce, response->group_id)) {
+        if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
+                                                                GroupMembershipControlType::GroupInviteDecline,
+                                                                "Invitation declined", *detail, actor_identity)) {
+          (void)store_.AppendMessage(*sys);
+        }
+      }
     }
     return {};
   }
@@ -468,6 +484,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
             (*thread)->id, GroupMembershipControlType::MemberRemoved, "Member removed", *detail, actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
+          if (outcome && !local_account.empty() && removed->member_identity == local_account) {
+            outcome->about_us = RelayReceiveOutcome::AboutUs::Removed;
+            outcome->about_us_group_thread_id = (*thread)->id;
+          }
         }
       }
     }

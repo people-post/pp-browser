@@ -3,6 +3,7 @@
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
+#include "feature/conversations/GroupEventText.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -23,7 +24,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <sstream>
+#include <unordered_map>
 
 #include "common/PbrCompat.h"
 
@@ -138,77 +141,6 @@ std::string CallRowRml(const CallSummaryRow& row) {
   return html;
 }
 
-/** `{name}` and `{title}` in `templ` replaced in one pass, so a value that holds the other marker stays as it is. */
-std::string FillOnce(const std::string& templ, const std::string& name, const std::string& title) {
-  std::string out;
-  for (size_t i = 0; i < templ.size();) {
-    if (templ.compare(i, 6, "{name}") == 0) {
-      out += name;
-      i += 6;
-    } else if (templ.compare(i, 7, "{title}") == 0) {
-      out += title;
-      i += 7;
-    } else {
-      out.push_back(templ[i++]);
-    }
-  }
-  return out;
-}
-
-/**
- * A group thread's membership line in the reader's language with the person's public name (the stored text is
- * English and names nobody). None for a kind with no wording here, or a payload that does not decode: the stored
- * text shows then.
- */
-std::optional<std::string> GroupEventLine(const ThreadMessage& message, const GroupMembershipControlType type,
-                                          const TranscriptFacts& facts) {
-  if (!facts.member_name) {
-    return std::nullopt;
-  }
-  const auto is_self = [&facts](const std::string& account) {
-    return !account.empty() && account == facts.local_account;
-  };
-  const auto line = [&facts, &is_self](const char* key, const char* you_key, const std::string& account,
-                                       const std::string& title = {}) -> std::optional<std::string> {
-    if (account.empty()) {
-      return std::nullopt;
-    }
-    if (is_self(account) && you_key) {
-      return FillOnce(Tr(you_key), "", title);
-    }
-    return FillOnce(Tr(key), facts.member_name(account), title);
-  };
-  switch (type) {
-  case GroupMembershipControlType::MemberJoined: {
-    auto joined = GroupMembershipCodec::DecodeMemberJoinedFromMessage(message);
-    if (!joined) {
-      return std::nullopt;
-    }
-    if (joined->role == MemberRole::Owner && is_self(joined->member_identity)) {
-      return Tr("chat.group_event.created");
-    }
-    return line("chat.group_event.joined", "chat.group_event.you_joined", joined->member_identity);
-  }
-  case GroupMembershipControlType::MemberRemoved: {
-    auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(message);
-    return removed ? line("chat.group_event.removed", "chat.group_event.you_removed", removed->member_identity)
-                   : std::nullopt;
-  }
-  case GroupMembershipControlType::MemberLeft: {
-    auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(message);
-    return left ? line("chat.group_event.left", "chat.group_event.you_left", left->member_identity) : std::nullopt;
-  }
-  case GroupMembershipControlType::GroupRenamed: {
-    auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(message);
-    return renamed ? line("chat.group_event.renamed", "chat.group_event.you_renamed", message.sender_contact_id,
-                          renamed->title)
-                   : std::nullopt;
-  }
-  default:
-    return std::nullopt;
-  }
-}
-
 std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
                       const std::optional<CallSummaryRow>& call_row) {
   const ThreadMessage& message = entry.message;
@@ -259,7 +191,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     return html;
   }
   if (control_type) {
-    if (auto event = GroupEventLine(message, *control_type, facts)) {
+    if (auto event = GroupEventText(message, facts.member_name, facts.local_account)) {
       return SystemLineRml(*event);
     }
   }
@@ -580,8 +512,20 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
 } // namespace
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
-                                                const TranscriptFacts& facts,
+                                                const TranscriptFacts& facts_in,
                                                 const std::optional<MentionRoster>& mentions) {
+  // A name is looked up (cards, contacts: SQLite) once per account in this build, however many lines name it.
+  TranscriptFacts facts = facts_in;
+  if (facts_in.member_name) {
+    auto names = std::make_shared<std::unordered_map<std::string, std::string>>();
+    facts.member_name = [lookup = facts_in.member_name, names](const std::string& account_id) {
+      auto it = names->find(account_id);
+      if (it == names->end()) {
+        it = names->emplace(account_id, lookup(account_id)).first;
+      }
+      return it->second;
+    };
+  }
   std::vector<MessageDisplayRow> rows;
   rows.reserve(entries.size());
   for (const TranscriptRow& entry : entries) {
