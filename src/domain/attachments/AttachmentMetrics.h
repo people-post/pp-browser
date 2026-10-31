@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Metrics.h"
+#include "common/ShareableLine.h"
 #include "foundation/platform/os/OsPeakRss.h"
 
 #include <chrono>
@@ -14,7 +15,7 @@ namespace pbr {
  * mark so far (start the app fresh to measure one operation), `ms` how long it took, `ok` 0 / 1. Sizes and
  * timings only: no names, ids or addresses. Only files of 1 MB and up are recorded.
  */
-inline void EmitAttachmentTransferMetric(const char* dir, const uint64_t bytes, const int64_t ms, const bool ok) {
+inline void EmitAttachmentTransferMetric(const ShareWord dir, const uint64_t bytes, const int64_t ms, const bool ok) {
   if (bytes < 1000ULL * 1000ULL) {
     return;
   }
