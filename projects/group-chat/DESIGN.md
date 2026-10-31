@@ -284,7 +284,7 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 **Invite handshake :** Invite records **pending only** — the invitee is not an encrypt target until commit. Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest of accept requires an invite this device issued (pending rows carry their direction), for the group the accept names, which this device owns, not expired; it upserts the member, bumps its own `roster_epoch` by one, then publishes owner-signed `member_joined` to all active members (G006 commit). An accept for an invite already accepted adds no one (a member removed since, or one who left, needs a new invite). An inbound `group_invite` is recorded only when its signed sender is the `inviter_identity` and the local account the `invitee_identity`, and — for a group already known locally — only from that group's owner while we are not a member; a stored invite is never rewritten by another with the same nonce. Group messages are dropped unless both the local account and the (non-blocked) sender are on the local roster. Peers apply `member_joined` (owner + epoch gates) as the roster source of truth. Decline clears pending only. Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` and self as `Member` locally so member→owner fan-out works before `member_joined` arrives. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
-**Leave / transfer / prune (G009):** Member close fans out `member_left` then deletes the local thread. Owner close with others picks a successor and fans out `owner_transferred` with `leave_previous: true` (one DM applies succession + removes the old owner). Solo owner close is local dismiss only. Ingest rejects `member_left` from a recorded owner and requires monotonic `roster_epoch`. Send/encrypt failure marks members unreachable; owner may remove via `member_removed` fan-out. Unreachable owner shows a local advisory card (Fork / Message owner / Got it) — no automatic second owner.
+**Leave / transfer / prune (G009):** Member close fans out `member_left` then deletes the local thread. Owner close with others picks a successor and fans out `owner_transferred` with `leave_previous: true` (one DM applies succession + removes the old owner). An owner may instead dissolve the group for everyone (G016, `group_dissolved`; a solo owner dissolves with nothing to send). Ingest rejects `member_left` from a recorded owner and requires monotonic `roster_epoch`. Send/encrypt failure marks members unreachable; owner may remove via `member_removed` fan-out. Unreachable owner shows a local advisory card (Fork / Message owner / Got it) — no automatic second owner.
 
 **Auto-create:** on accepted invite / first valid `member_joined` for local identity.
 
@@ -362,12 +362,21 @@ Request goes to the owner and all members in the backup roster. Reply: any membe
 
 Signer: owner. Invitee drops the pending local group and shows the refusal.
 
+### group_dissolved (G016)
+
+```json
+{ "control_type": "group_dissolved", "detail": { "group_id": "…", "roster_statement": { …, "roster_epoch": 6, "dissolved": true } } }
+```
+
+Signer: owner (account key, tag `pp-browser:group-dissolved-v1`); sent as a DM to each roster member. A receiver in the group, hearing it from the owner it knows, empties the roster, drops the send target, voids pending invites and marks the group `dissolved`; the chat stays, read-only, with the line "{owner} dissolved this group". Repeats and copies for a group it is not in change nothing. The DM is kept out of direct chats; the group's chat gets the one notice. [WIRE_SCHEMAS § Group dissolved](../../docs/contracts/WIRE_SCHEMAS.md).
+
 ### State machine (per group, restored device)
 
 ```
 restored (owner or not) --send group_roster_request--> checking   [receive: yes, send: no]
 checking --valid owner-signed reply, removed=false--> active   [apply highest roster_epoch]
 checking --valid reply, removed=true--> removed                    [read-only, "you were removed"]
+any state --valid group_dissolved from the owner--> dissolved      [read-only, roster empty, no check, no reply; terminal]
 any state --group message arrives while no check is running--> checking (again)  [its sender is online]
 re-invited --> active   (member_joined snapshot is fresh; numbering continues, or the pair restarts)
 ```

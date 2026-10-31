@@ -172,7 +172,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G016 — The owner dissolves a group for everyone
 
 **Date:** 2026-10-31
-**Status:** Accepted (Kenneth, 2026-10-31); Hongwei may amend
+**Status:** Accepted (Kenneth, 2026-10-31); Hongwei may amend; **implemented** 2026-10-31 (the marker is `group_metadata.sync_state` `dissolved`, no new column; wire in [WIRE_SCHEMAS § Group dissolved](../../docs/contracts/WIRE_SCHEMAS.md))
 **Decision:** The owner's choice is "dissolve the group", which ends it for every member. It replaces "dismiss on this device only" (G009) for a group with other members; leaving with a transfer stays as it is.
 
 1. **Wire:** new membership `control_type` `group_dissolved`, sent by the owner as a DM to every roster member and carrying the owner-signed roster statement form (G012) with the group id and a `dissolved` marker, so a receiver checks it the same way as other owner events.
@@ -183,5 +183,6 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 
 **Rationale:** On device test, an owner used "dismiss on this device only". The owner was removed from its own roster and its thread was deleted, nothing was sent, and the other members kept fanning out to it, so the group was left with no owner and silent drops. Kenneth: dissolving ends the group for everyone; each member keeps the chat with a line saying so, and deletes it themselves.
 **Alternatives:** Keep the local dismiss (the case above); transfer only (a group can never end while one other member remains, and that member becomes owner unasked).
+**Old apps:** an app before this does not know `group_dissolved`: it stores a plain system line in its direct chat with the owner (the DM's `display` text) and its group stays live for it; its sends are dropped by every app that dissolved, and it is told nothing more. The product is unreleased, so no shim.
 **Tombstone:** none. The kept thread and the dissolved marker on the group are enough; a member who deleted the chat has no thread, so later traffic is rejected as for any unknown group.
 
