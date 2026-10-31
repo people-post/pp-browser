@@ -54,6 +54,8 @@ TEST_F(AppErrorTest, NetworkDisplayNamesTheCause) {
             "Can't set up a secure connection — the network may be going through a proxy.");
   EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfigured, "Blob upload is not configured")),
             "Can't send attachments right now — the server hasn't enabled uploads.");
+  EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfiguredNoDirect, "detail")),
+            "No direct link to this contact right now, and the attachment server is not enabled yet, so this cannot be sent.");
 }
 
 // One plain line per row of the attachments plan's status table (no status codes, no protocol words).

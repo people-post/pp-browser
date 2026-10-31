@@ -1130,6 +1130,7 @@
     "errors.blob.quota_nothing_to_delete": "云端空间已满，没有可以安全删除的文件",
     "errors.blob.failed": "上传失败，请重试。",
     "errors.blob.not_configured": "暂时无法发送附件 — 服务器还没开通上传。",
+    "errors.blob.not_configured_no_direct": "对方现在没有和你直连，附件服务器也还没开通，这个附件暂时发不出去。",
     "errors.blob.upload_rejected": "上传失败，请稍后再试。",
     "errors.blob.expired": "文件已过期。",
     "errors.blob.too_large": "这个文件太大，发不出去。",

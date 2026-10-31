@@ -3,6 +3,8 @@
 #include "domain/attachments/ChatBlobRequest.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "common/Logger.h"
+#include "foundation/error/AppError.h"
 
 #include <algorithm>
 #include <cctype>
@@ -67,6 +69,22 @@ void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& ide
   options.peer_client->PushChatBlobAsync(*request, prepared.ciphertext, std::move(finish));
 }
 
+/** One WARNING per send whose direct push failed: the error text and the size only (no peer, key or file name). */
+void LogDirectPushFailed(const uint64_t plaintext_bytes, const Error& why) {
+  logging::getLogger("AttachmentClient").warning
+      << "attachment direct push failed, falling back to the server bytes=" << plaintext_bytes
+      << " reason=" << why.message;
+}
+
+/** A server answer "uploads not enabled" after a failed direct push says so: the user is told about both. */
+Error NoteDirectFailed(Error server_error) {
+  if (AppError::CategoryOf(server_error) == ErrorCategory::Blob &&
+      server_error.code == static_cast<int32_t>(Err::Blob::UploadNotConfigured)) {
+    return AppError::Blob(Err::Blob::UploadNotConfiguredNoDirect, server_error.message);
+  }
+  return server_error;
+}
+
 Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& relay_user_id,
                                                 const PreparedChatAttachment& prepared) {
   const std::string body(reinterpret_cast<const char*>(prepared.ciphertext.data()), prepared.ciphertext.size());
@@ -97,11 +115,12 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
   const std::string relay_id = *relay_user_id;
   OutgoingAttachmentStore* store = options.outgoing;
   const ByteVector dek = options.dek;
-  auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress, finish]() mutable {
+  auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress,
+                    finish](const bool direct_failed) mutable {
     auto uploaded = UploadRelayBlobFile(blob, relay_id, "application/octet-stream", BlobPurpose::File,
                                         store->CipherPath(record.id), record.cipher_bytes, progress);
     if (!uploaded) {
-      finish(uploaded.error());
+      finish(direct_failed ? NoteDirectFailed(uploaded.error()) : uploaded.error());
       return;
     }
     record.fields.url = uploaded.value().public_url;
@@ -130,7 +149,8 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
                              finish(record.fields);
                              return;
                            }
-                           to_server();
+                           LogDirectPushFailed(record.fields.byte_length, pushed.error());
+                           to_server(true);
                          };
                          if (AppRuntime::IsRunning()) {
                            AppRuntime::PostWorkerNormal(std::move(next));
@@ -141,7 +161,7 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
       return;
     }
   }
-  to_server();
+  to_server(false);
 }
 
 } // namespace
@@ -212,7 +232,13 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
               finish(prepared_shared->fields);
               return;
             }
-            finish(UploadPreparedToRelay(blob, relay_id, *prepared_shared));
+            LogDirectPushFailed(prepared_shared->fields.byte_length, pushed.error());
+            auto uploaded = UploadPreparedToRelay(blob, relay_id, *prepared_shared);
+            if (!uploaded) {
+              finish(NoteDirectFailed(uploaded.error()));
+              return;
+            }
+            finish(std::move(uploaded));
           };
           if (AppRuntime::IsRunning()) {
             AppRuntime::PostWorkerNormal(std::move(continue_result));

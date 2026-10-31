@@ -203,6 +203,40 @@ TEST_F(AttachmentClientTest, ServerErrorsKeepTheirTypeToTheCaller) {
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::QuotaExceeded));
 }
 
+TEST_F(AttachmentClientTest, NotConfiguredServerAfterAFailedDirectPushSaysBoth) {
+  peer_.reachable = false; // no live direct link: the push fails before it is sent
+  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  auto fields = Upload(1000, Options(direct_));
+  ASSERT_FALSE(fields);
+  EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfiguredNoDirect));
+  EXPECT_EQ(blob_.PresignCallCount(), 1u);
+}
+
+TEST_F(AttachmentClientTest, NotConfiguredServerAfterARefusedDirectPushSaysBoth) {
+  peer_.push_ok = false;
+  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  auto fields = Upload(1000, Options(direct_));
+  ASSERT_FALSE(fields);
+  EXPECT_EQ(peer_.push_calls, 1);
+  EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfiguredNoDirect));
+}
+
+TEST_F(AttachmentClientTest, NotConfiguredServerInAGroupKeepsTheServerOnlyMessage) {
+  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  auto fields = Upload(1000, Options(group_));
+  ASSERT_FALSE(fields);
+  EXPECT_EQ(peer_.push_calls, 0);
+  EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfigured));
+}
+
+TEST_F(AttachmentClientTest, OtherServerErrorsAfterAFailedDirectPushKeepTheirType) {
+  peer_.push_ok = false;
+  blob_.SetPresignError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  auto fields = Upload(1000, Options(direct_));
+  ASSERT_FALSE(fields);
+  EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::Unavailable));
+}
+
 // The staged (product) path: the ciphertext is a file, the key is in the sealed record, and a failed send is
 // resumed with that same ciphertext and key.
 class StagedUploadTest : public AttachmentClientTest {
@@ -274,6 +308,17 @@ TEST_F(StagedUploadTest, AFailedUploadKeepsTheCiphertextAndAResumeSendsTheSameBy
   ASSERT_EQ(blob_.UploadedBodies().size(), 1u);
   EXPECT_EQ(blob_.UploadedBodies().front(), std::string(cipher_before.begin(), cipher_before.end()));
   EXPECT_FALSE(resumed->url.empty());
+}
+
+TEST_F(StagedUploadTest, NotConfiguredServerAfterAFailedDirectPushSaysBothAndAGroupDoesNot) {
+  peer_.reachable = false;
+  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  auto direct = UploadStaged(5000, Staged(direct_));
+  ASSERT_FALSE(direct);
+  EXPECT_EQ(direct.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfiguredNoDirect));
+  auto group = UploadStaged(5000, Staged(group_));
+  ASSERT_FALSE(group);
+  EXPECT_EQ(group.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfigured));
 }
 
 TEST_F(StagedUploadTest, ADeliveredRecordResumesWithoutAnyNetwork) {

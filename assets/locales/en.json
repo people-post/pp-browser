@@ -1130,6 +1130,7 @@
     "errors.blob.quota_nothing_to_delete": "Cloud space is full and nothing can be removed safely",
     "errors.blob.failed": "Upload failed — try again.",
     "errors.blob.not_configured": "Can't send attachments right now — the server hasn't enabled uploads.",
+    "errors.blob.not_configured_no_direct": "No direct link to this contact right now, and the attachment server is not enabled yet, so this cannot be sent.",
     "errors.blob.upload_rejected": "Upload failed — please try again later.",
     "errors.blob.expired": "This file has expired.",
     "errors.blob.too_large": "This file is too large to send.",

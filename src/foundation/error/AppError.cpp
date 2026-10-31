@@ -134,6 +134,8 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
       return Tr("errors.blob.quota_nothing_to_delete");
     case Err::Blob::UploadNotConfigured:
       return Tr("errors.blob.not_configured");
+    case Err::Blob::UploadNotConfiguredNoDirect:
+      return Tr("errors.blob.not_configured_no_direct");
     case Err::Blob::UploadRejected:
       return Tr("errors.blob.upload_rejected");
     case Err::Blob::Expired:

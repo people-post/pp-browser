@@ -82,6 +82,8 @@ enum class Blob : int32_t {
   Unavailable = 7,
   /** 429 "Rate limit exceeded" / "Too many pending uploads", and this device's own send limit. */
   RateLimited = 8,
+  /** UploadNotConfigured after a peer-direct push to a 1:1 contact failed too: nothing could carry the file. */
+  UploadNotConfiguredNoDirect = 9,
 };
 
 } // namespace Err
