@@ -3,6 +3,7 @@
 // tmp/pp-picks/<uuid>/<name>; the consumer releases its copy when done (ReleasePickedFile), and leftovers
 // of an earlier run (a crash, a kill) are cleared when the first pick of this run starts.
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/NativeFileDialogIosShared.h"
 
 #import <PhotosUI/PhotosUI.h>
 #import <UIKit/UIKit.h>
@@ -30,13 +31,52 @@
 }
 @end
 
-namespace {
+// The one-picker guard, PickRoot and the presenting controller are shared with CameraCapture_Ios.mm
+// (NativeFileDialogIosShared.h).
+namespace pbr::ios_pick {
 
-PPPickDelegate* g_active = nil; // pickers hold their delegate weakly: kept alive here until the pick ends
+namespace {
+id g_active = nil; // pickers hold their delegate weakly: kept alive by their owner until the pick ends
+} // namespace
 
 NSString* PickRoot() { return [NSTemporaryDirectory() stringByAppendingPathComponent:@"pp-picks"]; }
 
 void ClearPickRoot() { [[NSFileManager defaultManager] removeItemAtPath:PickRoot() error:nil]; }
+
+void ClearLeftoversOnce() {
+  static bool cleared_leftovers = false; // only earlier runs: this run's copies may still be in use
+  if (!cleared_leftovers) {
+    ClearPickRoot();
+    cleared_leftovers = true;
+  }
+}
+
+id ActivePicker() { return g_active; }
+
+void SetActivePicker(id owner) { g_active = owner; }
+
+/** The controller to present from, or nil when UIKit would refuse (none, or mid-transition). */
+UIViewController* PresentingController(SDL_Window* window) {
+  if (window == nullptr) {
+    return nil;
+  }
+  UIWindow* uiwindow = static_cast<UIWindow*>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr));
+  UIViewController* host = uiwindow.rootViewController;
+  while (host != nil && host.presentedViewController != nil) {
+    host = host.presentedViewController;
+  }
+  if (host == nil || host.isBeingPresented || host.isBeingDismissed || host.transitionCoordinator != nil) {
+    return nil;
+  }
+  return host;
+}
+
+} // namespace pbr::ios_pick
+
+using namespace pbr::ios_pick;
+
+namespace {
 
 /** Copy `source` to tmp/pp-picks/<uuid>/<name>; empty on failure. */
 std::string CopyIntoPickRoot(NSURL* source, NSString* name) {
@@ -76,47 +116,26 @@ std::string ConvertHeicToJpeg(const std::string& path) {
 void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   pbr::NativeFileDialogCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
-  if (g_active == delegate) {
-    [g_active release];
-    g_active = nil;
+  if (ActivePicker() == delegate) {
+    SetActivePicker(nil);
+    [delegate release];
   }
   if (callback) {
     callback(std::move(paths));
   }
 }
 
-/** The controller to present from, or nil when UIKit would refuse (none, or mid-transition). */
-UIViewController* PresentingController(SDL_Window* window) {
-  if (window == nullptr) {
-    return nil;
-  }
-  UIWindow* uiwindow = static_cast<UIWindow*>(
-      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr));
-  UIViewController* host = uiwindow.rootViewController;
-  while (host != nil && host.presentedViewController != nil) {
-    host = host.presentedViewController;
-  }
-  if (host == nil || host.isBeingPresented || host.isBeingDismissed || host.transitionCoordinator != nil) {
-    return nil;
-  }
-  return host;
-}
-
 /** Start a pick: nil (and the callback answered "nothing picked") when another pick is up or UIKit is busy. */
 PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback callback, UIViewController** host) {
-  *host = g_active == nil ? PresentingController(window) : nil;
+  *host = ActivePicker() == nil ? PresentingController(window) : nil;
   if (*host == nil) {
     callback({});
     return nil;
   }
-  static bool cleared_leftovers = false; // only earlier runs: this run's copies may still be in use
-  if (!cleared_leftovers) {
-    ClearPickRoot();
-    cleared_leftovers = true;
-  }
+  ClearLeftoversOnce();
   PPPickDelegate* delegate = [[PPPickDelegate alloc] init]; // released in Finish
   delegate->callback = std::move(callback);
-  g_active = delegate;
+  SetActivePicker(delegate);
   return delegate;
 }
 
@@ -312,7 +331,7 @@ void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::stri
     return;
   }
   @autoreleasepool {
-    UIViewController* host = (g_export == nil && g_active == nil) ? PresentingController(window) : nil;
+    UIViewController* host = (g_export == nil && ActivePicker() == nil) ? PresentingController(window) : nil;
     if (host == nil) {
       done(false);
       return;
