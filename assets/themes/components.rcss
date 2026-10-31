@@ -589,6 +589,7 @@ select selectbox option {
   height: 18dp;
 }
 
+.prompt-voice-toggle-btn,
 .prompt-attach-btn {
   flex-shrink: 0;
   display: flex;
@@ -605,6 +606,7 @@ select selectbox option {
   cursor: pointer;
 }
 
+.prompt-voice-toggle-btn svg,
 .prompt-attach-btn svg {
   flex-shrink: 0;
   width: 18dp;
@@ -759,19 +761,24 @@ select selectbox option {
   height: 14dp;
 }
 
-/* Voice message: the microphone takes the send button's place; grey while a call has the microphone, red while recording. */
-.prompt-send-btn.prompt-voice-btn svg {
-  width: 16dp;
-  height: 16dp;
+/* Voice mode: the "hold to talk" bar takes the text input's place; grey while a call has the microphone, red while recording. */
+.prompt-voice-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8dp;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  cursor: pointer;
 }
 
-.prompt-send-btn.prompt-voice-btn--blocked {
-  background-color: #6b7280;
-  opacity: 0.7;
-}
-
-.prompt-send-btn.prompt-voice-btn--active {
-  background-color: #ef4444;
+.prompt-voice-bar--blocked {
+  opacity: 0.5;
 }
 
 .prompt-voice-cancel-btn {

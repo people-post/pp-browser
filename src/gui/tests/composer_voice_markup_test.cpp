@@ -40,7 +40,7 @@ protected:
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
       BindChatScreenState(ctor, state);
       for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send",
-                               "voice_cancel", "attach_file", "open_emoji_insert", "draft_changed",
+                               "voice_cancel", "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
                                "cancel_quote_reply", "retry_attachment_send", "discard_attachment_send",
                                "remove_image"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
@@ -62,12 +62,12 @@ protected:
     ui::SetRenderInterface(nullptr);
   }
   void Apply() {
-    for (const char* key : {"show_voice", "draft", "loading", "voice_recording", "voice_click_mode"}) {
+    for (const char* key : {"show_voice", "voice_mode", "draft", "loading", "voice_recording", "voice_click_mode"}) {
       DataModelHost::Instance().Dirty("chat", key);
     }
     context->Update();
   }
-  /** How many buttons with `cls` are in the composer and shown (a `data-if` that is false hides its element). */
+  /** How many elements with `cls` are in the composer and shown (a `data-if` that is false hides its element). */
   int Shown(const char* cls) {
     ui::ElementList found;
     document->GetElementsByClassName(found, cls);
@@ -77,14 +77,10 @@ protected:
     }
     return shown;
   }
-  int ShownSendWithoutMic() {
-    ui::ElementList found;
-    document->GetElementsByClassName(found, "prompt-send-btn");
-    int shown = 0;
-    for (ui::Element* element : found) {
-      shown += (element->IsVisible(true) && !element->IsClassSet("prompt-voice-btn")) ? 1 : 0;
-    }
-    return shown;
+  /** The text input is in the layout (its `data-if` is true). */
+  bool InputShown() {
+    ui::Element* input = document->GetElementById("draft-input");
+    return input && input->IsVisible(true);
   }
   NullRender renderer;
   bool initialized = false;
@@ -93,32 +89,71 @@ protected:
   ChatScreenState state;
 };
 
-TEST_F(ComposerVoiceMarkupTest, MicrophoneTakesTheSendButtonsPlaceWhenVoiceIsOnAndTheDraftIsEmpty) {
+// WeChat model: a toggle at the left of the footer switches the text input for a "hold to talk" bar.
+TEST_F(ComposerVoiceMarkupTest, TextModeShowsTheToggleTheInputAndSendButNoBar) {
   state.show_voice = true;
+  state.voice_mode = false;
   state.draft = "";
-  state.loading = false;
-  state.voice_recording = false;
   Apply();
-  EXPECT_EQ(Shown("prompt-voice-btn"), 1);
-  EXPECT_EQ(ShownSendWithoutMic(), 0);
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_EQ(Shown("prompt-voice-bar"), 0);
+  EXPECT_TRUE(InputShown());
+  EXPECT_EQ(Shown("prompt-send-btn"), 1);
 }
 
-TEST_F(ComposerVoiceMarkupTest, SendButtonStaysWhenVoiceIsOff) {
+TEST_F(ComposerVoiceMarkupTest, VoiceModeShowsTheBarAndTheToggleButNoInputOrSend) {
+  state.show_voice = true;
+  state.voice_mode = true;
+  state.draft = "";
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-bar"), 1);
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1); // the keyboard one, to go back
+  EXPECT_FALSE(InputShown());
+  EXPECT_EQ(Shown("prompt-send-btn"), 0);
+}
+
+TEST_F(ComposerVoiceMarkupTest, TheBarSaysHoldOnAPhoneAndClickOnTheDesktop) {
+  state.show_voice = true;
+  state.voice_mode = true;
+  state.voice_click_mode = false;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-bar-hold"), 1);
+  EXPECT_EQ(Shown("prompt-voice-bar-click"), 0);
+  state.voice_click_mode = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-bar-hold"), 0);
+  EXPECT_EQ(Shown("prompt-voice-bar-click"), 1);
+}
+
+TEST_F(ComposerVoiceMarkupTest, NoVoiceHidesTheToggleAndTheBar) {
   state.show_voice = false;
-  state.draft = "";
-  state.loading = false;
-  state.voice_recording = false;
+  state.voice_mode = false;
   Apply();
-  EXPECT_EQ(Shown("prompt-voice-btn"), 0);
-  EXPECT_EQ(ShownSendWithoutMic(), 1);
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
+  EXPECT_EQ(Shown("prompt-voice-bar"), 0);
+  EXPECT_TRUE(InputShown());
+  EXPECT_EQ(Shown("prompt-send-btn"), 1);
 }
 
-TEST_F(ComposerVoiceMarkupTest, SendButtonReplacesTheMicrophoneOnceTheDraftHasText) {
+TEST_F(ComposerVoiceMarkupTest, TheToggleStaysWhenTheDraftHasText) {
   state.show_voice = true;
+  state.voice_mode = false;
   state.draft = "hello";
   Apply();
-  EXPECT_EQ(Shown("prompt-voice-btn"), 0);
-  EXPECT_EQ(ShownSendWithoutMic(), 1);
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_EQ(Shown("prompt-send-btn"), 1);
+}
+
+TEST_F(ComposerVoiceMarkupTest, WhileRecordingOnTheDesktopTheBarStaysAndCancelAndSendAppear) {
+  state.show_voice = true;
+  state.voice_mode = true;
+  state.voice_click_mode = true;
+  state.voice_recording = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-bar"), 1);
+  EXPECT_EQ(Shown("prompt-voice-cancel-btn"), 1);
+  EXPECT_EQ(Shown("prompt-send-btn"), 1); // the voice Send
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
 }
 
 // The cause of the missing microphone on devices: the markup above is fine, but `show_voice` is only set by

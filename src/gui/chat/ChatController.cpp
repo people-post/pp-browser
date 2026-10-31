@@ -1101,6 +1101,20 @@ void ChatController::UpdateThreadChrome() {
   SyncComposerInputState();
 }
 
+void ChatController::ToggleVoiceMode() {
+  if (chat_.voice_recording || (!chat_.voice_mode && !chat_.show_voice)) {
+    return;
+  }
+  chat_.voice_mode = !chat_.voice_mode;
+  if (chat_.voice_mode && context_ && context_->GetNumDocuments() > 0) {
+    // The text input is going away: let the keyboard go with it.
+    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+      draft->Blur();
+    }
+  }
+  DataModelHost::Instance().Dirty("chat", "voice_mode");
+}
+
 void ChatController::SyncComposerInputState() {
   chat_.composer_input_disabled =
       chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing || chat_.voice_recording;
@@ -1139,27 +1153,56 @@ void ChatController::OnAttachFile(ui::Event* ev) {
       });
     };
   };
-  const auto pick_image = [picked](const OutgoingPickSource source) {
-    return [on_picked = picked(source)]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
+  // A picture is asked about before it goes: sent smaller (the default) or as it is. A video from the phone's
+  // library has no such choice and goes straight on.
+  const auto picked_picture = [this]() {
+    return [this](std::vector<std::string> paths) {
+      AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+        if (paths.empty()) {
+          return;
+        }
+        std::string path = std::move(paths.front());
+        if (AttachmentMimeFromFilename(path).rfind("video/", 0) == 0) {
+          StartAttachmentUpload(std::move(path), OutgoingPickSource::Photo);
+          return;
+        }
+        ShowPictureSendChoice(std::move(path));
+      });
+    };
   };
   // "Photo" on a phone: the library with pictures and videos.
-  const auto pick_photo_or_video = [picked]() {
-    return [on_picked = picked(OutgoingPickSource::Photo)]() {
-      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked);
-    };
+  const auto pick_photo_or_video = [picked_picture]() {
+    return [on_picked = picked_picture()]() { ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked); };
+  };
+  // "Picture" on the desktop: the image-file dialog.
+  const auto pick_image = [picked_picture]() {
+    return [on_picked = picked_picture()]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
   };
   const auto pick_file = [picked]() {
     return [on_picked = picked(OutgoingPickSource::File)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
   };
 
-  // A phone keeps photos and files apart; the desktop dialog shows both at once, so there it is only
-  // "File" and "Original photo".
+  // A phone keeps photos and files apart; the desktop dialog shows both at once, so there a picture and a file
+  // have their own entries.
   std::vector<ContextMenuAction> actions;
   if (Platform::IsMobile()) {
     actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video()});
+  } else {
+    actions.push_back({"attach_picture", Tr("chat.attach.picture"), nullptr, pick_image()});
   }
-  actions.push_back({"attach_original", Tr("chat.attach.original"), nullptr, pick_image(OutgoingPickSource::Original)});
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+}
+
+void ChatController::ShowPictureSendChoice(std::string path) {
+  // Shared so each button can hand the path on; only one of them runs.
+  const auto picture = std::make_shared<std::string>(std::move(path));
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"attach_send_compressed", Tr("chat.attach.send_compressed"), nullptr,
+                     [this, picture]() { StartAttachmentUpload(*picture, OutgoingPickSource::Photo); }});
+  actions.push_back({"attach_send_original", Tr("chat.attach.send_original"), nullptr,
+                     [this, picture]() { StartAttachmentUpload(*picture, OutgoingPickSource::Original); }});
   actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
   ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
 }
@@ -2942,6 +2985,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
         ctor.BindEventCallback("attach_file", DataEventAt([this](ui::Event& ev) { OnAttachFile(&ev); }));
+        ctor.BindEventCallback("voice_mode_toggle", DataEvent([this] { ToggleVoiceMode(); }));
         ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
         ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));
         ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));

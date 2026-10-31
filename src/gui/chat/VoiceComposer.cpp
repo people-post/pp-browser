@@ -86,9 +86,14 @@ void VoiceComposer::Refresh() {
   const bool blocked = show && ports_.call_live && ports_.call_live();
   const bool click_mode = !Platform::IsMobile();
   const std::string title = Tr(blocked ? "chat.voice.title_call" : "chat.voice.title");
+  // No microphone here (another chat, a call setup, a send in progress): back to the text input.
+  const bool leave_voice_mode = !show && state_.voice_mode;
   if (state_.show_voice == show && state_.voice_blocked == blocked && state_.voice_click_mode == click_mode &&
-      std::string(state_.voice_title) == title) {
+      std::string(state_.voice_title) == title && !leave_voice_mode) {
     return;
+  }
+  if (leave_voice_mode) {
+    state_.voice_mode = false;
   }
   state_.show_voice = show;
   state_.voice_blocked = blocked;
