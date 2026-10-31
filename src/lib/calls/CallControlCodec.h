@@ -63,6 +63,9 @@ public:
   static Roe<std::string> EncodeCapsUpdate(const CallCapsUpdateDetail& detail);
   static Roe<CallCapsUpdateDetail> DecodeCapsUpdate(const std::string& detail_json);
 
+  /** M021 d5: `{ call_id, accepted }` — which call this device took (or declined). */
+  static Roe<std::string> EncodeAnsweredElsewhere(const std::string& call_id, bool accepted);
+  static Roe<std::pair<std::string, bool>> DecodeAnsweredElsewhere(const std::string& detail_json);
   static Roe<std::string> EncodePunch(const CallPunchDetail& detail);
   static Roe<CallPunchDetail> DecodePunch(const std::string& detail_json);
 

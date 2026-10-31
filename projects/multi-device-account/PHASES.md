@@ -162,7 +162,7 @@ Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the
 
 ### d5 — Calls on every device
 
-- [ ] Ring every device; the first answer wins; the others stop
+- [x] Ring every device (the invite is an account copy); the first answer wins; the others stop — `call_answered_elsewhere` to our own devices on accept / decline, a sibling still ringing ends it locally with no history (`CallSessionWorkflow::StopRingingAnsweredElsewhere`); gtests (codec, no summary); lab `a_call_rings_every_device_and_stops_once_answered` ([CALLS.md](../../docs/architecture/CALLS.md))
 
 ### d6 — Later
 

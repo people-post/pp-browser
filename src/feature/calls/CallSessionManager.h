@@ -391,6 +391,11 @@ private:
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** M021 d5: a sibling's notice (our own account only) that it took / declined a call ringing here too. */
+  Roe<void> HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
+                                    const std::string& local_identity);
+  /** M021 d5: this device took / declined an incoming call — tell our other devices, so theirs stop ringing. */
+  void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
 
 
   ContactsStore& contacts_;

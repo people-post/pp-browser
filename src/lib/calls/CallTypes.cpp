@@ -172,6 +172,8 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_punch_answer";
   case CallControlType::CallJoinRequest:
     return "call_join_request";
+  case CallControlType::CallAnsweredElsewhere:
+    return "call_answered_elsewhere";
   case CallControlType::CallCapsUpdate:
     return "call_caps_update";
   }
@@ -232,6 +234,9 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_punch_answer") {
     return CallControlType::CallPunchAnswer;
+  }
+  if (value == "call_answered_elsewhere") {
+    return CallControlType::CallAnsweredElsewhere;
   }
   if (value == "call_caps_update") {
     return CallControlType::CallCapsUpdate;

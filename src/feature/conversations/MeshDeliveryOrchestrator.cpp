@@ -263,6 +263,13 @@ void MeshDeliveryOrchestrator::MirrorToSiblings(const ThreadMessage& sent, SentC
   });
 }
 
+Roe<void> MeshDeliveryOrchestrator::NotifyOwnDevices(const ThreadMessage& control) {
+  if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
+    return {};
+  }
+  return control_lane_.NotifySiblings(control);
+}
+
 void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::MissingCopy& missing) {
   {
     std::lock_guard lock(asked_copies_mutex_);

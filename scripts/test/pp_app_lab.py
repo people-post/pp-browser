@@ -2045,6 +2045,28 @@ def scenario_a_device_asks_for_a_copy_it_missed(lab):
         raise ProbeError("laptop: the message came without an ask — nothing was missing")
 
 
+def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
+    """A call rings every device of the account (M021 d5): Bob calls Alice; her phone and her laptop both ring.
+    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    a.wait_surface("ringing", 40, call_id=call_id)
+    laptop.wait_surface("ringing", 40, call_id=call_id)
+    a.cmd("accept_voice")
+    laptop.wait_surface("none", 15)
+    b.wait_surface("in_call", 40, call_id=call_id)
+    a.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(b, a, timeout=40)
+    if "ringing stopped call_id=%s" % call_id not in laptop.log_text():
+        raise ProbeError("laptop: stopped ringing, but not because the phone answered")
+    b.cmd("leave")
+    assert_idle(a, b, laptop, timeout=40)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2709,6 +2731,7 @@ SCENARIOS = [
     ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
     ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
     ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
+    ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),

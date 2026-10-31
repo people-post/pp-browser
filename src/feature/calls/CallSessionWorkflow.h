@@ -220,6 +220,8 @@ public:
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** M021 d5: another of our devices took (or declined) this call — stop it ringing here, no history. */
+  Roe<void> StopRingingAnsweredElsewhere(const std::string& call_id, const std::string& local_identity);
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
   Roe<void> HandleInboundJoinRequest(const std::string& detail_json, const std::string& sender_identity,
                                      const std::string& local_identity);

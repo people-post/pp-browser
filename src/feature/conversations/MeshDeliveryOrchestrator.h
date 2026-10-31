@@ -178,6 +178,11 @@ public:
    */
   void NudgeSiblings();
   /**
+   * A control notice to our own account's other devices (one record to our own mailbox, sealed to the account
+   * KEM): applied there by its family (M021 d5: a call taken here). Nothing when our card lists only us.
+   */
+  Roe<void> NotifyOwnDevices(const ThreadMessage& control);
+  /**
    * What we sent shows on our other devices (M021 d3): a sent-copy notice to our own mailbox, when our card lists
    * other devices. Off the caller's thread.
    */

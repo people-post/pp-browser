@@ -20,7 +20,7 @@ Read [DECISIONS.md](DECISIONS.md) **M021**, **M022**, **M023** first — they su
 ## Next
 
 1. **Account state (M023)** — built: phrase, relay locker, contact sync between siblings (with a nudge), restore from a typed phrase. Saved copies (exported locker files): Me → Security "Save a copy of my account…", "Use a saved copy…" when restoring (iOS / Android pickers not yet tried on devices). Left: the recovery tiers (easy: synced keychain, needs a device; tier switch UI); the relay locker API deploys (www PR #215). pp-node is not a provider (M023 §6 amendment).
-2. **d3** — sent messages on our own siblings; ask for a missing copy; a linked device introduces itself to contacts.
+2. **d6** — the directory carries the card; card version in envelopes; re-decide E027 device-lock.
 3. **d4 (cryptographic)** — only the master holds the account key: relay auth by device key + card, the seed off the link bundle (design first; the policy part is built).
 
 ## Stated limits in force

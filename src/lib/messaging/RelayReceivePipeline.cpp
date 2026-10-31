@@ -871,6 +871,32 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
   if (*copy) {
     outcome.from_sibling = false;  // a sent message, not news about the account's state (no locker sync)
     FileSentCopy(**copy, envelope, outcome);
+    return;
+  }
+  // Another lane notice of ours (M021 d5: a call taken on a sibling): its family applies it, fresh and once,
+  // as any lane message — the family knows it is from our own account (the context's sender).
+  ThreadMessage message = std::move(*decrypted);
+  const auto family = controls_ ? controls_->Find(message) : std::nullopt;
+  if (!family || !family->on_lane || !family->on_lane(message)) {
+    return;  // the device list notice: its card is what counts (taken above)
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (!ControlLaneFresh(envelope, family->lane_max_age_ms, now_ms)) {
+    return;
+  }
+  if (control_lane_seen_) {
+    auto first = control_lane_seen_->FirstSight(envelope.sender_contact_id, envelope.message_id, now_ms);
+    if (!first || !*first) {
+      return;
+    }
+  }
+  outcome.from_sibling = false;  // not a nudge to sync the locker
+  message.id = envelope.message_id;
+  message.thread_id.clear();
+  message.sender_contact_id = envelope.sender_contact_id;
+  message.timestamp = envelope.timestamp;
+  if (auto applied = ApplyInboundControl(message, envelope, &outcome); applied) {
+    outcome.decision = IngestDecision::AcceptControl;
   }
 }
 
