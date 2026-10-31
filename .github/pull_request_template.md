@@ -1,15 +1,23 @@
 ## Summary
 
-<!-- What changed and why. Link the issue / project doc. -->
+<!-- What changed and why, user-visible behaviour first. Link the issue, the decision (projects/*/DECISIONS.md) or the doc. -->
+
+## Contracts and docs
+
+<!-- Wire / disk / HTTP format changed? Additive or breaking (docs/contracts/COMPATIBILITY.md). The docs/ files updated in this PR, and decisions whose Status line changed. "None" when nothing. -->
+
+## Depends on
+
+<!-- PRs or deploys that must land first (relay / web2, pp-cpp-* pins) and the merge order. Follow-ups this PR leaves open. "None" when nothing. -->
 
 ## Testing
 
-<!-- What ran (test binaries, filters), what was checked on a device or a fresh profile, build-log lines for platforms CI does not cover (iOS). Show output, don't claim. -->
+<!-- What ran and its result — counts, not "all good". New tests: the behaviour each one guards. Lab scenarios run (`--only` names). A UI change: a screenshot. -->
 
-## Risk
+## Not verified
 
-<!-- Core flow touched (unlock, identity, registration, calls, messaging, backup)? Platform CI does not build? Contract / disk / wire format changed (docs/contracts updated)? -->
+<!-- What was not run or not seen, and why: platforms CI only compiles (iOS) or this machine cannot build, device-only paths (pickers, camera, push, keychain), flows not reachable headless. What a reviewer or tester should check by hand. "None" when everything was run. -->
 
-## How to revert
+## Where to look
 
-<!-- "Revert the merge commit" is fine if that is really all; say so if data written in a new format would be left behind. -->
+<!-- The parts that deserve a careful read: core flows touched (unlock, identity, messaging, calls), the security surface, threading. Optional for a small PR. -->
