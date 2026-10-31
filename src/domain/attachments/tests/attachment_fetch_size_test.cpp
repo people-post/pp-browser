@@ -50,6 +50,16 @@ TEST_F(FetchSizeTest, TheOverheadConstantIsTheRealOverhead) {
   EXPECT_EQ(cipher_.size(), plain_.size() + kAttachmentCipherOverheadBytes);
 }
 
+TEST_F(FetchSizeTest, TheConsumingDecryptMatchesTheCopyingOne) {
+  auto copying = AttachmentContentCipher::Decrypt(fields_.content_key, fields_.blob_nonce, cipher_, fields_.content_hash);
+  ASSERT_TRUE(copying);
+  auto consuming = AttachmentContentCipher::Decrypt(fields_.content_key, fields_.blob_nonce, std::vector<uint8_t>(cipher_),
+                                                    fields_.content_hash);
+  ASSERT_TRUE(consuming);
+  EXPECT_EQ(*copying, *consuming);
+  EXPECT_EQ(*consuming, plain_);
+}
+
 TEST_F(FetchSizeTest, ExactlyTheDeclaredSizeDecrypts) {
   auto result = RunWith(cipher_, fields_);
   ASSERT_TRUE(result) << result.error().message;

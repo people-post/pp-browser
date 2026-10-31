@@ -63,7 +63,8 @@ bool CasStore::Exists(const CasRealm realm, const ByteVector& content_id) const 
   return std::filesystem::is_regular_file(BlockPath(realm, content_id), ec) && !ec;
 }
 
-Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& bytes) const {
+Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& bytes,
+                                   const std::string_view prefix) const {
   std::error_code ec;
   std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
   if (ec) {
@@ -74,6 +75,9 @@ Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& by
     std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
     if (!out) {
       return Error("Failed to write CAS block");
+    }
+    if (!prefix.empty()) {
+      out.write(prefix.data(), static_cast<std::streamsize>(prefix.size()));
     }
     if (!bytes.empty()) {
       out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -95,7 +99,16 @@ Roe<ByteVector> CasStore::ReadBlockFile(const std::string& path) const {
   if (!in) {
     return Error("CAS block not found");
   }
-  return ByteVector((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  // One allocation of the file's size (an iterator copy would double the vector while it grows).
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    return ByteVector((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  }
+  ByteVector bytes(static_cast<size_t>(size));
+  in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  bytes.resize(static_cast<size_t>(in.gcount()));
+  return bytes;
 }
 
 Roe<void> CasStore::PutPrivate(const ByteVector& content_id, const ByteVector& plaintext, const ByteVector& dek,
@@ -122,12 +135,10 @@ Roe<void> CasStore::PutPrivate(const ByteVector& content_id, const ByteVector& p
   if (!cipher) {
     return cipher.error();
   }
-  ByteVector on_disk;
-  on_disk.reserve(4 + cipher->size());
-  on_disk.insert(on_disk.end(), kPpbaMagic, kPpbaMagic + 4);
-  on_disk.insert(on_disk.end(), cipher->begin(), cipher->end());
-
-  if (auto written = WriteBlockFile(BlockPath(CasRealm::Private, content_id), on_disk); !written) {
+  // The magic goes in front as it is written: no second copy of the whole ciphertext.
+  if (auto written = WriteBlockFile(BlockPath(CasRealm::Private, content_id), *cipher,
+                                    std::string_view(reinterpret_cast<const char*>(kPpbaMagic), 4));
+      !written) {
     return written.error();
   }
 
@@ -158,9 +169,9 @@ Roe<ByteVector> CasStore::GetPrivate(const ByteVector& content_id, const ByteVec
   if (raw->size() < 4 || std::memcmp(raw->data(), kPpbaMagic, 4) != 0) {
     return Error("CAS private block is not PPBA-wrapped");
   }
-  const ByteVector blob(raw->begin() + 4, raw->end());
+  raw->erase(raw->begin(), raw->begin() + 4); // in place: no second copy of the whole block
   const std::string aad = BuildCasPrivateAad(profile_id_, BytesToHex(content_id));
-  return FileCipher::Decrypt(dek, blob, aad);
+  return FileCipher::Decrypt(dek, std::move(*raw), aad);
 }
 
 Roe<void> CasStore::PutPublic(const ByteVector& content_id, const ByteVector& published_bytes,

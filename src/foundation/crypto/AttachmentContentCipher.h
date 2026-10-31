@@ -21,6 +21,9 @@ public:
                                              const ByteVector& nonce);
   static Roe<ByteVector> Decrypt(const ByteVector& content_key, const ByteVector& nonce,
                                  const ByteVector& ciphertext, const ByteVector& content_hash);
+  /** The same, consuming the ciphertext (a large file is not copied once more on the way in). */
+  static Roe<ByteVector> Decrypt(const ByteVector& content_key, const ByteVector& nonce, ByteVector&& ciphertext,
+                                 const ByteVector& content_hash);
 };
 
 } // namespace pbr

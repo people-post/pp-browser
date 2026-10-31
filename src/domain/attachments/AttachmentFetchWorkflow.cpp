@@ -436,7 +436,9 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           }
           const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
           if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint, Limits().max_receive_bytes)) {
-            (void)EnsureAttachmentView(profile_dir_, profile_id_, job.thread_id, job.fields.content_hash, job.fields.mime, job.fields.filename, dek_copy);
+            // From the bytes just decrypted, not read back from the store (that held the file two more times).
+            (void)StoreAttachmentViewBytes(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
+                                           job.fields.filename, bytes);
           }
           MaybeBuildPoster(job.thread_id, job.fields);
           // Cancelled while writing (message deleted): take back what was just written.

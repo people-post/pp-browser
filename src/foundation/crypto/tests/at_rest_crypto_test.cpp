@@ -1,7 +1,9 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/DataKeyVault.h"
+#include "foundation/crypto/EncryptedPayload.h"
 #include "foundation/crypto/FileCipher.h"
+#include "foundation/crypto/MessageCipher.h"
 #include "foundation/crypto/PinKeyDeriver.h"
 #include "foundation/error/AppError.h"
 
@@ -43,6 +45,33 @@ TEST_F(AtRestCryptoTest, VaultCreateUnlockWrongPin) {
   ASSERT_TRUE(static_cast<bool>(ok)) << ok.error().message;
   ASSERT_TRUE(again.IsUnlocked());
   EXPECT_EQ(again.Dek()->size(), kDataEncryptionKeySize);
+}
+
+// The in-place paths (a large file is not copied three times) must read and write the same bytes as the
+// MessageCipher + EncryptedPayload pair they replace.
+TEST_F(AtRestCryptoTest, FileCipherSealsStraightIntoTheSameFormat) {
+  ByteVector dek(kDataEncryptionKeySize, 0x21);
+  const ByteVector plain(5000, 0x7a);
+  const std::string aad = FileCipher::BuildAad("blob", "profile-a");
+  auto sealed = FileCipher::Encrypt(dek, plain, aad);
+  ASSERT_TRUE(sealed);
+  EXPECT_EQ(sealed->size(), 1 + kAeadNonceSize + plain.size() + crypto_aead_xchacha20poly1305_ietf_abytes());
+  EXPECT_EQ((*sealed)[0], kEncryptedPayloadVersion);
+  // Decoded by the generic path and opened by MessageCipher: the layout is the documented one.
+  auto decoded = EncryptedPayload::DecodeBlob(*sealed);
+  ASSERT_TRUE(decoded);
+  const ByteVector aad_bytes(aad.begin(), aad.end());
+  auto opened = MessageCipher::Decrypt(dek, *decoded, aad_bytes);
+  ASSERT_TRUE(opened);
+  EXPECT_EQ(*opened, plain);
+  // The consuming decrypt gives the same plaintext and leaves the wrong key / wrong AAD failing.
+  ByteVector copy = *sealed;
+  auto consumed = FileCipher::Decrypt(dek, std::move(copy), aad);
+  ASSERT_TRUE(consumed);
+  EXPECT_EQ(*consumed, plain);
+  EXPECT_FALSE(FileCipher::Decrypt(dek, ByteVector(*sealed), FileCipher::BuildAad("blob", "profile-b")));
+  EXPECT_FALSE(FileCipher::Decrypt(ByteVector(kDataEncryptionKeySize, 0x22), ByteVector(*sealed), aad));
+  EXPECT_FALSE(FileCipher::Decrypt(dek, ByteVector{1, 2, 3}, aad));
 }
 
 TEST_F(AtRestCryptoTest, FileCipherRoundTripAndAadBind) {

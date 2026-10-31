@@ -218,10 +218,10 @@ void FetchAndDecryptAttachmentAsync(const ChatAttachmentFields& fields, const At
       return;
     }
 
-    auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, *ciphertext,
+    // The ciphertext moves into the decrypt (a bad pending copy is dropped by hash below, not by its bytes), so
+    // a large file is never held three times over.
+    auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, std::move(*ciphertext),
                                                       fields.content_hash);
-    // The ciphertext is not needed again: free it before the plaintext is handed on (one copy at a time).
-    std::vector<uint8_t>().swap(*ciphertext);
     if (!plaintext) {
       // Whatever we just fed to Decrypt was bad — most likely a poisoned/corrupt pending push
       // (see ChatBlobResponder::ServePush). Drop it so the next attempt re-fetches instead of

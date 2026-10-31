@@ -70,8 +70,8 @@ Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, std::string_vi
   }
   if (AttachmentAllowsInlinePrivateView(fields.mime, fields.byte_length > 0 ? fields.byte_length : plaintext.size(),
                                         max_receive_bytes)) {
-    (void)EnsureAttachmentView(profile_dir, profile_id, thread_id, fields.content_hash, fields.mime, fields.filename,
-                               dek);
+    (void)StoreAttachmentViewBytes(profile_dir, thread_id, fields.content_hash, fields.mime, fields.filename,
+                                   plaintext);
   }
   return {};
 }

@@ -2359,7 +2359,13 @@ void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id,
     }
     return;
   }
-  attachment.bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+  if (!ec) {
+    attachment.bytes.resize(static_cast<size_t>(size));
+    input.read(reinterpret_cast<char*>(attachment.bytes.data()), static_cast<std::streamsize>(attachment.bytes.size()));
+    attachment.bytes.resize(static_cast<size_t>(input.gcount()));
+  } else {
+    attachment.bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+  }
   SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done));
 }
 

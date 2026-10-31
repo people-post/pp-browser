@@ -45,7 +45,14 @@ Roe<std::vector<uint8_t>> ReadAll(const std::string& path, const uint64_t max_by
     return PrepError(OutgoingAttachmentError::Unreadable, "Could not read attachment file",
                      Tr("chat.attachment.read_failed"));
   }
-  std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  // One allocation of the file's size (an iterator copy doubles the vector while it grows).
+  std::vector<uint8_t> bytes(ec ? 0 : static_cast<size_t>(size));
+  if (!ec) {
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<size_t>(input.gcount()));
+  } else {
+    bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+  }
   if (bytes.empty()) {
     return PrepError(OutgoingAttachmentError::Empty, "Attachment file is empty", Tr("chat.attachment.read_failed"));
   }

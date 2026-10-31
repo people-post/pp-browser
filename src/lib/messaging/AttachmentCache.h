@@ -73,6 +73,14 @@ std::string AttachmentLocalPath(const std::string& profile_dir, const std::strin
  * Ensure a plaintext file under `blobs_view/`, from `load_plaintext` (the private content store)
  * when it is not there yet.
  */
+/**
+ * Write the session view file from bytes the caller already holds (a file just sent): no read of the stored copy
+ * back, so a large send does not hold the file a second and third time. Returns the existing view when there is one.
+ */
+Roe<std::string> StoreAttachmentViewBytes(const std::string& profile_dir, const std::string& thread_id,
+                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                          const std::string& filename, const ByteVector& plaintext);
+
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash, const std::string& mime,
                                           const std::string& filename,

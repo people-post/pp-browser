@@ -369,6 +369,26 @@ std::string AttachmentLocalPath(const std::string& profile_dir, const std::strin
   return {};
 }
 
+Roe<std::string> StoreAttachmentViewBytes(const std::string& profile_dir, const std::string& thread_id,
+                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                          const std::string& filename, const ByteVector& plaintext) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment view lookup");
+  }
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
+  if (const auto existing_view = FindBlobFile(view_root, content_hash, mime, filename); !existing_view.empty()) {
+    return existing_view.string();
+  }
+  const auto view_path = view_root / AttachmentFilename(content_hash, mime, filename);
+  if (auto written = WriteBytesAtomic(view_path, plaintext); !written) {
+    return written.error();
+  }
+  if (auto marked = os::MarkFileAsDownloaded(view_path.string()); !marked) {
+    logging::getLogger("AttachmentCache").warning << marked.error().message << ": " << view_path.filename().string();
+  }
+  return view_path.string();
+}
+
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash, const std::string& mime,
                                           const std::string& filename,

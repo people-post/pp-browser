@@ -140,7 +140,11 @@ Roe<std::vector<uint8_t>> OutgoingAttachmentStore::ReadCipher(const std::string&
     return Error("The encrypted copy of the attachment is gone");
   }
   std::ifstream in(CipherPath(id), std::ios::binary);
-  std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(CipherPath(id), ec);
+  std::vector<uint8_t> bytes(ec ? 0 : static_cast<size_t>(size));
+  in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  bytes.resize(static_cast<size_t>(in.gcount()));
   if (bytes.empty()) {
     return Error("The encrypted copy of the attachment is gone");
   }
