@@ -178,7 +178,7 @@ private:
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile();
-  void StartAttachmentUpload(const std::string& path);
+  void StartAttachmentUpload(const std::string& path, bool original);
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */

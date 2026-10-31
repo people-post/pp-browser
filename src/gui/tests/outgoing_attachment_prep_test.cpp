@@ -1,0 +1,231 @@
+#include "foundation/platform/ImageMetadata.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
+
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
+#include <vector>
+
+namespace pbr {
+namespace {
+
+std::vector<uint8_t> ReadFile(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  return std::vector<uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+void WriteFile(const std::string& path, const std::vector<uint8_t>& bytes) {
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+bool Contains(const std::vector<uint8_t>& bytes, const std::string& needle) {
+  return std::search(bytes.begin(), bytes.end(), needle.begin(), needle.end()) != bytes.end();
+}
+
+SDL_Surface* Noisy(const int w, const int h) {
+  SDL_Surface* s = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGB24);
+  uint32_t state = 99;
+  for (int y = 0; y < h; ++y) {
+    auto* row = static_cast<uint8_t*>(s->pixels) + static_cast<size_t>(y) * s->pitch;
+    for (int x = 0; x < w * 3; ++x) {
+      state = state * 1664525u + 1013904223u;
+      row[x] = static_cast<uint8_t>(state >> 24);
+    }
+  }
+  return s;
+}
+
+/** Exif segment: orientation + a fake GPS block that must not survive an original send. */
+std::vector<uint8_t> ExifWithGps(const int orientation) {
+  std::vector<uint8_t> tiff = {'M', 'M', 0, 0x2A, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1,
+                               0,   static_cast<uint8_t>(orientation), 0, 0, 0, 0, 0, 0};
+  const std::string gps = "GPSLATITUDE-31.2304N";
+  tiff.insert(tiff.end(), gps.begin(), gps.end());
+  std::vector<uint8_t> payload = {'E', 'x', 'i', 'f', 0, 0};
+  payload.insert(payload.end(), tiff.begin(), tiff.end());
+  const uint16_t len = static_cast<uint16_t>(payload.size() + 2);
+  std::vector<uint8_t> segment = {0xFF, 0xE1, static_cast<uint8_t>(len >> 8), static_cast<uint8_t>(len & 0xFF)};
+  segment.insert(segment.end(), payload.begin(), payload.end());
+  return segment;
+}
+
+class OutgoingAttachmentPrepTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           (std::string("pp_outgoing_prep-") + ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::filesystem::create_directories(dir_);
+  }
+  void TearDown() override {
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+  }
+
+  std::string SaveJpeg(SDL_Surface* s, const std::string& name, const int orientation = 0) {
+    const std::string path = (dir_ / name).string();
+    EXPECT_TRUE(IMG_SaveJPG(s, path.c_str(), 90)) << SDL_GetError();
+    SDL_DestroySurface(s);
+    if (orientation > 0) {
+      auto jpeg = ReadFile(path);
+      const auto exif = ExifWithGps(orientation);
+      jpeg.insert(jpeg.begin() + 2, exif.begin(), exif.end());
+      WriteFile(path, jpeg);
+    }
+    return path;
+  }
+
+  std::filesystem::path dir_;
+  AttachmentLimits limits_;
+};
+
+TEST_F(OutgoingAttachmentPrepTest, ABigPhotoIsShrunkIntoTheImageLimit) {
+  const std::string path = SaveJpeg(Noisy(3000, 2000), "IMG_0001.jpg");
+  ASSERT_GT(std::filesystem::file_size(path), limits_.max_image_bytes) << "the sample must need shrinking";
+  auto out = PrepareOutgoingAttachment(path, limits_, /*original=*/false);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_TRUE(out->image_is_shrunk);
+  EXPECT_EQ(out->mime, "image/jpeg");
+  EXPECT_EQ(out->filename, "IMG_0001.jpg");
+  EXPECT_LE(out->bytes.size(), limits_.max_image_bytes);
+  const auto info = ReadImageHeaderBytes(out->bytes);
+  ASSERT_TRUE(info);
+  EXPECT_LE(std::max(info->width, info->height), kShrunkImageLongEdge);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, ShrinkingTurnsAPhotoUprightAndDropsItsMetadata) {
+  const std::string path = SaveJpeg(Noisy(200, 100), "sideways.jpg", /*orientation=*/6);
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_TRUE(out) << out.error().message;
+  const auto info = ReadImageHeaderBytes(out->bytes);
+  ASSERT_TRUE(info);
+  EXPECT_EQ(info->width, 100) << "a quarter turn: portrait now";
+  EXPECT_EQ(info->height, 200);
+  EXPECT_EQ(info->exif_orientation, 1);
+  EXPECT_FALSE(Contains(out->bytes, "GPSLATITUDE"));
+  EXPECT_FALSE(Contains(out->bytes, "Exif"));
+}
+
+TEST_F(OutgoingAttachmentPrepTest, AnAlphaPngStaysAPngAndTakesThePngName) {
+  SDL_Surface* s = SDL_CreateSurface(64, 64, SDL_PIXELFORMAT_RGBA32);
+  SDL_FillSurfaceRect(s, nullptr, SDL_MapSurfaceRGBA(s, 10, 200, 30, 128));
+  const std::string path = (dir_ / "sticker.PNG").string();
+  ASSERT_TRUE(IMG_SavePNG(s, path.c_str()));
+  SDL_DestroySurface(s);
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->mime, "image/png");
+  EXPECT_EQ(out->filename, "sticker.png");
+}
+
+TEST_F(OutgoingAttachmentPrepTest, OriginalJpegKeepsItsPixelsButLosesItsLocation) {
+  const std::string path = SaveJpeg(Noisy(120, 90), "orig.jpg", /*orientation=*/6);
+  const auto file = ReadFile(path);
+  ASSERT_TRUE(Contains(file, "GPSLATITUDE"));
+  auto out = PrepareOutgoingAttachment(path, limits_, /*original=*/true);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_FALSE(out->image_is_shrunk);
+  EXPECT_EQ(out->mime, "image/jpeg");
+  EXPECT_EQ(out->filename, "orig.jpg");
+  EXPECT_FALSE(Contains(out->bytes, "GPSLATITUDE"));
+  const auto info = ReadImageHeaderBytes(out->bytes);
+  ASSERT_TRUE(info);
+  EXPECT_EQ(info->width, 120) << "not re-encoded: same pixels";
+  EXPECT_EQ(info->exif_orientation, 6) << "still shows the right way up";
+}
+
+TEST_F(OutgoingAttachmentPrepTest, OriginalPngGoesAsItIs) {
+  SDL_Surface* s = Noisy(40, 40);
+  const std::string path = (dir_ / "shot.png").string();
+  ASSERT_TRUE(IMG_SavePNG(s, path.c_str()));
+  SDL_DestroySurface(s);
+  auto out = PrepareOutgoingAttachment(path, limits_, true);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->bytes, ReadFile(path));
+  EXPECT_EQ(out->mime, "image/png");
+}
+
+TEST_F(OutgoingAttachmentPrepTest, AGifIsNeverShrunk) {
+  std::vector<uint8_t> gif = {'G', 'I', 'F', '8', '9', 'a', 4, 0, 4, 0, 0, 0, 0, ';'};
+  const std::string path = (dir_ / "loop.gif").string();
+  WriteFile(path, gif);
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->mime, "image/gif");
+  EXPECT_EQ(out->bytes, gif);
+  EXPECT_FALSE(out->image_is_shrunk);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, ADamagedPictureFallsBackToAFileRowNotABrokenImage) {
+  const std::string path = (dir_ / "broken.jpg").string();
+  WriteFile(path, {'n', 'o', 't', ' ', 'a', ' ', 'p', 'i', 'c'});
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->mime, "application/octet-stream");
+  EXPECT_FALSE(out->image_is_shrunk);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, HeicIsAFileNotAPicture) {
+  const std::string path = (dir_ / "IMG_9.HEIC").string();
+  WriteFile(path, std::vector<uint8_t>(500, 3));
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_TRUE(out) << out.error().message;
+  EXPECT_EQ(out->mime, "application/octet-stream");
+  EXPECT_EQ(out->filename, "IMG_9.HEIC");
+  EXPECT_EQ(out->bytes.size(), 500u);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, ATooBigFileIsRefusedBeforeItIsRead) {
+  limits_.max_file_bytes = 100;
+  const std::string path = (dir_ / "big.pdf").string();
+  WriteFile(path, std::vector<uint8_t>(101, 1));
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_FALSE(out);
+  EXPECT_EQ(out.error().code, static_cast<int32_t>(OutgoingAttachmentError::TooLarge));
+  EXPECT_FALSE(out.error().user.empty()) << "the person is told the limit";
+  // Right at the limit goes through.
+  WriteFile(path, std::vector<uint8_t>(100, 1));
+  EXPECT_TRUE(PrepareOutgoingAttachment(path, limits_, false));
+}
+
+TEST_F(OutgoingAttachmentPrepTest, EachKindUsesItsOwnLimit) {
+  limits_.max_file_bytes = 1000;
+  limits_.max_video_bytes = 50;
+  limits_.max_audio_bytes = 20;
+  WriteFile((dir_ / "a.mp4").string(), std::vector<uint8_t>(51, 1));
+  WriteFile((dir_ / "a.mp3").string(), std::vector<uint8_t>(21, 1));
+  WriteFile((dir_ / "a.zip").string(), std::vector<uint8_t>(900, 1));
+  EXPECT_FALSE(PrepareOutgoingAttachment((dir_ / "a.mp4").string(), limits_, false));
+  EXPECT_FALSE(PrepareOutgoingAttachment((dir_ / "a.mp3").string(), limits_, false));
+  EXPECT_TRUE(PrepareOutgoingAttachment((dir_ / "a.zip").string(), limits_, false));
+}
+
+TEST_F(OutgoingAttachmentPrepTest, AnOriginalPictureUsesTheOriginalLimit) {
+  limits_.max_original_image_bytes = 100;
+  const std::string path = SaveJpeg(Noisy(80, 80), "o.jpg");
+  ASSERT_GT(std::filesystem::file_size(path), 100u);
+  auto out = PrepareOutgoingAttachment(path, limits_, /*original=*/true);
+  ASSERT_FALSE(out);
+  EXPECT_EQ(out.error().code, static_cast<int32_t>(OutgoingAttachmentError::TooLarge));
+  EXPECT_TRUE(PrepareOutgoingAttachment(path, limits_, /*original=*/false)) << "shrinking is not bound by it";
+}
+
+TEST_F(OutgoingAttachmentPrepTest, AHugePictureIsRefusedBeforeDecoding) {
+  // A small file whose header says 100000 x 100000 pixels.
+  std::vector<uint8_t> bomb = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
+                               0x00, 0x01, 0x86, 0xA0, 0x00, 0x01, 0x86, 0xA0, 8, 2, 0, 0, 0};
+  const std::string path = (dir_ / "bomb.png").string();
+  WriteFile(path, bomb);
+  auto out = PrepareOutgoingAttachment(path, limits_, false);
+  ASSERT_FALSE(out);
+  EXPECT_EQ(out.error().code, static_cast<int32_t>(OutgoingAttachmentError::ImageFailed));
+}
+
+} // namespace
+} // namespace pbr

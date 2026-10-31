@@ -17,7 +17,17 @@ std::string BlobQuotaRecoveryFlow::Detail::BuildQuotaConfirmMessage(const BlobQu
       Tr("blob.quota.detail", {{"purpose", BlobPurposeLabel(blob.purpose)},
                                {"size", FormatAttachmentByteSize(blob.byte_length)},
                                {"date", blob.created_at.empty() ? Tr("blob.quota.date_unknown") : blob.created_at}});
-  return Tr("blob.quota.message", {{"detail", detail}});
+  // Used / total of the tier that is full: the large tier counts bytes, the small tier files.
+  const BlobUsageSummary& usage = plan.usage;
+  const bool large_full = blob.tier == BlobTier::Large && usage.large_included_bytes > 0;
+  const std::string usage_line =
+      large_full ? Tr("blob.quota.usage_bytes", {{"used", FormatAttachmentByteSize(usage.large_bytes)},
+                                                 {"total", FormatAttachmentByteSize(usage.large_included_bytes)}})
+                 : Tr("blob.quota.usage_files", {{"used", std::to_string(usage.small_count)},
+                                                 {"total", plan.small_max_objects > 0
+                                                               ? std::to_string(plan.small_max_objects)
+                                                               : std::string("?")}});
+  return Tr("blob.quota.message", {{"usage", usage_line}, {"detail", detail}});
 }
 
 void BlobQuotaRecoveryFlow::RunVoidUpload(std::function<Roe<void>()> upload,

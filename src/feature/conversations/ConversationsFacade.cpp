@@ -801,6 +801,17 @@ void ConversationsFacade::SendAttachmentFromPathAsync(const std::string& thread_
   hub_.SendAttachmentFromPathAsync(thread_id, path, std::move(on_done));
 }
 
+void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                                              std::function<void(Roe<ThreadMessage>)> on_done) {
+  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done));
+}
+
+AttachmentLimits ConversationsFacade::CurrentAttachmentLimits() const { return hub_.CurrentAttachmentLimits(); }
+
+void ConversationsFacade::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
+  hub_.SetOnBlobSpaceWarning(std::move(callback));
+}
+
 void ConversationsFacade::EnsureThreadAttachments(const std::string& thread_id) {
   hub_.Attachments().EnsureThreadQueued(thread_id, hub_.Store());
 }

@@ -8,6 +8,7 @@
 
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -350,6 +351,12 @@ ChatController::ChatController()
 
 void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
+  if (facade_) {
+    // The server space is filling up: a plain line, said once per level (the hub counts).
+    facade_->SetOnBlobSpaceWarning([this](const int percent) {
+      ShowToast(Tr("chat.attachment.space_warning", {{"percent", std::to_string(percent)}}));
+    });
+  }
   presenter_.BindFacade(facade);
   scroller_.BindConversationsFacade(facade);
   chrome_.BindConversationsFacade(facade);
@@ -1011,23 +1018,37 @@ void ChatController::OnAttachFile() {
     return;
   }
 
-  auto on_picked = [this, thread_id](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
-      if (paths.empty()) {
-        return;
-      }
-      StartAttachmentUpload(std::move(paths.front()));
-    });
+  // original: send the picture as it is (a JPEG still loses its location); otherwise pictures are shrunk.
+  const auto picked = [this](const bool original) {
+    return [this, original](std::vector<std::string> paths) {
+      AppRuntime::PostUI([this, original, paths = std::move(paths)]() mutable {
+        if (paths.empty()) {
+          return;
+        }
+        StartAttachmentUpload(std::move(paths.front()), original);
+      });
+    };
   };
-  if (!Platform::IsMobile()) {
-    ShowOpenFileDialog(Backend::GetWindow(), std::move(on_picked));
-    return;
+  const auto pick_image = [picked](const bool original) {
+    return [on_picked = picked(original)]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
+  };
+  const auto pick_file = [picked]() {
+    return [on_picked = picked(false)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
+  };
+
+  // A phone keeps photos and files apart; the desktop dialog shows both at once, so there it is only
+  // "File" and "Original photo".
+  std::vector<ContextMenuAction> actions;
+  if (Platform::IsMobile()) {
+    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_image(false)});
   }
-  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); },
-                   [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); });
+  actions.push_back({"attach_original", Tr("chat.attach.original"), nullptr, pick_image(true)});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
-void ChatController::StartAttachmentUpload(const std::string& path) {
+void ChatController::StartAttachmentUpload(const std::string& path, const bool original) {
   if (!facade_ || chat_.attachment_uploading) {
     return;
   }
@@ -1043,28 +1064,46 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
   DirtyChatChrome();
   DirtyChatHeader();
 
-  BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-      [this, thread_id, path](std::function<void(Roe<ThreadMessage>)> done) {
-        facade_->SendAttachmentFromPathAsync(thread_id, path, std::move(done));
-      },
-      [this, path](Roe<ThreadMessage> sent) {
-        ReleasePickedFile(path); // read (and kept as a CAS copy) by now
-        chat_.attachment_uploading = false;
-        chat_.attachment_draft_name = "";
-        chat_.status = "";
-        SyncComposerInputState();
-        DirtyChatChrome();
-        DirtyChatHeader();
-        if (!sent) {
-          UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
-          return;
-        }
-        SyncDisplayFromThread();
-        scroller_.RequestScrollToLatest();
-        UpdateSidebarPreview(sent->text);
-      },
-      [this]() { return facade_->PlanRelayQuotaRecovery(); },
-      [this]() { return facade_->FreeOldestRelayBlobSlot(); });
+  const auto finish_uploading = [this]() {
+    chat_.attachment_uploading = false;
+    chat_.attachment_draft_name = "";
+    chat_.status = "";
+    SyncComposerInputState();
+    DirtyChatChrome();
+    DirtyChatHeader();
+  };
+
+  // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
+  const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
+  AppRuntime::PostWorkerNormal([this, thread_id, path, original, limits, finish_uploading]() {
+    auto prepared = PrepareOutgoingAttachment(path, limits, original);
+    ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
+    AppRuntime::PostUI([this, thread_id, finish_uploading, prepared = std::move(prepared)]() mutable {
+      if (!prepared) {
+        finish_uploading();
+        UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
+        return;
+      }
+      // Shared: the same bytes go again if the person frees space after a "full" answer.
+      auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
+      BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
+          [this, thread_id, attachment](std::function<void(Roe<ThreadMessage>)> done) {
+            facade_->SendAttachmentAsync(thread_id, *attachment, std::move(done));
+          },
+          [this, finish_uploading](Roe<ThreadMessage> sent) {
+            finish_uploading();
+            if (!sent) {
+              UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              return;
+            }
+            SyncDisplayFromThread();
+            scroller_.RequestScrollToLatest();
+            UpdateSidebarPreview(sent->text);
+          },
+          [this]() { return facade_->PlanRelayQuotaRecovery(); },
+          [this]() { return facade_->FreeOldestRelayBlobSlot(); });
+    });
+  });
 }
 
 bool ChatController::InAiComposerContext() const {

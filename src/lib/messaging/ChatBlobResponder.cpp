@@ -125,7 +125,7 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
     if (!bytes) {
       return bytes.error();
     }
-    if (bytes->size() > kMaxChatAttachmentPlaintextBytes) {
+    if (bytes->size() > kMaxDirectAttachmentBytes) {
       return Error("Public CAS object too large");
     }
     return std::vector<uint8_t>(bytes->begin(), bytes->end());
@@ -182,7 +182,7 @@ Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobReques
   if (ciphertext.empty()) {
     return Error("Empty chat-blob push body");
   }
-  if (ciphertext.size() > kMaxChatAttachmentPlaintextBytes + 64) {
+  if (ciphertext.size() > kMaxDirectAttachmentBytes + 64) {
     return Error("Chat-blob push body too large");
   }
 

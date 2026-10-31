@@ -607,7 +607,9 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (!fields) {
     return view;
   }
-  if (AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length)) {
+  const uint64_t max_receive_bytes =
+      attachment_downloads_ ? attachment_downloads_->Limits().max_receive_bytes : DefaultAttachmentLimits().max_receive_bytes;
+  if (AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length, max_receive_bytes)) {
     if (attachment_downloads_) {
       if (auto local = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
                                                                  fields->filename)) {

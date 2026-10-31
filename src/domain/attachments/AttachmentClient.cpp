@@ -7,7 +7,10 @@
 #include <cctype>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <future>
+#include <iterator>
+#include <memory>
 #include <thread>
 #include "common/PbrCompat.h"
 
@@ -32,37 +35,6 @@ std::string FilenameFromPath(const std::string& path) {
     return file_path.filename().string();
   }
   return "attachment";
-}
-
-std::string MimeFromFilename(const std::string& filename) {
-  std::string ext = std::filesystem::path(filename).extension().string();
-  std::transform(ext.begin(), ext.end(), ext.begin(),
-                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-  if (ext == ".png") {
-    return "image/png";
-  }
-  if (ext == ".jpg" || ext == ".jpeg") {
-    return "image/jpeg";
-  }
-  if (ext == ".webp") {
-    return "image/webp";
-  }
-  if (ext == ".gif") {
-    return "image/gif";
-  }
-  if (ext == ".pdf") {
-    return "application/pdf";
-  }
-  if (ext == ".txt") {
-    return "text/plain";
-  }
-  if (ext == ".mp4") {
-    return "video/mp4";
-  }
-  if (ext == ".webm") {
-    return "video/webm";
-  }
-  return "application/octet-stream";
 }
 
 void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& identity,
@@ -95,8 +67,7 @@ void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& ide
 }
 
 Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& relay_user_id,
-                                                const PreparedChatAttachment& prepared,
-                                                const std::string& source_path) {
+                                                const PreparedChatAttachment& prepared) {
   const std::string body(reinterpret_cast<const char*>(prepared.ciphertext.data()), prepared.ciphertext.size());
   auto uploaded =
       UploadRelayBlobBytes(blob, relay_user_id, "application/octet-stream", BlobPurpose::File, body);
@@ -106,20 +77,20 @@ Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::st
 
   ChatAttachmentFields fields = prepared.fields;
   fields.url = uploaded.value().public_url;
-  if (fields.mime.empty()) {
-    fields.mime = MimeFromFilename(FilenameFromPath(source_path));
-  }
-  if (fields.filename.empty()) {
-    fields.filename = FilenameFromPath(source_path);
-  }
   return fields;
 }
 
 } // namespace
 
-void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
-                                       ChatAttachmentUploadOptions options,
-                                       std::function<void(Roe<ChatAttachmentFields>)> on_done) {
+bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, const uint64_t plaintext_bytes) {
+  return thread && thread->kind == ThreadKind::Direct && ThreadChannelIsE2e(thread->channel) &&
+         plaintext_bytes <= kMaxDirectAttachmentBytes;
+}
+
+void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const std::vector<uint8_t>& plaintext,
+                               const std::string& filename, const std::string& mime,
+                               ChatAttachmentUploadOptions options,
+                               std::function<void(Roe<ChatAttachmentFields>)> on_done) {
   auto finish = [on_done = std::move(on_done)](Roe<ChatAttachmentFields> value) {
     if (on_done) {
       on_done(std::move(value));
@@ -132,25 +103,27 @@ void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identit
     return;
   }
 
-  auto prepared = PrepareChatAttachmentFromFile(path);
+  auto prepared = PrepareChatAttachmentFromBytes(plaintext, filename, mime, options.max_plaintext_bytes);
   if (!prepared) {
     finish(prepared.error());
     return;
   }
 
-  if (options.thread && options.thread->kind == ThreadKind::Direct && ThreadChannelIsE2e(options.thread->channel)) {
+  if (AttachmentTriesPeerDirect(options.thread, plaintext.size())) {
+    // Shared, not moved into the callback: the push reads the prepared bytes in the same call that builds
+    // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").
     const std::string relay_id = *relay_user_id;
-    PreparedChatAttachment prepared_copy = *prepared;
+    const auto prepared_shared = std::make_shared<PreparedChatAttachment>(std::move(*prepared));
     TryPeerPushAsync(
-        prepared_copy, identity, options,
-        [&blob, relay_id, prepared_copy = std::move(prepared_copy), path, finish](Roe<void> pushed) mutable {
-          auto continue_result = [&blob, relay_id, prepared_copy = std::move(prepared_copy), path,
-                                  finish = std::move(finish), pushed = std::move(pushed)]() mutable {
+        *prepared_shared, identity, options,
+        [&blob, relay_id, prepared_shared, finish](Roe<void> pushed) mutable {
+          auto continue_result = [&blob, relay_id, prepared_shared, finish = std::move(finish),
+                                  pushed = std::move(pushed)]() mutable {
             if (pushed) {
-              finish(prepared_copy.fields);
+              finish(prepared_shared->fields);
               return;
             }
-            finish(UploadPreparedToRelay(blob, relay_id, prepared_copy, path));
+            finish(UploadPreparedToRelay(blob, relay_id, *prepared_shared));
           };
           if (AppRuntime::IsRunning()) {
             AppRuntime::PostWorkerNormal(std::move(continue_result));
@@ -161,7 +134,30 @@ void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identit
     return;
   }
 
-  finish(UploadPreparedToRelay(blob, *relay_user_id, *prepared, path));
+  finish(UploadPreparedToRelay(blob, *relay_user_id, *prepared));
+}
+
+void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
+                                       ChatAttachmentUploadOptions options,
+                                       std::function<void(Roe<ChatAttachmentFields>)> on_done) {
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(path, ec);
+  if (!ec && size > options.max_plaintext_bytes) {
+    if (on_done) {
+      on_done(Error("Attachment is over the size limit")); // before the file is read
+    }
+    return;
+  }
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    if (on_done) {
+      on_done(Error("Could not read attachment file"));
+    }
+    return;
+  }
+  const std::vector<uint8_t> plaintext((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  UploadChatAttachmentAsync(blob, identity, plaintext, FilenameFromPath(path), std::string(), std::move(options),
+                            std::move(on_done));
 }
 
 Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,

@@ -3,6 +3,8 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
+#include "lib/messaging/AttachmentLimits.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -289,6 +291,13 @@ public:
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
+  /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
+  void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                           std::function<void(Roe<ThreadMessage>)> on_done);
+  /** The one source of every attachment size / pace / warning number (today the defaults). */
+  AttachmentLimits CurrentAttachmentLimits() const;
+  /** The server space is filling up: called on the UI thread with the percent used (said once per 80 / 90). */
+  void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,

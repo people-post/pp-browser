@@ -88,7 +88,7 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
 | **private** | Profile DEK wrap (PPBA) | BLAKE2b-256(plaintext) — R016 | Chat/E2E decrypt → memory → wrap; never auto-public |
 | **public** | Clear published payload (v1) | Hash(published bytes); new object on publish | Explicit **Share publicly…** only |
 
-**Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. Large private videos (> Soft 4 MiB) skip `blobs_view` until explicit open; CAS ingest unchanged. Public clear bytes need no DEK wipe path.
+**Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. A private video above `AttachmentLimits::max_receive_bytes` is never downloaded, so it has no `blobs_view` copy; CAS ingest unchanged. (This step changes nothing on disk.) Public clear bytes need no DEK wipe path.
 
 Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 

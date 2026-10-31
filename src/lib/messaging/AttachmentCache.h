@@ -23,6 +23,13 @@ std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash);
 
 std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename = {});
 
+/**
+ * The mime type of a file by its extension (lower-cased). Images (png, jpg, webp, gif), documents (pdf, txt),
+ * video (mp4, webm, mov) and audio (mp3, m4a, wav, ogg) are named; everything else is
+ * application/octet-stream. Only the type table: nothing is transcoded.
+ */
+std::string AttachmentMimeFromFilename(const std::string& filename);
+
 bool IsAttachmentImageMime(const std::string& mime);
 bool IsAttachmentVideoMime(const std::string& mime);
 bool AttachmentOpenNeedsConfirm(const std::string& mime);
@@ -46,17 +53,11 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
 bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
 
 /**
- * Presentation gate for private video: above this size, skip session `blobs_view`
- * materialization until explicit open (CAS ingest unchanged). Matches Soft auto-download
- * ceiling (4 MiB). Unknown size (`byte_length == 0`) stays permissive.
- */
-inline constexpr uint64_t kMaxInlinePrivateVideoBytes = 4ULL * 1024ULL * 1024ULL;
-
-/**
  * True when private attachment plaintext may be materialized for inline UI
- * (`blobs_view` / image src). Large private videos return false (open-on-demand).
+ * (`blobs_view` / image src). A video above `max_receive_bytes` (AttachmentLimits) returns false: it is
+ * never downloaded, so nothing is materialized. Unknown size (`byte_length == 0`) stays permissive.
  */
-bool AttachmentAllowsInlinePrivateView(const std::string& mime, uint64_t byte_length);
+bool AttachmentAllowsInlinePrivateView(const std::string& mime, uint64_t byte_length, uint64_t max_receive_bytes);
 
 std::string FormatAttachmentByteSize(uint64_t byte_length);
 
@@ -87,13 +88,13 @@ bool AttachmentPosterExists(const std::string& profile_dir, const std::string& t
 /**
  * Ensure a JPEG poster under blobs_view for a video attachment (R012).
  * Best-effort extract; soft placeholder when over inline size or on decode failure.
- * `known_byte_length` skips full decrypt/materialize when the video exceeds the inline gate.
+ * `known_byte_length` skips full decrypt/materialize when the video exceeds `max_receive_bytes`.
  */
 Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
                                         const std::string& filename,
                                         const std::function<Roe<ByteVector>()>& load_plaintext,
-                                        uint64_t known_byte_length = 0);
+                                        uint64_t known_byte_length, uint64_t max_receive_bytes);
 
 /** Remove view / pending-cipher caches for a thread (and any leftover pre-cutover `blobs/` dir). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);

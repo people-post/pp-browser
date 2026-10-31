@@ -35,6 +35,7 @@
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/error/AppError.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/SessionStore.h"
@@ -87,6 +88,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <future>
 #include <thread>
 #include <unordered_set>
@@ -2148,6 +2151,12 @@ Roe<void> ConversationsHub::ClearProfileIcon() {
 
 namespace {
 
+/** The sender-side "too big" error: names the limit, in the words people read. */
+Error AttachmentTooLargeError(const uint64_t max_bytes) {
+  return AppError::Blob(Err::Blob::TooLarge, "Attachment over the size limit")
+      .WithUser(Tr("chat.attachment.too_large", {{"limit", FormatAttachmentLimit(max_bytes)}}));
+}
+
 std::string ProtectedRelayBlobId(const std::string& profile_dir) {
   if (auto meta = LoadProfileIconCacheMeta(profile_dir); meta) {
     return meta->blob_id;
@@ -2174,7 +2183,11 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery() {
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
+  auto plan = PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
+  if (plan) {
+    plan->small_max_objects = static_cast<uint64_t>(CurrentAttachmentLimits().small_max_objects);
+  }
+  return plan;
 }
 
 Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
@@ -2283,8 +2296,70 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   return result_future.get();
 }
 
+AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const { return DefaultAttachmentLimits(); }
+
+void ConversationsHub::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
+  std::lock_guard lock(blob_space_mutex_);
+  on_blob_space_warning_ = std::move(callback);
+}
+
+void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
+  if (!blob_space_monitor_.ShouldCheck(util::NowUnixMs(), after_quota_error) || !blob_) {
+    return;
+  }
+  auto identity = Identity().Get();
+  if (!identity || !identity->registered || identity->relay_user_id.empty()) {
+    return;
+  }
+  auto listed = blob_->List(identity->relay_user_id);
+  if (!listed) {
+    return;
+  }
+  const AttachmentLimits limits = CurrentAttachmentLimits();
+  const int percent = BlobSpaceUsedPercent(BlobSpaceUse{.small_count = listed->usage.small_count,
+                                                        .large_bytes = listed->usage.large_bytes,
+                                                        .large_included_bytes = listed->usage.large_included_bytes},
+                                           limits);
+  if (blob_space_monitor_.NextWarning(percent, limits) == 0) {
+    return;
+  }
+  std::function<void(int)> callback;
+  {
+    std::lock_guard lock(blob_space_mutex_);
+    callback = on_blob_space_warning_;
+  }
+  if (callback) {
+    AppRuntime::PostUI([callback = std::move(callback), percent]() { callback(percent); });
+  }
+}
+
 void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                                    std::function<void(Roe<ThreadMessage>)> on_done) {
+  OutgoingAttachment attachment;
+  attachment.filename = std::filesystem::path(path).filename().string();
+  attachment.mime = AttachmentMimeFromFilename(attachment.filename);
+  const uint64_t max_bytes = MaxAttachmentSendBytes(CurrentAttachmentLimits(), attachment.mime, false);
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(path, ec);
+  if (!ec && size > max_bytes) {
+    if (on_done) {
+      on_done(AttachmentTooLargeError(max_bytes)); // before the file is read
+    }
+    return;
+  }
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    if (on_done) {
+      on_done(Error("Could not read attachment file"));
+    }
+    return;
+  }
+  attachment.bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+  SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done));
+}
+
+void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                                           std::function<void(Roe<ThreadMessage>)> on_done) {
   auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
     if (on_done) {
       on_done(std::move(value));
@@ -2327,18 +2402,35 @@ void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id,
     return;
   }
 
+  const AttachmentLimits limits = CurrentAttachmentLimits();
+  const uint64_t max_bytes = MaxAttachmentSendBytes(limits, attachment.mime, attachment.image_is_shrunk);
+  if (attachment.bytes.size() > max_bytes) {
+    finish(AttachmentTooLargeError(max_bytes));
+    return;
+  }
+  if (!attachment_send_limiter_.TryAcquire(util::NowUnixMs(), limits.send_max_per_minute)) {
+    finish(AppError::Blob(Err::Blob::RateLimited, "Attachment send pace exceeded"));
+    return;
+  }
+
   ChatAttachmentUploadOptions upload_opts;
   upload_opts.peer_client = mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr;
   upload_opts.contacts = contacts_.get();
   upload_opts.thread = active;
   upload_opts.thread_id = thread_id;
+  upload_opts.max_plaintext_bytes = max_bytes;
 
-  UploadChatAttachmentFromFileAsync(
-      *blob_, Identity(), path, std::move(upload_opts),
-      [this, thread_id, path, active = std::move(active), finish](Roe<ChatAttachmentFields> fields) mutable {
-        auto continue_send = [this, thread_id, path, active = std::move(active), finish = std::move(finish),
+  // The bytes outlive the upload: the sent copy in the content store is made from them afterwards.
+  auto plaintext = std::make_shared<const ByteVector>(std::move(attachment.bytes));
+  UploadChatAttachmentAsync(
+      *blob_, Identity(), *plaintext, attachment.filename, attachment.mime, std::move(upload_opts),
+      [this, thread_id, plaintext, active = std::move(active), finish](Roe<ChatAttachmentFields> fields) mutable {
+        auto continue_send = [this, thread_id, plaintext, active = std::move(active), finish = std::move(finish),
                               fields = std::move(fields)]() mutable {
           if (!fields) {
+            if (IsBlobQuotaError(fields.error())) {
+              CheckBlobSpace(/*after_quota_error=*/true);
+            }
             finish(fields.error());
             return;
           }
@@ -2349,30 +2441,33 @@ void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id,
           const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
           const ByteVector attachment_dek = Attachments().CopyDek();
+          const uint64_t max_receive_bytes = CurrentAttachmentLimits().max_receive_bytes;
+
+          const auto keep_sent_copy = [&](const ThreadMessage& sent) {
+            if (!attachment_dek.empty() && !profile_id_.empty()) {
+              (void)CopyAttachmentPlaintext(data_dir_, profile_id_, thread_id, *fields, *plaintext, attachment_dek,
+                                            max_receive_bytes);
+            }
+            Attachments().MaybeBuildPoster(thread_id, *fields);
+            if (attachment_downloads_) {
+              attachment_downloads_->EnqueueFromMessage(thread_id, sent);
+            }
+            if (!fields->url.empty()) {
+              CheckBlobSpace(/*after_quota_error=*/false); // went through the server: it holds our copy
+            }
+          };
 
           if (active.kind == ThreadKind::Group) {
             auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
             if (sent) {
-              if (!attachment_dek.empty() && !profile_id_.empty()) {
-                (void)CopyAttachmentPlaintextFile(data_dir_, profile_id_, thread_id, *fields, path, attachment_dek);
-              }
-              Attachments().MaybeBuildPoster(thread_id, *fields);
-              if (attachment_downloads_) {
-                attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
-              }
+              keep_sent_copy(*sent);
             }
             finish(std::move(sent));
             return;
           }
           auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
           if (sent) {
-            if (!attachment_dek.empty() && !profile_id_.empty()) {
-              (void)CopyAttachmentPlaintextFile(data_dir_, profile_id_, thread_id, *fields, path, attachment_dek);
-            }
-            Attachments().MaybeBuildPoster(thread_id, *fields);
-            if (attachment_downloads_) {
-              attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
-            }
+            keep_sent_copy(*sent);
           }
           finish(std::move(sent));
         };
@@ -2389,6 +2484,7 @@ AttachmentFetchWorkflow& ConversationsHub::Attachments() {
     attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
     attachment_downloads_->SetProfileDataDir(data_dir_);
     attachment_downloads_->SetProfileId(profile_id_);
+    attachment_downloads_->SetLimits(CurrentAttachmentLimits());
   }
   return *attachment_downloads_;
 }
@@ -2404,6 +2500,7 @@ void ConversationsHub::WireAttachmentDownloads() {
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
   attachment_downloads_->SetProfileId(profile_id_);
+  attachment_downloads_->SetLimits(CurrentAttachmentLimits());
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
                                                   mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());

@@ -284,7 +284,9 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
               "</p>";
     }
-    if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
+    if (state == AttachmentFetchWorkflow::DownloadState::TooLarge) {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.too_large_receive") + "</p>";
+    } else if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
       html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
     } else if (state == AttachmentFetchWorkflow::DownloadState::Pending) {
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +

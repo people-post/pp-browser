@@ -3,6 +3,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
+#include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadStore.h"
@@ -24,7 +25,8 @@ namespace pbr {
 /** Background CDN fetch + decrypt for chat attachments (R008 / R021). */
 class AttachmentFetchWorkflow : public IDekConsumer {
 public:
-  enum class DownloadState { Ready, Pending, Downloading, Failed };
+  /** TooLarge: the declared size is above AttachmentLimits::max_receive_bytes; it is never downloaded. */
+  enum class DownloadState { Ready, Pending, Downloading, Failed, TooLarge };
 
   using ChangedCallback = std::function<void()>;
 
@@ -35,6 +37,18 @@ public:
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
   void SetBacklogDrainActive(bool active);
+  /** The receive-side limits (size, automatic-download pace and disk cap); default AttachmentLimits{}. */
+  void SetLimits(const AttachmentLimits& limits);
+  AttachmentLimits Limits() const;
+  /** Bytes the attachment store holds (default: a scan of the private content blocks, cached for 30 s). */
+  void SetDiskUsageProvider(std::function<uint64_t()> provider);
+  /** Time source for the per-sender window (ms); tests only. */
+  void SetClockForTest(std::function<int64_t()> now_ms);
+  /**
+   * Whether this sender may start one more download by itself now: false when the store is over the disk cap
+   * or the sender is over its count / byte limit for the minute. A yes is recorded against the sender.
+   */
+  bool TryAutoDownloadBudget(const std::string& sender, uint64_t byte_length);
   void SetOnChanged(ChangedCallback callback);
 
   Roe<void> SetDek(ByteVector dek) override;
@@ -99,6 +113,7 @@ private:
   struct Job {
     std::string thread_id;
     std::string message_id;
+    std::string sender;
     ChatAttachmentFields fields;
   };
 
@@ -133,6 +148,15 @@ private:
   std::unordered_set<std::string> active_;
   std::unordered_set<std::string> failed_;
   std::unordered_set<std::string> pending_;
+  /** Held back by the automatic-download limits: stays a "Download" row until the person taps it. */
+  std::unordered_set<std::string> throttled_;
+  AttachmentLimits limits_ = DefaultAttachmentLimits();
+  AutoDownloadBudget budget_;
+  std::function<uint64_t()> disk_usage_;
+  std::function<int64_t()> clock_;
+  uint64_t scanned_disk_bytes_ = 0;
+  int64_t scanned_at_ms_ = 0;
+  uint64_t started_since_scan_bytes_ = 0;
   bool draining_ = false;
 };
 

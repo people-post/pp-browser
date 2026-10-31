@@ -158,14 +158,16 @@ TEST_F(AttachmentCacheAtRestTest, MemoryCacheServesAfterCasRemovedAndClearsOnVie
 }
 
 TEST_F(AttachmentCacheAtRestTest, InlinePrivateViewGateSkipsLargeVideo) {
-  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("image/png", 50ull * 1024ull * 1024ull));
-  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("video/mp4", 0));
-  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("video/mp4", kMaxInlinePrivateVideoBytes));
-  EXPECT_FALSE(AttachmentAllowsInlinePrivateView("video/mp4", kMaxInlinePrivateVideoBytes + 1));
+  constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
+  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("image/png", 50ull * 1024ull * 1024ull, kLimit));
+  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("video/mp4", 0, kLimit));
+  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("video/mp4", kLimit, kLimit));
+  EXPECT_FALSE(AttachmentAllowsInlinePrivateView("video/mp4", kLimit + 1, kLimit));
 }
 
 TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutViewFile) {
-  ByteVector big(static_cast<size_t>(kMaxInlinePrivateVideoBytes) + 16, 0xab);
+  constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
+  ByteVector big(static_cast<size_t>(kLimit) + 16, 0xab);
   auto hash = AttachmentContentHash(big);
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x66);
@@ -173,7 +175,7 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
   ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "video/mp4", big, "clip.mp4", dek));
 
   auto poster = EnsureAttachmentPosterFromContent(profile_dir_, profile_id_, thread_id_, *hash, "video/mp4", "clip.mp4",
-                                                  dek, big.size());
+                                                  dek, big.size(), kLimit);
   ASSERT_TRUE(poster) << poster.error().message;
   EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4").empty());

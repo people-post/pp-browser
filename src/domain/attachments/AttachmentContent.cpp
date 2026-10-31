@@ -4,8 +4,6 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 
-#include <fstream>
-#include <iterator>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -50,29 +48,28 @@ Roe<std::string> EnsureAttachmentView(const std::string& profile_dir, std::strin
 Roe<std::string> EnsureAttachmentPosterFromContent(const std::string& profile_dir, std::string_view profile_id,
                                                    const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                                    const std::string& mime, const std::string& filename,
-                                                   const ByteVector& dek, const uint64_t known_byte_length) {
+                                                   const ByteVector& dek, const uint64_t known_byte_length,
+                                                   const uint64_t max_receive_bytes) {
   return EnsureAttachmentPoster(
       profile_dir, thread_id, content_hash, mime, filename,
-      [&]() { return LoadAttachmentPlaintext(profile_dir, profile_id, content_hash, dek); }, known_byte_length);
+      [&]() { return LoadAttachmentPlaintext(profile_dir, profile_id, content_hash, dek); }, known_byte_length,
+      max_receive_bytes);
 }
 
-Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, std::string_view profile_id,
-                                      const std::string& thread_id, const ChatAttachmentFields& fields,
-                                      const std::string& source_path, const ByteVector& dek) {
-  std::ifstream input(source_path, std::ios::binary);
-  if (!input) {
-    return Error("Could not read sent attachment file");
-  }
-  const ByteVector plaintext((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, std::string_view profile_id,
+                                  const std::string& thread_id, const ChatAttachmentFields& fields,
+                                  const ByteVector& plaintext, const ByteVector& dek,
+                                  const uint64_t max_receive_bytes) {
   if (plaintext.empty()) {
-    return Error("Sent attachment file is empty");
+    return Error("Sent attachment is empty");
   }
   if (auto saved = SaveAttachmentPlaintext(profile_dir, profile_id, fields.content_hash, fields.mime, plaintext,
                                            fields.filename, dek);
       !saved) {
     return saved.error();
   }
-  if (AttachmentAllowsInlinePrivateView(fields.mime, fields.byte_length > 0 ? fields.byte_length : plaintext.size())) {
+  if (AttachmentAllowsInlinePrivateView(fields.mime, fields.byte_length > 0 ? fields.byte_length : plaintext.size(),
+                                        max_receive_bytes)) {
     (void)EnsureAttachmentView(profile_dir, profile_id, thread_id, fields.content_hash, fields.mime, fields.filename,
                                dek);
   }

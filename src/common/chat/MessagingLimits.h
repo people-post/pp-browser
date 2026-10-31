@@ -41,8 +41,12 @@ inline constexpr size_t kMaxOpenThreadDbs = 16;
 /** D042 — cap merged annotations per target message. */
 inline constexpr size_t kMaxAnnotationsPerTarget = 32;
 
-/** R008 / R021 — Soft max plaintext attachment size for Smart auto-download. */
-inline constexpr uint64_t kMaxChatAttachmentPlaintextBytes = 4ULL * 1024ULL * 1024ULL;
+/**
+ * Largest plaintext attachment sent or answered peer-to-peer (`/pp/blob/1.0.0`, 15 s timeout), whatever the
+ * account's tier: a bigger one goes through the server only. The send, receive and auto-download limits live
+ * in `AttachmentLimits` (lib/messaging).
+ */
+inline constexpr uint64_t kMaxDirectAttachmentBytes = 4ULL * 1024ULL * 1024ULL;
 
 /** D040 — AI compaction (v3). */
 inline constexpr int kCompactionTurnThreshold = 20;

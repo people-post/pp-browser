@@ -39,7 +39,7 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 | Piece | Change |
 |-------|--------|
 | RAM LRU | `AttachmentPlaintextMemoryCache` — private plaintext (≤8 MiB/entry, 64 entries / 64 MiB); filled on save/load; **cleared on ClearDek** with `WipeAllAttachmentViewCaches` |
-| Inline video gate | `kMaxInlinePrivateVideoBytes` (= Soft 4 MiB): large private videos stay in CAS; soft poster only; no `blobs_view` until explicit open |
+| Inline video gate | `AttachmentAllowsInlinePrivateView(mime, size, AttachmentLimits::max_receive_bytes)`: a video above the receive limit is not downloaded (shown as "too large"); the former `kMaxInlinePrivateVideoBytes` (4 MiB) is gone |
 | Images / posters | Prefer RAM then CAS; `blobs_view` still used for RmlUi file `src` (future: in-memory texture / stream decrypt) |
 
 ## Module home (C012)

@@ -13,6 +13,7 @@
 
 #include <sodium.h>
 
+#include <chrono>
 #include <filesystem>
 #include <unordered_set>
 
@@ -57,6 +58,76 @@ void AttachmentFetchWorkflow::SetDownloadPolicy(const AttachmentDownloadPolicy p
 
 void AttachmentFetchWorkflow::SetBacklogDrainActive(const bool active) {
   backlog_drain_ = active;
+}
+
+void AttachmentFetchWorkflow::SetLimits(const AttachmentLimits& limits) {
+  std::lock_guard lock(mutex_);
+  limits_ = limits;
+}
+
+AttachmentLimits AttachmentFetchWorkflow::Limits() const {
+  std::lock_guard lock(mutex_);
+  return limits_;
+}
+
+void AttachmentFetchWorkflow::SetDiskUsageProvider(std::function<uint64_t()> provider) {
+  std::lock_guard lock(mutex_);
+  disk_usage_ = std::move(provider);
+}
+
+void AttachmentFetchWorkflow::SetClockForTest(std::function<int64_t()> now_ms) {
+  std::lock_guard lock(mutex_);
+  clock_ = std::move(now_ms);
+}
+
+bool AttachmentFetchWorkflow::TryAutoDownloadBudget(const std::string& sender, const uint64_t byte_length) {
+  AttachmentLimits limits;
+  std::function<uint64_t()> provider;
+  std::function<int64_t()> clock;
+  {
+    std::lock_guard lock(mutex_);
+    limits = limits_;
+    provider = disk_usage_;
+    clock = clock_;
+  }
+  const int64_t now_ms = clock ? clock()
+                               : std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count();
+  uint64_t used = 0;
+  if (provider) {
+    used = provider();
+  } else {
+    std::lock_guard lock(mutex_);
+    if (scanned_at_ms_ == 0 || now_ms - scanned_at_ms_ >= 30 * 1000) {
+      uint64_t total = 0;
+      if (!profile_dir_.empty() && !profile_id_.empty()) {
+        std::error_code ec;
+        CasStore cas(profile_dir_, profile_id_);
+        for (std::filesystem::recursive_directory_iterator it(cas.BlocksRoot(CasRealm::Private), ec), end;
+             !ec && it != end; it.increment(ec)) {
+          std::error_code size_ec;
+          if (it->is_regular_file(size_ec) && !size_ec) {
+            total += it->file_size(size_ec);
+          }
+        }
+      }
+      scanned_disk_bytes_ = total;
+      scanned_at_ms_ = now_ms;
+      started_since_scan_bytes_ = 0;
+    }
+    used = scanned_disk_bytes_ + started_since_scan_bytes_;
+  }
+  if (used >= limits.auto_download_disk_cap_bytes) {
+    return false;
+  }
+  if (!budget_.TryAcquire(sender, byte_length, now_ms, limits.auto_download_max_count_per_minute,
+                          limits.auto_download_max_bytes_per_minute)) {
+    return false;
+  }
+  std::lock_guard lock(mutex_);
+  started_since_scan_bytes_ += byte_length;
+  return true;
 }
 
 void AttachmentFetchWorkflow::SetOnChanged(ChangedCallback callback) {
@@ -120,7 +191,7 @@ bool AttachmentFetchWorkflow::ShouldAutoDownload(const Job& job) const {
   if (suppression_ && suppression_->IsSuppressed(job.thread_id, job.fields.content_hash)) {
     return false;
   }
-  return ShouldAutoEnqueueAttachment(policy_, job.fields.byte_length, backlog_drain_);
+  return ShouldAutoEnqueueAttachment(policy_, job.fields.byte_length, backlog_drain_, Limits().auto_download_max_bytes);
 }
 
 void AttachmentFetchWorkflow::EnqueueFromMessage(const std::string& thread_id, const ThreadMessage& message,
@@ -132,7 +203,11 @@ void AttachmentFetchWorkflow::EnqueueFromMessage(const std::string& thread_id, c
   if (!fields) {
     return;
   }
-  EnqueueJob(Job{.thread_id = thread_id, .message_id = message.id, .fields = std::move(*fields)}, force);
+  EnqueueJob(Job{.thread_id = thread_id,
+                 .message_id = message.id,
+                 .sender = message.sender_contact_id,
+                 .fields = std::move(*fields)},
+             force);
 }
 
 void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
@@ -150,6 +225,9 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
   if (AttachmentBlobExists(profile_dir_, job.fields.content_hash)) {
     return;
   }
+  if (job.fields.byte_length > Limits().max_receive_bytes) {
+    return; // never downloaded, even on request: the card says it is too large
+  }
 
   const std::string key = JobKey(job);
   if (!force && suppression_ && suppression_->IsSuppressed(job.thread_id, job.fields.content_hash)) {
@@ -160,11 +238,28 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
     MarkPending(key);
     return;
   }
+  if (!force) {
+    bool already_throttled = false;
+    {
+      std::lock_guard lock(mutex_);
+      already_throttled = throttled_.contains(key);
+    }
+    // A sender over the automatic limits (or a full store) leaves the file as a "Download" row.
+    if (already_throttled || !TryAutoDownloadBudget(job.sender, job.fields.byte_length)) {
+      {
+        std::lock_guard lock(mutex_);
+        throttled_.insert(key);
+      }
+      MarkPending(key);
+      return;
+    }
+  }
 
   bool should_start = false;
   {
     std::lock_guard lock(mutex_);
     pending_.erase(key);
+    throttled_.erase(key); // asked for (or allowed): no longer held back
     if (active_.contains(key)) {
       return;
     }
@@ -258,7 +353,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             return;
           }
           const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
-          if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint)) {
+          if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint, Limits().max_receive_bytes)) {
             (void)EnsureAttachmentView(profile_dir_, profile_id_, job.thread_id, job.fields.content_hash, job.fields.mime, job.fields.filename, dek_copy);
           }
           MaybeBuildPoster(job.thread_id, job.fields);
@@ -351,6 +446,9 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(
   }
   const std::string key = JobKey(thread_id, content_hash);
   std::lock_guard lock(mutex_);
+  if (byte_length > limits_.max_receive_bytes) {
+    return DownloadState::TooLarge;
+  }
   if (failed_.contains(key)) {
     return DownloadState::Failed;
   }
@@ -368,7 +466,10 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(
   if (suppression_ && suppression_->IsSuppressed(thread_id, content_hash)) {
     return DownloadState::Pending;
   }
-  if (!ShouldAutoEnqueueAttachment(policy_, byte_length, backlog_drain_)) {
+  if (throttled_.contains(key)) {
+    return DownloadState::Pending;
+  }
+  if (!ShouldAutoEnqueueAttachment(policy_, byte_length, backlog_drain_, limits_.auto_download_max_bytes)) {
     return DownloadState::Pending;
   }
   return DownloadState::Downloading;
@@ -523,6 +624,7 @@ void AttachmentFetchWorkflow::CancelJobsLocked(const std::function<bool(const st
   std::erase_if(active_, [&](const std::string& key) { return matches(key); });
   std::erase_if(pending_, [&](const std::string& key) { return matches(key); });
   std::erase_if(failed_, [&](const std::string& key) { return matches(key); });
+  std::erase_if(throttled_, [&](const std::string& key) { return matches(key); });
 }
 
 void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id,
@@ -535,7 +637,7 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id,
     return;
   }
   (void)EnsureAttachmentPosterFromContent(profile_dir_, profile_id_, thread_id, fields.content_hash, fields.mime,
-                                          fields.filename, dek_copy, fields.byte_length);
+                                          fields.filename, dek_copy, fields.byte_length, Limits().max_receive_bytes);
 }
 
 void AttachmentFetchWorkflow::RetryDownload(const std::string& thread_id, const std::string& message_id,

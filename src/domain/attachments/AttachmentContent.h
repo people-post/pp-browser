@@ -35,11 +35,15 @@ Roe<std::string> EnsureAttachmentView(const std::string& profile_dir, std::strin
 Roe<std::string> EnsureAttachmentPosterFromContent(const std::string& profile_dir, std::string_view profile_id,
                                                    const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                                    const std::string& mime, const std::string& filename,
-                                                   const ByteVector& dek, uint64_t known_byte_length = 0);
+                                                   const ByteVector& dek, uint64_t known_byte_length,
+                                                   uint64_t max_receive_bytes);
 
-/** A file we sent: its plaintext into the content store, and its view when it shows inline. */
-Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, std::string_view profile_id,
-                                      const std::string& thread_id, const ChatAttachmentFields& fields,
-                                      const std::string& source_path, const ByteVector& dek);
+/**
+ * A file we sent: its plaintext (exactly the bytes that were encrypted and uploaded) into the content store,
+ * and its view when it shows inline (`max_receive_bytes`: AttachmentLimits).
+ */
+Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, std::string_view profile_id,
+                                  const std::string& thread_id, const ChatAttachmentFields& fields,
+                                  const ByteVector& plaintext, const ByteVector& dek, uint64_t max_receive_bytes);
 
 } // namespace pbr
