@@ -16,7 +16,8 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "foundation/platform/PlatformUserHints.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "mesh/types/MeshHopDial.h"
@@ -1593,7 +1594,7 @@ void CallTopologyController::Handle(TopologyEvent& event) {
 
 void CallTopologyController::Defer(std::function<void()> step) {
   // A hop flow's finish step runs as the next event, never inside the flow that reported it.
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   outbox_.Emit(topology_event::Continue{steps_.Store(std::move(step))});
 }
 

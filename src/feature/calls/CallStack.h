@@ -21,7 +21,8 @@
 #include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/CallsLoop.h"
-#include "foundation/runtime/RuntimeOwnerExecutor.h"
+#include "common/runtime/RuntimeOwnerExecutor.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "common/chat/SystemControl.h"
@@ -227,7 +228,7 @@ private:
 
   /** The calls owner's executor: every call object gets it from here (THREADING.md § Owner runners). */
   /** The calls owner: the media-sessions owner thread (UI without one); hooks publish the UI state. */
-  RuntimeOwnerExecutor executor_{OwnerThreadId::MediaSessions};
+  RuntimeOwnerExecutor executor_{kMediaSessionsOwner};
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;

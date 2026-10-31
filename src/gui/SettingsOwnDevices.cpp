@@ -1,7 +1,8 @@
 #include "gui/SettingsOwnDevices.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ui/DataEvent.h"

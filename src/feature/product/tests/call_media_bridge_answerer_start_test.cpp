@@ -1,6 +1,7 @@
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "foundation/runtime/RuntimeOwnerExecutor.h"
+#include "common/runtime/RuntimeOwnerExecutor.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/product/tests/calls_loopback_outbox.h"
 #include "feature/product/tests/calls_on_owner.h"
@@ -13,7 +14,8 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "domain/call_media/ICallMediaTransport.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "common/Utilities.h"
 
 #include <chrono>
@@ -36,7 +38,7 @@ namespace {
 
 /** The calls owner as CallStack holds it (here: none, so the test thread stands in). */
 RuntimeOwnerExecutor& CallsOwner() {
-  static RuntimeOwnerExecutor executor{OwnerThreadId::MediaSessions};
+  static RuntimeOwnerExecutor executor{kMediaSessionsOwner};
   return executor;
 }
 

@@ -1,6 +1,7 @@
 #include "app/ConfigApplyBridge.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "lib/ui/Theme.h"
 
 #include <ui/dom/Context.h>

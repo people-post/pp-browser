@@ -18,7 +18,7 @@
 #include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/MeshHopPolicy.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

@@ -15,7 +15,8 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformUserHints.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 
@@ -1261,7 +1262,7 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
 }
 
 Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (!IsMigrateGenerationCurrent(at.gen_at_start)) {
     relay_deps_->relay->Detach();
     return Error("reattach aborted");

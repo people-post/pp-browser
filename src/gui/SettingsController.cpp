@@ -10,7 +10,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"

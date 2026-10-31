@@ -1,13 +1,10 @@
-# Headless-safe runtime: worker pool + coordinator + main/UI mailbox (pp-node, tests).
+# Headless-safe runtime: pp-cpp-common's AppRuntime (worker pool, coordinator, UI mailbox, owner
+# threads; common/runtime/) with the product's owners registered, and the product version (pp-node, tests).
 pp_browser_add_foundation_library(pp_foundation_runtime_core
   SOURCES
-    AppRuntime.cpp
-    CoordinatorThread.cpp
-    OwnerTasks.cpp
-    OwnerThread.cpp
-    RuntimeOwnerExecutor.cpp
-    ThreadRuntime.cpp
-    WorkerDispatch.cpp
+    ProductOwners.cpp
+  PUBLIC_LIBS
+    pp_common
 )
 
 target_compile_definitions(pp_foundation_runtime_core PUBLIC
@@ -26,7 +23,3 @@ pp_browser_add_foundation_library(pp_foundation_runtime
   PUBLIC_LIBS
     pp_foundation_runtime_core)
 
-
-if(PP_BROWSER_BUILD_TESTS)
-  add_subdirectory(tests)
-endif()

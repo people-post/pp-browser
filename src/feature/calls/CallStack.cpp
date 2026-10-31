@@ -9,7 +9,8 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/punch/AmpPunchCoordinator.h"
@@ -357,7 +358,7 @@ Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path,
 }
 
 void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (call_sessions_) {
     // The manager holds every live call's state (ringing, accepting, media): rebuilding it ended
     // a call already ringing or in progress. Its ports reach the owner's current objects.
@@ -554,7 +555,7 @@ bool CallStack::WantEphemeralListen() const {
 }
 
 void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   DetachMeshMedia();
   // The 1:1 path lets go of its streams between two circuit aborts, then the transport stops.
   if (abort_inflight_circuit) {
@@ -649,7 +650,7 @@ CallSessionManager* CallStack::Calls() {
 }
 
 void CallStack::BindCallState() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (!call_sessions_) {
     return;
   }
@@ -696,7 +697,7 @@ void CallStack::SyncHubEphemeralListen() {
 }
 
 void CallStack::ResetSessionsOnOwner() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (deps_.system_controls) {
     deps_.system_controls->Unbind("call");
   }
@@ -724,7 +725,7 @@ void CallStack::Shutdown() {
 }
 
 void CallStack::ReleaseOnOwner() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   mobility_wake_.Disarm();
   DetachMeshMedia();
   if (mesh::MeshConnectivity* shared = connectivity()) {

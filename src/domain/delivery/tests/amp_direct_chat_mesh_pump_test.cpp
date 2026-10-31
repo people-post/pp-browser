@@ -11,7 +11,9 @@
 #include "foundation/crypto/MlDsa.h"
 #include "crypto/PeerId.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -102,7 +104,7 @@ RelayEnvelope MakeEnvelope() {
 TEST(AmpDirectChatMeshPumpTest, SyncSendFromNonDriveThreadIsAcked) {
   ASSERT_GE(sodium_init(), 0);
   // Like the product: under MeshPump, L4 inbound handlers do their work on AppRuntime workers.
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ProductRuntimeConfig());
   auto a = MakePumpedHost();
   ASSERT_TRUE(static_cast<bool>(a)) << a.error().message;
   auto b = MakePumpedHost();

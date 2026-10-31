@@ -1,7 +1,7 @@
 #include "foundation/platform/DesktopLocalNotifier.h"
 
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "foundation/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"

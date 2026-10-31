@@ -1,7 +1,7 @@
 #include "domain/attachments/AttachmentClient.h"
 
 #include "domain/attachments/ChatBlobRequest.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <algorithm>
 #include <cctype>

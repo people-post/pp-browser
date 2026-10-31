@@ -9,7 +9,7 @@
 #include "foundation/diagnostics/DiagnosticsBundle.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/DeploymentProfile.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "lib/net/HttpClient.h"

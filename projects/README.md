@@ -56,7 +56,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [p2p-mesh](p2p-mesh/) | Mesh deepen, relay scope, name directory / pre-chain |
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
 | [call-path-resilience](call-path-resilience/) | Calls survive link / network changes; mobility-aware path policy |
-| [capability-repos](capability-repos/) | Messaging, realtime, AI, node, identity as repos apps pick; thin shared base |
+| [capability-repos](capability-repos/) | Capability boundaries in the tree (gated); one capabilities repo when a second app picks them |
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [social-posts](social-posts/) | Public posts: signed hash-chained author logs, claimed → witnessed → anchored time |
 | [media-client-layers](media-client-layers/) | Neutral reach / relay-attach / pipeline / device layers; broadcast as a sibling feature of calls |

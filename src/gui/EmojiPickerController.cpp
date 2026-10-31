@@ -1,7 +1,8 @@
 #include "gui/EmojiPickerController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "lib/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
 #include "gui/shell/DataModelHost.h"

@@ -21,7 +21,7 @@
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"

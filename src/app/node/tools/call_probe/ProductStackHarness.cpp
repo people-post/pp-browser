@@ -19,7 +19,8 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/dht/AmpDhtProtocol.h"
@@ -90,7 +91,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   if (!clock) {
     return Error("null Amp clock");
   }
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ProductRuntimeConfig());
   AppRuntime::InitializeUI();
 
   auto harness = std::unique_ptr<ProductStackHarness>(new ProductStackHarness());

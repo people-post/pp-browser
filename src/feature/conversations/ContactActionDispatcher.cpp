@@ -8,7 +8,7 @@
 #include "lib/people/ContactTypes.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"

@@ -1,6 +1,6 @@
 #include "feature/conversations/InboxController.h"
 #include "domain/attachments/AttachmentContent.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"

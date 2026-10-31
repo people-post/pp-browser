@@ -8,7 +8,8 @@
 #include "lib/ai/conversation/Conversation.h"
 #include "foundation/data/Config.h"
 #include "foundation/error/AppError.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/ai/LlmClient.h"
 #include "lib/ai/ToolRegistry.h"
@@ -174,7 +175,7 @@ inline AgentImageTurn TestImage(const std::string& message_id = {}) {
 class AgentSessionBriefStreamTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ProductRuntimeConfig());
     // Every completions request (the model pipeline, output repair, compaction) is counted and kept here.
     LlmClient::SetRequestObserverForTests([this](const std::string& body) {
       std::lock_guard lock(mu_);

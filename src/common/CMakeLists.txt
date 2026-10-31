@@ -22,4 +22,7 @@ pp_browser_apply_warnings(pp_pbr_common)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
+  # Tests filed under their capability's common/ subdir (SRC_LAYOUT § Capabilities).
+  add_subdirectory(chat/tests)
+  add_subdirectory(ui/tests)
 endif()

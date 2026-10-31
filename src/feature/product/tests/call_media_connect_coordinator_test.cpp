@@ -2,7 +2,9 @@
 
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "foundation/runtime/ProductOwners.h"
 
 #include <chrono>
 #include <functional>
@@ -304,7 +306,7 @@ TEST_F(CallMediaConnectCoordinatorTest, StaleGiveUpIsNotDelivered) {
   // is handled. Queued behind the attempt's result, so it runs between the give-up and its delivery.
   transport_->after_fail = [this](int attempt) {
     if (attempt == 5) {
-      AppRuntime::PostTo(OwnerThreadId::MediaSessions, [this]() {
+      AppRuntime::PostTo(kMediaSessionsOwner, [this]() {
         EXPECT_FALSE(connect_->InFlight()) << "sequence already gave up";
         connect_->Abort();
       });

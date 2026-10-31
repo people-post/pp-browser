@@ -11,7 +11,8 @@
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/SchemaVersion.h"
 #include "domain/node/NodeMeshServices.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/Logger.h"
 
 #include <cstdlib>
@@ -90,7 +91,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return loaded.error();
   }
 
-  AppRuntimeConfig runtime;
+  AppRuntimeConfig runtime = ProductRuntimeConfig();
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
 

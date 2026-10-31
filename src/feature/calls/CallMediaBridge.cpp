@@ -8,7 +8,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -1455,7 +1456,7 @@ void CallMediaBridge::RunOffererStart(const std::string& call_id, const std::str
 
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   media_attempted_calls_.Insert(call_id);
   RunAnswererStart(call_id, peer_identity);
 }
@@ -1602,7 +1603,7 @@ void CallMediaBridge::StartDeferredAnswerer(const std::string& call_id) {
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Bridge state, the connect sequence and CallMediaEngine::Stop (SDL capture — CALLS.md) are
   // calls-owner only; every stop reaches here through the owner's events.
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   StopMeshMediaOnUi(call_id);
 }
 
@@ -1769,7 +1770,7 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     return Error("call_id required");
   }
   // Restarts the engine and the connect sequence — calls owner only.
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return Error("Call session not found");
@@ -1809,7 +1810,7 @@ Roe<void> CallMediaBridge::ResumeMeshMediaFromInbound(const std::string& call_id
   if (call_id.empty()) {
     return Error("call_id required");
   }
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return Error("Call session not found");

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "domain/call_media/ICallMediaTransport.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 
 #include <chrono>
 #include <memory>

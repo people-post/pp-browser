@@ -1,6 +1,8 @@
 #pragma once
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "foundation/runtime/ProductOwners.h"
 
 #include <optional>
 #include <type_traits>
@@ -16,10 +18,10 @@ template <typename F>
 auto OnCallsOwner(F&& run) -> decltype(run()) {
   using R = decltype(run());
   if constexpr (std::is_void_v<R>) {
-    AppRuntime::RunAndWait(OwnerThreadId::MediaSessions, [&]() { run(); });
+    AppRuntime::RunAndWait(kMediaSessionsOwner, [&]() { run(); });
   } else {
     std::optional<R> result;
-    AppRuntime::RunAndWait(OwnerThreadId::MediaSessions, [&]() { result.emplace(run()); });
+    AppRuntime::RunAndWait(kMediaSessionsOwner, [&]() { result.emplace(run()); });
     return std::move(*result);
   }
 }

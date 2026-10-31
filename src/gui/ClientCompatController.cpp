@@ -4,7 +4,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"
 #include "foundation/runtime/AppVersion.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
 #include "gui/UserFeedback.h"

@@ -6,8 +6,9 @@
 #include "lib/broadcast/PeerAnnounceTypes.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "feature/broadcast/BroadcasterWorkflow.h"
-#include "foundation/runtime/OwnerTasks.h"
-#include "foundation/runtime/RuntimeOwnerExecutor.h"
+#include "common/runtime/OwnerTasks.h"
+#include "foundation/runtime/ProductOwners.h"
+#include "common/runtime/RuntimeOwnerExecutor.h"
 
 #include "common/Error.h"
 
@@ -111,7 +112,7 @@ private:
   void OnStatusChanged();
 
   /** The media-sessions owner (UI without one), unless the caller passed its own executor. */
-  RuntimeOwnerExecutor own_executor_{OwnerThreadId::MediaSessions};
+  RuntimeOwnerExecutor own_executor_{kMediaSessionsOwner};
   OwnerExecutor& executor_;
   /** The hub's work on its owner: intents and the workflows' events (dropped with the hub). */
   OwnerTasks tasks_;

@@ -8,7 +8,7 @@
 #include "feature/calls/CallDirectDriver.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 #include "lib/calls/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
