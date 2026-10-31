@@ -23,6 +23,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   endif()
 endif()
 
+# macOS desktop: pin the minimum macOS before project() too. Unpinned, clang targets the build machine's own
+# version, so a newer CI runner (macos-15) would quietly raise what PP.app needs. 14.0 is what the macos-14
+# runners built for.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+  set(PP_BROWSER_MACOS_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version (CMAKE_OSX_DEPLOYMENT_TARGET)")
+  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${PP_BROWSER_MACOS_DEPLOYMENT_TARGET}" CACHE STRING
+      "Minimum macOS version for linked binaries" FORCE)
+  endif()
+endif()
+
 if(WIN32)
   # libp2p deps (Boost MASM, BoringSSL NASM) require these for Ninja + MSVC.
   # Generic ASM must also be declared here: vendored libpng does
