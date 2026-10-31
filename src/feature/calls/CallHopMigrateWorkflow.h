@@ -15,8 +15,8 @@
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "foundation/runtime/OwnerOutbox.h"
-#include "foundation/runtime/OwnerSteps.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerSteps.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

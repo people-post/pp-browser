@@ -4,7 +4,7 @@
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 
 #include "common/Module.h"
 

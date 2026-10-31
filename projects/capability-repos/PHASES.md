@@ -26,9 +26,8 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 - [ ] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
       `foundation/platform`: the app passes values and ports in.
 - [ ] `Tr()` out of capability code (calls and messaging): error codes, text in the app.
-- [ ] Runtime core into pp-cpp-common ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
-      registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines; release
-      pp-cpp-common and pin it. Does not wait for a second app.
+- [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
+      registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.
 - [ ] The crypto capabilities add today (message and attachment ciphers, PSK session store) into pp-cpp-crypto.
 
 ## P3 — Capability targets (in-repo)

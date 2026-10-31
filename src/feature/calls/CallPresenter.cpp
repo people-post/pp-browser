@@ -6,7 +6,7 @@
 #include "lib/media/CallMediaEngine.h"
 #include "feature/calls/CallUiBackend.h"
 #include "foundation/data/PricingTypes.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

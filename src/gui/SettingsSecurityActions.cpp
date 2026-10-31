@@ -5,7 +5,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "lib/ui/DataEvent.h"
 

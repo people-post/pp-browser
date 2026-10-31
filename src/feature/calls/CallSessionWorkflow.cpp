@@ -6,7 +6,7 @@
 #include "lib/calls/CallMediaPlannerSelectLogic.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/PeerCapsLogic.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

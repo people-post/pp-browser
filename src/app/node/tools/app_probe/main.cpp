@@ -89,7 +89,8 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include <SDL3/SDL_hints.h>
@@ -1326,7 +1327,7 @@ int main(int argc, char** argv) {
     pbr::LogFile::Install(log_file);
   }
 
-  pbr::AppRuntimeConfig runtime;
+  pbr::AppRuntimeConfig runtime = pbr::ProductRuntimeConfig();
   pbr::AppRuntime::Initialize(runtime);
   pbr::AppRuntime::InitializeUI();
 

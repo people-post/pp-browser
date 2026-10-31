@@ -7,7 +7,7 @@
 #include "lib/broadcast/BroadcastRpcCodec.h"
 #include "lib/broadcast/BroadcastViewerLadder.h"
 #include "lib/broadcast/PeerAnnounceTypes.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 
 #include "common/Error.h"
 

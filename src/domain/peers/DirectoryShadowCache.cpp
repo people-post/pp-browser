@@ -1,7 +1,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 
 #include "lib/people/ContactIdentity.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"

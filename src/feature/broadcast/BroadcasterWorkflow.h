@@ -5,7 +5,7 @@
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "lib/broadcast/PeerAnnounceTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 
 #include "common/Error.h"
 

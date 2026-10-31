@@ -62,12 +62,13 @@ calls → messaging (25), broadcast → calls (13).
 Every capability uses `foundation` and `common`. What they use of `foundation`: `crypto` (`CryptoUtil`,
 ML-DSA, the PSK session store, the hybrid KEM, attachment ciphers), `runtime` (`AppRuntime`, `OwnerOutbox`,
 `OwnerSteps`), `data` (`Config`, `MeshRole`, `UserPreferences`, `PricingTypes`), `platform`
-(`NetworkMonitor`) and `i18n` (`Tr()` calls in call and messaging logic). P2 thins this.
+(`NetworkMonitor`) and `i18n` (`Tr()` calls in call and messaging logic). P2 thins this; the runtime core
+already left for pp-cpp-common (§ Runtime core).
 
 ## Target
 
 ```
-pp-cpp-common (+ runtime core) ─┬─► pp-cpp-crypto ─► pp-cpp-amp ─► pp-cpp-mesh
+pp-cpp-common (+ runtime) ──────┬─► pp-cpp-crypto ─► pp-cpp-amp ─► pp-cpp-mesh
                                 │
            base ─► people ─┬─► net ───────────┐
                            ├─► social ────────┼─► messaging ─► calls ─► broadcast
@@ -112,23 +113,19 @@ people, net and node from that repo.
 
 ## Runtime core → pp-cpp-common
 
-`foundation/runtime` is 3.1k lines (+1k tests). Its core already builds only on pp-cpp-common (`WorkerPool`,
-`Executor`, `SerialExecutor`, `SequencedTaskRunner`, `Lifetime`, `Logger`, metrics), plus pp-browser's
-`PbrCompat.h` namespace bridge (moved code uses `pp::` directly).
+Moved in pp-cpp-common **v1.3.0** (`common/runtime/`, namespace `pp`, with its tests): `AppRuntime`,
+`CoordinatorThread`, `OwnerThread` / `OwnerTasks` / `OwnerOutbox` / `OwnerSteps`, `RuntimeOwnerExecutor`,
+`ThreadRuntime`, `WorkerDispatch`, and `QueueOwnerExecutor` for tests. pp-browser bridges the names into `pbr`
+(`common/PbrCompat.h`).
 
-| Part | kLOC | Goes to |
-|------|------|---------|
-| `AppRuntime`, `CoordinatorThread`, `OwnerThread` / `OwnerTasks` / `OwnerOutbox` / `OwnerSteps`, `RuntimeOwnerExecutor`, `ThreadRuntime`, `WorkerDispatch` | ~2.2 | pp-cpp-common |
-| `AppLifecycle`, `BackgroundSyncScheduler`, `AppVersion`, `ProductBranding`, `FramePacing` | ~0.6 | stay in apps (lifecycle, versions, branding, frame pacing) |
-
-Changes it needs:
-
-- `OwnerThreadId` (today a pp-browser enum, `MediaSessions`) becomes owners an app or capability
-  registers at startup; a shared runtime cannot name product threads.
-- `pp_foundation_runtime_core` stops carrying `PP_BROWSER_VERSION` / `PP_BROWSER_RELEASE_VERSION`.
-- `BackgroundSyncScheduler`'s include of `common/chat/MessagingLimits.h` stays with it (app side).
-
-It does not wait for a second app (CR012).
+- **Owners are registered, not named by the runtime:** `AppRuntimeConfig::owners` lists id + thread name (ids
+  below `kMaxOwnerThreads`); a drain passes through each registered owner. pp-browser's live in
+  `foundation/runtime/ProductOwners.h` (`kMediaSessionsOwner`, `pp-media-sess`), with `ProductRuntimeConfig()`
+  and its own `ManualOwnerRuntimeConfig()` for tests.
+- **No product version in the shared runtime:** `pp_foundation_runtime_core` is now pp-browser's small target
+  (the product's owners on top of `pp_common`) and still carries `PP_BROWSER_VERSION` /
+  `PP_BROWSER_RELEASE_VERSION`.
+- `AppLifecycle`, `BackgroundSyncScheduler`, `AppVersion`, `ProductBranding`, `FramePacing` stay in pp-browser.
 
 ## Before anything moves (CR012)
 

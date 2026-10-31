@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "foundation/data/PricingTypes.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"

@@ -24,7 +24,7 @@ in-repo first (CR004).
 ## CR002 — Runtime core goes to pp-cpp-common
 
 **Date:** 2026-10-29  
-**Status:** accepted
+**Status:** accepted; done in pp-cpp-common v1.3.0 (2026-10-30) — DESIGN § Runtime core
 
 **Context:** Every capability depends on the threading model (`AppRuntime`, owner threads, `OwnerOutbox`).
 The core (~2.2k lines) already builds only on pp-cpp-common's executors, logger and metrics.

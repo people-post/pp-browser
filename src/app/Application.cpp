@@ -36,7 +36,8 @@
 #include "gui/chat/ChatController.h"
 #include "feature/conversations/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPathProvider.h"
@@ -258,7 +259,7 @@ Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
 
 Application::Application() {
   redirectLogger("Application");
-  AppRuntimeConfig runtime;
+  AppRuntimeConfig runtime = ProductRuntimeConfig();
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
   secrets_ = std::make_unique<ProfileSecretsEngine>();

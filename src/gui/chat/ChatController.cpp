@@ -26,7 +26,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/i18n/ScriptLanguageDetector.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/Platform.h"

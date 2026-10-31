@@ -5,7 +5,9 @@
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/broadcast/BroadcastMedia.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/MeshAlias.h"
 
 #include <chrono>
@@ -15,7 +17,7 @@ namespace pbr {
 namespace {
 
 /** Broadcast shares the calls' owner (thread-ownership T001: one media-sessions thread). */
-constexpr OwnerThreadId kOwner = OwnerThreadId::MediaSessions;
+constexpr OwnerThreadId kOwner = kMediaSessionsOwner;
 
 /** Deliver `on_done` on UI (inline when the runtime has no owner — unit tests without one). */
 std::function<void(Roe<void>)> ReplyOnUi(std::function<void(Roe<void>)> on_done) {

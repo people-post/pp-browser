@@ -1,6 +1,8 @@
 #include "domain/delivery/DeliveryOutbox.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
 
@@ -41,7 +43,7 @@ private:
 
 class DeliveryOutboxTest : public ::testing::Test {
 protected:
-  void SetUp() override { AppRuntime::Initialize(); }
+  void SetUp() override { AppRuntime::Initialize(ProductRuntimeConfig()); }
   void TearDown() override { AppRuntime::Shutdown(); }
 
   void Drain() { ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); }

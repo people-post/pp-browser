@@ -9,7 +9,7 @@
 #include "lib/messaging/AiImageRef.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "domain/attachments/AttachmentFetch.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <sodium.h>
 

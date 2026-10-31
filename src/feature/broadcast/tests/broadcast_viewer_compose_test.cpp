@@ -19,8 +19,9 @@
 #include "mesh/testing/mesh_triple_harness.h"
 #include "lib/broadcast/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/runtime/OwnerOutbox.h"
-#include "foundation/runtime/tests/queue_owner_executor.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/runtime/QueueOwnerExecutor.h"
+#include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -240,7 +241,7 @@ protected:
   std::unique_ptr<CallMediaEngine> engine_;
   std::unique_ptr<BroadcastViewerWorkflow> workflow_;
   std::deque<std::function<void()>> ui_;
-  test::QueueOwnerExecutor owner_{ui_};
+  pp::QueueOwnerExecutor owner_{ui_};
   OwnerTasks tasks_{owner_};
 };
 

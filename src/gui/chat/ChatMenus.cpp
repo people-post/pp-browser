@@ -4,7 +4,8 @@
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "lib/messaging/SendRelayOptions.h"
 

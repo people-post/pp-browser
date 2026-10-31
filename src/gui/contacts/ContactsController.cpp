@@ -16,7 +16,7 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/DirectoryHitRank.h"
 #include "lib/people/PeopleLookupFailure.h"

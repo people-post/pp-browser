@@ -7,7 +7,7 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/DeploymentProfile.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/ValueJson.h"
 #include "mesh/dht/AmpDhtProtocol.h"

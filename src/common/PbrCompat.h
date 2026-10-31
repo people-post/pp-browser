@@ -29,6 +29,34 @@
 #include "common/ValueJson.h"
 #include "common/metrics/MetricsRegistry.h"
 
+#include <cstdint>
+#include <functional>
+
+// pp-cpp-common's runtime (common/runtime/), declared only: a TU that uses one includes its header,
+// and the names below make `AppRuntime` etc. resolve inside pbr without every TU including the runtime.
+namespace pp {
+class AppRuntime;
+struct AppRuntimeConfig;
+enum class CoordinatorPriority;
+class CoordinatorThread;
+class OwnerExecutor;
+template <typename Event>
+class OwnerOutbox;
+struct OwnerStepReady;
+class OwnerSteps;
+class OwnerTasks;
+class OwnerThread;
+enum class OwnerThreadId : uint8_t;
+enum class OwnerThreadMode : uint8_t;
+struct OwnerThreadSpec;
+class RuntimeOwnerExecutor;
+class ThreadRuntime;
+struct ThreadRuntimeConfig;
+class WorkerDispatch;
+template <typename Event>
+OwnerOutbox<Event> MakeOwnerOutbox(OwnerTasks& tasks, std::function<void(Event&)> handle);
+} // namespace pp
+
 namespace pbr {
 
 using ::pp::RoeErrorBase;
@@ -95,6 +123,25 @@ using ::pp::MetricLabelKey;
 using ::pp::MetricLabels;
 using ::pp::MetricsRegistry;
 using ::pp::ScopedMetricsCollector;
+
+// Runtime (pp-cpp-common common/runtime/; pp-browser's owners: foundation/runtime/ProductOwners.h).
+using ::pp::AppRuntime;
+using ::pp::AppRuntimeConfig;
+using ::pp::CoordinatorPriority;
+using ::pp::CoordinatorThread;
+using ::pp::MakeOwnerOutbox;
+using ::pp::OwnerExecutor;
+using ::pp::OwnerOutbox;
+using ::pp::OwnerStepReady;
+using ::pp::OwnerSteps;
+using ::pp::OwnerTasks;
+using ::pp::OwnerThread;
+using ::pp::OwnerThreadId;
+using ::pp::OwnerThreadMode;
+using ::pp::RuntimeOwnerExecutor;
+using ::pp::ThreadRuntime;
+using ::pp::ThreadRuntimeConfig;
+using ::pp::WorkerDispatch;
 
 namespace logging = ::pp::logging;
 namespace util = ::pp::util;

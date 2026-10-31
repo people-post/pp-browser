@@ -282,9 +282,9 @@ flowchart TB
 
 | Thread / queue | Owner class | Location | Role |
 |----------------|-------------|----------|------|
-| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `foundation/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
-| **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
-| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
+| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · pp-cpp-common `common/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
+| **Coordinator** | `CoordinatorThread` | pp-cpp-common `common/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
+| **Worker pool** | `WorkerPool` via `AppRuntime` | pp-cpp-common `common/` · `common/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
 | **Media capture / video** | `CallMediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `lib/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
@@ -337,6 +337,6 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileIdentityView** | `lib/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
-| **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
+| **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by `foundation/runtime/ProductOwners.h`) | UI mailbox + worker pool + coordinator + owner threads |
 | **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

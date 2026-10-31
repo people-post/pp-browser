@@ -25,7 +25,7 @@ Hard rules:
 1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` (including `platform/ui/`). Portable TUs (`CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
 2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
-4. **Process runtime** (threads, lifecycle, branding) lives in [`src/foundation/runtime/`](../../src/foundation/runtime/) — not here.
+4. **Process runtime** lives in pp-cpp-common (`common/runtime/`: threads, coordinator, owners); lifecycle, the product's owners, branding and version in [`src/foundation/runtime/`](../../src/foundation/runtime/) — not here.
 5. **Public headers must not expose OS types** (`SOCKET`, `HANDLE`, `NativeSocket`). Hide them in the `.cpp` or a private impl header.
 6. **`common/` CRT shims** — thread naming (`WorkerPool`) and civil-time (`CivilTime`) may use CRT/pthread `#ifdef`s. New OS behavior does not belong in `common/` beyond that.
 
@@ -33,7 +33,7 @@ Hard rules:
 
 | Path | Role |
 |------|------|
-| `foundation/runtime/` | `AppRuntime`, coordinator, `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version |
+| `foundation/runtime/` | The product's owner threads (`ProductOwners`), `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version (`AppRuntime` and the coordinator are pp-cpp-common's `common/runtime/`) |
 | `foundation/platform/Platform.{h,cpp}` | `PlatformKind` detection, capability flags |
 | `foundation/platform/PlatformHooks.*` | Registers Android/iOS/desktop implementations at startup |
 | `foundation/platform/ui/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` / Backend |
@@ -97,7 +97,7 @@ Allowed paths for OS preprocessor branches:
 ## Adding new platform behavior
 
 1. If it is a path, notification, credential, or OS tip → extend or add an `I*` interface implementation under `foundation/platform/`.
-2. If it is process threading / lifecycle / scheduling → `foundation/runtime/` (`AppRuntime`, `AppLifecycle`).
+2. If it is process threading / scheduling → pp-cpp-common `common/runtime/` (`AppRuntime`); lifecycle or the product's owners → `foundation/runtime/` (`AppLifecycle`, `ProductOwners`).
 3. If it is a syscall used by many modules (file sync, subprocess) → add to `foundation/platform/os/`. Civil time → `common/CivilTime` (re-exported as `pbr::os::`).
 4. If it is GL/GLES or SDL window backend → pp-cpp-ui `backend/` (shared) or `foundation/platform/ui/` (product host/overlays).
 5. If it is a fat backend used by one module (codec, camera, audio session, raw sockets, net-if) → colocated `*_Win32.cpp` / `*_Android.cpp` / … behind a portable header in that module. Wire with CMake source-selection.

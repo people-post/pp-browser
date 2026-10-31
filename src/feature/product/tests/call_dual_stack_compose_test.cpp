@@ -1,4 +1,5 @@
 #include "feature/product/tests/call_stack_compose_support.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 #include "common/MeshAlias.h"

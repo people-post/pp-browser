@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/net/BlobQuota.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "gui/UserFeedback.h"
 

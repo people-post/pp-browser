@@ -1,7 +1,8 @@
 #include "feature/conversations/ChatPresenter.h"
 
 #include "feature/conversations/ConversationsFacade.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"
 #include "lib/messaging/AtAiParser.h"

@@ -23,7 +23,8 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/Utilities.h"
 
 #include <chrono>

@@ -1,6 +1,7 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 
 #include <algorithm>
 #include <chrono>
@@ -112,7 +113,7 @@ void CallMediaConnectCoordinator::CancelTimers() {
 
 void CallMediaConnectCoordinator::Abort() {
   // Sequence state is calls-owner only (no lock).
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   seq_.fetch_add(1, std::memory_order_acq_rel);
   CancelTimers();
   // Completes the pending reach inline; its continuation sees the new sequence and returns.
@@ -161,7 +162,7 @@ void CallMediaConnectCoordinator::NotifyKeyAvailable() {
 }
 
 void CallMediaConnectCoordinator::HandleInboundHello(std::shared_ptr<CallMediaInboundReply> hello) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   CallMediaDirectConnectParams& params = hello->Params();
   log().info << "Inbound hello call_id=" << params.call_id << " epoch=" << params.media_epoch
              << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
@@ -208,7 +209,7 @@ void CallMediaConnectCoordinator::AcceptInboundHello(CallMediaInboundReply& repl
 }
 
 void CallMediaConnectCoordinator::RecheckPendingHellos(const bool ask_again) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   const auto now = std::chrono::steady_clock::now();
   std::vector<PendingHello> still;
   auto parked = std::move(pending_hellos_);
@@ -259,7 +260,7 @@ void CallMediaConnectCoordinator::RejectPendingHellos(const char* why) {
 }
 
 void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMediaConnectHooks hooks) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   Abort();
   if (AppRuntime::IsShuttingDown() || shut_down_.load(std::memory_order_acquire)) {
     log().debug << "Start rejected: shutting down call_id=" << request.params.call_id;

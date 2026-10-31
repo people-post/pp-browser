@@ -137,7 +137,7 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version; owner threads and a runner's executor on one (`RuntimeOwnerExecutor`) |
+| `foundation/runtime/` | The product's side of the process runtime: its owner threads (`ProductOwners`: `kMediaSessionsOwner`, `ProductRuntimeConfig`), lifecycle, branding/version. `AppRuntime`, the coordinator, owner threads and `RuntimeOwnerExecutor` are pp-cpp-common's (`common/runtime/`, bridged into `pbr` by `PbrCompat.h`) |
 | `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; `platform/ui/` = window host + RmlUi Backend + overlays. See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |

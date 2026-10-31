@@ -2,7 +2,7 @@
 
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

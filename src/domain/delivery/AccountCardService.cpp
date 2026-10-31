@@ -4,7 +4,8 @@
 #include "lib/messaging/PeerRequestAuth.h"
 
 #include "common/Utilities.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 
 #include <algorithm>
 #include <atomic>

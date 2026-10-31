@@ -4,6 +4,7 @@
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
 #include "feature/product/tests/call_stack_compose_support.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 

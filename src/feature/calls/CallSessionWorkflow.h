@@ -11,8 +11,8 @@
 #include "feature/calls/CallInitiationBilling.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
-#include "foundation/runtime/OwnerSteps.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerSteps.h"
 #include "feature/calls/LiveCallMedia.h"
 
 #include <functional>
