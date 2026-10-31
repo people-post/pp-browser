@@ -249,13 +249,20 @@ private:
     return line;
   }
 
+  /** How a call that never connected ended. Returns, not a nested ?: — MSVC flags that as C4701 (-Werror). */
+  ShareWord UnconnectedResult() const {
+    if (call_.declined) {
+      return "declined";
+    }
+    if (call_.role == "callee") {
+      return call_.accept_ms ? ShareWord("failed") : ShareWord("missed");
+    }
+    return "not_connected";
+  }
+
   ShareableLine EndLine(int64_t end_ms, const DeviceVitals& vitals) const {
     if (call_.connected_ms == 0) {
-      const ShareWord result = call_.declined                               ? ShareWord("declined")
-                               : call_.role == "callee" && !call_.accept_ms ? ShareWord("missed")
-                               : call_.role == "callee"                     ? ShareWord("failed")
-                                                                            : ShareWord("not_connected");
-      return SetupLine(result, end_ms);
+      return SetupLine(UnconnectedResult(), end_ms);
     }
     const CallMediaEngineHealth& b = call_.base;
     const CallMediaEngineHealth& l = call_.last;
