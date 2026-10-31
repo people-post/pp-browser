@@ -20,6 +20,7 @@
 #include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterVersion.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/ShortRelayId.h"
@@ -277,6 +278,15 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
 
   // Each kind is decoded by its own branch; a decode error there is a real error.
   const std::optional<GroupMembershipControlType> kind = GroupMembershipCodec::ControlTypeFromMessage(message);
+  // Whatever this event changes is applied when the function returns: the composer's `@` lines see a new version.
+  struct BumpOnExit {
+    bool active;
+    ~BumpOnExit() {
+      if (active) {
+        GroupRosterVersion::Bump();
+      }
+    }
+  } bump_on_exit{kind.has_value()};
 
   auto ignore_if_not_member = [this, &local_account](const std::string& group_id) -> Roe<bool> {
     if (local_account.empty() || group_id.empty()) {

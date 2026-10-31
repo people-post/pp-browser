@@ -62,54 +62,67 @@ std::vector<MentionCandidate> FilterMentionCandidates(const std::vector<MentionC
 
 /**
  * The picker's lines for the open group chat, built ahead of time so typing `@` and each keystroke after it only
- * filter in memory (no roster, card or contact read on the UI thread). The UI thread owns it. `Open` starts a load
- * when a group chat opens; `Changed` (the group's roster or names may have changed) reloads, coalesced and at most
- * every few seconds when idle (a change held back is picked up by the next `Typed`); `Drop` forgets the group. A load that finishes after a `Drop` is ignored.
- * A first `@` before the load is done waits for it (`WhenReady`) without blocking.
+ * filter in memory (no roster, card or contact read on the UI thread). The UI thread owns it.
+ *
+ * - `Open` starts a load when a group chat opens; `Drop` forgets the group (the chat changed); a load that finishes
+ *   after a `Drop` is ignored (`pp::Lifetime`).
+ * - `Changed` is called when the chat refreshes: it reloads only if `version` (GroupRosterVersion: a membership
+ *   event was applied here) is not the one the lines were read at.
+ * - `Typed` (an `@` was typed): reloads in the background when the lines are older than kStaleMs — names arrive by
+ *   paths with no signal — or a change was held back; the lines already held answer at once.
+ * - `SetOnLoaded`: told (UI thread) whenever a load finishes, so an open picker or one waiting for its first lines
+ *   refreshes, including after a drop and reopen.
  */
 class MentionCandidatePreload {
 public:
   using Lines = std::vector<MentionCandidate>;
   /** Runs `read` off the UI thread and calls `done` with its result on the UI thread. */
   using Runner = std::function<void(std::function<Lines()> read, std::function<void(Lines)> done)>;
-  /** The unfiltered lines of a group chat (reads the roster, cards and contacts). */
+  /** The unfiltered lines of a group chat (reads the roster, cards and contacts). Runs on a worker. */
   using Reader = std::function<Lines(const std::string& thread_id)>;
-  static constexpr int64_t kMinReloadMs = 3000;
+  /**
+   * Called on the UI thread at each load to make the Reader that load runs: it must carry what the worker needs by
+   * value (a facade pointer), never the picker or presenter, which the worker may outlive.
+   */
+  using ReaderFactory = std::function<Reader()>;
+  static constexpr int64_t kStaleMs = 30000;
 
-  MentionCandidatePreload(Runner run, Reader read, std::function<int64_t()> now_ms)
-      : run_(std::move(run)), read_(std::move(read)), now_ms_(std::move(now_ms)) {}
+  MentionCandidatePreload(Runner run, ReaderFactory make_reader, std::function<uint64_t()> version,
+                          std::function<int64_t()> now_ms)
+      : run_(std::move(run)),
+        make_reader_(std::move(make_reader)),
+        version_(std::move(version)),
+        now_ms_(std::move(now_ms)) {}
 
-  /** A group chat is open: load its lines unless they are loaded or loading. */
   void Open(const std::string& thread_id);
-  /** The open group's roster or names may have changed: reload (coalesced; when idle, at most every kMinReloadMs). */
   void Changed();
-  /** `@` was typed: reload in the background if a change was held back; start the load if none ran. */
   void Typed();
-  /** The chat changed: forget the lines, ignore a load in flight. */
   void Drop();
 
   const std::string& ThreadId() const { return thread_id_; }
   bool Ready() const { return ready_; }
   Lines Filter(const std::string& query) const { return FilterMentionCandidates(all_, query); }
-  /** Run `callback` (UI thread) once the lines are there; replaces an earlier waiter. */
-  void WhenReady(std::function<void()> callback) { waiter_ = std::move(callback); }
+  void SetOnLoaded(std::function<void()> callback) { on_loaded_ = std::move(callback); }
 
 private:
   void Start();
   void Loaded(const std::string& thread_id, Lines lines);
 
   Runner run_;
-  Reader read_;
+  ReaderFactory make_reader_;
+  std::function<uint64_t()> version_;
   std::function<int64_t()> now_ms_;
   pp::Lifetime lifetime_;
   std::string thread_id_;
   Lines all_;
   bool ready_ = false;
   bool loading_ = false;
-  /** A change came while loading, or inside the minimum interval: reload when possible. */
+  /** The membership changed while a load ran: read again when it is done. */
   bool pending_ = false;
+  uint64_t loaded_version_ = 0;
+  uint64_t loading_version_ = 0;
   int64_t last_started_ms_ = 0;
-  std::function<void()> waiter_;
+  std::function<void()> on_loaded_;
 };
 
 /**
@@ -183,6 +196,12 @@ struct MentionRoster {
   std::string owner;
   std::string local_account;
 };
+
+/**
+ * `spans` without the mentions of anyone not on `roster`, and without an everyone span unless this account is the
+ * group's owner: a pick made while a member was there can be stale at send (they left, were removed).
+ */
+std::vector<TextSpan> KeepMentionsOnRoster(std::vector<TextSpan> spans, const MentionRoster& roster);
 
 /** A highlighted range of a message's text. */
 struct MentionRun {

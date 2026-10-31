@@ -386,6 +386,8 @@ TEST(GroupMentionsTest, ATextThatStartsAtAiIsTheAgentsEvenAfterAPickedMemberName
 
 struct PreloadFixture {
   int reads = 0;
+  int loaded_notices = 0;
+  uint64_t version = 1;
   int64_t now = 100000;
   std::vector<std::function<void()>> pending;  // loads waiting for their turn on the "worker"
   bool deferred = false;
@@ -393,6 +395,7 @@ struct PreloadFixture {
   MentionCandidatePreload preload{
       [this](std::function<MentionCandidatePreload::Lines()> read,
              std::function<void(MentionCandidatePreload::Lines)> done) {
+        // The worker half runs `read` (which carries nothing of the fixture's picker); the UI half is `done`.
         auto run = [read = std::move(read), done = std::move(done)]() { done(read()); };
         if (deferred) {
           pending.push_back(std::move(run));
@@ -400,14 +403,25 @@ struct PreloadFixture {
           run();
         }
       },
-      [this](const std::string&) {
-        ++reads;  // the roster, the cards, the contacts: all behind this call
-        return AllMentionCandidates(
-            roster, kOwner, true,
-            [](const std::string& account) { return account == "acct-dave" ? std::string("Dave") : NameOf(account); },
-            "everyone");
+      [this]() -> MentionCandidatePreload::Reader {
+        return [this](const std::string&) {
+          ++reads;  // the roster, the cards, the contacts: all behind this call
+          return AllMentionCandidates(
+              roster, kOwner, true,
+              [](const std::string& account) { return account == "acct-dave" ? std::string("Dave") : NameOf(account); },
+              "everyone");
+        };
       },
-      [this]() { return now; }};
+      [this]() { return version; }, [this]() { return now; }};
+  PreloadFixture() {
+    preload.SetOnLoaded([this]() { ++loaded_notices; });
+  }
+  void RunFirst() {
+    ASSERT_FALSE(pending.empty());
+    auto job = std::move(pending.front());
+    pending.erase(pending.begin());
+    job();
+  }
   void RunPending() {
     auto jobs = std::move(pending);
     pending.clear();
@@ -429,41 +443,77 @@ TEST(GroupMentionsTest, TheGroupsLinesAreReadWhenItsChatOpensAndTypingOnlyFilter
   EXPECT_EQ(f.preload.Filter("bo").size(), 1u);
   EXPECT_EQ(f.preload.Filter("ev").size(), 1u);
   f.preload.Open("thread-hike");  // the chat refreshing itself is not a new open
+  f.preload.Changed();            // nor is a refresh with no membership change
   EXPECT_EQ(f.reads, 1);
 }
 
-TEST(GroupMentionsTest, ARosterChangeReloadsOnceAndAnotherChatDropsTheLines) {
+TEST(GroupMentionsTest, AMembershipChangeReloadsOnceNotEveryRefresh) {
   PreloadFixture f;
   f.preload.Open("thread-hike");
-  ASSERT_EQ(f.reads, 1);
+  for (int refresh = 0; refresh < 10; ++refresh) {
+    f.now += 1000;
+    f.preload.Changed();  // ten refreshes, nothing changed in the group
+  }
+  EXPECT_EQ(f.reads, 1);
   GroupRosterMember dave;
   dave.member_identity = "acct-dave";
   f.roster.push_back(dave);
-  f.preload.Changed();  // within the minimum interval: held back, not read
-  EXPECT_EQ(f.reads, 1);
-  f.now += MentionCandidatePreload::kMinReloadMs;
+  ++f.version;  // a membership event was applied
+  f.preload.Changed();
   f.preload.Changed();
   EXPECT_EQ(f.reads, 2) << "one reload for the change";
-  f.preload.Typed();
-  f.preload.Open("thread-hike");
-  EXPECT_EQ(f.reads, 2);
-  // Another chat: the lines go, and the new chat's are read.
-  f.preload.Drop();
-  EXPECT_FALSE(f.preload.Ready());
-  EXPECT_TRUE(f.preload.Filter("").empty());
-  f.preload.Open("thread-books");
-  EXPECT_EQ(f.reads, 3);
+  EXPECT_EQ(f.preload.Filter("dave").size(), 1u);
 }
 
-TEST(GroupMentionsTest, AChangeHeldBackIsReadWhenTheNextAtIsTyped) {
+TEST(GroupMentionsTest, AChangeDuringALoadIsReadAfterIt) {
+  PreloadFixture f;
+  f.deferred = true;
+  f.preload.Open("thread-hike");
+  ++f.version;
+  f.preload.Changed();  // arrives while the first read is out
+  f.RunPending();       // first read lands; a second starts at once
+  EXPECT_EQ(f.reads, 1);
+  f.RunPending();
+  EXPECT_EQ(f.reads, 2);
+  EXPECT_TRUE(f.preload.Ready());
+}
+
+TEST(GroupMentionsTest, OldLinesAreRefreshedOnTheNextAtAndTheOpenPickerIsTold) {
   PreloadFixture f;
   f.preload.Open("thread-hike");
-  f.preload.Changed();  // inside the interval
-  ASSERT_EQ(f.reads, 1);
+  const int told = f.loaded_notices;
+  f.now += MentionCandidatePreload::kStaleMs - 1;
   f.preload.Typed();
-  EXPECT_EQ(f.reads, 2) << "the list is about to be used";
+  EXPECT_EQ(f.reads, 1) << "not yet old";
+  f.now += 2;
+  f.deferred = true;
   f.preload.Typed();
-  EXPECT_EQ(f.reads, 2) << "and only once";
+  EXPECT_EQ(f.preload.Filter("").size(), 5u) << "answers from what it holds meanwhile";
+  EXPECT_EQ(f.reads, 1);
+  f.RunPending();
+  EXPECT_EQ(f.reads, 2);
+  EXPECT_EQ(f.loaded_notices, told + 1) << "the picker open on the old lines refreshes";
+  f.preload.Typed();
+  EXPECT_EQ(f.reads, 2) << "and is fresh again";
+}
+
+TEST(GroupMentionsTest, AnotherChatDropsTheLinesAndAReopenReadsAgainAndTellsThePicker) {
+  PreloadFixture f;
+  f.deferred = true;
+  f.preload.Open("thread-hike");
+  f.preload.Typed();  // `@` typed while the first read is out: nothing to show yet
+  EXPECT_FALSE(f.preload.Ready());
+  f.preload.Drop();   // the user went to another chat and came back
+  f.preload.Open("thread-hike");
+  f.RunFirst();       // the first read lands after the drop: ignored; the second is the live one
+  EXPECT_FALSE(f.preload.Ready());
+  EXPECT_EQ(f.loaded_notices, 0);
+  f.RunPending();
+  EXPECT_TRUE(f.preload.Ready());
+  EXPECT_EQ(f.loaded_notices, 1) << "the picker waiting for its lines is told once, for the live load";
+  EXPECT_EQ(f.preload.Filter("").size(), 5u);
+  f.preload.Drop();
+  EXPECT_TRUE(f.preload.Filter("").empty());
 }
 
 TEST(GroupMentionsTest, AFirstAtBeforeTheLoadIsDoneWaitsForItWithoutBlocking) {
@@ -471,27 +521,26 @@ TEST(GroupMentionsTest, AFirstAtBeforeTheLoadIsDoneWaitsForItWithoutBlocking) {
   f.deferred = true;
   f.preload.Open("thread-hike");
   EXPECT_FALSE(f.preload.Ready()) << "the read has not run: the UI thread is not waiting for it";
-  int shown = 0;
   f.preload.Typed();  // does not start a second load
-  f.preload.WhenReady([&]() { ++shown; });
   EXPECT_EQ(f.pending.size(), 1u);
   f.RunPending();
   EXPECT_TRUE(f.preload.Ready());
-  EXPECT_EQ(shown, 1);
+  EXPECT_EQ(f.loaded_notices, 1);
   EXPECT_EQ(f.reads, 1);
 }
 
-TEST(GroupMentionsTest, ALoadThatFinishesAfterTheChatChangedIsIgnored) {
-  PreloadFixture f;
-  f.deferred = true;
-  f.preload.Open("thread-hike");
-  int shown = 0;
-  f.preload.WhenReady([&]() { ++shown; });
-  f.preload.Drop();  // the user went to another chat
-  f.RunPending();
-  EXPECT_FALSE(f.preload.Ready());
-  EXPECT_EQ(shown, 0);
-  EXPECT_TRUE(f.preload.Filter("").empty());
+TEST(GroupMentionsTest, APickOfSomeoneWhoLeftIsDroppedAtSend) {
+  MentionRoster roster;
+  roster.members = {kMe, kAlice};
+  roster.owner = kOwner;
+  roster.local_account = kMe;
+  const std::vector<TextSpan> spans = {Span(TextSpanKind::Mention, 0, 6, kAlice), Span(TextSpanKind::Mention, 7, 11, kBob),
+                                       Span(TextSpanKind::Everyone, 12, 21)};
+  const auto kept = KeepMentionsOnRoster(spans, roster);
+  ASSERT_EQ(kept.size(), 1u) << "Bob left; we are not the owner, so no everyone";
+  EXPECT_EQ(kept[0].account_id, kAlice);
+  roster.owner = kMe;
+  EXPECT_EQ(KeepMentionsOnRoster(spans, roster).size(), 2u) << "the owner keeps its everyone";
 }
 
 // --- the everyone line in the user's language --------------------------------------------------

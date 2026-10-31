@@ -147,8 +147,10 @@ void MentionCandidatePreload::Changed() {
   if (thread_id_.empty() || (!ready_ && !loading_)) {
     return;  // nothing loaded for this chat yet: Open / Typed start it
   }
-  pending_ = true;
-  if (!loading_ && now_ms_() - last_started_ms_ >= kMinReloadMs) {
+  const uint64_t version = version_();
+  if (loading_) {
+    pending_ = pending_ || version != loading_version_;
+  } else if (version != loaded_version_) {
     Start();
   }
 }
@@ -157,8 +159,8 @@ void MentionCandidatePreload::Typed() {
   if (thread_id_.empty() || loading_) {
     return;
   }
-  if (!ready_ || pending_) {
-    Start();  // the list is about to be used: a change held back by the interval is picked up now
+  if (!ready_ || pending_ || version_() != loaded_version_ || now_ms_() - last_started_ms_ >= kStaleMs) {
+    Start();  // answers from what is held meanwhile; the open picker refreshes when this lands
   }
 }
 
@@ -169,16 +171,15 @@ void MentionCandidatePreload::Drop() {
   ready_ = false;
   loading_ = false;
   pending_ = false;
-  waiter_ = nullptr;
 }
 
 void MentionCandidatePreload::Start() {
   loading_ = true;
   pending_ = false;
+  loading_version_ = version_();
   last_started_ms_ = now_ms_();
   const std::string thread_id = thread_id_;
-  Reader read = read_;
-  run_([read = std::move(read), thread_id]() { return read(thread_id); },
+  run_([read = make_reader_(), thread_id]() { return read ? read(thread_id) : Lines{}; },
        lifetime_.Bind([this, thread_id](Lines lines) { Loaded(thread_id, std::move(lines)); }));
 }
 
@@ -189,11 +190,12 @@ void MentionCandidatePreload::Loaded(const std::string& thread_id, Lines lines) 
   all_ = std::move(lines);
   ready_ = true;
   loading_ = false;
+  loaded_version_ = loading_version_;
   if (pending_) {
-    Start();  // a change came in while this load ran
+    Start();  // the membership changed while this load ran
   }
-  if (auto waiter = std::exchange(waiter_, nullptr)) {
-    waiter();
+  if (on_loaded_) {
+    on_loaded_();
   }
 }
 
@@ -333,6 +335,21 @@ std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::v
     }
   }
   std::sort(spans.begin(), spans.end(), [](const TextSpan& a, const TextSpan& b) { return a.start < b.start; });
+  return spans;
+}
+
+std::vector<TextSpan> KeepMentionsOnRoster(std::vector<TextSpan> spans, const MentionRoster& roster) {
+  spans.erase(std::remove_if(spans.begin(), spans.end(),
+                             [&roster](const TextSpan& span) {
+                               if (span.Is(TextSpanKind::Mention)) {
+                                 return roster.members.count(span.account_id) == 0;
+                               }
+                               if (span.Is(TextSpanKind::Everyone)) {
+                                 return roster.owner.empty() || roster.owner != roster.local_account;
+                               }
+                               return false;
+                             }),
+              spans.end());
   return spans;
 }
 

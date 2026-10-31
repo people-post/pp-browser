@@ -1469,7 +1469,8 @@ void ChatController::OnSendMessage() {
   }
   // Mentions mark the typed text only (a prefix of `out`), never the quote under it (G015).
   const std::string thread_id = ActiveThreadId();
-  if (std::vector<TextSpan> spans = mentions_.SpansFor(thread_id, text);
+  // Picks of members who left since are dropped here (read at send), as the receiver would not light them anyway.
+  if (std::vector<TextSpan> spans = presenter_.SpansOnRoster(thread_id, mentions_.SpansFor(thread_id, text));
       presenter_.SendsWithMentions(thread_id, out, spans)) {
     close_keyboard();
     SendWithMentions(thread_id, text, out, std::move(spans));

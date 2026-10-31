@@ -3,6 +3,7 @@
 #include "common/Utilities.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "lib/messaging/GroupRosterVersion.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ui/ContextMenuHost.h"
 
@@ -33,16 +34,32 @@ ChatMentionPicker::ChatMentionPicker(ChatMenusHost& host, ChatPresenter& present
       presenter_(presenter),
       chat_(chat),
       context_(context),
-      // The group's lines are read on a worker when its chat opens (the roster, cards and contacts are SQLite reads);
-      // typing `@` and each keystroke after it only filter what is held.
+      // The group's lines are read on a worker when its chat opens; typing `@` and each keystroke after it only
+      // filter what is held. The worker gets the facade by value (made here, on the UI thread, at each load) and
+      // never the picker or the presenter; the AppRuntime teardown gate drains workers before the messaging graph
+      // (and with it the facade) is torn down, and the reply is dropped by pp::Lifetime once the chat has changed.
       preload_(
           [](std::function<std::vector<MentionCandidate>()> read,
              std::function<void(std::vector<MentionCandidate>)> done) {
             AppRuntime::PostWorkerAndReplyOnUI<std::vector<MentionCandidate>>(WorkerLane::Normal, std::move(read),
                                                                               std::move(done));
           },
-          [this](const std::string& thread_id) { return presenter_.MentionCandidatesFor(thread_id); },
-          []() { return util::NowUnixMs(); }) {}
+          [this]() -> MentionCandidatePreload::Reader {
+            ConversationsFacade* facade = presenter_.Facade();
+            return [facade](const std::string& thread_id) {
+              return facade ? ChatPresenter::ReadMentionCandidates(facade, thread_id)
+                            : std::vector<MentionCandidate>{};
+            };
+          },
+          []() { return GroupRosterVersion::Get(); }, []() { return util::NowUnixMs(); }) {
+  // Lines that landed: an open picker (or one waiting for its first lines) shows them.
+  preload_.SetOnLoaded([this]() {
+    if (at_ && (waiting_ || ContextMenuHost::Instance().IsOpen())) {
+      waiting_ = false;
+      RefreshLines();
+    }
+  });
+}
 
 void ChatMentionPicker::SyncThread() {
   const std::string thread_id = host_.ActiveThreadId();
@@ -126,14 +143,8 @@ void ChatMentionPicker::OnDraftChanged() {
     preload_.Typed();
   }
   if (!preload_.Ready()) {
-    // The group's lines are still being read (off the UI thread): show them the moment they are there.
+    // The group's lines are still being read (off the UI thread): the picker opens when they land.
     waiting_ = true;
-    preload_.WhenReady([this]() {
-      if (waiting_) {
-        waiting_ = false;
-        RefreshLines();
-      }
-    });
     return;
   }
   RefreshLines();

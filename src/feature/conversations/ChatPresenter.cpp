@@ -558,6 +558,27 @@ std::optional<std::string> GroupIdOf(ConversationsFacade* facade, const std::str
   return *(*thread)->group_id;
 }
 
+/** The roster a group chat's mentions are judged against now; none for a chat that is not a group. */
+std::optional<MentionRoster> RosterOfGroupThread(ConversationsFacade* facade, const std::string& thread_id) {
+  const std::optional<std::string> group_id = GroupIdOf(facade, thread_id);
+  if (!group_id) {
+    return std::nullopt;
+  }
+  MentionRoster roster;
+  if (auto members = facade->ListGroupRoster(*group_id)) {
+    for (const GroupRosterMember& member : *members) {
+      roster.members.insert(member.member_identity);
+    }
+  }
+  if (auto owner = facade->OwnerIdentity(*group_id)) {
+    roster.owner = *owner;
+  }
+  if (auto identity = facade->GetIdentity()) {
+    roster.local_account = identity->account_id;
+  }
+  return roster;
+}
+
 } // namespace
 
 bool ChatPresenter::SendsWithMentions(const std::string& thread_id, const std::string& text,
@@ -582,36 +603,28 @@ Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const st
 }
 
 std::optional<MentionRoster> ChatPresenter::MentionRosterOf(const std::string& thread_id) const {
-  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
-  if (!group_id) {
-    return std::nullopt;
-  }
-  MentionRoster roster;
-  if (auto members = facade_->ListGroupRoster(*group_id)) {
-    for (const GroupRosterMember& member : *members) {
-      roster.members.insert(member.member_identity);
-    }
-  }
-  if (auto owner = facade_->OwnerIdentity(*group_id)) {
-    roster.owner = *owner;
-  }
-  if (auto identity = facade_->GetIdentity()) {
-    roster.local_account = identity->account_id;
-  }
-  return roster;
+  return RosterOfGroupThread(facade_, thread_id);
 }
 
-std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::string& thread_id) {
-  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
+std::vector<TextSpan> ChatPresenter::SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const {
+  if (spans.empty()) {
+    return spans;
+  }
+  const std::optional<MentionRoster> roster = MentionRosterOf(thread_id);
+  return roster ? KeepMentionsOnRoster(std::move(spans), *roster) : std::vector<TextSpan>{};
+}
+
+std::vector<MentionCandidate> ChatPresenter::ReadMentionCandidates(ConversationsFacade* facade,
+                                                                   const std::string& thread_id) {
+  const std::optional<std::string> group_id = GroupIdOf(facade, thread_id);
   if (!group_id) {
     return {};
   }
-  auto members = facade_->ListGroupRoster(*group_id);
-  const std::optional<MentionRoster> roster = MentionRosterOf(thread_id);
+  auto members = facade->ListGroupRoster(*group_id);
+  const std::optional<MentionRoster> roster = RosterOfGroupThread(facade, thread_id);
   if (!members || !roster || roster->local_account.empty()) {
     return {};
   }
-  ConversationsFacade* facade = facade_;
   const auto public_name = [facade](const std::string& account_id) { return facade->MemberPublicNameOf(account_id); };
   // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
   const bool local_is_owner = roster->owner == roster->local_account;

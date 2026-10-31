@@ -254,8 +254,16 @@ public:
 
   /** What highlighting a group's mentions is checked against now; none for a chat that is not a group. */
   std::optional<MentionRoster> MentionRosterOf(const std::string& thread_id) const;
-  /** The composer's `@` picker for a group, unfiltered: its other members by public name (and `@everyone` for the owner). */
-  std::vector<MentionCandidate> MentionCandidatesFor(const std::string& thread_id);
+  /**
+   * The composer's `@` picker for a group, unfiltered: its other members by public name (and `@everyone` for the
+   * owner). Static and given the facade by value so a worker can run it holding nothing of the presenter; the
+   * AppRuntime teardown gate drains workers before the messaging graph (and so the facade) goes.
+   */
+  static std::vector<MentionCandidate> ReadMentionCandidates(ConversationsFacade* facade, const std::string& thread_id);
+  /** The messaging facade, for a worker that reads for the presenter (null before messaging is ready). */
+  ConversationsFacade* Facade() const { return facade_; }
+  /** `spans` without the mentions of anyone no longer on the group's roster (read now, at send). */
+  std::vector<TextSpan> SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const;
   /**
    * A tap on highlighted mention `run_index` of a message in the open group (EligibleMentionRuns' order): the
    * saved contact it names; none for `@everyone`, ourselves, or someone who is not a contact.
