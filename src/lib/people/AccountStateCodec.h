@@ -41,6 +41,11 @@ struct AccountStateGroup {
    * only) so an older copy where it was a member does not bring the group back. A restore skips it.
    */
   bool left = false;
+  /**
+   * The owner ended the group (G016): a tombstone like `left`, and terminal — a copy with a higher roster epoch or one
+   * where the account was a member does not bring it back (it carries no roster to restore).
+   */
+  bool dissolved = false;
 };
 
 /**

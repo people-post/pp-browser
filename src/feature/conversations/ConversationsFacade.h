@@ -204,6 +204,9 @@ public:
 
   // --- Groups ---------------------------------------------------------------
   Roe<void> DismissLocalGroup(const std::string& group_id);
+  /** G016: the owner ends the group for everyone; its chat stays here, read-only. */
+  Roe<void> DissolveGroup(const std::string& group_id);
+  bool IsGroupDissolved(const std::string& group_id);
   Roe<bool> IsLocalOwner(const std::string& group_id);
   Roe<std::vector<GroupRosterMember>> ListGroupRoster(const std::string& group_id);
   bool IsMemberUnreachable(const std::string& group_id, const std::string& member_identity);

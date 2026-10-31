@@ -699,13 +699,17 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   }
   if (outcome.refuse_invite_group_id) {
     (void)groups->RefuseInvite(*outcome.refuse_invite_group_id, outcome.refuse_invite_nonce,
-                               outcome.refuse_invite_member);
+                               outcome.refuse_invite_member, outcome.refuse_invite_reason);
   }
   if (outcome.took_ownership_group_id) {
     (void)groups->SignAndSendRoster(*outcome.took_ownership_group_id, outcome.took_ownership_transfer);
   }
   if (outcome.restart_roster_check_group_id) {
     (void)groups->StartRosterCheck(*outcome.restart_roster_check_group_id);
+  }
+  // G016: an invite to a group that was dissolved is void; its card in the DM says so instead of offering Accept.
+  for (const auto& [inviter, nonce] : outcome.voided_invite_cards) {
+    (void)groups->ResolveInviteCard(inviter, nonce, InviteStatus::Expired, "This group was dissolved");
   }
 }
 
@@ -805,7 +809,20 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
       MaybeRepairGap((*thread)->id, envelope);
     }
   }
-  if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
+  if (auto notice = NoticeGroupDissolved(outcome); notice && on_background_unread_) {
+    AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+      if (on_background_unread_) {
+        on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                              notice.mentions_us);
+      }
+    });
+  }
+  if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender && outcome.suppress_inbox_chrome) {
+    // As from the relay (PollInbox): control bookkeeping bumps no unread count and raises no notice.
+    if (outcome.sibling_copy) {
+      MaybeEnqueueAttachmentDownload(outcome);
+    }
+  } else if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
     std::optional<std::string> preview;
     if (outcome.persisted_message) {
       preview = outcome.persisted_message->text;
@@ -1658,8 +1675,14 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   // removed since); a group we were removed from is read-only. Refused before anything is stored.
   if (auto metadata = group_roster_.LoadMetadata(*(*thread)->group_id);
       metadata && *metadata && !group_roster_sync::MaySend(**metadata)) {
-    return Error((*metadata)->sync_state == GroupSyncState::Removed ? group_roster_sync::kGroupRemovedError
-                                                                        : group_roster_sync::kGroupCheckingError);
+    switch ((*metadata)->sync_state) {
+    case GroupSyncState::Removed:
+      return Error(group_roster_sync::kGroupRemovedError);
+    case GroupSyncState::Dissolved:
+      return Error(group_roster_sync::kGroupDissolvedError);
+    default:
+      return Error(group_roster_sync::kGroupCheckingError);
+    }
   }
 
   auto identity = identity_.Get();
@@ -2049,6 +2072,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
               MaybeRepairGap((*thread)->id, envelope);
             }
           }
+          if (auto notice = NoticeGroupDissolved(outcome)) {
+            background_notices.push_back(std::move(*notice));
+          }
           if (!outcome.persisted) {
             continue;
           }
@@ -2230,6 +2256,53 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
   notice.mentions_us = outcome.persisted_message &&
                        InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
   return notice;
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeGroupDissolved(
+    const RelayReceiveOutcome& outcome) {
+  if (!outcome.dissolved_group_thread_id) {
+    return std::nullopt;
+  }
+  return NoticeGroupDissolvedIn(*outcome.dissolved_group_thread_id);
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeGroupDissolvedIn(
+    const std::string& thread_id) {
+  // In the reader's language: the preview is kept as written, the notice shown once.
+  const std::string text = Tr("chat.group.dissolved_preview");
+  inbox_.OnInboundMessagePersisted(thread_id, text);
+  if (AppLifecycle::IsUserAttentive()) {
+    return std::nullopt;
+  }
+  BackgroundNotice notice;
+  notice.title = "New message";
+  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+    if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
+      notice.title = std::move(label);
+    }
+  }
+  notice.body = text;
+  notice.thread_id = thread_id;
+  notice.mentions_us = false;
+  return notice;
+}
+
+void MeshDeliveryOrchestrator::SurfaceGroupDissolved(const std::string& thread_id) {
+  auto notice = NoticeGroupDissolvedIn(thread_id);
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() {
+      if (on_messages_changed_) {
+        on_messages_changed_();
+      }
+    });
+  }
+  if (notice && on_background_unread_) {
+    AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+      if (on_background_unread_) {
+        on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id), false);
+      }
+    });
+  }
 }
 
 void MeshDeliveryOrchestrator::NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account) {

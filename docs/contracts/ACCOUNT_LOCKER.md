@@ -53,7 +53,7 @@ vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/Acc
 | `relay_user_id` | the account's relay binding (restore needs it: no locker, no restore) |
 | `nickname` | the account's nickname |
 | `contacts` | address book rows (`ContactToJson`) |
-| `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true` |
+| `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true`. A group the owner dissolved (group-chat G016) is a terminal tombstone: `left: true, dissolved: true` |
 | `card_floors` | `{account_id, issued_at}`: the newest account card issue time seen per account — a restored device refuses older cards ([ACCOUNT_CARD § Newest wins](ACCOUNT_CARD.md)) |
 | `providers` | provider list (reserved; empty until a second relay exists). pp-nodes are never providers: they keep caches only (M023 §6 amendment) |
 | `contact_clock` | one register per contact account: `{account_id, at, present, digest}` (below) |
@@ -73,7 +73,7 @@ One sync (`AccountLockerWorkflow::Publish`), serialized per device:
    this device's row (keeping its own id and directory data); absent: the contact is removed here.
 4. Store the merged state, the same whichever device merges (at a tie the stored register, row and group stand —
    rows hold each device's own local fields; lists sorted): contacts by register; groups by the higher `roster_epoch`; card floors by
-   the higher `issued_at`; providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. **Nothing new → no write.**
+   the higher `issued_at`; providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. A `dissolved` tombstone is terminal: it wins over any copy of the group whatever its epoch (a dissolved group is never re-invited), a restore skips it, and a device that is still in the group ends it at its next sync (the locker is the account's own state). **Nothing new → no write.**
 5. After a write, nudge the siblings: a `device_list` control-lane notice to the account's own mailbox,
    only when the own account card lists more than one device. A device that receives a verified sibling
    notice syncs 5 s later; since a sync with nothing new writes nothing, the exchange stops.

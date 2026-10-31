@@ -121,6 +121,8 @@ const char* CloseChatPlanKindName(const CloseChatPlan::Kind kind) {
     return "dismiss";
   case CloseChatPlan::Kind::LeaveAsOwner:
     return "leave_as_owner";
+  case CloseChatPlan::Kind::Dissolve:
+    return "dissolve";
   }
   return "?";
 }
@@ -402,8 +404,8 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
 
 ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   ChatGroupSheet sheet;
-  if (!facade_) {
-    return sheet;
+  if (!facade_ || facade_->IsGroupDissolved(group_id)) {
+    return sheet;  // an ended group has no owner to act and no one to remove (G016)
   }
   std::string local_identity;
   if (auto identity = facade_->GetIdentity()) {
@@ -673,6 +675,9 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
     return plan;
   }
   plan.group_id = *(*thread)->group_id;
+  if (facade_->IsGroupDissolved(plan.group_id)) {
+    return plan;  // G016: the chat of a group that ended is deleted like any chat; nobody is left to tell
+  }
   std::string me;
   if (auto identity = facade_->GetIdentity()) {
     me = identity->account_id;
@@ -695,8 +700,8 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
     }
   }
   if (is_owner) {
-    // Solo, or only unreachable peers: no transfer into a ghost roster.
-    plan.kind = plan.successors.empty() ? CloseChatPlan::Kind::Dismiss : CloseChatPlan::Kind::LeaveAsOwner;
+    // Solo, or only unreachable peers: no transfer into a ghost roster — the group ends instead (G016).
+    plan.kind = plan.successors.empty() ? CloseChatPlan::Kind::Dissolve : CloseChatPlan::Kind::LeaveAsOwner;
     return plan;
   }
   bool owner_on_roster = false;
@@ -741,6 +746,17 @@ Roe<void> ChatPresenter::DismissGroupAndClose(const std::string& thread_id, cons
   }
   (void)facade_->DismissLocalGroup(group_id);
   return CloseThread(thread_id);
+}
+
+Roe<void> ChatPresenter::DissolveGroup(const std::string& group_id) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  if (auto dissolved = facade_->DissolveGroup(group_id); !dissolved) {
+    return dissolved.error();
+  }
+  Refresh();
+  return {};
 }
 
 Roe<void> ChatPresenter::HandOverAndClose(const std::string& thread_id, const std::string& group_id,

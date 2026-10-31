@@ -23,6 +23,8 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -76,6 +78,8 @@ struct RelayReceiveOutcome {
   std::optional<std::string> refuse_invite_group_id;
   std::string refuse_invite_nonce;
   std::string refuse_invite_member;
+  /** Why (`group_full`, or `group_dissolved` for an accept that came after the owner ended the group, G016). */
+  std::string refuse_invite_reason;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
   /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
@@ -88,6 +92,13 @@ struct RelayReceiveOutcome {
    * changed there — the locker is worth a sync (M023 §7).
    */
   bool from_sibling = false;
+  /**
+   * G016: a `group_dissolved` ended a group we are in just now. The group's chat (this thread) gets the one
+   * notice — unread count, preview, an OS notice if away — and the DM that carried it none (`suppress_inbox_chrome`).
+   */
+  std::optional<std::string> dissolved_group_thread_id;
+  /** G016: invites to the dissolved group, now void: (inviter, nonce) — the invite cards in the DMs to close. */
+  std::vector<std::pair<std::string, std::string>> voided_invite_cards;
   /** G013: a group message arrived while our check went unanswered — ask again (its sender is online). */
   std::optional<std::string> restart_roster_check_group_id;
   /**
@@ -272,6 +283,9 @@ private:
    */
   Roe<void> ApplyRosterStatement(const ThreadMessage& message, const std::string& actor_identity,
                                  const std::string& local_account, RelayReceiveOutcome* outcome) const;
+  /** G016: the owner ended a group we are in — empty its roster, mark it dissolved, keep its chat with one line. */
+  Roe<void> ApplyGroupDissolved(const ThreadMessage& message, const std::string& actor_identity,
+                                const std::string& local_account, RelayReceiveOutcome* outcome) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                  const ThreadMessage& message);

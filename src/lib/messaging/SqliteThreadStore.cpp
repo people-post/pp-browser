@@ -517,12 +517,18 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::QueryMessages(const std::stri
   }
   sqlite3_bind_int64(stmt, bind_index, static_cast<int64_t>(limit));
 
+  if (auto dek = db_.RequireDek(); !dek) {
+    sqlite3_finalize(stmt);
+    return dek.error();  // a locked store reads nothing: that is an error, not a row to skip
+  }
   std::vector<ThreadMessage> messages;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     auto message = ReadMessageRow(thread_id, stmt);
     if (!message) {
-      sqlite3_finalize(stmt);
-      return message.error();
+      // One unreadable row must not blank the chat: the rest of the page still reads. The row stays.
+      log().warning << "Message not read, skipped thread_id=" << thread_id << " message_id=" << SqlText(stmt, 0)
+                    << ": " << message.error().message;
+      continue;
     }
     message->thread_id = thread_id;
     messages.push_back(std::move(*message));

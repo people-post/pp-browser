@@ -1,5 +1,7 @@
 #include "lib/messaging/GroupRosterSync.h"
 
+#include "lib/messaging/GroupMembershipApply.h"
+
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -53,10 +55,16 @@ std::optional<GroupRosterStatement> Held(const GroupMetadata& metadata) {
 }
 
 Roe<bool> KeepStatement(GroupRosterStore& roster, const GroupRosterStatement& statement) {
+  if (statement.dissolved) {
+    return Error("roster statement: a dissolve is not a roster");  // G016: never held as the group's roster
+  }
   auto lock = GroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, statement.group_id);
   if (!metadata) {
     return metadata.error();
+  }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return false;  // an ended group keeps no roster
   }
   if (auto valid = group_roster_statement::Verify(statement, metadata->owner_identity); !valid) {
     return valid.error();
@@ -156,6 +164,10 @@ Roe<Check> BeginCheck(GroupRosterStore& roster, const std::string& group_id, con
   ask.erase(local_identity);
   check.ask.assign(ask.begin(), ask.end());
 
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    check.ask.clear();  // G016: an ended group checks nothing and asks no one
+    return check;
+  }
   if (metadata->sync_state != GroupSyncState::Removed) {
     metadata->sync_state = GroupSyncState::Checking;
   }
@@ -180,7 +192,7 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore
   group_roster_sync_codec::RosterReply reply;
   reply.group_id = request.group_id;
   reply.request_id = request.request_id;
-  reply.statement = Held(**metadata);
+  reply.statement = Held(**metadata);  // for a dissolved group (G016): the owner's dissolve, which ends the asker's check
   if ((*metadata)->sync_state == GroupSyncState::Active) {
     auto member = roster.IsMember(request.group_id, asker);
     if (!member) {
@@ -192,13 +204,15 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore
 }
 
 Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
-                             const std::string& local_identity, const std::string& replier) {
+                             const std::string& local_identity, const std::string& replier,
+                             GroupDissolvedApplied* dissolved) {
   auto lock = GroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, reply.group_id);
   if (!metadata) {
     return metadata.error();
   }
-  if (metadata->sync_request_id.empty() || reply.request_id != metadata->sync_request_id) {
+  if (metadata->sync_state == GroupSyncState::Dissolved || metadata->sync_request_id.empty() ||
+      reply.request_id != metadata->sync_request_id) {
     return ReplyOutcome::Ignored;
   }
   const auto settle = [&](GroupSyncState state) -> Roe<ReplyOutcome> {
@@ -220,6 +234,18 @@ Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_c
     return ReplyOutcome::Ignored;
   }
   const GroupRosterStatement& statement = *reply.statement;
+  if (statement.dissolved) {
+    // G016: the owner ended the group (a member relays its dissolve, or the owner answers with it). Authority as for
+    // any dissolve; one that does not hold tells us nothing.
+    auto ended = ApplyDissolvedStatement(roster, statement, local_identity);
+    if (!ended || !ended->applied) {
+      return ReplyOutcome::Ignored;
+    }
+    if (dissolved) {
+      *dissolved = std::move(*ended);
+    }
+    return ReplyOutcome::Dissolved;
+  }
   if (auto valid = group_roster_statement::Verify(statement, metadata->owner_identity); !valid) {
     return ReplyOutcome::Ignored;
   }

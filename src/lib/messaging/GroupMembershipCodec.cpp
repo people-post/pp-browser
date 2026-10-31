@@ -644,6 +644,14 @@ Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const Thre
   return DecodeInvite(*detail);
 }
 
+Roe<std::string> GroupMembershipCodec::EncodeGroupDissolved(const std::string& group_id,
+                                                            const std::string& owner_identity) {
+  if (group_id.empty()) {
+    return Error("group_dissolved: group_id required");
+  }
+  return DumpJson(MakeStringObject({{"group_id", group_id}, {"owner", owner_identity}}));
+}
+
 Roe<ThreadMessage> GroupMembershipCodec::BuildSystemMessage(const std::string& thread_id,
                                                             const GroupMembershipControlType type,
                                                             const std::string& display_text,

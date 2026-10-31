@@ -600,7 +600,8 @@ RelayEnvelope EventFromPeer(const PipelineHarness& harness, const GroupMembershi
 std::vector<TranscriptRow> Shown(PipelineHarness& harness, const std::string& thread_id, const bool direct) {
   auto page = harness.store.GetMessagesPage(thread_id, std::nullopt, 100);
   EXPECT_TRUE(page);
-  return AssembleTranscript(page ? *page : std::vector<ThreadMessage>{}, nullptr, direct);
+  return AssembleTranscript(page ? *page : std::vector<ThreadMessage>{}, nullptr,
+                            direct ? ThreadKind::Direct : ThreadKind::Group);
 }
 
 // A direct chat the event arrived in: stored, applied, and nowhere to be seen or counted.

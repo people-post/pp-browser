@@ -572,7 +572,12 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
   std::optional<int64_t> before;
   for (;;) {
     auto page = store_.GetMessagesPage(thread_id, before, kDefaultMessagesPageSize);
-    if (!page || page->empty()) {
+    if (!page) {
+      // One unreadable row fails the whole page: say so, or the chat just reads empty.
+      log().warning << "Transcript not read thread_id=" << thread_id << ": " << page.error().message;
+      break;
+    }
+    if (page->empty()) {
       break;
     }
     const int64_t page_oldest = page->front().display_order;
@@ -607,9 +612,12 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
                    messages.end());
   }
 
-  const auto thread = store_.GetThread(thread_id);
-  const bool direct_thread = thread && *thread && (*thread)->kind == ThreadKind::Direct;
-  std::vector<TranscriptRow> rows = AssembleTranscript(messages, controls_, direct_thread);
+  ThreadKind kind = ThreadKind::Direct;
+  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+    kind = (*thread)->kind;
+  }
+  const bool direct_thread = kind == ThreadKind::Direct;
+  std::vector<TranscriptRow> rows = AssembleTranscript(messages, controls_, kind);
   // A run of a group's events on top of a direct chat's history would leave the page blank: go back for older
   // pages until something shows or the history ends (bounded). A caller that asked for a window gets exactly it.
   constexpr int kMaxExtraPages = 20;
@@ -621,7 +629,7 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
       break;
     }
     messages.insert(messages.begin(), older->begin(), older->end());
-    rows = AssembleTranscript(messages, controls_, direct_thread);
+    rows = AssembleTranscript(messages, controls_, kind);
   }
   return rows;
 }

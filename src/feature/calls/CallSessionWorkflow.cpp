@@ -219,6 +219,11 @@ Roe<Thread> CallSessionWorkflow::CheckCanStartCall(const std::string& origin_thr
   if ((*thread)->kind != ThreadKind::Direct && (*thread)->kind != ThreadKind::Group) {
     return Error("Calls require a direct or group thread");
   }
+  // A group call needs us in the group: one that was dissolved (G016) or that we left has no members to call.
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id && host_.wire.group_members &&
+      !InGroup(*(*thread)->group_id, local_identity)) {
+    return Error("You are no longer in this group");
+  }
   // P001: block outbound dial when initiation offer > 0 and payment rails unavailable.
   if (auto payable = billing_.CheckCanPlace(invitee_identities, local_identity); !payable) {
     return payable.error();
@@ -1262,6 +1267,12 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
   if (auto existing = sessions_.FindParticipant(invite.call_id, local_identity);
       existing && existing->has_value() && (*existing)->state == CallParticipantState::Joined) {
     log().info << "CallInvite ignored; already joined call_id=" << invite.call_id;
+    return true;
+  }
+  // A group call from someone who is not in the group (a group that was dissolved has no one in it, G016) does not ring.
+  if (invite.origin_group_id && !invite.origin_group_id->empty() && host_.wire.group_members &&
+      !InGroup(*invite.origin_group_id, sender_identity)) {
+    log().info << "CallInvite ignored; sender not in the group call_id=" << invite.call_id;
     return true;
   }
   // B24: a replayed invite for a call this device already ended must not re-arm the ring

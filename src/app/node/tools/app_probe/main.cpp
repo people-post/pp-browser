@@ -831,7 +831,7 @@ public:
       out.set("unreachable", ArrayValue(std::move(unreachable)));
       Emit(out);
     } else if (cmd == "close_chat") {
-      // Close a chat the way its plan says (an owner names a `successor`, or dismisses with none).
+      // Close a chat the way its plan says (an owner names a `successor`, or dissolves with none).
       const std::string thread = request->getString("thread").value_or("");
       const std::string successor = request->getString("successor").value_or("");
       const CloseChatPlan plan = chats_.PlanClose(thread);
@@ -848,8 +848,12 @@ public:
         done = chats_.LeaveGroupAndClose(thread, plan.group_id);
         break;
       case CloseChatPlan::Kind::LeaveAsOwner:
-        done = successor.empty() ? chats_.DismissGroupAndClose(thread, plan.group_id)
+        // No successor: the owner dissolves the group (the chat stays, read-only).
+        done = successor.empty() ? chats_.DissolveGroup(plan.group_id)
                                  : chats_.HandOverAndClose(thread, plan.group_id, successor);
+        break;
+      case CloseChatPlan::Kind::Dissolve:
+        done = chats_.DissolveGroup(plan.group_id);
         break;
       }
       done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);

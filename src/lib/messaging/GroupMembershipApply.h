@@ -1,11 +1,15 @@
 #pragma once
 
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterStatement.h"
 #include "lib/messaging/GroupRosterStore.h"
+#include "common/thread/IThreadStore.h"
 
 #include "common/Error.h"
 
+#include <optional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -59,5 +63,49 @@ Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
  */
 Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
                                     const std::string& actor_identity);
+
+/** What ending a group did (G016). */
+struct GroupDissolvedApplied {
+  /** The group ended here now; false for a group we are not in or one already over (nothing changed). */
+  bool applied = false;
+  /** The pending invites to or from the group, now void. */
+  std::vector<PendingGroupInvite> voided_invites;
+};
+
+/**
+ * End a group in the roster in one transaction (G016): empty its roster, drop the send target, void its pending
+ * invites, mark it dissolved at `roster_epoch` (at least ours) under `owner_identity`, hold `statement_json` (the
+ * owner-signed dissolve) to answer member checks, and record `sends` still to make. For the owner's own device,
+ * which needs no statement to believe itself. A group we do not hold, or one already dissolved, is left alone
+ * (`applied` false).
+ */
+Roe<GroupDissolvedApplied> EndGroupInRoster(GroupRosterStore& roster, const std::string& group_id,
+                                           const std::string& owner_identity, uint64_t roster_epoch,
+                                           const std::string& statement_json = {},
+                                           const std::vector<PendingGroupSend>& sends = {});
+
+/**
+ * Apply a dissolve statement (G016) however it reached us — the owner's DM, a member's answer to our member check,
+ * the owner's other device. The same authority as any owner statement: it verifies for the owner we know (or one the
+ * chain hands the group to), is not older than our roster, and its owner has not handed the group on by then
+ * (against the transfers we hold and the statement's own: a former owner and a stale chain lose, A to B to A wins).
+ * A group we are not in, or one already dissolved, is left alone (`applied` false); a statement that does not hold is
+ * an error. The statement is held to answer member checks.
+ */
+Roe<GroupDissolvedApplied> ApplyDissolvedStatement(GroupRosterStore& roster, const GroupRosterStatement& statement,
+                                                   const std::string& local_identity);
+
+/** `ApplyDissolvedStatement` for the owner's DM: the sender, `actor_identity`, must also be the owner it names. */
+Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(GroupRosterStore& roster, const GroupRosterStatement& statement,
+                                                       const std::string& actor_identity,
+                                                       const std::string& local_identity);
+
+/**
+ * The group's chat gets its one "dissolved" line (G016) unless it has it; true thread id when added, nullopt when
+ * the chat is gone or already says so. A redelivery after a crash between ending the group and the line adds it.
+ */
+Roe<std::optional<std::string>> EnsureDissolvedLine(IThreadStore& store, const std::string& group_id,
+                                                    const std::string& owner_identity,
+                                                    const std::string& sender_identity);
 
 } // namespace pbr

@@ -61,6 +61,16 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed
                             # roster held and a restored group's member check — group-chat G012/G013, plaintext, additive)
+                            # group_metadata.sync_state: active | checking | removed | dissolved. dissolved (G016): the owner ended the
+                            # group — group_rosters empty, group_targets row gone, pending invites expired, roster_statement_json empty;
+                            # the group's thread and messages stay (read-only). Terminal; no new column. The account locker keeps it as a
+                            # tombstone (`left`, `dissolved`: terminal), so a restore does not bring it back
+                            # group_pending_sends (group_id, recipient, control_type, detail_json, display; PRIMARY KEY (group_id, recipient,
+                            # control_type); G016): the `group_dissolved` to each member and the `group_invite_refused` to each invitee still
+                            # out, written in the SAME transaction that ends the group (roster emptied, send target dropped, invites voided,
+                            # sync_state dissolved, the signed dissolve held in roster_statement_json) — a crash leaves all or none. A row is
+                            # deleted once its copy reached the outbox; the rest are sent again when messaging comes up and after a failure
+                            # (30 s, 2 min, 10 min). Additive table (CREATE IF NOT EXISTS)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)

@@ -103,6 +103,11 @@ public:
   static Roe<GroupRenamedPayload> DecodeGroupRenamed(const std::string& detail_json);
   static Roe<GroupRenamedPayload> DecodeGroupRenamedFromMessage(const ThreadMessage& message);
   static Roe<std::string> EncodeGroupForked(const GroupForkPayload& payload);
+  /**
+   * The group's own "dissolved" line (G016): `{ group_id, owner }`, no signature. The wire form is the owner-signed
+   * roster (`group_roster_sync_codec::EncodeStatement`); this is what the group's chat keeps.
+   */
+  static Roe<std::string> EncodeGroupDissolved(const std::string& group_id, const std::string& owner_identity);
 
   static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, GroupMembershipControlType type,
                                                const std::string& display_text, const std::string& detail_json,

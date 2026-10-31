@@ -50,6 +50,11 @@ struct GroupRosterStatement {
   /** Every transfer since the group began, oldest first; empty while its creator owns it. */
   std::vector<GroupOwnerTransfer> owner_chain;
   std::string owner_signature_b64;
+  /**
+   * G016: the owner's statement that it ended the group, carried by `group_dissolved`. Signed under its own
+   * tag, so a roster statement cannot be turned into one (nor the reverse), and never kept as a roster.
+   */
+  bool dissolved = false;
 
   bool Lists(const std::string& identity) const;
 };
@@ -68,7 +73,7 @@ ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransf
 Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
                                const std::string& group_id, uint64_t roster_epoch,
                                std::vector<GroupRosterStatementMember> members,
-                               std::vector<GroupOwnerTransfer> owner_chain);
+                               std::vector<GroupOwnerTransfer> owner_chain, bool dissolved = false);
 
 /** Transfer the group to `to_identity` at `roster_epoch`, signed by the owner giving it up. */
 Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::string& public_key_b64,
@@ -82,6 +87,14 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
  * `known_owner` is not the statement's owner, the chain moves ownership away from `known_owner`.
  */
 Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known_owner);
+
+/**
+ * Whether `candidate`'s owner had already handed the group on by the candidate's epoch, as far as `known` — the
+ * transfers any statement we hold or are weighing shows — tells: a transfer from the owner at or before the
+ * candidate's epoch, with no transfer back to it after that and by that epoch. So a former owner loses to its
+ * successor, and an owner who got the group back (A to B to A) wins again.
+ */
+bool OwnerHandedOn(const std::vector<GroupOwnerTransfer>& known, const GroupRosterStatement& candidate);
 
 /**
  * The statement to adopt among valid ones (G013): drop any signed by an owner a chain shows had

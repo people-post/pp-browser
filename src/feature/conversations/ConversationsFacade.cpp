@@ -535,6 +535,12 @@ Roe<void> ConversationsFacade::DismissLocalGroup(const std::string& group_id) {
   return hub_.Groups().DismissLocalGroup(group_id);
 }
 
+Roe<void> ConversationsFacade::DissolveGroup(const std::string& group_id) {
+  return hub_.Groups().DissolveGroup(group_id);
+}
+
+bool ConversationsFacade::IsGroupDissolved(const std::string& group_id) { return hub_.Groups().IsDissolved(group_id); }
+
 Roe<bool> ConversationsFacade::IsLocalOwner(const std::string& group_id) { return hub_.Groups().IsLocalOwner(group_id); }
 
 Roe<std::vector<GroupRosterMember>> ConversationsFacade::ListGroupRoster(const std::string& group_id) {
