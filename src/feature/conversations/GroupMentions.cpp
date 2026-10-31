@@ -163,40 +163,95 @@ MentionInsert InsertMention(const std::string& text, const size_t at, const size
   return out;
 }
 
+namespace {
+
+bool Overlaps(const std::vector<std::pair<size_t, size_t>>& claimed, const size_t begin, const size_t end) {
+  return std::any_of(claimed.begin(), claimed.end(),
+                     [begin, end](const auto& range) { return begin < range.second && range.first < end; });
+}
+
+}  // namespace
+
+void PruneRecordedMentions(const std::string& text, std::vector<ComposerMention>& recorded) {
+  std::map<std::pair<TextSpanKind, std::string>, std::vector<size_t>> by_token;
+  for (size_t i = 0; i < recorded.size(); ++i) {
+    by_token[{recorded[i].kind, recorded[i].token}].push_back(i);
+  }
+  std::vector<bool> drop(recorded.size(), false);
+  for (const auto& [key, indexes] : by_token) {
+    size_t occurrences = 0;
+    for (size_t from = 0; !key.second.empty();) {
+      const size_t pos = FindToken(text, key.second, from);
+      if (pos == std::string::npos) {
+        break;
+      }
+      ++occurrences;
+      from = pos + key.second.size();
+    }
+    for (size_t i = 0; i + occurrences < indexes.size(); ++i) {
+      drop[indexes[i]] = true;  // more picks than tokens left: the oldest ones are the ones deleted
+    }
+  }
+  size_t kept = 0;
+  for (size_t i = 0; i < recorded.size(); ++i) {
+    if (!drop[i]) {
+      if (kept != i) {
+        recorded[kept] = std::move(recorded[i]);
+      }
+      ++kept;
+    }
+  }
+  recorded.resize(kept);
+}
+
 std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::vector<ComposerMention>& recorded) {
+  // Longest token first (a pick of `@张` must not take the front of `@张三`), picks of equal tokens in pick order:
+  // each takes the first occurrence nobody has claimed, wherever the other picks sit in the text.
+  std::vector<const ComposerMention*> order;
+  for (const ComposerMention& mention : recorded) {
+    order.push_back(&mention);
+  }
+  std::stable_sort(order.begin(), order.end(), [](const ComposerMention* a, const ComposerMention* b) {
+    return a->token.size() > b->token.size();
+  });
   std::vector<TextSpan> spans;
+  std::vector<std::pair<size_t, size_t>> claimed;
   std::set<std::string> accounts;
   bool everyone = false;
-  size_t from = 0;
-  for (const ComposerMention& mention : recorded) {
-    if (mention.token.size() < 2 || mention.token.front() != '@') {
+  for (const ComposerMention* mention : order) {
+    if (mention->token.size() < 2 || mention->token.front() != '@') {
       continue;
     }
-    const bool is_everyone = mention.kind == TextSpanKind::Everyone;
-    if (!is_everyone && (mention.kind != TextSpanKind::Mention || mention.account_id.empty())) {
+    const bool is_everyone = mention->kind == TextSpanKind::Everyone;
+    if (!is_everyone && (mention->kind != TextSpanKind::Mention || mention->account_id.empty())) {
       continue;
     }
-    const size_t pos = FindToken(text, mention.token, from);
+    size_t pos = FindToken(text, mention->token, 0);
+    while (pos != std::string::npos && Overlaps(claimed, pos, pos + mention->token.size())) {
+      pos = FindToken(text, mention->token, pos + 1);
+    }
     if (pos == std::string::npos) {
       continue;  // edited away: the text stays as typed
     }
-    from = pos + mention.token.size();
-    if (is_everyone ? std::exchange(everyone, true) : !accounts.insert(mention.account_id).second) {
+    const size_t end = pos + mention->token.size();
+    if (is_everyone ? std::exchange(everyone, true) : !accounts.insert(mention->account_id).second) {
       continue;  // a second mention of the same: plain text (the receiver would reject the message)
     }
     if (!is_everyone && accounts.size() > text_spans::kMaxMentions) {
       continue;
     }
+    claimed.emplace_back(pos, end);
     TextSpan span;
-    span.kind = static_cast<uint8_t>(mention.kind);
+    span.kind = static_cast<uint8_t>(mention->kind);
     span.start = static_cast<uint32_t>(pos);
-    span.end = static_cast<uint32_t>(from);
-    span.account_id = is_everyone ? std::string() : mention.account_id;
+    span.end = static_cast<uint32_t>(end);
+    span.account_id = is_everyone ? std::string() : mention->account_id;
     spans.push_back(std::move(span));
     if (spans.size() == text_spans::kMaxSpans) {
       break;
     }
   }
+  std::sort(spans.begin(), spans.end(), [](const TextSpan& a, const TextSpan& b) { return a.start < b.start; });
   return spans;
 }
 

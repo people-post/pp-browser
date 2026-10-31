@@ -93,10 +93,19 @@ struct ComposerMention {
 };
 
 /**
- * The spans to send `text` with: for each recorded mention, in the order it was inserted, its token searched
- * after the previous one's; the span covers exactly the token. A token edited away (not found, or run into
- * a longer word) is dropped, and so is a second mention of the same account or a second `@everyone` (the
- * receiver would reject the whole message, G015). Ranges are UTF-8 bytes.
+ * Forget the picks whose token the draft no longer holds as often as it was picked (deleted, or edited): per
+ * token, when there are more picks than occurrences the oldest picks go. Call it on a draft change, so a deleted
+ * pick cannot take the place of a later one with the same name.
+ */
+void PruneRecordedMentions(const std::string& text, std::vector<ComposerMention>& recorded);
+
+/**
+ * The spans to send `text` with: each recorded mention takes the first occurrence of its token that no other
+ * has claimed, whatever order the picks were made in (picks of the same token, so same-name members, go in pick
+ * order); the span covers exactly the token. A token edited away (not found, or run into a longer word) is
+ * dropped, and so is a second mention of the same account or a second `@everyone` (the receiver would reject
+ * the whole message, G015). In byte order; ranges are UTF-8 bytes. Two same-name members can still swap when
+ * the user moves one of their tokens past the other, or types one of the names by hand before a picked one.
  */
 std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::vector<ComposerMention>& recorded);
 

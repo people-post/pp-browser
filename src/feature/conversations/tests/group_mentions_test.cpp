@@ -136,6 +136,67 @@ TEST(GroupMentionsTest, ComposedWithAQuoteTheSpansStillHold) {
   EXPECT_EQ(MentionTextLimit(reply), reply.size());
 }
 
+TEST(GroupMentionsTest, ADeletedPickDoesNotTakeThePlaceOfALaterOneWithTheSameName) {
+  std::vector<ComposerMention> recorded = {Mention("acct-bob-aaa", "Bob")};
+  // The user deletes the "@Bob" and picks another Bob: the draft is re-read on each change.
+  PruneRecordedMentions("hi ", recorded);
+  EXPECT_TRUE(recorded.empty());
+  recorded.push_back(Mention("acct-bob-bbb", "Bob"));
+  const std::string text = "hi @Bob ";
+  PruneRecordedMentions(text, recorded);
+  const auto spans = MentionSpansForDraft(text, recorded);
+  ASSERT_EQ(spans.size(), 1u);
+  EXPECT_EQ(spans[0].account_id, "acct-bob-bbb");
+
+  // Two picks, one token left: the oldest goes. Two tokens: both stay.
+  recorded = {Mention("acct-bob-aaa", "Bob"), Mention("acct-bob-bbb", "Bob")};
+  PruneRecordedMentions("only @Bob here", recorded);
+  ASSERT_EQ(recorded.size(), 1u);
+  EXPECT_EQ(recorded[0].account_id, "acct-bob-bbb");
+  recorded = {Mention("acct-bob-aaa", "Bob"), Mention("acct-bob-bbb", "Bob"), Mention(kAlice, "Alice")};
+  PruneRecordedMentions("@Bob @Bob", recorded);
+  ASSERT_EQ(recorded.size(), 2u) << "Alice is gone, the two Bobs stay";
+  EXPECT_EQ(recorded[0].account_id, "acct-bob-aaa");
+  EXPECT_EQ(recorded[1].account_id, "acct-bob-bbb");
+}
+
+TEST(GroupMentionsTest, PicksAreMatchedWhateverOrderTheyWereMadeIn) {
+  // "@Bob hi" picked first, then "@Alice " inserted in front of it.
+  const std::string text = "@Alice @Bob hi";
+  const auto spans = MentionSpansForDraft(text, {Mention(kBob, "Bob"), Mention(kAlice, "Alice")});
+  ASSERT_EQ(spans.size(), 2u);
+  EXPECT_EQ(spans[0].account_id, kAlice);
+  EXPECT_EQ(Covered(text, spans[0]), "@Alice");
+  EXPECT_EQ(spans[1].account_id, kBob);
+  EXPECT_EQ(Covered(text, spans[1]), "@Bob");
+  EXPECT_TRUE(text_spans::CheckStructure(spans));
+}
+
+TEST(GroupMentionsTest, TwoSameNameMembersInTextOrderKeepTheirPickOrder) {
+  const std::string text = "@Bob and @Bob";
+  const auto spans = MentionSpansForDraft(text, {Mention("acct-bob-aaa", "Bob"), Mention("acct-bob-bbb", "Bob")});
+  ASSERT_EQ(spans.size(), 2u);
+  EXPECT_EQ(spans[0].account_id, "acct-bob-aaa");
+  EXPECT_EQ(spans[0].start, 0u);
+  EXPECT_EQ(spans[1].account_id, "acct-bob-bbb");
+  EXPECT_EQ(spans[1].start, 9u);
+  // The twins can still swap when the user moves a token past the other one: the first pick takes the first token.
+  const auto moved = MentionSpansForDraft("@Bob and @Bob", {Mention("acct-bob-bbb", "Bob"), Mention("acct-bob-aaa", "Bob")});
+  EXPECT_EQ(moved[0].account_id, "acct-bob-bbb");
+}
+
+TEST(GroupMentionsTest, AShorterNameThatStartsAnotherDoesNotTakeItsFront) {
+  const std::string zhang = "\xE5\xBC\xA0";            // 张
+  const std::string zhang_san = "\xE5\xBC\xA0\xE4\xB8\x89";  // 张三
+  const std::string text = "@" + zhang_san + " @" + zhang;
+  const auto spans = MentionSpansForDraft(text, {Mention("acct-short", zhang), Mention(kZhang, zhang_san)});
+  ASSERT_EQ(spans.size(), 2u);
+  EXPECT_EQ(spans[0].account_id, kZhang);
+  EXPECT_EQ(Covered(text, spans[0]), "@" + zhang_san);
+  EXPECT_EQ(spans[1].account_id, "acct-short");
+  EXPECT_EQ(Covered(text, spans[1]), "@" + zhang);
+}
+
 // --- the picker ----------------------------------------------------------------------------------
 
 std::vector<GroupRosterMember> Roster() {
