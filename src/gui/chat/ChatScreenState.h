@@ -43,6 +43,8 @@ struct ChatScreenState {
   ui::String attachment_status;
   /** A send did not finish: the chip offers Retry / Discard (the staged ciphertext is kept). */
   bool attachment_failed = false;
+  /** The camera icon in the composer pill (phones; see ShowCaptureEntry). */
+  bool show_capture = false;
   /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */
   bool show_voice = false;
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */

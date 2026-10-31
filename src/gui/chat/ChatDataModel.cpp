@@ -42,6 +42,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("compose_disabled", &state.compose_disabled);
   ctor.Bind("composer_input_disabled", &state.composer_input_disabled);
   ctor.Bind("show_attach_button", &state.show_attach_button);
+  ctor.Bind("show_capture", &state.show_capture);
   ctor.Bind("image_chip", &state.image_chip);
   ctor.Bind("image_preparing", &state.image_preparing);
   ctor.Bind("image_thumb_ready", &state.image_thumb_ready);
@@ -158,6 +159,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
   DataModelHost::Instance().Dirty("chat", "show_attach_button");
+  DataModelHost::Instance().Dirty("chat", "show_capture");
   DataModelHost::Instance().Dirty("chat", "attachment_uploading");
   DataModelHost::Instance().Dirty("chat", "attachment_draft_name");
   DataModelHost::Instance().Dirty("chat", "attachment_status");

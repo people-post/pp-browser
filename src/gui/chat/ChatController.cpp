@@ -6,6 +6,7 @@
 #include <fstream>
 #include "gui/chat/ChatController.h"
 #include "gui/chat/ApprovalCard.h"
+#include "gui/chat/AttachMenuRules.h"
 
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
@@ -1101,6 +1102,16 @@ void ChatController::UpdateThreadChrome() {
   SyncComposerInputState();
 }
 
+void ChatController::RefreshShowCapture() {
+  const bool show = chat_.show_attach_button &&
+                    ShowCaptureEntry(Platform::IsMobile(), facade_ && facade_->AnyCallLive(), InAiComposerContext(),
+                                     chat_.attachment_uploading || chat_.attachment_failed);
+  if (chat_.show_capture != show) {
+    chat_.show_capture = show;
+    DataModelHost::Instance().Dirty("chat", "show_capture");
+  }
+}
+
 void ChatController::ToggleVoiceMode() {
   if (chat_.voice_recording || (!chat_.voice_mode && !chat_.show_voice)) {
     return;
@@ -1123,6 +1134,7 @@ void ChatController::SyncComposerInputState() {
   if (voice_) {
     voice_->Refresh();
   }
+  RefreshShowCapture();
 }
 
 void ChatController::OnAttachFile(ui::Event* ev) {
@@ -1201,15 +1213,80 @@ void ChatController::OnAttachFile(ui::Event* ev) {
 }
 
 void ChatController::ShowPictureSendChoice(std::string path) {
-  // Shared so each button can hand the path on; only one of them runs.
-  const auto picture = std::make_shared<std::string>(std::move(path));
+  // Only one of the three runs; Cancel releases the file (the two sends hand it to StartAttachmentUpload).
+  auto actions = PictureChoiceActions(
+      std::move(path),
+      [this](const std::string& picture, const bool original) {
+        StartAttachmentUpload(picture, original ? OutgoingPickSource::Original : OutgoingPickSource::Photo);
+      },
+      [this](const std::string& picture) { release_pick_(picture); }, Tr("chat.attach.send_compressed"),
+      Tr("chat.attach.send_original"), Tr("common.cancel"));
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+}
+
+void ChatController::OnAttachCapture(ui::Event* ev) {
+  if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled ||
+      chat_.attachment_uploading || InAiComposerContext() || ActiveThreadId().empty()) {
+    return;
+  }
+  if (ev) {
+    const ui::Vector2i anchor = MenuPositionAboveEvent(*ev);
+    attach_menu_x_ = anchor.x;
+    attach_menu_y_ = anchor.y;
+  }
+  if (Platform::Detect() != PlatformKind::Android) {
+    OpenCameraCapture(CameraCaptureKind::PhotoOrVideo); // the iPhone camera switches photo / video itself
+    return;
+  }
+  // Android has one system camera intent per kind: ask which.
   std::vector<ContextMenuAction> actions;
-  actions.push_back({"attach_send_compressed", Tr("chat.attach.send_compressed"), nullptr,
-                     [this, picture]() { StartAttachmentUpload(*picture, OutgoingPickSource::Photo); }});
-  actions.push_back({"attach_send_original", Tr("chat.attach.send_original"), nullptr,
-                     [this, picture]() { StartAttachmentUpload(*picture, OutgoingPickSource::Original); }});
+  actions.push_back({"capture_photo", Tr("chat.attach.capture_photo"), nullptr,
+                     [this]() { OpenCameraCapture(CameraCaptureKind::Photo); }});
+  actions.push_back({"capture_video", Tr("chat.attach.capture_video"), nullptr,
+                     [this]() { OpenCameraCapture(CameraCaptureKind::Video); }});
   actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
   ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+}
+
+void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
+  if (!facade_) {
+    return;
+  }
+  const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
+  ShowCameraCapture(Backend::GetWindow(), kind, limits.video_max_seconds, limits.max_video_bytes,
+                    [this](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
+                      AppRuntime::PostUI([this, outcome, paths = std::move(paths)]() mutable {
+                        HandleCaptureResult(MakeCaptureFlowPorts(), outcome, std::move(paths));
+                      });
+                    });
+}
+
+CaptureFlowPorts ChatController::MakeCaptureFlowPorts() {
+  CaptureFlowPorts ports;
+  ports.release = [this](const std::string& path) { release_pick_(path); };
+  ports.ask_picture = [this](std::string path) { ShowPictureSendChoice(std::move(path)); };
+  ports.send_video = [this](std::string path) { StartAttachmentUpload(path, OutgoingPickSource::Photo); };
+  ports.say = [this](const CaptureNotice notice) {
+    switch (notice) {
+    case CaptureNotice::CameraUnavailable:
+      UserFeedback::Fail(Tr("chat.attach.camera_unavailable"));
+      break;
+    case CaptureNotice::VideoUnprocessable:
+      UserFeedback::Fail(Tr("chat.attach.video_unprocessable"));
+      break;
+    case CaptureNotice::VideoTooLarge:
+      UserFeedback::Fail(Tr("chat.attachment.video_too_large",
+                            {{"limit", FormatAttachmentLimit(facade_->CurrentAttachmentLimits().max_video_bytes)}}));
+      break;
+    }
+  };
+  ports.file_size = [](const std::string& path) {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    return ec ? uint64_t{0} : static_cast<uint64_t>(size);
+  };
+  ports.limits = [this]() { return facade_ ? facade_->CurrentAttachmentLimits() : AttachmentLimits{}; };
+  return ports;
 }
 
 std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress() {
@@ -1372,11 +1449,13 @@ void ChatController::OnRetryAttachmentSend() {
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
                                            const bool voice_file, const std::string& voice_thread_id) {
   if (!facade_ || chat_.attachment_uploading) {
+    release_pick_(path);
     return;
   }
   // A voice recording goes to the chat it was recorded in, which may no longer be the open one.
   const std::string thread_id = voice_file && !voice_thread_id.empty() ? voice_thread_id : ActiveThreadId();
   if (thread_id.empty()) {
+    release_pick_(path);
     return;
   }
   if (voice_file) {
@@ -1413,7 +1492,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
                                 staged_before]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
-    ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
+    release_pick_(path); // read by now (and kept as a CAS copy once sent)
     AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before,
                         prepared = std::move(prepared)]() mutable {
       if (!prepared) {
@@ -1579,6 +1658,7 @@ void ChatController::DownloadAttachment(const std::string& message_id) {
 void ChatController::UpdatePeerLinkChrome() {
   chrome_.UpdatePeerLink();
   voice_->Refresh(); // a call starting or ending greys / frees the microphone
+  RefreshShowCapture();
   DirtyChatHeader();
 }
 
@@ -2990,6 +3070,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
         ctor.BindEventCallback("attach_file", DataEventAt([this](ui::Event& ev) { OnAttachFile(&ev); }));
+        ctor.BindEventCallback("attach_capture", DataEventAt([this](ui::Event& ev) { OnAttachCapture(&ev); }));
         ctor.BindEventCallback("voice_mode_toggle", DataEvent([this] { ToggleVoiceMode(); }));
         ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
         ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));

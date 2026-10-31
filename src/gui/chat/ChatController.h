@@ -6,7 +6,9 @@
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
+#include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
@@ -188,6 +190,12 @@ private:
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile(ui::Event* ev = nullptr);
+  /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
+  void OnAttachCapture(ui::Event* ev = nullptr);
+  void OpenCameraCapture(CameraCaptureKind kind);
+  CaptureFlowPorts MakeCaptureFlowPorts();
+  /** Recompute `show_capture` (call, upload, chat kind); dirty only on a change. */
+  void RefreshShowCapture();
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
   void ShowPictureSendChoice(std::string path);
   void ToggleVoiceMode();
@@ -255,6 +263,8 @@ private:
   std::string failed_voice_thread_;
   std::chrono::steady_clock::time_point last_voice_call_check_{};
   /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
+  /** Deletes a picked / captured file once it is read or given up; tests swap it to count the releases. */
+  std::function<void(const std::string& path)> release_pick_ = [](const std::string& path) { ReleasePickedFile(path); };
   int attach_menu_x_ = 12;
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
