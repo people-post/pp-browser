@@ -234,21 +234,26 @@ TEST_F(OggOpusMalformed, ASecondStreamIsRefused) {
 
 TEST_F(OggOpusMalformed, PagesOutOfOrderAreRefused) {
   auto copy = good_;
-  // Swap the sequence numbers of page 2 and 3 (and fix their checksums).
-  size_t starts[4] = {0, 0, 0, 0};
-  size_t pos = 0;
-  for (int p = 0; p < 4; ++p) {
-    starts[p] = pos;
+  // Walk the pages the file really has (head, tags, then however many audio pages the mux made), then swap the
+  // sequence numbers of the last two and fix their checksums.
+  std::vector<size_t> starts;
+  for (size_t pos = 0; pos < copy.size();) {
+    ASSERT_LE(pos + 27, copy.size());
+    starts.push_back(pos);
     size_t body = 0;
     for (size_t i = 0; i < copy[pos + 26]; ++i) {
       body += copy[pos + 27 + i];
     }
     pos += 27 + copy[pos + 26] + body;
   }
-  copy[starts[2] + 18] = 3;
-  copy[starts[3] + 18] = 2;
-  FixCrcOfPage(copy, starts[2]);
-  FixCrcOfPage(copy, starts[3]);
+  ASSERT_GE(starts.size(), 3u);
+  const size_t a = starts[starts.size() - 2];
+  const size_t b = starts[starts.size() - 1];
+  const uint8_t seq_a = copy[a + 18];
+  copy[a + 18] = copy[b + 18];
+  copy[b + 18] = seq_a;
+  FixCrcOfPage(copy, a);
+  FixCrcOfPage(copy, b);
   EXPECT_FALSE(ParseOggOpus(copy.data(), copy.size()));
 }
 
