@@ -1,5 +1,6 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 
+#include "common/Diag.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -67,6 +68,7 @@ void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
 }
 
 void ProfileUnlockGate::Finish(const bool unlocked) {
+  DiagLine("unlock.done").Add("unlocked", unlocked).Emit();
   SetUnlockInProgress(false);
   if (ports_.ui.dismiss) {
     ports_.ui.dismiss();
@@ -76,6 +78,7 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
 
 void ProfileUnlockGate::ReportError(const std::string& message) {
   log().warning << "Unlock failed: " << message;
+  DiagLine("unlock.failed").Add("wrong_pin", false).Add("silent", !showing_).Emit();
   SetUnlockInProgress(false);
   if (!showing_) {
     // Silent unlock failed with no modal yet — open unlock so the user can retry.
@@ -90,10 +93,12 @@ void ProfileUnlockGate::ReportError(const Error& error) {
   // The vault's text ("Incorrect PIN or corrupt vault") is English; the log keeps it, the screen
   // gets our wording. A silent unlock (no PIN typed) opens the unlock screen without that line.
   if (!IsWrongPinError(error)) {
+    DiagLine("unlock.error").Fail("error", error).Emit();
     ReportError(error.message);
     return;
   }
   log().warning << "Unlock failed: " << error.message;
+  DiagLine("unlock.failed").Add("wrong_pin", true).Add("silent", !showing_).Emit();
   SetUnlockInProgress(false);
   const bool silent = !showing_;
   if (silent) {

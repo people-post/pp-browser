@@ -1,6 +1,7 @@
 #include "foundation/diagnostics/LogFile.h"
 
 #include "common/Logger.h"
+#include "common/Diag.h"
 #include "common/Metrics.h"
 #include "common/PbrCompat.h"
 
@@ -81,27 +82,42 @@ std::string LogFile::MetricsPath(const std::string& log_path) {
   return (fs::path(log_path).parent_path() / "metrics.log").string();
 }
 
-std::string LogFile::InstallMetrics(const std::string& log_path, const std::size_t keep) {
-  if (log_path.empty()) {
-    return {};
-  }
-  const std::string path = MetricsPath(log_path);
+std::string LogFile::DiagPath(const std::string& log_path) {
+  return (fs::path(log_path).parent_path() / "diag.log").string();
+}
+
+namespace {
+
+/**
+ * Rotate `path` and attach it to `channel` as the channel's own handler: its INFO lines reach this file
+ * whatever the root level (the root filters them out of the main log unless the app runs with --debug).
+ */
+std::string InstallChannelFile(const std::string& path, logging::Logger& channel, const std::size_t keep) {
   std::error_code ec;
   fs::create_directories(fs::path(path).parent_path(), ec);
-  Rotate(path, keep);
+  LogFile::Rotate(path, keep);
   CreateOwnerOnly(path);
 
   std::shared_ptr<logging::FileHandler> handler;
   try {
     handler = std::make_shared<logging::FileHandler>(path);
   } catch (const std::exception& ex) {
-    logging::getRootLogger().warning << "Metrics file disabled: " << ex.what();
+    logging::getRootLogger().warning << "Channel file disabled: " << fs::path(path).filename().string() << ": "
+                                     << ex.what();
     return {};
   }
-  // The Metrics logger's own handler: its INFO lines reach this file whatever the root level
-  // (the root filters them out of the main log unless the app runs with --debug).
-  MetricsLog().addHandler(std::move(handler));
+  channel.addHandler(std::move(handler));
   return path;
+}
+
+} // namespace
+
+std::string LogFile::InstallMetrics(const std::string& log_path, const std::size_t keep) {
+  return log_path.empty() ? std::string() : InstallChannelFile(MetricsPath(log_path), MetricsLog(), keep);
+}
+
+std::string LogFile::InstallDiag(const std::string& log_path, const std::size_t keep) {
+  return log_path.empty() ? std::string() : InstallChannelFile(DiagPath(log_path), DiagLog(), keep);
 }
 
 } // namespace pbr

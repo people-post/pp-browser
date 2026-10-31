@@ -4,7 +4,7 @@ pp_browser_add_foundation_library(pp_foundation_diagnostics
     CrashDump.cpp
     CrashReportEnvelope.cpp
     DiagnosticsBundle.cpp
-    DiagnosticsScrub.cpp
+    DiagnosticsSelfCheck.cpp
     DiagnosticsUploadResult.cpp
     LogFile.cpp
   PUBLIC_LIBS

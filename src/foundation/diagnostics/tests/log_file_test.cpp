@@ -1,6 +1,7 @@
 #include "foundation/diagnostics/LogFile.h"
 
 #include "common/Logger.h"
+#include "common/Diag.h"
 #include "common/Metrics.h"
 #include "common/PbrCompat.h"
 
@@ -109,6 +110,23 @@ TEST_F(LogFileTest, InstallMetricsRotatesThePreviousLaunch) {
   WriteText(pbr::LogFile::MetricsPath(path_), "previous launch");
   ASSERT_FALSE(pbr::LogFile::InstallMetrics(path_).empty());
   EXPECT_EQ(ReadAll((dir_ / "logs" / "metrics.1.log").string()), "previous launch");
+}
+
+// The diagnostics a user sends read diag.log: the Diag channel's lines, and nothing from any other channel.
+TEST_F(LogFileTest, DiagLinesReachTheirOwnFileOnly) {
+  auto root = pbr::logging::getRootLogger();
+  const auto saved = root.getLevel();
+  root.setLevel(pbr::logging::Level::WARNING);
+
+  const std::string diag = pbr::LogFile::InstallDiag(path_);
+  ASSERT_EQ(fs::path(diag), dir_ / "logs" / "diag.log");
+  pbr::DiagLine("test.diag").Add("n", 8).Emit();
+  pbr::logging::getLogger("SomeModule").warning << "a developer line naming Alice";
+  root.setLevel(saved);
+
+  const std::string text = ReadAll(diag);
+  EXPECT_NE(text.find("[Diag] event=test.diag n=8"), std::string::npos) << text;
+  EXPECT_EQ(text.find("Alice"), std::string::npos) << text;
 }
 
 TEST_F(LogFileTest, RotateWithZeroKeepRemovesCurrent) {

@@ -1209,7 +1209,7 @@ void ChatController::SyncDisplayFromThread() {
         .Add("ms", static_cast<int64_t>(sync_ms))
         .Add("backfill_ms", backfill_ms) // the whole-thread attachment check, when it ran in this sync
         .Add("rows", static_cast<int64_t>(chat_.messages.size()))
-        .Add("thread_changed", thread_changed ? "1" : "0")
+        .Add("thread_changed", thread_changed)
         .Emit();
   }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/ShareableLine.h"
+
 #include <string_view>
 #include <vector>
 
@@ -12,7 +14,8 @@ namespace pbr {
  * before matching), English ones are space-separated tokens.
  */
 struct AppActionWords {
-  std::string_view tool;
+  /** A word of the source code: the metrics name the tool by it (ShareableLine). */
+  ShareWord tool;
   /** A bare settings-read phrase on its own ("supported languages") counts as a request. */
   bool settings_read = false;
   std::vector<std::string_view> zh_verbs, zh_objects, zh_phrases;
@@ -211,6 +214,16 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        true},
   };
   return table;
+}
+
+/** `tool` as a word for a shareable line: one of the table's tools, else `other` (a tool from an MCP server). */
+inline ShareWord AppActionToolWord(std::string_view tool) {
+  for (const AppActionWords& words : AppActionTable()) {
+    if (words.tool.view() == tool) {
+      return words.tool;
+    }
+  }
+  return tool.empty() ? ShareWord("none") : ShareWord("other");
 }
 
 } // namespace pbr

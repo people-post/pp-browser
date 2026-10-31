@@ -302,7 +302,7 @@ bool IsCancel(const std::string& answer) {
 
 const AppActionWords* WordsFor(const std::string& tool) {
   for (const AppActionWords& w : AppActionTable()) {
-    if (w.tool == tool) {
+    if (w.tool.view() == tool) {
       return &w;
     }
   }

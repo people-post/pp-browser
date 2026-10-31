@@ -1,7 +1,7 @@
 #include "foundation/diagnostics/DiagnosticsBundle.h"
 
 #include "common/ValueJson.h"
-#include "foundation/diagnostics/DiagnosticsScrub.h"
+#include "foundation/diagnostics/DiagnosticsSelfCheck.h"
 
 #include <algorithm>
 #include <cctype>
@@ -79,11 +79,11 @@ std::string CutLong(std::string line) {
   return line;
 }
 
-/** Scrub the lines that pass the prefix filter, keeping file order (oldest first). */
-void FilterAndScrub(const std::vector<std::string>& raw, ScrubState& state, std::vector<std::string>& out) {
+/** The lines that pass the prefix filter, keeping file order (oldest first). */
+void Filter(const std::vector<std::string>& raw, std::vector<std::string>& out) {
   for (const std::string& line : raw) {
     if (!HasAllowedPrefix(line)) continue;
-    out.push_back(CutLong(ScrubLine(SanitizeUtf8(line), state)));
+    out.push_back(CutLong(SanitizeUtf8(line)));
   }
 }
 
@@ -146,7 +146,7 @@ std::string Serialize(const DiagnosticsBundleInput& in, const std::vector<Sectio
   }
   if (files.empty()) {  // keep at least one file entry
     Object file;
-    file.set("name", sections.empty() ? std::string("pp-browser.log") : sections.front().name);
+    file.set("name", sections.empty() ? std::string("diag.log") : sections.front().name);
     file.set("lines", makeArray({}));
     files.emplace_back(ObjectValue(std::move(file)));
   }
@@ -171,37 +171,29 @@ std::vector<std::string> CrashEnvelopeLines(const CrashReportEnvelope& envelope,
   lines.push_back(prefix + "reason=" + one_line(envelope.reason));
   for (const std::string& f : envelope.frames) lines.push_back(prefix + "frame=" + one_line(f));
   for (const std::string& t : envelope.breadcrumb_tags) lines.push_back(prefix + "tag=" + one_line(t));
-  if (!envelope.sample.empty()) lines.push_back(prefix + "sample=" + one_line(envelope.sample));
   return lines;
 }
 
 Roe<DiagnosticsBundle> BuildDiagnosticsBundle(const DiagnosticsBundleInput& input) {
-  ScrubState state;
   std::vector<Section> sections;
 
-  for (const auto& path : input.log_files) {
+  // Rank: the first file is dropped last; the crash record outlives them all.
+  for (const auto& path : input.files) {
     Section s;
     s.name = path.filename().string();
-    s.drop_rank = static_cast<int>(input.log_files.size() - 1 - sections.size());
-    FilterAndScrub(ReadTailLines(path), state, s.lines);
-    sections.push_back(std::move(s));
-  }
-  {
-    Section s;
-    s.drop_rank = static_cast<int>(input.log_files.size());
-    s.name = input.metrics_file.empty() ? "metrics.log" : input.metrics_file.filename().string();
-    FilterAndScrub(ReadTailLines(input.metrics_file), state, s.lines);
+    s.drop_rank = static_cast<int>(input.files.size() - sections.size());
+    Filter(ReadTailLines(path), s.lines);
     sections.push_back(std::move(s));
   }
   {
     Section s;
     s.name = "crash";
-    s.drop_rank = static_cast<int>(input.log_files.size()) + 1;
-    FilterAndScrub(input.crash_lines, state, s.lines);
+    s.drop_rank = static_cast<int>(input.files.size()) + 1;
+    Filter(input.crash_lines, s.lines);
     sections.push_back(std::move(s));
   }
 
-  // Cap: drop the oldest lines first, oldest file first (last log file ... first log file, metrics, crash).
+  // Cap: drop the oldest lines first, from the least wanted file first (the last file given ... the first, crash).
   auto drop_one = [&sections]() -> bool {
     Section* victim = nullptr;
     for (Section& s : sections) {

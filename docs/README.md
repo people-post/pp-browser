@@ -67,6 +67,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/CODED_FAILURE.md](contracts/CODED_FAILURE.md) | Per-module `CodedFailure` escalation; adapter vs wrap; rollout | in-process `Err` ints (not wire) |
 | [contracts/AMP-LINK-ERRORS.md](contracts/AMP-LINK-ERRORS.md) | Stable `PeerLinkManager` / `IChatPeerLinks` link `Err` table | link/port codes only |
 | [contracts/MEDIA_CHANNELS.md](contracts/MEDIA_CHANNELS.md) | Media frame `channel_id`: track kind + video level; relay QoS type; level negotiation | layout (one byte: kind / level) |
+| [contracts/DIAGNOSTICS.md](contracts/DIAGNOSTICS.md) | What Send diagnostics sends: shareable lines (`Diag`, `Metrics`), the crash record, the upload request | `schema_version` 1; event names / keys |
 | [contracts/NODE_METRICS.md](contracts/NODE_METRICS.md) | pp-node `/metrics` (Prometheus text): series names, types, labels | series names (stable) |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).

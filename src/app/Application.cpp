@@ -894,7 +894,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
     DiagnosticsUploadDeps deps;
     deps.data_dir = store_.Snapshot().data_dir;
-    // The scrub's self-check refuses to send when any of these survives into the bundle.
+    // The bundle's self-check refuses to send when any of these appears in it (a line that got past the shareable rule).
     if (auto identity = facade.GetIdentity()) {
       deps.known_identifiers = {identity->account_id, identity->peer_id, identity->relay_user_id};
     }
@@ -946,7 +946,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
-  settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() { return RunOnUiAndWait(open); };
+  settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {
+    return RunOnUiAndWait([open]() { return open({}); });
+  };
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.

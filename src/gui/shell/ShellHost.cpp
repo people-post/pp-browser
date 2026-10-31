@@ -1566,22 +1566,24 @@ void ShellHost::SyncLayout() {
     std::chrono::steady_clock::time_point started;
     const std::string& reason;
     int requests;
+    logging::Logger& log;
     ~Report() {
       // Also runs while a failed rebuild unwinds: diagnostics must never turn that into a terminate.
       try {
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
         if (ms >= kSlowSyncLayoutMs) {
+          // Who asked is a call site or a reason key: the developer log's, not the shareable metric's.
+          log.info << "slow SyncLayout ms=" << ms << " reason=" << reason << " requests=" << requests;
           MetricsLine("shell.sync_layout_slow")
               .Add("ms", static_cast<int64_t>(ms))
-              .Add("reason", reason)
               .Add("requests", static_cast<int64_t>(requests))
               .Emit();
         }
       } catch (...) {
       }
     }
-  } report{started, reason, requests};
+  } report{started, reason, requests, log()};
   // Nestable remount gate: field blur/change commits must not run until settle.
   UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;

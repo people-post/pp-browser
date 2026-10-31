@@ -62,9 +62,11 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
   auto log = logging::getLogger("Diagnostics");
 
   DiagnosticsBundleInput input;
+  // The channel files only: the developer log (pp-browser.log) never leaves the device.
   const std::string log_path = LogFile::DefaultPath(deps.data_dir);
-  input.log_files = {log_path, LogFile::RotatedPath(log_path, 1)};
-  input.metrics_file = LogFile::MetricsPath(log_path);
+  const std::string diag = LogFile::DiagPath(log_path);
+  const std::string metrics = LogFile::MetricsPath(log_path);
+  input.files = {diag, metrics, LogFile::RotatedPath(diag, 1), LogFile::RotatedPath(metrics, 1)};
   const int64_t now_ms = util::NowUnixMs();
   if (CrashDump::HasPending(deps.data_dir)) {
     const std::string dump = CrashDump::ReadPending(deps.data_dir);  // read-only: the crash channel clears it
