@@ -27,6 +27,13 @@ public:
   void SetScissorRegion(ui::Rectanglei) override {}
 };
 
+std::string ReadAll(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  return out.str();
+}
+
 // The real composer.rml mounted on the real "chat" data model: the unit tests of VoiceComposer stop at
 // ChatScreenState, so a markup / binding fault that hides the microphone button only shows on a device.
 class ComposerVoiceMarkupTest : public testing::Test {
@@ -51,7 +58,8 @@ protected:
     std::ostringstream body;
     body << file.rdbuf();
     const auto localized = LocalizationService::Instance().LocalizeText(body.str());
-    document = context->LoadDocumentFromMemory("<rml><head></head><body>" + localized + "</body></rml>");
+    document = context->LoadDocumentFromMemory("<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
+                                              "</style></head><body>" + localized + "</body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
   }
@@ -156,6 +164,49 @@ TEST_F(ComposerVoiceMarkupTest, WhileRecordingOnTheDesktopTheBarStaysAndCancelAn
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
 }
 
+// Reported on a device: after typing and sending, the toggle was gone until the chat was reopened.
+TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAfterSending) {
+  state.show_voice = true;
+  state.voice_mode = false;
+  state.draft = "";
+  Apply();
+  const auto toggle_width = [this]() {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, "prompt-voice-toggle-btn");
+    float width = 0;
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        width = element->GetClientWidth();
+      }
+    }
+    return width;
+  };
+  const float before = toggle_width();
+  EXPECT_FLOAT_EQ(before, 32.f);
+  std::string long_draft;
+  for (int line = 0; line < 12; ++line) {
+    long_draft += "a long line of text that wraps over the width of the composer when typed, number " +
+                  std::to_string(line) + "\n";
+  }
+  state.draft = long_draft.c_str();
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_FLOAT_EQ(toggle_width(), before);
+  // Send: the draft is cleared, the reply starts (loading) and ends.
+  state.draft = "";
+  state.loading = true;
+  Apply();
+  state.loading = false;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_FLOAT_EQ(toggle_width(), before);
+  // The shell may mount the composer again (RmlMount::MountInner) while the chat stays open.
+  document->SetInnerRML(ui::String(LocalizationService::Instance().LocalizeText(ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/composer.rml")).c_str()));
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_FLOAT_EQ(toggle_width(), before);
+}
+
 // The cause of the missing microphone on devices: the markup above is fine, but `show_voice` is only set by
 // VoiceComposer::Refresh(), and Refresh() sat in ChatController::UpdateThreadChrome(), which nothing called.
 // The thread chrome (and messaging_ready_ / mesh_ready_ with it) changed through `chrome_.Update()` alone, so
@@ -179,6 +230,22 @@ TEST(ComposerVoiceSourceTest, EveryThreadChromeUpdateGoesThroughUpdateThreadChro
     ++calls;
   }
   EXPECT_GE(calls, 3u) << "RefreshFromMessaging, OnMessagingReady and OnMeshReady must call UpdateThreadChrome()";
+}
+
+// Eligibility for a voice message includes "no upload running" (ChatController.cpp voice_ports.eligible). The
+// toggle goes away while a file is sent; every place that ends the upload calls SyncComposerInputState(), so that
+// is where the toggle is recomputed. Reported on a device: the toggle stayed gone after sending until the chat was
+// reopened.
+TEST(ComposerVoiceSourceTest, SyncComposerInputStateRefreshesTheVoiceToggle) {
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp", std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  const std::string source = out.str();
+  const size_t start = source.find("void ChatController::SyncComposerInputState() {");
+  ASSERT_NE(start, std::string::npos);
+  const size_t end = source.find("\n}\n", start);
+  ASSERT_NE(end, std::string::npos);
+  EXPECT_NE(source.substr(start, end - start).find("voice_->Refresh()"), std::string::npos);
 }
 
 } // namespace

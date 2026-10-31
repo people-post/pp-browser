@@ -1118,6 +1118,11 @@ void ChatController::ToggleVoiceMode() {
 void ChatController::SyncComposerInputState() {
   chat_.composer_input_disabled =
       chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing || chat_.voice_recording;
+  // Whether a voice message can be sent depends on the same upload state: a toggle that went away while a file
+  // was being sent must come back when the upload ends, not at the next chrome update.
+  if (voice_) {
+    voice_->Refresh();
+  }
 }
 
 void ChatController::OnAttachFile(ui::Event* ev) {
