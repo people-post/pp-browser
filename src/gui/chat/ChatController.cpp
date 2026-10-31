@@ -641,6 +641,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
+    mentions_.SyncThread();  // a group chat: its @ lines are read now, before anyone types `@`
     // Opened at its oldest unread mention (G015), read before the open dropped the marker.
     if (const std::optional<std::string>& mention = presenter_.OpenedAtMention()) {
       (void)scroller_.JumpToMessage(*mention);
@@ -847,6 +848,7 @@ void ChatController::RefreshFromMessaging() {
   DirtyChat();
   DirtyShell();
   NotifySurfaceChanged();
+  mentions_.SyncThread();  // the open group's @ lines: reloaded when its members or names may have changed
   const NavBadgeState& badges = ChromeSnapshot().nav_badges;
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
     ShellRemountNavRail();
@@ -1467,7 +1469,8 @@ void ChatController::OnSendMessage() {
   }
   // Mentions mark the typed text only (a prefix of `out`), never the quote under it (G015).
   const std::string thread_id = ActiveThreadId();
-  if (std::vector<TextSpan> spans = mentions_.SpansFor(thread_id, text);
+  // Picks of members who left since are dropped here (read at send), as the receiver would not light them anyway.
+  if (std::vector<TextSpan> spans = presenter_.SpansOnRoster(thread_id, mentions_.SpansFor(thread_id, text));
       presenter_.SendsWithMentions(thread_id, out, spans)) {
     close_keyboard();
     SendWithMentions(thread_id, text, out, std::move(spans));

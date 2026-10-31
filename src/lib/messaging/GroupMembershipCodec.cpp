@@ -623,6 +623,11 @@ std::optional<GroupMembershipControlType> GroupMembershipCodec::ControlTypeFromM
   return GroupMembershipControlTypeFromWire(*control_type);
 }
 
+bool GroupMembershipCodec::IsHiddenInDirectThread(const ThreadMessage& message) {
+  const auto type = ControlTypeFromMessage(message);
+  return type && *type != GroupMembershipControlType::GroupInvite;
+}
+
 Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const ThreadMessage& message) {
   const auto control_type = ControlTypeFromMessage(message);
   if (!control_type || *control_type != GroupMembershipControlType::GroupInvite) {

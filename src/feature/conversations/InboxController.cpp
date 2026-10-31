@@ -7,6 +7,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -32,7 +33,26 @@ void InboxController::SetGroupMembership(GroupMembershipWorkflow* groups) {
 }
 
 Roe<std::vector<Thread>> InboxController::ListThreads() {
-  return store_.ListThreads();
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return threads;
+  }
+  // A direct chat made only by a group's membership events (they travel as direct messages) is not a chat the
+  // user has: it stays out until something readable is in it, or they open it (the store's `listed` flag, which
+  // once set stays — a cleared or renamed chat is never dropped).
+  threads->erase(std::remove_if(threads->begin(), threads->end(),
+                                [](const Thread& thread) { return thread.kind == ThreadKind::Direct && !thread.listed; }),
+                 threads->end());
+  return threads;
+}
+
+void InboxController::KeepListed(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (thread && *thread && !(*thread)->listed) {
+    Thread listed = **thread;
+    listed.listed = true;
+    (void)store_.UpsertThread(listed);
+  }
 }
 
 Roe<Thread> InboxController::GetActiveThread() const {
@@ -59,6 +79,7 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   }
 
   active_thread_id_ = thread_id;
+  KeepListed(thread_id);  // a chat the user opened is theirs, even before anything is said in it
   MarkThreadRead(thread_id);
   if (mentions_) {
     (void)mentions_->DropThread(thread_id);  // read: "You were mentioned" goes with the unread count
@@ -200,9 +221,12 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   if (!page) {
     return;
   }
+  const auto holder = store_.GetThread(thread_id);
+  const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation) {
+    if (message.content_type != ChatContentType::Annotation &&
+        !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
       newest = &message;
     }
   }
@@ -245,6 +269,9 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
 
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
     return cleared.error();
+  }
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);  // the messages that mentioned us are gone: so is "You were mentioned"
   }
   if (attachment_downloads_ && before) {
     attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
@@ -580,7 +607,23 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
                    messages.end());
   }
 
-  return AssembleTranscript(messages, controls_);
+  const auto thread = store_.GetThread(thread_id);
+  const bool direct_thread = thread && *thread && (*thread)->kind == ThreadKind::Direct;
+  std::vector<TranscriptRow> rows = AssembleTranscript(messages, controls_, direct_thread);
+  // A run of a group's events on top of a direct chat's history would leave the page blank: go back for older
+  // pages until something shows or the history ends (bounded). A caller that asked for a window gets exactly it.
+  constexpr int kMaxExtraPages = 20;
+  for (int extra = 0; direct_thread && rows.empty() && !oldest_inclusive.has_value() && !messages.empty() &&
+                      extra < kMaxExtraPages;
+       ++extra) {
+    auto older = store_.GetMessagesPage(thread_id, messages.front().display_order, kDefaultMessagesPageSize);
+    if (!older || older->empty()) {
+      break;
+    }
+    messages.insert(messages.begin(), older->begin(), older->end());
+    rows = AssembleTranscript(messages, controls_, direct_thread);
+  }
+  return rows;
 }
 
 TranscriptFacts InboxController::Facts() const {

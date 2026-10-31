@@ -48,6 +48,12 @@ struct Thread {
   int unread_count = 0;
   std::string preview;
   bool encrypted = false;
+  /**
+   * Shown in the chat list. A direct chat made only by a group's membership events (they travel as direct messages)
+   * is not listed until something readable is in it or the user opens it; once listed it stays. Every other
+   * thread, and every thread from before this existed, is listed.
+   */
+  bool listed = true;
 };
 
 struct ThreadMessage {

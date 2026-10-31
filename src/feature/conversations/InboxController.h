@@ -37,6 +37,10 @@ struct TranscriptFacts {
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
+  /** A group member's public name (card nickname, then directory nickname, then short id; never a local remark). */
+  std::function<std::string(const std::string& account_id)> member_name;
+  /** This account's id: a group line about it reads "you". */
+  std::string local_account;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -51,7 +55,10 @@ public:
   /** The system-control families features bind: how their messages show (hidden, worded). Not owned. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
 
+  /** The chats the user has (a direct chat made only by a group's events is left out until it is theirs). */
   Roe<std::vector<Thread>> ListThreads();
+  /** The user did something with this chat (opened, pinned it): it is listed from now on. */
+  void KeepListed(const std::string& thread_id);
   Roe<Thread> GetActiveThread() const;
   const std::string& ActiveThreadId() const { return active_thread_id_; }
 

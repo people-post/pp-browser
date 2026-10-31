@@ -6,6 +6,7 @@
 #include "domain/delivery/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include "common/Diag.h"
 #include "lib/messaging/TextSpans.h"
@@ -809,17 +810,32 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
     if (outcome.persisted_message) {
       preview = outcome.persisted_message->text;
     }
-    inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
-    MaybeEnqueueAttachmentDownload(outcome);
-    NoteMention(outcome, identity->account_id);
-    // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
-    if (auto notice = BackgroundNoticeFor(outcome, identity->account_id); notice && on_background_unread_) {
-      AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
-        if (on_background_unread_) {
-          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
-                                notice.mentions_us);
-        }
-      });
+    if (outcome.suppress_inbox_chrome) {
+      // As on the relay path: apply side effects only, no unread count, preview or notice.
+      if (outcome.sibling_copy) {
+        MaybeEnqueueAttachmentDownload(outcome);
+      }
+      // Except an event about this account, which the GROUP thread shows as news.
+      if (auto notice = NoteEventAboutUs(outcome); notice && on_background_unread_) {
+        AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+          if (on_background_unread_) {
+            on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id), false);
+          }
+        });
+      }
+    } else {
+      inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
+      MaybeEnqueueAttachmentDownload(outcome);
+      NoteMention(outcome, identity->account_id);
+      // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
+      if (auto notice = BackgroundNoticeFor(outcome, identity->account_id); notice && on_background_unread_) {
+        AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+          if (on_background_unread_) {
+            on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                                  notice.mentions_us);
+          }
+        });
+      }
     }
   }
   if (outcome.persisted || outcome.thread_changed) {
@@ -2047,6 +2063,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             if (outcome.sibling_copy) {
               MaybeEnqueueAttachmentDownload(outcome);
             }
+            if (auto notice = NoteEventAboutUs(outcome)) {
+              background_notices.push_back(std::move(*notice));
+            }
             continue;
           }
           std::optional<std::string> preview;
@@ -2165,6 +2184,30 @@ void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const Deli
 void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
     std::function<void(std::string, std::string, std::string, bool)> callback) {
   on_background_unread_ = std::move(callback);
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoteEventAboutUs(
+    const RelayReceiveOutcome& outcome) {
+  if (outcome.about_us == RelayReceiveOutcome::AboutUs::None || outcome.about_us_group_thread_id.empty()) {
+    return std::nullopt;
+  }
+  const std::string text = Tr(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed
+                                  ? "chat.group_event.you_removed"
+                                  : "chat.group_event.full");
+  inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text);
+  if (AppLifecycle::IsUserAttentive()) {
+    return std::nullopt;
+  }
+  BackgroundNotice notice;
+  notice.title = "New message";
+  if (auto thread = store_.GetThread(outcome.about_us_group_thread_id); thread && *thread) {
+    if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
+      notice.title = std::move(label);
+    }
+  }
+  notice.body = text;
+  notice.thread_id = outcome.about_us_group_thread_id;
+  return notice;
 }
 
 std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::BackgroundNoticeFor(

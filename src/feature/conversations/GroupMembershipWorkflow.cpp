@@ -1,4 +1,5 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
+#include "lib/messaging/GroupRosterVersion.h"
 
 #include "lib/people/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipApply.h"
@@ -92,6 +93,7 @@ Roe<void> GroupMembershipWorkflow::AppendMembershipSystemEvent(const std::string
   if (auto appended = store_.AppendMessage(*message); !appended) {
     return appended.error();
   }
+  GroupRosterVersion::Bump();  // every local membership change writes one of these lines
   return {};
 }
 

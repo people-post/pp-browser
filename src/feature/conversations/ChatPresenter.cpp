@@ -3,6 +3,8 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
+#include "feature/conversations/GroupEventText.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"
 #include "lib/messaging/AtAiParser.h"
@@ -234,6 +236,10 @@ void ChatPresenter::Refresh() {
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
   const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
+  std::string local_account;
+  if (auto identity = facade_->GetIdentity()) {
+    local_account = identity->account_id;
+  }
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
     if (thread_prefs.archived != next.showing_archived) {
@@ -244,7 +250,7 @@ void ChatPresenter::Refresh() {
     row.title = facade_->ResolveThreadLabel(thread).title;
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
-    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(thread.preview));
+    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(GroupEventPreviewOr(thread, local_account)));
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
@@ -298,7 +304,27 @@ void ChatPresenter::ToggleArchived() {
   Refresh();
 }
 
+std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+  // A group whose latest row is a membership line previews the same words as its transcript shows (the stored
+  // preview is the English text). Only a preview that is such a text costs a read of the latest message.
+  if (thread.kind != ThreadKind::Group || !IsStoredGroupEventText(thread.preview)) {
+    return thread.preview;
+  }
+  auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+  if (!page || page->empty()) {
+    return thread.preview;
+  }
+  ConversationsFacade* facade = facade_;
+  const auto line = GroupEventText(
+      page->back(), [facade](const std::string& account) { return facade->MemberPublicNameOf(account); },
+      local_account);
+  return line ? *line : thread.preview;
+}
+
 void ChatPresenter::SetPinned(const std::string& thread_id, const bool pinned) {
+  if (pinned && facade_) {
+    facade_->KeepThreadListed(thread_id);
+  }
   UpdatePrefs(thread_id, [pinned](ThreadLocalPrefs& prefs) { prefs.pinned_at = pinned ? util::NowUnixMs() : 0; });
 }
 
@@ -533,11 +559,36 @@ std::optional<std::string> GroupIdOf(ConversationsFacade* facade, const std::str
   return *(*thread)->group_id;
 }
 
+/** The roster a group chat's mentions are judged against now; none for a chat that is not a group. */
+std::optional<MentionRoster> RosterOfGroupThread(ConversationsFacade* facade, const std::string& thread_id) {
+  const std::optional<std::string> group_id = GroupIdOf(facade, thread_id);
+  if (!group_id) {
+    return std::nullopt;
+  }
+  MentionRoster roster;
+  if (auto members = facade->ListGroupRoster(*group_id)) {
+    for (const GroupRosterMember& member : *members) {
+      roster.members.insert(member.member_identity);
+    }
+  }
+  if (auto owner = facade->OwnerIdentity(*group_id)) {
+    roster.owner = *owner;
+  }
+  if (auto identity = facade->GetIdentity()) {
+    roster.local_account = identity->account_id;
+  }
+  return roster;
+}
+
 } // namespace
 
 bool ChatPresenter::SendsWithMentions(const std::string& thread_id, const std::string& text,
                                       const std::vector<TextSpan>& spans) {
-  return !spans.empty() && GroupIdOf(facade_, thread_id) && !ParseAtAiPrefix(text).is_ai_invoke;
+  return KeepsMentionSpans(text, spans) && GroupIdOf(facade_, thread_id);
+}
+
+bool ChatPresenter::KeepsMentionSpans(const std::string& text, const std::vector<TextSpan>& spans) {
+  return !spans.empty() && !ParseAtAiPrefix(text).is_ai_invoke;
 }
 
 Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const std::string& text,
@@ -553,47 +604,33 @@ Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const st
 }
 
 std::optional<MentionRoster> ChatPresenter::MentionRosterOf(const std::string& thread_id) const {
-  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
-  if (!group_id) {
-    return std::nullopt;
-  }
-  MentionRoster roster;
-  if (auto members = facade_->ListGroupRoster(*group_id)) {
-    for (const GroupRosterMember& member : *members) {
-      roster.members.insert(member.member_identity);
-    }
-  }
-  if (auto owner = facade_->OwnerIdentity(*group_id)) {
-    roster.owner = *owner;
-  }
-  if (auto identity = facade_->GetIdentity()) {
-    roster.local_account = identity->account_id;
-  }
-  return roster;
+  return RosterOfGroupThread(facade_, thread_id);
 }
 
-std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::string& thread_id,
-                                                                  const std::string& query) {
-  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
+std::vector<TextSpan> ChatPresenter::SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const {
+  if (spans.empty()) {
+    return spans;
+  }
+  const std::optional<MentionRoster> roster = MentionRosterOf(thread_id);
+  return roster ? KeepMentionsOnRoster(std::move(spans), *roster) : std::vector<TextSpan>{};
+}
+
+std::vector<MentionCandidate> ChatPresenter::ReadMentionCandidates(ConversationsFacade* facade,
+                                                                   const std::string& thread_id) {
+  const std::optional<std::string> group_id = GroupIdOf(facade, thread_id);
   if (!group_id) {
     return {};
   }
-  auto members = facade_->ListGroupRoster(*group_id);
-  const std::optional<MentionRoster> roster = MentionRosterOf(thread_id);
+  auto members = facade->ListGroupRoster(*group_id);
+  const std::optional<MentionRoster> roster = RosterOfGroupThread(facade, thread_id);
   if (!members || !roster || roster->local_account.empty()) {
     return {};
   }
-  ConversationsFacade* facade = facade_;
-  const auto public_name = [facade](const std::string& account_id) {
-    std::optional<Contact> contact;
-    if (auto found = facade->FindContactByIdentity(account_id, mesh::ContactIdKind::Account); found && *found) {
-      contact = **found;
-    }
-    return MemberPublicName(account_id, facade->KeptCardNickname(account_id), contact);
-  };
+  const auto public_name = [facade](const std::string& account_id) { return facade->MemberPublicNameOf(account_id); };
   // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
   const bool local_is_owner = roster->owner == roster->local_account;
-  return MentionCandidates(*members, roster->local_account, local_is_owner, public_name, query);
+  return AllMentionCandidates(*members, roster->local_account, local_is_owner, public_name,
+                              Tr("chat.mention.everyone_word"));
 }
 
 std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {

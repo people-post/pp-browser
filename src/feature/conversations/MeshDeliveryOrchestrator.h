@@ -387,6 +387,11 @@ private:
   };
   std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
                                                       const std::string& local_account);
+  /**
+   * A group event about this account (removed; its accept met a full group) arrived in a direct message that stays
+   * quiet: the GROUP thread counts it unread, and the user away gets a notice for it.
+   */
+  std::optional<BackgroundNotice> NoteEventAboutUs(const RelayReceiveOutcome& outcome);
   /** A live message that mentions us is marked (unless its chat is open); one that cannot be decided is held. */
   void NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account);
   struct HeldMention {

@@ -3,6 +3,7 @@
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
+#include "feature/conversations/GroupEventText.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -23,7 +24,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <sstream>
+#include <unordered_map>
 
 #include "common/PbrCompat.h"
 
@@ -186,6 +189,11 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
       return InjectEntryPlaceholders(html, JsArgInAttribute(message.id));
     }
     return html;
+  }
+  if (control_type) {
+    if (auto event = GroupEventText(message, facts.member_name, facts.local_account)) {
+      return SystemLineRml(*event);
+    }
   }
   if (auto failure = ReceiveFailureLine(message)) {
     return SystemLineRml(*failure);
@@ -376,8 +384,21 @@ std::vector<MentionRun> MentionRunsOf(const ThreadMessage& message, const std::o
                              text_spans::FromPayloadJson(message.payload_json), *roster, sender);
 }
 
+/** A peer's text that mentions this account, `@everyone` included (only the owner's is eligible): its row is tinted. */
+bool MentionsLocalAccount(const ThreadMessage& message, const std::vector<MentionRun>& runs,
+                          const std::optional<MentionRoster>& roster) {
+  if (!roster || message.sender_contact_id == kLocalSelfContactId) {
+    return false;
+  }
+  return std::any_of(runs.begin(), runs.end(), [&roster](const MentionRun& run) {
+    return run.kind == TextSpanKind::Everyone || run.account_id == roster->local_account;
+  });
+}
+
+// `mentions_me`: set when the text mentions this account (the row is then tinted).
 std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
-                       const std::optional<CallSummaryRow>& call_row, const std::optional<MentionRoster>& mentions) {
+                       const std::optional<CallSummaryRow>& call_row, const std::optional<MentionRoster>& mentions,
+                       bool& mentions_me) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -433,6 +454,7 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
   // Mentions mark the reply's own words only (MentionTextLimit), so their byte offsets hold in either branch.
   const std::vector<MentionRun> mention_runs = MentionRunsOf(message, mentions);
+  mentions_me = MentionsLocalAccount(message, mention_runs, mentions);
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
     text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
@@ -490,8 +512,20 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
 } // namespace
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
-                                                const TranscriptFacts& facts,
+                                                const TranscriptFacts& facts_in,
                                                 const std::optional<MentionRoster>& mentions) {
+  // A name is looked up (cards, contacts: SQLite) once per account in this build, however many lines name it.
+  TranscriptFacts facts = facts_in;
+  if (facts_in.member_name) {
+    auto names = std::make_shared<std::unordered_map<std::string, std::string>>();
+    facts.member_name = [lookup = facts_in.member_name, names](const std::string& account_id) {
+      auto it = names->find(account_id);
+      if (it == names->end()) {
+        it = names->emplace(account_id, lookup(account_id)).first;
+      }
+      return it->second;
+    };
+  }
   std::vector<MessageDisplayRow> rows;
   rows.reserve(entries.size());
   for (const TranscriptRow& entry : entries) {
@@ -502,7 +536,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     const ThreadMessage& message = entry.message;
     // A call summary: decoded once, its side is the starter's (a group's is written locally).
     const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
-    std::string content = MessageRml(entry, facts, call_row, mentions);
+    bool mentions_me = false;
+    std::string content = MessageRml(entry, facts, call_row, mentions, mentions_me);
     if (content.empty()) {
       continue;
     }
@@ -527,6 +562,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.content_rml = content.c_str();
     row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
                              : RowClass(message.sender_contact_id).c_str();
+    row.mentions_me = mentions_me;
     if (!entry.control) {
       row.time_label = MessageTimeLabel(message.timestamp, util::NowUnixMs()).c_str();
     }
