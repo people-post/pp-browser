@@ -89,6 +89,13 @@ struct ComposerMention {
  */
 std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::vector<ComposerMention>& recorded);
 
+/**
+ * Whether sending `text` with these spans asks the AI. A text that starts `@ai` does, unless the composer
+ * recorded a member mention at its first character: that `@ai` is a person who picked this name (G015). A typed
+ * `@ai` with no such span (and `@ai+`, `@ai share` ...) still asks the AI.
+ */
+bool AsksTheAi(const std::string& text, const std::vector<TextSpan>& spans);
+
 /** What deciding a highlight needs: the group's current roster, its owner, and who we are. */
 struct MentionRoster {
   std::set<std::string> members;

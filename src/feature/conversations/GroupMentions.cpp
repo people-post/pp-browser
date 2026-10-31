@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/directory/ShortRelayId.h"
+#include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 
 #include <algorithm>
@@ -189,6 +190,17 @@ std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::v
     }
   }
   return spans;
+}
+
+bool AsksTheAi(const std::string& text, const std::vector<TextSpan>& spans) {
+  if (!ParseAtAiPrefix(text).is_ai_invoke) {
+    return false;
+  }
+  // The parser ignores leading whitespace; so does the first character a person's mention can sit at.
+  const size_t first = text.find_first_not_of(" \t\n\r\f\v");
+  return std::none_of(spans.begin(), spans.end(), [first](const TextSpan& span) {
+    return span.Is(TextSpanKind::Mention) && span.start == first;
+  });
 }
 
 size_t MentionTextLimit(const std::string& text) {
