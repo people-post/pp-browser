@@ -2166,7 +2166,7 @@ std::string ProtectedRelayBlobId(const std::string& profile_dir) {
 
 } // namespace
 
-Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery() {
+Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error& quota_error) {
   if (!IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
@@ -2183,7 +2183,8 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery() {
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  auto plan = PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
+  auto plan = PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_),
+                                          BlobQuotaTierOf(quota_error));
   if (plan) {
     plan->small_max_objects = static_cast<uint64_t>(CurrentAttachmentLimits().small_max_objects);
   }
@@ -2255,7 +2256,7 @@ void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
   }
 }
 
-Roe<void> ConversationsHub::FreeOldestRelayBlobSlot() {
+Roe<void> ConversationsHub::DeleteRelayBlobById(const std::string& blob_id) {
   if (!IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
@@ -2272,7 +2273,7 @@ Roe<void> ConversationsHub::FreeOldestRelayBlobSlot() {
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return pbr::FreeOldestRelayBlobSlot(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
+  return pbr::DeleteRelayBlob(*blob_, identity->relay_user_id, blob_id);
 }
 
 Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
@@ -2520,6 +2521,10 @@ void ConversationsHub::WireAttachmentDownloads() {
     mesh_messaging_->SetAttachmentDownloads(attachment_downloads_.get());
     if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
       peer_blob->SetProfileId(profile_id_);
+      // The receiver's own pace and disk limits apply to what a contact pushes straight to this device too.
+      peer_blob->SetPushGate([workflow = attachment_downloads_.get()](const std::string& sender, const uint64_t bytes) {
+        return workflow->TryAcceptDirectPush(sender, bytes);
+      });
       if (secrets_ != nullptr) {
         secrets_->RegisterDekConsumer(peer_blob);
         if (secrets_->IsUnlocked()) {

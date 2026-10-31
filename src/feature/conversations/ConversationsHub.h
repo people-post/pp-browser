@@ -293,8 +293,10 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
-  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
-  Roe<void> FreeOldestRelayBlobSlot();
+  /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
+  /** Delete the relay blob the person confirmed (by id). */
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();

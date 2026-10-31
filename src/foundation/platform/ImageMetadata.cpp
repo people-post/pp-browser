@@ -195,56 +195,143 @@ std::optional<ImageHeaderInfo> ReadImageHeader(const std::string& path) {
   return ReadImageHeaderBytes(head);
 }
 
-std::vector<uint8_t> StripJpegLocation(const std::vector<uint8_t>& jpeg) {
-  if (jpeg.size() < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8) {
-    return jpeg;
+bool ImageWithinPixelCap(const std::string& path, const uint64_t max_pixels) {
+  const auto header = ReadImageHeader(path);
+  return header && static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) <= max_pixels;
+}
+
+ImageKind ImageKindOfBytes(const std::vector<uint8_t>& head) {
+  static constexpr uint8_t kPng[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+  if (head.size() >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) {
+    return ImageKind::Jpeg;
+  }
+  if (head.size() >= 8 && std::memcmp(head.data(), kPng, 8) == 0) {
+    return ImageKind::Png;
+  }
+  if (head.size() >= 6 && (std::memcmp(head.data(), "GIF87a", 6) == 0 || std::memcmp(head.data(), "GIF89a", 6) == 0)) {
+    return ImageKind::Gif;
+  }
+  if (head.size() >= 12 && std::memcmp(head.data(), "RIFF", 4) == 0 && std::memcmp(&head[8], "WEBP", 4) == 0) {
+    return ImageKind::Webp;
+  }
+  return ImageKind::Unknown;
+}
+
+ImageKind ImageKindOfFile(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return ImageKind::Unknown;
+  }
+  std::vector<uint8_t> head(16);
+  input.read(reinterpret_cast<char*>(head.data()), static_cast<std::streamsize>(head.size()));
+  head.resize(static_cast<size_t>(input.gcount()));
+  return ImageKindOfBytes(head);
+}
+
+std::optional<std::vector<uint8_t>> StripJpegLocation(const std::vector<uint8_t>& jpeg) {
+  if (jpeg.size() < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 || jpeg[2] != 0xFF) {
+    return std::nullopt;
   }
   std::vector<uint8_t> out = {0xFF, 0xD8};
   int orientation = 1;
+  bool have_size = false;
+  bool have_scan = false;
   size_t pos = 2;
-  while (pos + 4 <= jpeg.size()) {
-    if (jpeg[pos] != 0xFF) {
-      return jpeg; // not a segment boundary: leave the file alone rather than damage it
+  while (true) {
+    if (pos + 2 > jpeg.size() || jpeg[pos] != 0xFF) {
+      return std::nullopt; // damaged, or no end of image
     }
     const uint8_t marker = jpeg[pos + 1];
     if (marker == 0xFF) {
-      ++pos;
+      ++pos; // fill byte
       continue;
     }
-    if (marker == 0x01 || marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7)) {
+    if (marker == 0xD9) {
+      if (!have_size || !have_scan) {
+        return std::nullopt;
+      }
+      out.push_back(0xFF);
+      out.push_back(0xD9);
+      break; // everything after the first end of image (a second picture, a trailer) is dropped
+    }
+    if (marker == 0x00 || marker == 0xD8) {
+      return std::nullopt;
+    }
+    if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
       out.push_back(0xFF); // a marker without a length
       out.push_back(marker);
       pos += 2;
       continue;
     }
-    if (marker == 0xDA) {
-      break; // picture data follows: copied below as it is
-    }
-    if (marker == 0xD9) {
-      break;
+    if (pos + 4 > jpeg.size()) {
+      return std::nullopt;
     }
     const size_t length = Be16(&jpeg[pos + 2]);
     if (length < 2 || pos + 2 + length > jpeg.size()) {
-      return jpeg;
+      return std::nullopt;
     }
     const uint8_t* body = &jpeg[pos + 4];
     const size_t body_size = length - 2;
-    const bool drop = marker == 0xE1 || marker == 0xED || marker == 0xFE;
-    if (marker == 0xE1 && body_size > 14 && std::memcmp(body, "Exif\0\0", 6) == 0) {
-      orientation = ExifOrientation(body + 6, body_size - 6);
+    const auto begin = jpeg.begin() + static_cast<std::ptrdiff_t>(pos);
+    const auto end = begin + static_cast<std::ptrdiff_t>(2 + length);
+    const auto is = [&](const char* tag, const size_t n) { return body_size >= n && std::memcmp(body, tag, n) == 0; };
+
+    if (marker >= 0xE0 && marker <= 0xEF) {
+      // Application segments: only what decoding or showing the picture right needs is kept.
+      if (marker == 0xE0 && is("JFIF\0", 5) && body_size >= 14) {
+        // The header without its embedded thumbnail (the thumbnail is a second, unstripped picture).
+        std::vector<uint8_t> jfif = {0xFF, 0xE0, 0x00, 0x10};
+        jfif.insert(jfif.end(), body, body + 12);
+        jfif.push_back(0);
+        jfif.push_back(0);
+        out.insert(out.end(), jfif.begin(), jfif.end());
+      } else if (marker == 0xEE && is("Adobe", 5)) {
+        out.insert(out.end(), begin, end); // colour transform of the data
+      } else if (marker == 0xE2 && is("ICC_PROFILE\0", 12)) {
+        out.insert(out.end(), begin, end); // colour profile
+      } else if (marker == 0xE1 && is("Exif\0\0", 6) && orientation == 1) {
+        orientation = ExifOrientation(body + 6, body_size - 6);
+      }
+      pos += 2 + length;
+      continue;
     }
-    if (!drop) {
-      out.insert(out.end(), jpeg.begin() + static_cast<std::ptrdiff_t>(pos),
-                 jpeg.begin() + static_cast<std::ptrdiff_t>(pos + 2 + length));
+    if (marker == 0xFE || (marker >= 0xF0 && marker <= 0xFD)) {
+      pos += 2 + length; // comment, JPEG extensions
+      continue;
     }
+    if (IsSofMarker(marker)) {
+      have_size = true;
+    }
+    out.insert(out.end(), begin, end);
     pos += 2 + length;
+    if (marker == 0xDA) {
+      // Scan data runs to the next real marker (stuffed FF00 and restart markers belong to it).
+      have_scan = true;
+      size_t scan_end = pos;
+      while (scan_end + 1 < jpeg.size()) {
+        if (jpeg[scan_end] == 0xFF) {
+          const uint8_t next = jpeg[scan_end + 1];
+          if (next == 0x00 || next == 0xFF || (next >= 0xD0 && next <= 0xD7)) {
+            scan_end += next == 0xFF ? 1 : 2;
+            continue;
+          }
+          break;
+        }
+        ++scan_end;
+      }
+      if (scan_end + 1 >= jpeg.size()) {
+        return std::nullopt; // the scan never ends
+      }
+      out.insert(out.end(), jpeg.begin() + static_cast<std::ptrdiff_t>(pos),
+                 jpeg.begin() + static_cast<std::ptrdiff_t>(scan_end));
+      pos = scan_end;
+    }
   }
   if (orientation != 1) {
     // Kept as the first segment after SOI (cameras write EXIF there too).
     const auto exif = MinimalOrientationExif(orientation);
     out.insert(out.begin() + 2, exif.begin(), exif.end());
   }
-  out.insert(out.end(), jpeg.begin() + static_cast<std::ptrdiff_t>(pos), jpeg.end());
   return out;
 }
 

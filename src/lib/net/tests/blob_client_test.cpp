@@ -65,7 +65,10 @@ TEST(BlobClientTest, StatusTableMapsEveryRowToATypedError) {
   // 429 is a full space only for the two quota texts.
   EXPECT_EQ(CodeOf(Fail(429, "Small file quota exceeded")), static_cast<int32_t>(Err::Blob::QuotaExceeded));
   EXPECT_EQ(CodeOf(Fail(429, "Large file storage quota exceeded")), static_cast<int32_t>(Err::Blob::QuotaExceeded));
-  EXPECT_EQ(CodeOf(Fail(429, "quota")), static_cast<int32_t>(Err::Blob::QuotaExceeded));
+  // Anything else on a 429 is not a full space: a reworded text, an empty body, a proxy / WAF page.
+  EXPECT_EQ(CodeOf(Fail(429, "quota")), static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_EQ(CodeOf(Fail(429, "")), static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_EQ(CodeOf(Fail(429, "Too Many Requests")), static_cast<int32_t>(Err::Blob::RateLimited));
   EXPECT_EQ(CodeOf(Fail(429, "Rate limit exceeded")), static_cast<int32_t>(Err::Blob::RateLimited));
   EXPECT_EQ(CodeOf(Fail(429, "Too many pending uploads")), static_cast<int32_t>(Err::Blob::RateLimited));
   // 5xx and the rest.

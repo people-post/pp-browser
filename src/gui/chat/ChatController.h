@@ -7,6 +7,7 @@
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatPeerSheet.h"
@@ -178,7 +179,7 @@ private:
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile();
-  void StartAttachmentUpload(const std::string& path, bool original);
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source);
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */

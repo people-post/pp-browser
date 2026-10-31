@@ -647,6 +647,7 @@
     "chat.attach.file": "File",
     "chat.attach.original": "Original photo",
     "chat.attachment.read_failed": "Couldn't read this file.",
+    "chat.attachment.image_unprocessable": "This picture can't be processed. You can send it with 'File' instead.",
     "chat.attachment.too_large": "This file is too big to send — the limit is {{limit}}.",
     "chat.attachment.too_large_receive": "This file is too large to download.",
     "chat.attachment.sending_too_fast": "You're sending too fast — please wait a moment.",

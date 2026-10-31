@@ -780,9 +780,11 @@ Roe<void> ConversationsFacade::UploadProfileIconFromPath(const std::string& path
 
 Roe<void> ConversationsFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }
 
-Roe<BlobQuotaRecoveryPlan> ConversationsFacade::PlanRelayQuotaRecovery() { return hub_.PlanRelayQuotaRecovery(); }
+Roe<BlobQuotaRecoveryPlan> ConversationsFacade::PlanRelayQuotaRecovery(const Error& quota_error) {
+  return hub_.PlanRelayQuotaRecovery(quota_error);
+}
 
-Roe<void> ConversationsFacade::FreeOldestRelayBlobSlot() { return hub_.FreeOldestRelayBlobSlot(); }
+Roe<void> ConversationsFacade::DeleteRelayBlobById(const std::string& blob_id) { return hub_.DeleteRelayBlobById(blob_id); }
 
 void ConversationsFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
 

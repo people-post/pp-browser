@@ -251,7 +251,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
 
   std::string html = "<div class=\"chat-card chat-attachment-card\">";
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
-  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty()) {
+  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";

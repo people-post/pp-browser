@@ -26,9 +26,12 @@ Error TooLarge(const uint64_t max_bytes) {
                    Tr("chat.attachment.too_large", {{"limit", FormatAttachmentLimit(max_bytes)}}));
 }
 
-bool IsShrinkableImage(const std::string& mime) {
-  return mime == "image/png" || mime == "image/jpeg" || mime == "image/webp";
+Error Unprocessable() {
+  return PrepError(OutgoingAttachmentError::ImageUnprocessable, "Picture could not be read or cleaned",
+                   Tr("chat.attachment.image_unprocessable"));
 }
+
+std::string StemOf(const std::string& filename) { return std::filesystem::path(filename).stem().string(); }
 
 /** Read a whole file, refusing one over `max_bytes` before it is opened. */
 Roe<std::vector<uint8_t>> ReadAll(const std::string& path, const uint64_t max_bytes) {
@@ -55,7 +58,7 @@ Roe<std::vector<uint8_t>> ReadAll(const std::string& path, const uint64_t max_by
 } // namespace
 
 Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const AttachmentLimits& limits,
-                                                  const bool original) {
+                                                  const OutgoingPickSource source) {
   OutgoingAttachment out;
   out.filename = std::filesystem::path(path).filename().string();
   if (out.filename.empty()) {
@@ -63,25 +66,56 @@ Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const
   }
   out.mime = AttachmentMimeFromFilename(out.filename);
 
-  if (IsShrinkableImage(out.mime) && !original) {
+  // The content decides what it is; the name only says what the sender called it.
+  const ImageKind kind = ImageKindOfFile(path);
+  const bool shrinkable = kind == ImageKind::Jpeg || kind == ImageKind::Png || kind == ImageKind::Webp;
+  const bool named_as_picture = out.mime == "image/png" || out.mime == "image/jpeg" || out.mime == "image/webp";
+
+  if (shrinkable && source != OutgoingPickSource::Original) {
     ImagePrepOptions options;
     options.max_pixels = limits.max_image_pixels;
     options.apply_exif_orientation = true;
     auto shrunk = PrepareAiImageFromFile(path, static_cast<size_t>(limits.max_image_bytes), kShrunkImageLongEdge, options);
     if (shrunk) {
-      const std::string stem = std::filesystem::path(out.filename).stem().string();
-      out.filename = stem + (shrunk->mime == "image/png" ? ".png" : ".jpg");
+      out.filename = StemOf(out.filename) + (shrunk->mime == "image/png" ? ".png" : ".jpg");
       out.mime = shrunk->mime;
       out.bytes = std::move(shrunk->bytes);
       out.image_is_shrunk = true;
       return out;
     }
-    if (AiImagePrepErrorOf(shrunk.error()) != AiImagePrepError::NotAnImage) {
-      return PrepError(OutgoingAttachmentError::ImageFailed, shrunk.error().message,
-                       Tr(AiImagePrepErrorOf(shrunk.error()) == AiImagePrepError::TooLarge ? "chat.image.too_large"
-                                                                                           : "chat.image.read_failed"));
+    const AiImagePrepError why = AiImagePrepErrorOf(shrunk.error());
+    if (why == AiImagePrepError::TooLarge) {
+      return PrepError(OutgoingAttachmentError::ImageFailed, shrunk.error().message, Tr("chat.image.too_large"));
     }
-    // Not a picture this device can decode: it goes as a file (a row with "Open"), not as a broken image.
+    if (source == OutgoingPickSource::Photo) {
+      return Unprocessable(); // it would have gone out with its metadata: not as a picture
+    }
+    // "File": the person chose to send this file, so it goes as the file it is.
+    out.mime = "application/octet-stream";
+  } else if (shrinkable) {
+    // "Original": the picture as it is.
+    out.mime = kind == ImageKind::Jpeg ? "image/jpeg" : kind == ImageKind::Png ? "image/png" : "image/webp";
+    auto bytes = ReadAll(path, MaxAttachmentSendBytes(limits, out.mime, /*image_is_shrunk=*/false));
+    if (!bytes) {
+      return bytes.error();
+    }
+    if (kind == ImageKind::Jpeg) {
+      auto cleaned = StripJpegLocation(*bytes);
+      if (!cleaned) {
+        return Unprocessable();
+      }
+      out.bytes = std::move(*cleaned);
+    } else {
+      out.bytes = std::move(*bytes);
+    }
+    return out;
+  } else if (kind == ImageKind::Gif) {
+    out.mime = "image/gif";
+  } else if (named_as_picture || out.mime == "image/gif") {
+    // Named as a picture but not one by content: never claimed to be an image.
+    if (source != OutgoingPickSource::File) {
+      return Unprocessable();
+    }
     out.mime = "application/octet-stream";
   }
 
@@ -89,7 +123,7 @@ Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const
   if (!bytes) {
     return bytes.error();
   }
-  out.bytes = original && out.mime == "image/jpeg" ? StripJpegLocation(*bytes) : std::move(*bytes);
+  out.bytes = std::move(*bytes);
   return out;
 }
 

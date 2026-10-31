@@ -42,6 +42,8 @@ public:
   AttachmentLimits Limits() const;
   /** Bytes the attachment store holds (default: a scan of the private content blocks, cached for 30 s). */
   void SetDiskUsageProvider(std::function<uint64_t()> provider);
+  /** Replaces the scan of the attachment store (tests only; it must run outside the workflow's lock). */
+  void SetStoreScanForTest(std::function<uint64_t()> scan);
   /** Time source for the per-sender window (ms); tests only. */
   void SetClockForTest(std::function<int64_t()> now_ms);
   /**
@@ -49,6 +51,11 @@ public:
    * or the sender is over its count / byte limit for the minute. A yes is recorded against the sender.
    */
   bool TryAutoDownloadBudget(const std::string& sender, uint64_t byte_length);
+  /**
+   * Whether a direct push from this sender may be kept: the same minute limits and disk cap as automatic
+   * downloads (counted apart from them), over the store including pushed ciphertext not yet opened.
+   */
+  bool TryAcceptDirectPush(const std::string& sender, uint64_t ciphertext_bytes);
   void SetOnChanged(ChangedCallback callback);
 
   Roe<void> SetDek(ByteVector dek) override;
@@ -129,6 +136,7 @@ private:
   void CancelJobsLocked(const std::function<bool(const std::string& key)>& matches);
   void MarkPending(const std::string& key);
   void NotifyChanged();
+  bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length);
   ByteVector CopyDekUnlocked() const;
   void ContinueDrainOnWorker();
 
@@ -152,8 +160,10 @@ private:
   std::unordered_set<std::string> throttled_;
   AttachmentLimits limits_ = DefaultAttachmentLimits();
   AutoDownloadBudget budget_;
+  AutoDownloadBudget push_budget_;
   std::function<uint64_t()> disk_usage_;
   std::function<int64_t()> clock_;
+  std::function<uint64_t()> scan_override_;
   uint64_t scanned_disk_bytes_ = 0;
   int64_t scanned_at_ms_ = 0;
   uint64_t started_since_scan_bytes_ = 0;

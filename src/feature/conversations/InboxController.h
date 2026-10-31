@@ -15,6 +15,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -29,6 +30,11 @@ struct TranscriptAttachmentView {
   std::string local_path;
   /** A video's poster frame (empty: none). */
   std::string poster_path;
+  /**
+   * False for a picture that must not be decoded for display: its header is unreadable or declares more pixels
+   * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
+   */
+  bool inline_image_ok = true;
 };
 
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
@@ -133,6 +139,8 @@ private:
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
+  /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
+  mutable std::unordered_map<std::string, bool> inline_image_ok_;
   std::string active_thread_id_;
   ThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;

@@ -121,6 +121,23 @@ TEST_F(ImageMetadataTest, ReadsExifOrientationBeyondALargeMetadataSegment) {
   EXPECT_EQ(info->height, 48);
 }
 
+std::vector<uint8_t> Segment(const uint8_t marker, const std::string& body) {
+  const uint16_t len = static_cast<uint16_t>(body.size() + 2);
+  std::vector<uint8_t> seg = {0xFF, marker, static_cast<uint8_t>(len >> 8), static_cast<uint8_t>(len & 0xFF)};
+  seg.insert(seg.end(), body.begin(), body.end());
+  return seg;
+}
+
+bool Decodes(const std::vector<uint8_t>& bytes, const int expected_width) {
+  SDL_Surface* surface = IMG_Load_IO(SDL_IOFromConstMem(bytes.data(), bytes.size()), true);
+  if (!surface) {
+    return false;
+  }
+  const bool ok = surface->w == expected_width;
+  SDL_DestroySurface(surface);
+  return ok;
+}
+
 TEST_F(ImageMetadataTest, StripRemovesGpsButKeepsAViewableUprightPicture) {
   std::vector<uint8_t> jpeg = ReadFile(SaveJpeg(64, 48, "gps.jpg"));
   const auto exif = ExifSegmentWithGps(6);
@@ -128,20 +145,16 @@ TEST_F(ImageMetadataTest, StripRemovesGpsButKeepsAViewableUprightPicture) {
   ASSERT_TRUE(Contains(jpeg, "GPSLATITUDE"));
 
   const auto stripped = StripJpegLocation(jpeg);
-  EXPECT_FALSE(Contains(stripped, "GPSLATITUDE"));
-  EXPECT_FALSE(Contains(stripped, "-121.4737E"));
+  ASSERT_TRUE(stripped);
+  EXPECT_FALSE(Contains(*stripped, "GPSLATITUDE"));
+  EXPECT_FALSE(Contains(*stripped, "-121.4737E"));
   // The orientation survives as a minimal EXIF segment that holds nothing else.
-  const auto info = ReadImageHeaderBytes(stripped);
+  const auto info = ReadImageHeaderBytes(*stripped);
   ASSERT_TRUE(info);
   EXPECT_EQ(info->exif_orientation, 6);
   EXPECT_EQ(info->width, 64);
   EXPECT_EQ(info->height, 48);
-  // Still a decodable JPEG.
-  SDL_IOStream* io = SDL_IOFromConstMem(stripped.data(), stripped.size());
-  SDL_Surface* surface = IMG_Load_IO(io, true);
-  ASSERT_NE(surface, nullptr) << SDL_GetError();
-  EXPECT_EQ(surface->w, 64);
-  SDL_DestroySurface(surface);
+  EXPECT_TRUE(Decodes(*stripped, 64));
 }
 
 TEST_F(ImageMetadataTest, StripOfAnUprightPictureLeavesNoExifAtAll) {
@@ -149,23 +162,120 @@ TEST_F(ImageMetadataTest, StripOfAnUprightPictureLeavesNoExifAtAll) {
   const auto exif = ExifSegmentWithGps(1);
   jpeg.insert(jpeg.begin() + 2, exif.begin(), exif.end());
   const auto stripped = StripJpegLocation(jpeg);
-  EXPECT_FALSE(Contains(stripped, "Exif"));
-  EXPECT_FALSE(Contains(stripped, "GPSLATITUDE"));
+  ASSERT_TRUE(stripped);
+  EXPECT_FALSE(Contains(*stripped, "Exif"));
+  EXPECT_FALSE(Contains(*stripped, "GPSLATITUDE"));
+  EXPECT_TRUE(Decodes(*stripped, 40));
 }
 
-TEST_F(ImageMetadataTest, StripDropsCommentsAndLeavesNonJpegAlone) {
+TEST_F(ImageMetadataTest, StripDropsCommentsXmpIptcAndVendorSegments) {
   std::vector<uint8_t> jpeg = ReadFile(SaveJpeg(40, 40, "c.jpg"));
-  const std::string note = "taken at home";
-  std::vector<uint8_t> comment = {0xFF, 0xFE, 0, static_cast<uint8_t>(note.size() + 2)};
-  comment.insert(comment.end(), note.begin(), note.end());
-  jpeg.insert(jpeg.begin() + 2, comment.begin(), comment.end());
-  ASSERT_TRUE(Contains(jpeg, "taken at home"));
-  EXPECT_FALSE(Contains(StripJpegLocation(jpeg), "taken at home"));
+  std::vector<uint8_t> extra;
+  for (const auto& seg : {Segment(0xFE, "taken at home"), Segment(0xE1, "http://ns.adobe.com/xap/1.0/ XMP-GPS-HOME"),
+                          Segment(0xED, "Photoshop 3.0 IPTC-CITY"), Segment(0xEB, "VENDOR-LOCATION"),
+                          Segment(0xE5, "MAKERNOTE-SERIAL")}) {
+    extra.insert(extra.end(), seg.begin(), seg.end());
+  }
+  jpeg.insert(jpeg.begin() + 2, extra.begin(), extra.end());
+  for (const char* needle : {"taken at home", "XMP-GPS-HOME", "IPTC-CITY", "VENDOR-LOCATION", "MAKERNOTE-SERIAL"}) {
+    ASSERT_TRUE(Contains(jpeg, needle)) << needle;
+  }
+  const auto stripped = StripJpegLocation(jpeg);
+  ASSERT_TRUE(stripped);
+  for (const char* needle : {"taken at home", "XMP-GPS-HOME", "IPTC-CITY", "VENDOR-LOCATION", "MAKERNOTE-SERIAL"}) {
+    EXPECT_FALSE(Contains(*stripped, needle)) << needle;
+  }
+  EXPECT_TRUE(Decodes(*stripped, 40));
+}
 
+TEST_F(ImageMetadataTest, StripDropsMpfSecondPictureTrailerAndJfxxThumbnail) {
+  const auto base = ReadFile(SaveJpeg(40, 40, "mpf.jpg"));
+  const auto second = ReadFile(SaveJpeg(16, 16, "second.jpg"));
+  std::vector<uint8_t> jpeg = base;
+  // APP0 JFXX thumbnail and APP2 MPF right after SOI (any further APP0 JFIF of the encoder stays as it was).
+  std::vector<uint8_t> extra;
+  for (const auto& seg : {Segment(0xE0, std::string("JFXX\0\x10", 6) + "THUMBNAIL-LOCATION"),
+                          Segment(0xE2, std::string("MPF\0", 4) + "MPF-INDEX")}) {
+    extra.insert(extra.end(), seg.begin(), seg.end());
+  }
+  jpeg.insert(jpeg.begin() + 2, extra.begin(), extra.end());
+  // A second complete picture and a trailer after the first end of image.
+  jpeg.insert(jpeg.end(), second.begin(), second.end());
+  const std::string trailer = "TRAILER-GPS-DATA";
+  jpeg.insert(jpeg.end(), trailer.begin(), trailer.end());
+
+  const auto stripped = StripJpegLocation(jpeg);
+  ASSERT_TRUE(stripped);
+  EXPECT_FALSE(Contains(*stripped, "THUMBNAIL-LOCATION"));
+  EXPECT_FALSE(Contains(*stripped, "MPF-INDEX"));
+  EXPECT_FALSE(Contains(*stripped, "TRAILER-GPS-DATA"));
+  EXPECT_LT(stripped->size(), base.size() + 1) << "nothing of the second picture or the trailer is left";
+  EXPECT_EQ((*stripped)[stripped->size() - 2], 0xFF);
+  EXPECT_EQ((*stripped)[stripped->size() - 1], 0xD9) << "ends at the first end of image";
+  EXPECT_TRUE(Decodes(*stripped, 40));
+}
+
+TEST_F(ImageMetadataTest, StripEmptiesAJfifThumbnail) {
+  // JFIF with a 2x2 thumbnail of recognisable bytes.
+  std::string jfif("JFIF\0\x01\x01\x00\x00\x01\x00\x01\x02\x02", 14);
+  jfif += "THUMB-PIXELS";
+  std::vector<uint8_t> jpeg = ReadFile(SaveJpeg(32, 32, "jfif.jpg"));
+  const auto seg = Segment(0xE0, jfif);
+  jpeg.insert(jpeg.begin() + 2, seg.begin(), seg.end());
+  const auto stripped = StripJpegLocation(jpeg);
+  ASSERT_TRUE(stripped);
+  EXPECT_FALSE(Contains(*stripped, "THUMB-PIXELS"));
+  EXPECT_TRUE(Decodes(*stripped, 32));
+}
+
+TEST_F(ImageMetadataTest, StripFailsClosedOnAnythingMalformed) {
+  EXPECT_FALSE(StripJpegLocation({}));
+  EXPECT_FALSE(StripJpegLocation({'n', 'o', 't', ' ', 'a', ' ', 'j', 'p', 'g'}));
   const std::vector<uint8_t> png = {0x89, 'P', 'N', 'G', 1, 2, 3};
-  EXPECT_EQ(StripJpegLocation(png), png);
-  const std::vector<uint8_t> broken = {0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF, 1, 2};
-  EXPECT_EQ(StripJpegLocation(broken), broken) << "a truncated segment is not touched";
+  EXPECT_FALSE(StripJpegLocation(png));
+  const std::vector<uint8_t> truncated_segment = {0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF, 1, 2};
+  EXPECT_FALSE(StripJpegLocation(truncated_segment)) << "a segment that runs past the end";
+
+  const auto good = ReadFile(SaveJpeg(40, 40, "cut.jpg"));
+  ASSERT_TRUE(StripJpegLocation(good));
+  std::vector<uint8_t> no_end(good.begin(), good.end() - 2); // end-of-image marker cut off
+  EXPECT_FALSE(StripJpegLocation(no_end));
+  std::vector<uint8_t> half(good.begin(), good.begin() + static_cast<std::ptrdiff_t>(good.size() / 2));
+  EXPECT_FALSE(StripJpegLocation(half));
+  std::vector<uint8_t> garbage_between = good;
+  garbage_between.insert(garbage_between.begin() + 2, {0x12, 0x34, 0x56, 0x78});
+  EXPECT_FALSE(StripJpegLocation(garbage_between)) << "bytes where a marker must be";
+}
+
+TEST_F(ImageMetadataTest, KindIsDecidedByTheFirstBytesNotTheName) {
+  const std::string jpeg = SaveJpeg(20, 20, "noext_source.jpg");
+  const std::string renamed = (dir_ / "IMG_0001").string(); // no extension at all
+  std::filesystem::copy_file(jpeg, renamed);
+  EXPECT_EQ(ImageKindOfFile(renamed), ImageKind::Jpeg);
+  EXPECT_EQ(ImageKindOfFile(SavePng(8, 8, "x.dat")), ImageKind::Png) << "a PNG named .dat";
+  EXPECT_EQ(ImageKindOfBytes({'G', 'I', 'F', '8', '9', 'a', 1}), ImageKind::Gif);
+  EXPECT_EQ(ImageKindOfBytes({'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'}), ImageKind::Webp);
+  EXPECT_EQ(ImageKindOfBytes({'h', 'e', 'l', 'l', 'o'}), ImageKind::Unknown);
+  EXPECT_EQ(ImageKindOfFile((dir_ / "missing").string()), ImageKind::Unknown);
+}
+
+TEST_F(ImageMetadataTest, PixelCapReadsTheDeclaredSizeOnly) {
+  EXPECT_TRUE(ImageWithinPixelCap(SaveJpeg(100, 100, "ok.jpg"), 10'000));
+  EXPECT_FALSE(ImageWithinPixelCap(SaveJpeg(100, 100, "big.jpg"), 9'999));
+  // A tiny file whose header claims 30000 x 30000.
+  std::vector<uint8_t> bomb = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
+                               0x00, 0x00, 0x75, 0x30, 0x00, 0x00, 0x75, 0x30, 8, 2, 0, 0, 0};
+  const std::string path = (dir_ / "claims_huge.png").string();
+  {
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bomb.data()), static_cast<std::streamsize>(bomb.size()));
+  }
+  EXPECT_FALSE(ImageWithinPixelCap(path, 64'000'000));
+  // Unknown format or a damaged head is not displayed inline either.
+  const std::string text = (dir_ / "text.png").string();
+  std::ofstream(text) << "not a picture";
+  EXPECT_FALSE(ImageWithinPixelCap(text, 64'000'000));
+  EXPECT_FALSE(ImageWithinPixelCap((dir_ / "missing.png").string(), 64'000'000));
 }
 
 } // namespace

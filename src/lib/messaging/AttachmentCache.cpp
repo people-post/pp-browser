@@ -534,6 +534,24 @@ std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, cons
   return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blob_cipher").string();
 }
 
+uint64_t PendingAttachmentCiphertextBytes(const std::string& profile_dir) {
+  uint64_t total = 0;
+  std::error_code ec;
+  for (std::filesystem::directory_iterator threads(ThreadsRoot(profile_dir), ec), end; !ec && threads != end;
+       threads.increment(ec)) {
+    const auto pending = threads->path() / "blob_cipher";
+    std::error_code walk_ec;
+    for (std::filesystem::directory_iterator it(pending, walk_ec), pend; !walk_ec && it != pend;
+         it.increment(walk_ec)) {
+      std::error_code size_ec;
+      if (it->is_regular_file(size_ec) && !size_ec) {
+        total += it->file_size(size_ec);
+      }
+    }
+  }
+  return total;
+}
+
 namespace {
 /**
  * A peer can push before the matching message arrives, so orphan pushes are bounded instead:

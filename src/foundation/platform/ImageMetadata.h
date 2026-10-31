@@ -24,10 +24,26 @@ std::optional<ImageHeaderInfo> ReadImageHeader(const std::string& path);
 std::optional<ImageHeaderInfo> ReadImageHeaderBytes(const std::vector<uint8_t>& head);
 
 /**
- * A JPEG without its location and camera data: every EXIF / XMP (APP1), IPTC (APP13) and comment segment is
- * removed. A non-upright orientation is kept as a minimal EXIF segment that holds nothing else, so the
- * picture still shows the right way up. Anything that is not a well-formed JPEG is returned unchanged.
+ * True when a picture file is one this reader knows and its declared size is at most `max_pixels`: the check to
+ * make before an image received from a contact is decoded for display (a header can claim 30000 x 30000).
+ * Unknown formats and damaged heads are false.
  */
-std::vector<uint8_t> StripJpegLocation(const std::vector<uint8_t>& jpeg);
+bool ImageWithinPixelCap(const std::string& path, uint64_t max_pixels);
+
+/** What a file is by its first bytes, whatever its name says. */
+enum class ImageKind { Unknown, Jpeg, Png, Gif, Webp };
+ImageKind ImageKindOfBytes(const std::vector<uint8_t>& head);
+ImageKind ImageKindOfFile(const std::string& path);
+
+/**
+ * A copy of a JPEG that keeps only what showing it needs: the tables, frame and scans, a JFIF header without
+ * its thumbnail, an Adobe colour-transform segment and an ICC colour profile. Every other application segment
+ * (EXIF with its GPS and camera data, XMP, IPTC, Multi-Picture / MPF, vendor data, a JFXX thumbnail), comments
+ * and JPEG extensions are removed, and the file ends at its first end-of-image marker, so a second picture or a
+ * trailer after it is gone. A non-upright orientation is kept as a minimal EXIF segment that holds nothing else.
+ * Only this is claimed: it is not a promise that pixels carry nothing. Returns nullopt for anything that is not
+ * a well-formed JPEG (not a JPEG, a damaged segment, no scan, no end of image): the caller must not send it on.
+ */
+std::optional<std::vector<uint8_t>> StripJpegLocation(const std::vector<uint8_t>& jpeg);
 
 } // namespace pbr

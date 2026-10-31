@@ -647,6 +647,7 @@
     "chat.attach.file": "文件",
     "chat.attach.original": "原图",
     "chat.attachment.read_failed": "无法读取这个文件。",
+    "chat.attachment.image_unprocessable": "这张图片无法处理，可以用'文件'发送",
     "chat.attachment.too_large": "这个文件太大，发不出去，上限是 {{limit}}。",
     "chat.attachment.too_large_receive": "文件太大，无法下载。",
     "chat.attachment.sending_too_fast": "发得太快了，请稍等。",

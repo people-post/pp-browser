@@ -7,6 +7,7 @@
 #include "lib/net/HttpClient.h"
 #include "common/PbrCompat.h"
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <thread>
@@ -15,13 +16,22 @@ namespace pbr {
 
 namespace {
 
+/** The ciphertext length a declared plaintext length implies; the declared length is the sender's word. */
+uint64_t ExpectedCiphertextBytes(const ChatAttachmentFields& fields) {
+  return fields.byte_length + kAttachmentCipherOverheadBytes;
+}
+
 Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentFields& fields) {
   if (fields.url.empty()) {
     return Error("Attachment URL is required");
   }
-  // fields.url is peer-controlled (sender's attachment URL): restrict to https + public hosts.
-  const auto response =
-      HttpClient::Get(fields.url, {}, kMaxHttpClientBodyBytes, HttpTimeout{}, /*restrict_to_public_https=*/true);
+  if (fields.byte_length == 0) {
+    return Error("Attachment declares no size");
+  }
+  // fields.url is peer-controlled (sender's attachment URL): restrict to https + public hosts, and stop reading
+  // at the declared size (plus the AEAD tag) instead of taking whatever the host sends.
+  const size_t cap = static_cast<size_t>(std::min<uint64_t>(ExpectedCiphertextBytes(fields), kMaxHttpClientBodyBytes));
+  const auto response = HttpClient::Get(fields.url, {}, cap, HttpTimeout{}, /*restrict_to_public_https=*/true);
   if (!response) {
     return response.error();
   }
@@ -144,6 +154,19 @@ void FetchAndDecryptAttachmentAsync(const ChatAttachmentFields& fields, const At
     if (!ciphertext) {
       if (on_done) {
         on_done(ciphertext.error());
+      }
+      return;
+    }
+
+    // The length must be exactly what the message declared, whichever way the bytes came (pending push, peer,
+    // CDN): a different one is a lying sender or a corrupt object, never decrypted, and a pending copy is dropped.
+    if (fields.byte_length == 0 || ciphertext->size() != ExpectedCiphertextBytes(fields)) {
+      if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
+          fields.content_hash.size() == kAttachmentContentHashSize) {
+        RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
+      }
+      if (on_done) {
+        on_done(Error("Attachment size does not match what the message declared"));
       }
       return;
     }

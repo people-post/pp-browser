@@ -104,6 +104,9 @@ Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir);
 
 /** Pending peer-push ciphertext before envelope key arrives (a6). */
 std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, const std::string& thread_id);
+
+/** Bytes of all pending (pushed, not yet opened) attachment ciphertext, over every thread. */
+uint64_t PendingAttachmentCiphertextBytes(const std::string& profile_dir);
 /**
  * Store pushed ciphertext for `content_hash`. `referenced_hex` holds the (lower-case hex) hashes
  * the thread's attachment messages name: those blobs are real attachments — possibly left

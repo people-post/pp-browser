@@ -5,6 +5,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/ImageMetadata.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/people/DirectChatTargetFromContact.h"
@@ -623,6 +624,18 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
     // Large private video: keep plaintext off disk until explicit open.
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
+  }
+  if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
+    // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
+    const auto cached = inline_image_ok_.find(view.local_path);
+    if (cached != inline_image_ok_.end()) {
+      view.inline_image_ok = cached->second;
+    } else {
+      const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
+                                                        : DefaultAttachmentLimits().max_image_pixels;
+      view.inline_image_ok = ImageWithinPixelCap(view.local_path, max_pixels);
+      inline_image_ok_[view.local_path] = view.inline_image_ok;
+    }
   }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);

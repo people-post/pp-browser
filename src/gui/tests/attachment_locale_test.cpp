@@ -24,6 +24,7 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.attachment.too_large_receive", {}},
       {"chat.attachment.sending_too_fast", {}},
       {"chat.attachment.read_failed", {}},
+      {"chat.attachment.image_unprocessable", {}},
       {"chat.attachment.space_warning", {"{{percent}}"}},
       {"errors.blob.not_configured", {}},
       {"errors.blob.upload_rejected", {}},

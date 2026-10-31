@@ -1018,37 +1018,37 @@ void ChatController::OnAttachFile() {
     return;
   }
 
-  // original: send the picture as it is (a JPEG still loses its location); otherwise pictures are shrunk.
-  const auto picked = [this](const bool original) {
-    return [this, original](std::vector<std::string> paths) {
-      AppRuntime::PostUI([this, original, paths = std::move(paths)]() mutable {
+  // Where the file came from decides what is done to a picture (see OutgoingPickSource).
+  const auto picked = [this](const OutgoingPickSource source) {
+    return [this, source](std::vector<std::string> paths) {
+      AppRuntime::PostUI([this, source, paths = std::move(paths)]() mutable {
         if (paths.empty()) {
           return;
         }
-        StartAttachmentUpload(std::move(paths.front()), original);
+        StartAttachmentUpload(std::move(paths.front()), source);
       });
     };
   };
-  const auto pick_image = [picked](const bool original) {
-    return [on_picked = picked(original)]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
+  const auto pick_image = [picked](const OutgoingPickSource source) {
+    return [on_picked = picked(source)]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
   };
   const auto pick_file = [picked]() {
-    return [on_picked = picked(false)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
+    return [on_picked = picked(OutgoingPickSource::File)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
   };
 
   // A phone keeps photos and files apart; the desktop dialog shows both at once, so there it is only
   // "File" and "Original photo".
   std::vector<ContextMenuAction> actions;
   if (Platform::IsMobile()) {
-    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_image(false)});
+    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_image(OutgoingPickSource::Photo)});
   }
-  actions.push_back({"attach_original", Tr("chat.attach.original"), nullptr, pick_image(true)});
+  actions.push_back({"attach_original", Tr("chat.attach.original"), nullptr, pick_image(OutgoingPickSource::Original)});
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
   actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
   ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
-void ChatController::StartAttachmentUpload(const std::string& path, const bool original) {
+void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source) {
   if (!facade_ || chat_.attachment_uploading) {
     return;
   }
@@ -1075,8 +1075,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const bool o
 
   // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
-  AppRuntime::PostWorkerNormal([this, thread_id, path, original, limits, finish_uploading]() {
-    auto prepared = PrepareOutgoingAttachment(path, limits, original);
+  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, finish_uploading]() {
+    auto prepared = PrepareOutgoingAttachment(path, limits, source);
     ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
     AppRuntime::PostUI([this, thread_id, finish_uploading, prepared = std::move(prepared)]() mutable {
       if (!prepared) {
@@ -1100,8 +1100,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const bool o
             scroller_.RequestScrollToLatest();
             UpdateSidebarPreview(sent->text);
           },
-          [this]() { return facade_->PlanRelayQuotaRecovery(); },
-          [this]() { return facade_->FreeOldestRelayBlobSlot(); });
+          [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
+          [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
     });
   });
 }

@@ -319,7 +319,7 @@ Top-level `text` is the display glyph for `reaction` (may be empty for `reaction
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob |
+| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob; **empty** when the file was pushed peer-direct only (no server copy; the receiver uses the pushed ciphertext or fetches from the sender) |
 | `mime` | **LenUtf8** — logical type, chosen from the file extension: `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf`, `text/plain`, `video/mp4`, `video/webm`, `video/quicktime` (.mov), `audio/mpeg` (.mp3), `audio/mp4` (.m4a), `audio/wav`, `audio/ogg`; any other extension is `application/octet-stream`. Table only, nothing is transcoded; receivers must also accept mimes they do not know. |
 | `filename` | **LenUtf8** — original filename |
 | `byte_length` | `u64` BE — plaintext size |

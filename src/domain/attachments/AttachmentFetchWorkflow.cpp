@@ -75,59 +75,101 @@ void AttachmentFetchWorkflow::SetDiskUsageProvider(std::function<uint64_t()> pro
   disk_usage_ = std::move(provider);
 }
 
+void AttachmentFetchWorkflow::SetStoreScanForTest(std::function<uint64_t()> scan) {
+  std::lock_guard lock(mutex_);
+  scan_override_ = std::move(scan);
+}
+
 void AttachmentFetchWorkflow::SetClockForTest(std::function<int64_t()> now_ms) {
   std::lock_guard lock(mutex_);
   clock_ = std::move(now_ms);
 }
 
-bool AttachmentFetchWorkflow::TryAutoDownloadBudget(const std::string& sender, const uint64_t byte_length) {
+namespace {
+
+int64_t SteadyNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+/** What the attachment store holds: the private content blocks plus pushed ciphertext not yet opened. */
+uint64_t ScanAttachmentStoreBytes(const std::string& profile_dir, const std::string& profile_id) {
+  if (profile_dir.empty()) {
+    return 0;
+  }
+  uint64_t total = PendingAttachmentCiphertextBytes(profile_dir);
+  if (!profile_id.empty()) {
+    std::error_code ec;
+    CasStore cas(profile_dir, profile_id);
+    for (std::filesystem::recursive_directory_iterator it(cas.BlocksRoot(CasRealm::Private), ec), end;
+         !ec && it != end; it.increment(ec)) {
+      std::error_code size_ec;
+      if (it->is_regular_file(size_ec) && !size_ec) {
+        total += it->file_size(size_ec);
+      }
+    }
+  }
+  return total;
+}
+
+} // namespace
+
+bool AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender,
+                                            const uint64_t byte_length) {
   AttachmentLimits limits;
   std::function<uint64_t()> provider;
   std::function<int64_t()> clock;
+  std::function<uint64_t()> scan_override;
+  bool need_scan = false;
+  std::string profile_dir;
+  std::string profile_id;
   {
     std::lock_guard lock(mutex_);
     limits = limits_;
     provider = disk_usage_;
     clock = clock_;
+    scan_override = scan_override_;
+    profile_dir = profile_dir_;
+    profile_id = profile_id_;
   }
-  const int64_t now_ms = clock ? clock()
-                               : std::chrono::duration_cast<std::chrono::milliseconds>(
-                                     std::chrono::steady_clock::now().time_since_epoch())
-                                     .count();
+  const int64_t now_ms = clock ? clock() : SteadyNowMs();
   uint64_t used = 0;
   if (provider) {
     used = provider();
   } else {
-    std::lock_guard lock(mutex_);
-    if (scanned_at_ms_ == 0 || now_ms - scanned_at_ms_ >= 30 * 1000) {
-      uint64_t total = 0;
-      if (!profile_dir_.empty() && !profile_id_.empty()) {
-        std::error_code ec;
-        CasStore cas(profile_dir_, profile_id_);
-        for (std::filesystem::recursive_directory_iterator it(cas.BlocksRoot(CasRealm::Private), ec), end;
-             !ec && it != end; it.increment(ec)) {
-          std::error_code size_ec;
-          if (it->is_regular_file(size_ec) && !size_ec) {
-            total += it->file_size(size_ec);
-          }
-        }
-      }
+    {
+      std::lock_guard lock(mutex_);
+      need_scan = scanned_at_ms_ == 0 || now_ms - scanned_at_ms_ >= 30 * 1000;
+    }
+    if (need_scan) {
+      // A directory walk: never under mutex_, which StateFor (the transcript render) takes.
+      const uint64_t total = scan_override ? scan_override() : ScanAttachmentStoreBytes(profile_dir, profile_id);
+      std::lock_guard lock(mutex_);
       scanned_disk_bytes_ = total;
       scanned_at_ms_ = now_ms;
       started_since_scan_bytes_ = 0;
     }
+    std::lock_guard lock(mutex_);
     used = scanned_disk_bytes_ + started_since_scan_bytes_;
   }
   if (used >= limits.auto_download_disk_cap_bytes) {
     return false;
   }
-  if (!budget_.TryAcquire(sender, byte_length, now_ms, limits.auto_download_max_count_per_minute,
-                          limits.auto_download_max_bytes_per_minute)) {
+  if (!budget.TryAcquire(sender, byte_length, now_ms, limits.auto_download_max_count_per_minute,
+                         limits.auto_download_max_bytes_per_minute)) {
     return false;
   }
   std::lock_guard lock(mutex_);
   started_since_scan_bytes_ += byte_length;
   return true;
+}
+
+bool AttachmentFetchWorkflow::TryAutoDownloadBudget(const std::string& sender, const uint64_t byte_length) {
+  return AdmitByBudget(budget_, sender, byte_length);
+}
+
+bool AttachmentFetchWorkflow::TryAcceptDirectPush(const std::string& sender, const uint64_t ciphertext_bytes) {
+  return AdmitByBudget(push_budget_, sender, ciphertext_bytes);
 }
 
 void AttachmentFetchWorkflow::SetOnChanged(ChangedCallback callback) {
@@ -188,6 +230,9 @@ std::string AttachmentFetchWorkflow::JobKey(const std::string& thread_id,
 }
 
 bool AttachmentFetchWorkflow::ShouldAutoDownload(const Job& job) const {
+  if (job.fields.byte_length == 0) {
+    return false; // an undeclared size is the sender's word for nothing: only a tap fetches it
+  }
   if (suppression_ && suppression_->IsSuppressed(job.thread_id, job.fields.content_hash)) {
     return false;
   }
@@ -242,6 +287,15 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
     bool already_throttled = false;
     {
       std::lock_guard lock(mutex_);
+      // Already downloading or queued: a repeat look must not spend the sender's budget again.
+      if (active_.contains(key)) {
+        return;
+      }
+      for (const Job& queued : queue_) {
+        if (JobKey(queued) == key) {
+          return;
+        }
+      }
       already_throttled = throttled_.contains(key);
     }
     // A sender over the automatic limits (or a full store) leaves the file as a "Download" row.
@@ -469,7 +523,8 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(
   if (throttled_.contains(key)) {
     return DownloadState::Pending;
   }
-  if (!ShouldAutoEnqueueAttachment(policy_, byte_length, backlog_drain_, limits_.auto_download_max_bytes)) {
+  if (byte_length == 0 ||
+      !ShouldAutoEnqueueAttachment(policy_, byte_length, backlog_drain_, limits_.auto_download_max_bytes)) {
     return DownloadState::Pending;
   }
   return DownloadState::Downloading;

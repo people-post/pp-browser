@@ -123,8 +123,8 @@ Failure statuses and the client's typed error (`CheckBlobResponse` → `Classify
 | 403 `Blob not owned by caller`, `Relay user not registered`, `Relay registration expired`; also a 403 from the storage PUT (expired or mismatched signed URL) | retain / delete, request auth, S3 | `UploadRejected` | failure line, retry later |
 | 404 `Blob not found` | retain / delete (e.g. the pending upload expired) | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
 | 400 `File exceeds size limit` (also 413 if a proxy sends it; the relay itself never answers 413) | presign above `largeMaxBytes` | `TooLarge` | not retried |
-| 429 `Small file quota exceeded` / `Large file storage quota exceeded` | presign | `QuotaExceeded` | `BlobQuotaRecoveryFlow`: confirm, delete the oldest relay blob, upload again; the confirm says people who have not downloaded it yet will not get it |
-| 429 `Rate limit exceeded` (120 per user per minute) / `Too many pending uploads` | every blobs route / presign | `RateLimited` | "sending too fast", no delete offered |
+| 429 `Small file quota exceeded` / `Large file storage quota exceeded` (these two exact texts only) | presign | `QuotaExceeded` | `BlobQuotaRecoveryFlow`: confirm, delete the oldest non-icon relay blob of the tier named in the 429 text (small / large; the blob id shown in the confirm is the one deleted), upload again; the confirm says people who have not downloaded it yet will not get it |
+| any other 429: `Rate limit exceeded` (120 per user per minute), `Too many pending uploads`, an empty or proxy / WAF body | every blobs route / presign | `RateLimited` | "sending too fast", no delete offered |
 | other 5xx | gateway / relay failure | `Unavailable` | failure line, retry |
 | anything else (400 `Unsupported content type`, 401 signature errors, …) | | `Generic` | failure line |
 

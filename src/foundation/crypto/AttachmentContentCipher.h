@@ -8,6 +8,9 @@
 
 namespace pbr {
 
+/** XChaCha20-Poly1305 adds its 16-byte tag to the plaintext; the nonce travels in the envelope, not the blob. */
+inline constexpr uint64_t kAttachmentCipherOverheadBytes = 16;
+
 /** AEAD for attachment file bytes using a per-file content key (R004). */
 class AttachmentContentCipher {
 public:

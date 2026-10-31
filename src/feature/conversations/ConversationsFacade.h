@@ -283,8 +283,8 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
-  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
-  Roe<void> FreeOldestRelayBlobSlot();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();

@@ -23,8 +23,19 @@ bool IsBlobQuotaError(const Error& err) {
          err.code == static_cast<int32_t>(Err::Blob::QuotaExceeded);
 }
 
+std::optional<BlobTier> BlobQuotaTierOf(const Error& err) {
+  if (err.message.find("Small file quota") != std::string::npos) {
+    return BlobTier::Small;
+  }
+  if (err.message.find("Large file storage quota") != std::string::npos) {
+    return BlobTier::Large;
+  }
+  return std::nullopt;
+}
+
 Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, const std::string& relay_user_id,
-                                                       const std::string& protected_blob_id) {
+                                                       const std::string& protected_blob_id,
+                                                       const std::optional<BlobTier> full_tier) {
   auto uid = RequireRelayUserId(relay_user_id);
   if (!uid) {
     return uid.error();
@@ -43,6 +54,13 @@ Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, const 
     if (!protected_blob_id.empty() && record.blob_id == protected_blob_id) {
       continue;
     }
+    // Never a profile photo, never an upload still in flight, and only the tier that is full.
+    if (record.purpose == BlobPurpose::Icon || record.status != BlobStatus::Retained) {
+      continue;
+    }
+    if (full_tier && record.tier != *full_tier) {
+      continue;
+    }
     if (!oldest || record.created_at < oldest->created_at) {
       oldest = record;
     }
@@ -54,6 +72,7 @@ Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, const 
   BlobQuotaRecoveryPlan plan;
   plan.blob_to_delete = *oldest;
   plan.usage = listed->usage;
+  plan.full_tier = full_tier.value_or(oldest->tier);
   return plan;
 }
 
@@ -69,8 +88,8 @@ Roe<void> DeleteRelayBlob(IBlobClient& blob, const std::string& relay_user_id, c
 }
 
 Roe<void> FreeOldestRelayBlobSlot(IBlobClient& blob, const std::string& relay_user_id,
-                                  const std::string& protected_blob_id) {
-  auto plan = PlanOldestRelayBlobDeletion(blob, relay_user_id, protected_blob_id);
+                                  const std::string& protected_blob_id, const std::optional<BlobTier> full_tier) {
+  auto plan = PlanOldestRelayBlobDeletion(blob, relay_user_id, protected_blob_id, full_tier);
   if (!plan) {
     return plan.error();
   }
