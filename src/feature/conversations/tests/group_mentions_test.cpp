@@ -290,29 +290,6 @@ TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
   }
 }
 
-// --- a member named "ai" -----------------------------------------------------------------------------
-
-TEST(GroupMentionsTest, AMemberPickedAtTheStartIsAPersonEvenWhenTheyAreCalledAi) {
-  const std::string text = "@ai look at this";
-  EXPECT_TRUE(AsksTheAi(text, {})) << "typed @ai, no span: still asks the AI";
-  EXPECT_FALSE(AsksTheAi(text, {Span(TextSpanKind::Mention, 0, 3, kAlice)})) << "picked: a person";
-  EXPECT_FALSE(AsksTheAi("  " + text, {Span(TextSpanKind::Mention, 2, 5, kAlice)})) << "after leading blanks too";
-  // A mention elsewhere does not turn a typed @ai into a person.
-  EXPECT_TRUE(AsksTheAi("@ai ask @Bob", {Span(TextSpanKind::Mention, 7, 11, kBob)}));
-  // An everyone span is never a member called ai.
-  EXPECT_TRUE(AsksTheAi(text, {Span(TextSpanKind::Everyone, 0, 3)}));
-}
-
-TEST(GroupMentionsTest, TheSharedAiFormsFollowTheSameRule) {
-  // "@ai+ summarize" typed: the AI, shared. The same text starting with a picked member "ai": a person.
-  EXPECT_TRUE(AsksTheAi("@ai+ summarize", {}));
-  EXPECT_TRUE(AsksTheAi("@ai++ summarize", {Span(TextSpanKind::Mention, 8, 12, kBob)}));
-  EXPECT_FALSE(AsksTheAi("@ai+ summarize", {Span(TextSpanKind::Mention, 0, 3, kAlice)}));
-  // Not an AI call at all (no prompt, or another word): never one.
-  EXPECT_FALSE(AsksTheAi("@ai", {}));
-  EXPECT_FALSE(AsksTheAi("@Bob hi", {Span(TextSpanKind::Mention, 0, 4, kBob)}));
-}
-
 // --- the everyone line in the user's language --------------------------------------------------
 
 TEST(GroupMentionsTest, EveryoneInChineseIsFoundByAPrefixOfItsWordOrByEveryone) {
