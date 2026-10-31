@@ -245,6 +245,8 @@ public:
    * group, or an "@ai" question (the agent's, sent the usual way) — then nothing was sent.
    */
   bool SendsWithMentions(const std::string& thread_id, const std::string& text, const std::vector<TextSpan>& spans);
+  /** The text part of that rule: spans, and not an "@ai" question (a text that starts `@ai` is the agent's; its spans drop). */
+  static bool KeepsMentionSpans(const std::string& text, const std::vector<TextSpan>& spans);
   /** Sends it (SendsWithMentions was true). */
   Roe<void> SendWithMentions(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
 

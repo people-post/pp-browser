@@ -537,7 +537,11 @@ std::optional<std::string> GroupIdOf(ConversationsFacade* facade, const std::str
 
 bool ChatPresenter::SendsWithMentions(const std::string& thread_id, const std::string& text,
                                       const std::vector<TextSpan>& spans) {
-  return !spans.empty() && GroupIdOf(facade_, thread_id) && !ParseAtAiPrefix(text).is_ai_invoke;
+  return KeepsMentionSpans(text, spans) && GroupIdOf(facade_, thread_id);
+}
+
+bool ChatPresenter::KeepsMentionSpans(const std::string& text, const std::vector<TextSpan>& spans) {
+  return !spans.empty() && !ParseAtAiPrefix(text).is_ai_invoke;
 }
 
 Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const std::string& text,
