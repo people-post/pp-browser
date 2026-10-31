@@ -83,6 +83,8 @@ void CallStack::Dispatch(CallStackEvent& event) {
       [this, now](auto& e) {
         using E = std::decay_t<decltype(e)>;
         if constexpr (std::is_same_v<E, calls_event::LocalNetworkChanged>) {
+          last_attachment_ = e.attachment;
+          attachment_known_ = true;
           AfterMobilityEvent(mobility_.OnAttachment(e.attachment, e.changed, now));
           if (e.moved && call_sessions_) {
             call_sessions_->OnLocalNetworkMoved();
@@ -334,6 +336,15 @@ void CallStack::BindMediaProducts() {
   }
   CallDirectPathDeps direct = media_plane_->DirectPathDeps();
   direct.path_policy = [this](const std::string& call_id) { return PathPolicyFor(call_id); };
+  if (direct.diag_env) {
+    // The attachment is the stack's (the mesh knows nothing of cellular); both are read on the owner.
+    direct.diag_env = [this, mesh_env = std::move(direct.diag_env)](const std::string& peer_key) {
+      CallConnectEnv env = mesh_env(peer_key);
+      env.attachment_known = attachment_known_;
+      env.attachment = last_attachment_;
+      return env;
+    };
+  }
   call_sessions_->AttachDirectPath(std::move(direct));
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
   // Call state ports (mesh stop cleared them): one bind point with BuildSessions.

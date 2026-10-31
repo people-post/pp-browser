@@ -198,6 +198,8 @@ public:
   /** Keep dial/circuit pointers valid when ConversationsHub rewires deps (N025 listen sync). */
   void SetReachDeps(mesh::PeerReachPorts reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
+  /** The connect sequence's Diag-line probe (calls owner); empty clears it. */
+  void SetConnectDiagProbe(CallConnectEnvProbe probe);
   void SetSeedWarm(std::function<void()> warm);
   /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);

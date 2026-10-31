@@ -200,6 +200,10 @@ void CallMediaBridge::SetReachDeps(mesh::PeerReachPorts reach) {
   reach_.SetDeps(std::move(reach));
 }
 
+void CallMediaBridge::SetConnectDiagProbe(CallConnectEnvProbe probe) {
+  connect_.SetDiagProbe(std::move(probe));
+}
+
 void CallMediaBridge::SetSeedWarm(std::function<void()> warm) {
   seed_warm_ = std::move(warm);
 }

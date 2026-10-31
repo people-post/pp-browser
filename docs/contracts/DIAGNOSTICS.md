@@ -54,6 +54,14 @@ There is no method that takes free text, so a name, a message, a search query, a
 | `unlock.done` | `unlocked` | `ProfileUnlockGate` |
 | `unlock.failed` | `wrong_pin`, `silent` (no PIN was typed) | `ProfileUnlockGate` |
 | `unlock.error` | `error` | `ProfileUnlockGate` |
+| `call.net` | `call`, `role` (`caller` / `callee`), `known`, `online`, `cellular`, `expensive` (the device's attachment as the calls last heard it), `v4_private`, `v4_public`, `v6_global`, `v6_other` (counts of this device's advertised addresses), `relays`, `relays_up`, `relays_down` (rendezvous relays the app offers / with a link up / the reach record holds down), `peer_state`, `peer_fail`, `peer_fails` (the reach record for the peer) | `CallMediaConnectCoordinator::Start` |
+| `call.signal` | `call`, `phase` (`invite_in` / `accept_out` / `accept_in`), `age_ms` (since the call row was created on this device), `implicit` (accept inferred from the media hello), `v4_private`, `v4_public`, `v6_global`, `v6_other` (counts of the addresses the message carries) | `CallSessionWorkflow` |
+| `call.reach` | `call`, `role`, `attempt`, `ok`; ok: `kind` (`direct` / `punched` / `relayed`), `family` (4 / 6 / 0: the dial book's preferred endpoint, best effort), `reused`; failed: `err` (`ReachErrWord`), `why` (`ReachWhyWord`: a fixed list classified from the failure chain); `ms` since the connect started | `CallMediaConnectCoordinator::OnLinkReady` |
+| `call.relay` | `call`, `dir` (`out` / `in`), `relay` (ref: the relay the circuit chose / the peer announced) | `CallReachSignals` |
+| `call.punch` | `call`, `phase` (`offer_out` / `offer_in` / `answer_out` / `answer_in` / `burst_start` / `burst_ok` / `burst_fail`), `window_ms`, `addrs` (count), `ms` | `CallReachSignals` (the signalling punch) |
+| `call.result` | `call`, `role`, `ok`, `attempts`, `ms`, `kind`, `family`; on a give-up also `err` (`MediaErrWord`), `reach_err`, `why`, `relays`, `relays_up`, `peer_state`, `peer_fail`, `peer_fails` | `CallMediaConnectCoordinator::Finish` |
+
+Call events are capped at 8 lines per event and call (`CallDiagBudget`), and a call's `call` value is the same on both devices, so a caller's and a callee's lines join on it. `relay` and every other ref join only within one device's run. Not visible from here (inside pp-cpp-mesh / pp-cpp-amp): each direct dial and circuit attempt (which relay, in what order, its own outcome), the Amp punch's start and outcome, how many relays hold our reservation.
 
 Metrics events are listed where they are emitted (`MetricsLine("…")`); they follow the same rule.
 
@@ -91,4 +99,4 @@ Metrics events are listed where they are emitted (`MetricsLine("…")`); they fo
 
 The gateway (www, `app/src/r_support_client.ts`) checks the Bearer like the LLM routes, validates the body (the fields above, strict; 1–4 `files`; 30 000 lines, 2048 chars a line, 2.5 MB of line bytes) and forwards it to app-support `POST /v1/diagnostics` with two hashes for the quota: `X-Diag-Key-Hash` (SHA-256 of the Bearer) and `X-Diag-Ip-Hash` (HMAC with a gateway-only secret; IPv6 by /64). Its access log for this path carries no IP, user agent or request id. app-support validates the same body, reserves the daily quotas (3 a key, 10 an IP, a global cap), writes each line to CloudWatch as a `client_diag` record (`upload`, `file`, `version`, `os`, `line`) and keeps only the upload record in Mongo. A change to the body or the file limits is a change on all three.
 
-Changelog: 2026-10-30 — first version (P009).
+Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`).

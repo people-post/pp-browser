@@ -241,6 +241,9 @@ private:
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
+  /** The device's last reported attachment (owner), for the connect lines of the Diag channel. */
+  MobilityAttachment last_attachment_;
+  bool attachment_known_ = false;
   CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
   /** Names the current session manager: its events carry it (a rebuilt one drops the old ones). */
   uint64_t sessions_generation_ = 0;
