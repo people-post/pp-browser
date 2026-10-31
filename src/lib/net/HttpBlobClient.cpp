@@ -98,6 +98,20 @@ Error ClassifyBlobFailure(const int status_code, const std::string& detail) {
   return AppError::Blob(Err::Blob::Generic, logged);
 }
 
+static Roe<void> CheckPutStatus(const int status) {
+  if (status >= 200 && status < 300) {
+    return Roe<void>{};
+  }
+  // The storage service, not the relay, answers a PUT: 403 is an expired or mismatched signed URL.
+  if (status == 403) {
+    return AppError::Blob(Err::Blob::UploadRejected, "Blob PUT failed with status 403");
+  }
+  if (status >= 500) {
+    return AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status " + std::to_string(status));
+  }
+  return Error("Blob PUT failed with status " + std::to_string(status));
+}
+
 Roe<void> CheckBlobResponse(const HttpResponse& response) {
   if (response.status_code >= 200 && response.status_code < 300) {
     return Roe<void>{};
@@ -303,6 +317,19 @@ Roe<void> HttpBlobClient::SetProfileIcon(const std::string& relay_user_id, const
   return CheckBlobResponse(response.value());
 }
 
+Roe<void> HttpBlobClient::PutUploadFile(const std::string& upload_url, const std::string& content_type,
+                                        const std::string& path,
+                                        const std::function<bool(uint64_t, uint64_t)>& progress) {
+  if (upload_url.empty()) {
+    return Error("upload_url is required");
+  }
+  const auto response = HttpClient::PutFile(upload_url, path, {{"Content-Type", content_type}}, progress);
+  if (!response) {
+    return response.error();
+  }
+  return CheckPutStatus(response.value().status_code);
+}
+
 Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::string& content_type,
                                     const std::string& body) {
   if (upload_url.empty()) {
@@ -312,18 +339,7 @@ Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::st
   if (!response) {
     return response.error();
   }
-  const int status = response.value().status_code;
-  if (status < 200 || status >= 300) {
-    // The storage service, not the relay, answers a PUT: 403 is an expired or mismatched signed URL.
-    if (status == 403) {
-      return AppError::Blob(Err::Blob::UploadRejected, "Blob PUT failed with status 403");
-    }
-    if (status >= 500) {
-      return AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status " + std::to_string(status));
-    }
-    return Error("Blob PUT failed with status " + std::to_string(status));
-  }
-  return Roe<void>{};
+  return CheckPutStatus(static_cast<int>(response.value().status_code));
 }
 
 } // namespace pbr
