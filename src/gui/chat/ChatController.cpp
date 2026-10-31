@@ -641,6 +641,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
+    mentions_.SyncThread();  // a group chat: its @ lines are read now, before anyone types `@`
     // Opened at its oldest unread mention (G015), read before the open dropped the marker.
     if (const std::optional<std::string>& mention = presenter_.OpenedAtMention()) {
       (void)scroller_.JumpToMessage(*mention);
@@ -847,6 +848,7 @@ void ChatController::RefreshFromMessaging() {
   DirtyChat();
   DirtyShell();
   NotifySurfaceChanged();
+  mentions_.SyncThread();  // the open group's @ lines: reloaded when its members or names may have changed
   const NavBadgeState& badges = ChromeSnapshot().nav_badges;
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
     ShellRemountNavRail();

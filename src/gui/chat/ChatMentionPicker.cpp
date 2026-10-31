@@ -1,6 +1,8 @@
 #include "gui/chat/ChatMentionPicker.h"
 
+#include "common/Utilities.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ui/ContextMenuHost.h"
 
@@ -27,7 +29,34 @@ ui::ElementFormControlTextArea* DraftInput(ui::Context* context) {
 
 ChatMentionPicker::ChatMentionPicker(ChatMenusHost& host, ChatPresenter& presenter, ChatScreenState& chat,
                                      ui::Context*& context)
-    : host_(host), presenter_(presenter), chat_(chat), context_(context) {}
+    : host_(host),
+      presenter_(presenter),
+      chat_(chat),
+      context_(context),
+      // The group's lines are read on a worker when its chat opens (the roster, cards and contacts are SQLite reads);
+      // typing `@` and each keystroke after it only filter what is held.
+      preload_(
+          [](std::function<std::vector<MentionCandidate>()> read,
+             std::function<void(std::vector<MentionCandidate>)> done) {
+            AppRuntime::PostWorkerAndReplyOnUI<std::vector<MentionCandidate>>(WorkerLane::Normal, std::move(read),
+                                                                              std::move(done));
+          },
+          [this](const std::string& thread_id) { return presenter_.MentionCandidatesFor(thread_id); },
+          []() { return util::NowUnixMs(); }) {}
+
+void ChatMentionPicker::SyncThread() {
+  const std::string thread_id = host_.ActiveThreadId();
+  if (thread_id.empty() || !chat_.thread_is_group || !host_.MessagingIsReady()) {
+    preload_.Drop();
+    return;
+  }
+  if (thread_id != preload_.ThreadId()) {
+    preload_.Drop();
+    preload_.Open(thread_id);
+  } else {
+    preload_.Changed();  // messaging changed: a member joined or left, a name arrived
+  }
+}
 
 size_t ChatMentionPicker::CaretByte(const std::string& text) const {
   ui::ElementFormControlTextArea* draft = DraftInput(context_);
@@ -58,7 +87,7 @@ void ChatMentionPicker::Close() {
   }
   at_.reset();
   lines_.clear();
-  candidates_.Clear();
+  waiting_ = false;
 }
 
 void ChatMentionPicker::OnDraftChanged() {
@@ -81,10 +110,9 @@ void ChatMentionPicker::OnDraftChanged() {
     Close();
     return;
   }
-  if (at_ && !ContextMenuHost::Instance().IsOpen()) {
+  if (at_ && !waiting_ && !ContextMenuHost::Instance().IsOpen()) {
     at_.reset();  // closed from outside (Escape, a tap beside it): typing on does not bring it back
     lines_.clear();
-    candidates_.Clear();
   }
   if (!at_) {
     const std::optional<size_t> trigger = TypedMentionTrigger(before, text);
@@ -92,12 +120,33 @@ void ChatMentionPicker::OnDraftChanged() {
       return;
     }
     at_ = *trigger;
-    // The roster, cards and contacts are read once, here; the keystrokes after it only filter.
-    candidates_.Load([&]() { return presenter_.MentionCandidatesFor(thread_id); });
+    if (thread_id != preload_.ThreadId()) {
+      SyncThread();  // the chat opened without the picker hearing of it
+    }
+    preload_.Typed();
   }
+  if (!preload_.Ready()) {
+    // The group's lines are still being read (off the UI thread): show them the moment they are there.
+    waiting_ = true;
+    preload_.WhenReady([this]() {
+      if (waiting_) {
+        waiting_ = false;
+        RefreshLines();
+      }
+    });
+    return;
+  }
+  RefreshLines();
+}
+
+void ChatMentionPicker::RefreshLines() {
+  if (!at_) {
+    return;
+  }
+  const std::string text = CurrentDraft();
   caret_ = CaretByte(text);
   const std::optional<std::string> query = MentionQueryAt(text, *at_, caret_);
-  std::vector<MentionCandidate> lines = query ? candidates_.Filter(*query) : std::vector<MentionCandidate>{};
+  std::vector<MentionCandidate> lines = query ? preload_.Filter(*query) : std::vector<MentionCandidate>{};
   if (lines.empty()) {
     Close();
     return;
@@ -140,7 +189,6 @@ void ChatMentionPicker::Choose(const MentionCandidate& line) {
   PruneRecordedMentions(kept_text, picks);
   at_.reset();
   lines_.clear();
-  candidates_.Clear();
   picks.push_back({line.kind, line.account_id, line.Token()});
   last_text_ = inserted.text;  // the change this makes is ours, not typing
   last_thread_ = thread_id;
@@ -183,6 +231,7 @@ void ChatMentionPicker::ForgetThread(const std::string& thread_id) {
 
 void ChatMentionPicker::Reset() {
   Close();
+  preload_.Drop();
   recorded_.clear();
   last_text_.clear();
   last_thread_.clear();

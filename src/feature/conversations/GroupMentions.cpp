@@ -130,6 +130,73 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
       AllMentionCandidates(roster, local_account, local_is_owner, public_name, everyone_word), query);
 }
 
+void MentionCandidatePreload::Open(const std::string& thread_id) {
+  if (thread_id.empty()) {
+    return;
+  }
+  if (thread_id != thread_id_) {
+    Drop();
+    thread_id_ = thread_id;
+  }
+  if (!ready_ && !loading_) {
+    Start();
+  }
+}
+
+void MentionCandidatePreload::Changed() {
+  if (thread_id_.empty() || (!ready_ && !loading_)) {
+    return;  // nothing loaded for this chat yet: Open / Typed start it
+  }
+  pending_ = true;
+  if (!loading_ && now_ms_() - last_started_ms_ >= kMinReloadMs) {
+    Start();
+  }
+}
+
+void MentionCandidatePreload::Typed() {
+  if (thread_id_.empty() || loading_) {
+    return;
+  }
+  if (!ready_ || pending_) {
+    Start();  // the list is about to be used: a change held back by the interval is picked up now
+  }
+}
+
+void MentionCandidatePreload::Drop() {
+  lifetime_.Invalidate();
+  thread_id_.clear();
+  all_.clear();
+  ready_ = false;
+  loading_ = false;
+  pending_ = false;
+  waiter_ = nullptr;
+}
+
+void MentionCandidatePreload::Start() {
+  loading_ = true;
+  pending_ = false;
+  last_started_ms_ = now_ms_();
+  const std::string thread_id = thread_id_;
+  Reader read = read_;
+  run_([read = std::move(read), thread_id]() { return read(thread_id); },
+       lifetime_.Bind([this, thread_id](Lines lines) { Loaded(thread_id, std::move(lines)); }));
+}
+
+void MentionCandidatePreload::Loaded(const std::string& thread_id, Lines lines) {
+  if (thread_id != thread_id_) {
+    return;
+  }
+  all_ = std::move(lines);
+  ready_ = true;
+  loading_ = false;
+  if (pending_) {
+    Start();  // a change came in while this load ran
+  }
+  if (auto waiter = std::exchange(waiter_, nullptr)) {
+    waiter();
+  }
+}
+
 std::optional<size_t> TypedMentionTrigger(const std::string& before, const std::string& after) {
   if (after.size() != before.size() + 1) {
     return std::nullopt;

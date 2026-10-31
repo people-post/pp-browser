@@ -32,6 +32,11 @@ class ChatMentionPicker {
 public:
   ChatMentionPicker(ChatMenusHost& host, ChatPresenter& presenter, ChatScreenState& chat, ui::Context*& context);
 
+  /**
+   * The open chat or its group may have changed (a chat opened, messaging refreshed): keeps the group's lines
+   * ready — read once on a worker when a group chat opens, again when the group changes, dropped on another chat.
+   */
+  void SyncThread();
   /** The composer's text changed (typing, or the app setting it): opens, filters or closes the picker. */
   void OnDraftChanged();
   bool IsOpen() const;
@@ -50,6 +55,8 @@ private:
   std::string CurrentDraft() const;
   /** The caret in `text`, as a byte offset (the input counts code points). */
   size_t CaretByte(const std::string& text) const;
+  /** Query and show the lines for the draft as it is now (the picker is open on `at_`). */
+  void RefreshLines();
   void Show(const std::vector<MentionCandidate>& lines);
   void Choose(const MentionCandidate& line);
 
@@ -64,8 +71,10 @@ private:
   std::optional<size_t> at_;
   size_t caret_ = 0;
   std::vector<MentionCandidate> lines_;
-  /** All the group's lines, read when the picker opened; cleared when it closes. */
-  MentionCandidateCache candidates_;
+  /** All the open group's lines, read ahead on a worker; the picker filters them. */
+  MentionCandidatePreload preload_;
+  /** `@` typed before the lines were there: the picker opens when they arrive. */
+  bool waiting_ = false;
   std::map<std::string, std::vector<ComposerMention>> recorded_;
 };
 

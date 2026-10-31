@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <map>
 
 namespace pbr {
@@ -381,41 +382,116 @@ TEST(GroupMentionsTest, ATextThatStartsAtAiIsTheAgentsEvenAfterAPickedMemberName
   EXPECT_FALSE(ChatPresenter::KeepsMentionSpans("hello", {}));
 }
 
-// --- the picker reads the group once ---------------------------------------------------------------
+// --- the picker's lines are read ahead, once --------------------------------------------------------
 
-TEST(GroupMentionsTest, TypingTheQueryFiltersInMemoryWithoutReadingTheRosterAgain) {
-  int roster_reads = 0;
-  const auto names = [](const std::string& account) {
-    return account == kBob2 ? std::string("Bob") : NameOf(account);
-  };
-  auto roster = Roster();
-  GroupRosterMember twin;
-  twin.member_identity = kBob2;
-  roster.push_back(twin);
-  MentionCandidateCache cache;
-  cache.Load([&]() {
-    ++roster_reads;  // the roster, the cards, the contacts: all behind this call
-    return AllMentionCandidates(roster, kOwner, true, names, "everyone");
-  });
-  ASSERT_EQ(roster_reads, 1);
-  EXPECT_EQ(cache.Filter("").size(), 6u) << "everyone + five others";
-  const auto b = cache.Filter("b");
-  const auto bo = cache.Filter("bo");
-  const auto bob = cache.Filter("bob");
-  EXPECT_EQ(roster_reads, 1) << "no read while typing";
-  EXPECT_EQ(b.size(), 2u);
-  ASSERT_EQ(bob.size(), 2u);
-  EXPECT_EQ(bo, bob);
-  // The collision short ids come from the whole group, so they stay when the query narrows the list.
-  EXPECT_FALSE(bob[0].short_id.empty());
-  EXPECT_NE(bob[0].Label(), bob[1].Label());
-  ASSERT_EQ(cache.Filter("ev").size(), 1u);
-  EXPECT_TRUE(cache.Filter("ev")[0].kind == TextSpanKind::Everyone);
-  EXPECT_EQ(cache.Filter("nobody").size(), 0u);
-  // Closed: nothing is kept.
-  cache.Clear();
-  EXPECT_TRUE(cache.Filter("").empty());
-  EXPECT_EQ(roster_reads, 1);
+struct PreloadFixture {
+  int reads = 0;
+  int64_t now = 100000;
+  std::vector<std::function<void()>> pending;  // loads waiting for their turn on the "worker"
+  bool deferred = false;
+  std::vector<GroupRosterMember> roster = Roster();
+  MentionCandidatePreload preload{
+      [this](std::function<MentionCandidatePreload::Lines()> read,
+             std::function<void(MentionCandidatePreload::Lines)> done) {
+        auto run = [read = std::move(read), done = std::move(done)]() { done(read()); };
+        if (deferred) {
+          pending.push_back(std::move(run));
+        } else {
+          run();
+        }
+      },
+      [this](const std::string&) {
+        ++reads;  // the roster, the cards, the contacts: all behind this call
+        return AllMentionCandidates(
+            roster, kOwner, true,
+            [](const std::string& account) { return account == "acct-dave" ? std::string("Dave") : NameOf(account); },
+            "everyone");
+      },
+      [this]() { return now; }};
+  void RunPending() {
+    auto jobs = std::move(pending);
+    pending.clear();
+    for (auto& job : jobs) {
+      job();
+    }
+  }
+};
+
+TEST(GroupMentionsTest, TheGroupsLinesAreReadWhenItsChatOpensAndTypingOnlyFilters) {
+  PreloadFixture f;
+  f.preload.Open("thread-hike");
+  ASSERT_EQ(f.reads, 1);
+  ASSERT_TRUE(f.preload.Ready());
+  // `@` and the keystrokes after it: no read at all.
+  f.preload.Typed();
+  EXPECT_EQ(f.preload.Filter("").size(), 5u);
+  EXPECT_EQ(f.preload.Filter("b").size(), 1u);
+  EXPECT_EQ(f.preload.Filter("bo").size(), 1u);
+  EXPECT_EQ(f.preload.Filter("ev").size(), 1u);
+  f.preload.Open("thread-hike");  // the chat refreshing itself is not a new open
+  EXPECT_EQ(f.reads, 1);
+}
+
+TEST(GroupMentionsTest, ARosterChangeReloadsOnceAndAnotherChatDropsTheLines) {
+  PreloadFixture f;
+  f.preload.Open("thread-hike");
+  ASSERT_EQ(f.reads, 1);
+  GroupRosterMember dave;
+  dave.member_identity = "acct-dave";
+  f.roster.push_back(dave);
+  f.preload.Changed();  // within the minimum interval: held back, not read
+  EXPECT_EQ(f.reads, 1);
+  f.now += MentionCandidatePreload::kMinReloadMs;
+  f.preload.Changed();
+  EXPECT_EQ(f.reads, 2) << "one reload for the change";
+  f.preload.Typed();
+  f.preload.Open("thread-hike");
+  EXPECT_EQ(f.reads, 2);
+  // Another chat: the lines go, and the new chat's are read.
+  f.preload.Drop();
+  EXPECT_FALSE(f.preload.Ready());
+  EXPECT_TRUE(f.preload.Filter("").empty());
+  f.preload.Open("thread-books");
+  EXPECT_EQ(f.reads, 3);
+}
+
+TEST(GroupMentionsTest, AChangeHeldBackIsReadWhenTheNextAtIsTyped) {
+  PreloadFixture f;
+  f.preload.Open("thread-hike");
+  f.preload.Changed();  // inside the interval
+  ASSERT_EQ(f.reads, 1);
+  f.preload.Typed();
+  EXPECT_EQ(f.reads, 2) << "the list is about to be used";
+  f.preload.Typed();
+  EXPECT_EQ(f.reads, 2) << "and only once";
+}
+
+TEST(GroupMentionsTest, AFirstAtBeforeTheLoadIsDoneWaitsForItWithoutBlocking) {
+  PreloadFixture f;
+  f.deferred = true;
+  f.preload.Open("thread-hike");
+  EXPECT_FALSE(f.preload.Ready()) << "the read has not run: the UI thread is not waiting for it";
+  int shown = 0;
+  f.preload.Typed();  // does not start a second load
+  f.preload.WhenReady([&]() { ++shown; });
+  EXPECT_EQ(f.pending.size(), 1u);
+  f.RunPending();
+  EXPECT_TRUE(f.preload.Ready());
+  EXPECT_EQ(shown, 1);
+  EXPECT_EQ(f.reads, 1);
+}
+
+TEST(GroupMentionsTest, ALoadThatFinishesAfterTheChatChangedIsIgnored) {
+  PreloadFixture f;
+  f.deferred = true;
+  f.preload.Open("thread-hike");
+  int shown = 0;
+  f.preload.WhenReady([&]() { ++shown; });
+  f.preload.Drop();  // the user went to another chat
+  f.RunPending();
+  EXPECT_FALSE(f.preload.Ready());
+  EXPECT_EQ(shown, 0);
+  EXPECT_TRUE(f.preload.Filter("").empty());
 }
 
 // --- the everyone line in the user's language --------------------------------------------------
