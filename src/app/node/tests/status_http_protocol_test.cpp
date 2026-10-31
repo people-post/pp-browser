@@ -198,6 +198,8 @@ pbr::StatusHttpResponse PostState(const std::string& body, const pbr::StatusHttp
   req.method = "POST";
   req.path = "/control/state";
   req.authorization = authorization;
+  req.content_type = "application/json; charset=utf-8";
+  req.host = "127.0.0.1:18518";
   req.body = body;
   return pbr::HandleStatusHttpRequest(req, auth, {}, actions);
 }
@@ -261,4 +263,44 @@ TEST(StatusHttpProtocolTest, PostElsewhereStaysMethodNotAllowed) {
   req.method = "POST";
   req.path = "/status";
   EXPECT_EQ(pbr::HandleStatusHttpRequest(req, {}, {}, actions).status_code, 405);
+}
+
+TEST(StatusHttpProtocolTest, ControlStateRefusesBrowserAndRebindingRequests) {
+  int calls = 0;
+  pbr::StatusHttpActions actions;
+  actions.set_state = [&](const std::string&) {
+    ++calls;
+    return true;
+  };
+  auto post = [&](const std::string& content_type, const std::string& host, bool origin) {
+    pbr::StatusHttpRequest req;
+    req.method = "POST";
+    req.path = "/control/state";
+    req.content_type = content_type;
+    req.host = host;
+    req.has_origin = origin;
+    req.body = R"({"state":"retiring"})";
+    return pbr::HandleStatusHttpRequest(req, {}, {}, actions).status_code;
+  };
+  EXPECT_EQ(post("text/plain", "127.0.0.1:18518", false), 415);
+  EXPECT_EQ(post("", "127.0.0.1:18518", false), 415);
+  EXPECT_EQ(post("application/json", "127.0.0.1:18518", true), 403);
+  EXPECT_EQ(post("application/json", "evil.example:18518", false), 403);
+  EXPECT_EQ(post("application/json", "127.0.0.1.evil.example", false), 403);
+  EXPECT_EQ(post("application/json", "", false), 403);
+  EXPECT_EQ(calls, 0);
+  EXPECT_EQ(post("application/json", "localhost:1", false), 200);
+  EXPECT_EQ(post("application/json", "[::1]:18518", false), 200);
+  EXPECT_EQ(post("Application/JSON", "127.0.0.1", false), 200);
+  EXPECT_EQ(calls, 3);
+}
+
+TEST(StatusHttpProtocolTest, ParseRequestExtractsContentTypeHostOrigin) {
+  auto req = pbr::TryParseStatusHttpRequest(
+      "POST /control/state HTTP/1.1\r\nHost: 127.0.0.1:1\r\nOrigin: http://x\r\n"
+      "Content-Type: application/json\r\nContent-Length: 0\r\n\r\n");
+  ASSERT_TRUE(req);
+  EXPECT_EQ(req->host, "127.0.0.1:1");
+  EXPECT_EQ(req->content_type, "application/json");
+  EXPECT_TRUE(req->has_origin);
 }

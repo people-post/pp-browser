@@ -47,10 +47,10 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
 | `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/develop/docs/architecture/PLATFORM_INTEGRATION.md)) |
 
-**Mesh heartbeat:** with `mesh_publish` on and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (no switch, fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405):
+**Mesh heartbeat:** with `mesh_publish` on and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (no switch, fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405; JSON `Content-Type` required, requests with an `Origin` header or a non-loopback `Host` get 403):
 
 ```
-curl -sS -X POST -d '{"state":"draining"}' http://127.0.0.1:18518/control/state
+curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' http://127.0.0.1:18518/control/state
 ```
 
 States only advance `active` → `draining` → `retiring`; `draining` → `active` is allowed, `retiring` is final (409). Contract: [MESH_DIRECTORY.md](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat).

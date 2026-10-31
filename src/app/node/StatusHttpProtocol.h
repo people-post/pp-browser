@@ -75,6 +75,9 @@ struct StatusHttpRequest {
   /** After `?`, as sent (empty when none). */
   std::string query;
   std::string authorization;
+  std::string content_type;
+  std::string host;
+  bool has_origin = false;
   /** Present only when Content-Length said so; the parse waits for all of it. */
   std::string body;
 };

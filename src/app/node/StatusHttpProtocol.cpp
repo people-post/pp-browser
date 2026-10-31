@@ -97,6 +97,27 @@ StatusHttpResponse MethodNotAllowed() {
   return JsonResponse(405, body);
 }
 
+bool IsJsonContentType(std::string_view value) {
+  const auto semi = value.find(';');
+  return EqualsIgnoreCase(Trim(value.substr(0, semi)), "application/json");
+}
+
+/** Host header naming loopback (any port); rejects DNS-rebound names. */
+bool IsLoopbackHostHeader(std::string_view host) {
+  if (host.empty()) {
+    return false;
+  }
+  const auto colon = host.front() == '[' ? host.find(':', host.find(']')) : host.rfind(':');
+  return IsLoopbackStatusBindHost(host.substr(0, colon)) ||
+         EqualsIgnoreCase(host.substr(0, colon), "[::1]");
+}
+
+StatusHttpResponse Forbidden() {
+  Object body;
+  body.set("error", "forbidden");
+  return JsonResponse(403, body);
+}
+
 const char* StatusReason(int code) {
   switch (code) {
   case 200:
@@ -107,12 +128,16 @@ const char* StatusReason(int code) {
     return "Bad Request";
   case 401:
     return "Unauthorized";
+  case 403:
+    return "Forbidden";
   case 404:
     return "Not Found";
   case 405:
     return "Method Not Allowed";
   case 409:
     return "Conflict";
+  case 415:
+    return "Unsupported Media Type";
   case 500:
     return "Internal Server Error";
   default:
@@ -225,6 +250,12 @@ std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw)
         const auto value = Trim(line.substr(colon + 1));
         if (EqualsIgnoreCase(name, "Authorization")) {
           req.authorization = std::string(value);
+        } else if (EqualsIgnoreCase(name, "Content-Type")) {
+          req.content_type = std::string(value);
+        } else if (EqualsIgnoreCase(name, "Host")) {
+          req.host = std::string(value);
+        } else if (EqualsIgnoreCase(name, "Origin")) {
+          req.has_origin = true;
         } else if (EqualsIgnoreCase(name, "Content-Length")) {
           if (std::from_chars(value.data(), value.data() + value.size(), content_length).ec != std::errc{} ||
               content_length > kMaxBodyBytes) {
@@ -253,6 +284,15 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
     return Unauthorized();
   }
   if (request.method == "POST" && request.path == "/control/state" && actions.set_state) {
+    // A browser can fire a simple cross-site POST or rebind DNS to us: refuse anything not from a local client.
+    if (request.has_origin || !IsLoopbackHostHeader(request.host)) {
+      return Forbidden();
+    }
+    if (!IsJsonContentType(request.content_type)) {
+      Object body;
+      body.set("error", "content_type_must_be_application_json");
+      return JsonResponse(415, body);
+    }
     const auto parsed = TryParseObject(request.body);
     const auto state = parsed ? parsed->getString("state") : std::nullopt;
     if (!state || (*state != "active" && *state != "draining" && *state != "retiring")) {

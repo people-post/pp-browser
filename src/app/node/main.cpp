@@ -84,7 +84,7 @@ void PrintUsage(const char* argv0) {
       << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n"
       << "\n"
       << "Drain before maintenance (loopback status bind only; the mesh directory sees the new state):\n"
-      << "  curl -sS -X POST -d '{\"state\":\"draining\"}' http://127.0.0.1:18518/control/state\n";
+      << "  curl -sS -X POST -H 'Content-Type: application/json' -d '{\"state\":\"draining\"}' http://127.0.0.1:18518/control/state\n";
 }
 
 /**
