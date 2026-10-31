@@ -19,4 +19,14 @@ tested against `lib/posts` vectors) and the gateway route
 (`/api/relay/v1/posts/*` → app-posts). Deploy needs an `app-posts` ECR repository, the service, and
 `BRF_WWW_POSTS_URI`.
 
-**Next:** once deployed, the client side of P2.
+**Design round (2026-10-30):** S022–S029 — reposts and quotes carry a copy beside them and honor deletes;
+relays moderate what they hold (withheld stubs, scan before serving media, anonymous or signed reports);
+the final v1 post body (alt text, sizes, placeholder, facets, content warning and labels, languages,
+`reply_root`) and an extension section on every entry; `post` stays short (long form a later `article`);
+nothing is sent to another author's relays, notices come from follows.
+
+**Next:**
+1. P1b: the S026 / S027 format in `lib/posts`, vectors regenerated.
+2. app-posts#1 takes the new format and the P2 relay additions (served authors only, refusal codes,
+   withheld stubs, the scan step, reports) before it is deployed.
+3. The client side of P2.
