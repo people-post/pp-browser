@@ -8,6 +8,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -31,7 +32,9 @@ std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());  // a CRLF checkout (Windows) reads the same
+  return text;
 }
 
 // The real composer.rml mounted on the real "chat" data model: the unit tests of VoiceComposer stop at
@@ -341,10 +344,7 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
 // The thread chrome (and messaging_ready_ / mesh_ready_ with it) changed through `chrome_.Update()` alone, so
 // show_voice stayed false. A ChatController cannot be built in a unit test, so this reads the source.
 TEST(ComposerVoiceSourceTest, EveryThreadChromeUpdateGoesThroughUpdateThreadChrome) {
-  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp", std::ios::binary);
-  std::ostringstream out;
-  out << in.rdbuf();
-  const std::string source = out.str();
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   ASSERT_FALSE(source.empty()) << "ChatController.cpp not found under PP_SOURCE_DIR";
   size_t direct = 0;
   for (size_t at = source.find("chrome_.Update();"); at != std::string::npos;
@@ -366,10 +366,7 @@ TEST(ComposerVoiceSourceTest, EveryThreadChromeUpdateGoesThroughUpdateThreadChro
 // is where the toggle is recomputed. Reported on a device: the toggle stayed gone after sending until the chat was
 // reopened.
 TEST(ComposerVoiceSourceTest, SyncComposerInputStateRefreshesTheVoiceToggle) {
-  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp", std::ios::binary);
-  std::ostringstream out;
-  out << in.rdbuf();
-  const std::string source = out.str();
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   const size_t start = source.find("void ChatController::SyncComposerInputState() {");
   ASSERT_NE(start, std::string::npos);
   const size_t end = source.find("\n}\n", start);
@@ -381,10 +378,7 @@ TEST(ComposerVoiceSourceTest, SyncComposerInputStateRefreshesTheVoiceToggle) {
 // The camera icon follows the same state as the toggle: it must be recomputed where an upload ends (Sync...), where a
 // call starts or ends (UpdatePeerLinkChrome) and with the thread chrome (which ends in Sync...).
 TEST(ComposerCaptureSourceTest, ShowCaptureIsRecomputedWhereTheComposerStateChanges) {
-  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp", std::ios::binary);
-  std::ostringstream out;
-  out << in.rdbuf();
-  const std::string source = out.str();
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   const auto body_of = [&source](const std::string& signature) {
     const size_t start = source.find(signature);
     EXPECT_NE(start, std::string::npos) << signature;
@@ -400,10 +394,7 @@ TEST(ComposerCaptureSourceTest, ShowCaptureIsRecomputedWhereTheComposerStateChan
 // A picked / captured file is released by release_pick_ (injectable), never by a direct ReleasePickedFile call, and
 // StartAttachmentUpload releases it on both early returns too (a camera file would otherwise stay on disk).
 TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit) {
-  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp", std::ios::binary);
-  std::ostringstream out;
-  out << in.rdbuf();
-  const std::string source = out.str();
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   const size_t start = source.find("void ChatController::StartAttachmentUpload(");
   ASSERT_NE(start, std::string::npos);
   const size_t end = source.find("\nbool ChatController::InAiComposerContext()", start);
