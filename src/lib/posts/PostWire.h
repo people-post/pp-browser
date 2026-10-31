@@ -17,6 +17,8 @@ public:
 
   void Raw(const std::string& bytes) { oss_.write(bytes.data(), static_cast<std::streamsize>(bytes.size())); }
   void U8(uint8_t value) { ar_ & value; }
+  void U16(uint16_t value) { ar_ & value; }
+  void U32(uint32_t value) { ar_ & value; }
   void U64(uint64_t value) { ar_ & value; }
   void I64(int64_t value) { ar_ & value; }
   void Bool(bool value) { ar_ & value; }
@@ -60,6 +62,8 @@ public:
     return !failed();
   }
   uint8_t U8() { return Read<uint8_t>(); }
+  uint16_t U16() { return Read<uint16_t>(); }
+  uint32_t U32() { return Read<uint32_t>(); }
   uint64_t U64() { return Read<uint64_t>(); }
   int64_t I64() { return Read<int64_t>(); }
   bool Bool() { return Read<bool>(); }
