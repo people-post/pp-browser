@@ -18,7 +18,9 @@ struct Key {
 const std::vector<Key>& AttachmentKeys() {
   static const std::vector<Key> keys = {
       {"chat.attach.photo", {}},
-      {"chat.attach.original", {}},
+      {"chat.attach.picture", {}},
+      {"chat.attach.send_compressed", {}},
+      {"chat.attach.send_original", {}},
       {"chat.attach.file", {}},
       {"chat.attachment.too_large", {"{{limit}}"}},
       {"chat.attachment.too_large_receive", {}},
@@ -36,6 +38,10 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.attachment.space_warning", {"{{percent}}"}},
       {"chat.voice.title", {}},
       {"chat.voice.title_call", {}},
+      {"chat.voice.hold_to_talk", {}},
+      {"chat.voice.click_to_talk", {}},
+      {"chat.voice.mode_voice", {}},
+      {"chat.voice.mode_keyboard", {}},
       {"chat.voice.send", {}},
       {"chat.voice.hint_hold", {}},
       {"chat.voice.hint_click", {}},

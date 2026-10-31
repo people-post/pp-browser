@@ -188,6 +188,9 @@ private:
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile(ui::Event* ev = nullptr);
+  /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
+  void ShowPictureSendChoice(std::string path);
+  void ToggleVoiceMode();
   /**
    * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
    * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip

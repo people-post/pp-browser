@@ -48,6 +48,8 @@ struct ChatScreenState {
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
   bool voice_recording = false;
+  /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
+  bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */
   bool voice_click_mode = false;
   /** The finger slid far enough up that releasing now cancels. */
