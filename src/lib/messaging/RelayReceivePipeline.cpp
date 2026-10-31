@@ -851,11 +851,17 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
   message.delivery = MessageDelivery::Relayed;
   message.transport = MessageTransport::Relay;
   message.relay_visible = true;
+  // As a peer's message is taken: one we deleted before its copy came stays deleted; reactions are capped.
+  TombstoneIfRetractedBeforeArrival(message, outcome);
+  if (auto cap = RejectIfAnnotationCapExceeded(store_, message); !cap) {
+    return;
+  }
   auto stored = store_.AppendMessage(message);
   if (!stored) {
     log().warning << "sibling's sent copy not stored: " << stored.error().message;
     return;
   }
+  ApplyInboundRetract(*stored, outcome);  // our delete for everyone, made on another device
   outcome.decision = IngestDecision::AcceptControl;
   outcome.persisted = true;
   outcome.thread_id = thread_id;

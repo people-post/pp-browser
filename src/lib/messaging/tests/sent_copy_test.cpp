@@ -53,13 +53,13 @@ TEST(SentCopyTest, AGroupMessageCarriesItsGroup) {
   EXPECT_EQ((*copy)->target.group_id, "group:hike");
 }
 
-TEST(SentCopyTest, ControlsAndReactionsAreNotCopied) {
+TEST(SentCopyTest, ControlsAreNotCopiedReactionsAndDeletesAre) {
   ThreadMessage control = SentText("x");
   control.content_type = ChatContentType::System;
   EXPECT_FALSE(sent_copy::Mirrored(control));
   ThreadMessage reaction = SentText("");
   reaction.content_type = ChatContentType::Annotation;
-  EXPECT_FALSE(sent_copy::Mirrored(reaction));
+  EXPECT_TRUE(sent_copy::Mirrored(reaction)) << "applied on the sibling as a peer's is";
   EXPECT_TRUE(sent_copy::Mirrored(SentText("hello")));
   EXPECT_FALSE(sent_copy::BuildNotice(SentText("x"), SentCopyTarget{}));
   EXPECT_FALSE(sent_copy::BuildNotice(SentText("x"), SentCopyTarget{.peer_account = "a", .group_id = "g"}));

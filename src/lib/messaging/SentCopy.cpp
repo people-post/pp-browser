@@ -10,13 +10,9 @@ namespace pbr {
 namespace sent_copy {
 
 bool Mirrored(const ThreadMessage& sent) {
-  switch (sent.content_type) {
-    case ChatContentType::System:
-    case ChatContentType::Annotation:  // reactions and deletes apply effects on arrival: later
-      return false;
-    default:
-      return !sent.id.empty();
-  }
+  // Chat content and its annotations (reactions, deletes — applied on arrival as a peer's are); not controls.
+  return sent.content_type != ChatContentType::System && sent.content_type != ChatContentType::Deleted &&
+         !sent.id.empty();
 }
 
 Roe<ThreadMessage> BuildNotice(const ThreadMessage& sent, const SentCopyTarget& target) {

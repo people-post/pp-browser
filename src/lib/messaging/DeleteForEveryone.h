@@ -10,7 +10,9 @@ namespace pbr {
  * reaction, not one already deleted.
  */
 inline bool CanDeleteForEveryone(const ThreadMessage& message) {
-  return message.sender_contact_id == kLocalSelfContactId && message.relay_visible && message.sender_seq.has_value() &&
+  // Went out: numbered here, or sent by another of our devices (a sent copy names that device, M021 d3).
+  const bool went_out = message.sender_seq.has_value() || message.sender_device.has_value();
+  return message.sender_contact_id == kLocalSelfContactId && message.relay_visible && went_out &&
          message.content_type != ChatContentType::System && message.content_type != ChatContentType::Annotation &&
          message.content_type != ChatContentType::Deleted;
 }

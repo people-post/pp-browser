@@ -1933,7 +1933,9 @@ def scenario_linked_device_introduces_itself(lab):
 
 def scenario_linked_devices_see_what_each_sent(lab):
     """What one of Alice's devices sends shows on her others (M021 d3), as hers: the phone writes to Bob and the
-    laptop shows it in its chat with Bob; the laptop writes back and the phone shows that. Bob reads each once."""
+    laptop shows it in its chat with Bob; the laptop writes back and the phone shows that. Bob reads each once.
+    Her reaction on the phone shows on the laptop, and her delete for everyone on the laptop deletes it on the
+    phone too."""
     a, a_thread, b, b_thread = open_pair(lab)
     laptop = lab.linked_device(a, "alice-laptop")
     laptop.wait_mesh()
@@ -1953,6 +1955,19 @@ def scenario_linked_devices_see_what_each_sent(lab):
     ids = [r["id"] for r in b.cmd("transcript", thread=b_thread)["rows"]]
     if ids.count(from_phone) != 1 or ids.count(from_laptop) != 1:
         raise ProbeError("bob: alice's messages not once each (%s)" % ids)
+    from_bob = b.cmd("send", thread=b_thread, text="react to this")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, from_bob), 40, "phone: bob's message")
+    wait_for(lambda: transcript_row(laptop, l_thread, from_bob), 40, "laptop: bob's message")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("react", message=from_bob, emoji="👍")
+    wait_for(lambda: reactions_of(laptop, l_thread, from_bob).get("👍") == 1 or None, 40,
+             "laptop: the phone's reaction")
+    laptop.cmd("show_chat", thread=l_thread)
+    laptop.cmd("delete_for_everyone", message=from_phone)
+    wait_for(lambda: (transcript_row(a, a_thread, from_phone) or {"type": "deleted"})["type"] == "deleted", 40,
+             "phone: its message deleted for everyone from the laptop")
+    wait_for(lambda: (transcript_row(b, b_thread, from_phone) or {"type": "deleted"})["type"] == "deleted", 40,
+             "bob: the message deleted")
 
 
 def next_message_notice(u, thread, seen, timeout=40):

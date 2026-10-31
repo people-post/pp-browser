@@ -35,7 +35,7 @@ struct SentCopy {
  */
 namespace sent_copy {
 
-/** Whether a message we sent is copied to our siblings: chat content, not control or reactions / deletes. */
+/** Whether a message we sent is copied to our siblings: chat content and its reactions / deletes; not controls. */
 bool Mirrored(const ThreadMessage& sent);
 /** The notice for `sent` (a system message with `control_type` sent_copy). */
 Roe<ThreadMessage> BuildNotice(const ThreadMessage& sent, const SentCopyTarget& target);
