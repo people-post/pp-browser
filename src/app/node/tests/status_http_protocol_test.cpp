@@ -175,3 +175,132 @@ TEST(StatusHttpProtocolTest, UnknownPathAndMethod) {
   pbr::StatusHttpRequest post{.method = "POST", .path = "/status", .authorization = {}};
   EXPECT_EQ(pbr::HandleStatusHttpRequest(post, {}, snap).status_code, 405);
 }
+
+TEST(StatusHttpProtocolTest, ParseRequestWaitsForAnnouncedBody) {
+  const std::string body = R"({"state":"retiring"})";
+  ASSERT_EQ(body.size(), 20u);
+  const std::string head20 =
+      "POST /control/state HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 20\r\n\r\n";
+  EXPECT_FALSE(pbr::TryParseStatusHttpRequest(head20 + body.substr(0, 5)));
+  auto req = pbr::TryParseStatusHttpRequest(head20 + body);
+  ASSERT_TRUE(req);
+  EXPECT_EQ(req->method, "POST");
+  EXPECT_EQ(req->body, body);
+  EXPECT_FALSE(pbr::TryParseStatusHttpRequest("POST /x HTTP/1.1\r\nContent-Length: 99999\r\n\r\n"));
+}
+
+namespace {
+
+pbr::StatusHttpResponse PostState(const std::string& body, const pbr::StatusHttpActions& actions,
+                                  const pbr::StatusHttpAuthConfig& auth = {},
+                                  const std::string& authorization = {}) {
+  pbr::StatusHttpRequest req;
+  req.method = "POST";
+  req.path = "/control/state";
+  req.authorization = authorization;
+  req.content_type = "application/json; charset=utf-8";
+  req.host = "127.0.0.1:18518";
+  req.body = body;
+  return pbr::HandleStatusHttpRequest(req, auth, {}, actions);
+}
+
+} // namespace
+
+TEST(StatusHttpProtocolTest, ControlStateAppliesValidStates) {
+  std::string applied;
+  pbr::StatusHttpActions actions;
+  actions.set_state = [&](const std::string& s) {
+    applied = s;
+    return true;
+  };
+  const auto r = PostState(R"({"state":"draining"})", actions);
+  EXPECT_EQ(r.status_code, 200);
+  EXPECT_EQ(applied, "draining");
+}
+
+TEST(StatusHttpProtocolTest, ControlStateRejectsBadInput) {
+  bool called = false;
+  pbr::StatusHttpActions actions;
+  actions.set_state = [&](const std::string&) {
+    called = true;
+    return true;
+  };
+  EXPECT_EQ(PostState(R"({"state":"sleeping"})", actions).status_code, 400);
+  EXPECT_EQ(PostState(R"({})", actions).status_code, 400);
+  EXPECT_EQ(PostState("not json", actions).status_code, 400);
+  EXPECT_FALSE(called);
+}
+
+TEST(StatusHttpProtocolTest, ControlStateRefusedMoveIs409) {
+  pbr::StatusHttpActions actions;
+  actions.set_state = [](const std::string&) { return false; };
+  EXPECT_EQ(PostState(R"({"state":"active"})", actions).status_code, 409);
+}
+
+// No callback is what a non-loopback bind gets: the route is closed.
+TEST(StatusHttpProtocolTest, ControlStateClosedWithoutCallback) {
+  EXPECT_EQ(PostState(R"({"state":"draining"})", {}).status_code, 405);
+}
+
+TEST(StatusHttpProtocolTest, ControlStateHonoursBearerToken) {
+  int calls = 0;
+  pbr::StatusHttpActions actions;
+  actions.set_state = [&](const std::string&) {
+    ++calls;
+    return true;
+  };
+  pbr::StatusHttpAuthConfig auth;
+  auth.bearer_token = "s3cret";
+  EXPECT_EQ(PostState(R"({"state":"draining"})", actions, auth).status_code, 401);
+  EXPECT_EQ(PostState(R"({"state":"draining"})", actions, auth, "Bearer s3cret").status_code, 200);
+  EXPECT_EQ(calls, 1);
+}
+
+TEST(StatusHttpProtocolTest, PostElsewhereStaysMethodNotAllowed) {
+  pbr::StatusHttpActions actions;
+  actions.set_state = [](const std::string&) { return true; };
+  pbr::StatusHttpRequest req;
+  req.method = "POST";
+  req.path = "/status";
+  EXPECT_EQ(pbr::HandleStatusHttpRequest(req, {}, {}, actions).status_code, 405);
+}
+
+TEST(StatusHttpProtocolTest, ControlStateRefusesBrowserAndRebindingRequests) {
+  int calls = 0;
+  pbr::StatusHttpActions actions;
+  actions.set_state = [&](const std::string&) {
+    ++calls;
+    return true;
+  };
+  auto post = [&](const std::string& content_type, const std::string& host, bool origin) {
+    pbr::StatusHttpRequest req;
+    req.method = "POST";
+    req.path = "/control/state";
+    req.content_type = content_type;
+    req.host = host;
+    req.has_origin = origin;
+    req.body = R"({"state":"retiring"})";
+    return pbr::HandleStatusHttpRequest(req, {}, {}, actions).status_code;
+  };
+  EXPECT_EQ(post("text/plain", "127.0.0.1:18518", false), 415);
+  EXPECT_EQ(post("", "127.0.0.1:18518", false), 415);
+  EXPECT_EQ(post("application/json", "127.0.0.1:18518", true), 403);
+  EXPECT_EQ(post("application/json", "evil.example:18518", false), 403);
+  EXPECT_EQ(post("application/json", "127.0.0.1.evil.example", false), 403);
+  EXPECT_EQ(post("application/json", "", false), 403);
+  EXPECT_EQ(calls, 0);
+  EXPECT_EQ(post("application/json", "localhost:1", false), 200);
+  EXPECT_EQ(post("application/json", "[::1]:18518", false), 200);
+  EXPECT_EQ(post("Application/JSON", "127.0.0.1", false), 200);
+  EXPECT_EQ(calls, 3);
+}
+
+TEST(StatusHttpProtocolTest, ParseRequestExtractsContentTypeHostOrigin) {
+  auto req = pbr::TryParseStatusHttpRequest(
+      "POST /control/state HTTP/1.1\r\nHost: 127.0.0.1:1\r\nOrigin: http://x\r\n"
+      "Content-Type: application/json\r\nContent-Length: 0\r\n\r\n");
+  ASSERT_TRUE(req);
+  EXPECT_EQ(req->host, "127.0.0.1:1");
+  EXPECT_EQ(req->content_type, "application/json");
+  EXPECT_TRUE(req->has_origin);
+}

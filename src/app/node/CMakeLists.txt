@@ -9,6 +9,7 @@ add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
   NodeEnvOverlay.cpp
+  NodeHeartbeat.cpp
   NodeMeshPublish.cpp
   NodeMetrics.cpp
   StatusHttpProtocol.cpp
@@ -55,6 +56,8 @@ if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
     tests/status_http_protocol_test.cpp
     tests/node_env_overlay_test.cpp
+    tests/node_heartbeat_test.cpp
+    NodeHeartbeat.cpp
     StatusHttpProtocol.cpp
     NodeEnvOverlay.cpp
   )

@@ -16,4 +16,8 @@ std::vector<uint8_t> BuildProfileUpdateSignBytes(const std::string& relay_user_i
 /** `POST /v1/register/revoke` (#328): domain `pp-browser:relay-revoke-v1`, v1, relay_user_id, timestamp. */
 std::vector<uint8_t> BuildAccountRevokeSignBytes(const std::string& relay_user_id, int64_t timestamp);
 
+/** `POST /v1/mesh/heartbeat`: domain `pp-browser:relay-heartbeat-v1`, v1, relay_user_id, peer_id, state, timestamp. */
+std::vector<uint8_t> BuildRelayHeartbeatSignBytes(const std::string& relay_user_id, const std::string& peer_id,
+                                                  const std::string& state, int64_t timestamp);
+
 } // namespace pbr
