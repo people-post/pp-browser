@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -62,8 +63,9 @@ struct OggOpusStream {
 /**
  * Parse one Ogg Opus stream. Fails (never crashes) on a bad checksum, a lacing that does not add
  * up, more than one stream, a missing or wrong header, a packet that is not valid Opus, or any of
- * the `limits`. Only mono is accepted: it is what is recorded and what the speaker path takes.
+ * the `limits`. `should_stop` is asked once per page: a parse nobody wants any more ends with an error. Only mono is accepted: it is what is recorded and what the speaker path takes.
  */
-Roe<OggOpusStream> ParseOggOpus(const uint8_t* data, size_t size, const OggOpusLimits& limits = {});
+Roe<OggOpusStream> ParseOggOpus(const uint8_t* data, size_t size, const OggOpusLimits& limits = {},
+                                const std::function<bool()>& should_stop = {});
 
 } // namespace pbr

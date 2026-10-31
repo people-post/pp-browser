@@ -102,6 +102,9 @@ public:
   bool ThreadHasActiveCall(const std::string& thread_id);
   /** Calls answer ThreadHasActiveCall (feature-level wiring sets it; none: never). */
   void SetActiveCallQuery(std::function<bool(const Thread& thread)> query);
+  /** A call is ringing here or this device is in one (any thread). False when no calls are wired. */
+  bool AnyCallLive();
+  void SetAnyCallQuery(std::function<bool()> query);
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
@@ -363,6 +366,7 @@ public:
 private:
   ConversationsHub& hub_;
   std::function<bool(const Thread& thread)> active_call_query_;
+  std::function<bool()> any_call_query_;
 };
 
 } // namespace pbr

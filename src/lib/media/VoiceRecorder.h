@@ -9,7 +9,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -80,6 +79,8 @@ struct VoiceRecorderConfig {
  * One voice recording at a time: opens the source on its own thread, encodes 20 ms Opus frames and, when
  * it ends, writes one Ogg file. Nothing is written to disk before the end and a cancelled recording
  * leaves nothing. `on_finished` runs once on the recorder's thread; `on_progress` about ten times a second.
+ * Nothing waits for that thread on the caller's: it owns what it needs (so destroying the recorder while
+ * the OS is still asking about the microphone is safe) and finishes by itself.
  */
 class VoiceRecorder {
 public:
@@ -100,17 +101,19 @@ public:
   void Finish();
   /** End and throw it away. */
   void Cancel();
-  bool IsRecording() const { return running_.load(); }
+  bool IsRecording() const { return shared_->running.load(); }
 
 private:
   enum class Request : int { None, Finish, Cancel };
-  void Run(VoiceRecorderConfig config, std::shared_ptr<std::atomic<int>> request);
+  struct Shared {
+    SourceFactory factory;
+    Callbacks callbacks;
+    std::atomic<bool> running{false};
+  };
+  static void Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig config, std::shared_ptr<std::atomic<int>> request);
 
-  SourceFactory factory_;
-  Callbacks callbacks_;
+  std::shared_ptr<Shared> shared_;
   std::mutex mutex_;
-  std::thread thread_;
-  std::atomic<bool> running_{false};
   std::shared_ptr<std::atomic<int>> request_;
 };
 

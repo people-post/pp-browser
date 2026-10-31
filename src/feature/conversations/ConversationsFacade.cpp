@@ -180,6 +180,14 @@ bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
   return active_call_query_(**thread);
 }
 
+bool ConversationsFacade::AnyCallLive() {
+  return any_call_query_ && any_call_query_();
+}
+
+void ConversationsFacade::SetAnyCallQuery(std::function<bool()> query) {
+  any_call_query_ = std::move(query);
+}
+
 void ConversationsFacade::SetActiveCallQuery(std::function<bool(const Thread& thread)> query) {
   active_call_query_ = std::move(query);
 }

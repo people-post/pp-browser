@@ -19,6 +19,7 @@ ProductStack::~ProductStack() {
 
 void ProductStack::BindFacade(ConversationsFacade& facade) {
   facade.SetActiveCallQuery([this](const Thread& thread) { return calls_.ThreadInActiveCall(thread); });
+  facade.SetAnyCallQuery([this]() { return calls_.AnyCallLive(); });
 }
 
 MessagingPeoplePickerPorts ProductStack::PeoplePickerPorts() {

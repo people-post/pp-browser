@@ -150,7 +150,8 @@ std::vector<uint8_t> BuildOggOpus(const std::vector<std::vector<uint8_t>>& packe
   return out;
 }
 
-Roe<OggOpusStream> ParseOggOpus(const uint8_t* data, const size_t size, const OggOpusLimits& limits) {
+Roe<OggOpusStream> ParseOggOpus(const uint8_t* data, const size_t size, const OggOpusLimits& limits,
+                                const std::function<bool()>& should_stop) {
   if (!data || size < kPageHeaderBytes) {
     return Error("ogg: too short");
   }
@@ -174,6 +175,9 @@ Roe<OggOpusStream> ParseOggOpus(const uint8_t* data, const size_t size, const Og
   while (pos < size) {
     if (++pages > limits.max_pages) {
       return Error("ogg: too many pages");
+    }
+    if (should_stop && should_stop()) {
+      return Error("ogg: stopped");
     }
     if (ended) {
       return Error("ogg: data after the end of the stream");

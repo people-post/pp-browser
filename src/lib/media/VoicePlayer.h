@@ -10,7 +10,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -46,16 +45,19 @@ enum class VoicePlayEnd {
 };
 
 struct VoicePlayerCallbacks {
-  /** About ten times a second while playing. */
-  std::function<void(const std::string& id, int64_t position_ms, int64_t duration_ms)> on_progress;
-  /** Once per Play(), on the player's thread. */
-  std::function<void(const std::string& id, VoicePlayEnd end)> on_ended;
+  /** About ten times a second while playing. `serial`: which Play() it belongs to (the same id can be played twice). */
+  std::function<void(const std::string& id, uint64_t serial, int64_t position_ms, int64_t duration_ms)> on_progress;
+  /** Once per Play(), on the clip's own thread. */
+  std::function<void(const std::string& id, uint64_t serial, VoicePlayEnd end)> on_ended;
 };
 
 /**
  * Plays one voice file at a time. The file is read, parsed and decoded only when Play() is called
- * (it came from a stranger and is treated as such: see ParseOggOpus), on the player's own thread.
- * Starting a clip stops the one playing.
+ * (it came from a stranger and is treated as such: see ParseOggOpus), on the clip's own thread, which
+ * checks for a stop between chunks of the file, pages and packets. Nothing here waits for a clip on the
+ * caller's thread: Play() and Stop() return at once, a stopped clip finishes by itself and a clip that
+ * outlives the player keeps only the shared state it needs. Starting a clip stops the one playing; the
+ * new clip does not open the speaker before the old one has let go of it.
  */
 class VoicePlayer {
 public:
@@ -66,8 +68,8 @@ public:
   VoicePlayer(const VoicePlayer&) = delete;
   VoicePlayer& operator=(const VoicePlayer&) = delete;
 
-  /** `max_seconds`: the voice limit; a file longer than it (plus a second) is refused as unplayable. */
-  void Play(const std::string& id, const std::string& path, int max_seconds);
+  /** `max_seconds`: the voice limit; a file longer than it (plus a second) is refused as unplayable. Returns its serial. */
+  uint64_t Play(const std::string& id, const std::string& path, int max_seconds);
   void Pause();
   void Resume();
   /** Ends the clip that is playing (its `on_ended` says Stopped); does not wait. */
@@ -75,24 +77,30 @@ public:
 
   /** The id being played or paused ("" when none). */
   std::string CurrentId() const;
-  bool IsPaused() const { return paused_.load(); }
+  bool IsPaused() const;
 
 private:
+  struct Shared {
+    SinkFactory factory;
+    VoicePlayerCallbacks callbacks;
+  };
   struct Job {
     std::string id;
     std::string path;
     int max_seconds = 120;
+    uint64_t serial = 0;
     std::atomic<bool> stop{false};
+    std::atomic<bool> paused{false};
     std::atomic<bool> done{false};
+    /** The clip this one replaced: waited for (briefly) before the speaker is opened. */
+    std::shared_ptr<Job> previous;
   };
-  void Run(std::shared_ptr<Job> job);
+  static void Run(std::shared_ptr<Shared> shared, std::shared_ptr<Job> job);
 
-  SinkFactory factory_;
-  VoicePlayerCallbacks callbacks_;
+  std::shared_ptr<Shared> shared_;
   mutable std::mutex mutex_;
-  std::thread thread_;
   std::shared_ptr<Job> job_;
-  std::atomic<bool> paused_{false};
+  uint64_t next_serial_ = 1;
 };
 
 } // namespace pbr

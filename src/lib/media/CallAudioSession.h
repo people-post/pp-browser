@@ -26,6 +26,17 @@ void SetSpeakerphoneOn(bool on);
 /** True when a speaker-route change needs the SDL devices closed and reopened (Android AudioRecord goes silent otherwise). */
 bool SpeakerToggleNeedsDeviceReopen();
 
+/**
+ * Voice messages (recording and playing a clip; not calls). They go through this file so the phone's one audio
+ * session has one coordinator: nothing here runs while a call (or ringback) holds the session, an activation
+ * cancels a pending delayed Deactivate like CancelPendingDeactivate, and the release retries when the system says
+ * the session is busy and gives up if a call has taken it meanwhile. Everywhere without a session to manage
+ * these do nothing. Call after the SDL device has been opened (SDL rewrites the iOS session when it opens one).
+ */
+void ActivateForVoicePlayback();
+void ActivateForVoiceRecording();
+void ReleaseVoice();
+
 /** Opus encoder complexity (0–10): 5 on phones (CPU / battery), 8 on desktop. */
 int OpusEncoderComplexity();
 

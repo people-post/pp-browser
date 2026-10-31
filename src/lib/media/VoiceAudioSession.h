@@ -3,9 +3,9 @@
 namespace pbr {
 
 /**
- * The phone's audio session for voice messages, kept apart from `CallAudioSession` (which is for
- * calls and is not touched here). Call each function AFTER the SDL device has been opened: SDL
- * rewrites the iOS audio session when it opens a device.
+ * The phone's audio session for voice messages. It forwards to the three voice functions of
+ * `CallAudioSession`, which own the coordination with calls (see there). Call each function AFTER the SDL
+ * device has been opened: SDL rewrites the iOS audio session when it opens a device.
  *
  *  - Playback: the `playback` category on the loudspeaker, so a voice message is heard with the
  *    mute switch on. Android needs nothing: SDL opens playback with the media role, so it plays on

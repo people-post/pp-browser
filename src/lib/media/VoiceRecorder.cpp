@@ -14,6 +14,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 
 namespace pbr {
 namespace {
@@ -71,13 +72,25 @@ public:
     lease_.reset();
     // Back to the playback setup and handed back to the system, unless a call (or its ringtone) has taken the
     // devices meanwhile: the audio session is then theirs and is not touched.
-    if (VoiceDeviceBlockedBy(devices_).empty()) {
+    if (!OtherHolds()) {
       VoiceAudioSession::RestoreForPlayback();
       VoiceAudioSession::Release();
     }
   }
 
 private:
+  /** Anything but us holds a microphone or speaker: a call, its ringtone, or a clip that has just begun playing. */
+  bool OtherHolds() const {
+    for (const MediaDeviceKind kind : {MediaDeviceKind::Mic, MediaDeviceKind::Speaker}) {
+      for (const auto& holder : devices_.Holders(kind)) {
+        if (holder != kVoiceRecorderHolder) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   MediaDeviceArbiter& devices_;
   std::unique_ptr<AudioDeviceLease> lease_;
 };
@@ -89,33 +102,29 @@ std::unique_ptr<IVoiceCaptureSource> CreateArbiterVoiceCaptureSource(MediaDevice
 }
 
 VoiceRecorder::VoiceRecorder(SourceFactory factory, Callbacks callbacks)
-    : factory_(std::move(factory)), callbacks_(std::move(callbacks)) {}
+    : shared_(std::make_shared<Shared>()) {
+  shared_->factory = std::move(factory);
+  shared_->callbacks = std::move(callbacks);
+}
 
 VoiceRecorder::~VoiceRecorder() {
-  Cancel();
-  std::lock_guard lock(mutex_);
-  if (thread_.joinable()) {
-    thread_.join();
-  }
+  Cancel(); // the thread ends by itself; destroying a recorder never waits for the microphone
 }
 
 bool VoiceRecorder::Start(const VoiceRecorderConfig& config) {
   std::lock_guard lock(mutex_);
-  if (running_.load()) {
+  if (shared_->running.load()) {
     return false;
   }
-  if (thread_.joinable()) {
-    thread_.join(); // the previous run is over (running_ is false): only its callback may still be returning
-  }
   request_ = std::make_shared<std::atomic<int>>(static_cast<int>(Request::None));
-  running_.store(true);
-  thread_ = std::thread([this, config, request = request_]() { Run(config, request); });
+  shared_->running.store(true);
+  std::thread([shared = shared_, config, request = request_]() { Run(shared, config, request); }).detach();
   return true;
 }
 
 void VoiceRecorder::Finish() {
   std::lock_guard lock(mutex_);
-  if (request_ && running_.load()) {
+  if (request_ && shared_->running.load()) {
     int expected = static_cast<int>(Request::None);
     request_->compare_exchange_strong(expected, static_cast<int>(Request::Finish));
   }
@@ -123,18 +132,20 @@ void VoiceRecorder::Finish() {
 
 void VoiceRecorder::Cancel() {
   std::lock_guard lock(mutex_);
-  if (request_ && running_.load()) {
+  if (request_ && shared_->running.load()) {
     request_->store(static_cast<int>(Request::Cancel)); // wins over a Finish that came first
   }
 }
 
-void VoiceRecorder::Run(VoiceRecorderConfig config, std::shared_ptr<std::atomic<int>> request) {
+void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig config,
+                        std::shared_ptr<std::atomic<int>> request) {
   using Clock = std::chrono::steady_clock;
   const auto requested = [&request]() { return static_cast<Request>(request->load()); };
+  const auto& callbacks_ = shared->callbacks;
 
   VoiceRecording result;
   const auto deliver = [&]() {
-    running_.store(false);
+    shared->running.store(false);
     if (callbacks_.on_finished) {
       callbacks_.on_finished(std::move(result));
     }
@@ -146,7 +157,7 @@ void VoiceRecorder::Run(VoiceRecorderConfig config, std::shared_ptr<std::atomic<
     deliver();
     return;
   }
-  auto source = factory_ ? factory_() : nullptr;
+  auto source = shared->factory ? shared->factory() : nullptr;
   if (!source) {
     result.end = VoiceEnd::NoDevice;
     result.error = "no capture source";
@@ -293,6 +304,12 @@ void VoiceRecorder::Run(VoiceRecorderConfig config, std::shared_ptr<std::atomic<
     return;
   }
 
+  if (requested() == Request::Cancel) { // cancelled (a lock, leaving the chat) while the last frames were encoded: no file
+    result.end = VoiceEnd::Cancelled;
+    result.duration_ms = 0;
+    deliver();
+    return;
+  }
   OggOpusWriteParams params;
   params.pre_skip = lookahead;
   const std::vector<uint8_t> file = BuildOggOpus(packets, samples, params);

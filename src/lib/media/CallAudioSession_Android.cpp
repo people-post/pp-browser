@@ -110,6 +110,11 @@ void Deactivate() {
 
 void CancelPendingDeactivate() {}
 
+// Voice messages: SDL opens playback with the media role (speaker, media volume) and capture needs no switch.
+void ActivateForVoicePlayback() {}
+void ActivateForVoiceRecording() {}
+void ReleaseVoice() {}
+
 bool SupportsSpeakerToggle() {
   return QueryHasEarpieceRoute();
 }

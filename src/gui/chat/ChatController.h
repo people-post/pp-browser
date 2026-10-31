@@ -111,6 +111,8 @@ public:
   void AfterLayout();
   void Shutdown();
   void OnApplicationPause();
+  /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
+  void CancelVoice();
   void FinalizeThreadDisplay();
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
   void PrefillDraft(const std::string& text);
@@ -186,8 +188,15 @@ private:
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile(ui::Event* ev = nullptr);
-  /** `remove_after_read`: the file is a temporary one of ours (a voice recording): deleted once its bytes are read. */
-  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool remove_after_read = false);
+  /**
+   * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
+   * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
+   * offers Retry / Discard.
+   */
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
+                             const std::string& voice_thread_id = {});
+  /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
+  void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
   /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
   void OnRetryAttachmentSend();
   void OnDiscardAttachmentSend();
@@ -238,6 +247,10 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
+  std::string failed_voice_path_;
+  std::string failed_voice_thread_;
+  std::chrono::steady_clock::time_point last_voice_call_check_{};
   /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
   int attach_menu_x_ = 12;
   int attach_menu_y_ = 120;

@@ -20,6 +20,8 @@ public:
   CallStack& Stack() { return stack_; }
   /** Whether the active local call is this thread's (origin / peer / group). UI thread. */
   bool ThreadInActiveCall(const Thread& thread);
+  /** Any call at all: one ringing here (an invite waiting) or one this device is in. Read only. UI thread. */
+  bool AnyCallLive();
   Roe<std::vector<CallParticipant>> JoinedParticipants(const std::string& call_id);
 
   Roe<void> OnStoresOpened(ConversationsHub& hub) override;

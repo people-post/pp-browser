@@ -11,6 +11,9 @@
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/VoiceBubble.h"
+#include "gui/chat/VoiceSendPolicy.h"
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_touch.h>
 #include "lib/media/VoiceSupport.h"
 #include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
@@ -336,18 +339,18 @@ ChatController::ChatController()
                          .string()
                    : std::string();
   };
-  voice_ports.send = [this](const std::string& path) {
+  voice_ports.thread_id = [this]() { return ActiveThreadId(); };
+  voice_ports.send = [this](const std::string& thread_id, const std::string& path) {
     if (chat_.attachment_uploading) {
-      std::error_code ec;
-      std::filesystem::remove(path, ec);
+      KeepVoiceForRetry(path, thread_id); // another send is on: this one waits behind Retry
       UserFeedback::Fail(Tr("chat.voice.upload_busy"));
       return;
     }
-    StartAttachmentUpload(path, OutgoingPickSource::File, /*remove_after_read=*/true);
+    StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id);
   };
   voice_ports.eligible = [this]() {
     return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() &&
-           !chat_.attachment_uploading && !ActiveThreadId().empty();
+           !chat_.attachment_uploading && !chat_.attachment_failed && !ActiveThreadId().empty();
   };
   voice_ports.dirty = [this]() {
     SyncComposerInputState(); // the input is off while recording
@@ -355,6 +358,28 @@ ChatController::ChatController()
     DirtyChatHeader();
   };
   voice_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
+  // The call stack's own state (a call ringing here or going on), not who happens to hold a device.
+  voice_ports.call_live = [this]() { return facade_ && facade_->AnyCallLive(); };
+  voice_ports.fingers_down = []() {
+    // The touch fingers that are down on a touch screen (not a trackpad): the hold is the finger that pressed.
+    std::vector<uint64_t> ids;
+    int devices = 0;
+    SDL_TouchID* touch = SDL_GetTouchDevices(&devices);
+    for (int i = 0; touch && i < devices; ++i) {
+      if (SDL_GetTouchDeviceType(touch[i]) != SDL_TOUCH_DEVICE_DIRECT) {
+        continue;
+      }
+      int count = 0;
+      SDL_Finger** fingers = SDL_GetTouchFingers(touch[i], &count);
+      for (int j = 0; fingers && j < count; ++j) {
+        ids.push_back(fingers[j]->id);
+      }
+      SDL_free(fingers);
+    }
+    SDL_free(touch);
+    return ids;
+  };
+  voice_ports.stop_playback_then = [this](std::function<void()> then) { voice_playback_->StopThen(std::move(then)); };
   voice_ = std::make_unique<VoiceComposer>(chat_, std::move(voice_ports));
 
   VoicePlaybackPorts playback_ports;
@@ -378,6 +403,7 @@ ChatController::ChatController()
     return context_ && context_->GetDocument(0) ? context_->GetDocument(0)->GetElementById(element_id) : nullptr;
   };
   playback_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
+  playback_ports.call_live = [this]() { return facade_ && facade_->AnyCallLive(); };
   voice_playback_ = std::make_unique<VoicePlayback>(std::move(playback_ports));
 
   presenter_.BindCallbacks({
@@ -1186,6 +1212,10 @@ void ChatController::RefreshPendingAttachmentChip(const bool force) {
   }
   pending_chip_thread_ = thread_id;
   failed_record_id_.clear();
+  if (!failed_voice_path_.empty() && thread_id == failed_voice_thread_) {
+    ShowFailedAttachment(std::string(), std::filesystem::path(failed_voice_path_).filename().string());
+    return; // a voice recording that was not staged: its own Retry / Discard
+  }
   const bool had_chip = chat_.attachment_failed;
   chat_.attachment_failed = false;
   if (!thread_id.empty() && !InAiComposerContext()) {
@@ -1204,7 +1234,35 @@ void ChatController::RefreshPendingAttachmentChip(const bool force) {
   }
 }
 
+void ChatController::KeepVoiceForRetry(const std::string& path, const std::string& thread_id) {
+  std::error_code ec;
+  if (path.empty() || !std::filesystem::exists(path, ec)) {
+    return; // already gone (the recordings are wiped at start and on lock): nothing to retry
+  }
+  failed_voice_path_ = path;
+  failed_voice_thread_ = thread_id;
+  failed_record_id_.clear();
+  if (thread_id == ActiveThreadId()) {
+    ShowFailedAttachment(std::string(), std::filesystem::path(path).filename().string());
+  }
+}
+
 void ChatController::OnDiscardAttachmentSend() {
+  if (!failed_voice_path_.empty()) {
+    std::error_code ec;
+    std::filesystem::remove(failed_voice_path_, ec);
+    failed_voice_path_.clear();
+    failed_voice_thread_.clear();
+    chat_.attachment_failed = false;
+    chat_.attachment_draft_name = "";
+    chat_.attachment_status = "";
+    pending_chip_thread_.clear();
+    RefreshPendingAttachmentChip(/*force=*/true);
+    SyncComposerInputState();
+    DirtyChatChrome();
+    DirtyChatHeader();
+    return;
+  }
   if (!facade_ || failed_record_id_.empty()) {
     return;
   }
@@ -1213,6 +1271,14 @@ void ChatController::OnDiscardAttachmentSend() {
 }
 
 void ChatController::OnRetryAttachmentSend() {
+  if (!failed_voice_path_.empty()) {
+    if (facade_ && !chat_.attachment_uploading) {
+      const std::string path = failed_voice_path_;
+      const std::string thread_id = failed_voice_thread_;
+      StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id);
+    }
+    return;
+  }
   if (!facade_ || failed_record_id_.empty() || chat_.attachment_uploading) {
     return;
   }
@@ -1257,14 +1323,20 @@ void ChatController::OnRetryAttachmentSend() {
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
-                                           const bool remove_after_read) {
+                                           const bool voice_file, const std::string& voice_thread_id) {
   if (!facade_ || chat_.attachment_uploading) {
     return;
   }
-  const std::string thread_id = ActiveThreadId();
+  // A voice recording goes to the chat it was recorded in, which may no longer be the open one.
+  const std::string thread_id = voice_file && !voice_thread_id.empty() ? voice_thread_id : ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
+  if (voice_file) {
+    failed_voice_path_.clear(); // this attempt is the retry
+    failed_voice_thread_.clear();
+  }
+  const size_t staged_before = voice_file ? facade_->PendingOutgoingAttachments(thread_id).size() : 0;
 
   chat_.attachment_uploading = true;
   chat_.attachment_failed = false;
@@ -1291,19 +1363,19 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
   const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
-  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading,
-                                remove_after_read]() {
+  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
+                                staged_before]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
     ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
-    if (remove_after_read) {
-      // A voice recording: its bytes are in memory and, from the send on, staged encrypted for a retry.
-      std::error_code ec;
-      std::filesystem::remove(path, ec);
-    }
-    AppRuntime::PostUI([this, thread_id, finish_uploading, prepared = std::move(prepared)]() mutable {
+    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before,
+                        prepared = std::move(prepared)]() mutable {
       if (!prepared) {
         finish_uploading();
         UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
+        if (voice_file) {
+          KeepVoiceForRetry(path, thread_id); // not read: the recording is the only copy
+          RefreshPendingAttachmentChip(/*force=*/true);
+        }
         return;
       }
       // The bytes go to the hub once (moved: no second whole-file copy here). If the space is full the dialog's
@@ -1323,16 +1395,29 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
             facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress());
           },
-          [this, thread_id, finish_uploading](Roe<ThreadMessage> sent) {
+          [this, thread_id, path, finish_uploading, voice_file, staged_before](Roe<ThreadMessage> sent) {
             finish_uploading();
+            if (voice_file) {
+              // The recording's file goes once the message is out or its encrypted copy is staged for a retry; a send
+              // refused before staging (the rate limit, for one) keeps it, with a Retry / Discard of its own.
+              const size_t staged_after = facade_->PendingOutgoingAttachments(thread_id).size();
+              if (DecideVoiceFileFate(static_cast<bool>(sent), staged_before, staged_after) == VoiceFileFate::Delete) {
+                std::error_code ec;
+                std::filesystem::remove(path, ec);
+              } else {
+                KeepVoiceForRetry(path, thread_id);
+              }
+            }
             if (!sent) {
               UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
               RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;
             }
             SyncDisplayFromThread();
-            scroller_.RequestScrollToLatest();
-            UpdateSidebarPreview(sent->text);
+            if (thread_id == ActiveThreadId()) {
+              scroller_.RequestScrollToLatest();
+              UpdateSidebarPreview(sent->text);
+            }
           },
           [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
           [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
@@ -3033,6 +3118,15 @@ void ChatController::OnMeshReady() {
 
 
 
+void ChatController::CancelVoice() {
+  if (voice_) {
+    voice_->DiscardAll();
+  }
+  if (voice_playback_) {
+    voice_playback_->Stop();
+  }
+}
+
 void ChatController::OnApplicationPause() {
   agent_.Cancel();
   // Going to the background loses a held press (no release will come) and ends a clip: cancel, never send.
@@ -3059,6 +3153,19 @@ void ChatController::Update() {
   }
 
   agent_.Tick();  // the streamed row, a held send, the agent's events
+
+  // Voice: the hold's touch state, a call turning live, and the vault locking under a recording or a clip.
+  const auto now = std::chrono::steady_clock::now();
+  voice_->Tick(now);
+  if ((voice_->Active() || voice_playback_->Active()) && messaging_ready_ && !MessagingReady()) {
+    CancelVoice();
+  }
+  if (voice_playback_->Active() && now - last_voice_call_check_ >= std::chrono::milliseconds(250)) {
+    last_voice_call_check_ = now;
+    if (facade_ && facade_->AnyCallLive()) {
+      voice_playback_->OnCallLive();
+    }
+  }
 }
 
 void ChatController::AfterLayout() {

@@ -23,11 +23,11 @@ struct PlayerProbe {
 
   VoicePlayerCallbacks Callbacks() {
     VoicePlayerCallbacks cb;
-    cb.on_progress = [this](const std::string&, int64_t pos, int64_t total) {
+    cb.on_progress = [this](const std::string&, uint64_t, int64_t pos, int64_t total) {
       progress_ms = pos;
       duration_ms = total;
     };
-    cb.on_ended = [this](const std::string& id, VoicePlayEnd end) {
+    cb.on_ended = [this](const std::string& id, uint64_t, VoicePlayEnd end) {
       std::lock_guard lock(mutex);
       ended.emplace_back(id, end);
     };
@@ -169,10 +169,10 @@ TEST(VoicePlayer, OneAtATime) {
   player.Play("a", path, 120);
   ASSERT_TRUE(WaitFor([&] { return state->Written() > 0 && player.CurrentId() == "a"; }));
   player.Play("b", path, 120);
-  // "a" was ended (Stopped) before "b" began.
-  ASSERT_GE(probe.Count(), 1u);
-  EXPECT_EQ(probe.At(0), std::make_pair(std::string("a"), VoicePlayEnd::Stopped));
   EXPECT_EQ(player.CurrentId(), "b");
+  // "a" is ended (Stopped) and has let go of the speaker before "b" opens it.
+  ASSERT_TRUE(WaitFor([&] { return probe.Count() >= 1; }));
+  EXPECT_EQ(probe.At(0), std::make_pair(std::string("a"), VoicePlayEnd::Stopped));
   ASSERT_TRUE(WaitFor([&] { return state->opens.load() == 2; }));
   EXPECT_EQ(state->closes.load(), 1);  // a's speaker was closed before b's opened
   player.Stop();
@@ -234,6 +234,80 @@ TEST(VoicePlayer, NotPlayedWhileTheDeviceIsInUse) {
   ASSERT_TRUE(WaitFor([&] { return probe.Count() == 1; }));
   EXPECT_EQ(probe.At(0).second, VoicePlayEnd::Busy);
   EXPECT_EQ(state->Written(), 0u);
+}
+
+/** A speaker that takes `open_ms` to open and then keeps its queue full. */
+class SlowOpenSink final : public IVoicePlaybackSink {
+public:
+  SlowOpenSink(int open_ms, std::shared_ptr<std::atomic<int>> opened) : open_ms_(open_ms), opened_(std::move(opened)) {}
+  Roe<void> Open(const std::function<bool()>& still_wanted) override {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(open_ms_);
+    while (std::chrono::steady_clock::now() < until) {
+      std::this_thread::sleep_for(1ms); // an open that notices it is no longer wanted gives up
+      if (!still_wanted()) {
+        return Error(kOpenNoDevice, "open abandoned");
+      }
+    }
+    ++*opened_;
+    return {};
+  }
+  int Queued() const override { return 1 << 20; }
+  bool Write(const void*, int) override { return true; }
+  void Clear() override {}
+  void Close() override {}
+
+private:
+  int open_ms_;
+  std::shared_ptr<std::atomic<int>> opened_;
+};
+
+TEST(VoicePlayer, PlayAndStopNeverWaitOnTheCallersThread) {
+  TempDir dir;
+  const std::string path = MakeVoiceFile(dir, 2000);
+  auto opened = std::make_shared<std::atomic<int>>(0);
+  PlayerProbe probe;
+  {
+    VoicePlayer player([opened]() { return std::make_unique<SlowOpenSink>(2000, opened); }, probe.Callbacks());
+    const auto t0 = std::chrono::steady_clock::now();
+    player.Play("a", path, 120);
+    player.Play("b", path, 120); // replaces a while a is still opening its speaker
+    player.Stop();
+    const auto took = std::chrono::steady_clock::now() - t0;
+    EXPECT_LT(took, 200ms);
+  }
+  // The player is gone already; the clips end by themselves, not as device errors, and without a hang.
+  ASSERT_TRUE(WaitFor([&] { return probe.Count() == 2; }));
+  for (size_t i = 0; i < 2; ++i) {
+    EXPECT_EQ(probe.At(i).second, VoicePlayEnd::Stopped);
+  }
+  EXPECT_EQ(opened->load(), 0);
+}
+
+TEST(VoicePlayer, AStoppedClipThatIsStillOpeningEndsAsStoppedNotAsADeviceError) {
+  TempDir dir;
+  const std::string path = MakeVoiceFile(dir, 2000);
+  auto opened = std::make_shared<std::atomic<int>>(0);
+  PlayerProbe probe;
+  VoicePlayer player([opened]() { return std::make_unique<SlowOpenSink>(5000, opened); }, probe.Callbacks());
+  player.Play("a", path, 120);
+  std::this_thread::sleep_for(100ms);
+  player.Stop();
+  ASSERT_TRUE(WaitFor([&] { return probe.Count() == 1; }, 2s));
+  EXPECT_EQ(probe.At(0).second, VoicePlayEnd::Stopped);
+}
+
+TEST(VoicePlayer, TheSameClipPlayedTwiceHasTwoSerials) {
+  TempDir dir;
+  const std::string path = MakeVoiceFile(dir, 1500);
+  auto state = std::make_shared<RecordingSink::State>();
+  state->draining = false;
+  PlayerProbe probe;
+  VoicePlayer player(Sink(state), probe.Callbacks());
+  const uint64_t first = player.Play("a", path, 120);
+  const uint64_t second = player.Play("a", path, 120);
+  EXPECT_NE(first, second);
+  player.Stop();
+  ASSERT_TRUE(WaitFor([&] { return probe.Count() == 2; }));
 }
 
 // --- through the arbiter, over a fake backend ---

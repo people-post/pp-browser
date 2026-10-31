@@ -154,6 +154,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
                                  ContactsController& contacts, ChatController& chat) {
   shell.SetOnNavTabChanged([badges, &shell, &settings, &contacts, &chat](NavTab tab) {
     static NavTab previous = NavTab::Home;
+    chat.CancelVoice(); // a recording is not carried to another tab, and a clip stops
     if (previous == NavTab::Me && tab != NavTab::Me) {
       settings.OnMeSurfaceClosed();
     }

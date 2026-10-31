@@ -13,6 +13,7 @@ pp_browser_add_lib_library(pp_lib_media
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoYuv.cpp
+    VoiceAudioSession.cpp
     VoiceDeviceBlock.cpp
     VoiceFile.cpp
     VoicePlayer.cpp
@@ -33,7 +34,6 @@ if(WIN32)
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Default.cpp
-    VoiceAudioSession_Default.cpp
     VoiceSupport_Default.cpp
     MicPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
@@ -53,7 +53,6 @@ elseif(APPLE)
       CameraCandidates_Default.cpp
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
-      VoiceAudioSession_Ios.mm
       VoiceProcessingIo_Apple.cpp)
     target_link_libraries(pp_lib_media PRIVATE "-framework AVFoundation" "-framework UIKit" "-framework AudioToolbox" "-framework CoreMotion")
   else()
@@ -62,8 +61,7 @@ elseif(APPLE)
       CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
       SdlAudioBootstrap_Default.cpp
-      VoiceAudioSession_Default.cpp
-      VoiceProcessingIo_Apple.cpp)
+        VoiceProcessingIo_Apple.cpp)
     target_link_libraries(pp_lib_media PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation")
   endif()
 elseif(ANDROID)
@@ -74,7 +72,6 @@ elseif(ANDROID)
     CallAudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
     SdlAudioBootstrap_Default.cpp
-    VoiceAudioSession_Default.cpp
     VoiceSupport_Default.cpp
     MicPermission_Android.cpp
     VoiceProcessingIo_Stub.cpp)
@@ -87,7 +84,6 @@ else()
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Linux.cpp
-    VoiceAudioSession_Default.cpp
     VoiceSupport_Linux.cpp
     MicPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)

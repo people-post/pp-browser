@@ -128,6 +128,49 @@ void CancelPendingDeactivate() {
   g_session_gen.fetch_add(1);
 }
 
+namespace {
+
+std::atomic<bool> g_voice_active{false};
+
+/** Voice message audio. Not while a call (or ringback) holds the session; cancels a call's pending delayed Deactivate. */
+void ActivateVoice(AVAudioSessionCategory category, AVAudioSessionCategoryOptions options) {
+  AVAudioSession* session = [AVAudioSession sharedInstance];
+  NSError* error = nil;
+  std::lock_guard<std::mutex> lock(g_session_mu);
+  if (g_session_active.load()) {
+    return;
+  }
+  g_session_gen.fetch_add(1);
+  if (![session setCategory:category mode:AVAudioSessionModeDefault options:options error:&error]) {
+    NSLog(@"CallAudioSession voice: setCategory failed: %@", error);
+    error = nil;
+  }
+  if (![session setActive:YES error:&error]) {
+    NSLog(@"CallAudioSession voice: setActive failed: %@", error);
+  }
+  g_voice_active.store(true);
+}
+
+} // namespace
+
+// `playback` ignores the ring/silent switch and uses the loudspeaker when nothing else is plugged in.
+void ActivateForVoicePlayback() {
+  ActivateVoice(AVAudioSessionCategoryPlayback, 0);
+}
+
+void ActivateForVoiceRecording() {
+  ActivateVoice(AVAudioSessionCategoryPlayAndRecord,
+                AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP);
+}
+
+void ReleaseVoice() {
+  if (!g_voice_active.exchange(false)) {
+    return;
+  }
+  // Same busy retry as a call's Deactivate; it does nothing when a newer activation (a call) has the session.
+  DeactivateAttempt(g_session_gen.load(), kDeactivateRetries);
+}
+
 bool SupportsSpeakerToggle() {
   return true;
 }

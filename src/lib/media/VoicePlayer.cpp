@@ -11,7 +11,9 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -71,12 +73,25 @@ public:
     }
     lease_->Clear();
     lease_.reset();
-    if (VoiceDeviceBlockedBy(devices_).empty()) { // a call that took the devices meanwhile owns the audio session
+    // Not while anything else holds the devices: a call owns the audio session then, and a recording that has
+    // just started on the microphone must not lose its session to our release.
+    if (!OtherHolds(devices_)) {
       VoiceAudioSession::Release();
     }
   }
 
 private:
+  static bool OtherHolds(MediaDeviceArbiter& devices) {
+    for (const MediaDeviceKind kind : {MediaDeviceKind::Mic, MediaDeviceKind::Speaker}) {
+      for (const auto& holder : devices.Holders(kind)) {
+        if (holder != kVoicePlayerHolder) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   std::string Blocker() const {
     for (const auto& holder : devices_.Holders(MediaDeviceKind::Speaker)) {
       if (holder != kVoicePlayerHolder) {
@@ -96,7 +111,7 @@ private:
 };
 
 /** The samples of the clip after the pre-skip and up to the end granule; nullopt when a packet does not decode. */
-bool DecodeStream(const OggOpusStream& stream, std::vector<int16_t>* pcm) {
+bool DecodeStream(const OggOpusStream& stream, std::vector<int16_t>* pcm, const std::function<bool()>& stopped) {
   int err = OPUS_OK;
   OpusDecoder* decoder = opus_decoder_create(kOggOpusRate, 1, &err);
   if (!decoder || err != OPUS_OK) {
@@ -107,6 +122,10 @@ bool DecodeStream(const OggOpusStream& stream, std::vector<int16_t>* pcm) {
   std::vector<int16_t> frame(kMaxDecodedFrameSamples);
   bool ok = true;
   for (const auto& packet : stream.packets) {
+    if (stopped()) {
+      ok = false;
+      break;
+    }
     const int n = opus_decode(decoder, packet.data(), static_cast<opus_int32>(packet.size()), frame.data(),
                               kMaxDecodedFrameSamples, 0);
     if (n < 0) {
@@ -132,38 +151,42 @@ std::unique_ptr<IVoicePlaybackSink> CreateArbiterVoicePlaybackSink(MediaDeviceAr
 }
 
 VoicePlayer::VoicePlayer(SinkFactory factory, VoicePlayerCallbacks callbacks)
-    : factory_(std::move(factory)), callbacks_(std::move(callbacks)) {}
+    : shared_(std::make_shared<Shared>(Shared{std::move(factory), std::move(callbacks)})) {}
 
 VoicePlayer::~VoicePlayer() {
-  Stop();
-  std::lock_guard lock(mutex_);
-  if (thread_.joinable()) {
-    thread_.join();
-  }
+  Stop(); // no join: a clip that is still ending owns what it needs
 }
 
-void VoicePlayer::Play(const std::string& id, const std::string& path, const int max_seconds) {
-  std::lock_guard lock(mutex_);
-  if (job_) {
-    job_->stop.store(true);
+uint64_t VoicePlayer::Play(const std::string& id, const std::string& path, const int max_seconds) {
+  auto job = std::make_shared<Job>();
+  job->id = id;
+  job->path = path;
+  job->max_seconds = max_seconds;
+  {
+    std::lock_guard lock(mutex_);
+    if (job_) {
+      job_->stop.store(true);
+      job->previous = job_;
+    }
+    job->serial = next_serial_++;
+    job_ = job;
   }
-  if (thread_.joinable()) {
-    thread_.join(); // the clip before reports Stopped here, before the new one starts
-  }
-  paused_.store(false);
-  job_ = std::make_shared<Job>();
-  job_->id = id;
-  job_->path = path;
-  job_->max_seconds = max_seconds;
-  thread_ = std::thread([this, job = job_]() { Run(job); });
+  std::thread([shared = shared_, job]() { Run(shared, job); }).detach();
+  return job->serial;
 }
 
 void VoicePlayer::Pause() {
-  paused_.store(true);
+  std::lock_guard lock(mutex_);
+  if (job_) {
+    job_->paused.store(true);
+  }
 }
 
 void VoicePlayer::Resume() {
-  paused_.store(false);
+  std::lock_guard lock(mutex_);
+  if (job_) {
+    job_->paused.store(false);
+  }
 }
 
 void VoicePlayer::Stop() {
@@ -173,17 +196,25 @@ void VoicePlayer::Stop() {
   }
 }
 
+bool VoicePlayer::IsPaused() const {
+  std::lock_guard lock(mutex_);
+  return job_ && job_->paused.load();
+}
+
 std::string VoicePlayer::CurrentId() const {
   std::lock_guard lock(mutex_);
   return job_ && !job_->stop.load() && !job_->done.load() ? job_->id : std::string();
 }
 
-void VoicePlayer::Run(std::shared_ptr<Job> job) {
+void VoicePlayer::Run(std::shared_ptr<Shared> shared, std::shared_ptr<Job> job) {
   using Clock = std::chrono::steady_clock;
+  const auto stopped = [&job]() { return job->stop.load(); };
+  const auto& callbacks = shared->callbacks;
   const auto end_with = [&](const VoicePlayEnd end) {
     job->done.store(true);
-    if (callbacks_.on_ended) {
-      callbacks_.on_ended(job->id, end);
+    job->previous.reset();
+    if (callbacks.on_ended) {
+      callbacks.on_ended(job->id, job->serial, end);
     }
   };
 
@@ -204,11 +235,33 @@ void VoicePlayer::Run(std::shared_ptr<Job> job) {
       end_with(VoicePlayEnd::Unplayable);
       return;
     }
-    bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    bytes.resize(static_cast<size_t>(file_size));
+    size_t got = 0;
+    while (got < bytes.size()) {
+      if (stopped()) {
+        end_with(VoicePlayEnd::Stopped);
+        return;
+      }
+      in.read(reinterpret_cast<char*>(bytes.data()) + got, static_cast<std::streamsize>(std::min<size_t>(64 * 1024, bytes.size() - got)));
+      const auto n = static_cast<size_t>(in.gcount());
+      if (n == 0) {
+        break;
+      }
+      got += n;
+    }
+    bytes.resize(got);
   }
-  auto parsed = ParseOggOpus(bytes.data(), bytes.size(), limits);
+  auto parsed = ParseOggOpus(bytes.data(), bytes.size(), limits, stopped);
+  if (stopped()) {
+    end_with(VoicePlayEnd::Stopped);
+    return;
+  }
   std::vector<int16_t> pcm;
-  if (!parsed || !DecodeStream(*parsed, &pcm)) {
+  if (!parsed || !DecodeStream(*parsed, &pcm, stopped)) {
+    if (stopped()) {
+      end_with(VoicePlayEnd::Stopped);
+      return;
+    }
     PlayerLog().info << "voice file not playable: " << (parsed ? "decode failed" : parsed.error().message);
     end_with(VoicePlayEnd::Unplayable);
     return;
@@ -217,19 +270,34 @@ void VoicePlayer::Run(std::shared_ptr<Job> job) {
   bytes.shrink_to_fit();
   const int64_t duration_ms = static_cast<int64_t>(pcm.size() * 1000 / kOggOpusRate);
 
-  auto sink = factory_ ? factory_() : nullptr;
+  // The clip this one replaced lets go of the speaker first (it was told to stop and does so within a few ms).
+  if (job->previous) {
+    const auto deadline = Clock::now() + std::chrono::seconds(3);
+    while (!job->previous->done.load() && !stopped() && Clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    job->previous.reset();
+  }
+  if (stopped()) {
+    end_with(VoicePlayEnd::Stopped);
+    return;
+  }
+
+  auto sink = shared->factory ? shared->factory() : nullptr;
   if (!sink) {
     end_with(VoicePlayEnd::NoDevice);
     return;
   }
   auto opened = sink->Open([&job]() { return !job->stop.load(); });
   if (!opened) {
-    end_with(opened.error().code == IVoicePlaybackSink::kOpenBusy ? VoicePlayEnd::Busy : VoicePlayEnd::NoDevice);
+    // Told to stop while it was opening: not a device error.
+    end_with(stopped() ? VoicePlayEnd::Stopped
+                       : (opened.error().code == IVoicePlaybackSink::kOpenBusy ? VoicePlayEnd::Busy : VoicePlayEnd::NoDevice));
     return;
   }
 
-  if (callbacks_.on_progress) {
-    callbacks_.on_progress(job->id, 0, duration_ms);
+  if (callbacks.on_progress) {
+    callbacks.on_progress(job->id, job->serial, 0, duration_ms);
   }
   size_t written = 0; // samples handed to the sink
   bool paused = false;
@@ -243,7 +311,7 @@ void VoicePlayer::Run(std::shared_ptr<Job> job) {
   };
 
   for (;;) {
-    if (job->stop.load()) {
+    if (stopped()) {
       end = VoicePlayEnd::Stopped;
       break;
     }
@@ -251,7 +319,7 @@ void VoicePlayer::Run(std::shared_ptr<Job> job) {
       end = VoicePlayEnd::Interrupted;
       break;
     }
-    const bool want_pause = paused_.load();
+    const bool want_pause = job->paused.load();
     if (want_pause != paused) {
       if (want_pause) {
         written = position_samples(); // resume from where it was heard, not from what was queued
@@ -264,9 +332,9 @@ void VoicePlayer::Run(std::shared_ptr<Job> job) {
       continue;
     }
 
-    if (callbacks_.on_progress && Clock::now() - last_progress >= std::chrono::milliseconds(100)) {
+    if (callbacks.on_progress && Clock::now() - last_progress >= std::chrono::milliseconds(100)) {
       last_progress = Clock::now();
-      callbacks_.on_progress(job->id, static_cast<int64_t>(position_samples() * 1000 / kOggOpusRate), duration_ms);
+      callbacks.on_progress(job->id, job->serial, static_cast<int64_t>(position_samples() * 1000 / kOggOpusRate), duration_ms);
     }
     const int queued = std::max(sink->Queued(), 0);
     if (queued != last_queued) {
@@ -293,8 +361,8 @@ void VoicePlayer::Run(std::shared_ptr<Job> job) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   if (end == VoicePlayEnd::Finished) {
-    if (callbacks_.on_progress) {
-      callbacks_.on_progress(job->id, duration_ms, duration_ms);
+    if (callbacks.on_progress) {
+      callbacks.on_progress(job->id, job->serial, duration_ms, duration_ms);
     }
   } else {
     sink->Clear();
