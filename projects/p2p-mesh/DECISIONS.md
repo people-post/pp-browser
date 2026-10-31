@@ -512,3 +512,15 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Rationale:** Mesh ADRs already forbade A/V-specific relay forks and premature message_relay packaging; A028 makes the complete set explicit for agents adding capabilities.
 
 **Alternatives rejected:** Open-ended `/pp-browser/<feature>/1.0.0` growth; packaging media hop and message durability as one protocol.
+
+## N031 — Node liveness: short-lived signed records, observed by the mesh
+
+**Date:** 2026-10-31  
+**Status:** Accepted (design); plan [NODE_LIVENESS.md](NODE_LIVENESS.md), not started. Until then the opt-in heartbeat of [privacy P011](../privacy/DECISIONS.md#p011--a-nodes-uptime-is-not-public-by-role) stands.  
+**Amends:** N027 (a `mesh_node` registration binds the account; it does not say the node is up).
+
+**Decision:** A node's liveness travels with a **signed, short-lived node record** (about 1 h, re-signed every ~20 min and on a state change), served by the Amp directory nodes and carried between them over links they already hold. The HTTP directory **reads** records and lists them verbatim for clients to verify; it does not receive liveness pings. Clients judge a node by record freshness and their own dial results, and never drop a node they reached recently. The pp-node heartbeat (PR #428) is retired once records flow.
+
+**Rationale:** Reporting liveness to one server makes it the authority on which nodes exist, hands it every node's uptime and egress address, and drops healthy nodes that cannot reach it — the opposite of N029, where the HTTP directory is an interim phone book and the chain the final authority. A self-proving record (the account-card pattern) can be served by any directory, checked by any client, and later anchored in the chain without change.
+
+**Alternatives rejected:** Heartbeat to every configured directory provider (multiplies the exposure); the directory probing nodes (better than pings, but liveness still lives in one place); liveness in the DHT (N028 keeps the DHT to PeerId → address).

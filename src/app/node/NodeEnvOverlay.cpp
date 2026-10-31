@@ -127,6 +127,11 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
     // Convenience: advertise list implies mesh_node publish for pp-node (N027).
     config.mesh.mesh_publish = true;
   }
+  if (const char* heartbeat = EnvOrNull("PP_NODE_MESH_HEARTBEAT")) {
+    if (auto parsed = ParsePpNodeBoolEnv(heartbeat)) {
+      config.mesh.mesh_heartbeat = *parsed;
+    }
+  }
   if (const char* registration = EnvOrNull("PP_NODE_REGISTRATION_BASE_URL")) {
     config.registration.base_url = registration;
   }

@@ -83,6 +83,12 @@ struct MeshConfig {
    */
   bool mesh_publish = false;
   /**
+   * With mesh_publish: also send a signed liveness heartbeat to the directory every 5 minutes (pp-node). Off by
+   * default — it tells the directory, and through its listing anyone, when this node is up and from which
+   * address; meant for org-run seeds. Privacy P011.
+   */
+  bool mesh_heartbeat = false;
+  /**
    * Prefer contacts then org seed for circuit/media hop pick (nf / N014).
    * On volunteer desktop Nodes, also prefer serving contacts (limit strangers).
    */
