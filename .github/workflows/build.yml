@@ -92,6 +92,8 @@ jobs:
         run: |
           ./scripts/check/check_base_includes.sh
           ./scripts/check/check_base_public_libs.sh
+      - name: Capability edges
+        run: ./scripts/check/check_capability_edges.py
       - name: Owner runners
         run: ./scripts/check/check_owner_runners.sh
       - name: Platform ifdef locations

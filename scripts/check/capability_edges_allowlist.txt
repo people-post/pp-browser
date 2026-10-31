@@ -1,0 +1,29 @@
+# Include edges against the capability order, still to be cut (projects/capability-repos PHASES § P1).
+# check_capability_edges.py fails when one appears, grows or shrinks: lower a count when you cut sites.
+# Format: from -> to <include sites>, tests included (a capability's tests move with it).
+
+# people sits below messaging: messaging vocabulary the identity code reaches for (thread / chat types,
+# the direct-message port) moves down to a people port, or the use moves up.
+people -> messaging 21
+# The backend client below messaging: chat DTOs it carries (relay envelope, history) become its own.
+net -> messaging 10
+# Mostly calls logic tests filed under feature/conversations/tests; two header uses (CallTypes, the
+# call media protocol id) in the conversations hub's ports.
+messaging -> calls 9
+# Chat thread / payload types used from common/ and foundation/ (BackgroundSyncScheduler stays app-side,
+# DESIGN § Runtime) and tests of common/chat filed under common/tests.
+base -> messaging 7
+# Identity using the backend client (directory, blob fetch for profile icons): a port people declares.
+people -> net 5
+# AI's tool registry and structured text, and lib/ui types, from the conversations feature: messaging
+# declares the ports AI and the shell implement (CR007).
+messaging -> app 5
+# The conversations hub naming node services and mesh executors: the app wires them in.
+messaging -> node 3
+# Tests of common/ui filed under common/tests.
+base -> app 2
+# NodeMetrics reading chat types.
+node -> messaging 2
+# Calls naming broadcast (CR003 keeps them in one capability, but not in a cycle).
+calls -> broadcast 2
+node -> calls 1

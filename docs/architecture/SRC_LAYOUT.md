@@ -73,6 +73,34 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 - **Feature:** a top-level thing the user does (conversations, a call, a broadcast, the agent, settings): its hub / session and its screen's decisions, composed from domain and lib.
 - **App:** exists only to run and wire the product.
 
+## Capabilities (across layers)
+
+Layers order code horizontally; **capabilities** cut vertically through them, so that another app can pick
+one ([capability-repos](../../projects/capability-repos/DESIGN.md)). Both hold: the layer rules apply inside
+every capability, and a capability's DTOs under `common/<capability>/` belong to it.
+
+```
+base (common, foundation) ─► people ─┬─► net ─────┬─► messaging ─► calls ─► broadcast
+                                     └─► social ──┘
+                             people, net ─► node            app (shell, GUI, AI): anything
+```
+
+| Capability | Paths |
+|------------|-------|
+| people | `lib/people`, `domain/peers`, `common/directory` |
+| net | `lib/net`, `domain/registration` |
+| social | `lib/posts`, `lib/content` |
+| messaging | `lib/messaging`, `lib/pricing`, `common/chat`, `common/thread`, `domain/delivery`, `domain/attachments`, `feature/conversations` |
+| calls | `lib/calls`, `lib/media`, `common/media`, `domain/call_media`, `feature/calls` |
+| broadcast | `lib/broadcast`, `feature/broadcast` |
+| node | `domain/node`, `app/node` |
+| app | `app`, `gui`, `feature/product`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
+
+A capability includes only those before it in the order (tests included: they move with it).
+`scripts/check/check_capability_edges.py` (CI lint) holds the map and the order; edges still to cut are in
+`capability_edges_allowlist.txt`, which may only shrink. A new directory under `lib/`, `domain/` or
+`feature/` must be added to the map.
+
 ## What `src/common` provides
 
 Two buckets only:
