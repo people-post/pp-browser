@@ -194,5 +194,19 @@ TEST(GroupE2ePayloadCodecTest, DetectsGroupEnvelope) {
   EXPECT_FALSE(GroupE2ePayloadCodec::IsGroupEnvelope(envelope));
 }
 
+TEST(GroupMembershipCodecTest, GroupDissolvedHasItsOwnWireNameAndIsNotRosterBookkeeping) {
+  EXPECT_EQ(GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupDissolved), "group_dissolved");
+  EXPECT_EQ(GroupMembershipControlTypeFromWire("group_dissolved"), GroupMembershipControlType::GroupDissolved);
+  EXPECT_FALSE(IsGroupRosterSyncControl(GroupMembershipControlType::GroupDissolved)) << "it rides the chat stream";
+
+  auto detail = GroupMembershipCodec::EncodeGroupDissolved("group:hike", "account:alice");
+  ASSERT_TRUE(detail);
+  auto message = GroupMembershipCodec::BuildSystemMessage("t1", GroupMembershipControlType::GroupDissolved,
+                                                          "Group dissolved", *detail, "account:alice");
+  ASSERT_TRUE(message);
+  EXPECT_EQ(GroupMembershipCodec::GroupDissolvedOwner(*message), "account:alice");
+  EXPECT_TRUE(GroupMembershipCodec::GroupDissolvedOwner(ThreadMessage{}).empty());
+}
+
 } // namespace
 } // namespace pbr

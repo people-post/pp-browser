@@ -15,6 +15,9 @@
 #include "lib/messaging/GroupInviteGate.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
+#include "lib/messaging/tests/TestRosterSigner.h"
+#include "lib/messaging/GroupRosterSync.h"
+#include "lib/messaging/TranscriptAssembly.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
@@ -798,6 +801,233 @@ TEST(GroupInviteIngestTest, AnInviteIsRecordedOnlyFromItsInviterToUs) {
   invite.group_id = "group:hike";
   invite.invite_nonce = "fine";
   EXPECT_TRUE(send(invite, 4));
+}
+
+
+// G016: the owner dissolves a group for everyone. Bob is a member; the owner signs with its own account key.
+class GroupDissolvedIngestTest : public ::testing::Test {
+protected:
+  static constexpr const char* kGroup = "group:hike";
+
+  GroupDissolvedIngestTest() : bob_("dissolved_" + util::GenerateUuid(), "account:bob", alice_.Id()) {}
+
+  void SetUp() override {
+    GroupMetadata metadata;
+    metadata.group_id = kGroup;
+    metadata.owner_identity = alice_.Id();
+    metadata.title = "Weekend hike";
+    metadata.roster_epoch = 3;
+    ASSERT_TRUE(bob_.roster.UpsertMetadata(metadata));
+    for (const auto& [identity, role] : std::vector<std::pair<std::string, MemberRole>>{
+             {alice_.Id(), MemberRole::Owner}, {"account:bob", MemberRole::Member}, {"account:carol", MemberRole::Member}}) {
+      GroupRosterMember member;
+      member.member_identity = identity;
+      member.role = role;
+      member.joined_at = 1000;
+      ASSERT_TRUE(bob_.roster.UpsertMember(kGroup, member));
+    }
+    auto thread = bob_.store.FindOrCreateGroupThread(kGroup, "Weekend hike", {});
+    ASSERT_TRUE(thread);
+    group_thread_ = *thread;
+    ASSERT_TRUE(bob_.roster.UpsertGroupTarget(kGroup, group_thread_.id, 1, 1));
+    ThreadMessage said;
+    said.id = "m1";
+    said.thread_id = group_thread_.id;
+    said.sender_contact_id = "account:carol";
+    said.content_type = ChatContentType::Text;
+    said.text = "see you at eight";
+    said.timestamp = 1;
+    ASSERT_TRUE(bob_.store.AppendMessage(said));
+  }
+
+  /** The owner's roster statement (epoch 4: one past bob's), signed as a dissolve unless told otherwise. */
+  GroupRosterStatement Statement(test::TestSigner& owner, const bool dissolved = true, const uint64_t epoch = 4) {
+    std::vector<GroupRosterStatementMember> rows{{owner.Id(), MemberRole::Owner, 1000},
+                                                 {"account:bob", MemberRole::Member, 1000},
+                                                 {"account:carol", MemberRole::Member, 1000}};
+    return group_roster_statement::Sign(owner, owner.Key(), kGroup, epoch, rows, {}, dissolved).value();
+  }
+
+  RelayReceiveOutcome Receive(const GroupRosterStatement& statement) {
+    return bob_.pipeline.ProcessEnvelope(
+        bob_.MakeSystemEnvelope("group_dissolved", group_roster_sync_codec::EncodeStatement(statement),
+                                "The group owner dissolved this group", ++seq_),
+        "account:bob");
+  }
+
+  GroupMetadata Metadata() { return bob_.roster.LoadMetadata(kGroup).value().value(); }
+  std::vector<ThreadMessage> GroupMessages() { return bob_.store.GetMessages(group_thread_.id).value(); }
+  static size_t DissolvedLines(const std::vector<ThreadMessage>& messages) {
+    size_t n = 0;
+    for (const ThreadMessage& m : messages) {
+      const auto type = GroupMembershipCodec::ControlTypeFromMessage(m);
+      n += type && *type == GroupMembershipControlType::GroupDissolved ? 1 : 0;
+    }
+    return n;
+  }
+
+  test::TestSigner alice_;
+  PartyHarness bob_;
+  Thread group_thread_;
+  uint64_t seq_ = 0;
+};
+
+TEST_F(GroupDissolvedIngestTest, TheOwnersDissolveEmptiesTheRosterAndKeepsTheChat) {
+  const RelayReceiveOutcome outcome = Receive(Statement(alice_));
+  EXPECT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
+  EXPECT_FALSE(outcome.receive_failure);
+
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Dissolved);
+  EXPECT_EQ(Metadata().roster_epoch, 4u);
+  EXPECT_TRUE(bob_.roster.ListMembers(kGroup).value().empty());
+  EXPECT_FALSE(group_roster_sync::MaySend(Metadata())) << "no sends in a dissolved group";
+  EXPECT_FALSE(bob_.roster.FindThreadIdForGroup(kGroup).value().has_value()) << "no send target";
+
+  // The chat and its messages stay, with one line.
+  ASSERT_TRUE(bob_.store.FindGroupThread(kGroup)->has_value());
+  const auto messages = GroupMessages();
+  ASSERT_EQ(messages.size(), 2u);
+  EXPECT_EQ(messages.front().text, "see you at eight");
+  EXPECT_EQ(DissolvedLines(messages), 1u);
+  EXPECT_EQ(GroupMembershipCodec::GroupDissolvedOwner(messages.back()), alice_.Id());
+}
+
+TEST_F(GroupDissolvedIngestTest, TheGroupGetsTheOneNoticeAndTheDirectChatNone) {
+  const RelayReceiveOutcome outcome = Receive(Statement(alice_));
+  EXPECT_TRUE(outcome.suppress_inbox_chrome) << "the DM that carried it bumps no unread count and raises no notice";
+  ASSERT_TRUE(outcome.dissolved_group_thread_id);
+  EXPECT_EQ(*outcome.dissolved_group_thread_id, group_thread_.id);
+
+  // In the group the line shows; in the direct chat that carried it nothing does.
+  const auto group_rows = AssembleTranscript(GroupMessages(), nullptr, ThreadKind::Group);
+  size_t group_lines = 0;
+  for (const TranscriptRow& row : group_rows) {
+    const auto type = GroupMembershipCodec::ControlTypeFromMessage(row.message);
+    group_lines += type && *type == GroupMembershipControlType::GroupDissolved ? 1 : 0;
+  }
+  EXPECT_EQ(group_lines, 1u);
+  const auto dm_messages = bob_.store.GetMessages(bob_.dm_thread.id).value();
+  EXPECT_EQ(DissolvedLines(dm_messages), 1u) << "the wire copy is stored in the DM";
+  for (const TranscriptRow& row : AssembleTranscript(dm_messages, nullptr, ThreadKind::Direct)) {
+    const auto type = GroupMembershipCodec::ControlTypeFromMessage(row.message);
+    EXPECT_FALSE(type && *type == GroupMembershipControlType::GroupDissolved) << "never a line in a direct chat";
+  }
+}
+
+TEST_F(GroupDissolvedIngestTest, ADissolveFromAnyoneButTheOwnerIsRejected) {
+  test::TestSigner carol;
+  // A member signs a dissolve of its own: it is not the owner we know...
+  EXPECT_TRUE(Receive(Statement(carol)).receive_failure) << "signed by someone who is not the owner we know";
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
+  EXPECT_EQ(bob_.roster.ListMembers(kGroup).value().size(), 3u);
+
+  // ...the owner's signed roster is not a dissolve...
+  EXPECT_TRUE(Receive(Statement(alice_, /*dissolved=*/false)).receive_failure);
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
+
+  // ...nor can one be made of it: the mark is part of what the owner signs.
+  GroupRosterStatement forged = Statement(alice_, /*dissolved=*/false);
+  forged.dissolved = true;
+  EXPECT_TRUE(Receive(forged).receive_failure);
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
+  EXPECT_EQ(DissolvedLines(GroupMessages()), 0u);
+}
+
+TEST_F(GroupDissolvedIngestTest, ADissolveSentByAMemberIsRejected) {
+  // Carol, a member, sends it: the owner's genuine dissolve in her name, and one she signed herself.
+  test::TestSigner carol;
+  PartyHarness from_carol("carol_" + util::GenerateUuid(), "account:bob", carol.Id());
+  ASSERT_TRUE(from_carol.roster.UpsertMetadata(Metadata()));
+  GroupRosterMember bob;
+  bob.member_identity = "account:bob";
+  ASSERT_TRUE(from_carol.roster.UpsertMember(kGroup, bob));
+  uint64_t seq = 0;
+  for (const GroupRosterStatement& statement : {Statement(alice_), Statement(carol)}) {
+    const RelayReceiveOutcome outcome = from_carol.pipeline.ProcessEnvelope(
+        from_carol.MakeSystemEnvelope("group_dissolved", group_roster_sync_codec::EncodeStatement(statement),
+                                      "The group owner dissolved this group", ++seq),
+        "account:bob");
+    EXPECT_TRUE(outcome.receive_failure);
+    EXPECT_EQ(from_carol.roster.LoadMetadata(kGroup).value().value().sync_state, GroupSyncState::Active);
+  }
+}
+
+TEST_F(GroupDissolvedIngestTest, ARepeatedDissolveDoesNothing) {
+  ASSERT_TRUE(Receive(Statement(alice_)).dissolved_group_thread_id);
+  const RelayReceiveOutcome again = Receive(Statement(alice_, true, 5));
+  EXPECT_FALSE(again.dissolved_group_thread_id) << "no second notice";
+  EXPECT_FALSE(again.receive_failure);
+  EXPECT_TRUE(again.suppress_inbox_chrome);
+  EXPECT_EQ(DissolvedLines(GroupMessages()), 1u) << "one line";
+  EXPECT_EQ(Metadata().roster_epoch, 4u);
+}
+
+TEST_F(GroupDissolvedIngestTest, AGroupWeAreNotInIsNotEnded) {
+  ASSERT_TRUE(bob_.roster.RemoveMember(kGroup, "account:bob"));  // left or removed before it arrived
+  const RelayReceiveOutcome outcome = Receive(Statement(alice_));
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_FALSE(outcome.dissolved_group_thread_id);
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
+  EXPECT_EQ(DissolvedLines(GroupMessages()), 0u);
+}
+
+TEST_F(GroupDissolvedIngestTest, LateGroupTrafficAndInvitesAreDropped) {
+  PendingGroupInvite waiting;
+  waiting.invite_nonce = "waiting";
+  waiting.group_id = kGroup;
+  waiting.inviter_identity = alice_.Id();
+  waiting.invitee_identity = "account:bob";
+  waiting.status = InviteStatus::Pending;
+  waiting.created_at = util::NowUnixMs();
+  ASSERT_TRUE(bob_.roster.UpsertPendingInvite(waiting));
+
+  const RelayReceiveOutcome outcome = Receive(Statement(alice_));
+  ASSERT_EQ(outcome.voided_invite_cards.size(), 1u) << "the invite's card in the DM is closed";
+  EXPECT_EQ(outcome.voided_invite_cards.front().second, "waiting");
+  EXPECT_EQ(bob_.roster.LoadPendingInvite("waiting").value().value().status, InviteStatus::Expired);
+
+  const RelayReceiveOutcome late =
+      bob_.pipeline.ProcessEnvelope(GroupEnvelopeFrom("account:carol", kGroup, "account:bob"), "account:bob");
+  EXPECT_EQ(late.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(late.persisted);
+  EXPECT_FALSE(late.receive_failure) << "dropped on the roster, quietly";
+  EXPECT_EQ(GroupMessages().size(), 2u);
+
+  // A new invite to the dissolved group, even from its owner, is void.
+  GroupInvitePayload invite;
+  invite.group_id = kGroup;
+  invite.group_title = "Weekend hike";
+  invite.inviter_identity = alice_.Id();
+  invite.invitee_identity = "account:bob";
+  invite.invite_nonce = "after";
+  invite.roster_epoch = 5;
+  invite.expires_at = util::NowUnixMs() + 86400000;
+  (void)bob_.pipeline.ProcessEnvelope(
+      bob_.MakeSystemEnvelope("group_invite", GroupMembershipCodec::EncodeInvite(invite).value(), "Group invitation", ++seq_),
+      "account:bob");
+  EXPECT_FALSE(bob_.roster.LoadPendingInvite("after").value().has_value());
+}
+
+TEST_F(GroupDissolvedIngestTest, ADeletedChatStaysGoneAndTheMarkerSurvivesARestart) {
+  ASSERT_TRUE(Receive(Statement(alice_)).dissolved_group_thread_id);
+
+  // The user deletes the chat (InboxController::CloseThread: the thread goes, local membership is cleared).
+  ASSERT_TRUE(bob_.store.DeleteThread(group_thread_.id).value());
+  ASSERT_TRUE(bob_.roster.ClearGroupTarget(kGroup));
+  const RelayReceiveOutcome again = Receive(Statement(alice_, true, 6));
+  EXPECT_FALSE(again.dissolved_group_thread_id);
+  EXPECT_FALSE(bob_.store.FindGroupThread(kGroup)->has_value()) << "a repeated dissolve brings no chat back";
+  const RelayReceiveOutcome late =
+      bob_.pipeline.ProcessEnvelope(GroupEnvelopeFrom("account:carol", kGroup, "account:bob"), "account:bob");
+  EXPECT_FALSE(late.persisted);
+  EXPECT_FALSE(bob_.store.FindGroupThread(kGroup)->has_value());
+
+  // A restart reads it all back from disk.
+  GroupRosterStore reopened(bob_.store.ProfileDbPath());
+  const auto metadata = reopened.LoadMetadata(kGroup).value();
+  ASSERT_TRUE(metadata);
+  EXPECT_EQ(metadata->sync_state, GroupSyncState::Dissolved);
+  EXPECT_TRUE(reopened.ListMembers(kGroup).value().empty());
 }
 
 } // namespace

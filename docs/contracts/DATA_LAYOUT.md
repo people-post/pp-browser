@@ -58,6 +58,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed
                             # roster held and a restored group's member check — group-chat G012/G013, plaintext, additive)
+                            # group_metadata.sync_state: active | checking | removed | dissolved. dissolved (G016): the owner ended the
+                            # group — group_rosters empty, group_targets row gone, pending invites expired, roster_statement_json empty;
+                            # the group's thread and messages stay (read-only). Terminal; no new column. The account locker keeps it as a
+                            # tombstone (`left`), so a restore does not bring it back
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)

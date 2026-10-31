@@ -53,10 +53,16 @@ std::optional<GroupRosterStatement> Held(const GroupMetadata& metadata) {
 }
 
 Roe<bool> KeepStatement(GroupRosterStore& roster, const GroupRosterStatement& statement) {
+  if (statement.dissolved) {
+    return Error("roster statement: a dissolve is not a roster");  // G016: never held as the group's roster
+  }
   auto lock = GroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, statement.group_id);
   if (!metadata) {
     return metadata.error();
+  }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return false;  // an ended group keeps no roster
   }
   if (auto valid = group_roster_statement::Verify(statement, metadata->owner_identity); !valid) {
     return valid.error();
@@ -156,6 +162,10 @@ Roe<Check> BeginCheck(GroupRosterStore& roster, const std::string& group_id, con
   ask.erase(local_identity);
   check.ask.assign(ask.begin(), ask.end());
 
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    check.ask.clear();  // G016: an ended group checks nothing and asks no one
+    return check;
+  }
   if (metadata->sync_state != GroupSyncState::Removed) {
     metadata->sync_state = GroupSyncState::Checking;
   }
@@ -174,8 +184,8 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore
   if (!metadata) {
     return metadata.error();
   }
-  if (!metadata->has_value()) {
-    return std::optional<group_roster_sync_codec::RosterReply>{};
+  if (!metadata->has_value() || (*metadata)->sync_state == GroupSyncState::Dissolved) {
+    return std::optional<group_roster_sync_codec::RosterReply>{};  // not ours, or ended (G016): nothing to say
   }
   group_roster_sync_codec::RosterReply reply;
   reply.group_id = request.group_id;
@@ -198,7 +208,8 @@ Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_c
   if (!metadata) {
     return metadata.error();
   }
-  if (metadata->sync_request_id.empty() || reply.request_id != metadata->sync_request_id) {
+  if (metadata->sync_state == GroupSyncState::Dissolved || metadata->sync_request_id.empty() ||
+      reply.request_id != metadata->sync_request_id) {
     return ReplyOutcome::Ignored;
   }
   const auto settle = [&](GroupSyncState state) -> Roe<ReplyOutcome> {
@@ -220,6 +231,9 @@ Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_c
     return ReplyOutcome::Ignored;
   }
   const GroupRosterStatement& statement = *reply.statement;
+  if (statement.dissolved) {
+    return ReplyOutcome::Ignored;
+  }
   if (auto valid = group_roster_statement::Verify(statement, metadata->owner_identity); !valid) {
     return ReplyOutcome::Ignored;
   }

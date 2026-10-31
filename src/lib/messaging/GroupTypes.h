@@ -41,6 +41,8 @@ enum class GroupMembershipControlType {
   GroupRosterReply,
   /** Owner → invitee: its accept came when the group was full (G014); the invitee was not added. */
   GroupInviteRefused,
+  /** Owner → members: the owner ended the group for everyone (G016); carries the owner-signed roster with `dissolved`. */
+  GroupDissolved,
 };
 
 /** G014: a group has at most this many active members (the owner included; pending invites do not count). */
@@ -50,8 +52,11 @@ inline constexpr const char kGroupFullError[] = "This group is full (50 members)
 /** `group_invite_refused` reason. */
 inline constexpr const char kInviteRefusedGroupFull[] = "group_full";
 
-/** G013: a restored group checks its members before it sends again. */
-enum class GroupSyncState : uint8_t { Active = 0, Checking = 1, Removed = 2 };
+/**
+ * G013: a restored group checks its members before it sends again. `Dissolved` (G016): the owner ended the
+ * group; its roster is empty and its chat stays read-only. Terminal, like `Removed`.
+ */
+enum class GroupSyncState : uint8_t { Active = 0, Checking = 1, Removed = 2, Dissolved = 3 };
 
 enum GroupPermission : uint32_t {
   kPermSend = 1u << 0,

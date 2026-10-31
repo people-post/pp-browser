@@ -53,6 +53,8 @@ public:
   Roe<size_t> CountPendingInvitesSince(int64_t since_ms) const;
   /** Marks this group's live outbound invites to one identity expired (it was removed). */
   Roe<void> ExpireOutboundInvitesTo(const std::string& group_id, const std::string& invitee_identity) const;
+  /** Voids every pending invite to or from this group (it was dissolved, G016); returns the ones voided. */
+  Roe<std::vector<PendingGroupInvite>> ExpirePendingInvitesOf(const std::string& group_id) const;
   /**
    * The group's invites this device sent that are still Pending and not expired at `now_ms`: the latest
    * one per invitee, newest first.

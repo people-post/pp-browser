@@ -57,7 +57,7 @@ struct LatestReaction {
 } // namespace
 
 std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& messages,
-                                                const SystemControlRegistry* controls) {
+                                                const SystemControlRegistry* controls, const ThreadKind thread_kind) {
   // Messages deleted on this device: an id-only tombstone that shows as one line; what hung off
   // them (reactions) is not shown.
   std::unordered_set<std::string> deleted_ids;
@@ -87,8 +87,9 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
       continue;  // lane signaling is never a transcript row (an old store may still hold some)
     }
     if (const auto membership = GroupMembershipCodec::ControlTypeFromMessage(message);
-        membership && IsGroupRosterSyncControl(*membership)) {
-      continue;  // roster bookkeeping between members (G012 / G013), not something to read
+        membership && (IsGroupRosterSyncControl(*membership) ||
+                       (*membership == GroupMembershipControlType::GroupDissolved && thread_kind != ThreadKind::Group))) {
+      continue;  // roster bookkeeping between members (G012 / G013), or the dissolve DM (G016): not something to read
     }
     TranscriptRow entry;
     entry.message = message;

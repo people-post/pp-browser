@@ -83,6 +83,8 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "group_roster_reply";
   case GroupMembershipControlType::GroupInviteRefused:
     return "group_invite_refused";
+  case GroupMembershipControlType::GroupDissolved:
+    return "group_dissolved";
   }
   return "group_invite";
 }
@@ -130,6 +132,9 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   if (value == "group_roster_reply") {
     return GroupMembershipControlType::GroupRosterReply;
   }
+  if (value == "group_dissolved") {
+    return GroupMembershipControlType::GroupDissolved;
+  }
   return std::nullopt;
 }
 
@@ -144,6 +149,8 @@ std::string GroupSyncStateToString(const GroupSyncState state) {
     return "checking";
   case GroupSyncState::Removed:
     return "removed";
+  case GroupSyncState::Dissolved:
+    return "dissolved";
   case GroupSyncState::Active:
     break;
   }
@@ -156,6 +163,9 @@ GroupSyncState GroupSyncStateFromString(const std::string& value) {
   }
   if (value == "removed") {
     return GroupSyncState::Removed;
+  }
+  if (value == "dissolved") {
+    return GroupSyncState::Dissolved;
   }
   return GroupSyncState::Active;
 }

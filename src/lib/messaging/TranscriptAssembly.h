@@ -37,8 +37,10 @@ struct TranscriptRow {
  * what hangs off a message deleted here, never a retract — with their reactions and badges folded
  * onto their targets (at most kMaxAnnotationsPerTarget each), the asked question on each AI
  * answer, and unlinked annotations as their own rows; all in display order. Drawing is the GUI's.
+ * `group_dissolved` (G016) shows as a line in the group's own chat only: the DM that carried it is not read.
  */
 std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& messages,
-                                                const SystemControlRegistry* controls);
+                                                const SystemControlRegistry* controls,
+                                                ThreadKind thread_kind = ThreadKind::Group);
 
 } // namespace pbr

@@ -50,6 +50,11 @@ struct GroupRosterStatement {
   /** Every transfer since the group began, oldest first; empty while its creator owns it. */
   std::vector<GroupOwnerTransfer> owner_chain;
   std::string owner_signature_b64;
+  /**
+   * G016: the owner's statement that it ended the group, carried by `group_dissolved`. Signed under its own
+   * tag, so a roster statement cannot be turned into one (nor the reverse), and never kept as a roster.
+   */
+  bool dissolved = false;
 
   bool Lists(const std::string& identity) const;
 };
@@ -68,7 +73,7 @@ ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransf
 Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
                                const std::string& group_id, uint64_t roster_epoch,
                                std::vector<GroupRosterStatementMember> members,
-                               std::vector<GroupOwnerTransfer> owner_chain);
+                               std::vector<GroupOwnerTransfer> owner_chain, bool dissolved = false);
 
 /** Transfer the group to `to_identity` at `roster_epoch`, signed by the owner giving it up. */
 Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::string& public_key_b64,

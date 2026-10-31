@@ -1,5 +1,6 @@
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupRosterSyncFamily.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
@@ -287,6 +288,65 @@ TEST_F(GroupRosterSyncTest, TheCheckRidesTheControlLane) {
   ASSERT_TRUE(family.apply(reply, SystemControlContext{.sender_identity = bob_}));
   EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
   EXPECT_EQ(Metadata().roster_epoch, 4u);
+}
+
+// G016: a group the owner ended is over for every roster rule.
+TEST_F(GroupRosterSyncTest, ASoloOwnerEndsItsGroupWithNothingToSend) {
+  Seed(Statement(2, {}));
+  ASSERT_EQ(Members(), (std::vector<std::string>{alice_.Id()}));
+  auto ended = EndGroupInRoster(*roster_, kGroup, alice_.Id(), 3);
+  ASSERT_TRUE(ended);
+  EXPECT_TRUE(ended->applied);
+  EXPECT_TRUE(Members().empty());
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Dissolved);
+  EXPECT_EQ(GroupSyncStateFromString(GroupSyncStateToString(GroupSyncState::Dissolved)), GroupSyncState::Dissolved);
+  EXPECT_EQ(Metadata().roster_epoch, 3u);
+  EXPECT_TRUE(Metadata().roster_statement_json.empty()) << "an ended group hands no roster on";
+  EXPECT_FALSE(group_roster_sync::MaySend(Metadata()));
+
+  auto again = EndGroupInRoster(*roster_, kGroup, alice_.Id(), 9);
+  ASSERT_TRUE(again);
+  EXPECT_FALSE(again->applied) << "a repeat is a no-op";
+  EXPECT_EQ(Metadata().roster_epoch, 3u);
+}
+
+TEST_F(GroupRosterSyncTest, ADissolvedGroupChecksNothingAnswersNothingAndKeepsNoRoster) {
+  Seed(Statement(3, {bob_, carol_}));
+  ASSERT_TRUE(EndGroupInRoster(*roster_, kGroup, alice_.Id(), 4));
+
+  auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1);
+  ASSERT_TRUE(check);
+  EXPECT_TRUE(check->ask.empty()) << "asks no one";
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Dissolved) << "and does not reopen the group";
+  EXPECT_TRUE(Metadata().sync_request_id.empty());
+
+  group_roster_sync_codec::RosterRequest request{kGroup, "r1", 3};
+  auto answer = group_roster_sync::Answer(*roster_, request, bob_);
+  ASSERT_TRUE(answer);
+  EXPECT_FALSE(answer->has_value()) << "nothing to say about a group that ended";
+
+  // A reply to a check from before it ended changes nothing; neither does a stale roster.
+  Seed(Statement(3, {bob_, carol_}));
+  GroupMetadata open = Metadata();
+  open.sync_state = GroupSyncState::Dissolved;
+  open.sync_request_id = "r-old";
+  ASSERT_TRUE(roster_->UpsertMetadata(open));
+  auto outcome = group_roster_sync::ApplyReply(*roster_, ReplyWith("r-old", Statement(5, {bob_, carol_})), carol_, bob_);
+  ASSERT_TRUE(outcome);
+  EXPECT_EQ(*outcome, ReplyOutcome::Ignored);
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Dissolved);
+}
+
+TEST_F(GroupRosterSyncTest, ADissolveIsNeverKeptAsTheRoster) {
+  Seed(Statement(3, {bob_, carol_}));
+  std::vector<GroupRosterStatementMember> rows{{alice_.Id(), MemberRole::Owner, 1000}, {bob_, MemberRole::Member, 2000}};
+  const GroupRosterStatement dissolve =
+      group_roster_statement::Sign(alice_, alice_.Key(), kGroup, 9, rows, {}, /*dissolved=*/true).value();
+  ASSERT_TRUE(group_roster_statement::Verify(dissolve, alice_.Id())) << "it verifies as what it is";
+  EXPECT_FALSE(group_roster_sync::KeepStatement(*roster_, dissolve));
+  EXPECT_FALSE(group_roster_sync::KeepAndCatchUp(*roster_, dissolve));
+  EXPECT_EQ(Metadata().roster_epoch, 3u);
+  EXPECT_EQ(Members().size(), 3u);
 }
 
 } // namespace

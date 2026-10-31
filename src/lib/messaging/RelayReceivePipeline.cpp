@@ -213,6 +213,52 @@ Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& messag
   return {};
 }
 
+Roe<void> RelayReceivePipeline::ApplyGroupDissolved(const ThreadMessage& message, const std::string& actor_identity,
+                                                    const std::string& local_account,
+                                                    RelayReceiveOutcome* outcome) const {
+  if (outcome) {
+    outcome->suppress_inbox_chrome = true;  // the DM that carried it is bookkeeping; the group's chat gets the notice
+  }
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  if (!detail) {
+    return Error("group_dissolved: no detail");
+  }
+  auto statement = group_roster_sync_codec::DecodeStatement(*detail);
+  if (!statement) {
+    return statement.error();
+  }
+  auto applied = ApplyGroupDissolvedToRoster(group_roster_, *statement, actor_identity, local_account);
+  if (!applied) {
+    return applied.error();
+  }
+  if (!applied->applied) {
+    return {};  // not our group, or already over
+  }
+  log().info << "group dissolved group_id=" << statement->group_id;
+  auto thread = store_.FindGroupThread(statement->group_id);
+  if (thread && *thread) {
+    const std::string text = "Group dissolved";
+    if (auto line = GroupMembershipCodec::EncodeGroupDissolved(statement->group_id, actor_identity)) {
+      if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupDissolved,
+                                                              text, *line, actor_identity)) {
+        (void)store_.AppendMessage(*sys);
+      }
+    }
+    if (outcome) {
+      outcome->dissolved_group_thread_id = (*thread)->id;
+      outcome->dissolved_group_text = text;
+    }
+  }
+  if (outcome) {
+    for (const PendingGroupInvite& invite : applied->voided_invites) {
+      if (!invite.outbound) {
+        outcome->voided_invite_cards.emplace_back(invite.inviter_identity, invite.invite_nonce);
+      }
+    }
+  }
+  return {};
+}
+
 void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const {
   if (controls_ && controls_->Quiet(message)) {
     outcome.suppress_inbox_chrome = true;
@@ -508,6 +554,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return ApplyRosterStatement(message, actor_identity, local_account, outcome);
   }
 
+  if (kind == GroupMembershipControlType::GroupDissolved) {
+    return ApplyGroupDissolved(message, actor_identity, local_account, outcome);
+  }
+
   if (!invite_gate_) {
     return {};
   }
@@ -532,6 +582,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   } else if (*known) {
     if ((*known)->owner_identity != actor_identity) {
       return Error("Invite rejected: sender does not own the group");
+    }
+    if ((*known)->sync_state == GroupSyncState::Dissolved) {
+      return {};  // G016: the group is over; an invite to it is void
     }
     auto member = group_roster_.IsMember(invite->group_id, local_account);
     if (!member) {
@@ -912,6 +965,10 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
     auto thread = store_.FindGroupThread(copy.target.group_id);
     if (!thread || !*thread) {
       return;  // a group this device does not hold
+    }
+    if (auto metadata = group_roster_.LoadMetadata(copy.target.group_id);
+        metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved) {
+      return;  // G016: nothing more is filed in a group that ended
     }
     thread_id = (*thread)->id;
   } else {

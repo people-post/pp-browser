@@ -542,6 +542,48 @@ Roe<void> GroupRosterStore::ExpireOutboundInvitesTo(const std::string& group_id,
   return {};
 }
 
+Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ExpirePendingInvitesOf(const std::string& group_id) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  std::vector<PendingGroupInvite> voided;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT invite_nonce, group_title, inviter_identity, invitee_identity, roster_epoch, "
+                         "outbound FROM pending_group_invites WHERE group_id = ? AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare invite list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PendingGroupInvite invite;
+    invite.group_id = group_id;
+    invite.invite_nonce = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_text(stmt, 1)) {
+      invite.group_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    invite.inviter_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    invite.roster_epoch = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    invite.outbound = sqlite3_column_int(stmt, 5) != 0;
+    voided.push_back(std::move(invite));
+  }
+  sqlite3_finalize(stmt);
+  if (sqlite3_prepare_v2(db, "UPDATE pending_group_invites SET status = 'expired' WHERE group_id = ? AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare invite expire");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return voided;
+}
+
 Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {

@@ -14,6 +14,7 @@ namespace group_roster_statement {
 namespace {
 
 constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v1";
+constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v1";
 constexpr const char kTransferTag[] = "pp-browser:group-owner-transfer-v1";
 
 /** u32 big-endian length, then the bytes: no field can run into the next. */
@@ -62,7 +63,7 @@ ByteVector SignBytes(const GroupRosterStatement& statement) {
   std::vector<GroupRosterStatementMember> members = statement.members;
   std::sort(members.begin(), members.end(), IdentityLess);
   ByteVector out;
-  Put(out, std::string(kStatementTag));
+  Put(out, std::string(statement.dissolved ? kDissolvedTag : kStatementTag));
   Put(out, statement.group_id);
   Put(out, statement.roster_epoch);
   Put(out, statement.owner_identity);
@@ -88,7 +89,7 @@ ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransf
 Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
                                const std::string& group_id, const uint64_t roster_epoch,
                                std::vector<GroupRosterStatementMember> members,
-                               std::vector<GroupOwnerTransfer> owner_chain) {
+                               std::vector<GroupOwnerTransfer> owner_chain, const bool dissolved) {
   auto account = signer.GetAccountId();
   if (!account) {
     return account.error();
@@ -101,6 +102,7 @@ Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string&
   statement.owner_identity = *account;
   statement.owner_public_key_b64 = public_key_b64;
   statement.owner_chain = std::move(owner_chain);
+  statement.dissolved = dissolved;
   auto signature = signer.SignAccountBytes(SignBytes(statement));
   if (!signature) {
     return signature.error();
@@ -259,6 +261,9 @@ Object ToJson(const GroupRosterStatement& statement) {
     json.set("owner_chain", ArrayValue(std::move(chain)));
   }
   json.set("owner_signature", statement.owner_signature_b64);
+  if (statement.dissolved) {
+    json.set("dissolved", true);
+  }
   return json;
 }
 
@@ -269,6 +274,7 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
   statement.owner_identity = json.getString("owner").value_or("");
   statement.owner_public_key_b64 = json.getString("owner_public_key").value_or("");
   statement.owner_signature_b64 = json.getString("owner_signature").value_or("");
+  statement.dissolved = json.getIf<bool>("dissolved").value_or(false);
   const Array* members = json.getArray("members");
   if (statement.group_id.empty() || statement.owner_identity.empty() || !members) {
     return Error("roster statement: missing field");

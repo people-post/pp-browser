@@ -1,5 +1,7 @@
 #include "lib/messaging/GroupMembershipApply.h"
 
+#include "lib/messaging/GroupRosterStatement.h"
+
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -34,6 +36,9 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
   }
   if (!*metadata || local_identity.empty() || (*metadata)->owner_identity != local_identity) {
     return Error("Invite accept for a group this device does not own");
+  }
+  if ((*metadata)->sync_state == GroupSyncState::Dissolved) {
+    return false;  // G016: the group is over; a late accept adds no one and needs no notice
   }
   if (invite.status == InviteStatus::Accepted) {
     // Re-delivered (or re-sent) accept: it was applied once. A member removed since, or one who
@@ -288,6 +293,78 @@ Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembers
     return saved.error();
   }
   return true;
+}
+
+Roe<GroupDissolvedApplied> EndGroupInRoster(GroupRosterStore& roster, const std::string& group_id,
+                                           const std::string& owner_identity, const uint64_t roster_epoch) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  GroupDissolvedApplied result;
+  auto metadata = roster.LoadMetadata(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!*metadata || (*metadata)->sync_state == GroupSyncState::Dissolved) {
+    return result;
+  }
+  auto members = roster.ListMembers(group_id);
+  if (!members) {
+    return members.error();
+  }
+  for (const GroupRosterMember& m : *members) {
+    if (auto removed = roster.RemoveMember(group_id, m.member_identity); !removed) {
+      return removed.error();
+    }
+  }
+  (void)roster.ClearGroupTarget(group_id);
+  if (auto voided = roster.ExpirePendingInvitesOf(group_id)) {
+    result.voided_invites = std::move(*voided);
+  }
+  GroupMetadata updated = **metadata;
+  updated.owner_identity = owner_identity;
+  updated.roster_epoch = std::max(updated.roster_epoch, roster_epoch);
+  updated.sync_state = GroupSyncState::Dissolved;
+  updated.sync_request_id.clear();
+  updated.sync_requested_at = 0;
+  updated.roster_statement_json.clear();  // an ended group holds no roster to hand on
+  if (auto saved = roster.UpsertMetadata(updated); !saved) {
+    return saved.error();
+  }
+  result.applied = true;
+  return result;
+}
+
+Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(GroupRosterStore& roster,
+                                                       const GroupRosterStatement& statement,
+                                                       const std::string& actor_identity,
+                                                       const std::string& local_identity) {
+  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  GroupDissolvedApplied result;
+  auto metadata = roster.LoadMetadata(statement.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!*metadata || (*metadata)->sync_state == GroupSyncState::Dissolved) {
+    return result;  // not a group we hold, or already over: a late or repeated copy does nothing
+  }
+  auto member = local_identity.empty() ? Roe<bool>(false) : roster.IsMember(statement.group_id, local_identity);
+  if (!member) {
+    return member.error();
+  }
+  if (!*member) {
+    return result;  // a group we are not in (left, removed, deleted): not ours to end
+  }
+  if (!statement.dissolved) {
+    return Error("Dissolve rejected: the statement does not say the group ended");
+  }
+  if (actor_identity.empty() || statement.owner_identity != actor_identity) {
+    return Error("Dissolve rejected: actor is not the owner who signed it");
+  }
+  // The owner we know, or one it handed the group to (the chain): the same check as any owner statement.
+  if (auto valid = group_roster_statement::Verify(statement, (*metadata)->owner_identity); !valid) {
+    return Error("Dissolve rejected: " + valid.error().message);
+  }
+
+  return EndGroupInRoster(roster, statement.group_id, statement.owner_identity, statement.roster_epoch);
 }
 
 } // namespace pbr

@@ -80,8 +80,10 @@ inline constexpr int64_t kCheckRetryMs = 15000;
 /** Why a group send was refused (i18n keys the GUI words). */
 inline constexpr const char kGroupCheckingError[] = "chat.group.checking_members";
 inline constexpr const char kGroupRemovedError[] = "chat.group.removed";
+/** A group the owner ended (G016) refuses sends. */
+inline constexpr const char kGroupDissolvedError[] = "chat.group.dissolved";
 
-/** A group may send only while active (not checking its members, not removed). */
+/** A group may send only while active (not checking its members, not removed, not dissolved). */
 bool MaySend(const GroupMetadata& metadata);
 
 } // namespace group_roster_sync
