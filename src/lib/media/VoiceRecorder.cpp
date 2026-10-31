@@ -284,7 +284,7 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
   result.duration_ms = static_cast<int64_t>(samples * 1000 / kOggOpusRate);
   if (!failed && result.duration_ms >= config.min_ms) {
     // The encoder delays its output by `lookahead` samples; silent frames flush the tail so the end is not cut.
-    std::fill(frame.begin(), frame.end(), 0);
+    frame.fill(0);
     while (!failed && packets.size() * kOggOpusFrameSamples < samples + static_cast<uint64_t>(lookahead)) {
       encode_frame();
     }
