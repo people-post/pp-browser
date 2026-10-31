@@ -103,8 +103,21 @@ Do **not** thread `Logger&` through every private leaf helper of a single Module
 | `Runtime.ThreadRuntime` | Module (`ThreadRuntime` ctor) |
 | `Runtime.Coordinator` | Module (`CoordinatorThread` ctor) |
 
-## Metrics channel
+## Developer log vs shareable lines
 
-`Metrics` (`common/Metrics.h`) is not a developer log: one `event=… k=v` line per operational event, with no account ids, PeerIds or addresses. It has its own file handler (`logs/metrics.log`, see [CONFIGURATION.md § Log file](../ops/CONFIGURATION.md#log-file)), so its INFO lines are written at any root level. Emit through `MetricsLine(...).Emit()`, never through a module logger.
+The developer log (`log()`, `getLogger`) is free text for whoever debugs this device: it may name ids, addresses and errors, and it **never leaves the device**.
 
-Changelog: 2026-09-09 — conventions + Runtime.* wiring for shutdown-latency work. 2026-09-30 — Metrics channel.
+Anything that may leave it goes through a **shareable line** (`common/ShareableLine.h`), which cannot take free text — only literals, numbers, a fixed-list `Pick`, keyed-hash `Ref`s, call ids and error codes. Two channels write them, each to its own file at any root level ([CONFIGURATION.md § Log file](../ops/CONFIGURATION.md#log-file)):
+
+| Channel | Builder | For |
+|---------|---------|-----|
+| `Metrics` | `MetricsLine("area.what")…Emit()` | timings, rates, device load |
+| `Diag` | `DiagLine("area.what")…Emit()` | what support needs to explain a failure |
+
+Never emit them through a module logger. When a shareable line needs a detail it cannot hold (an error message, a reason text), log that detail to the developer log beside it. The list of events and what Send diagnostics reads: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
+
+## Secrets
+
+A PIN, a recovery phrase, a private key or seed and an API key are `SecretText` (`common/Secret.h`): no `operator<<`, no conversion to a string, so streaming one into any logger does not compile. `Reveal()` is the one way to the text, for the code that uses the secret (a KDF, a cipher, a codec, an HTTP header) — never into a log line. Text converts into a `SecretText` freely, so take it as one where it enters (a typed field, an env var, a decoded file).
+
+Changelog: 2026-09-09 — conventions + Runtime.* wiring for shutdown-latency work. 2026-09-30 — Metrics channel. 2026-10-30 — shareable lines, Diag channel (privacy P009); secrets as `SecretText` (P010).

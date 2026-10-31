@@ -1209,7 +1209,7 @@ void ChatController::SyncDisplayFromThread() {
         .Add("ms", static_cast<int64_t>(sync_ms))
         .Add("backfill_ms", backfill_ms) // the whole-thread attachment check, when it ran in this sync
         .Add("rows", static_cast<int64_t>(chat_.messages.size()))
-        .Add("thread_changed", thread_changed ? "1" : "0")
+        .Add("thread_changed", thread_changed)
         .Emit();
   }
 }
@@ -1805,6 +1805,17 @@ void ChatController::OnFindSomeone() {
   OnNewChat();
   focus_draft_after_sync_ = true;
   chat_.draft = Tr("home.suggestion.find_someone_prompt");
+  DirtyChatChrome();
+}
+
+void ChatController::PrefillDraft(const std::string& text) {
+  if (text.empty() || chat_.compose_disabled) {
+    return;
+  }
+  focus_draft_after_sync_ = true;
+  if (util::Trim(chat_.draft.c_str()).empty()) {  // never overwrite what the user has typed
+    chat_.draft = text.c_str();
+  }
   DirtyChatChrome();
 }
 

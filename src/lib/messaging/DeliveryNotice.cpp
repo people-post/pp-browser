@@ -3,12 +3,17 @@
 #include "foundation/error/AppError.h"
 
 #include <array>
-#include <utility>
 
 namespace pbr {
 namespace {
 
-constexpr std::array<std::pair<ReceiveFailure, const char*>, 15> kReceiveWire = {{
+// A plain aggregate, not std::pair: pair's converting constructor would build the ShareWord at run time.
+struct ReceiveWire {
+  ReceiveFailure value;
+  ShareWord wire;
+};
+
+constexpr std::array<ReceiveWire, 15> kReceiveWire = {{
     {ReceiveFailure::ApplyFailed, "apply_failed"},
     {ReceiveFailure::ThreadLookupFailed, "thread_lookup_failed"},
     {ReceiveFailure::SenderMismatch, "sender_mismatch"},
@@ -77,7 +82,7 @@ SendFailure SendFailureForThread(const SendFailure failure, const bool trusted_p
   return failure == SendFailure::RelayRateLimited && trusted_peer ? SendFailure::RelayBusy : failure;
 }
 
-const char* ReceiveFailureWire(const ReceiveFailure reason) {
+ShareWord ReceiveFailureWord(const ReceiveFailure reason) {
   for (const auto& [value, wire] : kReceiveWire) {
     if (value == reason) {
       return wire;
@@ -86,9 +91,43 @@ const char* ReceiveFailureWire(const ReceiveFailure reason) {
   return "decode_failed";
 }
 
+const char* ReceiveFailureWire(const ReceiveFailure reason) { return ReceiveFailureWord(reason).c_str(); }
+
+ShareWord SendFailureWord(const SendFailure failure) {
+  switch (failure) {
+  case SendFailure::Unknown:
+    return "unknown";
+  case SendFailure::MeshOff:
+    return "mesh_off";
+  case SendFailure::NoAddress:
+    return "no_address";
+  case SendFailure::BackingOff:
+    return "backing_off";
+  case SendFailure::DialBusy:
+    return "dial_busy";
+  case SendFailure::PeerNoAnswer:
+    return "peer_no_answer";
+  case SendFailure::HandshakeFailed:
+    return "handshake_failed";
+  case SendFailure::DirectUnconfirmed:
+    return "direct_unconfirmed";
+  case SendFailure::RelayNotConfigured:
+    return "relay_not_configured";
+  case SendFailure::RelayBusy:
+    return "relay_busy";
+  case SendFailure::RelayRateLimited:
+    return "relay_rate_limited";
+  case SendFailure::RelayUnreachable:
+    return "relay_unreachable";
+  case SendFailure::RelayRejected:
+    return "relay_rejected";
+  }
+  return "unknown";
+}
+
 std::optional<ReceiveFailure> ReceiveFailureFromWire(const std::string& wire) {
   for (const auto& [value, name] : kReceiveWire) {
-    if (wire == name) {
+    if (wire == name.view()) {
       return value;
     }
   }

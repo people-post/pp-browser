@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "common/chat/IDirectMessageClient.h"
 
 #include "mesh/types/DirectoryTypes.h"
@@ -101,7 +103,7 @@ struct RegistrationResult {
   std::string relay_user_id;
   std::string message;
   /** Brief LLM API key returned once from register/finish or rotate. */
-  std::string llm_api_key;
+  SecretText llm_api_key;
   /** ISO-8601 registration expiry from register/finish. */
   std::string expires_at;
   /** Echoed initiation floor when server supports it; missing → leave unset (0). */

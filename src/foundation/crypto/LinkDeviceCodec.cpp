@@ -43,18 +43,18 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
   if (auto pk = RequireB64Size(bundle.account_ml_dsa_pk_b64, kMlDsa65PublicKeyBytes, "Account public key"); !pk) {
     return pk.error();
   }
-  if (auto sk = RequireB64Size(bundle.account_ml_dsa_sk_b64, kMlDsa65SecretKeyBytes, "Account secret key"); !sk) {
+  if (auto sk = RequireB64Size(bundle.account_ml_dsa_sk_b64.Reveal(), kMlDsa65SecretKeyBytes, "Account secret key"); !sk) {
     return sk.error();
   }
   if (auto kem_pk = RequireB64Size(bundle.account_kem_pk_b64, kHybridKemPublicKeyBytes, "Account KEM public key");
       !kem_pk) {
     return kem_pk.error();
   }
-  if (auto kem_sk = RequireB64Size(bundle.account_kem_sk_b64, kHybridKemPrivateKeyBytes, "Account KEM secret key");
+  if (auto kem_sk = RequireB64Size(bundle.account_kem_sk_b64.Reveal(), kHybridKemPrivateKeyBytes, "Account KEM secret key");
       !kem_sk) {
     return kem_sk.error();
   }
-  if (auto dek = RequireB64Size(bundle.dek_b64, kDataEncryptionKeySize, "DEK"); !dek) {
+  if (auto dek = RequireB64Size(bundle.dek_b64.Reveal(), kDataEncryptionKeySize, "DEK"); !dek) {
     return dek.error();
   }
   auto pk_bytes = Base64Decode(bundle.account_ml_dsa_pk_b64);
@@ -90,10 +90,10 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
   json.set("format", kLinkDeviceFormat);
   json.set("account_id", bundle.account_id);
   json.set("account_ml_dsa_pk_b64", bundle.account_ml_dsa_pk_b64);
-  json.set("account_ml_dsa_sk_b64", bundle.account_ml_dsa_sk_b64);
+  json.set("account_ml_dsa_sk_b64", bundle.account_ml_dsa_sk_b64.Reveal());
   json.set("account_kem_pk_b64", bundle.account_kem_pk_b64);
-  json.set("account_kem_sk_b64", bundle.account_kem_sk_b64);
-  json.set("dek_b64", bundle.dek_b64);
+  json.set("account_kem_sk_b64", bundle.account_kem_sk_b64.Reveal());
+  json.set("dek_b64", bundle.dek_b64.Reveal());
   json.set("relay_user_id", bundle.relay_user_id);
   json.set("nickname", bundle.nickname);
   json.set("created_at", bundle.created_at_ms);

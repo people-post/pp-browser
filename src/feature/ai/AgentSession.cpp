@@ -80,13 +80,13 @@ const LocalPlanContact* FindLocalContact(const LocalPlanContext& ctx, const std:
 }
 
 /** "ai.local_action": tool, outcome and whether parameters were taken; never their content. */
-void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const std::string& outcome,
+void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const ShareWord outcome,
                            const bool has_args) {
-  log.info << "local action tool=" << (tool.empty() ? "none" : tool) << " outcome=" << outcome;
+  log.info << "local action tool=" << (tool.empty() ? "none" : tool) << " outcome=" << outcome.view();
   MetricsLine("ai.local_action")
-      .Add("tool", tool.empty() ? std::string("none") : tool)
+      .Add("tool", AppActionToolWord(tool))
       .Add("outcome", outcome)
-      .Add("args", has_args ? "has" : "none")
+      .Add("args", has_args ? ShareWord("has") : ShareWord("none"))
       .Emit();
 }
 
@@ -290,7 +290,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
     // parked on a permission prompt is not finished: count it when the resumed turn ends.
     if (!parked) {
       MetricsLine("ai.handoff")
-          .Add("src", state->handoff_local ? "local" : "server")
+          .Add("src", state->handoff_local ? ShareWord("local") : ShareWord("server"))
           .Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size()))
           .Emit();
       state->handoff_turn = false;
@@ -1151,7 +1151,7 @@ namespace {
 /** A settings-read tool: "我的设置是什么" is a request for it, not a how-to question. */
 bool ToolIsSettingsRead(const std::string& tool) {
   for (const AppActionWords& words : AppActionTable()) {
-    if (words.tool == tool) {
+    if (words.tool.view() == tool) {
       return words.settings_read;
     }
   }
@@ -1289,7 +1289,7 @@ void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::
 }
 
 void AgentSession::HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan plan, const std::string& tool,
-                                   const char* outcome, const bool asked_twice) {
+                                   const ShareWord outcome, const bool asked_twice) {
   state->local_turn = true;
   if (auto* turn = std::get_if<TurnPlan>(&plan)) {
     turn->local = true;
@@ -1544,17 +1544,19 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   auto stats = std::make_shared<TurnStats>();
   // Size bucket only: no name, dimensions or content.
   const bool has_image = request.image.has_value();
-  const char* image_kb = !has_image ? "none" : request.image->data.size() < 500u * 1024u ? "<500"
-                         : request.image->data.size() < 1536u * 1024u              ? "<1536"
-                                                                                   : ">=1536";
-  const auto emit_turn = [stats, has_image, image_kb](const char* outcome) {
+  const ShareWord image_kb = !has_image                                 ? ShareWord("none")
+                             : request.image->data.size() < 500u * 1024u  ? ShareWord("<500")
+                             : request.image->data.size() < 1536u * 1024u ? ShareWord("<1536")
+                                                                          : ShareWord(">1535");
+  const auto emit_turn = [stats, has_image, image_kb](const ShareWord outcome) {
     const auto now = std::chrono::steady_clock::now();
     const auto ms = [](auto from, auto to) -> int64_t {
       return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count());
     };
     MetricsLine("ai.turn")
         .Add("outcome", outcome)
-        .Add("route", stats->route.empty() ? "none" : stats->route)
+        .Pick("route", stats->route.empty() ? std::string_view("none") : std::string_view(stats->route),
+              {"none", "web", "chat", "app_action", "news", "image"})
         .Add("first_token_ms", stats->first_token ? ms(stats->started, *stats->first_token) : int64_t{-1})
         .Add("total_ms", ms(stats->started, now))
         .Add("deltas", static_cast<int64_t>(stats->deltas))
@@ -1593,7 +1595,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   sinks.on_done = [state, current, emit_turn, role_thread_id](const std::string& response, const std::string& finish,
                                                               const std::vector<BriefAiSource>& sources,
                                                               const std::string& role) {
-    emit_turn(finish == "length" ? "done_truncated" : "done");
+    emit_turn(finish == "length" ? ShareWord("done_truncated") : ShareWord("done"));
     if (!current()) {
       state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
       return;
@@ -1630,7 +1632,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   sinks.on_error = [state, current, emit_turn, image_error_kind](const std::string& message, const bool retryable,
                                                                  const std::string& partial) {
     state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size() << ")";
-    emit_turn(partial.empty() ? "error" : "error_partial");
+    emit_turn(partial.empty() ? ShareWord("error") : ShareWord("error_partial"));
     if (!current()) {
       return;
     }

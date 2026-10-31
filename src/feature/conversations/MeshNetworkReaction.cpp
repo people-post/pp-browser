@@ -1,18 +1,10 @@
 #include "feature/conversations/MeshNetworkReaction.h"
 
-#include "common/Logger.h"
+#include "common/Diag.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
-namespace {
-
-logging::Logger& NetworkChangeLog() {
-  static logging::Logger logger = logging::getLogger("NetworkChange");
-  return logger;
-}
-
-} // namespace
 
 mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
   mesh::LocalNetworkChange local;
@@ -24,17 +16,23 @@ mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
 
 std::optional<mesh::LocalNetworkChange> ReactMeshToNetworkChange(const NetworkChange& change, mesh::MeshHost* mesh) {
   if (change.generation == 0) {
-    NetworkChangeLog().info << "network baseline online=" << (change.current.online ? 1 : 0)
-                            << " transport=" << static_cast<int>(change.current.transport)
-                            << " expensive=" << (change.current.expensive ? 1 : 0);
+    DiagLine("network.baseline")
+        .Add("online", change.current.online)
+        .Add("transport", static_cast<int>(change.current.transport))
+        .Add("expensive", change.current.expensive)
+        .Emit();
     return std::nullopt;
   }
   const mesh::LocalNetworkChange local = ToLocalNetworkChange(change);
-  NetworkChangeLog().info << "network change gen=" << change.generation << " online=" << (local.was_online ? 1 : 0)
-                          << "->" << (local.online ? 1 : 0) << " transport=" << static_cast<int>(change.previous.transport)
-                          << "->" << static_cast<int>(change.current.transport)
-                          << " expensive=" << (change.current.expensive ? 1 : 0)
-                          << " attachment_changed=" << (local.attachment_changed ? 1 : 0);
+  DiagLine("network.change")
+      .Add("gen", change.generation)
+      .Add("was_online", local.was_online)
+      .Add("online", local.online)
+      .Add("was_transport", static_cast<int>(change.previous.transport))
+      .Add("transport", static_cast<int>(change.current.transport))
+      .Add("expensive", change.current.expensive)
+      .Add("attachment_changed", local.attachment_changed)
+      .Emit();
   if (mesh) {
     mesh->OnLocalNetworkChanged(local);
   }

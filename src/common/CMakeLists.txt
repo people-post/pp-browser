@@ -13,6 +13,7 @@ add_library(pp_pbr_common STATIC
   directory/KeyCard.cpp
   ui/WorkingSetCodec.cpp
   LengthPrefixedCodec.cpp
+  ShareableLine.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${CMAKE_SOURCE_DIR}/src)
 # pp_mesh_types: the mesh vocabulary (directory rows, hops, relay scope, disclosure) app types embed.

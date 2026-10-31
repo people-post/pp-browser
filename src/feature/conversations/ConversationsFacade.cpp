@@ -51,7 +51,7 @@ Roe<void> ConversationsFacade::SyncPushDevices() {
   return PushDeviceCoordinator::Register(hub_);
 }
 
-Roe<std::optional<std::string>> ConversationsFacade::RecoveryPhrase(const std::string& pin) {
+Roe<std::optional<SecretText>> ConversationsFacade::RecoveryPhrase(const SecretText& pin) {
   if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
@@ -61,7 +61,7 @@ Roe<std::optional<std::string>> ConversationsFacade::RecoveryPhrase(const std::s
   if (!vault_bytes) {
     return vault_bytes.error();
   }
-  if (auto opened = DataKeyVault::UnwrapDekFromVaultBytes(*vault_bytes, vault.ProfileId(), pin); !opened) {
+  if (auto opened = DataKeyVault::UnwrapDekFromVaultBytes(*vault_bytes, vault.ProfileId(), pin.Reveal()); !opened) {
     return opened.error();
   }
   auto seed = hub_.Identity().RecoverySeed();
@@ -69,13 +69,13 @@ Roe<std::optional<std::string>> ConversationsFacade::RecoveryPhrase(const std::s
     return seed.error();
   }
   if (!*seed) {
-    return std::optional<std::string>{};
+    return std::optional<SecretText>{};
   }
   auto phrase = EncodeRecoveryPhrase(**seed);
   if (!phrase) {
     return phrase.error();
   }
-  return std::optional<std::string>(std::move(*phrase));
+  return std::optional<SecretText>(std::move(*phrase));
 }
 
 bool ConversationsFacade::HasRecoveryPhrase() {
@@ -113,7 +113,7 @@ Roe<std::string> ConversationsFacade::ExportLinkDevice() {
   return bundle;
 }
 
-Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const std::string& pin) {
+Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const SecretText& pin) {
   if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
   }
@@ -130,7 +130,7 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
   return {};
 }
 
-Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
                                                          const std::vector<std::string>& saved_copies) {
   return hub_.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
 }

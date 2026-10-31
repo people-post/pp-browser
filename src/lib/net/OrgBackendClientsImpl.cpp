@@ -1,5 +1,6 @@
 #include "lib/net/OrgBackendClientsImpl.h"
 
+#include "common/Diag.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/MessagingJson.h"
@@ -31,8 +32,9 @@ std::string TruncateForLog(const std::string& text, const size_t max_chars) {
   return text.substr(0, max_chars) + "...";
 }
 
-Error RelayHttpStatusError(const char* action, long status_code, const std::string& body) {
-  std::string detail = std::string("Relay ") + action + " failed with status " + std::to_string(status_code);
+Error RelayHttpStatusError(const ShareWord action, long status_code, const std::string& body) {
+  DiagLine("relay.http_failed").Add("action", action).Add("status", status_code).Emit();
+  std::string detail = std::string("Relay ") + action.c_str() + " failed with status " + std::to_string(status_code);
   std::string api_message;
   if (auto json = TryParseObject(body)) {
     if (auto err = json->getString("error")) {

@@ -356,7 +356,11 @@ public:
             .Add("cam_fps", have_spec && got.framerate_denominator > 0
                                 ? got.framerate_numerator / got.framerate_denominator
                                 : -1)
-            .Add("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "?")
+            .Pick("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "",
+                  {"SDL_PIXELFORMAT_NV12", "SDL_PIXELFORMAT_NV21", "SDL_PIXELFORMAT_YUY2", "SDL_PIXELFORMAT_UYVY",
+                   "SDL_PIXELFORMAT_YVYU", "SDL_PIXELFORMAT_MJPG", "SDL_PIXELFORMAT_IYUV", "SDL_PIXELFORMAT_YV12",
+                   "SDL_PIXELFORMAT_P010", "SDL_PIXELFORMAT_XRGB8888", "SDL_PIXELFORMAT_ARGB8888",
+                   "SDL_PIXELFORMAT_RGBA8888", "SDL_PIXELFORMAT_BGRA8888", "SDL_PIXELFORMAT_UNKNOWN"})
             .Add("native_min_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
                 SDL_GetCameraProperties(camera), "SDL.camera.coremedia.min_frame_ns", 0)))
             .Add("native_max_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
@@ -396,12 +400,11 @@ public:
     if (!ok) {
       if (reason != "unsupported") {
         SDL_Log("MediaDeviceArbiter: vpio open failed (%s) open_ms=%lld", reason.c_str(), static_cast<long long>(open_ms));
-        // Reason text is an OS status message, never a device or person name.
+        // The reason (an OS status message) stays in the SDL log above: a shareable line takes no free text.
         MetricsLine("device.open")
             .Add("kind", "vpio")
             .Add("result", "failed")
             .Add("open_ms", static_cast<int64_t>(open_ms))
-            .Add("reason", reason)
             .Emit();
       }
       *error = reason.empty() ? std::string("vpio open failed") : reason;

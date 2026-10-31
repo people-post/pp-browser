@@ -55,7 +55,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return manifest.error();
   }
 
-  auto pin = PinResolver::Require(options.pin);
+  auto pin = PinResolver::Require(options.pin.Reveal());
   if (!pin) {
     return pin.error();
   }

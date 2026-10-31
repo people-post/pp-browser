@@ -32,7 +32,7 @@ bool BitAt(const std::vector<uint8_t>& bytes, size_t i) { return (bytes[i / 8] >
 
 } // namespace
 
-Roe<std::string> EncodeRecoveryPhrase(const ByteVector& seed) {
+Roe<SecretText> EncodeRecoveryPhrase(const ByteVector& seed) {
   if (seed.size() != kRecoverySeedBytes) {
     return Error("recovery seed must be 32 bytes");
   }
@@ -49,11 +49,11 @@ Roe<std::string> EncodeRecoveryPhrase(const ByteVector& seed) {
     }
     phrase += kWords[index];
   }
-  return phrase;
+  return SecretText(std::move(phrase));
 }
 
-Roe<ByteVector> DecodeRecoveryPhrase(const std::string& phrase) {
-  std::istringstream in(phrase);
+Roe<ByteVector> DecodeRecoveryPhrase(const SecretText& phrase) {
+  std::istringstream in(phrase.Reveal());
   std::vector<std::string> words;
   for (std::string word; in >> word;) {
     std::transform(word.begin(), word.end(), word.begin(),

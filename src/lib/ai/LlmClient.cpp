@@ -314,7 +314,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   headers = curl_slist_append(headers, "Content-Type: application/json");
   std::string bearer_header;
   if (!config_.api_key.empty()) {
-    bearer_header = "Authorization: Bearer " + config_.api_key;
+    bearer_header = "Authorization: Bearer " + config_.api_key.Reveal();
     headers = curl_slist_append(headers, bearer_header.c_str());
   }
 

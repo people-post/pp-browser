@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/IDekConsumer.h"
@@ -32,7 +34,7 @@ public:
   bool IsUnlocked() const { return unlocked_; }
 
   /** Create vault (if missing) or unlock with PIN, then fan out DEK to consumers. */
-  Roe<void> Unlock(const std::string& pin);
+  Roe<void> Unlock(const SecretText& pin);
   void Lock();
 
   /** Re-fan the currently unlocked vault DEK (after link-device wrap of a shared DEK). */

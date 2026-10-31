@@ -98,7 +98,7 @@ void ProfileSecretsEngine::NotifyUnlocked() {
   }
 }
 
-Roe<void> ProfileSecretsEngine::Unlock(const std::string& pin) {
+Roe<void> ProfileSecretsEngine::Unlock(const SecretText& pin) {
   if (!initialized_) {
     return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets service not initialized");
   }
@@ -113,11 +113,11 @@ Roe<void> ProfileSecretsEngine::Unlock(const std::string& pin) {
   }
 
   if (!vault_->Exists()) {
-    if (auto created = vault_->Create(pin); !created) {
+    if (auto created = vault_->Create(pin.Reveal()); !created) {
       return created.error();
     }
   } else if (!vault_->IsUnlocked()) {
-    if (auto unlocked = vault_->Unlock(pin); !unlocked) {
+    if (auto unlocked = vault_->Unlock(pin.Reveal()); !unlocked) {
       return unlocked.error();
     }
   }

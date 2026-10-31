@@ -178,7 +178,7 @@ Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
   // The user's key goes only to the derived gateway URL, or to an override that is https or loopback;
   // a stale dev override pointing at a plain-http host must not receive it.
   if (BearerAllowedFor(sse.url, !stream_url_.empty())) {
-    sse.bearer_token = config_.api_key;
+    sse.bearer_token = config_.api_key.Reveal();
   }
   sse.json_body = BuildRequestJson(request);
   log().debug << "stream " << sse.url;

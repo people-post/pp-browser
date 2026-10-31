@@ -10,6 +10,9 @@ namespace pbr {
  */
 class CrashDump {
 public:
+  /** "android" / "windows" / "ios" / "macos" / "linux" — the same label the dump carries. */
+  static const char* OsLabel();
+
   /** Resolve dump path under the process data directory. */
   static std::string PendingPath(const std::string& data_dir);
 

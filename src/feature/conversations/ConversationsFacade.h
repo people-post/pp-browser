@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/crypto/CryptoTypes.h"
 #include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
@@ -69,12 +71,12 @@ public:
    * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the
    * account has no recovery seed (minted before M023). A wrong PIN is a Pin-category error.
    */
-  Roe<std::optional<std::string>> RecoveryPhrase(const std::string& pin);
+  Roe<std::optional<SecretText>> RecoveryPhrase(const SecretText& pin);
   /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
   bool HasRecoveryPhrase();
-  Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
+  Roe<void> ImportLinkDevice(const std::string& bundle_json, const SecretText& pin);
   /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
-  Roe<void> RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+  Roe<void> RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
                                       const std::vector<std::string>& saved_copies = {});
   /** The account's state sealed as an exported locker file's text (M023 §6 amendment; the user keeps it). */
   Roe<std::string> ExportAccountCopy();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "common/Error.h"
 
 #include <cstdint>
@@ -17,11 +19,11 @@ namespace pbr {
 struct LinkDeviceBundleV1 {
   std::string account_id;
   std::string account_ml_dsa_pk_b64;
-  std::string account_ml_dsa_sk_b64;
+  SecretText account_ml_dsa_sk_b64;
   /** Account ML-KEM-768 — public auto-key / group pair encapsulate-to (M015). */
   std::string account_kem_pk_b64;
-  std::string account_kem_sk_b64;
-  std::string dek_b64;
+  SecretText account_kem_sk_b64;
+  SecretText dek_b64;
   std::string relay_user_id;
   std::string nickname;
   int64_t created_at_ms = 0;

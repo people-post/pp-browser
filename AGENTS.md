@@ -93,6 +93,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — [at-rest A007](projects/at-rest-crypto/DECISIONS.md) |
 | pp-node / node role | `src/app/node/` (thin: main, bootstrap, status HTTP), `src/domain/node/NodeMeshServices.*` (shared with desktop `MeshRole::Node`), probes in `src/app/node/tools/`; link allowlist + `scripts/dev/pp_node_closure.sh` — [docs/ops/BUILD.md](docs/ops/BUILD.md#headless-mesh-node-pp-node) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/foundation/data/`, `src/foundation/runtime/`, `src/foundation/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
+| Metrics / diagnostics a user can send | `common/ShareableLine.h`, `common/Diag.h`, `common/Metrics.h` — no free text leaves the device; [docs/contracts/DIAGNOSTICS.md](docs/contracts/DIAGNOSTICS.md) |
 | Doc map / contracts | [docs/README.md](docs/README.md) |
 | In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |

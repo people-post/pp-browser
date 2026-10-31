@@ -127,7 +127,7 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
   view.show_register = true;
   view.show_rotate = (status == RegistrationStatus::Active || status == RegistrationStatus::ExpiringSoon) &&
                      !identity.brief_llm_api_key.empty();
-  view.brief_llm_key_masked = MaskBriefLlmApiKey(identity.brief_llm_api_key);
+  view.brief_llm_key_masked = MaskBriefLlmApiKey(identity.brief_llm_api_key.Reveal());
 }
 
 } // namespace
@@ -1937,7 +1937,7 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   return {};
 }
 
-Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const std::string& phrase, const std::string& pin,
+Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
                                                      const std::vector<std::string>& saved_copies) {
   if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || !account_locker_) {
     return Error("Messaging is not ready");
@@ -2682,7 +2682,7 @@ Roe<void> ConversationsHub::RotateBriefLlmKey() {
   }
   const std::string url = base_url + "/keys/rotate";
 
-  auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key},
+  auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()},
                                                {"Content-Type", "application/json"}});
   if (!response) {
     return response.error();

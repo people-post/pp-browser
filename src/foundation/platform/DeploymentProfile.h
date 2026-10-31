@@ -17,6 +17,11 @@ const char* BriefOrigin();
 std::string BriefLlmBaseUrl();
 /** Dev override for the brief_AI stream endpoint (PP_BROWSER_BRIEF_STREAM_URL); empty = derive from the LLM base URL. */
 std::string BriefStreamUrlOverride();
+/**
+ * Where "Send diagnostics" posts: BriefOrigin() + /api/support/diagnostics. PP_BROWSER_DIAGNOSTICS_URL (a full
+ * URL) replaces it for local development against DEV/tools/fake_diagnostics.py only; it is not remote config.
+ */
+std::string DiagnosticsUploadUrl();
 std::string BriefRelayBaseUrl();
 std::string BriefMcpUrl();
 

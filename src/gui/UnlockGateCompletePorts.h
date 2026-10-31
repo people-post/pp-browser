@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include <functional>
 #include <optional>
 #include <string>
@@ -12,15 +14,15 @@ namespace pbr {
  * Application fills from ProfileUnlockGate. Clear via BindGateComplete({}).
  */
 struct UnlockGateCompletePorts {
-  std::function<void(const std::string& pin, bool create_mode)> complete_with_pin;
+  std::function<void(const SecretText& pin, bool create_mode)> complete_with_pin;
   std::function<void()> complete_with_default_pin;
-  std::function<void(const std::string& pin, const std::string& bundle_json, bool set_default_pin)>
+  std::function<void(const SecretText& pin, const std::string& bundle_json, bool set_default_pin)>
       complete_link_device;
   /**
    * Restore from a recovery phrase (M023) under `pin` for this device, then unlock; `saved_copies`: saved copies of
    * the account the user picked (exported locker files' text).
    */
-  std::function<void(const std::string& pin, const std::string& phrase, bool set_default_pin,
+  std::function<void(const SecretText& pin, const SecretText& phrase, bool set_default_pin,
                      const std::vector<std::string>& saved_copies)>
       complete_phrase_restore;
   /**

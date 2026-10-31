@@ -470,15 +470,16 @@ public:
           });
     } else if (cmd == "recovery_phrase") {
       const std::string pin = request->getString("pin").value_or("");
-      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<std::string>>>(
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<SecretText>>>(
           WorkerLane::Normal, [this, pin]() { return facade_->RecoveryPhrase(pin); },
-          [id](Roe<std::optional<std::string>> phrase) {
+          [id](Roe<std::optional<SecretText>> phrase) {
             if (!phrase) {
               ReplyError(id, phrase.error().message);
               return;
             }
             Object out = Reply(id, true);
-            out.set("phrase", phrase->value_or(""));
+            // The test probe hands the phrase to its driver (lab: restore on another device).
+            out.set("phrase", phrase->has_value() ? (*phrase)->Reveal() : std::string());
             Emit(out);
           });
     } else if (cmd == "contacts") {
@@ -1339,7 +1340,9 @@ int main(int argc, char** argv) {
   options.pin = pin;
   if (!restore_phrase_file.empty()) {
     std::ifstream phrase_in(restore_phrase_file);
-    std::getline(phrase_in, options.restore_recovery_phrase);
+    std::string phrase;
+    std::getline(phrase_in, phrase);
+    options.restore_recovery_phrase = std::move(phrase);
   }
   if (!restore_saved_copy.empty()) {
     std::ifstream copy_in(restore_saved_copy, std::ios::binary);
