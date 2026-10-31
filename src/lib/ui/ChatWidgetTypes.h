@@ -68,6 +68,8 @@ struct MessageDisplayRow {
   ui::String sender_label;
   ui::String content_rml;
   ui::String row_class;
+  /** A peer's message mentions this account (group-chat G015): the whole row is tinted. */
+  bool mentions_me = false;
   /** Local send / receive time, e.g. "18:32"; empty when unknown. */
   ui::String time_label;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
