@@ -234,6 +234,39 @@ TEST(GroupMentionsTest, ChoosingReplacesTheQueryWithTheTokenAndASpace) {
   EXPECT_EQ(inserted.caret, 1 + name.size() + 1);
 }
 
+// --- members that share a name -------------------------------------------------------------------
+
+TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
+  const auto twin_name = [](const std::string& account) { return account == kBob2 ? std::string("Bob") : NameOf(account); };
+  auto roster = Roster();
+  GroupRosterMember twin;
+  twin.member_identity = kBob2;
+  roster.push_back(twin);
+  const auto lines = MentionCandidates(roster, kMe, false, twin_name, "");
+  size_t bobs = 0;
+  for (const MentionCandidate& line : lines) {
+    if (line.name == "Bob") {
+      ++bobs;
+      EXPECT_FALSE(line.short_id.empty());
+      EXPECT_EQ(line.Label(), "Bob \xC2\xB7 " + line.short_id);
+      EXPECT_EQ(line.Token(), "@Bob") << "what is inserted stays the name";
+    } else {
+      EXPECT_TRUE(line.short_id.empty()) << line.name;
+      EXPECT_EQ(line.Label(), line.name);
+    }
+  }
+  EXPECT_EQ(bobs, 2u);
+  // Narrowed by the query to one of them: still told apart (names collide in the group, not in the list).
+  const auto bo = MentionCandidates(roster, kMe, false, twin_name, "bo");
+  ASSERT_EQ(bo.size(), 2u);
+  EXPECT_NE(bo[0].Label(), bo[1].Label());
+  EXPECT_EQ(bo[0].account_id, kBob) << "same name: ordered by account id";
+  // No twins: no short id at all.
+  for (const MentionCandidate& line : MentionCandidates(Roster(), kMe, false, NameOf, "")) {
+    EXPECT_TRUE(line.short_id.empty());
+  }
+}
+
 // --- a member named "ai" -----------------------------------------------------------------------------
 
 TEST(GroupMentionsTest, AMemberPickedAtTheStartIsAPersonEvenWhenTheyAreCalledAi) {

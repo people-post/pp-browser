@@ -35,15 +35,20 @@ struct MentionCandidate {
   std::string account_id;
   /** What the line shows; the inserted token is `@` + this. */
   std::string name;
+  /** Set only when another member in the group has the same name: the line shows it after the name. */
+  std::string short_id;
 
   std::string Token() const { return kind == TextSpanKind::Everyone ? kEveryoneMentionToken : "@" + name; }
+  /** What the picker shows: the name, then ` · <short id>` when names collide. */
+  std::string Label() const { return short_id.empty() ? name : name + " · " + short_id; }
   bool operator==(const MentionCandidate&) const = default;
 };
 
 /**
  * The picker's lines: `@everyone` first when this device is the group's owner (`local_is_owner`: the owner the
  * roster names), then the other members (never ourselves) by name. `query` (the text typed after the `@`)
- * keeps the lines whose name contains it, ignoring ASCII case.
+ * keeps the lines whose name contains it, ignoring ASCII case. Members that share a name carry a `short_id`
+ * (decided over the whole group, not the query).
  */
 std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
                                                 const std::string& local_account, bool local_is_owner,
