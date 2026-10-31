@@ -217,6 +217,11 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
   if (controls_ && controls_->Quiet(message)) {
     outcome.suppress_inbox_chrome = true;
   }
+  // A membership event arrives in the direct chat with its sender (the group thread has its own line): no unread
+  // count, preview or notice for it there. Only the invitation is news in that chat.
+  if (GroupMembershipCodec::IsHiddenInDirectThread(message)) {
+    outcome.suppress_inbox_chrome = true;
+  }
 }
 
 Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
@@ -352,7 +357,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       }
     }
     auto thread = store_.FindGroupThread(joined->group_id);
-    if (thread && *thread) {
+    // The newcomer wrote "You joined the group" itself when it accepted: this is the same join, not a second line.
+    if (thread && *thread && joined->member_identity != local_account) {
       auto detail = GroupMembershipCodec::EncodeMemberJoined(joined->group_id, joined->member_identity, joined->role,
                                                              joined->roster_epoch);
       if (detail) {

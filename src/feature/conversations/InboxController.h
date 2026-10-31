@@ -121,6 +121,8 @@ public:
   void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
 
 private:
+  /** A direct chat with rows, all of them a group's events (they travel as direct messages): not a chat the user has. */
+  bool HoldsOnlyGroupEvents(const std::string& thread_id) const;
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
   std::optional<std::string> ControlLine(const ThreadMessage& message) const;
   TranscriptAttachmentView AttachmentView(const ThreadMessage& message) const;

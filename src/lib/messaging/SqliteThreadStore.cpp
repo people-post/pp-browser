@@ -6,6 +6,7 @@
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
@@ -313,6 +314,22 @@ Roe<int64_t> SqliteThreadStore::NextDisplayOrder(sqlite3* thread_db) const {
 Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage& message,
                                                             const bool increment_unread) const {
   std::lock_guard lock(db_.profile_mutex());
+  // A membership event in a direct chat is not something to read there: it neither moves the chat up the list
+  // nor becomes its preview (the last message the user can see stays).
+  if (GroupMembershipCodec::IsHiddenInDirectThread(message)) {
+    sqlite3_stmt* kind_stmt = nullptr;
+    bool direct = false;
+    if (sqlite3_prepare_v2(db_.profile_db(), "SELECT kind FROM threads WHERE id = ?;", -1, &kind_stmt, nullptr) ==
+        SQLITE_OK) {
+      sqlite3_bind_text(kind_stmt, 1, message.thread_id.c_str(), -1, SQLITE_TRANSIENT);
+      direct = sqlite3_step(kind_stmt) == SQLITE_ROW &&
+               ThreadKindFromString(SqlText(kind_stmt, 0)) == ThreadKind::Direct;
+    }
+    sqlite3_finalize(kind_stmt);
+    if (direct) {
+      return {};
+    }
+  }
   auto preview_enc = EncryptPreviewBlob(message.thread_id, message.text);
   if (!preview_enc) {
     return preview_enc.error();

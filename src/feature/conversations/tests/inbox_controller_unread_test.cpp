@@ -1,3 +1,4 @@
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
@@ -159,6 +160,56 @@ TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
   ASSERT_TRUE(env.inbox->ClearThreadHistory(group.id, /*forget_memory=*/false));
   EXPECT_EQ(*mentions.Threads(), (std::set<std::string>{other.id})) << "only the cleared chat loses its marker";
   EXPECT_FALSE(mentions.Oldest(group.id).value());
+}
+
+TEST(InboxControllerUnreadTest, ADirectChatThatOnlyHoldsAGroupsEventsIsNotInTheList) {
+  InboxTestEnv env("hidden_events_only");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  DirectChatTarget target;
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:bob";
+  target.channel = ThreadChannel::E2ePublic;
+  auto direct = env.store->FindOrCreateDirectThread(target, "contact-bob", "Bob");
+  ASSERT_TRUE(direct);
+
+  // A kick sent to Bob (or one from him) is stored in this chat; it is not something to read.
+  auto event = GroupMembershipCodec::BuildSystemMessage(direct->id, GroupMembershipControlType::MemberRemoved,
+                                                        "Member removed", "{}", "account:bob");
+  ASSERT_TRUE(event);
+  event->timestamp = direct->updated_at + 5000;
+  ASSERT_TRUE(env.store->AppendMessage(*event));
+  auto after = env.store->GetThread(direct->id);
+  ASSERT_TRUE(after && *after);
+  EXPECT_TRUE((*after)->preview.empty()) << "the event is not the preview";
+  EXPECT_EQ((*after)->updated_at, direct->updated_at) << "and does not reorder the list";
+  auto listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  EXPECT_TRUE(listed->empty());
+
+  // The chat the user has open stays (an empty chat they just started), and a readable message brings it in.
+  ASSERT_TRUE(env.inbox->OpenThread(direct->id));
+  EXPECT_EQ(env.inbox->ListThreads()->size(), 1u);
+  env.inbox->ClearActiveThread();
+  EXPECT_TRUE(env.inbox->ListThreads()->empty());
+  ThreadMessage hello;
+  hello.id = "hello-1";
+  hello.thread_id = direct->id;
+  hello.sender_contact_id = "account:bob";
+  hello.text = "hi there";
+  hello.timestamp = direct->updated_at + 6000;
+  ASSERT_TRUE(env.store->AppendMessage(hello));
+  listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  ASSERT_EQ(listed->size(), 1u);
+  EXPECT_EQ((*listed)[0].preview, "hi there");
+
+  // A later event leaves the last readable message as the preview.
+  auto later = GroupMembershipCodec::BuildSystemMessage(direct->id, GroupMembershipControlType::GroupRenamed,
+                                                        "Group renamed to X", "{}", "account:bob");
+  ASSERT_TRUE(later);
+  later->timestamp = direct->updated_at + 7000;
+  ASSERT_TRUE(env.store->AppendMessage(*later));
+  EXPECT_EQ((*env.inbox->ListThreads())[0].preview, "hi there");
 }
 
 TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {

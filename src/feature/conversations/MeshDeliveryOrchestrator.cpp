@@ -807,17 +807,24 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
     if (outcome.persisted_message) {
       preview = outcome.persisted_message->text;
     }
-    inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
-    MaybeEnqueueAttachmentDownload(outcome);
-    NoteMention(outcome, identity->account_id);
-    // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
-    if (auto notice = BackgroundNoticeFor(outcome, identity->account_id); notice && on_background_unread_) {
-      AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
-        if (on_background_unread_) {
-          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
-                                notice.mentions_us);
-        }
-      });
+    if (outcome.suppress_inbox_chrome) {
+      // As on the relay path: apply side effects only, no unread count, preview or notice.
+      if (outcome.sibling_copy) {
+        MaybeEnqueueAttachmentDownload(outcome);
+      }
+    } else {
+      inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
+      MaybeEnqueueAttachmentDownload(outcome);
+      NoteMention(outcome, identity->account_id);
+      // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
+      if (auto notice = BackgroundNoticeFor(outcome, identity->account_id); notice && on_background_unread_) {
+        AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+          if (on_background_unread_) {
+            on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                                  notice.mentions_us);
+          }
+        });
+      }
     }
   }
   if (outcome.persisted || outcome.thread_changed) {

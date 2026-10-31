@@ -7,6 +7,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -32,7 +33,27 @@ void InboxController::SetGroupMembership(GroupMembershipWorkflow* groups) {
 }
 
 Roe<std::vector<Thread>> InboxController::ListThreads() {
-  return store_.ListThreads();
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return threads;
+  }
+  // A direct chat whose only rows are a group's events (they travel as direct messages) is not a chat the user
+  // has: it stays out of the list until something readable is in it. One with a preview has a readable message.
+  threads->erase(std::remove_if(threads->begin(), threads->end(),
+                                [this](const Thread& thread) {
+                                  return thread.kind == ThreadKind::Direct && thread.preview.empty() &&
+                                         thread.id != active_thread_id_ && HoldsOnlyGroupEvents(thread.id);
+                                }),
+                 threads->end());
+  return threads;
+}
+
+bool InboxController::HoldsOnlyGroupEvents(const std::string& thread_id) const {
+  auto page = store_.GetMessagesPage(thread_id, std::nullopt, kDefaultMessagesPageSize);
+  return page && !page->empty() &&
+         std::all_of(page->begin(), page->end(), [](const ThreadMessage& message) {
+           return GroupMembershipCodec::IsHiddenInDirectThread(message);
+         });
 }
 
 Roe<Thread> InboxController::GetActiveThread() const {
@@ -200,9 +221,12 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   if (!page) {
     return;
   }
+  const auto holder = store_.GetThread(thread_id);
+  const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation) {
+    if (message.content_type != ChatContentType::Annotation &&
+        !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
       newest = &message;
     }
   }
@@ -583,7 +607,9 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
                    messages.end());
   }
 
-  return AssembleTranscript(messages, controls_);
+  const auto thread = store_.GetThread(thread_id);
+  const bool direct_thread = thread && *thread && (*thread)->kind == ThreadKind::Direct;
+  return AssembleTranscript(messages, controls_, direct_thread);
 }
 
 TranscriptFacts InboxController::Facts() const {

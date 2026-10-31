@@ -121,6 +121,12 @@ public:
   static bool IsOwnerUnreachableResolved(const ThreadMessage& message);
 
   static std::optional<GroupMembershipControlType> ControlTypeFromMessage(const ThreadMessage& message);
+  /**
+   * A membership event stored in a direct thread: it travels there (the signed roster and the cards ride on it)
+   * but it is not something to read in that chat — the group thread has its own line. Every control type
+   * except the invitation itself, which is the one card the invitee answers in the direct chat.
+   */
+  static bool IsHiddenInDirectThread(const ThreadMessage& message);
   static Roe<GroupInvitePayload> DecodeInviteFromMessage(const ThreadMessage& message);
 
   static Roe<GroupPolicy> DecodeGroupPolicy(const std::string& policy_json);
