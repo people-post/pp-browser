@@ -185,6 +185,26 @@ TEST_F(DiagnosticsBundleTest, ASelfCheckHitSendsNothing) {
   EXPECT_EQ(bundle.error().message, "self-check: known_identifier");
 }
 
+// The gateway and app-support take at most four file entries: three channel files and the crash record.
+TEST_F(DiagnosticsBundleTest, AnUploadHasAtMostFourFileEntries) {
+  const std::string line = Line("INFO", "Diag", "event=e");
+  pbr::DiagnosticsBundleInput in;
+  in.files = {Write("diag.log", line), Write("metrics.log", Line("INFO", "Metrics", "event=m")),
+              Write("diag.1.log", line)};
+  pbr::CrashReportEnvelope env;
+  env.reason = "SIGSEGV";
+  in.crash_lines = pbr::CrashEnvelopeLines(env, "2026-10-28 09:00:00.000");
+  auto bundle = pbr::BuildDiagnosticsBundle(in);
+  ASSERT_TRUE(static_cast<bool>(bundle)) << bundle.error().message;
+  auto parsed = pp::common::ParseObject(bundle->json);
+  ASSERT_TRUE(static_cast<bool>(parsed));
+  ASSERT_NE(parsed->getArray("files"), nullptr);
+  EXPECT_EQ(parsed->getArray("files")->elements.size(), pbr::kDiagnosticsMaxFiles);
+
+  in.files.push_back(Write("metrics.1.log", Line("INFO", "Metrics", "event=m")));
+  EXPECT_FALSE(static_cast<bool>(pbr::BuildDiagnosticsBundle(in))) << "a fifth entry would be refused upstream";
+}
+
 TEST_F(DiagnosticsBundleTest, MissingFilesStillGiveOneFileEntry) {
   pbr::DiagnosticsBundleInput in;
   in.files = {dir_ / "diag.log"};

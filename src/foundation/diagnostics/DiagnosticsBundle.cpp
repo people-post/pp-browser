@@ -175,6 +175,9 @@ std::vector<std::string> CrashEnvelopeLines(const CrashReportEnvelope& envelope,
 }
 
 Roe<DiagnosticsBundle> BuildDiagnosticsBundle(const DiagnosticsBundleInput& input) {
+  if (input.files.size() + 1 > kDiagnosticsMaxFiles) {
+    return Error("bundle: more files than an upload takes");
+  }
   std::vector<Section> sections;
 
   // Rank: the first file is dropped last; the crash record outlives them all.
