@@ -45,6 +45,35 @@ struct MentionCandidate {
 };
 
 /**
+ * Every line the picker can show for a group, unfiltered: the everyone line first when this device is the group's
+ * owner, then the other members (never ourselves) by name. Reading it costs the roster, the cards and the
+ * contacts, so the picker reads it once when it opens and filters it with FilterMentionCandidates. Members that
+ * share a name (ASCII case ignored) carry a `short_id`.
+ */
+std::vector<MentionCandidate> AllMentionCandidates(const std::vector<GroupRosterMember>& roster,
+                                                   const std::string& local_account, bool local_is_owner,
+                                                   const std::function<std::string(const std::string& account_id)>& public_name,
+                                                   const std::string& everyone_word);
+
+/** The lines of `all` whose name contains `query` (ASCII case ignored); the everyone line also answers to "everyone". */
+std::vector<MentionCandidate> FilterMentionCandidates(const std::vector<MentionCandidate>& all,
+                                                      const std::string& query);
+
+/**
+ * What the open picker keeps of AllMentionCandidates: read once when it opens (`read` is the only place the
+ * roster is touched), filtered in memory on each keystroke, dropped when it closes.
+ */
+class MentionCandidateCache {
+public:
+  void Load(const std::function<std::vector<MentionCandidate>()>& read) { all_ = read(); }
+  std::vector<MentionCandidate> Filter(const std::string& query) const { return FilterMentionCandidates(all_, query); }
+  void Clear() { all_.clear(); }
+
+private:
+  std::vector<MentionCandidate> all_;
+};
+
+/**
  * The picker's lines: the everyone line first when this device is the group's owner (`local_is_owner`: the owner
  * the roster names), then the other members (never ourselves) by name. `everyone_word` is what that line
  * inserts after the `@` (the user's language: `@所有人`, `@everyone`). `query` (the text typed after the `@`)

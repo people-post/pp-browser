@@ -58,6 +58,7 @@ void ChatMentionPicker::Close() {
   }
   at_.reset();
   lines_.clear();
+  candidates_.Clear();
 }
 
 void ChatMentionPicker::OnDraftChanged() {
@@ -83,6 +84,7 @@ void ChatMentionPicker::OnDraftChanged() {
   if (at_ && !ContextMenuHost::Instance().IsOpen()) {
     at_.reset();  // closed from outside (Escape, a tap beside it): typing on does not bring it back
     lines_.clear();
+    candidates_.Clear();
   }
   if (!at_) {
     const std::optional<size_t> trigger = TypedMentionTrigger(before, text);
@@ -90,14 +92,18 @@ void ChatMentionPicker::OnDraftChanged() {
       return;
     }
     at_ = *trigger;
+    // The roster, cards and contacts are read once, here; the keystrokes after it only filter.
+    candidates_.Load([&]() { return presenter_.MentionCandidatesFor(thread_id); });
   }
   caret_ = CaretByte(text);
   const std::optional<std::string> query = MentionQueryAt(text, *at_, caret_);
-  std::vector<MentionCandidate> lines =
-      query ? presenter_.MentionCandidatesFor(thread_id, *query) : std::vector<MentionCandidate>{};
+  std::vector<MentionCandidate> lines = query ? candidates_.Filter(*query) : std::vector<MentionCandidate>{};
   if (lines.empty()) {
     Close();
     return;
+  }
+  if (lines == lines_ && ContextMenuHost::Instance().IsOpen()) {
+    return;  // the same lines are showing
   }
   Show(lines);
 }
@@ -134,6 +140,7 @@ void ChatMentionPicker::Choose(const MentionCandidate& line) {
   PruneRecordedMentions(kept_text, picks);
   at_.reset();
   lines_.clear();
+  candidates_.Clear();
   picks.push_back({line.kind, line.account_id, line.Token()});
   last_text_ = inserted.text;  // the change this makes is ours, not typing
   last_thread_ = thread_id;

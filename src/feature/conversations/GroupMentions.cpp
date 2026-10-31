@@ -72,12 +72,11 @@ std::string MemberPublicName(const std::string& account_id, const std::string& c
   return ShortRelayId(account_id);
 }
 
-std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
-                                                const std::string& local_account, const bool local_is_owner,
-                                                const std::function<std::string(const std::string& account_id)>& public_name,
-                                                const std::string& query, const std::string& everyone_word) {
-  const std::string lowered = AsciiLower(query);
-  std::vector<MentionCandidate> all;
+std::vector<MentionCandidate> AllMentionCandidates(const std::vector<GroupRosterMember>& roster,
+                                                   const std::string& local_account, const bool local_is_owner,
+                                                   const std::function<std::string(const std::string& account_id)>& public_name,
+                                                   const std::string& everyone_word) {
+  std::vector<MentionCandidate> members;
   std::map<std::string, int> name_counts;
   for (const GroupRosterMember& member : roster) {
     if (member.member_identity.empty() || member.member_identity == local_account) {
@@ -90,17 +89,12 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
       continue;
     }
     ++name_counts[AsciiLower(candidate.name)];
-    all.push_back(std::move(candidate));
+    members.push_back(std::move(candidate));
   }
-  std::vector<MentionCandidate> members;
-  for (MentionCandidate& candidate : all) {
-    if (!NameMatches(candidate.name, lowered)) {
-      continue;
-    }
+  for (MentionCandidate& candidate : members) {
     if (name_counts[AsciiLower(candidate.name)] > 1) {
       candidate.short_id = ShortRelayId(candidate.account_id);
     }
-    members.push_back(std::move(candidate));
   }
   std::stable_sort(members.begin(), members.end(), [](const MentionCandidate& a, const MentionCandidate& b) {
     const std::string la = AsciiLower(a.name);
@@ -108,11 +102,32 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
     return la != lb ? la < lb : a.account_id < b.account_id;
   });
   std::vector<MentionCandidate> lines;
-  if (local_is_owner && (NameMatches(everyone_word, lowered) || NameMatches(kEveryoneMentionWord, lowered))) {
+  if (local_is_owner) {
     lines.push_back({TextSpanKind::Everyone, {}, everyone_word, {}});
   }
   lines.insert(lines.end(), members.begin(), members.end());
   return lines;
+}
+
+std::vector<MentionCandidate> FilterMentionCandidates(const std::vector<MentionCandidate>& all,
+                                                      const std::string& query) {
+  const std::string lowered = AsciiLower(query);
+  std::vector<MentionCandidate> lines;
+  for (const MentionCandidate& candidate : all) {
+    const bool everyone = candidate.kind == TextSpanKind::Everyone;
+    if (NameMatches(candidate.name, lowered) || (everyone && NameMatches(kEveryoneMentionWord, lowered))) {
+      lines.push_back(candidate);
+    }
+  }
+  return lines;
+}
+
+std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
+                                                const std::string& local_account, const bool local_is_owner,
+                                                const std::function<std::string(const std::string& account_id)>& public_name,
+                                                const std::string& query, const std::string& everyone_word) {
+  return FilterMentionCandidates(
+      AllMentionCandidates(roster, local_account, local_is_owner, public_name, everyone_word), query);
 }
 
 std::optional<size_t> TypedMentionTrigger(const std::string& before, const std::string& after) {

@@ -64,6 +64,8 @@ private:
   std::optional<size_t> at_;
   size_t caret_ = 0;
   std::vector<MentionCandidate> lines_;
+  /** All the group's lines, read when the picker opened; cleared when it closes. */
+  MentionCandidateCache candidates_;
   std::map<std::string, std::vector<ComposerMention>> recorded_;
 };
 

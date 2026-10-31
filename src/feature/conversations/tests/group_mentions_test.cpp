@@ -381,6 +381,43 @@ TEST(GroupMentionsTest, ATextThatStartsAtAiIsTheAgentsEvenAfterAPickedMemberName
   EXPECT_FALSE(ChatPresenter::KeepsMentionSpans("hello", {}));
 }
 
+// --- the picker reads the group once ---------------------------------------------------------------
+
+TEST(GroupMentionsTest, TypingTheQueryFiltersInMemoryWithoutReadingTheRosterAgain) {
+  int roster_reads = 0;
+  const auto names = [](const std::string& account) {
+    return account == kBob2 ? std::string("Bob") : NameOf(account);
+  };
+  auto roster = Roster();
+  GroupRosterMember twin;
+  twin.member_identity = kBob2;
+  roster.push_back(twin);
+  MentionCandidateCache cache;
+  cache.Load([&]() {
+    ++roster_reads;  // the roster, the cards, the contacts: all behind this call
+    return AllMentionCandidates(roster, kOwner, true, names, "everyone");
+  });
+  ASSERT_EQ(roster_reads, 1);
+  EXPECT_EQ(cache.Filter("").size(), 6u) << "everyone + five others";
+  const auto b = cache.Filter("b");
+  const auto bo = cache.Filter("bo");
+  const auto bob = cache.Filter("bob");
+  EXPECT_EQ(roster_reads, 1) << "no read while typing";
+  EXPECT_EQ(b.size(), 2u);
+  ASSERT_EQ(bob.size(), 2u);
+  EXPECT_EQ(bo, bob);
+  // The collision short ids come from the whole group, so they stay when the query narrows the list.
+  EXPECT_FALSE(bob[0].short_id.empty());
+  EXPECT_NE(bob[0].Label(), bob[1].Label());
+  ASSERT_EQ(cache.Filter("ev").size(), 1u);
+  EXPECT_TRUE(cache.Filter("ev")[0].kind == TextSpanKind::Everyone);
+  EXPECT_EQ(cache.Filter("nobody").size(), 0u);
+  // Closed: nothing is kept.
+  cache.Clear();
+  EXPECT_TRUE(cache.Filter("").empty());
+  EXPECT_EQ(roster_reads, 1);
+}
+
 // --- the everyone line in the user's language --------------------------------------------------
 
 TEST(GroupMentionsTest, EveryoneInChineseIsFoundByAPrefixOfItsWordOrByEveryone) {

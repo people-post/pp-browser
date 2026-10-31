@@ -576,8 +576,7 @@ std::optional<MentionRoster> ChatPresenter::MentionRosterOf(const std::string& t
   return roster;
 }
 
-std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::string& thread_id,
-                                                                  const std::string& query) {
+std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::string& thread_id) {
   const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
   if (!group_id) {
     return {};
@@ -597,8 +596,8 @@ std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::str
   };
   // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
   const bool local_is_owner = roster->owner == roster->local_account;
-  return MentionCandidates(*members, roster->local_account, local_is_owner, public_name, query,
-                           Tr("chat.mention.everyone_word"));
+  return AllMentionCandidates(*members, roster->local_account, local_is_owner, public_name,
+                              Tr("chat.mention.everyone_word"));
 }
 
 std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {

@@ -254,8 +254,8 @@ public:
 
   /** What highlighting a group's mentions is checked against now; none for a chat that is not a group. */
   std::optional<MentionRoster> MentionRosterOf(const std::string& thread_id) const;
-  /** The composer's `@` picker for a group: its other members by public name (and `@everyone` for the owner). */
-  std::vector<MentionCandidate> MentionCandidatesFor(const std::string& thread_id, const std::string& query);
+  /** The composer's `@` picker for a group, unfiltered: its other members by public name (and `@everyone` for the owner). */
+  std::vector<MentionCandidate> MentionCandidatesFor(const std::string& thread_id);
   /**
    * A tap on highlighted mention `run_index` of a message in the open group (EligibleMentionRuns' order): the
    * saved contact it names; none for `@everyone`, ourselves, or someone who is not a contact.
