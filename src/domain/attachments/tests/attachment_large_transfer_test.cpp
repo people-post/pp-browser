@@ -193,9 +193,12 @@ TEST_F(LargeDownloadTest, ASmallFileIsStillMaterializedAtOnce) {
            AttachmentFetchWorkflow::DownloadState::Ready;
   })) << "state "
       << static_cast<int>(workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length));
-  EXPECT_FALSE(AttachmentLocalPath(dir_.string(), "t1", prepared->fields.content_hash, prepared->fields.mime,
-                                   prepared->fields.filename)
-                   .empty());
+  // Ready is read from the stored (encrypted) file; the plaintext view is written right after it, so wait for it.
+  EXPECT_TRUE(WaitFor([&] {
+    return !AttachmentLocalPath(dir_.string(), "t1", prepared->fields.content_hash, prepared->fields.mime,
+                                prepared->fields.filename)
+                .empty();
+  })) << "a small file's plaintext view is there without an Open";
 }
 
 // A message deleted while its download is in flight cancels it; the aborted transfer comes back as an error, which
