@@ -108,8 +108,7 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
     return la != lb ? la < lb : a.account_id < b.account_id;
   });
   std::vector<MentionCandidate> lines;
-  if (local_is_owner && !everyone_word.empty() &&
-      (NameMatches(everyone_word, lowered) || NameMatches(kEveryoneMentionWord, lowered))) {
+  if (local_is_owner && (NameMatches(everyone_word, lowered) || NameMatches(kEveryoneMentionWord, lowered))) {
     lines.push_back({TextSpanKind::Everyone, {}, everyone_word, {}});
   }
   lines.insert(lines.end(), members.begin(), members.end());
