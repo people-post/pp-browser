@@ -3,6 +3,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
@@ -293,7 +294,14 @@ public:
                                    std::function<void(Roe<ThreadMessage>)> on_done);
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
-                           std::function<void(Roe<ThreadMessage>)> on_done);
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                             std::function<void(Roe<ThreadMessage>)> on_done,
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  void DiscardOutgoingAttachment(const std::string& record_id);
+  void CleanStaleAttachmentFiles();
   /** The one source of every attachment size / pace / warning number (today the defaults). */
   AttachmentLimits CurrentAttachmentLimits() const;
   /** The server space is filling up: called on the UI thread with the percent used (said once per 80 / 90). */

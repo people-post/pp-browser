@@ -124,6 +124,16 @@ Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_pay
 Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked and is wiped on `ClearDek` (`WipeAllAttachmentViewCaches`), which also clears `AttachmentPlaintextMemoryCache` (C011). A private video whose declared size is above `AttachmentLimits::max_receive_bytes` (`AttachmentAllowsInlinePrivateView`) is not downloaded at all and so has no `blobs_view` copy; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`. Images the user sends to the AI assistant are not stored durably: their thumbnails are session plaintext under the reserved pseudo thread `threads/ai-images/blobs_view/` and are wiped by the same `WipeAllAttachmentViewCaches` path.
 
 
+### Attachments in transit (outgoing / incoming)
+
+| Path | Content | At rest |
+|------|---------|---------|
+| `{profile}/blob_cipher/outgoing/<id>` | AEAD ciphertext of the file (random per-file key) | not wrapped: it reveals nothing without the key |
+| `{profile}/blob_cipher/outgoing/<id>.rec` | record: thread, attachment fields **including the content key and nonce**, size, time | `FileCipher` under the profile DEK, AAD purpose `outgoing-attachment` (`OutgoingAttachmentStore`) |
+| `{profile}/blob_cipher/incoming/<hash>.part` | ciphertext of a CDN download in progress | not wrapped (ciphertext) |
+
+The key never sits next to the ciphertext in the clear. Plaintext of a sent or received file is never written here; it goes to the private CAS and `blobs_view/` as before. The `.rec` is the one place a content key is kept before the message exists (the message row, with the key in its DEK-encrypted `thread.db`, is only created once the ciphertext has been delivered): while locked the record cannot be read, so a retry waits for the unlock.
+
 ## Test fixtures
 
 Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.

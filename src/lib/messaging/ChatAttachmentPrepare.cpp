@@ -67,7 +67,7 @@ Roe<PreparedChatAttachment> PrepareChatAttachmentFromBytes(const std::vector<uin
   prepared.fields.content_hash = *content_hash;
   prepared.fields.content_key = *content_key;
   prepared.fields.blob_nonce = encrypted->nonce;
-  prepared.ciphertext.assign(encrypted->ciphertext.begin(), encrypted->ciphertext.end());
+  prepared.ciphertext = std::move(encrypted->ciphertext); // no second copy
   return prepared;
 }
 

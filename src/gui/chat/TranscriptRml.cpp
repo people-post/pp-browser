@@ -287,7 +287,11 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     if (state == AttachmentFetchWorkflow::DownloadState::TooLarge) {
       html += "<p class=\"text muted\">" + Tr("chat.attachment.too_large_receive") + "</p>";
     } else if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
-      html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
+      html += "<p class=\"text muted\">" +
+              (view.download_percent >= 0
+                   ? Tr("chat.attachment.downloading_percent", {{"percent", std::to_string(view.download_percent)}})
+                   : Tr("chat.attachment.downloading")) +
+              "</p>";
     } else if (state == AttachmentFetchWorkflow::DownloadState::Pending) {
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +
               JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.download") + "</button>";

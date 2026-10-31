@@ -1,6 +1,7 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
+#include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
@@ -210,6 +211,32 @@ TEST_F(ReceiveLimitsTest, DirectPushesFollowTheSamePaceAndTheDiskCapCountsPendin
   EXPECT_FALSE(other.TryAcceptDirectPush("alice", 100)) << "a third push in the minute";
   EXPECT_TRUE(other.TryAcceptDirectPush("bob", 100)) << "another sender";
   EXPECT_TRUE(other.TryAutoDownloadBudget("alice", 100)) << "pushes are counted apart from downloads";
+}
+
+TEST_F(ReceiveLimitsTest, NothingAboveTheDirectSizeStartsByItselfWhateverThePolicyOrTier) {
+  AttachmentLimits limits;
+  limits.max_receive_bytes = 100'000'000;
+  limits.auto_download_max_bytes = 100'000'000;  // a tier that would allow it
+  workflow_.SetLimits(limits);
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
+  workflow_.SetClockForTest([]() { return int64_t{5'000}; });
+  workflow_.SetDiskUsageProvider([]() { return uint64_t{0}; });
+  const uint64_t above = kMaxDirectAttachmentBytes + 1;
+
+  EXPECT_EQ(workflow_.StateFor("t1", Hash(10), above), AttachmentFetchWorkflow::DownloadState::Pending);
+  workflow_.EnqueueFromMessage("t1", AttachmentMessage("big", "alice", 10, above));
+  EXPECT_EQ(workflow_.StateFor("t1", Hash(10), above), AttachmentFetchWorkflow::DownloadState::Pending);
+  EXPECT_TRUE(workflow_.TryAutoDownloadBudget("alice", 100)) << "and it cost no budget";
+  // At the direct size it still starts by itself.
+  EXPECT_EQ(workflow_.StateFor("t1", Hash(11), kMaxDirectAttachmentBytes),
+            AttachmentFetchWorkflow::DownloadState::Downloading);
+}
+
+TEST_F(ReceiveLimitsTest, ProgressIsPerDownloadAndClearsWhenDone) {
+  EXPECT_EQ(workflow_.ProgressPercent("t1", Hash(12)), -1);
+  workflow_.SetProgress(workflow_.JobKeyFor("t1", Hash(12)), 37);
+  EXPECT_EQ(workflow_.ProgressPercent("t1", Hash(12)), 37);
+  EXPECT_EQ(workflow_.ProgressPercent("t1", Hash(13)), -1);
 }
 
 TEST(AttachmentInlineViewGateTest, VideoAboveTheReceiveLimitIsNotShownInline) {

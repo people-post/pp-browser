@@ -1,6 +1,7 @@
 #include "domain/attachments/AttachmentClient.h"
 
 #include "domain/attachments/ChatBlobRequest.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/error/AppError.h"
@@ -200,6 +201,127 @@ TEST_F(AttachmentClientTest, ServerErrorsKeepTheirTypeToTheCaller) {
   auto fields = Upload(1000, Options(direct_));
   ASSERT_FALSE(fields);
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::QuotaExceeded));
+}
+
+// The staged (product) path: the ciphertext is a file, the key is in the sealed record, and a failed send is
+// resumed with that same ciphertext and key.
+class StagedUploadTest : public AttachmentClientTest {
+protected:
+  void SetUp() override {
+    AttachmentClientTest::SetUp();
+    store_ = std::make_unique<OutgoingAttachmentStore>(dir_.string(), "profile-1");
+  }
+  ChatAttachmentUploadOptions Staged(const Thread& thread) {
+    auto options = Options(thread);
+    options.outgoing = store_.get();
+    options.dek = TestDek();
+    options.on_staged = [this](const OutgoingAttachmentRecord& record) { staged_ = record; };
+    options.progress = [this](const uint64_t done, const uint64_t total) {
+      progress_.emplace_back(done, total);
+      return true;
+    };
+    return options;
+  }
+  Roe<ChatAttachmentFields> UploadStaged(const size_t size, ChatAttachmentUploadOptions options) {
+    Roe<ChatAttachmentFields> result = Error("not called");
+    const std::vector<uint8_t> bytes(size, 0x42);
+    UploadChatAttachmentAsync(blob_, *identity_, bytes, "clip.mp4", "", std::move(options),
+                              [&result](Roe<ChatAttachmentFields> value) { result = std::move(value); });
+    return result;
+  }
+  std::unique_ptr<OutgoingAttachmentStore> store_;
+  OutgoingAttachmentRecord staged_;
+  std::vector<std::pair<uint64_t, uint64_t>> progress_;
+};
+
+TEST_F(StagedUploadTest, TheServerUploadStreamsTheStagedFileAndReportsProgress) {
+  peer_.reachable = false;
+  auto fields = UploadStaged(5000, Staged(direct_));
+  ASSERT_TRUE(fields) << fields.error().message;
+  ASSERT_FALSE(staged_.id.empty());
+  auto cipher = store_->ReadCipher(staged_.id);
+  ASSERT_TRUE(cipher);
+  ASSERT_EQ(blob_.UploadedBodies().size(), 1u);
+  EXPECT_EQ(blob_.UploadedBodies().front(), std::string(cipher->begin(), cipher->end()))
+      << "what went out is the staged file, byte for byte";
+  EXPECT_FALSE(progress_.empty());
+  EXPECT_EQ(progress_.back().first, progress_.back().second);
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+  EXPECT_EQ(record->fields.url, fields->url);
+}
+
+TEST_F(StagedUploadTest, AFailedUploadKeepsTheCiphertextAndAResumeSendsTheSameBytesWithTheSameKey) {
+  peer_.reachable = false;
+  blob_.SetPresignError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  auto failed = UploadStaged(5000, Staged(direct_));
+  ASSERT_FALSE(failed);
+  ASSERT_FALSE(staged_.id.empty());
+  EXPECT_TRUE(store_->HasCipher(staged_.id)) << "kept for Retry";
+  const auto cipher_before = *store_->ReadCipher(staged_.id);
+  const auto key_before = staged_.fields.content_key;
+  auto sealed = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(sealed);
+  EXPECT_FALSE(sealed->delivered);
+
+  blob_.ClearPresignError();
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *sealed, Staged(direct_),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  ASSERT_TRUE(resumed) << resumed.error().message;
+  EXPECT_EQ(resumed->content_key, key_before) << "same key: the message the recipient gets still decrypts";
+  ASSERT_EQ(blob_.UploadedBodies().size(), 1u);
+  EXPECT_EQ(blob_.UploadedBodies().front(), std::string(cipher_before.begin(), cipher_before.end()));
+  EXPECT_FALSE(resumed->url.empty());
+}
+
+TEST_F(StagedUploadTest, ADeliveredRecordResumesWithoutAnyNetwork) {
+  peer_.reachable = false;
+  auto fields = UploadStaged(5000, Staged(direct_));
+  ASSERT_TRUE(fields);
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  const auto presigns = blob_.PresignCallCount();
+  Roe<ChatAttachmentFields> again = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, Staged(direct_),
+                            [&](Roe<ChatAttachmentFields> value) { again = std::move(value); });
+  ASSERT_TRUE(again);
+  EXPECT_EQ(again->url, fields->url);
+  EXPECT_EQ(blob_.PresignCallCount(), presigns);
+}
+
+TEST_F(StagedUploadTest, ADirectPushIsRecordedAsDeliveredWithNoUrl) {
+  auto fields = UploadStaged(5000, Staged(direct_));
+  ASSERT_TRUE(fields) << fields.error().message;
+  EXPECT_EQ(peer_.push_calls, 1);
+  EXPECT_TRUE(fields->url.empty());
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+}
+
+TEST_F(StagedUploadTest, ALargeStagedFileSkipsTheDirectPathAndIsNeverHeldInMemory) {
+  auto options = Staged(direct_);
+  options.max_plaintext_bytes = 20ULL * 1000ULL * 1000ULL;
+  auto fields = UploadStaged(static_cast<size_t>(kMaxDirectAttachmentBytes) + 1, options);
+  ASSERT_TRUE(fields) << fields.error().message;
+  EXPECT_EQ(peer_.push_calls, 0);
+  EXPECT_EQ(blob_.last_tier, BlobTier::Large);
+  EXPECT_EQ(staged_.cipher_bytes, kMaxDirectAttachmentBytes + 1 + kAttachmentCipherOverheadBytes);
+}
+
+TEST_F(StagedUploadTest, ResumeWithoutTheCiphertextTellsTheCallerToPickAgain) {
+  peer_.reachable = false;
+  blob_.SetPresignError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  ASSERT_FALSE(UploadStaged(5000, Staged(direct_)));
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  std::filesystem::remove(store_->CipherPath(staged_.id));  // cleaned after a day, or lost
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, Staged(direct_),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  EXPECT_FALSE(resumed);
 }
 
 TEST(AttachmentRoutingTest, OnlyAnE2eDirectThreadUpToTheLimitTriesDirect) {

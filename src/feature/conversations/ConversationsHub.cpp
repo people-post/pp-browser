@@ -1,5 +1,8 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "domain/attachments/AttachmentContent.h"
+#include "domain/attachments/AttachmentFetch.h"
+#include "domain/attachments/AttachmentMetrics.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "domain/node/AppRuntimeMeshExecutors.h"
 
@@ -1378,6 +1381,7 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
   WireAttachmentDownloads();
+  CleanStaleAttachmentFiles(); // once per start: staged sends older than a day, half-finished downloads
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
@@ -2359,49 +2363,49 @@ void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id,
   SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done));
 }
 
+Roe<Thread> ConversationsHub::AttachmentTargetThread(const std::string& thread_id) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  if (thread_id.empty()) {
+    return Error("No active thread");
+  }
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind == ThreadKind::Ai) {
+    return Error("Attachments are not supported in assistant threads");
+  }
+  if ((*thread)->kind != ThreadKind::Direct && (*thread)->kind != ThreadKind::Group) {
+    return Error("Attachments are not supported in this thread");
+  }
+  return **thread;
+}
+
 void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
-                                           std::function<void(Roe<ThreadMessage>)> on_done) {
+                                           std::function<void(Roe<ThreadMessage>)> on_done,
+                                           std::function<bool(uint64_t done, uint64_t total)> progress) {
   auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
     if (on_done) {
       on_done(std::move(value));
     }
   };
-
-  if (!IsInitialized()) {
-    finish(Error("Messaging hub not initialized"));
+  auto target = AttachmentTargetThread(thread_id);
+  if (!target) {
+    finish(target.error());
     return;
   }
-  if (!IsMessagingReady()) {
-    finish(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments"));
-    return;
-  }
-  if (!blob_) {
-    finish(Error("Blob client not configured"));
-    return;
-  }
-  if (thread_id.empty()) {
-    finish(Error("No active thread"));
-    return;
-  }
-
-  auto thread = Store().GetThread(thread_id);
-  if (!thread) {
-    finish(thread.error());
-    return;
-  }
-  if (!*thread) {
-    finish(Error("Thread not found"));
-    return;
-  }
-  Thread active = **thread;
-  if (active.kind == ThreadKind::Ai) {
-    finish(Error("Attachments are not supported in assistant threads"));
-    return;
-  }
-  if (active.kind != ThreadKind::Direct && active.kind != ThreadKind::Group) {
-    finish(Error("Attachments are not supported in this thread"));
-    return;
-  }
+  Thread active = std::move(*target);
 
   const AttachmentLimits limits = CurrentAttachmentLimits();
   const uint64_t max_bytes = MaxAttachmentSendBytes(limits, attachment.mime, attachment.image_is_shrunk);
@@ -2414,63 +2418,35 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
     return;
   }
 
+  auto store = std::make_shared<OutgoingAttachmentStore>(data_dir_, profile_id_);
+  auto job = std::make_shared<AttachmentSendJob>();
+  job->thread_id = thread_id;
+  job->kind = active.kind;
+  job->store = store;
+  job->dek = Attachments().CopyDek();
+  job->started_ms = util::NowUnixMs();
+  job->bytes = attachment.bytes.size();
+  // The bytes outlive the upload: the sent copy in the content store is made from them afterwards.
+  job->plaintext = std::make_shared<const ByteVector>(std::move(attachment.bytes));
+
   ChatAttachmentUploadOptions upload_opts;
   upload_opts.peer_client = mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr;
   upload_opts.contacts = contacts_.get();
   upload_opts.thread = active;
   upload_opts.thread_id = thread_id;
   upload_opts.max_plaintext_bytes = max_bytes;
+  upload_opts.progress = std::move(progress);
+  if (!job->dek.empty() && !profile_id_.empty()) {
+    upload_opts.outgoing = store.get(); // staged: a failed send can be resumed without the original file
+    upload_opts.dek = job->dek;
+    upload_opts.on_staged = [job](const OutgoingAttachmentRecord& record) { job->record_id = record.id; };
+  }
 
-  // The bytes outlive the upload: the sent copy in the content store is made from them afterwards.
-  auto plaintext = std::make_shared<const ByteVector>(std::move(attachment.bytes));
   UploadChatAttachmentAsync(
-      *blob_, Identity(), *plaintext, attachment.filename, attachment.mime, std::move(upload_opts),
-      [this, thread_id, plaintext, active = std::move(active), finish](Roe<ChatAttachmentFields> fields) mutable {
-        auto continue_send = [this, thread_id, plaintext, active = std::move(active), finish = std::move(finish),
-                              fields = std::move(fields)]() mutable {
-          if (!fields) {
-            if (IsBlobQuotaError(fields.error())) {
-              CheckBlobSpace(/*after_quota_error=*/true);
-            }
-            finish(fields.error());
-            return;
-          }
-
-          SendRelayOptions opts;
-          opts.content_type = ChatContentType::Attachment;
-          opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
-          const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
-
-          const ByteVector attachment_dek = Attachments().CopyDek();
-          const uint64_t max_receive_bytes = CurrentAttachmentLimits().max_receive_bytes;
-
-          const auto keep_sent_copy = [&](const ThreadMessage& sent) {
-            if (!attachment_dek.empty() && !profile_id_.empty()) {
-              (void)CopyAttachmentPlaintext(data_dir_, profile_id_, thread_id, *fields, *plaintext, attachment_dek,
-                                            max_receive_bytes);
-            }
-            Attachments().MaybeBuildPoster(thread_id, *fields);
-            if (attachment_downloads_) {
-              attachment_downloads_->EnqueueFromMessage(thread_id, sent);
-            }
-            if (!fields->url.empty()) {
-              CheckBlobSpace(/*after_quota_error=*/false); // went through the server: it holds our copy
-            }
-          };
-
-          if (active.kind == ThreadKind::Group) {
-            auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
-            if (sent) {
-              keep_sent_copy(*sent);
-            }
-            finish(std::move(sent));
-            return;
-          }
-          auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
-          if (sent) {
-            keep_sent_copy(*sent);
-          }
-          finish(std::move(sent));
+      *blob_, Identity(), *job->plaintext, attachment.filename, attachment.mime, std::move(upload_opts),
+      [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
+        auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
+          FinishAttachmentSend(job, std::move(fields), finish);
         };
         if (AppRuntime::IsRunning()) {
           AppRuntime::PostWorkerNormal(std::move(continue_send));
@@ -2478,6 +2454,144 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
           continue_send();
         }
       });
+}
+
+void ConversationsHub::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                                             std::function<void(Roe<ThreadMessage>)> on_done,
+                                             std::function<bool(uint64_t done, uint64_t total)> progress) {
+  auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+  auto target = AttachmentTargetThread(thread_id);
+  if (!target) {
+    finish(target.error());
+    return;
+  }
+  const ByteVector dek = Attachments().CopyDek();
+  auto store = std::make_shared<OutgoingAttachmentStore>(data_dir_, profile_id_);
+  auto record = dek.empty() ? Roe<OutgoingAttachmentRecord>(Error("Profile is locked")) : store->Load(record_id, dek);
+  if (!record || record->thread_id != thread_id || (!record->delivered && !store->HasCipher(record_id))) {
+    // Nothing to resume from (cleaned after a day, or damaged): the person picks the file again.
+    store->Remove(record_id);
+    finish(AppError::Blob(Err::Blob::Expired, "Outgoing attachment is gone")
+               .WithUser(Tr("chat.attachment.pick_again")));
+    return;
+  }
+  auto job = std::make_shared<AttachmentSendJob>();
+  job->thread_id = thread_id;
+  job->kind = target->kind;
+  job->store = store;
+  job->record_id = record_id;
+  job->dek = dek;
+  job->started_ms = util::NowUnixMs();
+  job->bytes = record->fields.byte_length;
+
+  ChatAttachmentUploadOptions upload_opts;
+  upload_opts.peer_client = mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr;
+  upload_opts.contacts = contacts_.get();
+  upload_opts.thread = *target;
+  upload_opts.thread_id = thread_id;
+  upload_opts.progress = std::move(progress);
+  upload_opts.outgoing = store.get();
+  upload_opts.dek = dek;
+  ResumeChatAttachmentAsync(
+      *blob_, Identity(), *record, std::move(upload_opts),
+      [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
+        auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
+          FinishAttachmentSend(job, std::move(fields), finish);
+        };
+        if (AppRuntime::IsRunning()) {
+          AppRuntime::PostWorkerNormal(std::move(continue_send));
+        } else {
+          continue_send();
+        }
+      });
+}
+
+std::vector<OutgoingAttachmentRecord> ConversationsHub::PendingOutgoingAttachments(const std::string& thread_id) {
+  const ByteVector dek = Attachments().CopyDek();
+  if (dek.empty() || profile_id_.empty() || data_dir_.empty()) {
+    return {};
+  }
+  return OutgoingAttachmentStore(data_dir_, profile_id_).ListForThread(thread_id, dek);
+}
+
+void ConversationsHub::DiscardOutgoingAttachment(const std::string& record_id) {
+  OutgoingAttachmentStore(data_dir_, profile_id_).Remove(record_id);
+}
+
+void ConversationsHub::CleanStaleAttachmentFiles() {
+  if (data_dir_.empty()) {
+    return;
+  }
+  OutgoingAttachmentStore(data_dir_, profile_id_).CleanupStale(OutgoingAttachmentStore::kMaxAgeMs);
+  CleanIncomingCiphertext(data_dir_); // a download that never finished
+}
+
+void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job,
+                                            Roe<ChatAttachmentFields> fields,
+                                            const std::function<void(Roe<ThreadMessage>)>& finish) {
+  const auto elapsed = [&]() { return util::NowUnixMs() - job->started_ms; };
+  if (!fields) {
+    EmitAttachmentTransferMetric("send", job->bytes, elapsed(), false);
+    if (IsBlobQuotaError(fields.error())) {
+      CheckBlobSpace(/*after_quota_error=*/true);
+    }
+    // A full space is answered by the delete-and-retry dialog, which sends again from the bytes it holds; a
+    // size the server refuses cannot succeed by retrying. Every other failure keeps the ciphertext for "Retry".
+    const bool keep = !IsBlobQuotaError(fields.error()) && fields.error().code != static_cast<int32_t>(Err::Blob::TooLarge);
+    if (!keep && !job->record_id.empty()) {
+      job->store->Remove(job->record_id);
+    }
+    finish(fields.error());
+    return;
+  }
+
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::Attachment;
+  opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
+  const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
+
+  const ByteVector attachment_dek = Attachments().CopyDek();
+  const uint64_t max_receive_bytes = CurrentAttachmentLimits().max_receive_bytes;
+
+  const auto keep_sent_copy = [&](const ThreadMessage& sent) {
+    if (!attachment_dek.empty() && !profile_id_.empty()) {
+      if (job->plaintext) {
+        (void)CopyAttachmentPlaintext(data_dir_, profile_id_, job->thread_id, *fields, *job->plaintext, attachment_dek,
+                                      max_receive_bytes);
+      } else if (!job->record_id.empty()) {
+        // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key.
+        if (auto cipher = job->store->ReadCipher(job->record_id)) {
+          if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce, *cipher,
+                                                            fields->content_hash)) {
+            (void)CopyAttachmentPlaintext(data_dir_, profile_id_, job->thread_id, *fields, *plain, attachment_dek,
+                                          max_receive_bytes);
+          }
+        }
+      }
+    }
+    Attachments().MaybeBuildPoster(job->thread_id, *fields);
+    if (attachment_downloads_) {
+      attachment_downloads_->EnqueueFromMessage(job->thread_id, sent);
+    }
+    if (!fields->url.empty()) {
+      CheckBlobSpace(/*after_quota_error=*/false); // went through the server: it holds our copy
+    }
+    if (!job->record_id.empty()) {
+      job->store->Remove(job->record_id); // sent: the staged ciphertext and key are no longer needed
+    }
+  };
+
+  auto sent = job->kind == ThreadKind::Group ? MeshMessaging().SendGroupMessage(job->thread_id, display, opts)
+                                             : MeshMessaging().SendUserMessage(job->thread_id, display, opts);
+  if (sent) {
+    keep_sent_copy(*sent);
+  }
+  EmitAttachmentTransferMetric("send", job->bytes, elapsed(), static_cast<bool>(sent));
+  finish(std::move(sent));
 }
 
 AttachmentFetchWorkflow& ConversationsHub::Attachments() {

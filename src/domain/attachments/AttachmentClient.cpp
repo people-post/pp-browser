@@ -2,6 +2,7 @@
 
 #include "domain/attachments/ChatBlobRequest.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "common/Utilities.h"
 
 #include <algorithm>
 #include <cctype>
@@ -80,6 +81,69 @@ Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::st
   return fields;
 }
 
+/** Direct push of a staged attachment when allowed, else (or on failure) the server, streamed from the file. */
+void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
+                   std::shared_ptr<PreparedChatAttachment> in_memory, ChatAttachmentUploadOptions options,
+                   std::function<void(Roe<ChatAttachmentFields>)> finish) {
+  auto relay_user_id = RequireRegisteredRelayUserId(identity);
+  if (!relay_user_id) {
+    finish(relay_user_id.error());
+    return;
+  }
+  if (record.delivered) {
+    finish(record.fields);
+    return;
+  }
+  const std::string relay_id = *relay_user_id;
+  OutgoingAttachmentStore* store = options.outgoing;
+  const ByteVector dek = options.dek;
+  auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress, finish]() mutable {
+    auto uploaded = UploadRelayBlobFile(blob, relay_id, "application/octet-stream", BlobPurpose::File,
+                                        store->CipherPath(record.id), record.cipher_bytes, progress);
+    if (!uploaded) {
+      finish(uploaded.error());
+      return;
+    }
+    record.fields.url = uploaded.value().public_url;
+    record.delivered = true;
+    (void)store->Update(record, dek);
+    finish(record.fields);
+  };
+
+  if (AttachmentTriesPeerDirect(options.thread, record.fields.byte_length)) {
+    if (!in_memory) {
+      // Small enough for the direct path: read the staged file back (never done for a large one).
+      if (auto cipher = store->ReadCipher(record.id)) {
+        in_memory = std::make_shared<PreparedChatAttachment>();
+        in_memory->fields = record.fields;
+        in_memory->ciphertext = std::move(*cipher);
+      }
+    }
+    if (in_memory) {
+      TryPeerPushAsync(*in_memory, identity, options,
+                       [record, store, dek, finish, to_server = std::move(to_server), in_memory](Roe<void> pushed) mutable {
+                         auto next = [record, store, dek, finish, to_server = std::move(to_server),
+                                      pushed = std::move(pushed)]() mutable {
+                           if (pushed) {
+                             record.delivered = true;
+                             (void)store->Update(record, dek);
+                             finish(record.fields);
+                             return;
+                           }
+                           to_server();
+                         };
+                         if (AppRuntime::IsRunning()) {
+                           AppRuntime::PostWorkerNormal(std::move(next));
+                         } else {
+                           next();
+                         }
+                       });
+      return;
+    }
+  }
+  to_server();
+}
+
 } // namespace
 
 bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, const uint64_t plaintext_bytes) {
@@ -109,6 +173,31 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
+  if (options.outgoing) {
+    OutgoingAttachmentRecord record;
+    record.id = OutgoingAttachmentStore::NewId();
+    record.thread_id = options.thread_id;
+    record.fields = prepared->fields;
+    record.created_ms = util::NowUnixMs();
+    if (auto staged = options.outgoing->Begin(record, prepared->ciphertext, options.dek); !staged) {
+      finish(staged.error());
+      return;
+    }
+    record.cipher_bytes = prepared->ciphertext.size();
+    if (options.on_staged) {
+      options.on_staged(record);
+    }
+    // A small ciphertext stays in memory for the direct push; a large one is dropped (it is on disk now).
+    std::shared_ptr<PreparedChatAttachment> in_memory;
+    if (AttachmentTriesPeerDirect(options.thread, plaintext.size())) {
+      in_memory = std::make_shared<PreparedChatAttachment>(std::move(*prepared));
+    } else {
+      std::vector<uint8_t>().swap(prepared->ciphertext);
+    }
+    DeliverStaged(blob, identity, std::move(record), std::move(in_memory), std::move(options), finish);
+    return;
+  }
+
   if (AttachmentTriesPeerDirect(options.thread, plaintext.size())) {
     // Shared, not moved into the callback: the push reads the prepared bytes in the same call that builds
     // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").
@@ -135,6 +224,25 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
   }
 
   finish(UploadPreparedToRelay(blob, *relay_user_id, *prepared));
+}
+
+void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const OutgoingAttachmentRecord& record,
+                               ChatAttachmentUploadOptions options,
+                               std::function<void(Roe<ChatAttachmentFields>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ChatAttachmentFields> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+  if (!options.outgoing) {
+    finish(Error("No outgoing attachment store"));
+    return;
+  }
+  if (!record.delivered && !options.outgoing->HasCipher(record.id)) {
+    finish(Error("The encrypted copy of the attachment is gone"));
+    return;
+  }
+  DeliverStaged(blob, identity, record, nullptr, std::move(options), finish);
 }
 
 void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,

@@ -1,6 +1,9 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "domain/attachments/AttachmentContent.h"
+#include "domain/attachments/AttachmentMetrics.h"
+#include "common/Utilities.h"
 
+#include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -13,6 +16,7 @@
 
 #include <sodium.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <unordered_set>
@@ -233,6 +237,9 @@ bool AttachmentFetchWorkflow::ShouldAutoDownload(const Job& job) const {
   if (job.fields.byte_length == 0) {
     return false; // an undeclared size is the sender's word for nothing: only a tap fetches it
   }
+  if (job.fields.byte_length > kMaxDirectAttachmentBytes) {
+    return false; // whatever the policy or tier: a file above the direct size is only fetched on a tap
+  }
   if (suppression_ && suppression_->IsSuppressed(job.thread_id, job.fields.content_hash)) {
     return false;
   }
@@ -358,6 +365,8 @@ void AttachmentFetchWorkflow::ContinueDrainOnWorker() {
 
 void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done) {
   const std::string key = JobKey(job);
+  const int64_t started_ms = util::NowUnixMs();
+  const uint64_t declared_bytes = job.fields.byte_length;
   AttachmentFetchContext context;
   context.thread_id = job.thread_id;
   context.store = store_;
@@ -365,13 +374,30 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   context.identity = identity_;
   context.peer_client = peer_client_;
   context.profile_data_dir = profile_dir_;
+  // Percent of the CDN download for the card; a deleted message (no longer active) cancels the transfer.
+  context.progress = [this, key](const uint64_t done, const uint64_t total) {
+    {
+      std::lock_guard lock(mutex_);
+      if (!active_.contains(key)) {
+        return false;
+      }
+    }
+    SetProgress(key, total > 0 ? static_cast<int>(std::min<uint64_t>(100, done * 100 / total)) : 0);
+    return true;
+  };
 
   FetchAndDecryptAttachmentAsync(
       job.fields, context,
-      [this, key, job = std::move(job), on_done = std::move(on_done)](Roe<std::vector<uint8_t>> plaintext) mutable {
+      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms,
+       declared_bytes](Roe<std::vector<uint8_t>> plaintext) mutable {
         auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
-                           plaintext = std::move(plaintext)]() mutable {
+                           plaintext = std::move(plaintext), started_ms, declared_bytes]() mutable {
+          // Reported at the end, after the bytes are stored, so the peak covers the whole receive.
+          const auto report = [&](const bool ok) {
+            EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
+          };
           if (!plaintext) {
+            report(false);
             MarkFailed(key);
             if (on_done) {
               on_done();
@@ -389,9 +415,10 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             }
             return;
           }
-          const ByteVector bytes(plaintext->begin(), plaintext->end());
+          const ByteVector bytes = std::move(*plaintext); // no second whole-file copy
           const ByteVector dek_copy = CopyDek();
           if (dek_copy.empty() || profile_id_.empty()) {
+            report(false);
             MarkFailed(key);
             if (on_done) {
               on_done();
@@ -400,6 +427,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           }
           if (auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, job.fields.content_hash, job.fields.mime, bytes, job.fields.filename, dek_copy);
               !saved) {
+            report(false);
             MarkFailed(key);
             if (on_done) {
               on_done();
@@ -424,6 +452,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             }
             return;
           }
+          report(true);
           MarkReady(key);
           if (on_done) {
             on_done();
@@ -438,9 +467,29 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
       });
 }
 
+void AttachmentFetchWorkflow::SetProgress(const std::string& key, const int percent) {
+  {
+    std::lock_guard lock(mutex_);
+    auto& shown = progress_[key];
+    if (shown == percent) {
+      return;
+    }
+    shown = percent;
+  }
+  NotifyChanged();
+}
+
+int AttachmentFetchWorkflow::ProgressPercent(const std::string& thread_id,
+                                             const std::vector<uint8_t>& content_hash) const {
+  std::lock_guard lock(mutex_);
+  const auto found = progress_.find(JobKey(thread_id, content_hash));
+  return found == progress_.end() ? -1 : found->second;
+}
+
 void AttachmentFetchWorkflow::MarkFailed(const std::string& key) {
   {
     std::lock_guard lock(mutex_);
+    progress_.erase(key);
     active_.erase(key);
     pending_.erase(key);
     failed_.insert(key);
@@ -451,6 +500,7 @@ void AttachmentFetchWorkflow::MarkFailed(const std::string& key) {
 void AttachmentFetchWorkflow::MarkReady(const std::string& key) {
   {
     std::lock_guard lock(mutex_);
+    progress_.erase(key);
     active_.erase(key);
     pending_.erase(key);
     failed_.erase(key);
@@ -523,7 +573,7 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(
   if (throttled_.contains(key)) {
     return DownloadState::Pending;
   }
-  if (byte_length == 0 ||
+  if (byte_length == 0 || byte_length > kMaxDirectAttachmentBytes ||
       !ShouldAutoEnqueueAttachment(policy_, byte_length, backlog_drain_, limits_.auto_download_max_bytes)) {
     return DownloadState::Pending;
   }
@@ -680,6 +730,7 @@ void AttachmentFetchWorkflow::CancelJobsLocked(const std::function<bool(const st
   std::erase_if(pending_, [&](const std::string& key) { return matches(key); });
   std::erase_if(failed_, [&](const std::string& key) { return matches(key); });
   std::erase_if(throttled_, [&](const std::string& key) { return matches(key); });
+  std::erase_if(progress_, [&](const auto& entry) { return matches(entry.first); });
 }
 
 void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id,

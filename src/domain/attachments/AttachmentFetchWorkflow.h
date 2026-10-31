@@ -16,6 +16,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -115,6 +116,13 @@ public:
 
   DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                          uint64_t byte_length) const;
+  /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
+  int ProgressPercent(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
+  /** Test hook / UI: record a download's percent (notifies the transcript when it changes). */
+  void SetProgress(const std::string& key, int percent);
+  std::string JobKeyFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const {
+    return JobKey(thread_id, content_hash);
+  }
 
 private:
   struct Job {
@@ -158,6 +166,7 @@ private:
   std::unordered_set<std::string> pending_;
   /** Held back by the automatic-download limits: stays a "Download" row until the person taps it. */
   std::unordered_set<std::string> throttled_;
+  std::unordered_map<std::string, int> progress_;
   AttachmentLimits limits_ = DefaultAttachmentLimits();
   AutoDownloadBudget budget_;
   AutoDownloadBudget push_budget_;

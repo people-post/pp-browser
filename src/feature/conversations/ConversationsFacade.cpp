@@ -1,4 +1,6 @@
 #include "feature/conversations/ConversationsFacade.h"
+#include "domain/attachments/AttachmentMetrics.h"
+#include "common/Utilities.h"
 
 #include <algorithm>
 
@@ -804,9 +806,26 @@ void ConversationsFacade::SendAttachmentFromPathAsync(const std::string& thread_
 }
 
 void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
-                                              std::function<void(Roe<ThreadMessage>)> on_done) {
-  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done));
+                                              std::function<void(Roe<ThreadMessage>)> on_done,
+                                              std::function<bool(uint64_t done, uint64_t total)> progress) {
+  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress));
 }
+
+void ConversationsFacade::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                                                std::function<void(Roe<ThreadMessage>)> on_done,
+                                                std::function<bool(uint64_t done, uint64_t total)> progress) {
+  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress));
+}
+
+std::vector<OutgoingAttachmentRecord> ConversationsFacade::PendingOutgoingAttachments(const std::string& thread_id) {
+  return hub_.PendingOutgoingAttachments(thread_id);
+}
+
+void ConversationsFacade::DiscardOutgoingAttachment(const std::string& record_id) {
+  hub_.DiscardOutgoingAttachment(record_id);
+}
+
+void ConversationsFacade::CleanStaleAttachmentFiles() { hub_.CleanStaleAttachmentFiles(); }
 
 AttachmentLimits ConversationsFacade::CurrentAttachmentLimits() const { return hub_.CurrentAttachmentLimits(); }
 
@@ -836,9 +855,12 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
     if (!fields) {
       return std::nullopt;
     }
+    const int64_t open_started_ms = util::NowUnixMs();
     if (auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, fields->content_hash, fields->mime,
                                                             fields->filename)) {
       if (!view->empty()) {
+        // Opening decrypts the stored copy into the session view: its memory is part of the large-file numbers.
+        EmitAttachmentTransferMetric("open", fields->byte_length, util::NowUnixMs() - open_started_ms, true);
         return *view;
       }
     }

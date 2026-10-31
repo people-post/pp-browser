@@ -639,6 +639,7 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
+    view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
   } else if (!view.local_path.empty() ||
              (!profile_data_dir_.empty() && AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;

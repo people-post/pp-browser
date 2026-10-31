@@ -37,6 +37,7 @@
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "lib/messaging/OutgoingAttachment.h"
@@ -315,7 +316,21 @@ public:
    * and the send pace (AttachmentLimits::send_max_per_minute).
    */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
-                           std::function<void(Roe<ThreadMessage>)> on_done);
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  /**
+   * Send again an attachment whose send failed (also after the app was killed): the same staged ciphertext and
+   * key, from the stage it stopped at. When nothing is left to send from, the error says to pick the file again.
+   */
+  void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                             std::function<void(Roe<ThreadMessage>)> on_done,
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  /** Attachments of this thread whose send did not finish and whose staged ciphertext is still there. */
+  std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** Drop a staged attachment (the person gave up on it). */
+  void DiscardOutgoingAttachment(const std::string& record_id);
+  /** At start: staged sends older than a day and half-finished downloads go. */
+  void CleanStaleAttachmentFiles();
   /** Every size / pace / warning number for attachments; one source so a member tier can replace it later. */
   AttachmentLimits CurrentAttachmentLimits() const;
   /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
@@ -523,6 +538,19 @@ private:
   std::mutex blob_space_mutex_;
   std::function<void(int percent)> on_blob_space_warning_;
   void CheckBlobSpace(bool after_quota_error);
+  struct AttachmentSendJob {
+    std::string thread_id;
+    ThreadKind kind = ThreadKind::Direct;
+    std::shared_ptr<OutgoingAttachmentStore> store;
+    std::string record_id;
+    std::shared_ptr<const ByteVector> plaintext;
+    ByteVector dek;
+    int64_t started_ms = 0;
+    uint64_t bytes = 0;
+  };
+  Roe<Thread> AttachmentTargetThread(const std::string& thread_id);
+  void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
+                            const std::function<void(Roe<ThreadMessage>)>& finish);
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;

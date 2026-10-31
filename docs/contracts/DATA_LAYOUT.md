@@ -78,6 +78,13 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth)
     # blobs/            # not used; durable bytes live in cas/private only
+  blob_cipher/
+    outgoing/           # <id> = AEAD ciphertext of an attachment being sent, <id>.rec = its record (content key, fields,
+                        # thread) sealed under the profile DEK. Removed when the message is sent, when the person
+                        # discards it, and at start when older than 24 h (file mtime). Kept after a failed send so
+                        # "Retry" (also after the app was killed) sends the same ciphertext with the same key.
+    incoming/           # <content_hash>.part = a CDN download in progress (ciphertext only); deleted when read back
+                        # or aborted, and the whole folder at start
   threads/ai-images/    # reserved name, NOT a thread (no thread.db): blobs_view/ only
     blobs_view/         # pre-send preview of the image the user is about to send to the AI; removed on send / discard, cleared at startup
                         # (sent AI images live in cas/private + the AI thread's own blobs_view, referenced by the message)

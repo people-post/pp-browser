@@ -180,6 +180,14 @@ private:
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path, OutgoingPickSource source);
+  /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
+  void OnRetryAttachmentSend();
+  void OnDiscardAttachmentSend();
+  /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
+  void RefreshPendingAttachmentChip(bool force);
+  void ShowFailedAttachment(const std::string& record_id, const std::string& name);
+  /** Progress for the chip: the percent line, with a "please stay in PP" hint for a large file. */
+  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress();
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
@@ -221,6 +229,8 @@ private:
   void SyncShellSessions() override;
   void UpdateThreadChrome();
   void ResetChatPanelState();
+  std::string failed_record_id_;
+  std::string pending_chip_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;

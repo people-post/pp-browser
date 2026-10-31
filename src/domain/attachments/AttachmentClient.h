@@ -3,6 +3,7 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/chat/MessagingLimits.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "lib/net/BlobClient.h"
@@ -29,6 +30,17 @@ struct ChatAttachmentUploadOptions {
   std::string thread_id;
   /** The most plaintext bytes accepted (the caller's AttachmentLimits for this kind of file). */
   uint64_t max_plaintext_bytes = kDefaultAttachmentSendMaxBytes;
+  /**
+   * The product path: the ciphertext is staged as a file (`OutgoingAttachmentStore`), streamed from there to the
+   * server with `progress`, and stays until the caller removes it, so a failed send can be resumed with the same
+   * ciphertext and key. Null: everything stays in memory (tests, one-shot callers).
+   */
+  OutgoingAttachmentStore* outgoing = nullptr;
+  ByteVector dek;
+  /** (bytes sent, bytes in all) of the server upload; false cancels. */
+  std::function<bool(uint64_t done, uint64_t total)> progress;
+  /** Called once the ciphertext is staged, before any network: the record to resume from. */
+  std::function<void(const OutgoingAttachmentRecord&)> on_staged;
 };
 
 /**
@@ -46,6 +58,15 @@ Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, Identi
 void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
                                        ChatAttachmentUploadOptions options,
                                        std::function<void(Roe<ChatAttachmentFields>)> on_done);
+
+/**
+ * Deliver an already staged attachment (a retry, also after the app was killed): the same ciphertext and key, a
+ * direct push first when it is small and the contact is reachable, then the server. A record already delivered
+ * returns its fields at once. `options.outgoing` and `options.dek` are required.
+ */
+void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const OutgoingAttachmentRecord& record,
+                               ChatAttachmentUploadOptions options,
+                               std::function<void(Roe<ChatAttachmentFields>)> on_done);
 
 /** The same for bytes already in memory (a shrunk picture, a file read by the caller). */
 void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const std::vector<uint8_t>& plaintext,

@@ -36,6 +36,8 @@ struct AttachmentLimits {
   /** A received attachment whose declared size is above this is never downloaded. */
   uint64_t max_receive_bytes = kDefaultAttachmentReceiveMaxBytes;
   int voice_max_seconds = 120;
+  /** A send of at least this many bytes tells the person to stay in the app until it is done. */
+  uint64_t stay_hint_bytes = 10ULL * kAttachmentMegabyte;
   /** Server space warnings, in percent of the space in use. */
   int warn_percent_low = 80;
   int warn_percent_high = 90;

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -995,6 +996,7 @@ void ChatController::OnLockPublicToThisDevice() {
 
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
+  RefreshPendingAttachmentChip(/*force=*/false);
   SyncComposerInputState();
 }
 
@@ -1048,6 +1050,119 @@ void ChatController::OnAttachFile() {
   ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
+std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress() {
+  const uint64_t stay_hint_bytes = facade_ ? facade_->CurrentAttachmentLimits().stay_hint_bytes : 0;
+  auto last_percent = std::make_shared<std::atomic<int>>(-1);
+  return [this, last_percent, stay_hint_bytes](const uint64_t done, const uint64_t total) {
+    if (total == 0) {
+      return true;
+    }
+    const int percent = static_cast<int>(std::min<uint64_t>(100, done * 100 / total));
+    if (last_percent->exchange(percent) == percent) {
+      return true; // the line changes only when the number does
+    }
+    const bool large = total >= stay_hint_bytes;
+    AppRuntime::PostUI([this, percent, large]() {
+      if (!chat_.attachment_uploading) {
+        return;
+      }
+      chat_.attachment_status =
+          Tr(large ? "chat.attachment.uploading_stay" : "chat.attachment.uploading_percent",
+             {{"percent", std::to_string(percent)}})
+              .c_str();
+      DataModelHost::Instance().Dirty("chat", "attachment_status");
+    });
+    return true;
+  };
+}
+
+void ChatController::ShowFailedAttachment(const std::string& record_id, const std::string& name) {
+  failed_record_id_ = record_id;
+  chat_.attachment_failed = true;
+  chat_.attachment_uploading = false;
+  chat_.attachment_draft_name = name.c_str();
+  chat_.attachment_status = Tr("chat.attachment.send_failed").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void ChatController::RefreshPendingAttachmentChip(const bool force) {
+  if (!facade_ || !messaging_ready_ || chat_.attachment_uploading) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (!force && thread_id == pending_chip_thread_) {
+    return;
+  }
+  pending_chip_thread_ = thread_id;
+  failed_record_id_.clear();
+  const bool had_chip = chat_.attachment_failed;
+  chat_.attachment_failed = false;
+  if (!thread_id.empty() && !InAiComposerContext()) {
+    const auto pending = facade_->PendingOutgoingAttachments(thread_id);
+    if (!pending.empty()) {
+      ShowFailedAttachment(pending.front().id, pending.front().fields.filename);
+      return;
+    }
+  }
+  if (had_chip) {
+    chat_.attachment_draft_name = "";
+    chat_.attachment_status = "";
+    SyncComposerInputState();
+    DirtyChatChrome();
+    DirtyChatHeader();
+  }
+}
+
+void ChatController::OnDiscardAttachmentSend() {
+  if (!facade_ || failed_record_id_.empty()) {
+    return;
+  }
+  facade_->DiscardOutgoingAttachment(failed_record_id_);
+  RefreshPendingAttachmentChip(/*force=*/true);
+}
+
+void ChatController::OnRetryAttachmentSend() {
+  if (!facade_ || failed_record_id_.empty() || chat_.attachment_uploading) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  const std::string record_id = failed_record_id_;
+  if (thread_id.empty()) {
+    return;
+  }
+  chat_.attachment_failed = false;
+  chat_.attachment_uploading = true;
+  chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+  facade_->ResumeAttachmentAsync(
+      thread_id, record_id,
+      [this](Roe<ThreadMessage> sent) {
+        AppRuntime::PostUI([this, sent = std::move(sent)]() mutable {
+          chat_.attachment_uploading = false;
+          chat_.attachment_status = "";
+          chat_.attachment_draft_name = "";
+          failed_record_id_.clear();
+          SyncComposerInputState();
+          if (!sent) {
+            UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+            RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone: nothing shown
+            return;
+          }
+          RefreshPendingAttachmentChip(/*force=*/true);
+          SyncDisplayFromThread();
+          scroller_.RequestScrollToLatest();
+          UpdateSidebarPreview(sent->text);
+          DirtyChatChrome();
+          DirtyChatHeader();
+        });
+      },
+      MakeSendProgress());
+}
+
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source) {
   if (!facade_ || chat_.attachment_uploading) {
     return;
@@ -1058,8 +1173,11 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   }
 
   chat_.attachment_uploading = true;
+  chat_.attachment_failed = false;
+  failed_record_id_.clear();
   chat_.attachment_draft_name = std::filesystem::path(path).filename().string().c_str();
   chat_.status = Tr("chat.attachment.uploading").c_str();
+  chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
@@ -1067,6 +1185,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   const auto finish_uploading = [this]() {
     chat_.attachment_uploading = false;
     chat_.attachment_draft_name = "";
+    chat_.attachment_status = "";
     chat_.status = "";
     SyncComposerInputState();
     DirtyChatChrome();
@@ -1088,12 +1207,13 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
       auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
       BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
           [this, thread_id, attachment](std::function<void(Roe<ThreadMessage>)> done) {
-            facade_->SendAttachmentAsync(thread_id, *attachment, std::move(done));
+            facade_->SendAttachmentAsync(thread_id, *attachment, std::move(done), MakeSendProgress());
           },
-          [this, finish_uploading](Roe<ThreadMessage> sent) {
+          [this, thread_id, finish_uploading](Roe<ThreadMessage> sent) {
             finish_uploading();
             if (!sent) {
               UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;
             }
             SyncDisplayFromThread();
@@ -1194,6 +1314,10 @@ void ChatController::UpdatePeerLinkChrome() {
 
 void ChatController::ResetChatPanelState() {
   chat_.attachment_uploading = false;
+  chat_.attachment_failed = false;
+  chat_.attachment_status = "";
+  failed_record_id_.clear();
+  pending_chip_thread_.clear();
   chat_.attachment_draft_name = "";
   chrome_.ResetPanelState();
   SyncComposerInputState();
@@ -2581,6 +2705,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
         ctor.BindEventCallback("attach_file", DataEvent([this] { OnAttachFile(); }));
+        ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
+        ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
         ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>(

@@ -23,9 +23,13 @@
               title="{{i18n:chat.attach_file}}">
         <svg src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
       </button>
-      <div class="prompt-attachment-chip" data-if="attachment_uploading">
+      <div class="prompt-attachment-chip" data-if="attachment_uploading || attachment_failed">
         <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
-        <span class="prompt-attachment-chip-status">{{i18n:chat.attachment.uploading}}</span>
+        <span class="prompt-attachment-chip-status" data-value="attachment_status"></span>
+        <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
+                data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
+        <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
+                data-event-click="discard_attachment_send()">{{i18n:common.cancel}}</button>
       </div>
       <div class="prompt-attachment-chip" data-if="image_chip">
         <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on

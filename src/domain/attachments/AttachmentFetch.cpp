@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
+#include "foundation/error/AppError.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "domain/attachments/ChatBlobRequest.h"
 #include "lib/net/HttpClient.h"
@@ -9,6 +10,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <thread>
 
@@ -21,28 +24,60 @@ uint64_t ExpectedCiphertextBytes(const ChatAttachmentFields& fields) {
   return fields.byte_length + kAttachmentCipherOverheadBytes;
 }
 
-Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentFields& fields) {
+Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentFields& fields,
+                                                           const AttachmentFetchContext& context) {
   if (fields.url.empty()) {
     return Error("Attachment URL is required");
   }
   if (fields.byte_length == 0) {
     return Error("Attachment declares no size");
   }
-  // fields.url is peer-controlled (sender's attachment URL): restrict to https + public hosts, and stop reading
-  // at the declared size (plus the AEAD tag) instead of taking whatever the host sends.
-  const size_t cap = static_cast<size_t>(std::min<uint64_t>(ExpectedCiphertextBytes(fields), kMaxHttpClientBodyBytes));
-  const auto response = HttpClient::Get(fields.url, {}, cap, HttpTimeout{}, /*restrict_to_public_https=*/true);
-  if (!response) {
-    return response.error();
+  const uint64_t cap = ExpectedCiphertextBytes(fields);
+  // fields.url is peer-controlled (sender's attachment URL): restrict to https + public hosts, and stop at the
+  // declared size (plus the AEAD tag) instead of taking whatever the host sends.
+  if (context.profile_data_dir.empty()) {
+    if (cap > kMaxHttpClientBodyBytes) {
+      return Error("Attachment download needs a profile directory");
+    }
+    const auto response = HttpClient::Get(fields.url, {}, static_cast<size_t>(cap), HttpTimeout{},
+                                          /*restrict_to_public_https=*/!context.allow_local_cdn_for_test);
+    if (!response) {
+      return response.error();
+    }
+    const HttpResponse& http = response.value();
+    if (http.status_code < 200 || http.status_code >= 300) {
+      return Error("Attachment download failed with status " + std::to_string(http.status_code));
+    }
+    if (http.body.empty()) {
+      return Error("Attachment download returned empty body");
+    }
+    return std::vector<uint8_t>(http.body.begin(), http.body.end());
   }
-  const HttpResponse& http = response.value();
-  if (http.status_code < 200 || http.status_code >= 300) {
-    return Error("Attachment download failed with status " + std::to_string(http.status_code));
+
+  // Streamed to a temp file (no whole-body buffer in the HTTP layer), then read back once.
+  const std::string dir = IncomingCiphertextDir(context.profile_data_dir);
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  const std::string part = (std::filesystem::path(dir) / (AttachmentHashHex(fields.content_hash) + ".part")).string();
+  auto downloaded = HttpClient::GetToFile(fields.url, part, cap, context.progress,
+                                          /*restrict_to_public_https=*/!context.allow_local_cdn_for_test);
+  if (!downloaded) {
+    return downloaded.error();
   }
-  if (http.body.empty()) {
+  if (downloaded->status_code < 200 || downloaded->status_code >= 300) {
+    return AppError::Blob(downloaded->status_code == 404 ? Err::Blob::Expired : Err::Blob::Generic,
+                          "Attachment download failed with status " + std::to_string(downloaded->status_code));
+  }
+  std::ifstream input(part, std::ios::binary);
+  std::vector<uint8_t> bytes(static_cast<size_t>(downloaded->bytes));
+  input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  const bool read_ok = static_cast<bool>(input) || input.gcount() == static_cast<std::streamsize>(bytes.size());
+  input.close();
+  std::filesystem::remove(part, ec);
+  if (!read_ok || bytes.empty()) {
     return Error("Attachment download returned empty body");
   }
-  return std::vector<uint8_t>(http.body.begin(), http.body.end());
+  return bytes;
 }
 
 void FetchAttachmentCiphertextFromPeerAsync(const ChatAttachmentFields& fields,
@@ -78,6 +113,18 @@ void FetchAttachmentCiphertextFromPeerAsync(const ChatAttachmentFields& fields,
 
 } // namespace
 
+std::string IncomingCiphertextDir(const std::string& profile_data_dir) {
+  return (std::filesystem::path(profile_data_dir) / "blob_cipher" / "incoming").string();
+}
+
+void CleanIncomingCiphertext(const std::string& profile_data_dir) {
+  if (profile_data_dir.empty()) {
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(IncomingCiphertextDir(profile_data_dir), ec);
+}
+
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context) {
   if (!fields.url.empty()) {
     return true;
@@ -112,17 +159,17 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
   }
 
   if (context.peer_client && context.store && context.contacts && context.identity && !context.thread_id.empty()) {
-    FetchAttachmentCiphertextFromPeerAsync(fields, context, [fields, finish](Roe<std::vector<uint8_t>> peer_bytes) {
+    FetchAttachmentCiphertextFromPeerAsync(fields, context, [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) {
       if (peer_bytes) {
         finish(std::move(peer_bytes));
         return;
       }
-      finish(FetchAttachmentCiphertextFromCdn(fields));
+      finish(FetchAttachmentCiphertextFromCdn(fields, context));
     });
     return;
   }
 
-  finish(FetchAttachmentCiphertextFromCdn(fields));
+  finish(FetchAttachmentCiphertextFromCdn(fields, context));
 }
 
 Roe<std::vector<uint8_t>> FetchAttachmentCiphertext(const ChatAttachmentFields& fields,
@@ -171,9 +218,10 @@ void FetchAndDecryptAttachmentAsync(const ChatAttachmentFields& fields, const At
       return;
     }
 
-    const ByteVector cipher_bytes(ciphertext->begin(), ciphertext->end());
-    auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, cipher_bytes,
+    auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, *ciphertext,
                                                       fields.content_hash);
+    // The ciphertext is not needed again: free it before the plaintext is handed on (one copy at a time).
+    std::vector<uint8_t>().swap(*ciphertext);
     if (!plaintext) {
       // Whatever we just fed to Decrypt was bad — most likely a poisoned/corrupt pending push
       // (see ChatBlobResponder::ServePush). Drop it so the next attempt re-fetches instead of
@@ -194,7 +242,7 @@ void FetchAndDecryptAttachmentAsync(const ChatAttachmentFields& fields, const At
     }
 
     if (on_done) {
-      on_done(std::vector<uint8_t>(plaintext->begin(), plaintext->end()));
+      on_done(std::move(*plaintext));
     }
   });
 }

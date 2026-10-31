@@ -4,8 +4,10 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "common/Utilities.h"
+#include "common/tests/LocalHttpServer.h"
 
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 
 namespace pbr {
@@ -85,6 +87,81 @@ TEST_F(FetchSizeTest, ZeroDeclaredSizeIsNeverFetched) {
   auto cdn = FetchAttachmentCiphertext(zero, AttachmentFetchContext{});
   ASSERT_FALSE(cdn);
   EXPECT_NE(cdn.error().message.find("no size"), std::string::npos);
+}
+
+// The CDN path: streamed to a temp file under the profile, capped at the declared size, no buffered-client limit.
+class CdnFetchTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() / ("pp_cdn_fetch_" + util::GenerateUuid());
+    std::filesystem::create_directories(dir_);
+    context_.thread_id = "t1";
+    context_.profile_data_dir = dir_.string();
+    context_.allow_local_cdn_for_test = true;
+  }
+  void TearDown() override {
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+  }
+  PreparedChatAttachment Prepare(const size_t bytes) {
+    plain_.assign(bytes, 0x37);
+    auto prepared = PrepareChatAttachmentFromBytes(plain_, "clip.mp4", "", 200'000'000);
+    EXPECT_TRUE(prepared);
+    return *prepared;
+  }
+  bool NoLeftover() const {
+    std::error_code ec;
+    const auto incoming = std::filesystem::path(IncomingCiphertextDir(dir_.string()));
+    return !std::filesystem::exists(incoming) || std::filesystem::is_empty(incoming, ec);
+  }
+  std::filesystem::path dir_;
+  std::vector<uint8_t> plain_;
+  AttachmentFetchContext context_;
+  pbr::test::LocalHttpServer server_;
+};
+
+TEST_F(CdnFetchTest, ADownloadAboveTheBufferedClientsLimitIsStreamedAndDecrypted) {
+  auto prepared = Prepare(9 * 1024 * 1024);  // the buffered client stops at 8 MiB
+  server_.SetResponse(std::string(prepared.ciphertext.begin(), prepared.ciphertext.end()));
+  prepared.fields.url = server_.Url();
+  uint64_t last_done = 0;
+  uint64_t last_total = 0;
+  context_.progress = [&](const uint64_t done, const uint64_t total) {
+    last_done = done;
+    last_total = total;
+    return true;
+  };
+  auto result = FetchAndDecryptAttachment(prepared.fields, context_);
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_EQ(*result, plain_);
+  EXPECT_EQ(last_done, prepared.ciphertext.size());
+  EXPECT_EQ(last_total, prepared.ciphertext.size());
+  EXPECT_TRUE(NoLeftover());
+}
+
+TEST_F(CdnFetchTest, AnObjectLongerThanDeclaredIsAbortedAndNothingIsLeftBehind) {
+  auto prepared = Prepare(100'000);
+  server_.SetResponse(std::string(prepared.ciphertext.begin(), prepared.ciphertext.end()) + std::string(5000, 'x'));
+  prepared.fields.url = server_.Url();
+  auto result = FetchAndDecryptAttachment(prepared.fields, context_);
+  ASSERT_FALSE(result);
+  EXPECT_TRUE(NoLeftover());
+}
+
+TEST_F(CdnFetchTest, AnObjectShorterThanDeclaredIsRefused) {
+  auto prepared = Prepare(100'000);
+  server_.SetResponse(std::string(prepared.ciphertext.begin(), prepared.ciphertext.end() - 100));
+  prepared.fields.url = server_.Url();
+  EXPECT_FALSE(FetchAndDecryptAttachment(prepared.fields, context_));
+  EXPECT_TRUE(NoLeftover());
+}
+
+TEST_F(CdnFetchTest, InterruptedDownloadsAreCleanedAtStart) {
+  const auto dir = std::filesystem::path(IncomingCiphertextDir(dir_.string()));
+  std::filesystem::create_directories(dir);
+  std::ofstream(dir / "left.part") << "partial";
+  CleanIncomingCiphertext(dir_.string());
+  EXPECT_FALSE(std::filesystem::exists(dir / "left.part"));
 }
 
 } // namespace
