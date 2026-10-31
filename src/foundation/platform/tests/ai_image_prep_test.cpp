@@ -151,5 +151,134 @@ TEST_F(AiImagePrepTest, ReEncodingDropsExifSegment) {
   EXPECT_FALSE(HasSubstring(result->bytes, "GPSMARKER"));
 }
 
+// A JPEG whose left half is red and right half blue, with an EXIF orientation segment inserted.
+std::string SaveTwoToneJpegWithOrientation(const std::filesystem::path& dir, const int orientation) {
+  SDL_Surface* s = SDL_CreateSurface(200, 100, SDL_PIXELFORMAT_RGB24);
+  SDL_Rect left{0, 0, 100, 100};
+  SDL_Rect right{100, 0, 100, 100};
+  SDL_FillSurfaceRect(s, &left, SDL_MapSurfaceRGB(s, 255, 0, 0));
+  SDL_FillSurfaceRect(s, &right, SDL_MapSurfaceRGB(s, 0, 0, 255));
+  const std::string path = (dir / "two_tone.jpg").string();
+  EXPECT_TRUE(IMG_SaveJPG(s, path.c_str(), 95)) << SDL_GetError();
+  SDL_DestroySurface(s);
+
+  std::vector<uint8_t> jpeg;
+  {
+    std::ifstream in(path, std::ios::binary);
+    jpeg.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  const std::vector<uint8_t> segment = {0xFF, 0xE1, 0x00, 0x22, 'E', 'x', 'i', 'f', 0, 0,
+                                        'M',  'M',  0,    0x2A, 0,   0,   0,   8,
+                                        0,    1,    0x01, 0x12, 0,   3,   0,   0,   0, 1,
+                                        0,    static_cast<uint8_t>(orientation), 0, 0,
+                                        0,    0,    0,    0};
+  jpeg.insert(jpeg.begin() + 2, segment.begin(), segment.end());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(jpeg.data()), static_cast<std::streamsize>(jpeg.size()));
+  return path;
+}
+
+SDL_Surface* Decode(const std::vector<uint8_t>& bytes) {
+  return IMG_Load_IO(SDL_IOFromConstMem(bytes.data(), bytes.size()), true);
+}
+
+void ExpectRedAndBlueAt(SDL_Surface* surface, const int rx, const int ry, const int bx, const int by) {
+  uint8_t r = 0, g = 0, b = 0, a = 0;
+  ASSERT_TRUE(SDL_ReadSurfacePixel(surface, rx, ry, &r, &g, &b, &a));
+  EXPECT_GT(r, 200) << "red expected at " << rx << "," << ry;
+  EXPECT_LT(b, 60);
+  ASSERT_TRUE(SDL_ReadSurfacePixel(surface, bx, by, &r, &g, &b, &a));
+  EXPECT_GT(b, 200) << "blue expected at " << bx << "," << by;
+  EXPECT_LT(r, 60);
+}
+
+TEST_F(AiImagePrepTest, ExifOrientationIsAppliedOnlyWhenAsked) {
+  const std::string path = SaveTwoToneJpegWithOrientation(dir_, 6); // needs a quarter turn clockwise
+
+  auto untouched = PrepareAiImageFromFile(path);
+  ASSERT_TRUE(untouched) << untouched.error().message;
+  EXPECT_EQ(untouched->width, 200) << "the AI path is unchanged";
+  EXPECT_EQ(untouched->height, 100);
+
+  ImagePrepOptions options;
+  options.apply_exif_orientation = true;
+  auto upright = PrepareAiImageFromFile(path, 1536u * 1024u, 2048, options);
+  ASSERT_TRUE(upright) << upright.error().message;
+  EXPECT_EQ(upright->width, 100);
+  EXPECT_EQ(upright->height, 200);
+  SDL_Surface* surface = Decode(upright->bytes);
+  ASSERT_NE(surface, nullptr);
+  ExpectRedAndBlueAt(surface, 50, 25, 50, 175); // the left half is now the top
+  SDL_DestroySurface(surface);
+}
+
+TEST_F(AiImagePrepTest, EveryOrientationPutsTheRedHalfWhereItBelongs) {
+  // For each tag: where the red (source left) half ends up, as a point of the upright result.
+  struct Case {
+    int orientation;
+    int width, height;
+    int rx, ry, bx, by;
+  };
+  const Case cases[] = {
+      {2, 200, 100, 150, 50, 50, 50},   // mirrored: red on the right
+      {3, 200, 100, 150, 50, 50, 50},   // 180 degrees: red on the right
+      {4, 200, 100, 50, 50, 150, 50},   // vertical flip: red stays left
+      {5, 100, 200, 50, 50, 50, 150},   // transpose: red on top
+      {6, 100, 200, 50, 50, 50, 150},   // 90 clockwise: red on top
+      {7, 100, 200, 50, 150, 50, 50},   // transverse: red at the bottom
+      {8, 100, 200, 50, 150, 50, 50},   // 90 counter-clockwise: red at the bottom
+  };
+  for (const Case& c : cases) {
+    const std::string path = SaveTwoToneJpegWithOrientation(dir_, c.orientation);
+    ImagePrepOptions options;
+    options.apply_exif_orientation = true;
+    auto result = PrepareAiImageFromFile(path, 1536u * 1024u, 2048, options);
+    ASSERT_TRUE(result) << c.orientation;
+    EXPECT_EQ(result->width, c.width) << c.orientation;
+    EXPECT_EQ(result->height, c.height) << c.orientation;
+    SDL_Surface* surface = Decode(result->bytes);
+    ASSERT_NE(surface, nullptr);
+    SCOPED_TRACE(c.orientation);
+    ExpectRedAndBlueAt(surface, c.rx, c.ry, c.bx, c.by);
+    SDL_DestroySurface(surface);
+  }
+}
+
+TEST_F(AiImagePrepTest, PixelLimitRefusesBeforeDecoding) {
+  ImagePrepOptions options;
+  options.max_pixels = 50'000;
+
+  const std::string big = Save(MakeNoisySurface(300, 300, false), "big.png"); // 90 000 pixels
+  auto refused = PrepareAiImageFromFile(big, 4'000'000, 2048, options);
+  ASSERT_FALSE(refused);
+  EXPECT_EQ(AiImagePrepErrorOf(refused.error()), AiImagePrepError::TooLarge);
+
+  const std::string small = Save(MakeNoisySurface(100, 100, false), "fits.png");
+  EXPECT_TRUE(PrepareAiImageFromFile(small, 4'000'000, 2048, options));
+
+  // A small file whose header claims a gigantic picture: refused on the header alone (a decode would
+  // try to allocate it).
+  std::vector<uint8_t> bomb = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
+                               0x00, 0x01, 0x86, 0xA0, 0x00, 0x01, 0x86, 0xA0, 8, 2, 0, 0, 0};
+  const std::string bomb_path = (dir_ / "bomb.png").string();
+  {
+    std::ofstream out(bomb_path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bomb.data()), static_cast<std::streamsize>(bomb.size()));
+  }
+  auto bomb_result = PrepareAiImageFromFile(bomb_path, 4'000'000, 2048, options);
+  ASSERT_FALSE(bomb_result);
+  EXPECT_EQ(AiImagePrepErrorOf(bomb_result.error()), AiImagePrepError::TooLarge);
+}
+
+TEST_F(AiImagePrepTest, PixelLimitTreatsAnUnreadableHeadAsNotAnImage) {
+  ImagePrepOptions options;
+  options.max_pixels = 1'000'000;
+  const std::string path = (dir_ / "text.png").string();
+  std::ofstream(path) << "not an image at all";
+  auto result = PrepareAiImageFromFile(path, 4'000'000, 2048, options);
+  ASSERT_FALSE(result);
+  EXPECT_EQ(AiImagePrepErrorOf(result.error()), AiImagePrepError::NotAnImage);
+}
+
 } // namespace
 } // namespace pbr

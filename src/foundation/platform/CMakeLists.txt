@@ -37,6 +37,7 @@ set(_pp_platform_gui_sources
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
   AiImagePrep.cpp
+  ImageMetadata.cpp
   ImageEncode.cpp
   ProfileIconImagePrep.cpp
   VideoPosterExtractor_Common.cpp
