@@ -18,7 +18,7 @@ Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.m
 
 ## Open (next first)
 
-1. The mention flows seen on screen (picker, highlight, jump), and a lab case for a held mention.
+1. A lab case for a held mention; a click on a context-menu item under Xvfb did nothing (the picker's and the chat menu's) — check on a real desktop.
 
 ## Notes for whoever picks this up
 

@@ -142,6 +142,11 @@ std::vector<TextSpan> ChatMentionPicker::SpansFor(const std::string& thread_id, 
 
 void ChatMentionPicker::ForgetThread(const std::string& thread_id) {
   recorded_.erase(thread_id);
+  if (thread_id == last_thread_) {
+    // Sent (or gone): the draft was cleared in code, with no draft_changed — what was typed before is not the
+    // text the next `@` is typed into (it would not be seen as typed, and the picker would not open).
+    last_text_.clear();
+  }
 }
 
 void ChatMentionPicker::Reset() {
