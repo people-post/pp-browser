@@ -97,9 +97,9 @@
     <false/>
   </dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>PP uses the microphone for voice and video calls and to record voice messages.</string>
+  <string>PP uses the microphone for voice and video calls, to record voice messages, and to record videos in chats.</string>
   <key>NSCameraUsageDescription</key>
-  <string>PP uses the camera for video calls and scanning QR codes.</string>
+  <string>PP uses the camera for video calls, scanning QR codes, and taking photos and videos in chats.</string>
   <key>UIBackgroundModes</key>
   <array>
     <string>fetch</string>
