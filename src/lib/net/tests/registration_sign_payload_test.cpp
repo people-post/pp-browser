@@ -52,4 +52,20 @@ TEST(RegistrationSignPayloadTest, BuildProfileUpdateSignBytesMatchesGoldenVector
             "75310000000000000005616c6963650000018bcfe56803");
 }
 
+// Layout mirrors the relay server's buildMeshHeartbeatSignBytes.
+TEST(RegistrationSignPayloadTest, BuildRelayHeartbeatSignBytesMatchesGoldenVector) {
+  const auto bytes = BuildRelayHeartbeatSignBytes("relay:u1", "12D3KooWpeer", "active", 1700000000007);
+  EXPECT_EQ(BytesToHex(bytes),
+            "70702d62726f777365723a72656c61792d6865617274626561742d76310001000000000000000872656c61793a"
+            "7531000000000000000c313244334b6f6f577065657200000000000000066163746976650000018bcfe56807");
+}
+
+TEST(RegistrationSignPayloadTest, HeartbeatSignBytesBindEveryField) {
+  const auto base = BuildRelayHeartbeatSignBytes("relay:u1", "p1", "active", 1);
+  EXPECT_NE(base, BuildRelayHeartbeatSignBytes("relay:u2", "p1", "active", 1));
+  EXPECT_NE(base, BuildRelayHeartbeatSignBytes("relay:u1", "p2", "active", 1));
+  EXPECT_NE(base, BuildRelayHeartbeatSignBytes("relay:u1", "p1", "draining", 1));
+  EXPECT_NE(base, BuildRelayHeartbeatSignBytes("relay:u1", "p1", "active", 2));
+}
+
 } // namespace pbr

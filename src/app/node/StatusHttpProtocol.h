@@ -55,6 +55,11 @@ struct StatusHttpSnapshot {
  */
 struct StatusHttpActions {
   std::function<bool(const std::string& peer_id)> dht_find;
+  /**
+   * `POST /control/state` {"state":"active|draining|retiring"}: true = applied, false = refused (409).
+   * Unset (the route answers 404) unless the status bind is loopback — a reachable port must not steer the node.
+   */
+  std::function<bool(const std::string& state)> set_state;
 };
 
 struct StatusHttpResponse {
@@ -70,9 +75,11 @@ struct StatusHttpRequest {
   /** After `?`, as sent (empty when none). */
   std::string query;
   std::string authorization;
+  /** Present only when Content-Length said so; the parse waits for all of it. */
+  std::string body;
 };
 
-/** Returns nullopt if the buffer is incomplete or malformed beyond recovery. */
+/** Returns nullopt if the buffer (headers, and the body Content-Length announces) is incomplete or malformed. */
 std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw);
 
 StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,

@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "app/node/NodeHeartbeat.h"
 #include "app/node/NodeMetrics.h"
 #include "app/node/NodeMeshPublish.h"
 #include "app/node/StatusHttpProtocol.h"
@@ -11,6 +12,8 @@
 #include "common/Logger.h"
 #include "common/ValueJson.h"
 #include "mesh/dht/AmpDhtProtocol.h"
+#include "lib/net/HttpClient.h"
+#include "lib/net/RegistrationSignPayload.h"
 #include "mesh/reachability/Reachability.h"
 #if defined(PP_BROWSER_HAS_LEDGER)
 #include "domain/node/NodeLedgerRole.h"
@@ -21,6 +24,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -77,7 +81,10 @@ void PrintUsage(const char* argv0) {
       << "Live status HTTP (long-running mode), e.g.:\n"
       << "  curl -sS http://127.0.0.1:18518/healthz\n"
       << "  curl -sS http://127.0.0.1:18518/status\n"
-      << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n";
+      << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n"
+      << "\n"
+      << "Drain before maintenance (loopback status bind only; the mesh directory sees the new state):\n"
+      << "  curl -sS -X POST -d '{\"state\":\"draining\"}' http://127.0.0.1:18518/control/state\n";
 }
 
 /**
@@ -179,6 +186,40 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
   if (boot.secrets) {
     boot.secrets->Shutdown();
   }
+}
+
+pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot) {
+  pbr::NodeHeartbeatDeps deps;
+  deps.base_url = boot.config.registration.base_url;
+  pbr::IdentityStore* identity = boot.identity.get();
+  pbr::NodeBootstrapResult* node = &boot;
+  deps.identity = [identity]() {
+    pbr::HeartbeatIdentity out;
+    if (auto loaded = identity->Get(); loaded && loaded->registered) {
+      out.relay_user_id = loaded->relay_user_id;
+      out.peer_id = loaded->peer_id;
+    }
+    return out;
+  };
+  deps.sign = [identity](const std::string& relay_user_id, const std::string& peer_id, const std::string& state,
+                         int64_t timestamp) {
+    return identity->SignBytes(pbr::BuildRelayHeartbeatSignBytes(relay_user_id, peer_id, state, timestamp));
+  };
+  deps.post = [](const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers,
+                 long timeout_s) {
+    return pbr::HttpClient::Post(url, body, headers, 64 * 1024,
+                                 pbr::HttpTimeout{.total_s = timeout_s, .connect_s = std::min(timeout_s, 5L)});
+  };
+  deps.reregister = [node]() { return pbr::PublishOrRenewMeshNodeListing(node->config, *node->identity, ""); };
+  deps.unix_ms = []() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+  };
+  deps.steady_ms = []() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
+  return deps;
 }
 
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
@@ -315,6 +356,11 @@ int main(int argc, char** argv) {
 
   // Operator metrics for /metrics (projects/node-monitoring); goes before the mesh stops.
   pbr::ScopedMetricsCollector node_metrics = pbr::RegisterNodeMetrics(*boot);
+  // Heartbeat runs only where this node publishes itself to a mesh directory.
+  std::optional<pbr::NodeHeartbeat> heartbeat;
+  if (boot->config.mesh.mesh_publish && !boot->config.registration.base_url.empty()) {
+    heartbeat.emplace(MakeHeartbeatDeps(*boot));
+  }
   pbr::StatusHttpServer status_http;
   if (auto bind = pbr::ParseStatusHttpBind(status_addr_spec)) {
     pbr::StatusHttpAuthConfig auth;
@@ -337,6 +383,14 @@ int main(int argc, char** argv) {
           }
         });
         return true;
+      };
+    }
+    // State control steers the node: loopback binds only.
+    if (heartbeat && pbr::IsLoopbackStatusBindHost(bind->host)) {
+      pbr::NodeHeartbeat* hb = &*heartbeat;
+      actions.set_state = [hb](const std::string& state) {
+        const auto parsed = pbr::ParseHeartbeatState(state);
+        return parsed && hb->SetState(*parsed);
       };
     }
     if (auto started = status_http.Start(*bind, std::move(auth),
@@ -365,9 +419,17 @@ int main(int argc, char** argv) {
   };
   schedule_probe();
 
-  // Publish/renew mesh_node listing when advertise multiaddrs configured (N027).
+  // Publish/renew mesh_node listing when advertise multiaddrs configured (N027); a failed first
+  // publish is retried with backoff below until the node is registered.
+  constexpr auto kPublishRetryInitial = std::chrono::seconds(10);
+  constexpr auto kPublishRetryMax = std::chrono::minutes(5);
+  std::chrono::steady_clock::duration publish_retry_delay = kPublishRetryInitial;
+  auto publish_retry_due = std::chrono::steady_clock::now();
+  bool publish_pending = false;
   if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
     root.warning << "mesh directory publish skipped/failed: " << published.error().message;
+    publish_pending = true;
+    publish_retry_due += publish_retry_delay;
   }
 
   root.info << "pp-node running (SIGINT/SIGTERM to stop)";
@@ -386,6 +448,19 @@ int main(int argc, char** argv) {
       last_probe = now;
       schedule_probe();
     }
+    if (publish_pending && now >= publish_retry_due) {
+      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); published) {
+        publish_pending = false;
+        last_mesh_publish = now;
+      } else {
+        root.warning << "mesh directory publish retry failed: " << published.error().message;
+        publish_retry_delay = std::min<std::chrono::steady_clock::duration>(publish_retry_delay * 2, kPublishRetryMax);
+        publish_retry_due = now + publish_retry_delay;
+      }
+    }
+    if (heartbeat) {
+      heartbeat->Tick();
+    }
     if (now - last_mesh_publish > std::chrono::hours(12)) {
       last_mesh_publish = now;
       if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
@@ -396,6 +471,9 @@ int main(int argc, char** argv) {
   }
 
   root.info << "pp-node shutting down";
+  if (heartbeat) {
+    heartbeat->SendFinal();  // before the mesh stops; bounded by a short timeout
+  }
   ledger.Stop();  // its protocols withdrawn, its thread joined — before the mesh stops
   status_http.Stop();
   node_metrics.Reset();
