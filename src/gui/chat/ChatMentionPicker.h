@@ -21,7 +21,8 @@ namespace pbr {
 /**
  * The composer's `@` picker in a group chat (group-chat G015). Typing `@` at the start or after a space opens
  * a menu of the group's other members by public nickname (`@everyone` too for the owner); typing on filters
- * it, a finished word or Escape closes it. Choosing puts `@<nickname> ` in the draft and records the mention;
+ * it, a finished word or Escape closes it. The query runs from the `@` to the caret, so an `@` typed in front of a
+ * word leaves the word alone. Choosing puts `@<nickname> ` in the draft and records the mention;
  * at send, SpansFor() finds the recorded tokens in the final text. Recorded mentions are kept per chat, like
  * its draft. The lists and the span rules are GroupMentions' (feature layer).
  *
@@ -47,6 +48,8 @@ public:
 private:
   /** The draft's text as the input holds it now. */
   std::string CurrentDraft() const;
+  /** The caret in `text`, as a byte offset (the input counts code points). */
+  size_t CaretByte(const std::string& text) const;
   void Show(const std::vector<MentionCandidate>& lines);
   void Choose(const MentionCandidate& line);
 
@@ -57,8 +60,9 @@ private:
   /** The draft at the last change, and whose it was (a switch of chats is not an edit). */
   std::string last_text_;
   std::string last_thread_;
-  /** While open: the byte offset of its `@`, and the lines shown. */
+  /** While open: the byte offset of its `@`, the caret when the lines were made, and the lines shown. */
   std::optional<size_t> at_;
+  size_t caret_ = 0;
   std::vector<MentionCandidate> lines_;
   std::map<std::string, std::vector<ComposerMention>> recorded_;
 };

@@ -212,24 +212,47 @@ TEST(GroupMentionsTest, TypingAtOpensThePickerAtTheStartOrAfterASpace) {
   EXPECT_FALSE(TypedMentionTrigger("@b", "@")) << "a deletion";
 }
 
-TEST(GroupMentionsTest, TheQueryFollowsTheAtUntilTheWordIsFinished) {
-  EXPECT_EQ(MentionQueryAt("hi @", 3), std::optional<std::string>(""));
-  EXPECT_EQ(MentionQueryAt("hi @bo", 3), std::optional<std::string>("bo"));
-  EXPECT_EQ(MentionQueryAt("hi @ there", 3), std::optional<std::string>(""));
-  EXPECT_FALSE(MentionQueryAt("hi @bo ", 3)) << "a space after the word: the user typed on";
-  EXPECT_FALSE(MentionQueryAt("hi bo", 3)) << "the @ was deleted";
-  EXPECT_FALSE(MentionQueryAt("hi", 3));
+TEST(GroupMentionsTest, TheQueryRunsFromTheAtToTheCaret) {
+  EXPECT_EQ(MentionQueryAt("hi @", 3, 4), std::optional<std::string>(""));
+  EXPECT_EQ(MentionQueryAt("hi @bo", 3, 6), std::optional<std::string>("bo"));
+  EXPECT_EQ(MentionQueryAt("hi @ there", 3, 4), std::optional<std::string>(""));
+  EXPECT_EQ(MentionQueryAt("hi @bo there", 3, 6), std::optional<std::string>("bo")) << "words after the caret are not the query";
+  EXPECT_FALSE(MentionQueryAt("hi @bo ", 3, 7)) << "a space after the word: the user typed on";
+  EXPECT_FALSE(MentionQueryAt("hi bo", 3, 5)) << "the @ was deleted";
+  EXPECT_FALSE(MentionQueryAt("hi", 3, 2));
+  EXPECT_FALSE(MentionQueryAt("hi @bo", 3, 3)) << "the caret moved in front of the @";
+  EXPECT_EQ(MentionQueryAt("hi @bo", 3, 99), std::optional<std::string>("bo")) << "a caret past the end is the end";
+}
+
+TEST(GroupMentionsTest, AnAtTypedInFrontOfAWordLeavesTheWordAlone) {
+  // "hello" with "@" typed at the start: the caret is right after the @, so the query is empty ...
+  EXPECT_EQ(MentionQueryAt("@hello", 0, 1), std::optional<std::string>(""));
+  // ... and choosing replaces the @ only.
+  MentionInsert inserted = InsertMention("@hello", 0, 1, "@Bob");
+  EXPECT_EQ(inserted.text, "@Bob hello");
+  EXPECT_EQ(inserted.caret, 5u);
+  // In Chinese text (3 bytes a character), with the caret counted in bytes: "你好@世界" -> "你好@Bob 世界".
+  const std::string hello = "\xE4\xBD\xA0\xE5\xA5\xBD";  // 你好
+  const std::string world = "\xE4\xB8\x96\xE7\x95\x8C";  // 世界
+  const std::string text = hello + "@" + world;
+  EXPECT_EQ(MentionQueryAt(text, hello.size(), hello.size() + 1), std::optional<std::string>(""));
+  inserted = InsertMention(text, hello.size(), hello.size() + 1, "@Bob");
+  EXPECT_EQ(inserted.text, hello + "@Bob " + world);
+  EXPECT_EQ(inserted.caret, hello.size() + 5);
+  // Part of the word typed after the @: only that part is replaced.
+  EXPECT_EQ(MentionQueryAt("@boring", 0, 3), std::optional<std::string>("bo"));
+  EXPECT_EQ(InsertMention("@boring", 0, 3, "@Bob").text, "@Bob ring");
 }
 
 TEST(GroupMentionsTest, ChoosingReplacesTheQueryWithTheTokenAndASpace) {
-  MentionInsert inserted = InsertMention("hi @bo", 3, "@Bob");
+  MentionInsert inserted = InsertMention("hi @bo", 3, 6, "@Bob");
   EXPECT_EQ(inserted.text, "hi @Bob ");
   EXPECT_EQ(inserted.caret, inserted.text.size());
-  inserted = InsertMention("@ there", 0, "@everyone");
+  inserted = InsertMention("@ there", 0, 1, "@everyone");
   EXPECT_EQ(inserted.text, "@everyone there");
   EXPECT_EQ(inserted.caret, 10u);
   const std::string name = "\xE5\xBC\xA0\xE4\xB8\x89";
-  inserted = InsertMention("@\xE5\xBC\xA0", 0, "@" + name);
+  inserted = InsertMention("@\xE5\xBC\xA0", 0, 4, "@" + name);
   EXPECT_EQ(inserted.text, "@" + name + " ");
   EXPECT_EQ(inserted.caret, 1 + name.size() + 1);
 }
