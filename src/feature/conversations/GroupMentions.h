@@ -17,8 +17,8 @@ namespace pbr {
 // Mentions in a group chat (group-chat G015), the parts the GUI needs without a GUI: what the composer's
 // `@` picker lists and inserts, the spans a draft is sent with, and which spans a transcript highlights.
 
-/** The token the picker puts for `@everyone` (the owner's to use). */
-inline constexpr const char* kEveryoneMentionToken = "@everyone";
+/** What the composer inserts for an everyone mention when no localized word is given. */
+inline constexpr const char* kEveryoneMentionWord = "everyone";
 
 /**
  * The name a member is mentioned by: their PUBLIC nickname — the one on the account card the roster carried,
@@ -33,27 +33,29 @@ struct MentionCandidate {
   TextSpanKind kind = TextSpanKind::Mention;
   /** Mention: the member's account id. */
   std::string account_id;
-  /** What the line shows; the inserted token is `@` + this. */
+  /** What the line shows; the inserted token is `@` + this. Everyone: the word of the user's language. */
   std::string name;
   /** Set only when another member in the group has the same name: the line shows it after the name. */
   std::string short_id;
 
-  std::string Token() const { return kind == TextSpanKind::Everyone ? kEveryoneMentionToken : "@" + name; }
+  std::string Token() const { return "@" + name; }
   /** What the picker shows: the name, then ` · <short id>` when names collide. */
   std::string Label() const { return short_id.empty() ? name : name + " · " + short_id; }
   bool operator==(const MentionCandidate&) const = default;
 };
 
 /**
- * The picker's lines: `@everyone` first when this device is the group's owner (`local_is_owner`: the owner the
- * roster names), then the other members (never ourselves) by name. `query` (the text typed after the `@`)
- * keeps the lines whose name contains it, ignoring ASCII case. Members that share a name carry a `short_id`
- * (decided over the whole group, not the query).
+ * The picker's lines: the everyone line first when this device is the group's owner (`local_is_owner`: the owner
+ * the roster names), then the other members (never ourselves) by name. `everyone_word` is what that line
+ * inserts after the `@` (the user's language: `@所有人`, `@everyone`). `query` (the text typed after the `@`)
+ * keeps the lines whose name contains it, ignoring ASCII case; the everyone line also answers to "everyone"
+ * whatever its word. Members that share a name carry a `short_id` (decided over the whole group, not the query).
  */
 std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
                                                 const std::string& local_account, bool local_is_owner,
                                                 const std::function<std::string(const std::string& account_id)>& public_name,
-                                                const std::string& query);
+                                                const std::string& query,
+                                                const std::string& everyone_word = kEveryoneMentionWord);
 
 /**
  * The `@` the user just typed that opens the picker: `after` is `before` with one `@` added, at the start of the

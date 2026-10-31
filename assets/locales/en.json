@@ -800,6 +800,7 @@
     "chat.menu.delete_for_everyone": "Delete for everyone",
     "chat.menu.reply": "Reply",
     "chat.mention.everyone": "@everyone — all members",
+    "chat.mention.everyone_word": "everyone",
     "chat.menu.chat_with_ai": "Chat with AI",
     "chat.menu.message_a_contact": "Message a contact",
     "chat.menu.find_someone": "Find someone",

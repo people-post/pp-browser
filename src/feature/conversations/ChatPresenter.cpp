@@ -1,6 +1,7 @@
 #include "feature/conversations/ChatPresenter.h"
 
 #include "feature/conversations/ConversationsFacade.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"
@@ -591,7 +592,8 @@ std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::str
   };
   // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
   const bool local_is_owner = roster->owner == roster->local_account;
-  return MentionCandidates(*members, roster->local_account, local_is_owner, public_name, query);
+  return MentionCandidates(*members, roster->local_account, local_is_owner, public_name, query,
+                           Tr("chat.mention.everyone_word"));
 }
 
 std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {
