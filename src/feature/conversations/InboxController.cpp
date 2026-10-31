@@ -545,7 +545,12 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
   std::optional<int64_t> before;
   for (;;) {
     auto page = store_.GetMessagesPage(thread_id, before, kDefaultMessagesPageSize);
-    if (!page || page->empty()) {
+    if (!page) {
+      // One unreadable row fails the whole page: say so, or the chat just reads empty.
+      log().warning << "Transcript not read thread_id=" << thread_id << ": " << page.error().message;
+      break;
+    }
+    if (page->empty()) {
       break;
     }
     const int64_t page_oldest = page->front().display_order;
@@ -580,7 +585,11 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
                    messages.end());
   }
 
-  return AssembleTranscript(messages, controls_);
+  ThreadKind kind = ThreadKind::Direct;
+  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+    kind = (*thread)->kind;
+  }
+  return AssembleTranscript(messages, controls_, kind);
 }
 
 TranscriptFacts InboxController::Facts() const {

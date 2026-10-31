@@ -205,6 +205,9 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   if (*local != metadata->owner_identity) {
     return Error("Only the group owner may invite members");
   }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return Error(group_roster_sync::kGroupDissolvedError);  // G016: no invites into an ended group
+  }
   if (auto can = invite_gate_.CanSendInvite(MemberRole::Owner); !can || !*can) {
     return Error("Actor lacks invite permission");
   }
@@ -327,6 +330,11 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
   }
   if (*local != (*pending)->invitee_identity) {
     return Error("Invite not addressed to local identity");
+  }
+
+  if (IsDissolved((*pending)->group_id)) {
+    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);  // G016: an invite to an ended group is void
+    return Error(group_roster_sync::kGroupDissolvedError);
   }
 
   const std::string title =
@@ -567,6 +575,9 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
   if (*local != metadata->owner_identity) {
     return Error("Only the group owner may remove members");
   }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return Error(group_roster_sync::kGroupDissolvedError);
+  }
   if (member_identity == *local) {
     return Error("Owner cannot remove self — transfer ownership or leave");
   }
@@ -702,6 +713,97 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   return {};
 }
 
+bool GroupMembershipWorkflow::IsDissolved(const std::string& group_id) const {
+  auto metadata = roster_.LoadMetadata(group_id);
+  return metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved;
+}
+
+void GroupMembershipWorkflow::AppendDissolvedLine(const std::string& group_id, const std::string& owner_identity,
+                                                  const std::string& sender_identity) {
+  auto thread = store_.FindGroupThread(group_id);
+  if (!thread || !*thread) {
+    return;  // the chat was deleted: nothing to keep
+  }
+  if (auto detail = GroupMembershipCodec::EncodeGroupDissolved(group_id, owner_identity)) {
+    (void)AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::GroupDissolved, "Group dissolved",
+                                      *detail, sender_identity);
+  }
+  Thread row = **thread;
+  row.preview = "Group dissolved";
+  row.updated_at = util::NowUnixMs();
+  (void)store_.UpsertThread(row);
+}
+
+Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  std::vector<std::string> recipients;
+  std::string detail;
+  {
+    auto update = GroupRosterStore::LockForUpdate();  // the roster we sign and the one we end, as one
+    auto metadata = LoadMetadataOrError(group_id);
+    if (!metadata) {
+      return metadata.error();
+    }
+    if (*local != metadata->owner_identity) {
+      return Error("Only the group owner may dissolve the group");
+    }
+    if (metadata->sync_state == GroupSyncState::Dissolved) {
+      return {};
+    }
+    auto members = roster_.ListMembers(group_id);
+    if (!members) {
+      return members.error();
+    }
+    for (const GroupRosterMember& m : *members) {
+      if (m.member_identity != *local) {
+        recipients.push_back(m.member_identity);
+      }
+    }
+    const uint64_t epoch = metadata->roster_epoch + 1;
+    if (!recipients.empty()) {
+      // Signed before anything changes here: without a key nobody could be told, and the group would end for us alone.
+      auto identity = identity_.Get();
+      if (!identity) {
+        return identity.error();
+      }
+      if (identity->account_signing_public_key_b64.empty()) {
+        return Error("No account signing key yet");
+      }
+      std::vector<GroupRosterStatementMember> rows;
+      rows.reserve(members->size());
+      for (const GroupRosterMember& m : *members) {
+        rows.push_back({m.member_identity, m.role, m.joined_at});
+      }
+      std::vector<GroupOwnerTransfer> chain;
+      if (auto held = group_roster_sync::Held(*metadata)) {
+        chain = held->owner_chain;
+      }
+      auto statement = group_roster_statement::Sign(identity_, identity->account_signing_public_key_b64, group_id,
+                                                    epoch, std::move(rows), std::move(chain), /*dissolved=*/true);
+      if (!statement) {
+        return statement.error();
+      }
+      detail = group_roster_sync_codec::EncodeStatement(*statement);
+    }
+    auto ended = EndGroupInRoster(roster_, group_id, *local, epoch);
+    if (!ended) {
+      return ended.error();
+    }
+  }
+  AppendDissolvedLine(group_id, *local, kLocalSelfContactId);  // our own line reads "You dissolved…"
+  log().info << "Group dissolved group=" << group_id << " members_to_tell=" << recipients.size();
+  // Best-effort: each copy goes through the outbox, which retries; one member we cannot reach holds nobody back.
+  (void)FanOutPairwise(SelectPairwiseFanoutTargets(recipients, *local), PairwiseFanoutMode::BestEffort,
+                       [&](const std::string& identity) {
+                         return SendMembershipDirectMessage(identity, GroupMembershipControlType::GroupDissolved,
+                                                            detail, "The group owner dissolved this group");
+                       });
+  return {};
+}
+
 void GroupMembershipWorkflow::MarkMemberUnreachable(const std::string& group_id, const std::string& member_identity) {
   if (group_id.empty() || member_identity.empty()) {
     return;
@@ -762,8 +864,8 @@ std::vector<PendingGroupInvite> GroupMembershipWorkflow::ListInvitedWaiting(cons
 
 bool GroupMembershipWorkflow::IsOwnerUnreachable(const std::string& group_id) const {
   auto metadata = roster_.LoadMetadata(group_id);
-  if (!metadata || !*metadata) {
-    return false;
+  if (!metadata || !*metadata || (*metadata)->sync_state == GroupSyncState::Dissolved) {
+    return false;  // an ended group waits for no owner
   }
   return IsMemberUnreachable(group_id, (**metadata).owner_identity);
 }
@@ -772,6 +874,9 @@ Roe<void> GroupMembershipWorkflow::EnsureOwnerUnreachableAdvisory(const std::str
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
+  }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return {};  // G016: an ended group has no owner to wait for
   }
   auto thread = store_.FindGroupThread(group_id);
   if (!thread || !*thread) {
@@ -946,6 +1051,9 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
   }
   if (*local != metadata->owner_identity) {
     return Error("Only the group owner may rename the group for everyone");
+  }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return Error(group_roster_sync::kGroupDissolvedError);
   }
   if (!RoleHasPermission(MemberRole::Owner, kPermRename)) {
     return Error("Actor lacks rename permission");
@@ -1323,7 +1431,8 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
     const bool member = local && std::any_of(members->begin(), members->end(), [&](const GroupRosterMember& m) {
                           return m.member_identity == *local;
                         });
-    if ((*metadata)->sync_state == GroupSyncState::Removed || (local && !member)) {
+    if ((*metadata)->sync_state == GroupSyncState::Removed || (*metadata)->sync_state == GroupSyncState::Dissolved ||
+        (local && !member)) {
       group.left = true;  // a tombstone: an older copy where we were in must not bring it back
       groups.push_back(std::move(group));
       continue;

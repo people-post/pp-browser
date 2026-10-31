@@ -3,6 +3,8 @@
 #include "lib/people/ContactsStore.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
+#include "lib/messaging/GroupMembershipCodec.h"
+#include "common/Utilities.h"
 #include "domain/peers/PeerDisplaySources.h"
 
 #include <filesystem>
@@ -158,6 +160,46 @@ TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
   ASSERT_TRUE(listed);
   EXPECT_TRUE(listed->empty());
   EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
+}
+
+// G016: a dissolved group's chat is deleted like any chat (nobody is left to tell); the line shows in the group only.
+TEST(InboxControllerTest, ADissolvedGroupChatReadsWithItsLineAndDeletes) {
+  InboxTestEnv env("dissolved_group_chat");
+  auto group = env.store->FindOrCreateGroupThread("group:hike", "Weekend hike", {});
+  ASSERT_TRUE(group);
+  ThreadMessage said;
+  said.id = "m1";
+  said.thread_id = group->id;
+  said.sender_contact_id = "account:carol";
+  said.content_type = ChatContentType::Text;
+  said.text = "see you at eight";
+  said.timestamp = 1;
+  ASSERT_TRUE(env.store->AppendMessage(said));
+  const std::string detail = GroupMembershipCodec::EncodeGroupDissolved("group:hike", "account:alice").value();
+  auto line = GroupMembershipCodec::BuildSystemMessage(group->id, GroupMembershipControlType::GroupDissolved,
+                                                       "Group dissolved", detail, "account:alice");
+  ASSERT_TRUE(line);
+  ASSERT_TRUE(env.store->AppendMessage(*line));
+
+  // The same control message that reached the owner's direct chat is stored there too, and never shown.
+  DirectChatTarget target;
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:alice";
+  target.channel = ThreadChannel::E2ePublic;
+  auto dm = env.store->FindOrCreateDirectThread(target, "", "Alice");
+  ASSERT_TRUE(dm);
+  auto wire = GroupMembershipCodec::BuildSystemMessage(dm->id, GroupMembershipControlType::GroupDissolved,
+                                                       "The group owner dissolved this group", detail, "account:alice");
+  ASSERT_TRUE(wire);
+  ASSERT_TRUE(env.store->AppendMessage(*wire));
+
+  const auto group_rows = env.inbox->BuildTranscript(group->id, std::nullopt, std::nullopt);
+  ASSERT_EQ(group_rows.size(), 2u);
+  EXPECT_EQ(GroupMembershipCodec::GroupDissolvedOwner(group_rows.back().message), "account:alice");
+  EXPECT_TRUE(env.inbox->BuildTranscript(dm->id, std::nullopt, std::nullopt).empty());
+
+  ASSERT_TRUE(env.inbox->CloseThread(group->id));
+  EXPECT_FALSE(env.store->FindGroupThread("group:hike")->has_value());
 }
 
 } // namespace

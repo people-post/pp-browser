@@ -387,6 +387,11 @@ private:
   };
   std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
                                                       const std::string& local_account);
+  /**
+   * G016: a group dissolved. Its chat gets the one unread count / preview, and the notice for a user who is away;
+   * the DM that carried the news gets none. None when the outcome dissolved no group.
+   */
+  std::optional<BackgroundNotice> NoticeGroupDissolved(const RelayReceiveOutcome& outcome);
   /** A live message that mentions us is marked (unless its chat is open); one that cannot be decided is held. */
   void NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account);
   struct HeldMention {

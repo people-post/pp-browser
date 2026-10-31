@@ -64,10 +64,12 @@ struct CloseChatPlan {
     DeleteAi,
     /** Leave the group (the owner stays). */
     Leave,
-    /** Drop the group here only: an orphaned or solo group — no owner on the roster, or nobody reachable. */
+    /** Drop the group here only: a member's orphaned group — no owner on the roster, or nobody reachable. */
     Dismiss,
-    /** The owner leaves: hand the group to one of `successors` (reachable members), or dismiss it here. */
+    /** The owner leaves: hand the group to one of `successors` (reachable members), or dissolve it. */
     LeaveAsOwner,
+    /** The owner, with nobody to hand the group to (solo, or only unreachable members): dissolve it for everyone. */
+    Dissolve,
   };
   Kind kind = Kind::Delete;
   std::string group_id;
@@ -195,6 +197,8 @@ public:
   /** Leave the group, then close the chat; a leave that cannot be sent dismisses the group here. */
   Roe<void> LeaveGroupAndClose(const std::string& thread_id, const std::string& group_id);
   Roe<void> DismissGroupAndClose(const std::string& thread_id, const std::string& group_id);
+  /** G016: the owner dissolves the group for everyone. The chat stays (read-only), so nothing is closed. */
+  Roe<void> DissolveGroup(const std::string& group_id);
   Roe<void> HandOverAndClose(const std::string& thread_id, const std::string& group_id, const std::string& successor);
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */

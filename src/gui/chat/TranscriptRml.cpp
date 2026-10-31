@@ -187,6 +187,15 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
     return html;
   }
+  if (control_type && *control_type == GroupMembershipControlType::GroupDissolved) {
+    // G016: "{owner} dissolved this group" (the owner is the sender), "You dissolved…" on the owner's own device.
+    if (message.sender_contact_id == kLocalSelfContactId) {
+      return SystemLineRml(Tr("chat.group.dissolved_by_you"));
+    }
+    std::string name = facts.sender_label ? facts.sender_label(message.sender_contact_id) : std::string();
+    return SystemLineRml(name.empty() ? Tr("chat.group.dissolved_line_unnamed")
+                                      : Tr("chat.group.dissolved_line", {{"name", name}}));
+  }
   if (auto failure = ReceiveFailureLine(message)) {
     return SystemLineRml(*failure);
   }

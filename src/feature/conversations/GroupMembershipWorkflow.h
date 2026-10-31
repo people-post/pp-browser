@@ -48,6 +48,14 @@ public:
   Roe<void> LeaveGroup(const std::string& group_id);
   /** Owner leave with successor: fan-out owner_transferred (leave_previous) then clear local. */
   Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
+  /**
+   * G016: the owner ends the group for everyone. Signs the dissolve, ends the group here (roster emptied, chat kept
+   * read-only with one line), then sends `group_dissolved` to each member — best-effort through the outbox, so a
+   * member we cannot reach does not hold the dissolve back. A solo owner has nothing to send. Idempotent.
+   */
+  Roe<void> DissolveGroup(const std::string& group_id);
+  /** G016: the owner ended this group (its chat stays, read-only). */
+  bool IsDissolved(const std::string& group_id) const;
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
                         const std::vector<std::string>& member_contact_ids);
   /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
@@ -126,6 +134,9 @@ private:
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  /** G016: the group's chat gets its one "dissolved" line, and the thread list its preview. */
+  void AppendDissolvedLine(const std::string& group_id, const std::string& owner_identity,
+                           const std::string& sender_identity);
   /** `detail_json` with the roster we now sign as owner added (G012); unchanged if it cannot be signed. */
   std::string WithSignedRoster(const std::string& group_id, const std::string& detail_json);
   Roe<void> FanOutMembershipEvent(const std::string& group_id, GroupMembershipControlType control_type,

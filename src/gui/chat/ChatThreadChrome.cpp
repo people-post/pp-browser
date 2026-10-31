@@ -234,9 +234,12 @@ void ChatThreadChrome::Update() {
     view_.thread_is_public = visual_kind == "public";
     view_.thread_is_group = visual_kind == "group";
     view_.show_peer_sheet = thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group;
+    // G016: a group the owner dissolved is read-only: no composer, no calls, no attach.
+    const bool group_dissolved = thread->kind == ThreadKind::Group && thread->group_id && messaging_ready_ &&
+                                 PortsMessagingReady(facade_) && facade_->IsGroupDissolved(*thread->group_id);
     view_.show_call_actions =
         (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_ &&
-        mesh_ready_;
+        mesh_ready_ && !group_dissolved;
     const AiAttachInfo ai_info = ai_attach_info_ ? ai_attach_info_() : AiAttachInfo{};
     view_.show_attach_button = ShowAttachButton({.peer_thread_attach = view_.show_call_actions && thread->kind != ThreadKind::Ai,
                                                  .ai_composer = thread->kind == ThreadKind::Ai,
@@ -321,7 +324,7 @@ void ChatThreadChrome::Update() {
         }
       }
     } else if (thread->kind == ThreadKind::Group) {
-      view_.compose_disabled = !PortsMessagingReady(facade_);
+      view_.compose_disabled = !PortsMessagingReady(facade_) || group_dissolved;
     }
     // P001: unpaid initiation floor blocks compose (same gate as outbound send).
     if (!view_.compose_disabled && thread->kind == ThreadKind::Direct &&
@@ -360,7 +363,9 @@ void ChatThreadChrome::Update() {
       }
     } else {
       std::string roster_label = thread->encrypted ? Tr("chat.subtitle.group_e2e") : Tr("chat.subtitle.group");
-      if (PortsMessagingReady(facade_) && thread->group_id) {
+      if (group_dissolved) {
+        roster_label += " · " + Tr("chat.subtitle.dissolved");
+      } else if (PortsMessagingReady(facade_) && thread->group_id) {
         if (facade_) {
           if (auto roster = facade_->ListGroupRoster(*thread->group_id)) {
             roster_label += " · " + Tr("chat.subtitle.members", {{"count", std::to_string(roster->size())}});
@@ -374,7 +379,7 @@ void ChatThreadChrome::Update() {
         roster_label = Tr("chat.subtitle.shared", {{"title", *label.shared_title}}) + " · " + roster_label;
       }
       view_.thread_subtitle = roster_label.c_str();
-      view_.draft_placeholder = Tr("chat.group.placeholder").c_str();
+      view_.draft_placeholder = Tr(group_dissolved ? "chat.group.dissolved_composer" : "chat.group.placeholder").c_str();
     }
     view_.show_thread_menu =
         view_.show_thread_actions || view_.show_forget_memory || view_.show_sync_with_peer;

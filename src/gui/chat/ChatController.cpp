@@ -702,6 +702,9 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       CloseChatWith(thread_id, [this, thread_id, group_id]() { return presenter_.DismissGroupAndClose(thread_id, group_id); });
     });
     return;
+  case CloseChatPlan::Kind::Dissolve:
+    DissolveGroupAfterConfirm(group_id);
+    return;
   case CloseChatPlan::Kind::Leave:
     confirm_then("chat.group.leave_title", "chat.group.leave_confirm", [this, thread_id, group_id]() {
       CloseChatWith(thread_id, [this, thread_id, group_id]() { return presenter_.LeaveGroupAndClose(thread_id, group_id); });
@@ -736,14 +739,10 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                      });
                    }
                    actions.push_back({
-                       "dismiss_local",
-                       Tr("chat.group.dismiss_local"),
+                       "dissolve",
+                       Tr("chat.group.dissolve"),
                        nullptr,
-                       [this, thread_id, group_id]() {
-                         CloseChatWith(thread_id, [this, thread_id, group_id]() {
-                           return presenter_.DismissGroupAndClose(thread_id, group_id);
-                         });
-                       },
+                       [this, group_id]() { DissolveGroupAfterConfirm(group_id); },
                        "../icons/trash.svg",
                        true,
                    });
@@ -752,6 +751,19 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                  });
     return;
   }
+}
+
+void ChatController::DissolveGroupAfterConfirm(const std::string& group_id) {
+  ShowConfirm(Tr("chat.group.dissolve_title"), Tr("chat.group.dissolve_confirm"), [this, group_id](const bool ok) {
+    if (!ok) {
+      return;
+    }
+    // The chat stays for everyone, read-only: nothing is closed, the screen only refreshes.
+    if (auto dissolved = presenter_.DissolveGroup(group_id); !dissolved) {
+      UserFeedback::Fail(dissolved.error().message);
+    }
+    RefreshFromMessaging();
+  });
 }
 
 void ChatController::AfterThreadPrefsChanged() {
