@@ -28,6 +28,18 @@ ChatMentionPicker::ChatMentionPicker(ChatMenusHost& host, ChatPresenter& present
                                      ui::Context*& context)
     : host_(host), presenter_(presenter), chat_(chat), context_(context) {}
 
+size_t ChatMentionPicker::CaretByte(const std::string& text) const {
+  ui::ElementFormControlTextArea* draft = DraftInput(context_);
+  if (!draft) {
+    return text.size();
+  }
+  int start = 0;
+  int end = 0;
+  draft->GetSelection(&start, &end, nullptr);
+  // The input counts code points; the text is UTF-8 bytes (a Chinese draft).
+  return static_cast<size_t>(ui::StringUtilities::ConvertCharacterOffsetToByteOffset(text, end));
+}
+
 std::string ChatMentionPicker::CurrentDraft() const {
   if (ui::ElementFormControlTextArea* draft = DraftInput(context_)) {
     return draft->GetValue().c_str();
@@ -72,7 +84,8 @@ void ChatMentionPicker::OnDraftChanged() {
     }
     at_ = *trigger;
   }
-  const std::optional<std::string> query = MentionQueryAt(text, *at_);
+  caret_ = CaretByte(text);
+  const std::optional<std::string> query = MentionQueryAt(text, *at_, caret_);
   std::vector<MentionCandidate> lines =
       query ? presenter_.MentionCandidatesFor(thread_id, *query) : std::vector<MentionCandidate>{};
   if (lines.empty()) {
@@ -106,7 +119,7 @@ void ChatMentionPicker::Choose(const MentionCandidate& line) {
     return;
   }
   const std::string thread_id = host_.ActiveThreadId();
-  const MentionInsert inserted = InsertMention(CurrentDraft(), *at_, line.Token());
+  const MentionInsert inserted = InsertMention(CurrentDraft(), *at_, caret_, line.Token());
   at_.reset();
   lines_.clear();
   recorded_[thread_id].push_back({line.kind, line.account_id, line.Token()});

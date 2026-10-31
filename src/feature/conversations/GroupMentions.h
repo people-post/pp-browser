@@ -64,18 +64,22 @@ std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMem
 std::optional<size_t> TypedMentionTrigger(const std::string& before, const std::string& after);
 
 /**
- * While the picker is open on the `@` at byte `at`: the word typed after it (up to the end of the text or the
- * next whitespace). nullopt once that `@` is gone, or the word is finished (whitespace typed after it): the
- * user wrote something else, so the picker closes.
+ * While the picker is open on the `@` at byte `at`: what was typed after it, up to the caret (a byte offset in
+ * `text`; the text after the caret is not part of the query, so an `@` typed in front of a word leaves the word
+ * alone). nullopt once that `@` is gone, the caret is not after it, or whitespace came in between (the user wrote
+ * something else), so the picker closes.
  */
-std::optional<std::string> MentionQueryAt(const std::string& text, size_t at);
+std::optional<std::string> MentionQueryAt(const std::string& text, size_t at, size_t caret);
 
-/** Choosing a line: `@` + query at byte `at` replaced by `token` and a space; `caret` is the byte after them. */
+/**
+ * Choosing a line: `@` + query (from `at` to `caret`) replaced by `token` and a space; `text` after the caret is
+ * kept. The result's `caret` is the byte after the token and its space.
+ */
 struct MentionInsert {
   std::string text;
   size_t caret = 0;
 };
-MentionInsert InsertMention(const std::string& text, size_t at, const std::string& token);
+MentionInsert InsertMention(const std::string& text, size_t at, size_t caret, const std::string& token);
 
 /** A mention the composer inserted: what to mark when the draft is sent. */
 struct ComposerMention {

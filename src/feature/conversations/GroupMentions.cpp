@@ -136,29 +136,22 @@ std::optional<size_t> TypedMentionTrigger(const std::string& before, const std::
   return std::nullopt;
 }
 
-std::optional<std::string> MentionQueryAt(const std::string& text, const size_t at) {
-  if (at >= text.size() || text[at] != '@') {
+std::optional<std::string> MentionQueryAt(const std::string& text, const size_t at, const size_t caret) {
+  if (at >= text.size() || text[at] != '@' || caret <= at) {
     return std::nullopt;
   }
-  size_t end = at + 1;
-  while (end < text.size() && !IsAsciiSpace(text[end])) {
-    ++end;
-  }
-  std::string query = text.substr(at + 1, end - at - 1);
-  if (end < text.size() && !query.empty()) {
-    return std::nullopt;  // a finished word: the user typed on
+  std::string query = text.substr(at + 1, std::min(caret, text.size()) - at - 1);
+  if (std::any_of(query.begin(), query.end(), IsAsciiSpace)) {
+    return std::nullopt;  // whitespace after the @: the user typed on
   }
   return query;
 }
 
-MentionInsert InsertMention(const std::string& text, const size_t at, const std::string& token) {
+MentionInsert InsertMention(const std::string& text, const size_t at, const size_t caret, const std::string& token) {
   if (at >= text.size() || text[at] != '@') {
     return {text, text.size()};
   }
-  size_t end = at + 1;
-  while (end < text.size() && !IsAsciiSpace(text[end])) {
-    ++end;
-  }
+  const size_t end = std::clamp(caret, at + 1, text.size());
   MentionInsert out;
   out.text = text.substr(0, at) + token;
   if (end < text.size() && text[end] == ' ') {
