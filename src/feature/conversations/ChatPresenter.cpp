@@ -299,6 +299,9 @@ void ChatPresenter::ToggleArchived() {
 }
 
 void ChatPresenter::SetPinned(const std::string& thread_id, const bool pinned) {
+  if (pinned && facade_) {
+    facade_->KeepThreadListed(thread_id);
+  }
   UpdatePrefs(thread_id, [pinned](ThreadLocalPrefs& prefs) { prefs.pinned_at = pinned ? util::NowUnixMs() : 0; });
 }
 

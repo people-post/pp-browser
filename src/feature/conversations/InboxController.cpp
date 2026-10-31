@@ -37,23 +37,22 @@ Roe<std::vector<Thread>> InboxController::ListThreads() {
   if (!threads) {
     return threads;
   }
-  // A direct chat whose only rows are a group's events (they travel as direct messages) is not a chat the user
-  // has: it stays out of the list until something readable is in it. One with a preview has a readable message.
+  // A direct chat made only by a group's membership events (they travel as direct messages) is not a chat the
+  // user has: it stays out until something readable is in it, or they open it (the store's `listed` flag, which
+  // once set stays — a cleared or renamed chat is never dropped).
   threads->erase(std::remove_if(threads->begin(), threads->end(),
-                                [this](const Thread& thread) {
-                                  return thread.kind == ThreadKind::Direct && thread.preview.empty() &&
-                                         thread.id != active_thread_id_ && HoldsOnlyGroupEvents(thread.id);
-                                }),
+                                [](const Thread& thread) { return thread.kind == ThreadKind::Direct && !thread.listed; }),
                  threads->end());
   return threads;
 }
 
-bool InboxController::HoldsOnlyGroupEvents(const std::string& thread_id) const {
-  auto page = store_.GetMessagesPage(thread_id, std::nullopt, kDefaultMessagesPageSize);
-  return page && !page->empty() &&
-         std::all_of(page->begin(), page->end(), [](const ThreadMessage& message) {
-           return GroupMembershipCodec::IsHiddenInDirectThread(message);
-         });
+void InboxController::KeepListed(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (thread && *thread && !(*thread)->listed) {
+    Thread listed = **thread;
+    listed.listed = true;
+    (void)store_.UpsertThread(listed);
+  }
 }
 
 Roe<Thread> InboxController::GetActiveThread() const {
@@ -80,6 +79,7 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   }
 
   active_thread_id_ = thread_id;
+  KeepListed(thread_id);  // a chat the user opened is theirs, even before anything is said in it
   MarkThreadRead(thread_id);
   if (mentions_) {
     (void)mentions_->DropThread(thread_id);  // read: "You were mentioned" goes with the unread count
@@ -609,7 +609,21 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
 
   const auto thread = store_.GetThread(thread_id);
   const bool direct_thread = thread && *thread && (*thread)->kind == ThreadKind::Direct;
-  return AssembleTranscript(messages, controls_, direct_thread);
+  std::vector<TranscriptRow> rows = AssembleTranscript(messages, controls_, direct_thread);
+  // A run of a group's events on top of a direct chat's history would leave the page blank: go back for older
+  // pages until something shows or the history ends (bounded). A caller that asked for a window gets exactly it.
+  constexpr int kMaxExtraPages = 20;
+  for (int extra = 0; direct_thread && rows.empty() && !oldest_inclusive.has_value() && !messages.empty() &&
+                      extra < kMaxExtraPages;
+       ++extra) {
+    auto older = store_.GetMessagesPage(thread_id, messages.front().display_order, kDefaultMessagesPageSize);
+    if (!older || older->empty()) {
+      break;
+    }
+    messages.insert(messages.begin(), older->begin(), older->end());
+    rows = AssembleTranscript(messages, controls_, direct_thread);
+  }
+  return rows;
 }
 
 TranscriptFacts InboxController::Facts() const {

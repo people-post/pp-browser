@@ -163,6 +163,9 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
     return Error("Incompatible profile.db (schema " + std::to_string(user_version) + ", expected " +
                  std::to_string(kSqliteThreadProfileUserVersion) + ") — reset chats in Me → Storage");
   }
+  // Additive threads column (an older profile.db lacks it: its threads are all listed).
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE threads ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;", nullptr,
+                     nullptr, nullptr);
   // Additive chat_targets columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
   (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
                      nullptr);

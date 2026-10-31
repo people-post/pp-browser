@@ -92,6 +92,7 @@ public:
   /** One more unread in `thread_id` (an AI answer that arrived while its page was not shown). */
   void IncrementUnread(const std::string& thread_id);
   Roe<std::vector<Thread>> ListThreads();
+  void KeepThreadListed(const std::string& thread_id);
   /** True when an active local call is for this thread (origin / peer / group). */
   bool ThreadHasActiveCall(const std::string& thread_id);
   /** Calls answer ThreadHasActiveCall (feature-level wiring sets it; none: never). */

@@ -164,6 +164,8 @@ void ConversationsFacade::IncrementUnread(const std::string& thread_id) {
 
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
 
+void ConversationsFacade::KeepThreadListed(const std::string& thread_id) { hub_.Inbox().KeepListed(thread_id); }
+
 bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
   if (thread_id.empty() || !active_call_query_) {
     return false;

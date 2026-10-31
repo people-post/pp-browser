@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include <set>
 #include <stdexcept>
 
 namespace pbr {
@@ -162,54 +163,102 @@ TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
   EXPECT_FALSE(mentions.Oldest(group.id).value());
 }
 
-TEST(InboxControllerUnreadTest, ADirectChatThatOnlyHoldsAGroupsEventsIsNotInTheList) {
-  InboxTestEnv env("hidden_events_only");
-  ASSERT_TRUE(env.inbox->ListThreads());
+// A direct chat the group traffic made (store creation: not listed until it is the user's).
+Thread EventChat(InboxTestEnv& env, const std::string& peer) {
   DirectChatTarget target;
   target.peer_identity_kind = "account";
-  target.peer_identity_value = "account:bob";
+  target.peer_identity_value = peer;
   target.channel = ThreadChannel::E2ePublic;
-  auto direct = env.store->FindOrCreateDirectThread(target, "contact-bob", "Bob");
-  ASSERT_TRUE(direct);
+  auto direct = env.store->FindOrCreateDirectThread(target, "contact-" + peer, peer);
+  EXPECT_TRUE(direct);
+  return *direct;
+}
 
-  // A kick sent to Bob (or one from him) is stored in this chat; it is not something to read.
-  auto event = GroupMembershipCodec::BuildSystemMessage(direct->id, GroupMembershipControlType::MemberRemoved,
-                                                        "Member removed", "{}", "account:bob");
-  ASSERT_TRUE(event);
-  event->timestamp = direct->updated_at + 5000;
-  ASSERT_TRUE(env.store->AppendMessage(*event));
-  auto after = env.store->GetThread(direct->id);
+ThreadMessage Event(const Thread& thread, const GroupMembershipControlType type, const int64_t at) {
+  auto event = GroupMembershipCodec::BuildSystemMessage(thread.id, type, "Member removed", "{}", "account:bob");
+  EXPECT_TRUE(event);
+  event->timestamp = at;
+  return *event;
+}
+
+ThreadMessage Said(const Thread& thread, const std::string& id, const std::string& text, const int64_t at) {
+  ThreadMessage message;
+  message.id = id;
+  message.thread_id = thread.id;
+  message.sender_contact_id = "account:bob";
+  message.text = text;
+  message.timestamp = at;
+  return message;
+}
+
+TEST(InboxControllerUnreadTest, ADirectChatMadeOnlyByGroupEventsIsNotListedUntilItIsReadable) {
+  InboxTestEnv env("control_only");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  const Thread direct = EventChat(env, "account:bob");
+  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::MemberRemoved, direct.updated_at + 5000)));
+  auto after = env.store->GetThread(direct.id);
   ASSERT_TRUE(after && *after);
   EXPECT_TRUE((*after)->preview.empty()) << "the event is not the preview";
-  EXPECT_EQ((*after)->updated_at, direct->updated_at) << "and does not reorder the list";
-  auto listed = env.inbox->ListThreads();
-  ASSERT_TRUE(listed);
-  EXPECT_TRUE(listed->empty());
+  EXPECT_EQ((*after)->updated_at, direct.updated_at) << "and does not reorder the list";
+  EXPECT_TRUE(env.inbox->ListThreads()->empty()) << "control-only: hidden";
 
-  // The chat the user has open stays (an empty chat they just started), and a readable message brings it in.
-  ASSERT_TRUE(env.inbox->OpenThread(direct->id));
-  EXPECT_EQ(env.inbox->ListThreads()->size(), 1u);
-  env.inbox->ClearActiveThread();
-  EXPECT_TRUE(env.inbox->ListThreads()->empty());
-  ThreadMessage hello;
-  hello.id = "hello-1";
-  hello.thread_id = direct->id;
-  hello.sender_contact_id = "account:bob";
-  hello.text = "hi there";
-  hello.timestamp = direct->updated_at + 6000;
-  ASSERT_TRUE(env.store->AppendMessage(hello));
-  listed = env.inbox->ListThreads();
+  ASSERT_TRUE(env.store->AppendMessage(Said(direct, "hello-1", "hi there", direct.updated_at + 6000)));
+  auto listed = env.inbox->ListThreads();
   ASSERT_TRUE(listed);
   ASSERT_EQ(listed->size(), 1u);
   EXPECT_EQ((*listed)[0].preview, "hi there");
 
   // A later event leaves the last readable message as the preview.
-  auto later = GroupMembershipCodec::BuildSystemMessage(direct->id, GroupMembershipControlType::GroupRenamed,
-                                                        "Group renamed to X", "{}", "account:bob");
-  ASSERT_TRUE(later);
-  later->timestamp = direct->updated_at + 7000;
-  ASSERT_TRUE(env.store->AppendMessage(*later));
+  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 7000)));
   EXPECT_EQ((*env.inbox->ListThreads())[0].preview, "hi there");
+}
+
+TEST(InboxControllerUnreadTest, ARealChatNeverVanishesNotEvenClearedAndRenamed) {
+  InboxTestEnv env("never_vanishes");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  const Thread direct = EventChat(env, "account:bob");
+  ASSERT_TRUE(env.store->AppendMessage(Said(direct, "m-1", "hello", direct.updated_at + 1000)));
+  ASSERT_EQ(env.inbox->ListThreads()->size(), 1u);
+  ASSERT_TRUE(env.inbox->ClearThreadHistory(direct.id, /*forget_memory=*/false));
+  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 9000)));
+  EXPECT_EQ(env.inbox->ListThreads()->size(), 1u) << "cleared, then only an event in it: still the user's chat";
+}
+
+TEST(InboxControllerUnreadTest, AnOpenedOrPinnedEmptyChatStaysListed) {
+  InboxTestEnv env("opened_pinned");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  const Thread started = EventChat(env, "account:started");
+  const Thread pinned = EventChat(env, "account:pinned");
+  const Thread untouched = EventChat(env, "account:untouched");
+  EXPECT_TRUE(env.inbox->ListThreads()->empty());
+  ASSERT_TRUE(env.inbox->OpenThread(started.id));  // the user started a chat with a contact
+  env.inbox->ClearActiveThread();
+  env.inbox->KeepListed(pinned.id);  // what pinning does
+  ASSERT_TRUE(env.store->AppendMessage(Event(started, GroupMembershipControlType::MemberLeft, started.updated_at + 100)));
+  std::set<std::string> ids;
+  const auto listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  for (const Thread& thread : *listed) {
+    ids.insert(thread.id);
+  }
+  EXPECT_EQ(ids, (std::set<std::string>{started.id, pinned.id}));
+  EXPECT_EQ(ids.count(untouched.id), 0u);
+}
+
+TEST(InboxControllerUnreadTest, ALongRunOfEventsOnTopOfHistoryStillShowsTheHistory) {
+  InboxTestEnv env("long_run");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  const Thread direct = EventChat(env, "account:bob");
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_TRUE(env.store->AppendMessage(Said(direct, "m-" + std::to_string(i), "real " + std::to_string(i), 1000 + i)));
+  }
+  for (int i = 0; i < 150; ++i) {
+    ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, 2000 + i)));
+  }
+  const auto rows = env.inbox->BuildTranscript(direct.id, std::nullopt);
+  EXPECT_EQ(rows.size(), 10u) << "more than a page of events on top: the page is not blank";
+  // A window asked for by the caller is exactly that window.
+  EXPECT_TRUE(env.inbox->BuildTranscript(direct.id, 130).empty());
 }
 
 TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {

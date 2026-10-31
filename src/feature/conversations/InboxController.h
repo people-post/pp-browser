@@ -55,7 +55,10 @@ public:
   /** The system-control families features bind: how their messages show (hidden, worded). Not owned. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
 
+  /** The chats the user has (a direct chat made only by a group's events is left out until it is theirs). */
   Roe<std::vector<Thread>> ListThreads();
+  /** The user did something with this chat (opened, pinned it): it is listed from now on. */
+  void KeepListed(const std::string& thread_id);
   Roe<Thread> GetActiveThread() const;
   const std::string& ActiveThreadId() const { return active_thread_id_; }
 
@@ -125,8 +128,6 @@ public:
   void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
 
 private:
-  /** A direct chat with rows, all of them a group's events (they travel as direct messages): not a chat the user has. */
-  bool HoldsOnlyGroupEvents(const std::string& thread_id) const;
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
   std::optional<std::string> ControlLine(const ThreadMessage& message) const;
   TranscriptAttachmentView AttachmentView(const ThreadMessage& message) const;
