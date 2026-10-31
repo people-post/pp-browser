@@ -121,8 +121,20 @@ Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_pay
 |---------|-----|
 | Private CAS block | `cas-private\|{profile_id}\|{content_id_hex}\|1` (`BuildCasPrivateAad`) |
 
-Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked and is wiped on `ClearDek` (`WipeAllAttachmentViewCaches`), which also clears `AttachmentPlaintextMemoryCache` (C011). Large private videos above Soft 4 MiB (`kMaxInlinePrivateVideoBytes` / `AttachmentAllowsInlinePrivateView`) skip `blobs_view` until explicit open; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`. Images the user sends to the AI assistant are not stored durably: their thumbnails are session plaintext under the reserved pseudo thread `threads/ai-images/blobs_view/` and are wiped by the same `WipeAllAttachmentViewCaches` path.
+Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked; it is wiped on `ClearDek` **and at every start**. A file of at most `kMaxDirectAttachmentBytes` (4 MiB) is materialized when received or sent so it can be shown; a **larger** file never is, in render or right after a receive or send: it is made on an explicit Open, on a worker, once, and lives only for that session (a large video gets its poster at that first Open). The wipe is `WipeAllAttachmentViewCaches`, which also clears `AttachmentPlaintextMemoryCache` (C011). A private video whose declared size is above `AttachmentLimits::max_receive_bytes` (`AttachmentAllowsInlinePrivateView`) is not downloaded at all and so has no `blobs_view` copy; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`. Images the user sends to the AI assistant are not stored durably: their thumbnails are session plaintext under the reserved pseudo thread `threads/ai-images/blobs_view/` and are wiped by the same `WipeAllAttachmentViewCaches` path. A voice recording before it is sent is session plaintext too: `threads/voice/blobs_view/voice-rec/voice-<ms>.ogg`, written when the recording ends, deleted once it has been read for the send (the staged ciphertext, sealed like any attachment, is the retry path), emptied when the next recording starts and wiped by the same path at start and on lock.
 
+
+### Attachments in transit (outgoing / incoming)
+
+| Path | Content | At rest |
+|------|---------|---------|
+| `{profile}/blob_cipher/outgoing/<id>` | AEAD ciphertext of the file (random per-file key) | not wrapped: it reveals nothing without the key |
+| `{profile}/blob_cipher/outgoing/<id>.rec` | record: thread, attachment fields **including the content key and nonce**, size, time | `FileCipher` under the profile DEK, AAD purpose `outgoing-attachment` (`OutgoingAttachmentStore`) |
+| `{profile}/blob_cipher/incoming/<hash>.part` | ciphertext of a CDN download in progress | not wrapped (ciphertext) |
+
+`{profile}/picked/<unique>/<name>` (Android only) is the one place the **plaintext** of a file the person is sending sits unencrypted in the profile: the copy of a `content://` pick, streamed there so image decoders and file reads can open it, deleted when the attachment has been prepared and wiped at start (iOS has the same property in `tmp/pp-picks`, removed by `ReleasePickedFile`).
+
+The key never sits next to the ciphertext in the clear. Plaintext of a sent or received file is never written here; it goes to the private CAS and `blobs_view/` as before. The `.rec` is the one place a content key is kept before the message exists (the message row, with the key in its DEK-encrypted `thread.db`, is only created once the ciphertext has been delivered): while locked the record cannot be read, so a retry waits for the unlock.
 
 ## Test fixtures
 

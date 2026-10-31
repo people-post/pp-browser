@@ -36,6 +36,20 @@ Roe<EncryptedBlob> EncryptedPayload::DecodeBlob(const ByteVector& bytes) {
   return blob;
 }
 
+Roe<EncryptedBlob> EncryptedPayload::DecodeBlob(ByteVector&& bytes) {
+  if (bytes.empty() || bytes[0] != kEncryptedPayloadVersion) {
+    return Error("Unsupported encrypted payload version");
+  }
+  if (bytes.size() < 1 + kAeadNonceSize + crypto_aead_xchacha20poly1305_ietf_abytes()) {
+    return Error("Encrypted payload too short");
+  }
+  EncryptedBlob blob;
+  blob.nonce.assign(bytes.begin() + 1, bytes.begin() + 1 + kAeadNonceSize);
+  bytes.erase(bytes.begin(), bytes.begin() + 1 + kAeadNonceSize); // in place
+  blob.ciphertext = std::move(bytes);
+  return blob;
+}
+
 std::string EncryptedPayload::EncodeBase64(const ByteVector& blob) {
   return Base64Encode(blob);
 }

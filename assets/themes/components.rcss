@@ -655,6 +655,14 @@ select selectbox option {
   font-size: 12dp;
 }
 
+.prompt-attachment-chip-action {
+  flex-shrink: 0;
+  font-size: 11dp;
+  padding: 2dp 8dp;
+  border-radius: 8dp;
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
 .prompt-attachment-chip-status {
   flex-shrink: 0;
   font-size: 11dp;
@@ -749,6 +757,72 @@ select selectbox option {
   flex-shrink: 0;
   width: 14dp;
   height: 14dp;
+}
+
+/* Voice message: the microphone takes the send button's place; grey while a call has the microphone, red while recording. */
+.prompt-send-btn.prompt-voice-btn svg {
+  width: 16dp;
+  height: 16dp;
+}
+
+.prompt-send-btn.prompt-voice-btn--blocked {
+  background-color: #6b7280;
+  opacity: 0.7;
+}
+
+.prompt-send-btn.prompt-voice-btn--active {
+  background-color: #ef4444;
+}
+
+.prompt-voice-cancel-btn {
+  flex-shrink: 0;
+  margin-right: 8dp;
+  padding: 6dp 12dp;
+  border: 0;
+  border-radius: 16dp;
+  font-size: 13dp;
+  background-color: rgba(128, 128, 128, 0.2);
+  cursor: pointer;
+}
+
+.prompt-voice-status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8dp;
+  padding: 0 6dp;
+}
+
+.prompt-voice-dot {
+  flex-shrink: 0;
+  width: 10dp;
+  height: 10dp;
+  border-radius: 5dp;
+  background-color: #ef4444;
+}
+
+.prompt-voice-timer {
+  flex-shrink: 0;
+  font-size: 14dp;
+}
+
+.prompt-voice-timer--countdown {
+  color: #ef4444;
+}
+
+.prompt-voice-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12dp;
+  opacity: 0.72;
+}
+
+.prompt-voice-hint--cancel {
+  color: #ef4444;
+  opacity: 1;
 }
 
 .chat-link {
@@ -3529,6 +3603,66 @@ input.checkbox {
 
 .chat-attachment-card {
   max-width: 320dp;
+}
+
+/* A voice message: play / pause, a progress line, the length. */
+.chat-voice-card {
+  display: flex;
+  align-items: center;
+  gap: 10dp;
+  min-width: 200dp;
+  max-width: 280dp;
+}
+
+.chat-voice-play {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  padding: 0;
+  border: 0;
+  border-radius: 18dp;
+  background-color: #6366f1;
+  cursor: pointer;
+}
+
+.chat-voice-play svg {
+  width: 16dp;
+  height: 16dp;
+}
+
+.chat-voice-icon-pause {
+  display: none;
+}
+
+.chat-voice-play--playing .chat-voice-icon-pause {
+  display: block;
+}
+
+.chat-voice-play--playing .chat-voice-icon-play {
+  display: none;
+}
+
+.chat-voice-track {
+  flex: 1;
+  min-width: 60dp;
+  height: 4dp;
+  border-radius: 2dp;
+  background-color: rgba(128, 128, 128, 0.35);
+  overflow: hidden;
+}
+
+.chat-voice-fill {
+  height: 4dp;
+  background-color: #6366f1;
+}
+
+.chat-voice-time {
+  flex-shrink: 0;
+  font-size: 12dp;
+  opacity: 0.8;
 }
 
 .chat-attachment-image {

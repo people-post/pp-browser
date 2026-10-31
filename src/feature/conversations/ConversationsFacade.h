@@ -5,6 +5,9 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
+#include "lib/messaging/AttachmentLimits.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -289,16 +292,36 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
-  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
-  Roe<void> FreeOldestRelayBlobSlot();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
+  /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
+  void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                             std::function<void(Roe<ThreadMessage>)> on_done,
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  void DiscardOutgoingAttachment(const std::string& record_id);
+  void CleanStaleAttachmentFiles();
+  /** The one source of every attachment size / pace / warning number (today the defaults). */
+  AttachmentLimits CurrentAttachmentLimits() const;
+  /** The server space is filling up: called on the UI thread with the percent used (said once per 80 / 90). */
+  void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  struct AttachmentInfo {
+    std::string mime;
+    uint64_t byte_length = 0;
+  };
+  /** Declared type and size of an attachment message (none: not an attachment). */
+  std::optional<AttachmentInfo> AttachmentInfoForMessage(const std::string& thread_id, const std::string& message_id);
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
                                                            const std::string& message_id);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);

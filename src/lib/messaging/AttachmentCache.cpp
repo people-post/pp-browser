@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <unordered_map>
 #include <unordered_set>
 #include <fstream>
 #include "common/PbrCompat.h"
@@ -179,6 +180,62 @@ std::string LowerFilenameExtension(const std::string& filename) {
 
 } // namespace
 
+std::string AttachmentMimeFromFilename(const std::string& filename) {
+  static const std::unordered_map<std::string, std::string> kMimeByExtension = {
+      {"png", "image/png"},        {"jpg", "image/jpeg"},        {"jpeg", "image/jpeg"},
+      {"webp", "image/webp"},      {"gif", "image/gif"},         {"pdf", "application/pdf"},
+      {"txt", "text/plain"},       {"mp4", "video/mp4"},         {"webm", "video/webm"},
+      {"mov", "video/quicktime"},  {"mp3", "audio/mpeg"},        {"m4a", "audio/mp4"},
+      {"wav", "audio/wav"},        {"ogg", "audio/ogg"},
+  };
+  const auto found = kMimeByExtension.find(LowerFilenameExtension(filename));
+  return found == kMimeByExtension.end() ? std::string("application/octet-stream") : found->second;
+}
+
+std::string AttachmentExtensionFromContent(const std::vector<uint8_t>& head) {
+  const auto starts = [&](const size_t at, const char* text) {
+    const size_t n = std::strlen(text);
+    return head.size() >= at + n && std::memcmp(head.data() + at, text, n) == 0;
+  };
+  if (head.size() >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) {
+    return "jpg";
+  }
+  if (starts(0, "\x89PNG\r\n\x1a\n")) {
+    return "png";
+  }
+  if (starts(0, "GIF87a") || starts(0, "GIF89a")) {
+    return "gif";
+  }
+  if (starts(0, "RIFF") && starts(8, "WEBP")) {
+    return "webp";
+  }
+  if (starts(0, "RIFF") && starts(8, "WAVE")) {
+    return "wav";
+  }
+  if (starts(4, "ftyp")) {
+    if (starts(8, "qt  ")) {
+      return "mov";
+    }
+    if (starts(8, "M4A ")) {
+      return "m4a";
+    }
+    return "mp4";
+  }
+  if (starts(0, "\x1a\x45\xdf\xa3")) {
+    return "webm";
+  }
+  if (starts(0, "OggS")) {
+    return "ogg";
+  }
+  if (starts(0, "ID3") || (head.size() >= 2 && head[0] == 0xFF && (head[1] & 0xE0) == 0xE0)) {
+    return "mp3";
+  }
+  if (starts(0, "%PDF-")) {
+    return "pdf";
+  }
+  return {};
+}
+
 std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
   // Known mimes map to a fixed extension. Beyond them the peer-supplied filename is trusted only
   // for mimes that open after a confirm (AttachmentOpenNeedsConfirm) and only for an inert
@@ -201,6 +258,9 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
   }
   if (mime == "video/webm") {
     return "webm";
+  }
+  if (mime == "video/quicktime") {
+    return "mov";
   }
   if (mime == "application/pdf") {
     return "pdf";
@@ -282,6 +342,15 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
   if (mime == "video/webm") {
     return has_prefix({0x1A, 0x45, 0xDF, 0xA3});
   }
+  if (mime == "video/quicktime") {
+    // A QuickTime file starts with a box: ftyp (newer files) or one of the classic atoms.
+    if (got < 8) {
+      return false;
+    }
+    return std::memcmp(buf + 4, "ftyp", 4) == 0 || std::memcmp(buf + 4, "moov", 4) == 0 ||
+           std::memcmp(buf + 4, "mdat", 4) == 0 || std::memcmp(buf + 4, "wide", 4) == 0 ||
+           std::memcmp(buf + 4, "free", 4) == 0 || std::memcmp(buf + 4, "skip", 4) == 0;
+  }
   if (mime == "application/pdf") {
     return has_prefix({'%', 'P', 'D', 'F', '-'});
   }
@@ -306,14 +375,15 @@ bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime) 
   return AttachmentContentMatchesMime(path, mime);
 }
 
-bool AttachmentAllowsInlinePrivateView(const std::string& mime, const uint64_t byte_length) {
+bool AttachmentAllowsInlinePrivateView(const std::string& mime, const uint64_t byte_length,
+                                       const uint64_t max_receive_bytes) {
   if (!IsAttachmentVideoMime(mime)) {
     return true;
   }
   if (byte_length == 0) {
     return true;
   }
-  return byte_length <= kMaxInlinePrivateVideoBytes;
+  return byte_length <= max_receive_bytes;
 }
 
 std::string FormatAttachmentByteSize(const uint64_t byte_length) {
@@ -323,7 +393,11 @@ std::string FormatAttachmentByteSize(const uint64_t byte_length) {
   if (byte_length < 1024 * 1024) {
     return std::to_string(byte_length / 1024) + " KiB";
   }
-  return std::to_string(byte_length / (1024 * 1024)) + " MiB";
+  if (byte_length < 1024ULL * 1024ULL * 1024ULL) {
+    return std::to_string(byte_length / (1024 * 1024)) + " MiB";
+  }
+  const uint64_t tenths = byte_length * 10 / (1024ULL * 1024ULL * 1024ULL);
+  return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " GiB";
 }
 
 std::string AttachmentLocalPath(const std::string& profile_dir, const std::string& thread_id,
@@ -337,6 +411,26 @@ std::string AttachmentLocalPath(const std::string& profile_dir, const std::strin
     return view.string();
   }
   return {};
+}
+
+Roe<std::string> StoreAttachmentViewBytes(const std::string& profile_dir, const std::string& thread_id,
+                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                          const std::string& filename, const ByteVector& plaintext) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment view lookup");
+  }
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
+  if (const auto existing_view = FindBlobFile(view_root, content_hash, mime, filename); !existing_view.empty()) {
+    return existing_view.string();
+  }
+  const auto view_path = view_root / AttachmentFilename(content_hash, mime, filename);
+  if (auto written = WriteBytesAtomic(view_path, plaintext); !written) {
+    return written.error();
+  }
+  if (auto marked = os::MarkFileAsDownloaded(view_path.string()); !marked) {
+    logging::getLogger("AttachmentCache").warning << marked.error().message << ": " << view_path.filename().string();
+  }
+  return view_path.string();
 }
 
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
@@ -395,7 +489,7 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
                                         const std::string& filename,
                                         const std::function<Roe<ByteVector>()>& load_plaintext,
-                                        const uint64_t known_byte_length) {
+                                        const uint64_t known_byte_length, const uint64_t max_receive_bytes) {
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment poster lookup");
   }
@@ -412,7 +506,7 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
   }
 
   Roe<std::vector<uint8_t>> jpeg = [&]() -> Roe<std::vector<uint8_t>> {
-    if (!AttachmentAllowsInlinePrivateView(mime, known_byte_length)) {
+    if (!AttachmentAllowsInlinePrivateView(mime, known_byte_length, max_receive_bytes)) {
       return SoftVideoPosterJpeg();
     }
     auto view = EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename, load_plaintext);
@@ -502,6 +596,24 @@ Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir) {
 
 std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, const std::string& thread_id) {
   return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blob_cipher").string();
+}
+
+uint64_t PendingAttachmentCiphertextBytes(const std::string& profile_dir) {
+  uint64_t total = 0;
+  std::error_code ec;
+  for (std::filesystem::directory_iterator threads(ThreadsRoot(profile_dir), ec), end; !ec && threads != end;
+       threads.increment(ec)) {
+    const auto pending = threads->path() / "blob_cipher";
+    std::error_code walk_ec;
+    for (std::filesystem::directory_iterator it(pending, walk_ec), pend; !walk_ec && it != pend;
+         it.increment(walk_ec)) {
+      std::error_code size_ec;
+      if (it->is_regular_file(size_ec) && !size_ec) {
+        total += it->file_size(size_ec);
+      }
+    }
+  }
+  return total;
 }
 
 namespace {

@@ -7,6 +7,9 @@
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/VoiceComposer.h"
+#include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatPeerSheet.h"
@@ -44,6 +47,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <functional>
 #include <utility>
@@ -181,8 +185,17 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
-  void OnAttachFile();
-  void StartAttachmentUpload(const std::string& path);
+  void OnAttachFile(ui::Event* ev = nullptr);
+  /** `remove_after_read`: the file is a temporary one of ours (a voice recording): deleted once its bytes are read. */
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool remove_after_read = false);
+  /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
+  void OnRetryAttachmentSend();
+  void OnDiscardAttachmentSend();
+  /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
+  void RefreshPendingAttachmentChip(bool force);
+  void ShowFailedAttachment(const std::string& record_id, const std::string& name);
+  /** Progress for the chip: the percent line, with a "please stay in PP" hint for a large file. */
+  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress();
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
@@ -224,6 +237,13 @@ private:
   void SyncShellSessions() override;
   void UpdateThreadChrome();
   void ResetChatPanelState();
+  std::string failed_record_id_;
+  /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
+  int attach_menu_x_ = 12;
+  int attach_menu_y_ = 120;
+  /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
+  std::unordered_set<std::string> opening_message_ids_;
+  std::string pending_chip_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;
@@ -327,6 +347,11 @@ private:
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
+  /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */
+  std::unique_ptr<VoiceComposer> voice_;
+  std::unique_ptr<VoicePlayback> voice_playback_;
+  /** The chat the voice parts last saw: another one cancels a recording and stops a clip. */
+  std::string voice_thread_;
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

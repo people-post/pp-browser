@@ -18,7 +18,11 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatActionLabel.cpp
     chat/DeliveryNoticeText.cpp
     chat/MessageTimeLabel.cpp
+    chat/OutgoingAttachmentPrep.cpp
     chat/TranscriptRml.cpp
+    chat/VoiceBubble.cpp
+    chat/VoiceComposer.cpp
+    chat/VoicePlayback.cpp
     chat/ChatWidgetHost.cpp
     chat/ChatWidgetStateBuilder.cpp
     chat/WorkingSetController.cpp

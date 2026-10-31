@@ -5,6 +5,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/ImageMetadata.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
@@ -658,7 +659,11 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (!fields) {
     return view;
   }
-  if (AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length)) {
+  const uint64_t max_receive_bytes =
+      attachment_downloads_ ? attachment_downloads_->Limits().max_receive_bytes : DefaultAttachmentLimits().max_receive_bytes;
+  // Rendering never decrypts a large file: its plaintext view is made by an explicit Open (on a worker).
+  view.on_demand = fields->byte_length > kMaxDirectAttachmentBytes;
+  if (!view.on_demand && AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length, max_receive_bytes)) {
     if (attachment_downloads_) {
       if (auto local = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
                                                                  fields->filename)) {
@@ -669,12 +674,25 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
                                             fields->filename);
     }
   } else if (!profile_data_dir_.empty()) {
-    // Large private video: keep plaintext off disk until explicit open.
+    // Large file: plaintext stays off disk until an explicit Open; a view made by an earlier Open is used.
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }
+  if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
+    // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
+    const auto cached = inline_image_ok_.find(view.local_path);
+    if (cached != inline_image_ok_.end()) {
+      view.inline_image_ok = cached->second;
+    } else {
+      const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
+                                                        : DefaultAttachmentLimits().max_image_pixels;
+      view.inline_image_ok = ImageWithinPixelCap(view.local_path, max_pixels);
+      inline_image_ok_[view.local_path] = view.inline_image_ok;
+    }
+  }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
+    view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
   } else if (!view.local_path.empty() ||
              (!profile_data_dir_.empty() && AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;

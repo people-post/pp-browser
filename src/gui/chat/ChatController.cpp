@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -8,6 +9,10 @@
 
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/VoiceBubble.h"
+#include "lib/media/VoiceSupport.h"
+#include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -323,6 +328,58 @@ ChatController::ChatController()
              messaging_ready_,
              mesh_ready_) {
   redirectLogger("ChatController");
+  VoiceComposerPorts voice_ports;
+  voice_ports.limits = [this]() { return facade_ ? facade_->CurrentAttachmentLimits() : AttachmentLimits{}; };
+  voice_ports.out_dir = [this]() {
+    // blobs_view/voice-rec under a reserved name that is not a chat: wiped at start and when the vault locks.
+    return facade_ ? (std::filesystem::path(AttachmentViewRoot(facade_->ProfileDataDir(), kVoiceViewThread)) / "voice-rec")
+                         .string()
+                   : std::string();
+  };
+  voice_ports.send = [this](const std::string& path) {
+    if (chat_.attachment_uploading) {
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+      UserFeedback::Fail(Tr("chat.voice.upload_busy"));
+      return;
+    }
+    StartAttachmentUpload(path, OutgoingPickSource::File, /*remove_after_read=*/true);
+  };
+  voice_ports.eligible = [this]() {
+    return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() &&
+           !chat_.attachment_uploading && !ActiveThreadId().empty();
+  };
+  voice_ports.dirty = [this]() {
+    SyncComposerInputState(); // the input is off while recording
+    DirtyChatChrome();
+    DirtyChatHeader();
+  };
+  voice_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
+  voice_ = std::make_unique<VoiceComposer>(chat_, std::move(voice_ports));
+
+  VoicePlaybackPorts playback_ports;
+  playback_ports.max_seconds = [this]() {
+    return facade_ ? facade_->CurrentAttachmentLimits().voice_max_seconds : AttachmentLimits{}.voice_max_seconds;
+  };
+  playback_ports.resolve = [this](const std::string& message_id,
+                                  std::function<void(std::optional<std::string>)> done) {
+    if (!facade_) {
+      done(std::nullopt);
+      return;
+    }
+    const std::string thread_id = ActiveThreadId();
+    // Making the plaintext view of a stored copy is blocking work: off the UI thread.
+    AppRuntime::PostWorkerNormal([this, thread_id, message_id, done = std::move(done)]() mutable {
+      auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+      AppRuntime::PostUI([done = std::move(done), path = std::move(path)]() mutable { done(std::move(path)); });
+    });
+  };
+  playback_ports.element = [this](const std::string& element_id) -> ui::Element* {
+    return context_ && context_->GetDocument(0) ? context_->GetDocument(0)->GetElementById(element_id) : nullptr;
+  };
+  playback_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
+  voice_playback_ = std::make_unique<VoicePlayback>(std::move(playback_ports));
+
   presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
@@ -350,6 +407,12 @@ ChatController::ChatController()
 
 void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
+  if (facade_) {
+    // The server space is filling up: a plain line, said once per level (the hub counts).
+    facade_->SetOnBlobSpaceWarning([this](const int percent) {
+      ShowToast(Tr("chat.attachment.space_warning", {{"percent", std::to_string(percent)}}));
+    });
+  }
   presenter_.BindFacade(facade);
   scroller_.BindConversationsFacade(facade);
   chrome_.BindConversationsFacade(facade);
@@ -1002,19 +1065,34 @@ void ChatController::OnLockPublicToThisDevice() {
 
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
+  RefreshPendingAttachmentChip(/*force=*/false);
+  if (const std::string thread_id = ActiveThreadId(); thread_id != voice_thread_) {
+    // Another chat is open: a recording in the one before can no longer be followed, and a clip is not its bubble's.
+    voice_thread_ = thread_id;
+    voice_->Lost();
+    voice_playback_->Stop();
+  }
+  voice_->Refresh();
   SyncComposerInputState();
 }
 
 void ChatController::SyncComposerInputState() {
-  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing;
+  chat_.composer_input_disabled =
+      chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing || chat_.voice_recording;
 }
 
-void ChatController::OnAttachFile() {
+void ChatController::OnAttachFile(ui::Event* ev) {
   if (!messaging_ready_ || !facade_) {
     return;
   }
   if (chat_.composer_input_disabled || chat_.attachment_uploading || !chat_.show_attach_button) {
     return;
+  }
+  // B90: the menu opens at the attach button, not at a fixed corner (which was behind the keyboard on a phone).
+  if (ev) {
+    const ui::Vector2i anchor = MenuPositionAboveEvent(*ev);
+    attach_menu_x_ = anchor.x;
+    attach_menu_y_ = anchor.y;
   }
   if (InAiComposerContext()) {
     agent_.OnAttachAiImage();
@@ -1025,23 +1103,161 @@ void ChatController::OnAttachFile() {
     return;
   }
 
-  auto on_picked = [this, thread_id](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
-      if (paths.empty()) {
-        return;
-      }
-      StartAttachmentUpload(std::move(paths.front()));
-    });
+  // Where the file came from decides what is done to a picture (see OutgoingPickSource).
+  const auto picked = [this](const OutgoingPickSource source) {
+    return [this, source](std::vector<std::string> paths) {
+      AppRuntime::PostUI([this, source, paths = std::move(paths)]() mutable {
+        if (paths.empty()) {
+          return;
+        }
+        StartAttachmentUpload(std::move(paths.front()), source);
+      });
+    };
   };
-  if (!Platform::IsMobile()) {
-    ShowOpenFileDialog(Backend::GetWindow(), std::move(on_picked));
-    return;
+  const auto pick_image = [picked](const OutgoingPickSource source) {
+    return [on_picked = picked(source)]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); };
+  };
+  // "Photo" on a phone: the library with pictures and videos.
+  const auto pick_photo_or_video = [picked]() {
+    return [on_picked = picked(OutgoingPickSource::Photo)]() {
+      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked);
+    };
+  };
+  const auto pick_file = [picked]() {
+    return [on_picked = picked(OutgoingPickSource::File)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
+  };
+
+  // A phone keeps photos and files apart; the desktop dialog shows both at once, so there it is only
+  // "File" and "Original photo".
+  std::vector<ContextMenuAction> actions;
+  if (Platform::IsMobile()) {
+    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video()});
   }
-  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); },
-                   [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); });
+  actions.push_back({"attach_original", Tr("chat.attach.original"), nullptr, pick_image(OutgoingPickSource::Original)});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
 }
 
-void ChatController::StartAttachmentUpload(const std::string& path) {
+std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress() {
+  const uint64_t stay_hint_bytes = facade_ ? facade_->CurrentAttachmentLimits().stay_hint_bytes : 0;
+  auto last_percent = std::make_shared<std::atomic<int>>(-1);
+  return [this, last_percent, stay_hint_bytes](const uint64_t done, const uint64_t total) {
+    if (total == 0) {
+      return true;
+    }
+    const int percent = static_cast<int>(std::min<uint64_t>(100, done * 100 / total));
+    if (last_percent->exchange(percent) == percent) {
+      return true; // the line changes only when the number does
+    }
+    const bool large = total >= stay_hint_bytes;
+    AppRuntime::PostUI([this, percent, large]() {
+      if (!chat_.attachment_uploading) {
+        return;
+      }
+      chat_.attachment_status =
+          Tr(large ? "chat.attachment.uploading_stay" : "chat.attachment.uploading_percent",
+             {{"percent", std::to_string(percent)}})
+              .c_str();
+      DataModelHost::Instance().Dirty("chat", "attachment_status");
+    });
+    return true;
+  };
+}
+
+void ChatController::ShowFailedAttachment(const std::string& record_id, const std::string& name) {
+  failed_record_id_ = record_id;
+  chat_.attachment_failed = true;
+  chat_.attachment_uploading = false;
+  chat_.attachment_draft_name = name.c_str();
+  chat_.attachment_status = Tr("chat.attachment.send_failed").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void ChatController::RefreshPendingAttachmentChip(const bool force) {
+  if (!facade_ || !messaging_ready_ || chat_.attachment_uploading) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (!force && thread_id == pending_chip_thread_) {
+    return;
+  }
+  pending_chip_thread_ = thread_id;
+  failed_record_id_.clear();
+  const bool had_chip = chat_.attachment_failed;
+  chat_.attachment_failed = false;
+  if (!thread_id.empty() && !InAiComposerContext()) {
+    const auto pending = facade_->PendingOutgoingAttachments(thread_id);
+    if (!pending.empty()) {
+      ShowFailedAttachment(pending.front().id, pending.front().fields.filename);
+      return;
+    }
+  }
+  if (had_chip) {
+    chat_.attachment_draft_name = "";
+    chat_.attachment_status = "";
+    SyncComposerInputState();
+    DirtyChatChrome();
+    DirtyChatHeader();
+  }
+}
+
+void ChatController::OnDiscardAttachmentSend() {
+  if (!facade_ || failed_record_id_.empty()) {
+    return;
+  }
+  facade_->DiscardOutgoingAttachment(failed_record_id_);
+  RefreshPendingAttachmentChip(/*force=*/true);
+}
+
+void ChatController::OnRetryAttachmentSend() {
+  if (!facade_ || failed_record_id_.empty() || chat_.attachment_uploading) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  const std::string record_id = failed_record_id_;
+  if (thread_id.empty()) {
+    return;
+  }
+  chat_.attachment_failed = false;
+  chat_.attachment_uploading = true;
+  chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+  // Same dialog as a first send when the space is full: free the oldest file, then send the staged ciphertext again.
+  BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
+      [this, thread_id, record_id](std::function<void(Roe<ThreadMessage>)> done) {
+        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress());
+      },
+      [this](Roe<ThreadMessage> sent) {
+        chat_.attachment_uploading = false;
+        chat_.attachment_status = "";
+        chat_.attachment_draft_name = "";
+        failed_record_id_.clear();
+        SyncComposerInputState();
+        const bool stale_chip = !sent && sent.error().category == 0 &&
+                                sent.error().code == OutgoingAttachmentStore::kWrongThread;
+        if (!sent && !stale_chip) {
+          UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+        }
+        RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone or sent: nothing shown
+        if (sent) {
+          SyncDisplayFromThread();
+          scroller_.RequestScrollToLatest();
+          UpdateSidebarPreview(sent->text);
+        }
+        DirtyChatChrome();
+        DirtyChatHeader();
+      },
+      [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
+      [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
+}
+
+void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
+                                           const bool remove_after_read) {
   if (!facade_ || chat_.attachment_uploading) {
     return;
   }
@@ -1051,34 +1267,77 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
   }
 
   chat_.attachment_uploading = true;
-  chat_.attachment_draft_name = std::filesystem::path(path).filename().string().c_str();
+  chat_.attachment_failed = false;
+  failed_record_id_.clear();
+  const std::string shown_name = DisplayNameFromPickedPath(path);  // a content:// URI is not a name
+  chat_.attachment_draft_name =
+      (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
   chat_.status = Tr("chat.attachment.uploading").c_str();
+  chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
 
-  BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-      [this, thread_id, path](std::function<void(Roe<ThreadMessage>)> done) {
-        facade_->SendAttachmentFromPathAsync(thread_id, path, std::move(done));
-      },
-      [this, path](Roe<ThreadMessage> sent) {
-        ReleasePickedFile(path); // read (and kept as a CAS copy) by now
-        chat_.attachment_uploading = false;
-        chat_.attachment_draft_name = "";
-        chat_.status = "";
-        SyncComposerInputState();
-        DirtyChatChrome();
-        DirtyChatHeader();
-        if (!sent) {
-          UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
-          return;
-        }
-        SyncDisplayFromThread();
-        scroller_.RequestScrollToLatest();
-        UpdateSidebarPreview(sent->text);
-      },
-      [this]() { return facade_->PlanRelayQuotaRecovery(); },
-      [this]() { return facade_->FreeOldestRelayBlobSlot(); });
+  const auto finish_uploading = [this]() {
+    chat_.attachment_uploading = false;
+    chat_.attachment_draft_name = "";
+    chat_.attachment_status = "";
+    chat_.status = "";
+    SyncComposerInputState();
+    DirtyChatChrome();
+    DirtyChatHeader();
+  };
+
+  // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
+  const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
+  const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
+  AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading,
+                                remove_after_read]() {
+    auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
+    ReleasePickedFile(path); // read by now (and kept as a CAS copy once sent)
+    if (remove_after_read) {
+      // A voice recording: its bytes are in memory and, from the send on, staged encrypted for a retry.
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
+    AppRuntime::PostUI([this, thread_id, finish_uploading, prepared = std::move(prepared)]() mutable {
+      if (!prepared) {
+        finish_uploading();
+        UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
+        return;
+      }
+      // The bytes go to the hub once (moved: no second whole-file copy here). If the space is full the dialog's
+      // retry sends the staged ciphertext (resume), so nothing is kept here after the first attempt.
+      auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
+      auto attempts = std::make_shared<int>(0);
+      BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
+          [this, thread_id, attachment, attempts](std::function<void(Roe<ThreadMessage>)> done) {
+            if ((*attempts)++ == 0) {
+              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress());
+              return;
+            }
+            const auto staged = facade_->PendingOutgoingAttachments(thread_id);
+            if (staged.empty()) {
+              done(Error("The attachment is no longer staged").WithUser(Tr("chat.attachment.pick_again")));
+              return;
+            }
+            facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress());
+          },
+          [this, thread_id, finish_uploading](Roe<ThreadMessage> sent) {
+            finish_uploading();
+            if (!sent) {
+              UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
+              return;
+            }
+            SyncDisplayFromThread();
+            scroller_.RequestScrollToLatest();
+            UpdateSidebarPreview(sent->text);
+          },
+          [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
+          [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
+    });
+  });
 }
 
 bool ChatController::InAiComposerContext() const {
@@ -1098,7 +1357,7 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
   actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
   actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
 }
 
 namespace {
@@ -1113,9 +1372,13 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   if (!facade_) {
     return {};
   }
+  TranscriptFacts facts = facade_->TranscriptFactsFor();
+  facts.voice_supported = VoiceMessagesSupported();
+  facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
+  facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   std::vector<MessageDisplayRow> rows =
-      RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive),
-                       facade_->TranscriptFactsFor(), presenter_.MentionRosterOf(thread_id));
+      RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
+                       presenter_.MentionRosterOf(thread_id));
   agent_.DecorateAiImageRows(rows);
   return rows;
 }
@@ -1125,27 +1388,46 @@ void ChatController::OpenAttachment(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
     return;
   }
+  // Once: a second tap while the first is still making the file does nothing.
+  if (!opening_message_ids_.insert(message_id).second) {
+    return;
+  }
   const std::string thread_id = ActiveThreadId();
-  auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
-  if (!path) {
-    UserFeedback::Fail(Tr("chat.attachment.not_ready"));
-    return;
+  const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
+  const bool is_video = info && IsAttachmentVideoMime(info->mime);
+  if (info && info->byte_length > kMaxDirectAttachmentBytes) {
+    UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
   }
-  const auto open_file = [path = *path]() {
-    if (!PlatformOpenFile(path)) {
-      UserFeedback::Fail(Tr("chat.attachment.open_failed"));
-    }
-  };
-  if (facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id)) {
-    ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
-                [open_file](const bool ok) {
-                  if (ok) {
-                    open_file();
-                  }
-                });
-    return;
-  }
-  open_file();
+  // The decrypt of a stored copy is blocking work (seconds for a large file): off the UI thread.
+  AppRuntime::PostWorkerNormal([this, thread_id, message_id, is_video]() {
+    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+    const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
+    AppRuntime::PostUI([this, thread_id, message_id, is_video, path = std::move(path), needs_confirm]() {
+      opening_message_ids_.erase(message_id);
+      if (!path) {
+        UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+        return;
+      }
+      SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
+      const auto open_file = [path = *path, is_video]() {
+        if (!PlatformOpenFile(path)) {
+          // A video this device has no player for (an iPhone's HEVC .mov on an Android phone or a Windows PC,
+          // a codec the system lacks): say so plainly instead of a generic failure.
+          UserFeedback::Fail(Tr(is_video ? "chat.attachment.video_unplayable" : "chat.attachment.open_failed"));
+        }
+      };
+      if (needs_confirm) {
+        ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
+                    [open_file](const bool ok) {
+                      if (ok) {
+                        open_file();
+                      }
+                    });
+        return;
+      }
+      open_file();
+    });
+  });
 }
 
 void ChatController::RetryAttachmentDownload(const std::string& message_id) {
@@ -1164,11 +1446,16 @@ void ChatController::DownloadAttachment(const std::string& message_id) {
 
 void ChatController::UpdatePeerLinkChrome() {
   chrome_.UpdatePeerLink();
+  voice_->Refresh(); // a call starting or ending greys / frees the microphone
   DirtyChatHeader();
 }
 
 void ChatController::ResetChatPanelState() {
   chat_.attachment_uploading = false;
+  chat_.attachment_failed = false;
+  chat_.attachment_status = "";
+  failed_record_id_.clear();
+  pending_chip_thread_.clear();
   chat_.attachment_draft_name = "";
   chrome_.ResetPanelState();
   SyncComposerInputState();
@@ -2261,6 +2548,9 @@ void ChatController::CancelQueuedHere() {
 }
 
 ChatController::ComposerEscape ChatController::OnComposerEscape() {
+  if (voice_ && voice_->OnEscape()) {
+    return ComposerEscape::Handled; // Esc cancels a recording (the composer is not focused during one)
+  }
   if (!context_) {
     return ComposerEscape::NotInComposer;
   }
@@ -2567,7 +2857,15 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& message_id, const std::string& emoji) { ToggleReaction(message_id, emoji); }));
         ctor.BindEventCallback("open_emoji_insert", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
-        ctor.BindEventCallback("attach_file", DataEvent([this] { OnAttachFile(); }));
+        ctor.BindEventCallback("attach_file", DataEventAt([this](ui::Event& ev) { OnAttachFile(&ev); }));
+        ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
+        ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));
+        ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
+        ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
+        ctor.BindEventCallback("play_voice", DataEvent<std::string>(
+            [this](const std::string& message_id) { voice_playback_->Toggle(message_id); }));
+        ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
+        ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
         ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>(
@@ -2737,6 +3035,9 @@ void ChatController::OnMeshReady() {
 
 void ChatController::OnApplicationPause() {
   agent_.Cancel();
+  // Going to the background loses a held press (no release will come) and ends a clip: cancel, never send.
+  voice_->Lost();
+  voice_playback_->Stop();
 }
 
 
@@ -2765,6 +3066,8 @@ void ChatController::AfterLayout() {
 }
 
 void ChatController::Shutdown() {
+  voice_->Shutdown();
+  voice_playback_->Shutdown();
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   lifecycle_background_id_ = 0;
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);

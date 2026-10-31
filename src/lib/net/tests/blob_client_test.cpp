@@ -28,28 +28,64 @@ TEST(BlobClientTest, OrgBackendClientFactoryCreatesBlobClient) {
   ASSERT_TRUE(static_cast<bool>(clients.blob));
 }
 
-TEST(BlobClientTest, CheckBlobResponseMapsUploadNotConfigured) {
-  const auto result = CheckBlobResponse(HttpResponse{.status_code = 400, .body = R"({"error":"Blob upload is not configured"})"});
-  ASSERT_FALSE(static_cast<bool>(result));
-  EXPECT_EQ(result.error().category, static_cast<int32_t>(ErrorCategory::Blob));
-  EXPECT_EQ(result.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfigured));
-  EXPECT_EQ(result.error().message, "Blob upload is not configured");
+namespace {
+
+Error Fail(const int status, const std::string& error_text) {
+  const auto result = CheckBlobResponse(
+      HttpResponse{.status_code = status, .body = error_text.empty() ? "oops" : R"({"error":")" + error_text + R"("})"});
+  EXPECT_FALSE(static_cast<bool>(result)) << status;
+  return result ? Error() : result.error();
 }
 
-TEST(BlobClientTest, CheckBlobResponseKeepsQuotaAndSuccess) {
+int32_t CodeOf(const Error& err) {
+  EXPECT_EQ(err.category, static_cast<int32_t>(ErrorCategory::Blob));
+  return err.code;
+}
+
+} // namespace
+
+TEST(BlobClientTest, CheckBlobResponseAcceptsSuccess) {
   EXPECT_TRUE(static_cast<bool>(CheckBlobResponse(HttpResponse{.status_code = 200, .body = "{}"})));
-  const auto quota = CheckBlobResponse(HttpResponse{.status_code = 429, .body = R"({"error":"quota"})"});
-  ASSERT_FALSE(static_cast<bool>(quota));
-  EXPECT_EQ(quota.error().code, static_cast<int32_t>(Err::Blob::QuotaExceeded));
-  const auto other = CheckBlobResponse(HttpResponse{.status_code = 500, .body = "oops"});
-  ASSERT_FALSE(static_cast<bool>(other));
-  EXPECT_EQ(other.error().code, static_cast<int32_t>(Err::Blob::Generic));
-  EXPECT_EQ(other.error().message, "HTTP request failed with status 500");
+}
+
+// The status table of the attachments plan, row by row; the statuses are the ones r_relay.ts /
+// RelayBlobs.ts (blobFailureStatus) can produce.
+TEST(BlobClientTest, StatusTableMapsEveryRowToATypedError) {
+  // Upload not enabled: 503 from the relay (400 from an older gateway), matched by its text.
+  EXPECT_EQ(CodeOf(Fail(503, "Blob upload is not configured")), static_cast<int32_t>(Err::Blob::UploadNotConfigured));
+  EXPECT_EQ(CodeOf(Fail(400, "Blob upload is not configured")), static_cast<int32_t>(Err::Blob::UploadNotConfigured));
+  // 403: not the owner / not registered.
+  EXPECT_EQ(CodeOf(Fail(403, "Blob not owned by caller")), static_cast<int32_t>(Err::Blob::UploadRejected));
+  EXPECT_EQ(CodeOf(Fail(403, "Relay user not registered")), static_cast<int32_t>(Err::Blob::UploadRejected));
+  // 404: the blob is gone (expired pending upload).
+  EXPECT_EQ(CodeOf(Fail(404, "Blob not found")), static_cast<int32_t>(Err::Blob::Expired));
+  // Too large: 413, and the relay's own 400 for an object over the large tier.
+  EXPECT_EQ(CodeOf(Fail(413, "")), static_cast<int32_t>(Err::Blob::TooLarge));
+  EXPECT_EQ(CodeOf(Fail(400, "File exceeds size limit")), static_cast<int32_t>(Err::Blob::TooLarge));
+  // 429 is a full space only for the two quota texts.
+  EXPECT_EQ(CodeOf(Fail(429, "Small file quota exceeded")), static_cast<int32_t>(Err::Blob::QuotaExceeded));
+  EXPECT_EQ(CodeOf(Fail(429, "Large file storage quota exceeded")), static_cast<int32_t>(Err::Blob::QuotaExceeded));
+  // Anything else on a 429 is not a full space: a reworded text, an empty body, a proxy / WAF page.
+  EXPECT_EQ(CodeOf(Fail(429, "quota")), static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_EQ(CodeOf(Fail(429, "")), static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_EQ(CodeOf(Fail(429, "Too Many Requests")), static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_EQ(CodeOf(Fail(429, "Rate limit exceeded")), static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_EQ(CodeOf(Fail(429, "Too many pending uploads")), static_cast<int32_t>(Err::Blob::RateLimited));
+  // 5xx and the rest.
+  EXPECT_EQ(CodeOf(Fail(503, "")), static_cast<int32_t>(Err::Blob::Unavailable));
+  EXPECT_EQ(CodeOf(Fail(500, "")), static_cast<int32_t>(Err::Blob::Unavailable));
+  EXPECT_EQ(CodeOf(Fail(400, "Unsupported content type")), static_cast<int32_t>(Err::Blob::Generic));
+  EXPECT_EQ(CodeOf(Fail(401, "Invalid signature")), static_cast<int32_t>(Err::Blob::Generic));
+}
+
+TEST(BlobClientTest, FailureDetailKeepsStatusAndServerText) {
+  const Error err = Fail(429, "Rate limit exceeded");
+  EXPECT_EQ(err.message, "HTTP 429: Rate limit exceeded");
+  EXPECT_EQ(Fail(500, "").message, "HTTP 500");
   // Server text is log detail only; a reworded gateway message must not hit the "not configured" hint.
-  const auto reworded = CheckBlobResponse(HttpResponse{.status_code = 400, .body = R"({"error":"Icon CDN not configured"})"});
-  ASSERT_FALSE(static_cast<bool>(reworded));
-  EXPECT_EQ(reworded.error().code, static_cast<int32_t>(Err::Blob::Generic));
-  EXPECT_EQ(reworded.error().message, "Icon CDN not configured");
+  const Error reworded = Fail(400, "Icon CDN not configured");
+  EXPECT_EQ(reworded.code, static_cast<int32_t>(Err::Blob::Generic));
+  EXPECT_EQ(reworded.message, "HTTP 400: Icon CDN not configured");
 }
 
 TEST(BlobClientTest, BlobPurposeWireRoundTrip) {

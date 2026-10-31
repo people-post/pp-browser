@@ -14,20 +14,29 @@
             data-attrif-disabled="composer_input_disabled"></textarea>
   <div class="prompt-composer-footer">
     <div class="prompt-composer-leading">
-      <button class="prompt-emoji-btn" type="button" data-event-click="open_emoji_insert()"
+      <button class="prompt-emoji-btn" type="button" data-if="!voice_recording" data-event-click="open_emoji_insert()"
               data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">
         <svg src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
       </button>
-      <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
+      <button class="prompt-attach-btn" type="button" data-if="show_attach_button && !voice_recording"
               data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
       </button>
-      <div class="prompt-attachment-chip" data-if="attachment_uploading">
-        <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
-        <span class="prompt-attachment-chip-status">{{i18n:chat.attachment.uploading}}</span>
+      <div class="prompt-voice-status" data-if="voice_recording">
+        <div class="prompt-voice-dot"></div>
+        <span class="prompt-voice-timer" data-class-prompt-voice-timer--countdown="voice_countdown" data-value="voice_timer"></span>
+        <span class="prompt-voice-hint" data-class-prompt-voice-hint--cancel="voice_cancel_zone" data-value="voice_hint"></span>
       </div>
-      <div class="prompt-attachment-chip" data-if="image_chip">
+      <div class="prompt-attachment-chip" data-if="(attachment_uploading || attachment_failed) && !voice_recording">
+        <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
+        <span class="prompt-attachment-chip-status" data-value="attachment_status"></span>
+        <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
+                data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
+        <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
+                data-event-click="discard_attachment_send()">{{i18n:common.cancel}}</button>
+      </div>
+      <div class="prompt-attachment-chip" data-if="image_chip && !voice_recording">
         <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on
              any picture (Kenneth 2026-10-28). -->
         <div class="prompt-image-thumb-wrap">
@@ -45,7 +54,25 @@
             title="{{i18n:chat.stop}}">
       <svg src="../icons/stop.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
-    <button class="prompt-send-btn" type="button" data-if="!loading" data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
+    <!-- Voice message: the microphone takes the send button's place while the composer is empty. Phones hold
+         (mousedown starts, the document sees the release), desktop clicks and then uses Send / Cancel. -->
+    <button class="prompt-voice-cancel-btn" type="button" data-if="voice_recording && voice_click_mode"
+            data-event-click="voice_cancel()">{{i18n:common.cancel}}</button>
+    <button class="prompt-send-btn" type="button" data-if="voice_recording && voice_click_mode"
+            data-event-click="voice_send()" title="{{i18n:chat.voice.send}}">
+      <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
+    </button>
+    <button class="prompt-send-btn prompt-voice-btn" type="button"
+            data-if="show_voice && draft == '' && !loading && !(voice_recording && voice_click_mode)"
+            data-class-prompt-voice-btn--blocked="voice_blocked"
+            data-class-prompt-voice-btn--active="voice_recording"
+            data-attr-title="voice_title"
+            data-event-mousedown="voice_press()" data-event-click="voice_click()">
+      <svg src="../icons/mic.svg" width="16" height="16" crop-to-content="true"></svg>
+    </button>
+    <button class="prompt-send-btn" type="button"
+            data-if="!loading && !voice_recording && !(show_voice && draft == '')"
+            data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
       <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
   </div>

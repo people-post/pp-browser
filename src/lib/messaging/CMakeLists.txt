@@ -1,6 +1,7 @@
 pp_browser_add_lib_library(pp_lib_messaging
   SOURCES
     AttachmentCache.cpp
+    AttachmentLimits.cpp
     AttachmentPlaintextMemoryCache.cpp
     AttachmentSuppressionStore.cpp
     ChatAttachmentPrepare.cpp

@@ -113,7 +113,24 @@ Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlob
 | `POST /v1/blobs/list` | Inventory + usage (quota UX) |
 | `POST /v1/profile/icon` | Attach hosted blob / external https, or clear |
 
-Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **400** `{ "error": "Blob upload is not configured" }` when the gateway has no upload bucket → client shows "uploads not enabled" (`Err::Blob::UploadNotConfigured`; exact text match). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
+Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h (and ≤ 20 pending uploads); retained GC ~90d (skip current profile icon). The tier follows `byte_length` (the ciphertext), so a client that stays at 4 MB per file only ever fills the small tier. The large tier has **no overage billing today**: a presign that would pass `large_included_bytes` is refused with **429** `Large file storage quota exceeded` (`usage.overage_bytes` is always 0). A blob is released only by `POST /v1/blobs/delete` (also "delete for everyone" in the client, `DeleteUploadedCopy`) or by the 90-day GC; "delete for me", clearing history and deleting a thread do not touch the server copy.
+
+Failure statuses and the client's typed error (`CheckBlobResponse` → `ClassifyBlobFailure`, `Err::Blob`; the log detail is `HTTP <status>: <error text>`). The server's text, not only the status, picks the code where one status has several causes:
+
+| Status (server `error` text) | Produced by | `Err::Blob` | Client does |
+|---|---|---|---|
+| 503 `Blob upload is not configured` (an older gateway: 400, same text) | every `/v1/blobs/*` route without an upload bucket | `UploadNotConfigured` | failure line "server hasn't enabled uploads" |
+| 403 `Blob not owned by caller`, `Relay user not registered`, `Relay registration expired`; also a 403 from the storage PUT (expired or mismatched signed URL) | retain / delete, request auth, S3 | `UploadRejected` | failure line, retry later |
+| 404 `Blob not found` | retain / delete (e.g. the pending upload expired) | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
+| 400 `File exceeds size limit` (also 413 if a proxy sends it; the relay itself never answers 413) | presign above `largeMaxBytes` | `TooLarge` | not retried |
+| 429 `Small file quota exceeded` / `Large file storage quota exceeded` (these two exact texts only) | presign | `QuotaExceeded` | `BlobQuotaRecoveryFlow`: confirm, delete the oldest non-icon relay blob of the tier named in the 429 text (small / large; the blob id shown in the confirm is the one deleted), upload again; the confirm says people who have not downloaded it yet will not get it |
+| any other 429: `Rate limit exceeded` (120 per user per minute), `Too many pending uploads`, an empty or proxy / WAF body | every blobs route / presign | `RateLimited` | "sending too fast", no delete offered |
+| other 5xx | gateway / relay failure | `Unavailable` | failure line, retry |
+| anything else (400 `Unsupported content type`, 401 signature errors, …) | | `Generic` | failure line |
+
+Chat attachments are always presigned as `application/octet-stream`, so `Unsupported content type` cannot come from them. Space warnings read `usage` from `POST /v1/blobs/list` after a successful server upload (at most once a day, and after every 429 quota answer): percent of `large_included_bytes` for the large tier, and of the client's `small_max_objects` (default 100) for the small tier, because the list answer carries no small-tier limit (ask the relay to add one). The client tells the person once at 80 % and once at 90 %.
+
+**Transfer of the ciphertext (client).** The upload `PUT` to the presigned `upload_url` is streamed from a file (`HttpClient::PutFile`, `IBlobClient::PutUploadFile`): no whole-body string, progress reported as bytes go out, no total time limit, but a 15 s connect timeout and a speed floor (under 2 KB/s over 30 s aborts). The download `GET` of the CDN `public_url` goes to a temp file (`HttpClient::GetToFile`) with a hard cap of the declared plaintext size plus the 16-byte AEAD tag: a larger `Content-Length` is refused before any byte is read, a body that grows past the cap is aborted and the temp file deleted, and a non-2xx answer writes nothing. `kMaxHttpClientBodyBytes` (8 MiB) still bounds every buffered request.
 
 Chat attachment **file bytes** prefer peer-direct `/pp/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
 

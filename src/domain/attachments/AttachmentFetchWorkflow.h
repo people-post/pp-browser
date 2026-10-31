@@ -3,6 +3,8 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
+#include "domain/attachments/LargeTransferLane.h"
+#include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadStore.h"
@@ -15,6 +17,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -24,7 +27,8 @@ namespace pbr {
 /** Background CDN fetch + decrypt for chat attachments (R008 / R021). */
 class AttachmentFetchWorkflow : public IDekConsumer {
 public:
-  enum class DownloadState { Ready, Pending, Downloading, Failed };
+  /** TooLarge: the declared size is above AttachmentLimits::max_receive_bytes; it is never downloaded. */
+  enum class DownloadState { Ready, Pending, Downloading, Failed, TooLarge };
 
   using ChangedCallback = std::function<void()>;
 
@@ -35,6 +39,29 @@ public:
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
   void SetBacklogDrainActive(bool active);
+  /** Where downloads above the direct size run (null: on the drain's own worker, as small ones do). */
+  void SetTransferLane(LargeTransferLane* lane) { lane_ = lane; }
+  /** The receive-side limits (size, automatic-download pace and disk cap); default AttachmentLimits{}. */
+  void SetLimits(const AttachmentLimits& limits);
+  AttachmentLimits Limits() const;
+  /** Bytes the attachment store holds (default: a scan of the private content blocks, cached for 30 s). */
+  void SetDiskUsageProvider(std::function<uint64_t()> provider);
+  /** Replaces the scan of the attachment store (tests only; it must run outside the workflow's lock). */
+  void SetStoreScanForTest(std::function<uint64_t()> scan);
+  /** Time source for the per-sender window (ms); tests only. */
+  void SetClockForTest(std::function<int64_t()> now_ms);
+  /** Tests only: let a download use a plain-http loopback url. */
+  void SetAllowLocalCdnForTest(bool allow) { allow_local_cdn_for_test_ = allow; }
+  /**
+   * Whether this sender may start one more download by itself now: false when the store is over the disk cap
+   * or the sender is over its count / byte limit for the minute. A yes is recorded against the sender.
+   */
+  bool TryAutoDownloadBudget(const std::string& sender, uint64_t byte_length);
+  /**
+   * Whether a direct push from this sender may be kept: the same minute limits and disk cap as automatic
+   * downloads (counted apart from them), over the store including pushed ciphertext not yet opened.
+   */
+  bool TryAcceptDirectPush(const std::string& sender, uint64_t ciphertext_bytes);
   void SetOnChanged(ChangedCallback callback);
 
   Roe<void> SetDek(ByteVector dek) override;
@@ -90,15 +117,23 @@ public:
   void ForgetThread(const std::string& thread_id);
 
   /** Best-effort video poster under blobs_view (R012); ignores errors. */
-  void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields);
+  void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields, bool after_open = false);
 
   DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                          uint64_t byte_length) const;
+  /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
+  int ProgressPercent(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
+  /** Test hook / UI: record a download's percent (notifies the transcript when it changes). */
+  void SetProgress(const std::string& key, int percent);
+  std::string JobKeyFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const {
+    return JobKey(thread_id, content_hash);
+  }
 
 private:
   struct Job {
     std::string thread_id;
     std::string message_id;
+    std::string sender;
     ChatAttachmentFields fields;
   };
 
@@ -114,6 +149,7 @@ private:
   void CancelJobsLocked(const std::function<bool(const std::string& key)>& matches);
   void MarkPending(const std::string& key);
   void NotifyChanged();
+  bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length);
   ByteVector CopyDekUnlocked() const;
   void ContinueDrainOnWorker();
 
@@ -133,6 +169,20 @@ private:
   std::unordered_set<std::string> active_;
   std::unordered_set<std::string> failed_;
   std::unordered_set<std::string> pending_;
+  /** Held back by the automatic-download limits: stays a "Download" row until the person taps it. */
+  std::unordered_set<std::string> throttled_;
+  std::unordered_map<std::string, int> progress_;
+  LargeTransferLane* lane_ = nullptr;
+  bool allow_local_cdn_for_test_ = false;
+  AttachmentLimits limits_ = DefaultAttachmentLimits();
+  AutoDownloadBudget budget_;
+  AutoDownloadBudget push_budget_;
+  std::function<uint64_t()> disk_usage_;
+  std::function<int64_t()> clock_;
+  std::function<uint64_t()> scan_override_;
+  uint64_t scanned_disk_bytes_ = 0;
+  int64_t scanned_at_ms_ = 0;
+  uint64_t started_since_scan_bytes_ = 0;
   bool draining_ = false;
 };
 

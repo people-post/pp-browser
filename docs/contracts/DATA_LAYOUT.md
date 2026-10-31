@@ -89,11 +89,25 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
     public/blocks/{aa}/{bb}/{content_id_hex}   # clear published bytes (v1)
   object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
   threads/{thread_id}/
-    blobs_view/         # optional session plaintext materialization (not source of truth)
+    blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
+                        # a file above 4 MiB appears here only after an explicit Open
     # blobs/            # not used; durable bytes live in cas/private only
+  picked/               # Android: <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as
+                        # the attachment is prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
+  blob_cipher/
+    outgoing/           # <id> = AEAD ciphertext of an attachment being sent, <id>.rec = its record (content key, fields,
+                        # thread) sealed under the profile DEK. Removed when the message is sent, when the person
+                        # discards it, and at start when older than 24 h (file mtime). Kept after a failed send so
+                        # "Retry" (also after the app was killed) sends the same ciphertext with the same key.
+    incoming/           # <content_hash>.part = a CDN download in progress (ciphertext only); deleted when read back
+                        # or aborted, and the whole folder at start
   threads/ai-images/    # reserved name, NOT a thread (no thread.db): blobs_view/ only
     blobs_view/         # pre-send preview of the image the user is about to send to the AI; removed on send / discard, cleared at startup
                         # (sent AI images live in cas/private + the AI thread's own blobs_view, referenced by the message)
+  threads/voice/        # reserved name, NOT a thread (no thread.db): blobs_view/ only
+    blobs_view/voice-rec/  # the voice recording before it is sent: written when the recording ends (nothing on disk before, and a cancelled
+                        # one leaves nothing), deleted once it has been read for the send (the staged ciphertext is the retry path),
+                        # emptied when the next recording starts, cleared at startup and when the vault locks (like all blobs_view/)
 ```
 
 | Realm | At rest | Object id | How it gets bytes |
@@ -101,7 +115,7 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
 | **private** | Profile DEK wrap (PPBA) | BLAKE2b-256(plaintext) — R016 | Chat/E2E decrypt → memory → wrap; never auto-public |
 | **public** | Clear published payload (v1) | Hash(published bytes); new object on publish | Explicit **Share publicly…** only |
 
-**Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. Large private videos (> Soft 4 MiB) skip `blobs_view` until explicit open; CAS ingest unchanged. Public clear bytes need no DEK wipe path.
+**Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. A private video above `AttachmentLimits::max_receive_bytes` is never downloaded, so it has no `blobs_view` copy; CAS ingest unchanged. (This step changes nothing on disk.) Public clear bytes need no DEK wipe path.
 
 Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 

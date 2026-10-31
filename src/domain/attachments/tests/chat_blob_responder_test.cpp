@@ -213,6 +213,35 @@ TEST(ChatBlobResponderTest, ServePushAcceptsHashBeforeAttachmentMessageArrives) 
   harness.SeedAttachmentMessage(fields);
 }
 
+TEST(ChatBlobResponderTest, ServePushAsksTheGateAndAKeptPushIsOnlyWhatTheGateAdmits) {
+  ChatBlobResponderHarness harness("push-gate");
+  const auto fields = harness.MakeAttachmentFields();
+  const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
+
+  std::string seen_sender;
+  uint64_t seen_bytes = 0;
+  bool admit = false;
+  const ChatBlobPushGate gate = [&](const std::string& sender, const uint64_t bytes) {
+    seen_sender = sender;
+    seen_bytes = bytes;
+    return admit;
+  };
+
+  auto refused = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                              harness.profile_data_dir, ciphertext, harness.OnItsLink(), gate);
+  ASSERT_FALSE(static_cast<bool>(refused)) << "over the receiver's limits: refused, the sender uses the server";
+  EXPECT_EQ(seen_sender, "relay:peer");
+  EXPECT_EQ(seen_bytes, ciphertext.size());
+  EXPECT_FALSE(AttachmentPendingCiphertextExists(harness.profile_data_dir, harness.thread.id, fields.content_hash))
+      << "a refused push leaves nothing on disk";
+
+  admit = true;
+  auto kept = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                           harness.profile_data_dir, ciphertext, harness.OnItsLink(), gate);
+  ASSERT_TRUE(static_cast<bool>(kept)) << kept.error().message;
+  EXPECT_TRUE(AttachmentPendingCiphertextExists(harness.profile_data_dir, harness.thread.id, fields.content_hash));
+}
+
 TEST(ChatBlobResponderTest, ServePushRejectsPastPerThreadPendingCap) {
   ChatBlobResponderHarness harness("push-cap");
   const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};

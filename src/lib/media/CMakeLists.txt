@@ -5,6 +5,7 @@ pp_browser_add_lib_library(pp_lib_media
     CallRingtone.cpp
     MediaDeviceArbiter.cpp
     NoiseSuppressor.cpp
+    OggOpus.cpp
     QrDecode.cpp
     QrScanner.cpp
     Ringback.cpp
@@ -12,6 +13,10 @@ pp_browser_add_lib_library(pp_lib_media
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoYuv.cpp
+    VoiceDeviceBlock.cpp
+    VoiceFile.cpp
+    VoicePlayer.cpp
+    VoiceRecorder.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_foundation_platform
@@ -28,10 +33,14 @@ if(WIN32)
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Default.cpp
+    VoiceAudioSession_Default.cpp
+    VoiceSupport_Default.cpp
+    MicPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
-  target_sources(pp_lib_media PRIVATE VideoCodec_Darwin.cpp DeviceVitals_Darwin.mm)
+  target_sources(pp_lib_media PRIVATE VideoCodec_Darwin.cpp DeviceVitals_Darwin.mm MicPermission_Darwin.mm
+    VoiceSupport_Default.cpp)
   target_link_libraries(pp_lib_media PRIVATE
     "-framework Foundation"
     "-framework VideoToolbox"
@@ -44,6 +53,7 @@ elseif(APPLE)
       CameraCandidates_Default.cpp
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
+      VoiceAudioSession_Ios.mm
       VoiceProcessingIo_Apple.cpp)
     target_link_libraries(pp_lib_media PRIVATE "-framework AVFoundation" "-framework UIKit" "-framework AudioToolbox" "-framework CoreMotion")
   else()
@@ -52,6 +62,7 @@ elseif(APPLE)
       CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
       SdlAudioBootstrap_Default.cpp
+      VoiceAudioSession_Default.cpp
       VoiceProcessingIo_Apple.cpp)
     target_link_libraries(pp_lib_media PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation")
   endif()
@@ -63,6 +74,9 @@ elseif(ANDROID)
     CallAudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
     SdlAudioBootstrap_Default.cpp
+    VoiceAudioSession_Default.cpp
+    VoiceSupport_Default.cpp
+    MicPermission_Android.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mediandk camera2ndk)
 else()
@@ -73,6 +87,9 @@ else()
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Linux.cpp
+    VoiceAudioSession_Default.cpp
+    VoiceSupport_Linux.cpp
+    MicPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)

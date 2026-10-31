@@ -39,6 +39,24 @@ struct ChatScreenState {
   bool show_attach_button = false;
   bool attachment_uploading = false;
   ui::String attachment_draft_name;
+  /** The chip's line while sending ("Uploading 37%") and after a failure; empty falls back to "Uploading…". */
+  ui::String attachment_status;
+  /** A send did not finish: the chip offers Retry / Discard (the staged ciphertext is kept). */
+  bool attachment_failed = false;
+  /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */
+  bool show_voice = false;
+  /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
+  bool voice_blocked = false;
+  bool voice_recording = false;
+  /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */
+  bool voice_click_mode = false;
+  /** The finger slid far enough up that releasing now cancels. */
+  bool voice_cancel_zone = false;
+  /** The last seconds before the limit: the timer counts down. */
+  bool voice_countdown = false;
+  ui::String voice_timer;
+  ui::String voice_hint;
+  ui::String voice_title;
   /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
   bool image_chip = false;
   bool image_preparing = false;

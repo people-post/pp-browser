@@ -53,5 +53,18 @@ TEST_F(AppErrorTest, NetworkDisplayNamesTheCause) {
   EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::TlsFailed, "curl failed: ssl")),
             "Can't set up a secure connection — the network may be going through a proxy.");
   EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfigured, "Blob upload is not configured")),
-            "Can't send pictures right now — the server hasn't enabled uploads.");
+            "Can't send attachments right now — the server hasn't enabled uploads.");
+}
+
+// One plain line per row of the attachments plan's status table (no status codes, no protocol words).
+TEST_F(AppErrorTest, BlobStatusRowsShowPlainText) {
+  using namespace pbr;
+  const auto show = [](const Err::Blob code) { return AppError::Display(AppError::Blob(code, "detail")); };
+  EXPECT_EQ(show(Err::Blob::UploadRejected), "Upload failed — please try again later.");
+  EXPECT_EQ(show(Err::Blob::Expired), "This file has expired.");
+  EXPECT_EQ(show(Err::Blob::TooLarge), "This file is too large to send.");
+  EXPECT_EQ(show(Err::Blob::QuotaExceeded), "Cloud space is full");
+  EXPECT_EQ(show(Err::Blob::Unavailable), "Can't send right now — please try again in a moment.");
+  EXPECT_EQ(show(Err::Blob::RateLimited), "You're sending too fast — please wait a moment.");
+  EXPECT_EQ(show(Err::Blob::Generic), "Upload failed — try again.");
 }
