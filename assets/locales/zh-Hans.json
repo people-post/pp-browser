@@ -1103,6 +1103,8 @@
     "sidebar.menu.unpin": "取消置顶",
     "sidebar.menu.mute": "静音…",
     "sidebar.menu.unmute": "取消静音",
+    "sidebar.menu.mute_mentions": "提及也静音",
+    "sidebar.menu.allow_mentions": "被提及时提醒",
     "sidebar.menu.mute_8h": "8 小时",
     "sidebar.menu.mute_1w": "1 周",
     "sidebar.menu.mute_always": "一直",

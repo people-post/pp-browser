@@ -61,6 +61,19 @@ TEST(SessionMenuTest, SetStatesOfferTheirOpposite) {
   EXPECT_TRUE(Has(items, Item::Unarchive) && !Has(items, Item::Archive));
 }
 
+TEST(SessionMenuTest, AMutedGroupOffersToMuteItsMentionsToo) {
+  // G015: a mention alerts in a muted group unless its mentions are muted too.
+  SessionMenuState group{.kind = SessionKind::Group};
+  EXPECT_FALSE(Has(SessionMenuItems(group), Item::MuteMentions)) << "not muted: nothing to add";
+  group.muted = true;
+  EXPECT_TRUE(Has(SessionMenuItems(group), Item::MuteMentions));
+  group.mute_mentions = true;
+  EXPECT_TRUE(Has(SessionMenuItems(group), Item::AllowMentions));
+  EXPECT_FALSE(Has(SessionMenuItems(group), Item::MuteMentions));
+  SessionMenuState direct{.kind = SessionKind::Direct, .muted = true};
+  EXPECT_FALSE(Has(SessionMenuItems(direct), Item::MuteMentions)) << "a direct chat has no mentions";
+}
+
 TEST(SessionMenuTest, DestructiveItemsComeLast) {
   for (const SessionKind kind : {SessionKind::Ai, SessionKind::Direct, SessionKind::Group}) {
     const std::vector<Item> items = Items(kind, false, true);

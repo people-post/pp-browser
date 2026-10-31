@@ -296,7 +296,14 @@ void ChatPresenter::Mute(const std::string& thread_id, const SessionMuteChoice c
 }
 
 void ChatPresenter::Unmute(const std::string& thread_id) {
-  UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.muted_until = 0; });
+  UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) {
+    prefs.muted_until = 0;
+    prefs.mute_mentions = false;  // a mute's own setting: the next mute starts with mentions alerting
+  });
+}
+
+void ChatPresenter::SetMuteMentions(const std::string& thread_id, const bool mute) {
+  UpdatePrefs(thread_id, [mute](ThreadLocalPrefs& prefs) { prefs.mute_mentions = mute; });
 }
 
 void ChatPresenter::SetArchived(const std::string& thread_id, const bool archived) {

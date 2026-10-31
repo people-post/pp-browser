@@ -314,6 +314,19 @@ Roe<ThreadMessage> ConversationsFacade::SendGroupMessage(const std::string& thre
   return hub_.MeshMessaging().SendGroupMessage(thread_id, text, opts);
 }
 
+Roe<ThreadMessage> ConversationsFacade::SendGroupText(const std::string& thread_id, const std::string& text,
+                                                      std::vector<TextSpan> spans) {
+  if (auto checked = text_spans::CheckStructure(spans); !checked) {
+    return checked.error();
+  }
+  spans = text_spans::KeepValidRanges(text, std::move(spans));
+  SendRelayOptions opts;
+  if (!spans.empty()) {
+    opts.payload_json = text_spans::ToPayloadJson(text, spans);
+  }
+  return hub_.MeshMessaging().SendGroupMessage(thread_id, text, opts);
+}
+
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
   return hub_.ShareContact(thread_id, contact_id);
 }

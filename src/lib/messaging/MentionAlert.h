@@ -29,4 +29,20 @@ inline bool MutedMentionMayAlert(int64_t last_alert_ms, int64_t now_ms) {
   return last_alert_ms == 0 || now_ms - last_alert_ms >= kMutedMentionAlertGapMs;
 }
 
+/**
+ * Whether a background notice alerts (G015): an unmuted chat always; a muted one only for a message that mentions
+ * us — not when its mentions are muted too — and then once per kMutedMentionAlertGapMs at most (`last_alert_ms`,
+ * this chat's last mention alert, is moved on when it does).
+ */
+inline bool NoticeAlerts(bool muted, bool mute_mentions, bool mentions_us, int64_t& last_alert_ms, int64_t now_ms) {
+  if (!muted) {
+    return true;
+  }
+  if (!mentions_us || mute_mentions || !MutedMentionMayAlert(last_alert_ms, now_ms)) {
+    return false;
+  }
+  last_alert_ms = now_ms;
+  return true;
+}
+
 } // namespace pbr

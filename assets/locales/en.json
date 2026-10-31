@@ -1103,6 +1103,8 @@
     "sidebar.menu.unpin": "Unpin",
     "sidebar.menu.mute": "Mute…",
     "sidebar.menu.unmute": "Unmute",
+    "sidebar.menu.mute_mentions": "Mute mentions too",
+    "sidebar.menu.allow_mentions": "Alert on mentions",
     "sidebar.menu.mute_8h": "8 hours",
     "sidebar.menu.mute_1w": "1 week",
     "sidebar.menu.mute_always": "Always",

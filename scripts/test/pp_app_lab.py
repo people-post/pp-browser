@@ -1955,6 +1955,48 @@ def scenario_linked_devices_see_what_each_sent(lab):
         raise ProbeError("bob: alice's messages not once each (%s)" % ids)
 
 
+def next_message_notice(u, thread, seen, timeout=40):
+    """The next background message notice for `thread` after the first `seen` of them: {mentions_us, alerts}."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with u.lock:
+            notices = [m for _, m in u.history
+                       if m.get("event") == "notice" and m.get("kind") == "message" and m.get("thread") == thread]
+        if len(notices) > seen:
+            return notices[seen]
+        time.sleep(0.2)
+    raise ProbeError("%s: no notice for message %d in %s" % (u.name, seen + 1, thread))
+
+
+def scenario_muted_group_alerts_on_a_mention(lab):
+    """Mentions in a muted group (group-chat G015): Carol mutes the group and puts the app away. Bob's plain
+    message is silent; Bob mentioning her alerts; Bob's `@everyone` does not reach her (only the owner's does);
+    once she mutes its mentions too, even Alice's mention is silent."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    c_thread = threads[c.name]
+    c.cmd("mute", thread=c_thread)
+    c.cmd("show_chat", thread=c.cmd("open_chat", account=a.account)["thread"])  # the group is not the open chat
+    c.cmd("minimize")  # out of sight, still connected (a phone in the background stops its network)
+    steps = [
+        (b, "plain news", [], False, (False, False)),
+        (b, "@%s look" % c.name, [c.account], False, (True, True)),
+        (b, "@everyone hey", [], True, (False, False)),
+    ]
+    seen = 0
+    for sender, text, mentions, everyone, (mentions_us, alerts) in steps:
+        sender.cmd("send_mentions", thread=threads[sender.name], text=text, mentions=mentions, everyone=everyone)
+        notice = next_message_notice(c, c_thread, seen)
+        seen += 1
+        if notice.get("mentions_us") != mentions_us or notice.get("alerts") != alerts:
+            raise ProbeError("carol: %r from %s gave %s" % (text, sender.name, notice))
+    c.cmd("mute_mentions", thread=c_thread)
+    a.cmd("send_mentions", thread=threads[a.name], text="@%s now" % c.name, mentions=[c.account])
+    notice = next_message_notice(c, c_thread, seen)
+    if not notice.get("mentions_us") or notice.get("alerts"):
+        raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2618,6 +2660,7 @@ SCENARIOS = [
     ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
     ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
     ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
+    ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

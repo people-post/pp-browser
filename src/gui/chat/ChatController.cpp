@@ -2287,12 +2287,10 @@ void ChatController::WireMessagingBindings() {
         // mentions us (G015), and then once a minute per group at most.
         const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
         const int64_t now_ms = util::NowUnixMs();
-        if (prefs && ThreadIsMuted(prefs->muted_until, now_ms)) {
-          int64_t& last = muted_mention_alert_ms_[thread_id];
-          if (!mentions_us || !MutedMentionMayAlert(last, now_ms)) {
-            return;
-          }
-          last = now_ms;
+        const bool muted = prefs && ThreadIsMuted(prefs->muted_until, now_ms);
+        if (!NoticeAlerts(muted, prefs && prefs->mute_mentions, mentions_us, muted_mention_alert_ms_[thread_id],
+                          now_ms)) {
+          return;
         }
         // A stranger's first message arrives before the directory answered, so the title would be a bare
         // id. Give the lookup a moment and use whatever name is known by then.

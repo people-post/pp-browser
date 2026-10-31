@@ -7,6 +7,7 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
+#include "lib/messaging/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
@@ -538,6 +539,15 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
     }
     inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
     MaybeEnqueueAttachmentDownload(outcome);
+    // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
+    if (auto notice = BackgroundNoticeFor(outcome, identity->account_id); notice && on_background_unread_) {
+      AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+        if (on_background_unread_) {
+          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                                notice.mentions_us);
+        }
+      });
+    }
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
@@ -1420,7 +1430,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
 
   std::optional<std::vector<uint8_t>> rich_plaintext;
-  if (options.content_type && *options.content_type != ChatContentType::Text) {
+  // Rich content, or a text with marked ranges (mentions, G015): the whole ChatPayload, not the bare text.
+  if ((options.content_type && *options.content_type != ChatContentType::Text) ||
+      !text_spans::FromPayloadJson(message.payload_json).empty()) {
     auto plaintext = ChatPayloadCodec::EncodeToRow(message);
     if (!plaintext) {
       return FailOutbound(store_, *appended, plaintext.error());
@@ -1726,13 +1738,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       AppRuntime::PostWorkerCritical( [this, local_account_id, local_relay_id = identity->relay_user_id,
                                                          messages = std::move(messages)]() mutable {
         bool changed = false;
-        struct UnreadNotice {
-          std::string title;
-          std::string body;
-          std::string thread_id;
-          bool mentions_us = false;
-        };
-        std::vector<UnreadNotice> background_notices;
+        std::vector<BackgroundNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome);
@@ -1766,23 +1772,8 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
           MaybeEnqueueAttachmentDownload(outcome);
-          if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
-            std::string notice_title = "New message";
-            if (auto thread = store_.GetThread(resolved_thread_id)) {
-              if (*thread) {
-                notice_title = inbox_.ResolveThreadLabel(**thread).title;
-                if (notice_title.empty()) {
-                  notice_title = "New message";
-                }
-              }
-            }
-            background_notices.push_back(UnreadNotice{
-                .title = std::move(notice_title),
-                .body = preview && !preview->empty() ? *preview : "You have a new message",
-                .thread_id = resolved_thread_id,
-                .mentions_us = outcome.persisted_message &&
-                               InboundMentionsUs(resolved_thread_id, *outcome.persisted_message, local_account_id),
-            });
+          if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
+            background_notices.push_back(std::move(*notice));
           }
         }
 
@@ -1890,6 +1881,26 @@ void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const Deli
 void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
     std::function<void(std::string, std::string, std::string, bool)> callback) {
   on_background_unread_ = std::move(callback);
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::BackgroundNoticeFor(
+    const RelayReceiveOutcome& outcome, const std::string& local_account) {
+  if (outcome.thread_id.empty() || AppLifecycle::IsUserAttentive() || inbox_.ActiveThreadId() == outcome.thread_id) {
+    return std::nullopt;
+  }
+  BackgroundNotice notice;
+  notice.title = "New message";
+  if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
+    if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
+      notice.title = std::move(label);
+    }
+  }
+  const std::string preview = outcome.persisted_message ? outcome.persisted_message->text : std::string();
+  notice.body = preview.empty() ? "You have a new message" : preview;
+  notice.thread_id = outcome.thread_id;
+  notice.mentions_us = outcome.persisted_message &&
+                       InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
+  return notice;
 }
 
 bool MeshDeliveryOrchestrator::InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message,

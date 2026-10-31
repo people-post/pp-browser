@@ -348,6 +348,15 @@ private:
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
   /** Whether a stored inbound message in `thread_id` mentions us (G015). */
+  /** A persisted message's notice for a user who is away (not attentive, another chat open); none otherwise. */
+  struct BackgroundNotice {
+    std::string title;
+    std::string body;
+    std::string thread_id;
+    bool mentions_us = false;
+  };
+  std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
+                                                      const std::string& local_account);
   bool InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message, const std::string& local_account);
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;

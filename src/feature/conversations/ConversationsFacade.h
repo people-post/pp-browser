@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
+#include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
@@ -139,6 +140,11 @@ public:
   void MaybeTailSync(const std::string& thread_id);
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
   Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  /**
+   * A group text with marked ranges (mentions, `@everyone` — G015): spans checked (structure, ranges; a bad range
+   * is dropped, the text stays) and sent in the ChatPayload (type 6); the row keeps them in `payload_json`.
+   */
+  Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */

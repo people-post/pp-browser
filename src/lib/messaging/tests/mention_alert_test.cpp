@@ -97,6 +97,18 @@ TEST_F(MentionAlertTest, NotWhileTheGroupIsCheckingOrAfterWeWereRemoved) {
   EXPECT_FALSE(Reaches(From(kOwner, "@everyone", {Everyone()})));
 }
 
+TEST(MutedMentionAlertTest, AMutedChatAlertsOnlyOnAMentionUnlessMentionsAreMutedToo) {
+  int64_t last = 0;
+  EXPECT_TRUE(NoticeAlerts(/*muted=*/false, false, /*mentions_us=*/false, last, 1000)) << "not muted: always";
+  EXPECT_EQ(last, 0) << "an ordinary notice is not a mention alert";
+  EXPECT_FALSE(NoticeAlerts(true, false, false, last, 1000)) << "muted: a plain message is silent";
+  EXPECT_FALSE(NoticeAlerts(true, /*mute_mentions=*/true, true, last, 1000)) << "mentions muted too";
+  EXPECT_TRUE(NoticeAlerts(true, false, true, last, 1000));
+  EXPECT_EQ(last, 1000);
+  EXPECT_FALSE(NoticeAlerts(true, false, true, last, 1000 + kMutedMentionAlertGapMs - 1)) << "rate-limited";
+  EXPECT_TRUE(NoticeAlerts(true, false, true, last, 1000 + kMutedMentionAlertGapMs));
+}
+
 TEST(MutedMentionAlertTest, AtMostOnceAMinutePerGroup) {
   EXPECT_TRUE(MutedMentionMayAlert(0, 1'000'000)) << "the first one";
   EXPECT_FALSE(MutedMentionMayAlert(1'000'000, 1'000'000 + kMutedMentionAlertGapMs - 1));

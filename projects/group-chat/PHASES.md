@@ -42,22 +42,22 @@ L (size limit, G014) — independent
 - [x] `MessageMentionsUs` (`lib/messaging/MentionAlert.*`): our account mentioned, or everyone from the signed roster's owner; never own / blocked sender / direct chat / removed / checking group
 - [x] Background notices carry `mentions_us`; a muted group alerts on a mention at most once a minute per group (`ChatController`, `kMutedMentionAlertGapMs`)
 - [ ] **Held mentions:** a mention in a group still checking its members (or before its roster is known) is held, then decided when the check settles if the message is under 10 min old (`ConversationsHub::ResumeGroupRosterChecks` / the roster sync family's settle is where the check ends)
-- [ ] Alerts for group messages that arrive over Amp too (today only the relay poll's background notices carry `mentions_us`) — check which ingest paths raise background notices
+- [x] Alerts for group messages that arrive over Amp too: both ingest paths raise the background notice through one helper (`MeshDeliveryOrchestrator::BackgroundNoticeFor`); the alert decision is one function (`NoticeAlerts`, used by `ChatController` and the probe)
 
 **m3 — Mute mentions too**
-- [ ] `thread_local_prefs.mute_mentions` column (additive; `ThreadLocalPrefsStore`), read in the `SetOnBackgroundUnread` handler
-- [ ] Mute menu choice "Mute mentions too" (`ChatMenus` / `ChatPresenter`), en + zh-Hans strings
+- [x] `thread_local_prefs.mute_mentions` column (additive, added on open; `ThreadLocalPrefsStore`), read in the `SetOnBackgroundUnread` handler; cleared on unmute
+- [x] Menu choice on a muted group: "Mute mentions too" / "Alert on mentions" (`SessionMenuItem::MuteMentions` / `AllowMentions`, `ChatPresenter::SetMuteMentions`), en + zh-Hans
 
 **m4 — Mention marker**
 - [ ] `thread_mentions` rows (DATA_LAYOUT): written when a live message mentions us (not by history sync), dropped on thread open, on message delete (for everyone or here), with the thread
 - [ ] Chat list: "You were mentioned" (`ChatPresenter` row), opening jumps to the oldest unread mention
 
 **m5 — Sending and display**
-- [ ] Facade / hub API to send a group text with spans (spans in `payload_json`; `ChatPayloadCodec::EncodeToRow` writes type 6)
+- [x] `ConversationsFacade::SendGroupText(thread, text, spans)`: spans checked, kept in `payload_json`; a group send with spans carries the full ChatPayload (type 6) — it used to send only rich non-text content that way
 - [ ] Composer: `@` opens a member picker; inserts `@` + the member's **public nickname** (their card's, else the roster's) — never the user's private remark; owner sees `@everyone`
 - [ ] Transcript: highlight eligible spans (member / owner check at display, so a late roster restores them); tap opens the member
 - [ ] Re-encode rule: same chat keeps spans; any future forward / quote drops mention and everyone spans
 
 **m6 — Proof and promotion**
-- [ ] Probe command to send with mentions; lab scenario: a muted member is alerted on a mention, not on a plain message; a member's `@everyone` does not alert
+- [x] Probe `send_mentions`, `mute_mentions` / `allow_mentions`, a `notice` event (kind message: `mentions_us`, `alerts`); lab `muted_group_alerts_on_a_mention` (a plain message silent, a mention alerts, a member's `@everyone` does not, mentions muted too: silent)
 - [ ] Promote: WIRE_SCHEMAS already normative; DATA_LAYOUT `thread_mentions` / `mute_mentions` lines describe m3 / m4 — confirm against the code when they land; G015 status → implemented

@@ -17,6 +17,9 @@ enum class SessionMenuItem {
   Unpin,
   Mute,
   Unmute,
+  /** A muted group: its mentions silent too (G015) — or alerting again. */
+  MuteMentions,
+  AllowMentions,
   Archive,
   Unarchive,
   ViewContact,
@@ -38,6 +41,8 @@ struct SessionMenuState {
   bool pinned = false;
   /** Muted right now (an expired mute is not muted). */
   bool muted = false;
+  /** While muted, mentions are silent too (G015). */
+  bool mute_mentions = false;
   bool archived = false;
 };
 
@@ -57,6 +62,9 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   items.push_back(state.pinned ? SessionMenuItem::Unpin : SessionMenuItem::Pin);
   if (state.kind != SessionKind::Ai) { // an AI thread never notifies
     items.push_back(state.muted ? SessionMenuItem::Unmute : SessionMenuItem::Mute);
+  }
+  if (state.kind == SessionKind::Group && state.muted) {
+    items.push_back(state.mute_mentions ? SessionMenuItem::AllowMentions : SessionMenuItem::MuteMentions);
   }
   items.push_back(state.archived ? SessionMenuItem::Unarchive : SessionMenuItem::Archive);
   if (state.kind == SessionKind::Direct && state.has_contact) {
