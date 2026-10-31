@@ -7,6 +7,7 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
+#include "lib/messaging/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
@@ -243,6 +244,25 @@ void MeshDeliveryOrchestrator::NudgeSiblings() {
   }
 }
 
+void MeshDeliveryOrchestrator::MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target) {
+  if (!sent_copy::Mirrored(sent)) {
+    return;
+  }
+  AppRuntime::PostWorkerNormal([this, sent, target = std::move(target)]() {
+    if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
+      return;  // no other device, or signed out
+    }
+    auto notice = sent_copy::BuildNotice(sent, target);
+    if (!notice) {
+      log().warning << "sent copy not built message_id=" << sent.id << ": " << notice.error().message;
+      return;
+    }
+    if (auto copied = control_lane_.NotifySiblings(*notice); !copied) {
+      log().info << "sent copy not sent message_id=" << sent.id << ": " << copied.error().message;
+    }
+  });
+}
+
 void MeshDeliveryOrchestrator::NotifySiblings() {
   if (auto card = own_cards_.Card(util::NowUnixMs())) {
     siblings_told_card_at_.store(card->issued_at);
@@ -409,6 +429,10 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   if (outcome.resign_roster_group_id) {
     (void)groups->SignAndSendRoster(*outcome.resign_roster_group_id);
   }
+  if (outcome.refuse_invite_group_id) {
+    (void)groups->RefuseInvite(*outcome.refuse_invite_group_id, outcome.refuse_invite_nonce,
+                               outcome.refuse_invite_member);
+  }
   if (outcome.took_ownership_group_id) {
     (void)groups->SignAndSendRoster(*outcome.took_ownership_group_id, outcome.took_ownership_transfer);
   }
@@ -519,6 +543,16 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
     }
     inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
     MaybeEnqueueAttachmentDownload(outcome);
+    NoteMention(outcome, identity->account_id);
+    // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
+    if (auto notice = BackgroundNoticeFor(outcome, identity->account_id); notice && on_background_unread_) {
+      AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+        if (on_background_unread_) {
+          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                                notice.mentions_us);
+        }
+      });
+    }
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
@@ -1255,6 +1289,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   }
   if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
     (void)public_lock_.NoteTraffic(thread_id);
+    // Public chats only: a private Secure chat stays on its device (M014).
+    MirrorToSiblings(wire, SentCopyTarget{.peer_account = amp_peer_key});
   }
   return *appended;
 }
@@ -1399,7 +1435,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
 
   std::optional<std::vector<uint8_t>> rich_plaintext;
-  if (options.content_type && *options.content_type != ChatContentType::Text) {
+  // Rich content, or a text with marked ranges (mentions, G015): the whole ChatPayload, not the bare text.
+  if ((options.content_type && *options.content_type != ChatContentType::Text) ||
+      !text_spans::FromPayloadJson(message.payload_json).empty()) {
     auto plaintext = ChatPayloadCodec::EncodeToRow(message);
     if (!plaintext) {
       return FailOutbound(store_, *appended, plaintext.error());
@@ -1500,6 +1538,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
+  MirrorToSiblings(message, SentCopyTarget{.group_id = *(*thread)->group_id});
   return *appended;
 }
 
@@ -1704,13 +1743,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       AppRuntime::PostWorkerCritical( [this, local_account_id, local_relay_id = identity->relay_user_id,
                                                          messages = std::move(messages)]() mutable {
         bool changed = false;
-        struct UnreadNotice {
-          std::string title;
-          std::string body;
-          std::string thread_id;
-          bool mentions_us = false;
-        };
-        std::vector<UnreadNotice> background_notices;
+        std::vector<BackgroundNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome);
@@ -1744,23 +1777,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
           MaybeEnqueueAttachmentDownload(outcome);
-          if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
-            std::string notice_title = "New message";
-            if (auto thread = store_.GetThread(resolved_thread_id)) {
-              if (*thread) {
-                notice_title = inbox_.ResolveThreadLabel(**thread).title;
-                if (notice_title.empty()) {
-                  notice_title = "New message";
-                }
-              }
-            }
-            background_notices.push_back(UnreadNotice{
-                .title = std::move(notice_title),
-                .body = preview && !preview->empty() ? *preview : "You have a new message",
-                .thread_id = resolved_thread_id,
-                .mentions_us = outcome.persisted_message &&
-                               InboundMentionsUs(resolved_thread_id, *outcome.persisted_message, local_account_id),
-            });
+          NoteMention(outcome, local_account_id);
+          if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
+            background_notices.push_back(std::move(*notice));
           }
         }
 
@@ -1868,6 +1887,103 @@ void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const Deli
 void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
     std::function<void(std::string, std::string, std::string, bool)> callback) {
   on_background_unread_ = std::move(callback);
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::BackgroundNoticeFor(
+    const RelayReceiveOutcome& outcome, const std::string& local_account) {
+  // The user is away (minimized, another window focused, a phone in the background): every chat notifies, the
+  // one left open too — it is not being looked at.
+  if (outcome.thread_id.empty() || AppLifecycle::IsUserAttentive()) {
+    return std::nullopt;
+  }
+  BackgroundNotice notice;
+  notice.title = "New message";
+  if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
+    if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
+      notice.title = std::move(label);
+    }
+  }
+  const std::string preview = outcome.persisted_message ? outcome.persisted_message->text : std::string();
+  notice.body = preview.empty() ? "You have a new message" : preview;
+  notice.thread_id = outcome.thread_id;
+  notice.mentions_us = outcome.persisted_message &&
+                       InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
+  return notice;
+}
+
+void MeshDeliveryOrchestrator::NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account) {
+  if (!outcome.persisted_message || outcome.thread_id.empty()) {
+    return;
+  }
+  auto thread = store_.GetThread(outcome.thread_id);
+  if (!thread || !*thread || !(*thread)->group_id) {
+    return;
+  }
+  const ThreadMessage& message = *outcome.persisted_message;
+  const auto blocked = contacts_.IsAccountBlocked(message.sender_contact_id);
+  const MentionVerdict verdict =
+      MentionVerdictFor(message, *(*thread)->group_id, local_account, group_roster_, blocked && *blocked);
+  if (verdict == MentionVerdict::Held) {
+    std::lock_guard lock(held_mentions_mutex_);
+    held_mentions_.push_back(HeldMention{.group_id = *(*thread)->group_id,
+                                         .thread_id = outcome.thread_id,
+                                         .message = message,
+                                         .local_account = local_account,
+                                         .held_at_ms = util::NowUnixMs()});
+    return;
+  }
+  if (verdict == MentionVerdict::Us && mentions_ && inbox_.ActiveThreadId() != outcome.thread_id) {
+    if (auto marked = mentions_->Add(outcome.thread_id, message.id, message.timestamp); !marked) {
+      log().warning << "mention not marked: " << marked.error().message;
+    }
+  }
+}
+
+void MeshDeliveryOrchestrator::DecideHeldMentions(const std::string& group_id) {
+  std::vector<HeldMention> deciding;
+  {
+    std::lock_guard lock(held_mentions_mutex_);
+    auto split = std::stable_partition(held_mentions_.begin(), held_mentions_.end(),
+                                       [&](const HeldMention& held) { return held.group_id != group_id; });
+    deciding.assign(std::make_move_iterator(split), std::make_move_iterator(held_mentions_.end()));
+    held_mentions_.erase(split, held_mentions_.end());
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  std::vector<HeldMention> still_held;
+  for (HeldMention& held : deciding) {
+    const auto blocked = contacts_.IsAccountBlocked(held.message.sender_contact_id);
+    const MentionVerdict verdict =
+        MentionVerdictFor(held.message, group_id, held.local_account, group_roster_, blocked && *blocked);
+    if (verdict == MentionVerdict::Held) {
+      if (now_ms - held.held_at_ms < kHeldMentionMaxAgeMs) {
+        still_held.push_back(std::move(held));
+      }
+      continue;
+    }
+    if (verdict != MentionVerdict::Us || now_ms - held.held_at_ms >= kHeldMentionMaxAgeMs) {
+      continue;  // not ours after all, or too late to alert (G015 limit 3)
+    }
+    RelayReceiveOutcome decided;
+    decided.persisted = true;
+    decided.thread_id = held.thread_id;
+    decided.persisted_message = held.message;
+    NoteMention(decided, held.local_account);
+    if (auto notice = BackgroundNoticeFor(decided, held.local_account); notice && on_background_unread_) {
+      AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+        if (on_background_unread_) {
+          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                                notice.mentions_us);
+        }
+      });
+    }
+    log().info << "held mention decided group_id=" << group_id << " message_id=" << held.message.id;
+  }
+  if (!still_held.empty()) {
+    std::lock_guard lock(held_mentions_mutex_);
+    for (HeldMention& held : still_held) {
+      held_mentions_.push_back(std::move(held));
+    }
+  }
 }
 
 bool MeshDeliveryOrchestrator::InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message,

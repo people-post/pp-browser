@@ -257,6 +257,14 @@ select selectbox option:hover {
   color: #4f46e5;
 }
 
+.chat-mention {
+  color: #4a6cf7;
+}
+
+.bubble-user .chat-mention {
+  color: #ffffff;
+}
+
 .chat-inline-link {
   color: #4f46e5;
 }
@@ -1111,6 +1119,10 @@ select selectbox option:hover {
 
 .sidebar-archived-entry:hover {
   background-color: #f3f4f6;
+}
+
+.sidebar-session-mention {
+  color: #4a6cf7;
 }
 
 .sidebar-unread-dot {

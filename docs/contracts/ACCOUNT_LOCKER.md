@@ -71,7 +71,8 @@ One sync (`AccountLockerWorkflow::Publish`), serialized per device:
    (a tombstone, so the removal carries).
 3. **Take remote edits:** a register newer than ours wins — present: the remote user's fields go into
    this device's row (keeping its own id and directory data); absent: the contact is removed here.
-4. Store the merged state: contacts by register; groups by the higher `roster_epoch`; card floors by
+4. Store the merged state, the same whichever device merges (at a tie the stored register, row and group stand —
+   rows hold each device's own local fields; lists sorted): contacts by register; groups by the higher `roster_epoch`; card floors by
    the higher `issued_at`; providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. **Nothing new → no write.**
 5. After a write, nudge the siblings: a `device_list` control-lane notice to the account's own mailbox,
    only when the own account card lists more than one device. A device that receives a verified sibling

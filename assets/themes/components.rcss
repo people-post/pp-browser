@@ -756,6 +756,16 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* A mention / @everyone in a group message (group-chat G015): accent, bold; a member's opens them. */
+.chat-mention {
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.chat-mention--everyone {
+  cursor: auto;
+}
+
 .inline-code {
   font-family: LatoLatin;
   font-size: 13dp;
@@ -3064,6 +3074,16 @@ input.checkbox {
 
 .sidebar-session-flag {
   flex-shrink: 0;
+}
+
+/* "You were mentioned" ahead of the preview (group-chat G015): accent, bold, never cut. */
+.sidebar-session-mention {
+  flex-shrink: 0;
+  display: block;
+  margin-right: 4dp;
+  font-size: 12dp;
+  font-weight: bold;
+  white-space: nowrap;
 }
 
 /* "Marked as unread": a dot in the badge colour, since there is no message count to show. */

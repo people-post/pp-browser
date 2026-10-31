@@ -143,6 +143,11 @@ Roe<std::string> GroupMembershipCodec::EncodeInviteResponse(const std::string& i
   return DumpJson(MakeStringObject({{"invite_nonce", invite_nonce}, {"group_id", group_id}}));
 }
 
+Roe<std::string> GroupMembershipCodec::EncodeInviteRefused(const std::string& invite_nonce,
+                                                           const std::string& group_id, const std::string& reason) {
+  return DumpJson(MakeStringObject({{"invite_nonce", invite_nonce}, {"group_id", group_id}, {"reason", reason}}));
+}
+
 Roe<std::pair<std::string, std::string>> GroupMembershipCodec::DecodeInviteResponse(
     const std::string& detail_json) {
   auto json = TryParseObject(detail_json);
@@ -161,7 +166,8 @@ Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInv
     const ThreadMessage& message) {
   const auto control_type = ControlTypeFromMessage(message);
   if (!control_type || (*control_type != GroupMembershipControlType::GroupInviteAccept &&
-                       *control_type != GroupMembershipControlType::GroupInviteDecline)) {
+                       *control_type != GroupMembershipControlType::GroupInviteDecline &&
+                       *control_type != GroupMembershipControlType::GroupInviteRefused)) {
     return Error("Message is not a group invite response");
   }
   auto payload = TryParseObject(message.payload_json);
@@ -180,6 +186,9 @@ Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInv
   result.invite_nonce = decoded->first;
   result.group_id = decoded->second;
   result.control_type = *control_type;
+  if (auto json = TryParseObject(*detail)) {
+    result.reason = json->getString("reason").value_or("");
+  }
   return result;
 }
 

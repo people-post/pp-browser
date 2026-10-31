@@ -60,6 +60,9 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
 
   active_thread_id_ = thread_id;
   MarkThreadRead(thread_id);
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);  // read: "You were mentioned" goes with the unread count
+  }
   if (on_thread_changed_) {
     on_thread_changed_();
   }
@@ -111,6 +114,9 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   auto deleted = store_.DeleteThread(thread_id);
   if (!deleted || !*deleted) {
     return Error("Failed to delete thread");
+  }
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);
   }
   if (attachment_downloads_) {
     attachment_downloads_->ForgetThread(thread_id);
@@ -167,6 +173,9 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
 
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
   const std::string& message_id = original.id;
+  if (mentions_) {
+    (void)mentions_->DropMessage(thread_id, message_id);  // a deleted mention leaves no marker (G015)
+  }
   if (attachment_downloads_ && (original.content_type == ChatContentType::Attachment || original.ai_image_json)) {
     // The rest of the thread, so bytes another message here still shows are kept. Reading it decrypts the
     // transcript: off the UI thread.

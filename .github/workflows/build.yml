@@ -104,7 +104,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-14]
+        os: [ubuntu-24.04, windows-2022, macos-15]
 
     runs-on: ${{ matrix.os }}
     env:
@@ -236,7 +236,7 @@ jobs:
   ios:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.apple == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache

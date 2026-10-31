@@ -1,5 +1,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 
+#include "lib/messaging/SentCopy.h"
+
 #include "lib/messaging/AccountCard.h"
 
 #include "lib/messaging/DeliveryNotice.h"
@@ -217,6 +219,44 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
   }
 }
 
+Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
+                                                  const std::string& local_account) const {
+  auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
+  if (!refused) {
+    return refused.error();
+  }
+  // Only for an invite we received from this owner, for this group: anyone else's word drops nothing.
+  auto pending = group_roster_.LoadPendingInvite(refused->invite_nonce);
+  if (!pending || !*pending || (*pending)->outbound || (*pending)->inviter_identity != actor_identity ||
+      (*pending)->group_id != refused->group_id) {
+    return Error("group_invite_refused for no invite of ours from its sender");
+  }
+  (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
+  // G014: we were never added — drop the group we made on accept; its chat stays, read-only, saying why.
+  if (!local_account.empty()) {
+    (void)group_roster_.RemoveMember(refused->group_id, local_account);
+  }
+  (void)group_roster_.ClearGroupTarget(refused->group_id);
+  if (auto metadata = group_roster_.LoadMetadata(refused->group_id); metadata && *metadata) {
+    GroupMetadata removed = **metadata;
+    removed.sync_state = GroupSyncState::Removed;
+    (void)group_roster_.UpsertMetadata(removed);
+  }
+  if (auto thread = store_.FindGroupThread(refused->group_id); thread && *thread) {
+    auto detail = GroupMembershipCodec::EncodeInviteRefused(refused->invite_nonce, refused->group_id,
+                                                           refused->reason);
+    if (detail) {
+      if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupInviteRefused,
+                                                              "The group is full: you were not added", *detail,
+                                                              actor_identity)) {
+        (void)store_.AppendMessage(*sys);
+      }
+    }
+  }
+  log().info << "group invite refused group_id=" << refused->group_id << " reason=" << refused->reason;
+  return {};
+}
+
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
                                                               const std::string& actor_identity,
                                                               RelayReceiveOutcome* outcome) const {
@@ -239,6 +279,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return !*is_member; // true => ignore
   };
 
+  if (kind == GroupMembershipControlType::GroupInviteRefused) {
+    return ApplyInviteRefused(message, actor_identity, local_account);
+  }
   if (kind == GroupMembershipControlType::GroupInviteAccept ||
       kind == GroupMembershipControlType::GroupInviteDecline) {
     auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
@@ -249,6 +292,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
       auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
                                                response->group_id, local_account, util::NowUnixMs());
+      if (!applied && applied.error().message == kGroupFullError) {
+        if (outcome) {
+          outcome->refuse_invite_group_id = response->group_id;
+          outcome->refuse_invite_nonce = response->invite_nonce;
+          outcome->refuse_invite_member = actor_identity;
+        }
+        return {};
+      }
       if (!applied) {
         return applied.error();
       }
@@ -709,6 +760,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     outcome.sender_verified = verified && *verified;
     outcome.from_sibling = outcome.sender_verified;
     outcome.decision = IngestDecision::SilentDiscard;
+    if (outcome.sender_verified) {
+      ApplySiblingNotice(envelope, local_relay_user_id, inbound_target, outcome);
+    }
     return outcome;
   }
   auto verified = VerifySignature(envelope, inbound_target);
@@ -779,6 +833,89 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   }
   outcome.decision = IngestDecision::AcceptControl;
   return outcome;
+}
+
+void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, const std::string& local_account_id,
+                                              const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome) {
+  if (local_keys_.device_peer_id) {
+    if (auto self = local_keys_.device_peer_id(); self && envelope.sender_device == *self) {
+      return;  // our own notice, back from the shared mailbox
+    }
+  }
+  auto kem_private = CopyKemPrivateKey(envelope);
+  if (!kem_private) {
+    return;
+  }
+  // A one-off opener to our account KEM (ControlLane::NotifySiblings): read, no session kept between siblings.
+  const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
+  AutoKeyRead read;
+  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_,
+                                                         *kem_private, &read);
+  if (!decrypted) {
+    log().info << "sibling notice not read message_id=" << envelope.message_id << ": " << decrypted.error().message;
+    return;
+  }
+  auto copy = sent_copy::Parse(*decrypted);
+  if (!copy) {
+    log().warning << "sibling's sent copy refused message_id=" << envelope.message_id << ": " << copy.error().message;
+    return;
+  }
+  if (*copy) {
+    outcome.from_sibling = false;  // a sent message, not news about the account's state (no locker sync)
+    FileSentCopy(**copy, envelope, outcome);
+  }
+}
+
+void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope,
+                                        RelayReceiveOutcome& outcome) {
+  std::string thread_id;
+  if (!copy.target.group_id.empty()) {
+    auto thread = store_.FindGroupThread(copy.target.group_id);
+    if (!thread || !*thread) {
+      return;  // a group this device does not hold
+    }
+    thread_id = (*thread)->id;
+  } else {
+    // Public chats only (private Secure stays on one device, M014). A chat this device has not opened yet is.
+    const DirectChatTarget target{.peer_identity_kind = "account",
+                                  .peer_identity_value = copy.target.peer_account,
+                                  .channel = ThreadChannel::E2ePublic};
+    const std::string title = ShortRelayId(copy.target.peer_account);
+    auto thread = store_.FindOrCreateDirectThread(target, "", title.empty() ? copy.target.peer_account : title);
+    if (!thread) {
+      log().warning << "sibling's sent copy: no chat: " << thread.error().message;
+      return;
+    }
+    thread_id = thread->id;
+    outcome.thread_changed = true;
+  }
+  if (auto seen = store_.HasMessageId(thread_id, copy.message.id); !seen || *seen) {
+    outcome.decision = IngestDecision::BenignDuplicate;
+    return;
+  }
+  ThreadMessage message = copy.message;
+  message.thread_id = thread_id;
+  message.sender_contact_id = kLocalSelfContactId;  // ours, from another of our devices
+  message.sender_device = envelope.sender_device;
+  message.delivery = MessageDelivery::Relayed;
+  message.transport = MessageTransport::Relay;
+  message.relay_visible = true;
+  // As a peer's message is taken: one we deleted before its copy came stays deleted; reactions are capped.
+  TombstoneIfRetractedBeforeArrival(message, outcome);
+  if (auto cap = RejectIfAnnotationCapExceeded(store_, message); !cap) {
+    return;
+  }
+  auto stored = store_.AppendMessage(message);
+  if (!stored) {
+    log().warning << "sibling's sent copy not stored: " << stored.error().message;
+    return;
+  }
+  ApplyInboundRetract(*stored, outcome);  // our delete for everyone, made on another device
+  outcome.decision = IngestDecision::AcceptControl;
+  outcome.persisted = true;
+  outcome.thread_id = thread_id;
+  outcome.persisted_message = *stored;
+  outcome.suppress_inbox_chrome = true;  // what we sent ourselves: no unread count, no notice
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,

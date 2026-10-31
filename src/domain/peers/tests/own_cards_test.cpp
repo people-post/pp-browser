@@ -134,6 +134,21 @@ TEST_F(OwnCardsTest, ALinkedDeviceJoinsAtTheEndAndTheMasterStaysFirst) {
   EXPECT_FALSE(laptop.own->SignedOut());
 }
 
+TEST_F(OwnCardsTest, OnlyTheMasterHearsThatADeviceJoined) {
+  // M021 d3: the master, which has the contacts, tells them of a new device; the new device does not.
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  int phone_heard = 0;
+  int laptop_heard = 0;
+  phone.own->SetOnDeviceJoined([&](const AccountCard&) { ++phone_heard; });
+  laptop.own->SetOnDeviceJoined([&](const AccountCard&) { ++laptop_heard; });
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  EXPECT_EQ(phone_heard, 1);
+  EXPECT_EQ(laptop_heard, 0);
+  ASSERT_TRUE(phone.own->Learn(joined, kNow + 40));
+  EXPECT_EQ(phone_heard, 1) << "the same list again: nothing new";
+}
+
 TEST_F(OwnCardsTest, TheMasterSignsADeviceOutAndItCannotSignItselfBackIn) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");

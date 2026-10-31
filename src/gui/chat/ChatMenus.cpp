@@ -182,6 +182,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
   state.unread = SessionIsUnread(thread.unread_count, prefs.marked_unread);
   state.pinned = prefs.pinned_at != 0;
   state.muted = ThreadIsMuted(prefs.muted_until, util::NowUnixMs());
+  state.mute_mentions = prefs.mute_mentions;
   state.archived = prefs.archived;
 
   for (const SessionMenuItem item : SessionMenuItems(state)) {
@@ -227,6 +228,17 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id]() {
         presenter_.Unmute(thread_id);
+        host_.AfterThreadPrefsChanged();
+      };
+      break;
+    case SessionMenuItem::MuteMentions:
+    case SessionMenuItem::AllowMentions:
+      action.id = item == SessionMenuItem::MuteMentions ? "session_mute_mentions" : "session_allow_mentions";
+      action.label = Tr(item == SessionMenuItem::MuteMentions ? "sidebar.menu.mute_mentions"
+                                                              : "sidebar.menu.allow_mentions");
+      action.icon = "../icons/bell-off.svg";
+      action.run = [this, thread_id, mute = item == SessionMenuItem::MuteMentions]() {
+        presenter_.SetMuteMentions(thread_id, mute);
         host_.AfterThreadPrefsChanged();
       };
       break;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/messaging/SentCopy.h"
+
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
@@ -49,6 +51,10 @@ struct RelayReceiveOutcome {
    * Filled on successful group_invite_accept apply.
    */
   std::optional<std::string> publish_member_joined_group_id;
+  /** G014: an accept came when the group was full — the owner tells the invitee (`group_invite_refused`). */
+  std::optional<std::string> refuse_invite_group_id;
+  std::string refuse_invite_nonce;
+  std::string refuse_invite_member;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
   /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
@@ -168,6 +174,17 @@ private:
    * that sends it on the lane while fresh and not seen before. Never stored.
    */
   RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
+  /**
+   * A sibling's control notice (M022: our own account writes to itself), signature already checked: a sent-message
+   * copy (M021 d3) is opened and filed as a message we sent; anything else is only its card (the device list).
+   */
+  void ApplySiblingNotice(const RelayEnvelope& envelope, const std::string& local_account_id,
+                          const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome);
+  /** File a sibling's sent message in its chat (public direct, or group), once per message id. */
+  void FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope, RelayReceiveOutcome& outcome);
+  /** G014 invitee side: the owner refused our accept (the group was full) — drop the group we made on accept. */
+  Roe<void> ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
+                               const std::string& local_account) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */

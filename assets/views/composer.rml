@@ -10,7 +10,7 @@
      data-class-prompt-composer--disabled="composer_input_disabled">
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" max-rows="6"
             maxlength="65536"
-            data-value="draft" data-attr-placeholder="draft_placeholder"
+            data-value="draft" data-event-change="draft_changed()" data-attr-placeholder="draft_placeholder"
             data-attrif-disabled="composer_input_disabled"></textarea>
   <div class="prompt-composer-footer">
     <div class="prompt-composer-leading">

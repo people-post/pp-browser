@@ -47,6 +47,11 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
     (void)roster.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
     return Error("Invite expired");
   }
+  // G014: sent while not full, accepted when full — refused (the caller tells the invitee).
+  if (auto members = roster.ListMembers(invite.group_id); members && members->size() >= kMaxGroupMembers) {
+    (void)roster.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+    return Error(kGroupFullError);
+  }
 
   GroupRosterMember member;
   member.member_identity = member_identity;

@@ -314,6 +314,37 @@ Roe<ThreadMessage> ConversationsFacade::SendGroupMessage(const std::string& thre
   return hub_.MeshMessaging().SendGroupMessage(thread_id, text, opts);
 }
 
+Roe<ThreadMessage> ConversationsFacade::SendGroupText(const std::string& thread_id, const std::string& text,
+                                                      std::vector<TextSpan> spans) {
+  if (auto checked = text_spans::CheckStructure(spans); !checked) {
+    return checked.error();
+  }
+  spans = text_spans::KeepValidRanges(text, std::move(spans));
+  SendRelayOptions opts;
+  if (!spans.empty()) {
+    opts.payload_json = text_spans::ToPayloadJson(text, spans);
+  }
+  return hub_.MeshMessaging().SendGroupMessage(thread_id, text, opts);
+}
+
+std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
+  ThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return {};
+  }
+  auto threads = mentions->Threads();
+  return threads ? std::move(*threads) : std::set<std::string>{};
+}
+
+std::optional<std::string> ConversationsFacade::OldestMention(const std::string& thread_id) {
+  ThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return std::nullopt;
+  }
+  auto oldest = mentions->Oldest(thread_id);
+  return oldest ? *oldest : std::nullopt;
+}
+
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
   return hub_.ShareContact(thread_id, contact_id);
 }
@@ -506,6 +537,10 @@ Roe<void> ConversationsFacade::LeaveAsOwner(const std::string& group_id, const s
 
 Roe<std::string> ConversationsFacade::OwnerIdentity(const std::string& group_id) {
   return hub_.Groups().OwnerIdentity(group_id);
+}
+
+std::string ConversationsFacade::KeptCardNickname(const std::string& account_id) {
+  return hub_.KeptCardNickname(account_id);
 }
 
 bool ConversationsFacade::IsOwnerUnreachable(const std::string& group_id) {

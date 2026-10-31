@@ -10,6 +10,9 @@
 //   register {nickname}                 register on the relay (first run)
 //   open_chat {account}                 find the person in the directory and open the chat
 //   send {thread, text}                 a text message
+//   send_mentions {thread, text, mentions: [account], everyone}
+//                                       a group text marking `@<nickname>` for each account (the first `@` not yet
+//                                       marked, through the next space) and `@everyone` (G015)
 //   threads / messages {thread}         what this user sees
 //   call {thread, video, [accounts]}    the call button: a 1:1 chat, or a group (every other member,
 //                                       or the picked `accounts`)
@@ -59,6 +62,8 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
+#include "lib/messaging/TextSpans.h"
+#include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/PeerRequestAuth.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
@@ -95,6 +100,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -182,6 +188,20 @@ public:
     Hub().SetOnMessagingReady([this]() {
       // The stack is (re)built: bind as ChatController::WireMessagingBindings does.
       facade_->SetOnMessagesChanged([this]() { AppRuntime::PostUI([this]() { Settle(); }); });
+      // A background message notice, decided as ChatController does (muted chats: mentions only, G015).
+      facade_->SetOnBackgroundUnread([this](std::string, std::string, std::string thread_id, bool mentions_us) {
+        const std::optional<ThreadLocalPrefs> prefs = chats_.PrefsOf(thread_id);
+        const int64_t now_ms = util::NowUnixMs();
+        const bool muted = prefs && ThreadIsMuted(prefs->muted_until, now_ms);
+        Object event;
+        event.set("event", "notice");
+        event.set("kind", "message");
+        event.set("thread", thread_id);
+        event.set("mentions_us", mentions_us);
+        event.set("alerts", NoticeAlerts(muted, prefs && prefs->mute_mentions, mentions_us,
+                                         mention_alert_ms_[thread_id], now_ms));
+        Emit(event);
+      });
       Object event;
       event.set("event", "ready");
       Emit(event);
@@ -196,6 +216,50 @@ public:
     // The GUI refreshes the call surface on these (ChatController's messages-changed,
     // Application's call wake → CallController::OnCallWake): so does the probe.
     Hub().SetOnCallWake([this]() { presenter_.OnCallWake(); });
+  }
+
+  void SendMentions(const int64_t id, const Object& request) {
+    const std::string thread = request.getString("thread").value_or("");
+    const std::string text = request.getString("text").value_or("");
+    std::vector<TextSpan> spans;
+    size_t from = 0;
+    const auto mark = [&](const std::string& token, TextSpan span) {
+      const size_t at = text.find(token, from);
+      if (at == std::string::npos) {
+        return;
+      }
+      size_t end = text.find(' ', at);
+      end = end == std::string::npos ? text.size() : end;
+      span.start = static_cast<uint32_t>(at);
+      span.end = static_cast<uint32_t>(end);
+      spans.push_back(std::move(span));
+      from = end;
+    };
+    if (const Array* mentions = request.getArray("mentions")) {
+      for (const Value& value : mentions->elements) {
+        if (const auto account = asString(value)) {
+          mark("@", TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Mention), .account_id = *account});
+        }
+      }
+    }
+    if (request.getIf<bool>("everyone").value_or(false)) {
+      from = 0;
+      mark("@everyone", TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Everyone)});
+    }
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<ThreadMessage>>(
+        WorkerLane::Normal,
+        [this, thread, text, spans = std::move(spans)]() mutable {
+          return facade_->SendGroupText(thread, text, std::move(spans));
+        },
+        [id](Roe<ThreadMessage> sent) {
+          if (!sent) {
+            ReplyError(id, sent.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("message_id", sent->id);
+          Emit(out);
+        });
   }
 
   /** CallController::BindToMessaging. */
@@ -640,8 +704,11 @@ public:
       // The chat on screen: what tapping it in the chats list does (ChatPresenter).
       chats_.SelectThread(request->getString("thread").value_or("")) ? Emit(Reply(id, true))
                                                                       : ReplyError(id, "could not open the chat");
+    } else if (cmd == "send_mentions") {
+      SendMentions(id, *request);
     } else if (cmd == "pin" || cmd == "unpin" || cmd == "mute" || cmd == "unmute" || cmd == "archive" ||
-               cmd == "unarchive" || cmd == "mark_unread" || cmd == "mark_read") {
+               cmd == "unarchive" || cmd == "mark_unread" || cmd == "mark_read" || cmd == "mute_mentions" ||
+               cmd == "allow_mentions") {
       // A chat row's menu (ChatMenus::SessionActions → ChatPresenter).
       const std::string thread = request->getString("thread").value_or("");
       if (cmd == "pin" || cmd == "unpin") {
@@ -650,6 +717,8 @@ public:
         chats_.Mute(thread, SessionMuteChoice::Always);
       } else if (cmd == "unmute") {
         chats_.Unmute(thread);
+      } else if (cmd == "mute_mentions" || cmd == "allow_mentions") {
+        chats_.SetMuteMentions(thread, cmd == "mute_mentions");
       } else if (cmd == "archive" || cmd == "unarchive") {
         chats_.SetArchived(thread, cmd == "archive");
       } else if (cmd == "mark_unread") {
@@ -958,6 +1027,7 @@ private:
         row.set("preview", shown.preview);
         row.set("unread", static_cast<int64_t>(shown.unread_count));
         row.set("unread_dot", shown.unread_dot);
+        row.set("mentioned", shown.mentioned);
         row.set("pinned", shown.pinned);
         row.set("muted", shown.muted);
         row.set("active", shown.active);
@@ -1206,6 +1276,8 @@ private:
   CallPresenter presenter_;
   /** The chats list, as ChatController shows it. */
   ChatPresenter chats_;
+  /** Per chat, its last mention alert while muted (NoticeAlerts' rate limit). */
+  std::map<std::string, int64_t> mention_alert_ms_;
   std::string last_kind_ = "none";
   std::string last_line_;
   std::string last_error_;

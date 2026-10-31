@@ -821,6 +821,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
     mesh_messaging_->SetAttachmentDownloads(nullptr);
   }
   if (inbox_) {
@@ -1138,8 +1139,14 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
   // The account locker keeps every group (G013): republish it on any roster change.
-  group_roster_->SetOnChanged([this](const std::string&) { PublishAccountLockerSoon(); });
+  group_roster_->SetOnChanged([this](const std::string& group_id) {
+    PublishAccountLockerSoon();
+    if (mesh_messaging_) {
+      mesh_messaging_->DecideHeldMentions(group_id);  // G015: a check that settled decides its held mentions
+    }
+  });
   thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
+  thread_mentions_ = std::make_unique<ThreadMentionsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
       return opened.error();
@@ -1150,6 +1157,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
   inbox_->SetSystemControls(&system_controls_);
+  inbox_->SetThreadMentions(thread_mentions_.get());
   directory_shadows_->SetOnUpdated([this]() {
     if (inbox_) {
       inbox_->NotifyThreadChanged();
@@ -1345,6 +1353,7 @@ void ConversationsHub::BuildMessagingObjects() {
                                                 *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
+  mesh_messaging_->SetThreadMentions(thread_mentions_.get());
   // Our device list changed: our address goes to our other devices too (M021).
   mesh_messaging_->SetOnOwnDevicesChanged([this]() { PublishAddressDisclosure(); });
   // A device with no link up is reached through the seed it is parked on (on the hub's thread).
@@ -1389,6 +1398,9 @@ void ConversationsHub::BuildMessagingObjects() {
     }
   });
   mesh_messaging_->SetOnSiblingNotice([this]() { PublishAccountLockerSoon(); });
+  // A device just joined our list (we are the master): our contacts hear of it, so their next message reaches it.
+  mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(
+      [this](const AccountCard&) { AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); }); });
   NotifyMessagingBuilt();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
@@ -2917,6 +2929,7 @@ void ConversationsHub::Shutdown() {
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
@@ -2978,6 +2991,10 @@ void ConversationsHub::Shutdown() {
   group_invite_gate_.reset();
   group_roster_.reset();
   thread_prefs_.reset();
+  if (inbox_) {
+    inbox_->SetThreadMentions(nullptr);
+  }
+  thread_mentions_.reset();
   contact_cards_.reset();
   account_keys_.reset();
   peer_cards_.reset();
@@ -3024,6 +3041,8 @@ InboxController& ConversationsHub::Inbox() {
 }
 
 ThreadLocalPrefsStore& ConversationsHub::ThreadPrefs() { return *thread_prefs_; }
+
+ThreadMentionsStore* ConversationsHub::ThreadMentions() { return thread_mentions_.get(); }
 
 MeshDeliveryOrchestrator& ConversationsHub::MeshMessaging() {
   return *mesh_messaging_;
@@ -3105,8 +3124,8 @@ void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {
   // first sync runs a few seconds after start), and the announce goes to them.
   if (account_locker_) {
     if (auto seed = Identity().RecoverySeed(); seed && *seed) {
-      if (auto synced = account_locker_->Publish(); !synced) {
-        log().info << "Account locker not synced before the device announce: " << synced.error().message;
+      if (auto published = account_locker_->Publish(); !published) {
+        log().info << "Account locker not synced before the device announce: " << published.error().message;
       }
     }
   }

@@ -387,7 +387,9 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
     left = kViewportMarginPx;
   }
 
-  if (top + size.y > static_cast<float>(dims.y) - kViewportMarginPx) {
+  if (float_above_ && static_cast<float>(preferred.y) - size.y >= kViewportMarginPx) {
+    top = static_cast<float>(preferred.y) - size.y;
+  } else if (top + size.y > static_cast<float>(dims.y) - kViewportMarginPx) {
     // Prefer flipping above the preferred anchor when there is room.
     const float flipped = static_cast<float>(preferred.y) - size.y;
     if (flipped >= kViewportMarginPx) {
@@ -649,15 +651,22 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   RenderMenu(request, active_actions_, menu_editor_ ? Presentation::Bar : Presentation::Float);
 }
 
+void ContextMenuHost::ShowActionsAbove(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
+  next_show_above_ = true;
+  ShowActions(position, std::move(actions));
+}
+
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
+  const bool above = std::exchange(next_show_above_, false);
   if (dismiss_pending_) {
     // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
     // event, which is why its teardown was deferred. Tearing it down here instead would leave the
     // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
-    pending_show_ = PendingShow{position, std::move(actions)};
+    pending_show_ = PendingShow{position, std::move(actions), above};
     return;
   }
   Dismiss();
+  float_above_ = above;
   if (!context_ || actions.empty()) {
     return;
   }
@@ -704,6 +713,7 @@ void ContextMenuHost::Dismiss() {
   layer_ = nullptr;
   panel_ = nullptr;
   presentation_ = Presentation::Float;
+  float_above_ = false;
   if (layer) {
     layer->RemoveEventListener(ui::EventId::Mousedown, this, true);
     layer->RemoveEventListener(ui::EventId::Click, this, true);
@@ -738,6 +748,7 @@ void ContextMenuHost::Update() {
   if (pending_show_) {
     PendingShow show = std::move(*pending_show_);
     pending_show_.reset();
+    next_show_above_ = show.above;
     ShowActions(show.position, std::move(show.actions));
   }
   // Not from inside the menu's own click: the old layer had to be gone first.

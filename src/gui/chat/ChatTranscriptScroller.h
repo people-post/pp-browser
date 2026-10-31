@@ -43,6 +43,12 @@ public:
   void ApplyPolicy();
   void OnMessagesScroll();
   void OnJumpToLatest();
+  /**
+   * Show `message_id` of the open chat at the top instead of the latest (opening a chat at its oldest unread
+   * mention, G015): the window is widened back to it when it is older, then it is scrolled into view once laid
+   * out. Call after the open's display sync. False when the message is not in the chat.
+   */
+  bool JumpToMessage(const std::string& message_id);
   /** SyncLayout remounts DOM — re-arm follow-tail when still pinned. */
   void OnShellRemounted();
 
@@ -83,6 +89,8 @@ private:
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
   void LoadOlderLocalHistory();
+  /** A pending JumpToMessage: scroll its row into view until the layout settles. True while it runs. */
+  bool ApplyPendingJump(ui::Element* el);
 
   ui::Context*& context_;
   View view_;
@@ -106,6 +114,11 @@ private:
   float last_messages_scroll_height_ = 0.f;
   float last_client_height_ = 0.f;
   int unread_while_scrolled_ = 0;
+  /** JumpToMessage's row, scrolled to on the next layouts until its place stops moving. */
+  std::string pending_jump_id_;
+  int pending_jump_frames_ = 0;
+  int pending_jump_stable_frames_ = 0;
+  float pending_jump_last_top_ = -1.f;
   ConversationsFacade* facade_ = nullptr;
   RowBuilder rows_;
 };

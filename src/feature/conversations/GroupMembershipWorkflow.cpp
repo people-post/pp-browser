@@ -140,6 +140,9 @@ Roe<Thread> GroupMembershipWorkflow::CreateGroup(const std::string& title,
     return local_identity.error();
   }
 
+  if (member_contact_ids.size() + 1 > kMaxGroupMembers) {
+    return Error(kGroupFullError);  // G014: the owner and its members
+  }
   const std::string group_id = GenerateGroupId();
   std::vector<std::string> participants;
   for (const std::string& contact_id : member_contact_ids) {
@@ -205,6 +208,10 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   if (auto can = invite_gate_.CanSendInvite(MemberRole::Owner); !can || !*can) {
     return Error("Actor lacks invite permission");
   }
+  // G014: the active roster only — pending invites do not count (an accept that comes when full is refused).
+  if (auto members = roster_.ListMembers(group_id); members && members->size() >= kMaxGroupMembers) {
+    return Error(kGroupFullError);
+  }
 
   auto invitee_identity = ResolveRelayIdentity(invitee_contact_id);
   if (!invitee_identity) {
@@ -237,6 +244,16 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   }
   // Pending only — invitee is not an encrypt target until owner commits member_joined.
   return SendInviteDirectMessage(invite, invitee_contact_id);
+}
+
+Roe<void> GroupMembershipWorkflow::RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
+                                               const std::string& invitee_identity) {
+  auto detail = GroupMembershipCodec::EncodeInviteRefused(invite_nonce, group_id, kInviteRefusedGroupFull);
+  if (!detail) {
+    return detail.error();
+  }
+  return SendMembershipDirectMessage(invitee_identity, GroupMembershipControlType::GroupInviteRefused, *detail,
+                                     "Group invitation refused: the group is full");
 }
 
 Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::string& inviter_identity,

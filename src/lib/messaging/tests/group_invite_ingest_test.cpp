@@ -295,6 +295,82 @@ TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
   EXPECT_EQ(targets.size(), 1u);
 }
 
+// G014: an accept that comes when the group is full adds no one; the owner is asked to tell the invitee.
+TEST(GroupInviteIngestTest, InboundAcceptWhenFullAsksTheOwnerToRefuse) {
+  PartyHarness owner("owner", "account:alice", "account:bob");
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "account:alice";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(owner.roster.UpsertMetadata(metadata));
+  for (size_t i = 0; i < kMaxGroupMembers; ++i) {
+    GroupRosterMember member;
+    member.member_identity = i == 0 ? "account:alice" : "account:m" + std::to_string(i);
+    member.role = i == 0 ? MemberRole::Owner : MemberRole::Member;
+    ASSERT_TRUE(owner.roster.UpsertMember("group:hike", member));
+  }
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-full";
+  pending.group_id = "group:hike";
+  pending.inviter_identity = "account:alice";
+  pending.invitee_identity = "account:bob";
+  pending.status = InviteStatus::Pending;
+  pending.created_at = util::NowUnixMs();
+  pending.outbound = true;
+  ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
+
+  auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-full", "group:hike");
+  ASSERT_TRUE(detail);
+  const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(
+      owner.MakeSystemEnvelope("group_invite_accept", *detail, "Accepted group invitation", 1), "account:alice");
+  EXPECT_FALSE(outcome.publish_member_joined_group_id);
+  ASSERT_TRUE(outcome.refuse_invite_group_id);
+  EXPECT_EQ(*outcome.refuse_invite_group_id, "group:hike");
+  EXPECT_EQ(outcome.refuse_invite_nonce, "nonce-full");
+  EXPECT_EQ(outcome.refuse_invite_member, "account:bob");
+  EXPECT_FALSE(owner.roster.IsMember("group:hike", "account:bob").value());
+}
+
+// G014 invitee side: the owner's refusal drops the group made on accept — read-only, with a line saying why.
+TEST(GroupInviteIngestTest, AnInviteRefusedByItsOwnerDropsTheGroup) {
+  PartyHarness invitee("invitee", "account:bob", "account:alice");
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-full";
+  pending.group_id = "group:hike";
+  pending.inviter_identity = "account:alice";
+  pending.invitee_identity = "account:bob";
+  pending.status = InviteStatus::Accepted;
+  pending.created_at = util::NowUnixMs();
+  pending.outbound = false;
+  ASSERT_TRUE(invitee.roster.UpsertPendingInvite(pending));
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "account:alice";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(invitee.roster.UpsertMetadata(metadata));
+  GroupRosterMember me;
+  me.member_identity = "account:bob";
+  ASSERT_TRUE(invitee.roster.UpsertMember("group:hike", me));
+  auto thread = invitee.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {});
+  ASSERT_TRUE(thread);
+
+  auto detail = GroupMembershipCodec::EncodeInviteRefused("nonce-full", "group:hike", kInviteRefusedGroupFull);
+  ASSERT_TRUE(detail);
+  (void)invitee.pipeline.ProcessEnvelope(
+      invitee.MakeSystemEnvelope("group_invite_refused", *detail, "Group invitation refused", 1), "account:bob");
+  EXPECT_FALSE(invitee.roster.IsMember("group:hike", "account:bob").value());
+  auto after = invitee.roster.LoadMetadata("group:hike");
+  ASSERT_TRUE(after && *after);
+  EXPECT_EQ((*after)->sync_state, GroupSyncState::Removed) << "read-only: it never joined";
+  bool said_why = false;
+  auto rows = invitee.store.GetMessages(thread->id);
+  ASSERT_TRUE(rows);
+  for (const ThreadMessage& row : *rows) {
+    said_why = said_why || row.payload_json.find("group_invite_refused") != std::string::npos;
+  }
+  EXPECT_TRUE(said_why);
+}
+
 TEST(GroupInviteIngestTest, InboundAcceptAppliesEvenWhenDmSoftCompromised) {
   // Private e2e: compromised latches; membership bypass still applies accept.
   PartyHarness owner("accept_compromised", "account:alice", "account:bob", ThreadChannel::E2e);

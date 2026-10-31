@@ -27,6 +27,7 @@
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
 #include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/ThreadMentionsStore.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
 #include "lib/pricing/PaymentPromiseInbound.h"
 #include "lib/pricing/InitiationBillingStore.h"
@@ -194,6 +195,8 @@ public:
   InboxController& Inbox();
   /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
   ThreadLocalPrefsStore& ThreadPrefs();
+  /** Unread mentions of this account per thread (G015); null until the stores open. */
+  ThreadMentionsStore* ThreadMentions();
   MeshDeliveryOrchestrator& MeshMessaging();
   /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
   std::optional<std::string> OwnAccountCardJson();
@@ -478,6 +481,8 @@ private:
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
+  /** Unread mentions of this account (G015 marker). */
+  std::unique_ptr<ThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;

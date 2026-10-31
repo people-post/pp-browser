@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
+#include "feature/conversations/GroupMentions.h"
 #include "feature/conversations/SessionMenu.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
@@ -35,6 +36,8 @@ struct ChatSessionRow {
   int unread_count = 0;
   /** Marked unread by hand with no real unread count: a dot, not a number. */
   bool unread_dot = false;
+  /** An unread message here mentions us (G015): the row says "You were mentioned". */
+  bool mentioned = false;
   bool pinned = false;
   bool muted = false;
   std::string date_label;
@@ -162,8 +165,13 @@ public:
 
   // --- buttons ----------------------------------------------------------------------------------
 
-  /** Open a chat: it is read (a "marked unread" dot goes too), its notification is cleared. */
+  /**
+   * Open a chat: it is read (a "marked unread" dot goes too, and its mention marker), its notification is
+   * cleared. OpenedAtMention() then names the oldest unread message that mentioned us there, if any.
+   */
   bool SelectThread(const std::string& thread_id);
+  /** The last SelectThread's chat had an unread mention: the message to show first (G015). */
+  const std::optional<std::string>& OpenedAtMention() const { return opened_at_mention_; }
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */
@@ -171,6 +179,8 @@ public:
   void SetPinned(const std::string& thread_id, bool pinned);
   void Mute(const std::string& thread_id, SessionMuteChoice choice);
   void Unmute(const std::string& thread_id);
+  /** A muted group: its mentions silent too (G015), or alerting again. */
+  void SetMuteMentions(const std::string& thread_id, bool mute);
   void SetArchived(const std::string& thread_id, bool archived);
   void MarkUnread(const std::string& thread_id);
   void MarkRead(const std::string& thread_id);
@@ -230,6 +240,25 @@ public:
   std::string ComposeWithQuote(const std::string& reply) const;
   /** Send `text` into the open chat the way the composer does (the message router: a person, or the agent). */
   Roe<void> SendToChat(const std::string& text);
+  /**
+   * A group text with the mentions the composer marked (G015). False when it is not one: no spans, not a
+   * group, or an "@ai" question (the agent's, sent the usual way) — then nothing was sent.
+   */
+  bool SendsWithMentions(const std::string& thread_id, const std::string& text, const std::vector<TextSpan>& spans);
+  /** Sends it (SendsWithMentions was true). */
+  Roe<void> SendWithMentions(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
+
+  // --- mentions in a group (G015) -------------------------------------------------------------
+
+  /** What highlighting a group's mentions is checked against now; none for a chat that is not a group. */
+  std::optional<MentionRoster> MentionRosterOf(const std::string& thread_id) const;
+  /** The composer's `@` picker for a group: its other members by public name (and `@everyone` for the owner). */
+  std::vector<MentionCandidate> MentionCandidatesFor(const std::string& thread_id, const std::string& query);
+  /**
+   * A tap on highlighted mention `run_index` of a message in the open group (EligibleMentionRuns' order): the
+   * saved contact it names; none for `@everyone`, ourselves, or someone who is not a contact.
+   */
+  std::optional<std::string> MentionedContact(const std::string& message_id, size_t run_index);
 
 private:
   /**
@@ -251,6 +280,7 @@ private:
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> prefs_;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   std::string quote_source_;
+  std::optional<std::string> opened_at_mention_;
 };
 
 } // namespace pbr

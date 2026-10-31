@@ -1916,6 +1916,110 @@ def scenario_restore_signs_out_the_other_devices(lab):
     wait_for(lambda: transcript_row(a, a_thread, r), 40, "restored phone: bob's answer")
 
 
+def scenario_linked_device_introduces_itself(lab):
+    """A newly linked device tells its contacts it exists (M021 d3): Alice links a laptop; before the laptop writes
+    to anyone, Bob holds Alice's list with it, and his next message reaches the laptop as well as the phone."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: Alice's list with the laptop")
+    m = b.cmd("send", thread=b_thread, text="hello, new laptop")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, m), 30, "phone: bob's message")
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 30, "laptop: a chat with bob")
+    wait_for(lambda: transcript_row(laptop, l_thread, m), 30, "laptop: bob's message")
+
+
+def scenario_linked_devices_see_what_each_sent(lab):
+    """What one of Alice's devices sends shows on her others (M021 d3), as hers: the phone writes to Bob and the
+    laptop shows it in its chat with Bob; the laptop writes back and the phone shows that. Bob reads each once.
+    Her reaction on the phone shows on the laptop, and her delete for everyone on the laptop deletes it on the
+    phone too."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    from_phone = a.cmd("send", thread=a_thread, text="sent on the phone")["message_id"]
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 40, "laptop: a chat with bob")
+    row = wait_for(lambda: transcript_row(laptop, l_thread, from_phone), 40, "laptop: the phone's message")
+    if row["from"] != "local:self" or row["text"] != "sent on the phone":
+        raise ProbeError("laptop: the phone's message as %s" % row)
+    from_laptop = laptop.cmd("send", thread=l_thread, text="sent on the laptop")["message_id"]
+    row = wait_for(lambda: transcript_row(a, a_thread, from_laptop), 40, "phone: the laptop's message")
+    if row["from"] != "local:self":
+        raise ProbeError("phone: the laptop's message as %s" % row)
+    for m in (from_phone, from_laptop):
+        wait_for(lambda m=m: transcript_row(b, b_thread, m), 30, "bob: alice's message")
+    ids = [r["id"] for r in b.cmd("transcript", thread=b_thread)["rows"]]
+    if ids.count(from_phone) != 1 or ids.count(from_laptop) != 1:
+        raise ProbeError("bob: alice's messages not once each (%s)" % ids)
+    from_bob = b.cmd("send", thread=b_thread, text="react to this")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, from_bob), 40, "phone: bob's message")
+    wait_for(lambda: transcript_row(laptop, l_thread, from_bob), 40, "laptop: bob's message")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("react", message=from_bob, emoji="👍")
+    wait_for(lambda: reactions_of(laptop, l_thread, from_bob).get("👍") == 1 or None, 40,
+             "laptop: the phone's reaction")
+    laptop.cmd("show_chat", thread=l_thread)
+    laptop.cmd("delete_for_everyone", message=from_phone)
+    wait_for(lambda: (transcript_row(a, a_thread, from_phone) or {"type": "deleted"})["type"] == "deleted", 40,
+             "phone: its message deleted for everyone from the laptop")
+    wait_for(lambda: (transcript_row(b, b_thread, from_phone) or {"type": "deleted"})["type"] == "deleted", 40,
+             "bob: the message deleted")
+
+
+def next_message_notice(u, thread, seen, timeout=40):
+    """The next background message notice for `thread` after the first `seen` of them: {mentions_us, alerts}."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with u.lock:
+            notices = [m for _, m in u.history
+                       if m.get("event") == "notice" and m.get("kind") == "message" and m.get("thread") == thread]
+        if len(notices) > seen:
+            return notices[seen]
+        time.sleep(0.2)
+    raise ProbeError("%s: no notice for message %d in %s" % (u.name, seen + 1, thread))
+
+
+def scenario_muted_group_alerts_on_a_mention(lab):
+    """Mentions in a muted group (group-chat G015): Carol mutes the group and puts the app away. Bob's plain
+    message is silent; Bob mentioning her alerts and marks the chat "You were mentioned" until she opens it;
+    Bob's `@everyone` does not reach her (only the owner's does); once she mutes its mentions too, even Alice's
+    mention is silent — noticed, with the group open while she is away, but not alerting."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    c_thread = threads[c.name]
+    c.cmd("mute", thread=c_thread)
+    c.cmd("show_chat", thread=c.cmd("open_chat", account=a.account)["thread"])  # the group is not the open chat
+    c.cmd("minimize")  # out of sight, still connected (a phone in the background stops its network)
+    steps = [
+        (b, "plain news", [], False, (False, False)),
+        (b, "@%s look" % c.name, [c.account], False, (True, True)),
+        (b, "@everyone hey", [], True, (False, False)),
+    ]
+    seen = 0
+    for sender, text, mentions, everyone, (mentions_us, alerts) in steps:
+        sender.cmd("send_mentions", thread=threads[sender.name], text=text, mentions=mentions, everyone=everyone)
+        notice = next_message_notice(c, c_thread, seen)
+        seen += 1
+        if notice.get("mentions_us") != mentions_us or notice.get("alerts") != alerts:
+            raise ProbeError("carol: %r from %s gave %s" % (text, sender.name, notice))
+        row = next(t for t in c.cmd("threads")["threads"] if t["id"] == c_thread)
+        if row.get("mentioned") != (seen >= 2):
+            raise ProbeError("carol: the group's mention marker after %r: %s" % (text, row))
+    c.cmd("show_chat", thread=c_thread)  # read: the marker goes
+    if next(t for t in c.cmd("threads")["threads"] if t["id"] == c_thread).get("mentioned"):
+        raise ProbeError("carol: still marked mentioned after opening the group")
+    c.cmd("minimize")  # the group stays open: away, it still notifies
+    c.cmd("mute_mentions", thread=c_thread)
+    a.cmd("send_mentions", thread=threads[a.name], text="@%s now" % c.name, mentions=[c.account])
+    notice = next_message_notice(c, c_thread, seen)
+    if not notice.get("mentions_us") or notice.get("alerts"):
+        raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
+
+
 def scenario_chat_quote_reply(lab):
     """Bob replies to Alice's message quoting it, from the composer (validated, routed like the GUI's
     Send); Alice sees his reply with her message quoted under it. A draft over the limit is refused."""
@@ -2577,6 +2681,9 @@ SCENARIOS = [
     ("restore_from_phrase", scenario_restore_from_phrase),
     ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
     ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
+    ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
+    ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
+    ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

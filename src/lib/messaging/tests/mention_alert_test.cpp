@@ -57,6 +57,9 @@ protected:
   bool Reaches(const ThreadMessage& message, bool blocked = false) {
     return MessageMentionsUs(message, kGroup, kMe, *roster_, blocked);
   }
+  MentionVerdict Verdict(const ThreadMessage& message) {
+    return MentionVerdictFor(message, kGroup, kMe, *roster_, false);
+  }
 
   void SetSyncState(GroupSyncState state) {
     GroupMetadata metadata = roster_->LoadMetadata(kGroup).value().value();
@@ -95,6 +98,30 @@ TEST_F(MentionAlertTest, NotWhileTheGroupIsCheckingOrAfterWeWereRemoved) {
   EXPECT_FALSE(Reaches(From(kBob, "@C hi", {MentionOf(kMe)}))) << "the roster may be stale (G013)";
   SetSyncState(GroupSyncState::Removed);
   EXPECT_FALSE(Reaches(From(kOwner, "@everyone", {Everyone()})));
+}
+
+TEST_F(MentionAlertTest, AMentionWhileTheGroupIsCheckingIsHeldNotDropped) {
+  SetSyncState(GroupSyncState::Checking);
+  EXPECT_EQ(Verdict(From(kBob, "@C hi", {MentionOf(kMe)})), MentionVerdict::Held);
+  EXPECT_EQ(Verdict(From(kOwner, "@everyone", {Everyone()})), MentionVerdict::Held);
+  EXPECT_EQ(Verdict(From(kBob, "plain", {})), MentionVerdict::No) << "nothing to hold";
+  EXPECT_EQ(Verdict(From(kBob, "@A hi", {MentionOf(kOwner)})), MentionVerdict::No) << "someone else";
+  SetSyncState(GroupSyncState::Active);
+  EXPECT_EQ(Verdict(From(kBob, "@C hi", {MentionOf(kMe)})), MentionVerdict::Us) << "decided once it settles";
+  SetSyncState(GroupSyncState::Removed);
+  EXPECT_EQ(Verdict(From(kBob, "@C hi", {MentionOf(kMe)})), MentionVerdict::No);
+}
+
+TEST(MutedMentionAlertTest, AMutedChatAlertsOnlyOnAMentionUnlessMentionsAreMutedToo) {
+  int64_t last = 0;
+  EXPECT_TRUE(NoticeAlerts(/*muted=*/false, false, /*mentions_us=*/false, last, 1000)) << "not muted: always";
+  EXPECT_EQ(last, 0) << "an ordinary notice is not a mention alert";
+  EXPECT_FALSE(NoticeAlerts(true, false, false, last, 1000)) << "muted: a plain message is silent";
+  EXPECT_FALSE(NoticeAlerts(true, /*mute_mentions=*/true, true, last, 1000)) << "mentions muted too";
+  EXPECT_TRUE(NoticeAlerts(true, false, true, last, 1000));
+  EXPECT_EQ(last, 1000);
+  EXPECT_FALSE(NoticeAlerts(true, false, true, last, 1000 + kMutedMentionAlertGapMs - 1)) << "rate-limited";
+  EXPECT_TRUE(NoticeAlerts(true, false, true, last, 1000 + kMutedMentionAlertGapMs));
 }
 
 TEST(MutedMentionAlertTest, AtMostOnceAMinutePerGroup) {

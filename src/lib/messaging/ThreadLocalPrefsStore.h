@@ -28,6 +28,8 @@ struct ThreadLocalPrefs {
   bool archived = false;
   /** The user marked the thread unread by hand: the row shows a ring until the thread is opened. */
   bool marked_unread = false;
+  /** While muted, mentions are silent too (G015: by default a mention alerts in a muted group). */
+  bool mute_mentions = false;
 };
 
 /**

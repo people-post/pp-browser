@@ -205,7 +205,7 @@ Open the DMG, drag PP to Applications, launch without right-click → Open.
 | Item | Notes |
 |------|-------|
 | **`.icns` icon** | Packaged build uses `app-icon.png`; `.icns` improves dock quality |
-| **Intel / universal binary** | Current GHA `macos-14` is Apple Silicon only |
+| **Intel / universal binary** | Current GHA `macos-15` is Apple Silicon only |
 | **Mac App Store** | Different cert, sandbox, review — not covered here |
 | **iOS** | Separate bundle id, provisioning profiles, Keychain — see [IOS_BUILD.md](IOS_BUILD.md) |
 

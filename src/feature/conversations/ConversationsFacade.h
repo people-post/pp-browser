@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
+#include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
@@ -32,6 +33,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -139,6 +141,15 @@ public:
   void MaybeTailSync(const std::string& thread_id);
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
   Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  /**
+   * A group text with marked ranges (mentions, `@everyone` — G015): spans checked (structure, ranges; a bad range
+   * is dropped, the text stays) and sent in the ChatPayload (type 6); the row keeps them in `payload_json`.
+   */
+  Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
+  /** The chats with an unread message that mentions us (G015 marker); empty when unknown. */
+  std::set<std::string> ThreadsWithMentions();
+  /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
+  std::optional<std::string> OldestMention(const std::string& thread_id);
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */
@@ -196,6 +207,8 @@ public:
   Roe<void> LeaveGroup(const std::string& group_id);
   Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
   Roe<std::string> OwnerIdentity(const std::string& group_id);
+  /** The nickname on the account card kept for `account_id` (a member's own, public); empty if none. */
+  std::string KeptCardNickname(const std::string& account_id);
   bool IsOwnerUnreachable(const std::string& group_id);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);

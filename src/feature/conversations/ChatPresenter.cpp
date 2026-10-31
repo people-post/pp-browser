@@ -4,6 +4,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/ReactionTypes.h"
@@ -16,6 +17,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
+#include <set>
 #include <utility>
 
 namespace pbr {
@@ -230,6 +232,7 @@ void ChatPresenter::Refresh() {
   }
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
+  const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
     if (thread_prefs.archived != next.showing_archived) {
@@ -244,6 +247,7 @@ void ChatPresenter::Refresh() {
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
+    row.mentioned = mentioned.count(thread.id) > 0;
     row.pinned = thread_prefs.pinned_at != 0;
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);
@@ -261,9 +265,16 @@ void ChatPresenter::Changed() {
 }
 
 bool ChatPresenter::SelectThread(const std::string& thread_id) {
-  if (!facade_ || !facade_->OpenThread(thread_id)) {
+  opened_at_mention_.reset();
+  if (!facade_) {
     return false;
   }
+  // Read before opening: opening reads the chat, which drops its mention marker.
+  std::optional<std::string> mention = facade_->OldestMention(thread_id);
+  if (!facade_->OpenThread(thread_id)) {
+    return false;
+  }
+  opened_at_mention_ = std::move(mention);
   // Opening a chat reads it: a dot set by "Mark as unread" goes with the unread count.
   if (std::optional<ThreadLocalPrefs> prefs = PrefsOf(thread_id); prefs && prefs->marked_unread) {
     prefs->marked_unread = false;
@@ -296,7 +307,14 @@ void ChatPresenter::Mute(const std::string& thread_id, const SessionMuteChoice c
 }
 
 void ChatPresenter::Unmute(const std::string& thread_id) {
-  UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.muted_until = 0; });
+  UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) {
+    prefs.muted_until = 0;
+    prefs.mute_mentions = false;  // a mute's own setting: the next mute starts with mentions alerting
+  });
+}
+
+void ChatPresenter::SetMuteMentions(const std::string& thread_id, const bool mute) {
+  UpdatePrefs(thread_id, [mute](ThreadLocalPrefs& prefs) { prefs.mute_mentions = mute; });
 }
 
 void ChatPresenter::SetArchived(const std::string& thread_id, const bool archived) {
@@ -501,6 +519,106 @@ Roe<void> ChatPresenter::SendToChat(const std::string& text) {
     return Error("No chat is open");
   }
   return facade_->RouteMessage(thread_id, text, std::nullopt);
+}
+
+namespace {
+
+/** The group a chat is, if it is one. */
+std::optional<std::string> GroupIdOf(ConversationsFacade* facade, const std::string& thread_id) {
+  auto thread = facade ? facade->GetThread(thread_id) : Roe<std::optional<Thread>>(std::optional<Thread>{});
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return std::nullopt;
+  }
+  return *(*thread)->group_id;
+}
+
+} // namespace
+
+bool ChatPresenter::SendsWithMentions(const std::string& thread_id, const std::string& text,
+                                      const std::vector<TextSpan>& spans) {
+  return !spans.empty() && GroupIdOf(facade_, thread_id) && !ParseAtAiPrefix(text).is_ai_invoke;
+}
+
+Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const std::string& text,
+                                          std::vector<TextSpan> spans) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  auto sent = facade_->SendGroupText(thread_id, text, std::move(spans));
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
+}
+
+std::optional<MentionRoster> ChatPresenter::MentionRosterOf(const std::string& thread_id) const {
+  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
+  if (!group_id) {
+    return std::nullopt;
+  }
+  MentionRoster roster;
+  if (auto members = facade_->ListGroupRoster(*group_id)) {
+    for (const GroupRosterMember& member : *members) {
+      roster.members.insert(member.member_identity);
+    }
+  }
+  if (auto owner = facade_->OwnerIdentity(*group_id)) {
+    roster.owner = *owner;
+  }
+  if (auto identity = facade_->GetIdentity()) {
+    roster.local_account = identity->account_id;
+  }
+  return roster;
+}
+
+std::vector<MentionCandidate> ChatPresenter::MentionCandidatesFor(const std::string& thread_id,
+                                                                  const std::string& query) {
+  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
+  if (!group_id) {
+    return {};
+  }
+  auto members = facade_->ListGroupRoster(*group_id);
+  const std::optional<MentionRoster> roster = MentionRosterOf(thread_id);
+  if (!members || !roster || roster->local_account.empty()) {
+    return {};
+  }
+  ConversationsFacade* facade = facade_;
+  const auto public_name = [facade](const std::string& account_id) {
+    std::optional<Contact> contact;
+    if (auto found = facade->FindContactByIdentity(account_id, mesh::ContactIdKind::Account); found && *found) {
+      contact = **found;
+    }
+    return MemberPublicName(account_id, facade->KeptCardNickname(account_id), contact);
+  };
+  // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
+  const bool local_is_owner = roster->owner == roster->local_account;
+  return MentionCandidates(*members, roster->local_account, local_is_owner, public_name, query);
+}
+
+std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  const std::optional<MentionRoster> roster = thread_id.empty() ? std::nullopt : MentionRosterOf(thread_id);
+  if (!roster) {
+    return std::nullopt;
+  }
+  auto message = facade_->GetMessage(thread_id, message_id);
+  if (!message || !*message) {
+    return std::nullopt;
+  }
+  const ThreadMessage& shown = **message;
+  const std::string sender =
+      shown.sender_contact_id == kLocalSelfContactId ? roster->local_account : shown.sender_contact_id;
+  const std::vector<MentionRun> runs = EligibleMentionRuns(
+      shown.text, MentionTextLimit(shown.text), text_spans::FromPayloadJson(shown.payload_json), *roster, sender);
+  if (run_index >= runs.size() || runs[run_index].kind != TextSpanKind::Mention ||
+      runs[run_index].account_id == roster->local_account) {
+    return std::nullopt;
+  }
+  auto contact = facade_->FindContactByIdentity(runs[run_index].account_id, mesh::ContactIdKind::Account);
+  if (!contact || !*contact) {
+    return std::nullopt;
+  }
+  return (*contact)->id;
 }
 
 CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {

@@ -641,6 +641,10 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
+    // Opened at its oldest unread mention (G015), read before the open dropped the marker.
+    if (const std::optional<std::string>& mention = presenter_.OpenedAtMention()) {
+      (void)scroller_.JumpToMessage(*mention);
+    }
   }
 }
 
@@ -856,6 +860,7 @@ void ChatController::OnProfileDataReset() {
   presenter_.ResetForNewProfile();
   drafts_ = ThreadDrafts{}; // unsent text of the old profile must not reach the new one
   quotes_.clear();
+  mentions_.Reset();
   agent_.ForgetAllPendingImages();
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
@@ -901,6 +906,7 @@ void ChatController::ApplySessionList() {
     row.pinned = from.pinned;
     row.muted = from.muted;
     row.unread_dot = from.unread_dot;
+    row.mentioned = from.mentioned;
     shell_.sessions.push_back(std::move(row));
   }
 }
@@ -1093,8 +1099,9 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   if (!facade_) {
     return {};
   }
-  std::vector<MessageDisplayRow> rows = RenderTranscript(
-      facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facade_->TranscriptFactsFor());
+  std::vector<MessageDisplayRow> rows =
+      RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive),
+                       facade_->TranscriptFactsFor(), presenter_.MentionRosterOf(thread_id));
   agent_.DecorateAiImageRows(rows);
   return rows;
 }
@@ -1458,12 +1465,56 @@ void ChatController::OnSendMessage() {
   if (!ComposerSendAllowed(out)) {
     return; // the draft stays: an AI send in the thread whose turn runs, or one already queued here
   }
+  // Mentions mark the typed text only (a prefix of `out`), never the quote under it (G015).
+  const std::string thread_id = ActiveThreadId();
+  if (std::vector<TextSpan> spans = mentions_.SpansFor(thread_id, text);
+      presenter_.SendsWithMentions(thread_id, out, spans)) {
+    close_keyboard();
+    SendWithMentions(thread_id, text, out, std::move(spans));
+    return;
+  }
+  mentions_.ForgetThread(thread_id);
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
   close_keyboard();
   CancelQuoteReply();
   SendUserText(out);
+}
+
+void ChatController::SendWithMentions(const std::string& thread_id, const std::string& reply, const std::string& out,
+                                      std::vector<TextSpan> spans) {
+  mentions_.Close();
+  chat_.draft = "";
+  scroller_.RequestScrollToLatest();
+  CancelQuoteReply();
+  UpdateSidebarPreview(out);
+  if (auto sent = presenter_.SendWithMentions(thread_id, out, std::move(spans)); !sent) {
+    UserFeedback::Fail(PaymentErrorUserMessage(sent.error().message));
+    RestoreDraftIfEmpty(thread_id, reply);  // its mentions stay recorded, so sending again marks them
+  } else {
+    mentions_.ForgetThread(thread_id);
+  }
+  DirtyChatChrome();
+  SyncDisplayFromThread();
+}
+
+void ChatController::RegisterMentionPickerKeys() {
+  if (!input_) {
+    return;
+  }
+  for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER, ui::Input::KI_TAB}) {
+    input_->Register(KeyBinding{
+        .key = key,
+        .forbidden_modifiers = ui::Input::KM_SHIFT,
+        .when = [this](ui::Context* ctx) {
+          ui::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
+          return focus && focus->GetId() == "draft-input" && mentions_.IsOpen();
+        },
+        .action = [this]() { return !mentions_.ChooseFirst(); },
+        .priority = 60, // before Enter sends
+    });
+  }
 }
 
 bool ChatController::ComposerSendAllowed(const std::string& text) {
@@ -2065,6 +2116,7 @@ void ChatController::RestoreComposerExtras(const std::string& key) {
 void ChatController::ForgetComposerExtras(const std::string& key) {
   drafts_.Forget(key);
   quotes_.erase(key);
+  mentions_.ForgetThread(key);
   agent_.ForgetPendingImage(key);
   if (agent_.Ports().forget_thread) {
     agent_.Ports().forget_thread(key); // the AI session's memory of which role answered last
@@ -2190,6 +2242,10 @@ ChatController::ComposerEscape ChatController::OnComposerEscape() {
   if (!focus || focus->GetId() != "draft-input") {
     return ComposerEscape::NotInComposer;
   }
+  if (mentions_.IsOpen()) {
+    mentions_.Close();  // the `@` picker first; the draft keeps its `@`
+    return ComposerEscape::Handled;
+  }
   const int64_t now = util::NowUnixMs();
   const std::string thread_id = ActiveThreadId();
   const EscapeAction action =
@@ -2287,12 +2343,10 @@ void ChatController::WireMessagingBindings() {
         // mentions us (G015), and then once a minute per group at most.
         const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
         const int64_t now_ms = util::NowUnixMs();
-        if (prefs && ThreadIsMuted(prefs->muted_until, now_ms)) {
-          int64_t& last = muted_mention_alert_ms_[thread_id];
-          if (!mentions_us || !MutedMentionMayAlert(last, now_ms)) {
-            return;
-          }
-          last = now_ms;
+        const bool muted = prefs && ThreadIsMuted(prefs->muted_until, now_ms);
+        if (!NoticeAlerts(muted, prefs && prefs->mute_mentions, mentions_us, muted_mention_alert_ms_[thread_id],
+                          now_ms)) {
+          return;
         }
         // A stranger's first message arrives before the directory answered, so the title would be a bare
         // id. Give the lookup a moment and use whatever name is known by then.
@@ -2464,6 +2518,7 @@ bool ChatController::Setup(ui::Context* context) {
   };
   register_enter_send(ui::Input::KI_RETURN);
   register_enter_send(ui::Input::KI_NUMPADENTER);
+  RegisterMentionPickerKeys();
 
   if (!DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
         BindChatScreenState(ctor, chat_);
@@ -2493,6 +2548,15 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& reply_id) { JumpToQuotedMessage(reply_id); }));
         ctor.BindEventCallback("open_message_link", DataEvent<std::string, int>(
             [this](const std::string& message_id, int link) { OpenMessageLink(message_id, link); }));
+        ctor.BindEventCallback("draft_changed", DataEvent([this] { mentions_.OnDraftChanged(); }));
+        ctor.BindEventCallback("open_mention", DataEvent<std::string, int>([this](const std::string& message_id, int run) {
+          // A highlighted mention: the member's contact page; nothing for someone who is not a contact.
+          const auto contact =
+              run < 0 ? std::nullopt : presenter_.MentionedContact(message_id, static_cast<size_t>(run));
+          if (contact && contacts_notify_.select_contact) {
+            contacts_notify_.select_contact(*contact);
+          }
+        }));
         ctor.BindEventCallback("open_attachment", DataEvent<std::string>(
             [this](const std::string& message_id) { OpenAttachment(message_id); }));
         ctor.BindEventCallback("download_attachment", DataEvent<std::string>(
