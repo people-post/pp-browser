@@ -10,6 +10,7 @@
 #include <ui/dom/ElementDocument.h>
 #include <ui/widgets/ElementFormControlTextArea.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace pbr {
@@ -67,6 +68,12 @@ void ChatMentionPicker::OnDraftChanged() {
     Close();
   }
   const std::string before = thread_id == last_thread_ ? last_text_ : text;
+  // Picks whose token was deleted go now (not an empty draft: a refused send clears it, then restores it).
+  if (thread_id == last_thread_ && !text.empty()) {
+    if (const auto it = recorded_.find(thread_id); it != recorded_.end()) {
+      PruneRecordedMentions(text, it->second);
+    }
+  }
   last_text_ = text;
   last_thread_ = thread_id;
   if (thread_id.empty() || !chat_.thread_is_group || !host_.MessagingIsReady()) {
@@ -119,10 +126,15 @@ void ChatMentionPicker::Choose(const MentionCandidate& line) {
     return;
   }
   const std::string thread_id = host_.ActiveThreadId();
-  const MentionInsert inserted = InsertMention(CurrentDraft(), *at_, caret_, line.Token());
+  const std::string draft_text = CurrentDraft();
+  const MentionInsert inserted = InsertMention(draft_text, *at_, caret_, line.Token());
+  // An earlier pick of this name whose token was deleted must not outlive it (the `@query` being replaced is not one).
+  const std::string kept_text = draft_text.substr(0, *at_) + draft_text.substr(std::min(caret_, draft_text.size()));
+  std::vector<ComposerMention>& picks = recorded_[thread_id];
+  PruneRecordedMentions(kept_text, picks);
   at_.reset();
   lines_.clear();
-  recorded_[thread_id].push_back({line.kind, line.account_id, line.Token()});
+  picks.push_back({line.kind, line.account_id, line.Token()});
   last_text_ = inserted.text;  // the change this makes is ours, not typing
   last_thread_ = thread_id;
   chat_.draft = inserted.text.c_str();
