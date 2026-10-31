@@ -20,11 +20,16 @@ namespace pbr {
 inline constexpr std::string_view kDiagnosticsChannels[] = {"Diag", "Metrics", "Crash"};
 
 inline constexpr std::size_t kDiagnosticsMaxJsonBytes = 2u * 1024u * 1024u;
+/** File entries in one upload, the crash record's included: the gateway and app-support accept at most 4. */
+inline constexpr std::size_t kDiagnosticsMaxFiles = 4;
 inline constexpr int kDiagnosticsMaxLines = 30000;
 inline constexpr std::size_t kDiagnosticsMaxLineBytes = 2048;
 
 struct DiagnosticsBundleInput {
-  /** Channel files, most wanted first (dropped last when over the cap): diag.log, metrics.log, diag.1.log, … */
+  /**
+   * Channel files, most wanted first (dropped last when over the cap): diag.log, metrics.log, diag.1.log. At most
+   * kDiagnosticsMaxFiles - 1: the crash record is an entry too.
+   */
   std::vector<std::filesystem::path> files;
   std::vector<std::string> crash_lines;          // already formatted "[ts] [INFO] [Crash] ..." lines; kept longest
   std::vector<std::string> known_identifiers;    // own account id, contact peer ids, device id, relay id

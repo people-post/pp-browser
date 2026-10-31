@@ -21,7 +21,7 @@ struct DiagnosticsUploadDeps {
 };
 
 /**
- * Bundles this run's and the previous run's diag.log and metrics.log and the pending crash record (read-only)
+ * Bundles this run's diag.log and metrics.log, the previous run's diag.log and the pending crash record (read-only)
  * and POSTs them once, on a worker.
  * `on_done` runs on the UI thread. One call at a time (the Settings button is disabled while sending).
  * Records the reference in `{data_dir}/diagnostics/last_upload.json` on success.

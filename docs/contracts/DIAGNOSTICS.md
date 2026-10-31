@@ -11,12 +11,12 @@ A user can send diagnostics to support from Me → Security → Send diagnostics
 | Source | File | Written by |
 |--------|------|------------|
 | Troubleshooting events | `{data_dir}/logs/diag.log` (this run) and `diag.1.log` (the previous run) | `DiagLine` — channel `Diag` |
-| Operational metrics | `{data_dir}/logs/metrics.log` and `metrics.1.log` | `MetricsLine` — channel `Metrics` |
+| Operational metrics | `{data_dir}/logs/metrics.log` (this run) | `MetricsLine` — channel `Metrics` |
 | The last crash, if one is pending | `{data_dir}/diagnostics/crash_pending.txt`, rebuilt as `Crash` lines: reason, frames, breadcrumb tags (never the raw sample) | `CrashEnvelopeLines` |
 
 Nothing else. The developer log (`pp-browser.log`) is never read for a send: it is free text, and it stays on the device.
 
-Before sending, the bundle keeps only lines of the channels `Diag`, `Metrics` and `Crash` at INFO or above, caps them (30 000 lines, 2 MiB JSON, 2048 bytes a line; the least wanted file's oldest lines go first — `diag.log`, then `metrics.log`, then the previous run's), and runs `SelfCheck` over exactly what would go: one hit (a long hex run, an id-like token, an email, a home path, one of the user's own or contacts' ids) and nothing is sent.
+Before sending, the bundle keeps only lines of the channels `Diag`, `Metrics` and `Crash` at INFO or above, caps them (30 000 lines, 2 MiB JSON, 2048 bytes a line; at most 4 file entries — the gateway and app-support refuse a fifth; the least wanted file's oldest lines go first — `diag.1.log`, then `metrics.log`, then `diag.log`), and runs `SelfCheck` over exactly what would go: one hit (a long hex run, an id-like token, an email, a home path, one of the user's own or contacts' ids) and nothing is sent.
 
 ## The rule: shareable lines
 
@@ -72,6 +72,7 @@ Metrics events are listed where they are emitted (`MetricsLine("…")`); they fo
   "files": [
     { "name": "diag.log", "lines": ["[2026-10-28 08:57:32.329] [INFO] [Diag] event=relay.http_failed action=send status=503"] },
     { "name": "metrics.log", "lines": ["…"] },
+    { "name": "diag.1.log", "lines": ["…"] },
     { "name": "crash", "lines": ["[…] [INFO] [Crash] reason=SIGSEGV"] }
   ]
 }
@@ -84,6 +85,10 @@ Metrics events are listed where they are emitted (`MetricsLine("…")`); they fo
 | 409 | The previous send is still being processed |
 | 401, 404, 503 | Unavailable |
 | 413 | Too large |
-| other / no answer | Failed / no network (the same `client_token` on retry) |
+| other (400: a body the server refused) / no answer | Failed / no network (the same `client_token` on retry) |
+
+### The receiving side
+
+The gateway (www, `app/src/r_support_client.ts`) checks the Bearer like the LLM routes, validates the body (the fields above, strict; 1–4 `files`; 30 000 lines, 2048 chars a line, 2.5 MB of line bytes) and forwards it to app-support `POST /v1/diagnostics` with two hashes for the quota: `X-Diag-Key-Hash` (SHA-256 of the Bearer) and `X-Diag-Ip-Hash` (HMAC with a gateway-only secret; IPv6 by /64). Its access log for this path carries no IP, user agent or request id. app-support validates the same body, reserves the daily quotas (3 a key, 10 an IP, a global cap), writes each line to CloudWatch as a `client_diag` record (`upload`, `file`, `version`, `os`, `line`) and keeps only the upload record in Mongo. A change to the body or the file limits is a change on all three.
 
 Changelog: 2026-10-30 — first version (P009).
