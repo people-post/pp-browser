@@ -241,6 +241,9 @@ private:
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
+  /** The device's last reported attachment (owner), for the connect lines of the Diag channel. */
+  MobilityAttachment last_attachment_;
+  bool attachment_known_ = false;
   /** H013: the relays the answerer of `call_id` advertised in its CallAccept (calls owner). */
   struct PeerParkedRelays {
     std::string call_id;

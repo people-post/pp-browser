@@ -6,7 +6,12 @@
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
+#include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/CameraCaptureFlow.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/VoiceComposer.h"
+#include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatPeerSheet.h"
@@ -44,6 +49,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <functional>
 #include <utility>
@@ -107,6 +113,8 @@ public:
   void AfterLayout();
   void Shutdown();
   void OnApplicationPause();
+  /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
+  void CancelVoice();
   void FinalizeThreadDisplay();
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
   void PrefillDraft(const std::string& text);
@@ -181,8 +189,33 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
-  void OnAttachFile();
-  void StartAttachmentUpload(const std::string& path);
+  void OnAttachFile(ui::Event* ev = nullptr);
+  /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
+  void OnAttachCapture(ui::Event* ev = nullptr);
+  void OpenCameraCapture(CameraCaptureKind kind);
+  CaptureFlowPorts MakeCaptureFlowPorts();
+  /** Recompute `show_capture` (call, upload, chat kind); dirty only on a change. */
+  void RefreshShowCapture();
+  /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
+  void ShowPictureSendChoice(std::string path);
+  void ToggleVoiceMode();
+  /**
+   * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
+   * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
+   * offers Retry / Discard.
+   */
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
+                             const std::string& voice_thread_id = {});
+  /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
+  void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
+  /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
+  void OnRetryAttachmentSend();
+  void OnDiscardAttachmentSend();
+  /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
+  void RefreshPendingAttachmentChip(bool force);
+  void ShowFailedAttachment(const std::string& record_id, const std::string& name);
+  /** Progress for the chip: the percent line, with a "please stay in PP" hint for a large file. */
+  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress();
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
@@ -224,6 +257,19 @@ private:
   void SyncShellSessions() override;
   void UpdateThreadChrome();
   void ResetChatPanelState();
+  std::string failed_record_id_;
+  /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
+  std::string failed_voice_path_;
+  std::string failed_voice_thread_;
+  std::chrono::steady_clock::time_point last_voice_call_check_{};
+  /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
+  /** Deletes a picked / captured file once it is read or given up; tests swap it to count the releases. */
+  std::function<void(const std::string& path)> release_pick_ = [](const std::string& path) { ReleasePickedFile(path); };
+  int attach_menu_x_ = 12;
+  int attach_menu_y_ = 120;
+  /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
+  std::unordered_set<std::string> opening_message_ids_;
+  std::string pending_chip_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;
@@ -327,6 +373,11 @@ private:
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
+  /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */
+  std::unique_ptr<VoiceComposer> voice_;
+  std::unique_ptr<VoicePlayback> voice_playback_;
+  /** The chat the voice parts last saw: another one cancels a recording and stops a clip. */
+  std::string voice_thread_;
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

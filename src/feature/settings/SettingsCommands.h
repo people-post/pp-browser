@@ -35,8 +35,8 @@ struct SettingsCommands {
   std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
   std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
   std::function<Roe<void>()> clear_profile_icon;
-  std::function<Roe<BlobQuotaRecoveryPlan>()> plan_relay_quota_recovery;
-  std::function<Roe<void>()> free_oldest_relay_blob_slot;
+  std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
+  std::function<Roe<void>(const std::string& blob_id)> delete_relay_blob;
   std::function<void()> drain_pending_attachment_media;
   std::function<Roe<void>()> clear_downloaded_attachments;
   /** CAS library (P3): filter all|private|public|cache. */

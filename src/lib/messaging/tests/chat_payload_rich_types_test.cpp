@@ -137,6 +137,41 @@ TEST(ChatPayloadRichTypesTest, AttachmentRoundTrip) {
   EXPECT_EQ(decoded->blob_nonce, fields.blob_nonce);
 }
 
+// A file sent peer-direct only has no server copy, so its url is empty; that message must still be valid
+// (before, the receiver rejected it and the sender encoded it as an empty attachment).
+TEST(ChatPayloadRichTypesTest, DirectOnlyAttachmentWithoutUrlRoundTrips) {
+  using namespace pbr;
+
+  ChatAttachmentFields fields;
+  fields.mime = "application/pdf";
+  fields.filename = "doc.pdf";
+  fields.byte_length = 1000;
+  fields.content_hash.assign(kAttachmentContentHashSize, 0x11);
+  fields.content_key.assign(kSessionKeySize, 0x22);
+  fields.blob_nonce.assign(kAeadNonceSize, 0x33);
+
+  auto json_decoded = ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(fields));
+  ASSERT_TRUE(static_cast<bool>(json_decoded));
+  EXPECT_TRUE(json_decoded->url.empty());
+
+  auto bytes = ChatPayloadCodec::EncodeAttachment(fields, "doc.pdf");
+  ASSERT_TRUE(static_cast<bool>(bytes));
+  auto message = ChatPayloadValidator::DecodeValidated(*bytes);
+  ASSERT_TRUE(static_cast<bool>(message));
+  auto decoded = ChatPayloadCodec::DecodeAttachmentJson(message->payload_json);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_TRUE(decoded->url.empty());
+  EXPECT_EQ(decoded->content_hash, fields.content_hash);
+
+  // Still invalid: no declared size, no type, damaged key material.
+  ChatAttachmentFields no_size = fields;
+  no_size.byte_length = 0;
+  EXPECT_FALSE(static_cast<bool>(ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(no_size))));
+  ChatAttachmentFields no_key = fields;
+  no_key.content_key.clear();
+  EXPECT_FALSE(static_cast<bool>(ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(no_key))));
+}
+
 TEST(ChatPayloadRichTypesTest, AttachmentContentCipherRoundTrip) {
   using namespace pbr;
 

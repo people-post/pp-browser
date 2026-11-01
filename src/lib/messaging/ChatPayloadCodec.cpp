@@ -544,7 +544,9 @@ Roe<ChatAttachmentFields> ChatPayloadCodec::DecodeAttachmentJson(const std::stri
   fields.content_hash = attachment_codec::ReadByteArray(*json, "content_hash");
   fields.content_key = attachment_codec::ReadByteArray(*json, "content_key");
   fields.blob_nonce = attachment_codec::ReadByteArray(*json, "blob_nonce");
-  if (fields.url.empty() || fields.mime.empty() || fields.byte_length == 0 ||
+  // An empty url is valid: a file pushed peer-direct only has no server copy (fetched from the pending push or
+  // from the sender), and the receiver's size and hash checks do not depend on it.
+  if (fields.mime.empty() || fields.byte_length == 0 ||
       fields.content_hash.size() != kAttachmentContentHashSize ||
       fields.content_key.size() != kAttachmentContentKeySize ||
       fields.blob_nonce.size() != kAttachmentBlobNonceSize) {

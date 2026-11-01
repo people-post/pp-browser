@@ -1,12 +1,10 @@
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "common/BoundedRead.h"
 
-#include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
+#include "lib/messaging/AttachmentCache.h"
 
-#include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -16,14 +14,19 @@ namespace pbr {
 
 namespace {
 
-Roe<ByteVector> ReadFileBytes(const std::string& path) {
+Roe<ByteVector> ReadFileBytes(const std::string& path, const uint64_t max_bytes) {
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(path, ec);
+  if (!ec && size > max_bytes) {
+    return Error("Attachment is over the size limit"); // before the file is read
+  }
   std::ifstream input(path, std::ios::binary);
   if (!input) {
     return Error("Could not read attachment file");
   }
-  auto bytes = ReadBoundedBytes(input, kMaxChatAttachmentPlaintextBytes);
+  auto bytes = ReadBoundedBytes(input, static_cast<size_t>(max_bytes));
   if (!bytes) {
-    return Error("Attachment exceeds 4 MiB limit");  // read no further than the limit
+    return Error("Attachment is over the size limit"); // read no further than the limit
   }
   if (bytes->empty()) {
     return Error("Attachment file is empty");
@@ -39,67 +42,48 @@ std::string FilenameFromPath(const std::string& path) {
   return "attachment";
 }
 
-std::string MimeFromFilename(const std::string& filename) {
-  std::string ext = std::filesystem::path(filename).extension().string();
-  std::transform(ext.begin(), ext.end(), ext.begin(),
-                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-  if (ext == ".png") {
-    return "image/png";
-  }
-  if (ext == ".jpg" || ext == ".jpeg") {
-    return "image/jpeg";
-  }
-  if (ext == ".webp") {
-    return "image/webp";
-  }
-  if (ext == ".gif") {
-    return "image/gif";
-  }
-  if (ext == ".pdf") {
-    return "application/pdf";
-  }
-  if (ext == ".txt") {
-    return "text/plain";
-  }
-  if (ext == ".mp4") {
-    return "video/mp4";
-  }
-  if (ext == ".webm") {
-    return "video/webm";
-  }
-  return "application/octet-stream";
-}
-
 } // namespace
 
-Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& path) {
-  auto plaintext = ReadFileBytes(path);
-  if (!plaintext) {
-    return plaintext.error();
+Roe<PreparedChatAttachment> PrepareChatAttachmentFromBytes(const std::vector<uint8_t>& plaintext,
+                                                           const std::string& filename, const std::string& mime,
+                                                           const uint64_t max_bytes) {
+  if (plaintext.empty()) {
+    return Error("Attachment file is empty");
+  }
+  if (plaintext.size() > max_bytes) {
+    return Error("Attachment is over the size limit");
   }
 
   auto content_key = AttachmentContentCipher::GenerateContentKey();
   if (!content_key) {
     return content_key.error();
   }
-  auto encrypted = AttachmentContentCipher::Encrypt(*content_key, *plaintext);
+  auto encrypted = AttachmentContentCipher::Encrypt(*content_key, plaintext);
   if (!encrypted) {
     return encrypted.error();
   }
-  auto content_hash = AttachmentContentHash(*plaintext);
+  auto content_hash = AttachmentContentHash(plaintext);
   if (!content_hash) {
     return content_hash.error();
   }
 
   PreparedChatAttachment prepared;
-  prepared.fields.mime = MimeFromFilename(FilenameFromPath(path));
-  prepared.fields.filename = FilenameFromPath(path);
-  prepared.fields.byte_length = plaintext->size();
+  prepared.fields.filename = filename.empty() ? "attachment" : filename;
+  prepared.fields.mime = mime.empty() ? AttachmentMimeFromFilename(prepared.fields.filename) : mime;
+  prepared.fields.byte_length = plaintext.size();
   prepared.fields.content_hash = *content_hash;
   prepared.fields.content_key = *content_key;
   prepared.fields.blob_nonce = encrypted->nonce;
-  prepared.ciphertext.assign(encrypted->ciphertext.begin(), encrypted->ciphertext.end());
+  prepared.ciphertext = std::move(encrypted->ciphertext); // no second copy
   return prepared;
+}
+
+Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& path, const uint64_t max_bytes) {
+  auto plaintext = ReadFileBytes(path, max_bytes);
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  return PrepareChatAttachmentFromBytes(*plaintext, FilenameFromPath(path), std::string(), max_bytes);
 }
 
 } // namespace pbr

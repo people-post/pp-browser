@@ -17,13 +17,13 @@ namespace pbr {
 /** UI orchestration for R009: confirm, delete oldest remote blob, retry upload. */
 struct BlobQuotaRecoveryFlow {
   static void RunVoidUpload(std::function<Roe<void>()> upload, std::function<void(Roe<void>)> on_complete,
-                              std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                              std::function<Roe<void>()> free_slot);
+                              std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                              std::function<Roe<void>(const std::string& blob_id)> free_slot);
 
   template <typename T>
   static void RunUpload(std::function<Roe<T>()> upload, std::function<void(Roe<T>)> on_complete,
-                        std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                        std::function<Roe<void>()> free_slot) {
+                        std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                        std::function<Roe<void>(const std::string& blob_id)> free_slot) {
     Detail::RunUploadImpl(std::move(upload), std::move(on_complete), std::move(plan_recovery), std::move(free_slot));
   }
 
@@ -31,8 +31,8 @@ struct BlobQuotaRecoveryFlow {
   template <typename T>
   static void RunUploadAsync(std::function<void(std::function<void(Roe<T>)>)> upload,
                              std::function<void(Roe<T>)> on_complete,
-                             std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                             std::function<Roe<void>()> free_slot) {
+                             std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                             std::function<Roe<void>(const std::string& blob_id)> free_slot) {
     Detail::RunUploadAsyncImpl(std::move(upload), std::move(on_complete), std::move(plan_recovery),
                                std::move(free_slot));
   }
@@ -51,7 +51,7 @@ private:
     template <typename T>
     static void PromptQuotaRecoveryAsync(std::function<void(std::function<void(Roe<T>)>)> upload,
                                          std::function<void(Roe<T>)> on_complete,
-                                         std::function<Roe<void>()> free_slot, Roe<BlobQuotaRecoveryPlan> plan) {
+                                         std::function<Roe<void>(const std::string& blob_id)> free_slot, Roe<BlobQuotaRecoveryPlan> plan) {
       AppRuntime::PostUI([upload = std::move(upload), on_complete = std::move(on_complete),
                           free_slot = std::move(free_slot), plan = std::move(plan)]() mutable {
         if (!plan) {
@@ -61,15 +61,16 @@ private:
 
         UserFeedback::Confirm(
             Tr("blob.quota.title"), BuildQuotaConfirmMessage(*plan),
-            [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot)](
-                const bool confirmed) mutable {
+            // The blob named in the dialog is the one deleted, not whatever is oldest by then.
+            [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot),
+             blob_id = plan->blob_to_delete.blob_id](const bool confirmed) mutable {
               if (!confirmed) {
                 FinishUpload(on_complete, Roe<T>{Error(Tr("blob.quota.cancelled"))});
                 return;
               }
               AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
-                                            free_slot = std::move(free_slot)]() mutable {
-                auto freed = free_slot();
+                                            free_slot = std::move(free_slot), blob_id = std::move(blob_id)]() mutable {
+                auto freed = free_slot(blob_id);
                 if (!freed) {
                   FinishUpload(on_complete, Roe<T>{freed.error()});
                   return;
@@ -86,8 +87,8 @@ private:
     template <typename T>
     static void BeginUploadAttemptAsync(std::function<void(std::function<void(Roe<T>)>)> upload,
                                         std::function<void(Roe<T>)> on_complete,
-                                        std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                                        std::function<Roe<void>()> free_slot) {
+                                        std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                                        std::function<Roe<void>(const std::string& blob_id)> free_slot) {
       AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
                                     plan_recovery = std::move(plan_recovery),
                                     free_slot = std::move(free_slot)]() mutable {
@@ -102,10 +103,10 @@ private:
             return;
           }
           AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
-                                        plan_recovery = std::move(plan_recovery),
-                                        free_slot = std::move(free_slot)]() mutable {
+                                        plan_recovery = std::move(plan_recovery), free_slot = std::move(free_slot),
+                                        quota_error = result.error()]() mutable {
             PromptQuotaRecoveryAsync(std::move(upload), std::move(on_complete), std::move(free_slot),
-                                     plan_recovery());
+                                     plan_recovery(quota_error));
           });
         });
       });
@@ -113,7 +114,7 @@ private:
 
     template <typename T>
     static void PromptQuotaRecovery(std::function<Roe<T>()> upload, std::function<void(Roe<T>)> on_complete,
-                                    std::function<Roe<void>()> free_slot, Roe<BlobQuotaRecoveryPlan> plan) {
+                                    std::function<Roe<void>(const std::string& blob_id)> free_slot, Roe<BlobQuotaRecoveryPlan> plan) {
       AppRuntime::PostUI([upload = std::move(upload), on_complete = std::move(on_complete),
                           free_slot = std::move(free_slot), plan = std::move(plan)]() mutable {
         if (!plan) {
@@ -123,15 +124,16 @@ private:
 
         UserFeedback::Confirm(
             Tr("blob.quota.title"), BuildQuotaConfirmMessage(*plan),
-            [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot)](
-                const bool confirmed) mutable {
+            // The blob named in the dialog is the one deleted, not whatever is oldest by then.
+            [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot),
+             blob_id = plan->blob_to_delete.blob_id](const bool confirmed) mutable {
               if (!confirmed) {
                 FinishUpload(on_complete, Roe<T>{Error(Tr("blob.quota.cancelled"))});
                 return;
               }
               AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
-                                            free_slot = std::move(free_slot)]() mutable {
-                auto freed = free_slot();
+                                            free_slot = std::move(free_slot), blob_id = std::move(blob_id)]() mutable {
+                auto freed = free_slot(blob_id);
                 if (!freed) {
                   FinishUpload(on_complete, Roe<T>{freed.error()});
                   return;
@@ -145,8 +147,8 @@ private:
 
     template <typename T>
     static void BeginUploadAttempt(std::function<Roe<T>()> upload, std::function<void(Roe<T>)> on_complete,
-                                   std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                                   std::function<Roe<void>()> free_slot) {
+                                   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                                   std::function<Roe<void>(const std::string& blob_id)> free_slot) {
       AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
                                     plan_recovery = std::move(plan_recovery),
                                     free_slot = std::move(free_slot)]() mutable {
@@ -161,25 +163,26 @@ private:
         }
 
         AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
-                                      plan_recovery = std::move(plan_recovery),
-                                      free_slot = std::move(free_slot)]() mutable {
-          PromptQuotaRecovery(std::move(upload), std::move(on_complete), std::move(free_slot), plan_recovery());
+                                      plan_recovery = std::move(plan_recovery), free_slot = std::move(free_slot),
+                                      quota_error = result.error()]() mutable {
+          PromptQuotaRecovery(std::move(upload), std::move(on_complete), std::move(free_slot),
+                              plan_recovery(quota_error));
         });
       });
     }
 
     template <typename T>
     static void RunUploadImpl(std::function<Roe<T>()> upload, std::function<void(Roe<T>)> on_complete,
-                              std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                              std::function<Roe<void>()> free_slot) {
+                              std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                              std::function<Roe<void>(const std::string& blob_id)> free_slot) {
       BeginUploadAttempt(std::move(upload), std::move(on_complete), std::move(plan_recovery), std::move(free_slot));
     }
 
     template <typename T>
     static void RunUploadAsyncImpl(std::function<void(std::function<void(Roe<T>)>)> upload,
                                    std::function<void(Roe<T>)> on_complete,
-                                   std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
-                                   std::function<Roe<void>()> free_slot) {
+                                   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
+                                   std::function<Roe<void>(const std::string& blob_id)> free_slot) {
       BeginUploadAttemptAsync(std::move(upload), std::move(on_complete), std::move(plan_recovery),
                               std::move(free_slot));
     }

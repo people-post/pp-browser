@@ -22,7 +22,16 @@ struct AttachmentFetchContext {
   IdentityStore* identity = nullptr;
   IChatBlobPeerClient* peer_client = nullptr;
   std::string profile_data_dir;
+  /** (bytes received, bytes expected) of a CDN download; false cancels it. */
+  std::function<bool(uint64_t done, uint64_t total)> progress;
+  /** Tests only: allow a plain-http / loopback CDN url (a peer-controlled url is https + public otherwise). */
+  bool allow_local_cdn_for_test = false;
 };
+
+/** Where a CDN download is written before it is read back: `{data_dir}/blob_cipher/incoming/<hash>.part`. */
+std::string IncomingCiphertextDir(const std::string& profile_data_dir);
+/** Remove leftovers of interrupted downloads (run at start). */
+void CleanIncomingCiphertext(const std::string& profile_data_dir);
 
 /** True when CDN URL, pending ciphertext, or peer fetch path may apply. */
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context);

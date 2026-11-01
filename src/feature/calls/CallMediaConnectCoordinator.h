@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/call_media/ICallMediaTransport.h"
+#include "feature/calls/CallConnectDiag.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -117,6 +118,12 @@ public:
   /** Inbound hello key wait budget (<= 0 = production default). */
   void SetInboundKeyWaitMsForTest(int wait_ms);
 
+  /**
+   * What the connect lines of the Diag channel read of this device and the mesh (calls owner; empty =
+   * lines without it). Cleared when the mesh ports are detached.
+   */
+  void SetDiagProbe(CallConnectEnvProbe probe);
+
 private:
   bool Current(uint64_t seq) const;
   bool MediaReady() const;
@@ -169,6 +176,18 @@ private:
   OwnerExecutor::TimerId retry_timer_id_ = 0;
   OwnerExecutor::TimerId watchdog_timer_id_ = 0;
   int attempt_timeout_ms_;
+
+  // Diag lines of the sequence (calls owner). Reset by Start.
+  CallConnectEnvProbe diag_probe_;
+  std::chrono::steady_clock::time_point diag_started_;
+  int diag_attempts_ = 0;
+  mesh::PeerLinkKind diag_kind_ = mesh::PeerLinkKind::Unknown;
+  int diag_family_ = 0;
+  bool diag_reach_failed_ = false;
+  mesh::PeerReachCoordinator::Err diag_reach_err_ = mesh::PeerReachCoordinator::Err::Ok;
+  ShareWord diag_why_ = "none";
+  CallConnectEnv DiagEnv() const;
+  int64_t DiagMs() const;
 };
 
 } // namespace pbr

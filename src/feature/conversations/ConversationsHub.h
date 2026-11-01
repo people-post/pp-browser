@@ -39,7 +39,11 @@
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
+#include "domain/attachments/LargeTransferLane.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
+#include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
@@ -293,8 +297,10 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
-  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
-  Roe<void> FreeOldestRelayBlobSlot();
+  /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
+  /** Delete the relay blob the person confirmed (by id). */
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
@@ -305,8 +311,33 @@ public:
    */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  /** Read a file and send it as it is (no picture shrink: that is the picker's job, see OutgoingAttachment). */
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
+  /**
+   * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
+   * and the send pace (AttachmentLimits::send_max_per_minute).
+   */
+  void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  /**
+   * Send again an attachment whose send failed (also after the app was killed): the same staged ciphertext and
+   * key, from the stage it stopped at. When nothing is left to send from, the error says to pick the file again.
+   */
+  void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                             std::function<void(Roe<ThreadMessage>)> on_done,
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  /** Attachments of this thread whose send did not finish and whose staged ciphertext is still there. */
+  std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** Drop a staged attachment (the person gave up on it). */
+  void DiscardOutgoingAttachment(const std::string& record_id);
+  /** At start: staged sends older than a day and half-finished downloads go. */
+  void CleanStaleAttachmentFiles();
+  /** Every size / pace / warning number for attachments; one source so a member tier can replace it later. */
+  AttachmentLimits CurrentAttachmentLimits() const;
+  /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
+  void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   AttachmentFetchWorkflow& Attachments();
   /** Our uploaded relay copy of an attachment message, if any; best effort. */
   void DeleteUploadedCopy(const ThreadMessage& message);
@@ -504,6 +535,30 @@ private:
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
+  AttachmentSendLimiter attachment_send_limiter_;
+  /** Server-space warnings: once per level and run, and at most one list call a day. */
+  BlobSpaceMonitor blob_space_monitor_;
+  std::mutex blob_space_mutex_;
+  std::function<void(int percent)> on_blob_space_warning_;
+  void CheckBlobSpace(bool after_quota_error);
+  struct AttachmentSendJob {
+    std::string thread_id;
+    ThreadKind kind = ThreadKind::Direct;
+    std::shared_ptr<OutgoingAttachmentStore> store;
+    std::string record_id;
+    std::shared_ptr<const ByteVector> plaintext;
+    ByteVector dek;
+    int64_t started_ms = 0;
+    uint64_t bytes = 0;
+  };
+  Roe<Thread> AttachmentTargetThread(const std::string& thread_id);
+  void ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress);
+  std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
+      std::function<bool(uint64_t done, uint64_t total)> progress);
+  void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
+                            const std::function<void(Roe<ThreadMessage>)>& finish);
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;
@@ -602,6 +657,12 @@ private:
   bool mobile_ephemeral_stop_inflight_ = false;
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
+  /**
+   * Where large attachment transfers run (see LargeTransferLane): one upload thread and one download thread,
+   * one job at a time each. Declared last so it is destroyed first, and stopped + joined in Shutdown() and the
+   * destructor before anything a job uses goes away.
+   */
+  LargeTransferLane transfer_lane_;
 };
 
 /** Preferred name for the app messaging assembler (holds MeshHost; calls and broadcast participate). */

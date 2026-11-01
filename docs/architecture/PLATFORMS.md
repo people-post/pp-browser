@@ -23,10 +23,12 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Platform | SDL audio backend | Extra build packages? | Product needs |
 |----------|-------------------|----------------------|----------------------------------|
 | Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264 |
-| Windows | WASAPI | No | OS microphone privacy |
-| macOS | CoreAudio | No | Mic / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)) |
-| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk` |
-| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` (+ `voip` on CallKit builds) |
+| Windows | WASAPI | No | OS microphone privacy (also voice messages) |
+| macOS | CoreAudio | No | Mic (calls and voice messages) / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)) |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` (calls and voice messages) + `CAMERA` + runtime; link `mediandk` + `camera2ndk` |
+| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` (calls **and voice messages**) + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` (+ `voip` on CallKit builds) |
+
+**Voice messages** (`lib/media`: `VoiceRecorder`, `VoicePlayer`, `OggOpus`): Mac, Windows, iOS and Android record (Opus 24 kbps, Ogg) and play; **Linux has no microphone button and no player** (`VoiceMessagesSupported()` is false, a received voice message is a file row). Both go through `MediaDeviceArbiter` (the microphone is exclusive with calls; playback is refused while a call or ringtone holds the speaker, and a ringing call stops a recording, keeping what was said, and a clip). The first press only asks for the microphone (`MicPermission`: AVCaptureDevice on Apple, `checkSelfPermission` / `SDL_RequestAndroidPermission` on Android; Windows and Linux have no per-app prompt) and then says to press again; a refusal is told as such. iOS uses its own `playback` audio session (`VoiceAudioSession_Ios.mm`, loudspeaker, audible with the silent switch on), separate from `CallAudioSession`; Android plays at media volume on the speaker (SDL's media role, nothing to switch).
 
 **Agent traps**
 

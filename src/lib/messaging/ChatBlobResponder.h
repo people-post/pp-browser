@@ -25,6 +25,13 @@ struct ChatBlobContentSource {
 class IPeerSigningKeyResolver;
 
 /**
+ * Receiver-side admission for a direct push: true to keep it. Called after the request is authenticated, with
+ * the account that signed it and the ciphertext size; false refuses the push (the sender then uses the server).
+ * Empty: every push is admitted.
+ */
+using ChatBlobPushGate = std::function<bool(const std::string& sender, uint64_t ciphertext_bytes)>;
+
+/**
  * Who is asking: the authenticated Amp peer the request came on, and the keys to check that the
  * request is signed for that peer by the account it names (PeerRequestAuth).
  */
@@ -47,7 +54,8 @@ public:
 
   static Roe<void> ServePush(IThreadStore& store, const ChatBlobRequest& request,
                              const std::string& local_relay_user_id, const std::string& profile_data_dir,
-                             const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester);
+                             const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester,
+                             const ChatBlobPushGate& push_gate = {});
 };
 
 } // namespace pbr

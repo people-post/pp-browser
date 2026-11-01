@@ -24,6 +24,15 @@ enum class AiImagePrepError : int32_t {
   Failed = 3,     // internal failure (allocation, scaling, encoding)
 };
 
+/** Extra rules for a picture that goes to a chat. The AI path uses none of them (the defaults). */
+struct ImagePrepOptions {
+  /** > 0: a picture with more pixels than this is refused (TooLarge) before it is decoded. Its size must be readable
+   *  from the file head (PNG, JPEG, GIF, WebP); any other format is refused as NotAnImage. */
+  uint64_t max_pixels = 0;
+  /** Turn the picture upright by its EXIF orientation (the re-encode drops the tag). */
+  bool apply_exif_orientation = false;
+};
+
 /**
  * Load an image file and re-encode it for sending to the AI.
  *
@@ -36,7 +45,7 @@ enum class AiImagePrepError : int32_t {
  * code is an AiImagePrepError (NotAnImage vs TooLarge). Re-encoding drops all source metadata (EXIF/GPS).
  */
 Roe<PreparedAiImage> PrepareAiImageFromFile(const std::string& path, size_t max_bytes = 1536u * 1024u,
-                                            int max_dimension = 2048);
+                                            int max_dimension = 2048, const ImagePrepOptions& options = {});
 
 /** The AiImagePrepError carried by an Error returned from PrepareAiImageFromFile. */
 inline AiImagePrepError AiImagePrepErrorOf(const Error& err) {

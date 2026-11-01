@@ -162,6 +162,18 @@ bool CallsParticipant::ThreadInActiveCall(const Thread& thread) {
   return ThreadMatchesActiveCall(thread, **active, joined);
 }
 
+bool CallsParticipant::AnyCallLive() {
+  auto* calls = stack_.Calls();
+  if (!calls) {
+    return false;
+  }
+  if (auto active = calls->ActiveLocalCall(); active && *active) {
+    return true;
+  }
+  const auto invite = calls->PeekTopPendingInvite(); // read only: no ring is started or cleared by asking
+  return invite && *invite;
+}
+
 Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std::string& call_id) {
   auto* calls = stack_.Calls();
   if (!calls) {

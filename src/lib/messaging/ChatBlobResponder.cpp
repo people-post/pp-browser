@@ -125,7 +125,7 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
     if (!bytes) {
       return bytes.error();
     }
-    if (bytes->size() > kMaxChatAttachmentPlaintextBytes) {
+    if (bytes->size() > kMaxDirectAttachmentBytes) {
       return Error("Public CAS object too large");
     }
     return std::vector<uint8_t>(bytes->begin(), bytes->end());
@@ -171,7 +171,8 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
 
 Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobRequest& request,
                                        const std::string& local_relay_user_id, const std::string& profile_data_dir,
-                                       const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester) {
+                                       const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester,
+                                  const ChatBlobPushGate& push_gate) {
   if (request.op != ChatBlobOp::Push) {
     return Error("Expected push chat-blob request");
   }
@@ -182,13 +183,17 @@ Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobReques
   if (ciphertext.empty()) {
     return Error("Empty chat-blob push body");
   }
-  if (ciphertext.size() > kMaxChatAttachmentPlaintextBytes + 64) {
+  if (ciphertext.size() > kMaxDirectAttachmentBytes + 64) {
     return Error("Chat-blob push body too large");
   }
 
   auto hash = HexToBytes(request.content_hash_hex);
   if (!hash || hash->size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment content hash");
+  }
+  // A changed client can push as fast as it likes: the receiver's own pace and disk limits decide.
+  if (push_gate && !push_gate(request.requester_identity_value, ciphertext.size())) {
+    return Error("Chat-blob push over the receive limits");
   }
 
   // Senders push before the attachment message itself arrives, so the hash cannot be required

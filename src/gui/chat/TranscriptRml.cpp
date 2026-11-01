@@ -4,6 +4,8 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/conversations/GroupEventText.h"
+#include "gui/chat/VoiceBubble.h"
+#include "lib/media/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -268,7 +270,17 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
 
   std::string html = "<div class=\"chat-card chat-attachment-card\">";
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
-  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty()) {
+  // A voice message (audio/ogg named voice-<ms>.ogg, at most 1 MB declared) is a bubble; any other audio is a file row.
+  // Only the declared values decide here: the file itself is not looked at until the person taps play.
+  const VoiceBubbleView voice =
+      ready && facts.voice_supported
+          ? DecideVoiceBubble(fields->mime, fields->filename, fields->byte_length, facts.voice_max_seconds)
+          : VoiceBubbleView{};
+  if (voice.bubble) {
+    return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
+                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+  }
+  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";
@@ -287,7 +299,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
             JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
     html += "</div>";
-  } else if (ready && !local_path.empty()) {
+  } else if (ready && (!local_path.empty() || view.on_demand)) {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields->byte_length > 0) {
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
@@ -301,8 +313,14 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
               "</p>";
     }
-    if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
-      html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
+    if (state == AttachmentFetchWorkflow::DownloadState::TooLarge) {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.too_large_receive") + "</p>";
+    } else if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
+      html += "<p class=\"text muted\">" +
+              (view.download_percent >= 0
+                   ? Tr("chat.attachment.downloading_percent", {{"percent", std::to_string(view.download_percent)}})
+                   : Tr("chat.attachment.downloading")) +
+              "</p>";
     } else if (state == AttachmentFetchWorkflow::DownloadState::Pending) {
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +
               JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.download") + "</button>";

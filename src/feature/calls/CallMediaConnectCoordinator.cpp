@@ -135,6 +135,19 @@ void CallMediaConnectCoordinator::Shutdown() {
   }
 }
 
+void CallMediaConnectCoordinator::SetDiagProbe(CallConnectEnvProbe probe) {
+  diag_probe_ = std::move(probe);
+}
+
+CallConnectEnv CallMediaConnectCoordinator::DiagEnv() const {
+  return diag_probe_ ? diag_probe_(request_.params.peer_key) : CallConnectEnv{};
+}
+
+int64_t CallMediaConnectCoordinator::DiagMs() const {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - diag_started_)
+      .count();
+}
+
 void CallMediaConnectCoordinator::SetInboundKeyWaitMsForTest(const int wait_ms) {
   inbound_key_wait_ms_ = wait_ms > 0 ? wait_ms : kInboundKeyWaitMs;
 }
@@ -280,6 +293,16 @@ void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMed
   reach_.AbandonDial(request_.params.peer_key);
   log().info << "Connect start call_id=" << request_.params.call_id << " peer=" << request_.params.peer_key
              << " role=" << Role();
+  diag_started_ = std::chrono::steady_clock::now();
+  diag_attempts_ = 0;
+  diag_kind_ = mesh::PeerLinkKind::Unknown;
+  diag_family_ = 0;
+  diag_reach_failed_ = false;
+  diag_reach_err_ = mesh::PeerReachCoordinator::Err::Ok;
+  diag_why_ = "none";
+  if (CallDiagBudget::Shared().Allow(request_.params.call_id, CallDiagEvent::Net)) {
+    CallNetLine(request_.params.call_id, request_.params.offerer, DiagEnv()).Emit();
+  }
   BeginAttempt(seq_.load(std::memory_order_acquire), 1);
 }
 
@@ -304,9 +327,25 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
 
 void CallMediaConnectCoordinator::OnLinkReady(const uint64_t seq, const int attempt,
                                               mesh::PeerReachCoordinator::ReachRoe reached) {
+  diag_attempts_ = std::max(diag_attempts_, attempt);
+  const bool diag_room = CallDiagBudget::Shared().Allow(request_.params.call_id, CallDiagEvent::Reach);
   if (!reached) {
+    diag_reach_failed_ = true;
+    diag_reach_err_ = reached.error().GetCode();
+    diag_why_ = ReachWhyWord(reached.error().message);
+    if (diag_room) {
+      CallReachFailLine(request_.params.call_id, request_.params.offerer, attempt, reached.error(), DiagMs()).Emit();
+    }
     Finish(seq, WrapReachFailure(reached.error()));
     return;
+  }
+  diag_reach_failed_ = false;
+  diag_kind_ = reached->kind;
+  diag_family_ = reached->kind == mesh::PeerLinkKind::Relayed ? 0 : DiagEnv().peer_pref_family;
+  if (diag_room) {
+    CallReachOkLine(request_.params.call_id, request_.params.offerer, attempt, reached->kind, reached->reused_link,
+                    diag_family_, DiagMs())
+        .Emit();
   }
   attempt_reused_link_ = reached->reused_link;
   if (hooks_.on_link_ready) {
@@ -448,6 +487,22 @@ void CallMediaConnectCoordinator::Finish(const uint64_t seq, CallMediaRoe result
   if (!result) {
     log().info << "Connect give up call_id=" << request_.params.call_id << " role=" << Role()
                << " err=" << result.error().message;
+  }
+  if (CallDiagBudget::Shared().Allow(request_.params.call_id, CallDiagEvent::Result)) {
+    CallResultFacts facts;
+    facts.offerer = request_.params.offerer;
+    facts.ok = static_cast<bool>(result);
+    facts.attempts = diag_attempts_;
+    facts.ms = DiagMs();
+    facts.kind = diag_kind_;
+    facts.family = diag_family_;
+    if (!result) {
+      facts.media_err = result.error().GetCode();
+      facts.reach_failed = diag_reach_failed_;
+      facts.reach_err = diag_reach_err_;
+      facts.why = diag_why_;
+    }
+    CallResultLine(request_.params.call_id, facts, result ? CallConnectEnv{} : DiagEnv()).Emit();
   }
   // An event, not inline: the owner's handler may restart or stop the call.
   outbox_.Emit(connect_event::Finished{seq, std::move(result)});

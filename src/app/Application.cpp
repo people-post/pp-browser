@@ -153,6 +153,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
                                  ContactsController& contacts, ChatController& chat) {
   shell.SetOnNavTabChanged([badges, &shell, &settings, &contacts, &chat](NavTab tab) {
     static NavTab previous = NavTab::Home;
+    chat.CancelVoice(); // a recording is not carried to another tab, and a clip stops
     if (previous == NavTab::Me && tab != NavTab::Me) {
       settings.OnMeSurfaceClosed();
     }
@@ -621,8 +622,10 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return facade.UploadProfileIconFromPath(path);
   };
   settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
-  settings_commands.plan_relay_quota_recovery = [&facade]() { return facade.PlanRelayQuotaRecovery(); };
-  settings_commands.free_oldest_relay_blob_slot = [&facade]() { return facade.FreeOldestRelayBlobSlot(); };
+  settings_commands.plan_relay_quota_recovery = [&facade](const Error& quota_error) {
+    return facade.PlanRelayQuotaRecovery(quota_error);
+  };
+  settings_commands.delete_relay_blob = [&facade](const std::string& blob_id) { return facade.DeleteRelayBlobById(blob_id); };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
   settings_commands.list_cas_library = [this](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {

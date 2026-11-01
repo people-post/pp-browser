@@ -15,6 +15,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -29,6 +30,26 @@ struct TranscriptAttachmentView {
   std::string local_path;
   /** A video's poster frame (empty: none). */
   std::string poster_path;
+  /**
+   * False for a picture that must not be decoded for display: its header is unreadable or declares more pixels
+   * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
+   */
+  bool inline_image_ok = true;
+  /**
+   * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
+   * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
+   */
+  bool on_demand = false;
+  /** Percent of a download in progress (0..100), -1 when not downloading or not yet known. */
+  int download_percent = -1;
+};
+
+/** What a voice message's bubble shows while it plays (all zero when it is not the one playing). */
+struct VoiceBubbleState {
+  bool playing = false;
+  bool paused = false;
+  int64_t position_ms = 0;
+  int64_t duration_ms = 0;
 };
 
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
@@ -41,6 +62,13 @@ struct TranscriptFacts {
   std::function<std::string(const std::string& account_id)> member_name;
   /** This account's id: a group line about it reads "you". */
   std::string local_account;
+  /**
+   * Voice messages: drawn as a play / pause bubble when this build can play them (false on Linux: a file row),
+   * with the length clamped to `voice_max_seconds` and the progress `voice_state` gives. The GUI sets these.
+   */
+  bool voice_supported = false;
+  int voice_max_seconds = 120;
+  std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -140,6 +168,8 @@ private:
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
+  /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
+  mutable std::unordered_map<std::string, bool> inline_image_ok_;
   std::string active_thread_id_;
   ThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;
