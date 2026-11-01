@@ -114,6 +114,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("archived_count", &state.archived_count);
   ctor.Bind("showing_archived", &state.showing_archived);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
+  ctor.Bind("sessions_more", &state.sessions_more);
   ctor.Bind("working_set_active", &state.working_set_active);
   ctor.Bind("working_set_title", &state.working_set_title);
   ctor.Bind("working_set_subtitle", &state.working_set_subtitle);
@@ -212,6 +213,7 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "archived_count");
   DataModelHost::Instance().Dirty("shell", "showing_archived");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");
+  DataModelHost::Instance().Dirty("shell", "sessions_more");
   DataModelHost::Instance().Dirty("shell", "working_set_active");
   DataModelHost::Instance().Dirty("shell", "working_set_title");
   DataModelHost::Instance().Dirty("shell", "working_set_subtitle");

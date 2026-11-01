@@ -1220,6 +1220,7 @@
     "sidebar.archived.back": "Back to chats",
     "sidebar.error.prefs_failed": "Could not save the setting",
     "sidebar.empty": "No conversations yet.",
+    "sidebar.loading_more": "Loading…",
     "preview.empty": "Results, forms, and lists appear here when the assistant produces them.",
     "emoji.category.smileys": "Smileys & emotion",
     "emoji.category.people": "People & body",
