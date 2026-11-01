@@ -13,14 +13,14 @@
 
 namespace pbr {
 
-#if defined(__ANDROID__)
 namespace {
 
 /**
- * B127: SDL hands the app's pause / resume only to event watches, while it pumps on the main
- * thread (SDL_SendAppEvent never queues them), so SdlAppEvents::PreProcess never sees them.
+ * B127: SDL hands the app's pause / resume (iOS and Android) only to event watches, on the main
+ * thread as it pumps (SDL_SendAppEvent never queues them), so SdlAppEvents::PreProcess never sees them.
+ * Desktops send none of these; their minimized / restored window events take the pump path.
  */
-bool SDLCALL AndroidLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
+bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
   switch (event->type) {
   case SDL_EVENT_WILL_ENTER_BACKGROUND:
     AppLifecycle::OnWillEnterBackground();
@@ -35,7 +35,6 @@ bool SDLCALL AndroidLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
 }
 
 } // namespace
-#endif
 
 bool Platform::EarlyInit() {
 #if defined(__ANDROID__)
@@ -46,12 +45,12 @@ bool Platform::EarlyInit() {
     return false;
   }
   SDL_SetHint("SDL_ANDROID_TRAP_BACK_BUTTON", "1");
-  SDL_AddEventWatch(AndroidLifecycleWatch, nullptr);
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
   if (!SDL_Init(SDL_INIT_EVENTS)) {
     return false;
   }
 #endif
+  SDL_AddEventWatch(AppLifecycleWatch, nullptr);  // before the first pause can arrive (B127)
   return true;
 }
 
