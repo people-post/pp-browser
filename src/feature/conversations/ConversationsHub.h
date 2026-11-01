@@ -606,7 +606,6 @@ private:
   // --- The mesh (borrowed from its owner between start and stop) + app mesh glue ----
   HubMeshOwner* mesh_owner_ = nullptr;
   mesh::MeshHost* mesh_ = nullptr;
-  std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
   /** The mesh's owner watches the device's network for us while the mesh services run. */
   bool watching_network_ = false;
   /** Last seed-observed public address (k6 churn). UI thread. */

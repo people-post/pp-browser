@@ -427,10 +427,8 @@ void ConversationsHub::StartMeshServices() {
     return;
   }
 
-  lan_mdns_ = std::make_unique<mesh::LanMdnsDiscovery>();
-  lan_mdns_->SetOnDiscovered([this](const mesh::LanMdnsDiscoveredPeer& peer) { OnLanMdnsPeerDiscovered(peer); });
-  if (auto started = lan_mdns_->Start(); !started) {
-    log().warning << "LAN mDNS discovery unavailable: " << started.error().message;
+  if (mesh_owner_) {
+    mesh_owner_->StartLanDiscovery([this](const mesh::LanMdnsDiscoveredPeer& peer) { OnLanMdnsPeerDiscovered(peer); });
   }
 
   ApplyMeshAdmissionPolicies();
@@ -514,7 +512,7 @@ void ConversationsHub::SyncMobileEphemeralListen() {
 
 
 void ConversationsHub::SyncLanMdnsAdvertisement() {
-  if (!lan_mdns_ || !lan_mdns_->IsRunning()) {
+  if (!mesh_owner_) {
     return;
   }
 
@@ -527,7 +525,7 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
   const bool node_listen = role == MeshRole::Node;
   const bool ephemeral = Platform::IsMobile() && ParticipantsWantEphemeralListen();
   if (!node_listen && !ephemeral) {
-    lan_mdns_->SetAdvertisement({}, 0, {});
+    mesh_owner_->AdvertiseOnLan({}, 0);
     return;
   }
 
@@ -537,12 +535,10 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
     amp_udp = static_cast<int>(*port);
   }
   if (peer_id.empty() || amp_udp <= 0) {
-    lan_mdns_->SetAdvertisement({}, 0, {});
+    mesh_owner_->AdvertiseOnLan({}, 0);
     return;
   }
-
-  // Empty host_ips → LanMdnsDiscovery enumerates LAN IFs (Amp typically binds 0.0.0.0).
-  lan_mdns_->SetAdvertisement(peer_id, amp_udp, {});
+  mesh_owner_->AdvertiseOnLan(peer_id, amp_udp);
 }
 
 
@@ -730,9 +726,8 @@ void ConversationsHub::StopMesh() {
   mobile_ephemeral_stop_inflight_ = false;
   mobile_ephemeral_last_start_error_.clear();
   auto detach_transports = [this]() {
-    if (lan_mdns_) {
-      lan_mdns_->Stop();
-      lan_mdns_.reset();
+    if (mesh_owner_) {
+      mesh_owner_->StopLanDiscovery();
     }
     // Amp chat/announce/broadcast transports hold PeerLinks& — detach before MeshHost::Stop
     // destroys Amp (otherwise ~AmpBroadcastTransport::Stop UAFs).

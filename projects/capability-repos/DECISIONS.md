@@ -268,6 +268,10 @@ built by the composition (net's factory) and handed to the hub. Step by step, on
 value types (`NetworkTransport`, `NetworkState`, `NetworkChange`) are the base's (`common/NetworkChange.h`), so
 the hub, `HubParticipant` and the calls stack no longer include the platform's monitor.
 
+**Step 2 (2026-11-01):** LAN mDNS is the mesh owner's: `StartLanDiscovery` / `AdvertiseOnLan` /
+`StopLanDiscovery`. The hub keeps the decisions — which discovered peers are contacts (their endpoints go to
+delivery), and whether to announce at all (the node role, or a call on a phone).
+
 ## CR019 — Presenters are the app's
 
 **Date:** 2026-11-01  

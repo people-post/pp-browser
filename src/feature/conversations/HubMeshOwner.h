@@ -3,6 +3,7 @@
 #include "foundation/data/Config.h"
 #include "lib/people/IdentityStore.h"
 #include "mesh/host/MeshHost.h"
+#include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/types/DirectoryTypes.h"
 #include "common/Error.h"
@@ -73,6 +74,12 @@ public:
   virtual void WatchNetwork(std::function<void(const NetworkChange&)> on_change) = 0;
   /** No `on_change` call is running or will run once this returns. Idempotent. */
   virtual void StopWatchingNetwork() = 0;
+  /** Listens for peers on the LAN (mDNS); each reaches `on_peer` on the discovery thread until StopLanDiscovery. */
+  virtual void StartLanDiscovery(std::function<void(const mesh::LanMdnsDiscoveredPeer&)> on_peer) = 0;
+  /** What this device announces on the LAN: its PeerId and Amp UDP port; empty / 0 announces nothing. */
+  virtual void AdvertiseOnLan(const std::string& peer_id, int amp_udp_port) = 0;
+  /** Stops listening and announcing. Idempotent. */
+  virtual void StopLanDiscovery() = 0;
 };
 
 } // namespace pbr

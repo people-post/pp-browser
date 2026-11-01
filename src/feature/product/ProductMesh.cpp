@@ -82,6 +82,7 @@ ProductMesh::ProductMesh() {
 }
 
 ProductMesh::~ProductMesh() {
+  StopLanDiscovery();
   StopWatchingNetwork();
   Stop();
   Release();
@@ -221,6 +222,30 @@ void ProductMesh::StopWatchingNetwork() {
   if (network_monitor_) {
     network_monitor_->Stop();
     network_monitor_.reset();
+  }
+}
+
+void ProductMesh::StartLanDiscovery(std::function<void(const mesh::LanMdnsDiscoveredPeer&)> on_peer) {
+  StopLanDiscovery();
+  lan_mdns_ = std::make_unique<mesh::LanMdnsDiscovery>();
+  lan_mdns_->SetOnDiscovered(std::move(on_peer));
+  if (auto started = lan_mdns_->Start(); !started) {
+    log().warning << "LAN mDNS discovery unavailable: " << started.error().message;
+  }
+}
+
+void ProductMesh::AdvertiseOnLan(const std::string& peer_id, const int amp_udp_port) {
+  if (!lan_mdns_ || !lan_mdns_->IsRunning()) {
+    return;
+  }
+  // Empty host_ips → LanMdnsDiscovery enumerates LAN IFs (Amp typically binds 0.0.0.0).
+  lan_mdns_->SetAdvertisement(peer_id, amp_udp_port, {});
+}
+
+void ProductMesh::StopLanDiscovery() {
+  if (lan_mdns_) {
+    lan_mdns_->Stop();
+    lan_mdns_.reset();
   }
 }
 
