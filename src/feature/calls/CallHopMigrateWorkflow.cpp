@@ -988,6 +988,8 @@ void CallHopMigrateWorkflow::Handle(HopMigrateEvent& event) {
           RefanOutPickedHop(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectAfterAttach>) {
           ReleaseDirectSettled(e);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectWhenHopHeard>) {
+          ReleaseDirectWhenHopHeard(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::GuestReattachRetry>) {
           OnGuestReattachRetry(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::Continue>) {
@@ -1073,16 +1075,40 @@ void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::Relea
       }
     }
   }
-  ReleaseDirectFor(release.call_id);
   host_.ClearMediaActivity();
 }
 
+void CallHopMigrateWorkflow::ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait) {
+  const bool still_on_hop = sfu_.attached && media_.ActiveCallId() == wait.call_id;
+  std::vector<int64_t> heard_ms;
+  if (still_on_hop) {
+    const CallMediaEngineHealth health = media_.HealthSnapshot();
+    if (health.sfu_mode) {
+      for (const CallMediaStreamHealth& stream : health.streams) {
+        heard_ms.push_back(stream.last_rx_ms);
+      }
+    }
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (!ReleaseDirectAfterHopAttachNow(still_on_hop, heard_ms, wait.attached_ms, now_ms, wait.deadline_ms)) {
+    if (outbox_.After(std::chrono::milliseconds(kKeepDirectRecheckMs), wait) != 0) {
+      return;  // looked at again shortly
+    }
+  }
+  log().info << "ReleaseDirect after hop attach call_id=" << wait.call_id << " waited_ms=" << (now_ms - wait.attached_ms)
+             << " heard=" << heard_ms.size();
+  ReleaseDirectFor(wait.call_id);
+}
+
 void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
-  // Advance lifecycle (DirectConnected via ReleaseDirect) + clear Connecting immediately, and again
-  // after a settle delay. Do not gate on migrate gen — stampede leaves gen_at_start permanently
-  // stale (dogfood UI).
-  ReleaseDirectFor(at.call_id);
+  // Clear Connecting immediately, and again after a settle delay. Do not gate on migrate gen —
+  // stampede leaves gen_at_start permanently stale (dogfood UI). #431 (b): the 1:1 leg goes once the
+  // others are heard on the hop (at most kKeepDirectUntilHopHeardMs): until then its live link is how
+  // the peer gets our CallSfuAttach at once, control going direct-first.
   host_.ClearMediaActivity();
+  const int64_t attached_ms = util::NowUnixMs();
+  ReleaseDirectWhenHopHeard(hop_migrate_event::ReleaseDirectWhenHopHeard{
+      .call_id = at.call_id, .attached_ms = attached_ms, .deadline_ms = attached_ms + kKeepDirectUntilHopHeardMs});
   hop_migrate_event::ReleaseDirectAfterAttach release{at.call_id, at.gen_at_start, BuildSfuAttachFanout(at.attach),
                                                      at.self_hop};
   if (outbox_.After(std::chrono::milliseconds(3500), release) == 0) {

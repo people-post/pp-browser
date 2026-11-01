@@ -321,6 +321,7 @@ private:
   uint64_t StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, bool guest);
   std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
   void OnRelayAttached(const hop_migrate_event::RelayAttached& answer);
+  void ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait);
   void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);
   // Guest reattach after a lost relay transport (engine stays live).

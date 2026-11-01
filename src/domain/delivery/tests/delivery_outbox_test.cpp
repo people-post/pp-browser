@@ -41,6 +41,28 @@ private:
   int failures_;
 };
 
+/** A direct-chat transport with a live link (or not) to the peer; records what it carried. */
+class FakeDirect final : public IDirectMessageClient {
+public:
+  explicit FakeDirect(bool connected) : connected_(connected) {}
+  bool IsPeerReachable(const std::string&) const override { return true; }
+  bool IsPeerConnected(const std::string&) const override { return connected_; }
+  DirectSendRoe SendEnvelope(const std::string&, const RelayEnvelope& envelope) override {
+    std::lock_guard lock(mu_);
+    sent.push_back(envelope.message_id);
+    return {};
+  }
+  std::vector<std::string> Sent() {
+    std::lock_guard lock(mu_);
+    return sent;
+  }
+
+private:
+  bool connected_;
+  std::mutex mu_;
+  std::vector<std::string> sent;
+};
+
 class DeliveryOutboxTest : public ::testing::Test {
 protected:
   void SetUp() override { AppRuntime::Initialize(ProductRuntimeConfig()); }
@@ -86,6 +108,28 @@ TEST_F(DeliveryOutboxTest, ARelaySendReportsDelivered) {
   EXPECT_TRUE(Outcomes()[0].ok);
   EXPECT_EQ(Outcomes()[0].transport, MessageTransport::Relay);
   EXPECT_FALSE(Outcomes()[0].relay_after_direct);
+}
+
+// #431 (a): call control to a peer with a live link goes over it at once as well as by the relay
+// (an inbox can lag tens of seconds); without a live link, the relay alone as before.
+TEST_F(DeliveryOutboxTest, CallControlAlsoGoesOverALiveLinkAtOnce) {
+  for (const bool connected : {true, false}) {
+    FakeRelay relay(0);
+    FakeDirect direct(connected);
+    DeliveryOutbox outbox([&direct]() -> IDirectMessageClient* { return &direct; });
+    outbox.SetRelayClient(&relay);
+    DeliveryRequest control;
+    control.envelope.message_id = "ctl-1";
+    control.envelope.timestamp = util::NowUnixMs();
+    control.message_id = "ctl-1";
+    control.amp_peer_key = "account:bob";
+    control.relay_route = "relay:bob";
+    control.critical_lane = true;
+    outbox.Send(control);
+    Drain();
+    EXPECT_EQ(relay.sent.size(), 1u) << "the relay copy always goes, connected=" << connected;
+    EXPECT_EQ(direct.Sent().size(), connected ? 1u : 0u) << "connected=" << connected;
+  }
 }
 
 TEST_F(DeliveryOutboxTest, ARefusedSendIsReportedFailedThenDeliveredByARetry) {

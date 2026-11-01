@@ -24,6 +24,22 @@ namespace pbr {
  */
 CallSfuAttachDetail BuildSfuAttachFanout(const CallSfuAttachDetail& after_local_attach);
 
+// --- The 1:1 leg across a move to the hop (#431 b) ---
+
+/** The 1:1 leg is kept at most this long after our hop attach, waiting to hear the others there. */
+inline constexpr int64_t kKeepDirectUntilHopHeardMs = 10'000;
+inline constexpr int64_t kKeepDirectRecheckMs = 500;
+
+/**
+ * Whether to drop the 1:1 leg now, after our own hop attach at `attached_ms`. It stays while the
+ * others are not heard on the hop yet — its live link is how the peer still gets our
+ * CallSfuAttach at once (control goes direct-first) instead of through a slow inbox — and goes
+ * when every remote stream (`stream_last_rx_ms`, from the engine in hop mode) has been heard since,
+ * at `deadline_ms`, or once we are no longer on the hop.
+ */
+bool ReleaseDirectAfterHopAttachNow(bool still_on_hop, const std::vector<int64_t>& stream_last_rx_ms,
+                                    int64_t attached_ms, int64_t now_ms, int64_t deadline_ms);
+
 
 // --- Attach-wait ---
 

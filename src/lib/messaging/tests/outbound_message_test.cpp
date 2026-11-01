@@ -209,6 +209,12 @@ TEST(OutboundSendRulesTest, WhoMaySendAndHow) {
   EXPECT_FALSE(DirectSendTriesAmpFirst(true, true, true)) << "call control prefers a known relay route";
   EXPECT_TRUE(DirectSendTriesAmpFirst(true, false, true)) << "an Amp-only peer";
   EXPECT_FALSE(DirectSendTriesAmpFirst(false, false, false));
+
+  // #431 (a): call control also goes over a live link, at once; nothing else changes.
+  EXPECT_TRUE(ControlAlsoGoesDirect(true, true, true)) << "control, a live link, a relay route";
+  EXPECT_FALSE(ControlAlsoGoesDirect(false, true, true)) << "no live link: the relay alone, as before";
+  EXPECT_FALSE(ControlAlsoGoesDirect(true, false, true)) << "Amp-only peer: Amp alone, as before";
+  EXPECT_FALSE(ControlAlsoGoesDirect(true, true, false)) << "chat: Amp first, then the relay, as before";
 }
 
 TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {

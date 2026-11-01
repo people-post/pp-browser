@@ -1,5 +1,7 @@
 #include "lib/calls/CallHopAttachLogic.h"
 
+#include <algorithm>
+
 #include <unordered_set>
 
 namespace pbr {
@@ -72,6 +74,18 @@ std::vector<std::string> CapGuestHopPreferences(std::vector<std::string> preferr
     }
   }
   return out;
+}
+
+bool ReleaseDirectAfterHopAttachNow(const bool still_on_hop, const std::vector<int64_t>& stream_last_rx_ms,
+                                    const int64_t attached_ms, const int64_t now_ms, const int64_t deadline_ms) {
+  if (!still_on_hop || now_ms >= deadline_ms) {
+    return true;
+  }
+  if (stream_last_rx_ms.empty()) {
+    return false;  // nobody heard on the hop yet
+  }
+  return std::all_of(stream_last_rx_ms.begin(), stream_last_rx_ms.end(),
+                     [attached_ms](const int64_t last_rx_ms) { return last_rx_ms >= attached_ms; });
 }
 
 } // namespace pbr

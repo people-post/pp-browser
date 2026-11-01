@@ -114,3 +114,15 @@ TEST(CallHopAttachLogicTest, WaitExpiredWithNobodyConnectedLeavesTheCall) {
   pair.media_active_mesh_for_call = true;  // a 1:1 still connecting is not cut off
   EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::ClearAsP2p);
 }
+
+// #431 (b): the 1:1 leg stays across the move to the hop until the others are heard there.
+TEST(CallHopAttachLogicTest, TheDirectLegStaysUntilEveryoneIsHeardOnTheHop) {
+  const int64_t attached = 1000;
+  const int64_t deadline = attached + kKeepDirectUntilHopHeardMs;
+  EXPECT_FALSE(ReleaseDirectAfterHopAttachNow(true, {}, attached, 1500, deadline)) << "nobody heard yet";
+  EXPECT_FALSE(ReleaseDirectAfterHopAttachNow(true, {900, 1200}, attached, 1500, deadline))
+      << "one stream only heard before the move (its 1:1 frames)";
+  EXPECT_TRUE(ReleaseDirectAfterHopAttachNow(true, {1100, 1200}, attached, 1500, deadline)) << "both on the hop";
+  EXPECT_TRUE(ReleaseDirectAfterHopAttachNow(true, {}, attached, deadline, deadline)) << "the wait is bounded";
+  EXPECT_TRUE(ReleaseDirectAfterHopAttachNow(false, {}, attached, 1500, deadline)) << "off the hop: as before";
+}

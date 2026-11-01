@@ -79,6 +79,21 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
     const bool reachable =
         chat && !request.amp_peer_key.empty() && chat->IsPeerReachable(request.amp_peer_key);
+    const bool connected = chat && !request.amp_peer_key.empty() && chat->IsPeerConnected(request.amp_peer_key);
+    if (ControlAlsoGoesDirect(connected, request.relay_route.has_value(), request.critical_lane)) {
+      // #431 (a): a live link carries it in milliseconds where the inbox can take tens of seconds; the
+      // relay copy still goes (the outcome is its), and the receiver applies whichever lands first.
+      chat->SendEnvelopeAsync(request.amp_peer_key, request.envelope,
+                              [this, message_id = request.message_id, peer = request.amp_peer_key](DirectSendRoe direct) {
+                                if (!direct) {
+                                  log().info << "control direct copy failed message_id=" << message_id
+                                             << " peer=" << peer << " err=" << direct.error().message
+                                             << " (the relay copy stands)";
+                                }
+                              });
+      finish_relay(std::nullopt);
+      return;
+    }
     // Call signaling: Amp's open + ack per message races media setup — the relay first when a
     // route is known; Amp remains for Amp-only peers.
     if (!DirectSendTriesAmpFirst(reachable, request.relay_route.has_value(), request.critical_lane)) {

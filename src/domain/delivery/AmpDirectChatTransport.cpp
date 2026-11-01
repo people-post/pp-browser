@@ -214,7 +214,21 @@ std::string AmpDirectChatTransport::ReachableKey(const std::string& key) const {
 }
 
 bool AmpDirectChatTransport::IsPeerConnected(const std::string& peer_key) const {
-  return !peer_key.empty() && links_.IsConnected(peer_key);
+  if (peer_key.empty()) {
+    return false;
+  }
+  if (links_.IsConnected(peer_key)) {
+    return true;
+  }
+  // An account: any of its devices with a link up (what SendEnvelope then picks, ReachableKey).
+  if (devices_of_) {
+    for (const std::string& device : devices_of_(peer_key)) {
+      if (links_.IsConnected(device)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 bool AmpDirectChatTransport::IsPeerReachable(const std::string& peer_identity_value) const {
