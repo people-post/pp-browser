@@ -31,6 +31,7 @@
 #include "lib/messaging/ChatPayloadValidator.h"
 #include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "lib/ui/InputCoordinator.h"
 #include "lib/ui/ContextMenuHost.h"
@@ -48,6 +49,7 @@
 #include "foundation/platform/AppEventHooks.h"
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ui/FrameDrawPolicy.h"
 #include "foundation/platform/ui/SdlAppEvents.h"
 #include "foundation/platform/StayConnectedService.h"
 #include "foundation/platform/WindowIcon.h"
@@ -1846,8 +1848,10 @@ void Application::Run() {
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
     qr_scan_->NotifyFrameEnd();
+    // Android in the background: events and posted tasks run above, nothing draws (B127).
+    const bool draw_frame = ShouldDrawFrame(Platform::Detect() == PlatformKind::Android, AppLifecycle::IsForeground());
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
-    if (Backend::CanRender()) {
+    if (draw_frame && Backend::CanRender()) {
       const auto draw_started = std::chrono::steady_clock::now(); // after AfterLayout / NotifyFrameEnd
       Backend::BeginFrame();
       context->Render();
@@ -1891,7 +1895,7 @@ void Application::Run() {
           ++slow_frames_skipped;
         }
       }
-    } else if (skip_log_countdown-- <= 0) {
+    } else if (draw_frame && skip_log_countdown-- <= 0) {
       log().warning << "CanRender=false; skipping frame (docs=" << context->GetNumDocuments() << ")";
       skip_log_countdown = 120;
     }
