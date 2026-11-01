@@ -115,6 +115,13 @@ RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSe
  */
 bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool critical_lane);
 
+/**
+ * #431 (a): call control to a peer with a live link goes over it as well as by the relay — at once,
+ * not after a relay failure. The relay is kept (it reaches every device and survives a link that is
+ * about to drop); the receiver's control lane takes the first copy and drops the other.
+ */
+bool ControlAlsoGoesDirect(bool peer_connected, bool has_relay_route, bool critical_lane);
+
 // --- A group send -------------------------------------------------------------------------------------
 
 /**

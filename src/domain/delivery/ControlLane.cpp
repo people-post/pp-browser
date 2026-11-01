@@ -91,8 +91,9 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   envelope.relay_wake_urgent = urgent;
   const std::string message_id = envelope.message_id;
   // Off the caller's thread, on the critical lane (signaling must not queue behind inbox polls); the
-  // relay first when a route is known (Amp's open + ack per message races media setup). No row to
-  // mark: a relay failure is retried while fresh.
+  // relay when a route is known, and over a live link to the peer at once as well (#431: an inbox
+  // can lag tens of seconds; the receiver's control lane takes the first copy). No row to mark: a
+  // relay failure is retried while fresh.
   outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
                                .message_id = message_id,
                                .amp_peer_key = peer_identity,

@@ -309,6 +309,10 @@ bool DirectSendTriesAmpFirst(const bool amp_reachable, const bool has_relay_rout
   return amp_reachable && !(critical_lane && has_relay_route);
 }
 
+bool ControlAlsoGoesDirect(const bool peer_connected, const bool has_relay_route, const bool critical_lane) {
+  return critical_lane && has_relay_route && peer_connected;
+}
+
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
                                        const std::string& route_party, std::vector<RelayCopy> copies,
