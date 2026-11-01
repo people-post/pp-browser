@@ -1,6 +1,6 @@
-#include "foundation/platform/CurlSsl.h"
+#include "foundation/tls/CurlSsl.h"
 
-#include "foundation/platform/os/OsTlsPlatformCurl.h"
+#include "foundation/tls/OsTlsPlatformCurl.h"
 
 namespace pbr {
 

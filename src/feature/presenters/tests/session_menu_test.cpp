@@ -1,4 +1,4 @@
-#include "feature/conversations/SessionMenu.h"
+#include "feature/presenters/SessionMenu.h"
 
 #include <gtest/gtest.h>
 

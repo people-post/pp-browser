@@ -41,8 +41,9 @@ src/feature/
 │   └── bindings/
 ├── calls/            Call session (`pp_feature_calls`)
 ├── broadcast/        Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
-├── conversations/    Conversations hub + delivery; ConversationsFacade; `HubParticipant` (what rides the hub); `ChatPresenter` (the chats list's decisions + buttons, headless — ChatController renders it, pp-app-probe drives it)
-└── product/          `ProductStack` (`pp_feature_product`): the hub with calls and broadcast as its participants — the one module that sees all three; only app/ and gui/ include it
+├── conversations/    Conversations hub, chat on delivery; ConversationsFacade; `HubParticipant` (what rides the hub)
+├── product/          `ProductStack` (`pp_feature_product`): the mesh and the hub with calls and broadcast as its participants — the one module that sees all three; only app/ and gui/ include it
+└── presenters/       The app's presenters (`pp_feature_presenters`, CR019): `ChatPresenter` (the chats list) and `CallPresenter` (the call screen) — decisions + buttons, headless; the GUI renders them, pp-app-probe drives them; only app/ and gui/ include it
 ```
 
 Product UI: see [`src/gui/README.md`](../gui/README.md).
@@ -57,7 +58,7 @@ Product UI: see [`src/gui/README.md`](../gui/README.md).
 | **Intelligence** | ai, ai/tools | How does the agent plan turns and call tools? |
 | **Call session** | calls | How do ring/accept/topology/media-bridge sessions run? |
 | **Conversations** | conversations | How do threads sync/relay? |
-| **Presentation** | `src/gui/` | Shell, contacts, chat screen, settings presenters |
+| **Presentation** | `feature/presenters`, `src/gui/` | Headless presenters (chats list, call screen); the Rml shell, contacts, chat screen, settings |
 
 Start points when exploring:
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "feature/product/MessagingPeoplePickerPorts.h"
 #include "gui/CallActionsPorts.h"

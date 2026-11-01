@@ -222,6 +222,9 @@ the apps (`app`, `node_app`) may include it. Today's sites go in the allowlist, 
 (CR014). Platform mechanisms a capability truly needs (time, secure storage) move to the base with a narrow
 interface rather than staying behind the product's.
 
+**First mechanism moved (2026-11-01, Hongwei):** the per-OS TLS trust for curl leaves `foundation/platform` for
+its own base module, `foundation/tls` (`pp_foundation_tls`).
+
 ## CR016 — The gate covers links, not only includes
 
 **Date:** 2026-11-01  
@@ -263,14 +266,18 @@ built by the composition (net's factory) and handed to the hub. Step by step, on
 ## CR019 — Presenters are the app's
 
 **Date:** 2026-11-01  
-**Status:** draft (proposed)
+**Status:** accepted (Hongwei, 2026-11-01); implementation started
 
 **Context:** `ChatPresenter` (the chats list's order, unread, pin, mute, archive and its buttons) and parts of
 `InboxController` sit in messaging. They are UI decisions shaped like `CallPresenter`; they are why messaging
 had to take the preview line's prose from its binder. Another app would bring its own list.
 
-**Decision (proposed):** Presenters move to the app side (`gui/` or a presenter folder the app owns);
+**Decision:** Presenters move to the app side (`gui/` or a presenter folder the app owns);
 messaging exposes the facade they read. Calls' presenter follows the same rule.
+
+**Done (2026-11-01):** `feature/presenters` (`pp_feature_presenters`, mapped to the app) holds `ChatPresenter`,
+`CallPresenter` and the chats list's text (`SessionListText`, `SessionMenu`, `GroupEventText`) with their tests; no
+feature module includes it (`check_feature_includes.sh`). `GroupMentions` stays messaging's (the facade uses it).
 
 ## CR020 — Secure delivery below messaging and realtime
 

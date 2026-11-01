@@ -1,5 +1,5 @@
 #include "common/directory/ShortRelayId.h"
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 
 #include <gtest/gtest.h>
 

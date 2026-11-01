@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 #include "feature/conversations/GroupMentions.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatScreenState.h"

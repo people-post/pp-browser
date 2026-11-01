@@ -99,7 +99,7 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | node | `domain/node` |
 | node_app | `app/node` — pp-node, an app (CR017) |
 | product | `foundation/data`, `foundation/platform`, `foundation/i18n` — config, paths, platform hooks, text (CR015) |
-| app | `app`, `gui`, `feature/product`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
+| app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
 
 A capability includes and links only those before it in the order (tests included: they move with it). The
 product's base is the apps' to read; capabilities take values and ports from them. Convenience bundles
@@ -212,6 +212,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 |------|----------|
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
 | `feature/conversations/` | Conversations hub, chat on delivery (the transport bundle `PeerTransports`, chat history over the mesh); never includes calls / broadcast / call_media — they ride the hub as `HubParticipant`s |
+| `feature/presenters/` | The app's headless presenters (`pp_feature_presenters`, CR019): `ChatPresenter`, `CallPresenter` and their text (`SessionListText`, `SessionMenu`, `GroupEventText`); only app/ and gui/ include them |
 | `feature/product/` | `ProductStack` (`pp_feature_product`): owns the mesh (`ProductMesh`, built for the profile's role over `domain/node`, lent to the hub as its `HubMeshOwner`) and the hub, and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; where messaging meets AI (`MessagingTools`) and the people picker (`MessagingPeoplePickerPorts`); only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |

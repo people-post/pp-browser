@@ -1,4 +1,4 @@
-#include "feature/conversations/GroupEventText.h"
+#include "feature/presenters/GroupEventText.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/GroupMembershipCodec.h"

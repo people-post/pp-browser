@@ -1,6 +1,6 @@
 #include "feature/conversations/GroupMentions.h"
 
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 #include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 

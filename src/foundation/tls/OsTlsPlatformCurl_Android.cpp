@@ -1,8 +1,8 @@
 #if defined(__ANDROID__)
 
-#include "foundation/platform/os/OsTlsPlatformCurl.h"
+#include "foundation/tls/OsTlsPlatformCurl.h"
 
-#include "foundation/platform/os/OsTlsCaPath.h"
+#include "foundation/tls/OsTlsCaPath.h"
 
 #include <curl/curl.h>
 

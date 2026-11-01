@@ -6,7 +6,7 @@
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/platform/CurlSsl.h"
+#include "foundation/tls/CurlSsl.h"
 
 #include <curl/curl.h>
 #include "common/PbrCompat.h"

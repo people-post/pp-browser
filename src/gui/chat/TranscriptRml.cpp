@@ -3,7 +3,7 @@
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
-#include "feature/conversations/GroupEventText.h"
+#include "feature/presenters/GroupEventText.h"
 #include "gui/chat/VoiceBubble.h"
 #include "lib/media/VoiceFile.h"
 #include "common/Utilities.h"

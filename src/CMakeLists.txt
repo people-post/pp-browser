@@ -12,6 +12,7 @@ target_link_libraries(pp_foundation INTERFACE
   pp_foundation_runtime_core
   pp_foundation_runtime
   pp_foundation_platform_core
+  pp_foundation_tls
   pp_foundation_platform
   pp_foundation_data
   pp_foundation_diagnostics

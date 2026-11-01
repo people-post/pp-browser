@@ -1,4 +1,4 @@
-#include "feature/conversations/SessionListText.h"
+#include "feature/presenters/SessionListText.h"
 
 #include <gtest/gtest.h>
 

@@ -38,7 +38,8 @@ Hard rules:
 | `foundation/platform/PlatformHooks.*` | Registers Android/iOS/desktop implementations at startup |
 | `foundation/platform/ui/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` / Backend |
 | `foundation/platform/ui/` | `RmlUi_Backend.h`, `BrowserHost`, overlays, desktop window chrome, navigation-via-Backend |
-| `foundation/platform/os/` | Low-level OS primitives (`OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
+| `foundation/platform/os/` | Low-level OS primitives (`OsProcess`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
+| `foundation/tls/` | The platform's TLS trust for curl (`ApplyCurlSslDefaults`; `OsTlsPlatformCurl_{Ios,Android,Default}`, `OsTlsCaPath_*`): a base mechanism net and the AI clients use, outside the product's platform layer (capability-repos CR015) |
 | `foundation/platform/desktop/` | Per-OS desktop path and **native** notification implementations (Linux Freedesktop Notifications via linked `libdbus-1`, macOS `UNUserNotificationCenter`, Windows WinRT toasts) — not shell helpers |
 | `foundation/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
 | `foundation/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |

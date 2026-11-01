@@ -2,7 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
-#include "feature/conversations/SessionMenu.h"
+#include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"

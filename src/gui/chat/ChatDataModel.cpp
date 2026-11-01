@@ -1,6 +1,6 @@
 #include "gui/chat/ChatDataModel.h"
 
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 
 #include "gui/shell/DataModelHost.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"

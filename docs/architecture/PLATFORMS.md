@@ -114,7 +114,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 | Android | `CURLOPT_CAPATH` → Conscrypt/system hashed PEMs (`os::TlsCaPath`) | Yes (OS CA updates) |
 | iOS | `CURLOPT_SSL_CTX_FUNCTION` → `SecTrustEvaluateWithError` | Yes (Keychain trust store) |
 
-Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/foundation/platform/os/OsTlsPlatformCurl_*`).
+Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/foundation/tls/OsTlsPlatformCurl_*`; a base mechanism, not the product's platform layer — capability-repos CR015).
 
 **A/V ([V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
 

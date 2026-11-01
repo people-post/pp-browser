@@ -54,7 +54,7 @@ GROUPS: dict[str, list[str]] = {
     # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node.
     "node_app": ["app/node"],
     # The app: shell, GUI, composition — and AI, the shell's planner rather than a capability (CR007).
-    "app": ["app", "gui", "feature/product", "feature/settings", "lib/ui", "lib/ai", "feature/ai", "common/ui"],
+    "app": ["app", "gui", "feature/product", "feature/presenters", "feature/settings", "lib/ui", "lib/ai", "feature/ai", "common/ui"],
 }
 
 # What each capability may include besides itself. DESIGN § Target.

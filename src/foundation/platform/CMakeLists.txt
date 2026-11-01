@@ -16,7 +16,6 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
-  CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
   DesktopAssetLocator.cpp
@@ -54,21 +53,11 @@ set(_pp_platform_gui_sources
   AndroidLocalNotifier.cpp
   AndroidPushDeviceRegistrar.cpp
   AndroidSystemChrome.cpp
-  os/OsTlsCaPath_Android.cpp
-  os/OsTlsCaPath_Default.cpp
 )
 
-# CurlSsl + ApplyPlatformCurlSsl live in platform_core so ai/net can use TLS
-# defaults without linking the SDL/Rml GUI platform lib.
-if(PP_BROWSER_IS_ANDROID)
-  list(APPEND _pp_platform_core_sources
-    os/OsTlsPlatformCurl_Android.cpp
-    os/OsTlsCaPath_Android.cpp
-  )
-elseif(PP_BROWSER_IS_IOS)
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp IosBackupExclusion_Ios.mm)
-else()
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
+# The platform's TLS trust for curl is a base mechanism: foundation/tls (CR015).
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources IosBackupExclusion_Ios.mm)
 endif()
 
 # Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; else a stub.
@@ -253,8 +242,8 @@ if(ANDROID)
   target_link_libraries(pp_foundation_platform PUBLIC log GLESv3 EGL)
 endif()
 
-# iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios (in platform_core) installs a SecTrust
-# verify callback — OpenSSL headers/libs must be on the *core* target that compiles it (B8).
+# iOS: curl uses BoringSSL (the SecTrust verify callback is foundation/tls's now, B8); the platform libs keep
+# the same links for their own Keychain / curl users.
 if(PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_platform_core PUBLIC
     CURL::libcurl

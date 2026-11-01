@@ -4,7 +4,7 @@
 
 #if defined(__APPLE__) && TARGET_OS_IPHONE
 
-#include "foundation/platform/os/OsTlsPlatformCurl.h"
+#include "foundation/tls/OsTlsPlatformCurl.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
