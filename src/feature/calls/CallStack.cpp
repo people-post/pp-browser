@@ -334,6 +334,9 @@ void CallStack::BindMediaProducts() {
   }
   CallDirectPathDeps direct = media_plane_->DirectPathDeps();
   direct.path_policy = [this](const std::string& call_id) { return PathPolicyFor(call_id); };
+  direct.advertised_relays = [this](const std::string& call_id) {
+    return peer_parked_.call_id == call_id ? peer_parked_.relays : std::vector<std::string>{};
+  };
   call_sessions_->AttachDirectPath(std::move(direct));
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
   // Call state ports (mesh stop cleared them): one bind point with BuildSessions.
@@ -433,6 +436,13 @@ void CallStack::BindSessionProviders() {
     }
   });
   call_sessions_->SetLocalPeerCapsProvider([this]() { return LocalPeerCaps(); });
+  // H013: what our CallAccept advertises (the published view, never the MeshHost) and what the
+  // answerer's advertised (kept for the call our reach is for: one 1:1 call reaches at a time).
+  call_sessions_->SetParkedRelaysProvider([this]() { return LocalMeshView()->parked_relays; });
+  call_sessions_->SetCallPeerParkedRelaysSink(
+      [this](const std::string& call_id, const std::vector<std::string>& relays) {
+        peer_parked_ = PeerParkedRelays{call_id, relays};
+      });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);

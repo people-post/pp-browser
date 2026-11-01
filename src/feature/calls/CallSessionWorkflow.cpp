@@ -606,6 +606,10 @@ Roe<CallAcceptDetail> CallSessionWorkflow::SendCallAccept(const std::string& cal
   if (host_.hop.hop_report_for_accept) {
     accept.hop_report = host_.hop.hop_report_for_accept(call_id);
   }
+  // H013: where we are parked, so the caller's circuit tries those relays first.
+  if (host_.reach.parked_relays) {
+    accept.circuit_parked = host_.reach.parked_relays();
+  }
   auto detail = CallControlCodec::EncodeAccept(accept);
   if (!detail) {
     return detail.error();
@@ -1461,6 +1465,10 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept,
   // Accepts on every poll; registering those overwrote the DialBook with stale endpoints.
   if (host_.reach.register_peer_listen && !accept.listen_multiaddrs.empty()) {
     host_.reach.register_peer_listen(identity, accept.listen_multiaddrs);
+  }
+  // H013: before media starts — the reach reads them (an implicit accept carries none).
+  if (host_.reach.note_call_peer_parked_relays && !implicit) {
+    host_.reach.note_call_peer_parked_relays(accept.call_id, accept.circuit_parked);
   }
   if (session->has_value()) {
     StartMediaAfterRemoteAccept(accept, identity, local_identity, implicit);

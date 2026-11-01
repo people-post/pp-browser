@@ -95,7 +95,18 @@ enum class CallControlType {
    * Honoured only from our own account. Additive — old devices ignore it.
    */
   CallAnsweredElsewhere,
+  /**
+   * H013: the caller stopped trying to reach us for this call's media (its connect gave up), so the
+   * answerer stops waiting too and both screens leave "connecting" together. Additive — old peers
+   * ignore it and keep waiting until their own limit.
+   */
+  CallConnectGiveUp,
 };
+
+/** H013: at most this many parked relays in a CallAccept (the caller's StartBridge attempts). */
+inline constexpr size_t kCallMaxAdvertisedCircuitRelays = 4;
+/** H013: a call's answerer waits this long for the caller's circuit (its CallAccept may cross a slow inbox). */
+inline constexpr int64_t kCallAnswererAwaitHoldMs = 60'000;
 
 struct CallParticipantMedia {
   bool audio_muted = false;
@@ -261,6 +272,11 @@ struct CallAcceptDetail {
   std::optional<bool> video_allowed;
   /** V050 gt4: planned-hop reachability + reachable hops. */
   CallHopReport hop_report;
+  /**
+   * H013: relays the answerer holds a circuit reservation on (mesh PeerIds, at most
+   * kCallMaxAdvertisedCircuitRelays) — the caller tries them first. Relay ids only, never addresses.
+   */
+  std::vector<std::string> circuit_parked;
 };
 
 struct CallDeclineDetail {
@@ -382,6 +398,12 @@ struct CallHopRefuseDetail {
 struct CallVideoRefreshDetail {
   std::string call_id;
   /** Publisher identity whose video_lo should keyframe. Empty = local publisher. */
+  std::string identity;
+};
+
+/** H013: the caller stopped trying to reach the answerer for this call's media. */
+struct CallConnectGiveUpDetail {
+  std::string call_id;
   std::string identity;
 };
 

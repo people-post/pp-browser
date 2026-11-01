@@ -241,6 +241,12 @@ private:
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
+  /** H013: the relays the answerer of `call_id` advertised in its CallAccept (calls owner). */
+  struct PeerParkedRelays {
+    std::string call_id;
+    std::vector<std::string> relays;
+  };
+  PeerParkedRelays peer_parked_;
   CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
   /** Names the current session manager: its events carry it (a rebuilt one drops the old ones). */
   uint64_t sessions_generation_ = 0;

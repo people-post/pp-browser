@@ -1116,6 +1116,10 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (!err.empty()) {
     host_.P2pSetLastMediaError(err);
   }
+  // H013: the caller tells the answerer it stopped (read before StopMeshMedia clears the session).
+  const bool tell_peer = session_offerer_ && !call_id.empty() && call_id == media_call_id_ &&
+                         !media_peer_identity_.empty();
+  const std::string gave_up_peer = media_peer_identity_;
   // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
   reach_.AbortCircuitAttempts();
   // StopMeshMedia also resets the seed-park outcome; this failure is what it explains (dogfood 2026-10-01:
@@ -1139,11 +1143,23 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (arming_.on_connect_failed) {
     arming_.on_connect_failed(call_id);
   }
+  if (tell_peer && arming_.on_gave_up_reaching) {
+    arming_.on_gave_up_reaching(call_id, gave_up_peer);
+  }
   mesh_connect_failed_ = true;
   if (seed_unreachable) {
     seed_park_state_->unreachable.store(true, std::memory_order_release);
   }
   host_.P2pNotifyRingChanged();
+}
+
+void CallMediaBridge::OnPeerGaveUpReaching(const std::string& call_id) {
+  if (call_id.empty() || call_id != media_call_id_ || session_offerer_ || mesh_connect_failed_ || !connect_.InFlight()) {
+    log().info << "peer gave up reaching us; not waiting for it call_id=" << call_id;
+    return;
+  }
+  log().info << "peer gave up reaching us; stop waiting call_id=" << call_id;
+  SurfaceConnectFailed(call_id, {}, /*stop_media=*/true);
 }
 
 std::string CallMediaBridge::CallPeerMeshId() {
@@ -1185,6 +1201,16 @@ mesh::PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectC
   const CallPathPolicy policy = PathPolicyFor(params.call_id);
   request.exclude_direct = std::exchange(force_circuit_ensure_, false) || policy.relay_only;
   request.allow_punch = policy.punch_at_start;
+  if (params.offerer) {
+    // H013: the answerer said where it is parked; its relays go first.
+    if (advertised_relays_) {
+      request.advertised_relays = advertised_relays_(params.call_id);
+    }
+  } else {
+    // H013: the caller starts only once our CallAccept crossed its inbox — wait for it, until it tells
+    // us it gave up (OnPeerGaveUpReaching), the link comes up, or this hold ends.
+    request.await_hold_ms = answerer_await_hold_ms_;
+  }
   return request;
 }
 
