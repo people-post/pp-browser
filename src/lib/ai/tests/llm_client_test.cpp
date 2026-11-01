@@ -219,3 +219,12 @@ TEST_F(LlmClientLimitsTest, RejectsResponseOverConfiguredLimit) {
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_NE(result.error().message.find("response body exceeds limit of 8388608 bytes"), std::string::npos);
 }
+
+TEST(LlmClientTest, EmptyBaseUrlFailsWithoutRequest) {
+  pbr::LlmConfig config;
+  config.require_api_key = false;
+  ASSERT_TRUE(config.base_url.empty());
+  auto result = pbr::LlmClient(config).Complete("sys", "user");
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("not configured"), std::string::npos);
+}

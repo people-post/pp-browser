@@ -180,20 +180,18 @@ See [INPUT.md](../ui/INPUT.md) for behavior details.
 
 ### Brief LLM (default)
 
-First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `xai` — Brief provider id; upstream Grok version is configured on the Brief AI side). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
+First launch uses Brief defaults (`<origin>/api/llm/v1`, model `xai` — Brief provider id; upstream Grok version is configured on the Brief AI side). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
 
-### Sandbox backend (dogfood)
+### Backend origin
 
-Point relay, directory, registration, LLM, and promoted MCP at the PeoplePost sandbox (`https://www-en.qa.peoplepost.org`) and keep profile data separate from production:
+The client ships with no backend origin. Every backend URL (LLM, relay, directory, registration, promoted MCP, diagnostics) is derived from one origin; while it is empty those features are disabled and the app still starts.
 
-```bash
-pp-browser --sandbox
-# or: PP_BROWSER_SANDBOX=1 pp-browser
-```
+- Compile-time default: `cmake -B build -S . -DPP_BROWSER_DEFAULT_ORIGIN=https://backend.example.test`
+- Runtime override: `PP_BROWSER_ORIGIN=https://backend.example.test pp-browser` (wins over the compile-time default and over backend URLs saved in the config file)
 
-Uses config/data under `pp-browser-sandbox` (e.g. `~/.config/pp-browser-sandbox`, `~/.local/share/pp-browser-sandbox` on Linux). Register a **new identity** on the sandbox — production relay IDs and Brief API keys do not carry over. Stale `www.brief.global` URLs in an existing sandbox config file are rewritten on load.
+Precedence: `PP_BROWSER_ORIGIN` > fields in the config file > compile-time default. A different origin is a different backend: register a new identity there. Use `XDG_DATA_HOME` / `--config` to keep profile data separate.
 
 ### Cloud LLM (optional)
 

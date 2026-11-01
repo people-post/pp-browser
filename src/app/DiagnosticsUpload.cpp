@@ -106,6 +106,10 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
   }
 
   const std::string url = deps.url.empty() ? DiagnosticsUploadUrl() : deps.url;
+  if (url.empty()) {
+    log.info << "Diagnostics not sent: no upload URL";
+    return Failed(DiagnosticsUploadKind::Unavailable);
+  }
   HttpTimeout timeout;
   timeout.total_s = kUploadTimeoutSeconds;
   log.info << "Uploading diagnostics lines=" << bundle->lines << " bytes=" << bundle->bytes;

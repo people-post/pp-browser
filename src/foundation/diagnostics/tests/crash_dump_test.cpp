@@ -118,10 +118,10 @@ TEST(CrashReportEnvelope, BuildsFingerprintAndJson) {
 }
 
 TEST(CrashReportEnvelope, ResolveUrlPrefersOverride) {
-  EXPECT_EQ(pbr::ResolveCrashReportUploadUrl("https://www.brief.global/api/relay/",
+  EXPECT_EQ(pbr::ResolveCrashReportUploadUrl("https://backend.example.test/api/relay/",
                                              "https://override.example/crash"),
             "https://override.example/crash");
-  EXPECT_EQ(pbr::ResolveCrashReportUploadUrl("https://www.brief.global/api/relay/", ""),
-            "https://www.brief.global/api/relay/v1/crash-reports");
+  EXPECT_EQ(pbr::ResolveCrashReportUploadUrl("https://backend.example.test/api/relay/", ""),
+            "https://backend.example.test/api/relay/v1/crash-reports");
   EXPECT_TRUE(pbr::ResolveCrashReportUploadUrl("", "").empty());
 }

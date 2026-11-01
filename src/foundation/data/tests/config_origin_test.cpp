@@ -1,0 +1,105 @@
+#include "foundation/data/Config.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/platform/DeploymentProfile.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
+#include <string>
+
+namespace {
+
+class ScopedOrigin {
+public:
+  explicit ScopedOrigin(const char* value) {
+    if (const char* old = std::getenv("PP_BROWSER_ORIGIN")) {
+      had_ = true;
+      old_ = old;
+    }
+    set(value);
+  }
+  ~ScopedOrigin() { set(had_ ? old_.c_str() : nullptr); }
+
+private:
+  static void set(const char* value) {
+#ifdef _WIN32
+    _putenv_s("PP_BROWSER_ORIGIN", value ? value : "");
+#else
+    if (value) {
+      setenv("PP_BROWSER_ORIGIN", value, 1);
+    } else {
+      unsetenv("PP_BROWSER_ORIGIN");
+    }
+#endif
+  }
+  bool had_ = false;
+  std::string old_;
+};
+
+std::string WriteConfig(const char* name, const std::string& body) {
+  const std::string path = (std::filesystem::temp_directory_path() / name).string();
+  std::ofstream out(path);
+  out << body;
+  return path;
+}
+
+constexpr const char* kSavedConfig = R"({
+  "config_version": 1,
+  "llm": { "preset": "brief", "base_url": "https://saved.example.test/api/llm/v1", "model": "xai" },
+  "relay": { "base_url": "https://saved.example.test/api/relay" },
+  "directory": { "base_url": "https://saved.example.test/api/relay" },
+  "registration": { "base_url": "https://saved.example.test/api/relay" },
+  "promoted_mcp": { "url": "https://saved.example.test/mcp" }
+})";
+
+} // namespace
+
+TEST(ConfigOriginTest, EnvOverridesSavedBackendUrls) {
+  ScopedOrigin origin("https://backend.example.test");
+  const std::string path = WriteConfig("pp_browser_config_origin_env.json", kSavedConfig);
+  auto loaded = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(loaded->llm.base_url, "https://backend.example.test/api/llm/v1");
+  EXPECT_EQ(loaded->relay.base_url, "https://backend.example.test/api/relay");
+  EXPECT_EQ(loaded->registration.base_url, "https://backend.example.test/api/relay");
+  EXPECT_EQ(loaded->promoted_mcp.url, "https://backend.example.test/mcp");
+  std::filesystem::remove(path);
+}
+
+TEST(ConfigOriginTest, SavedUrlsWinOverCompiledDefaultWhenEnvUnset) {
+  ScopedOrigin origin(nullptr);
+  const std::string path = WriteConfig("pp_browser_config_origin_saved.json", kSavedConfig);
+  auto loaded = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  // The brief preset always derives its LLM URL from the origin; the other endpoints keep saved values.
+  EXPECT_EQ(loaded->llm.base_url, pbr::BriefLlmBaseUrl());
+  EXPECT_EQ(loaded->relay.base_url, "https://saved.example.test/api/relay");
+  EXPECT_EQ(loaded->promoted_mcp.url, "https://saved.example.test/mcp");
+  std::filesystem::remove(path);
+}
+
+TEST(ConfigOriginTest, EnvLeavesCustomLlmEndpointAlone) {
+  ScopedOrigin origin("https://backend.example.test");
+  const std::string path = WriteConfig(
+      "pp_browser_config_origin_custom.json",
+      R"({ "config_version": 1, "llm": { "preset": "custom", "base_url": "https://proxy.example.test/v1" } })");
+  auto loaded = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(loaded->llm.base_url, "https://proxy.example.test/v1");
+  EXPECT_EQ(loaded->relay.base_url, "https://backend.example.test/api/relay");
+  std::filesystem::remove(path);
+}
+
+TEST(ConfigOriginTest, NoOriginLeavesBackendUrlsEmpty) {
+  ScopedOrigin origin(nullptr);
+  if (!std::string(pbr::CompiledDefaultOrigin()).empty()) {
+    GTEST_SKIP() << "a compile-time default origin is configured";
+  }
+  const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
+  EXPECT_TRUE(defaults.llm.base_url.empty());
+  EXPECT_TRUE(defaults.relay.base_url.empty());
+  EXPECT_TRUE(defaults.directory.base_url.empty());
+  EXPECT_TRUE(defaults.registration.base_url.empty());
+  EXPECT_FALSE(defaults.promoted_mcp.IsConfigured());
+}

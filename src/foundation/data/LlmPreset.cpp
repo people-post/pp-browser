@@ -21,7 +21,7 @@ struct LlmPresetSpec {
   bool clears_inline_key;
 };
 
-// Brief /v1/chat/completions treats `model` as a provider id (xai, nfscbrief, …),
+// Brief /v1/chat/completions treats `model` as a provider id (xai, …),
 // not an upstream slug. Upstream model (e.g. grok-4.3) is configured server-side.
 constexpr LlmPresetSpec kLlmPresets[] = {
     {"brief", "", "xai", true, true},

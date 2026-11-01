@@ -5,9 +5,45 @@
 
 #include <gtest/gtest.h>
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
+#include <string>
+
+namespace {
+
+class ScopedOrigin {
+public:
+  explicit ScopedOrigin(const char* value) {
+    if (const char* old = std::getenv("PP_BROWSER_ORIGIN")) {
+      had_ = true;
+      old_ = old;
+    }
+    set(value);
+  }
+  ~ScopedOrigin() { set(had_ ? old_.c_str() : nullptr); }
+
+private:
+  static void set(const char* value) {
+#ifdef _WIN32
+    _putenv_s("PP_BROWSER_ORIGIN", value ? value : "");
+#else
+    if (value) {
+      setenv("PP_BROWSER_ORIGIN", value, 1);
+    } else {
+      unsetenv("PP_BROWSER_ORIGIN");
+    }
+#endif
+  }
+  bool had_ = false;
+  std::string old_;
+};
+
+constexpr const char* kOrigin = "https://backend.example.test";
+
+} // namespace
 
 TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
+  ScopedOrigin origin(kOrigin);
   const std::string partial_path = 
       (std::filesystem::temp_directory_path() / "pp_browser_config_merge_test.json").string();
   {
@@ -18,16 +54,16 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   auto config = pbr::Config::LoadFromFile(partial_path);
   ASSERT_TRUE(static_cast<bool>(config));
   EXPECT_EQ(config->llm.model, "custom-model");
-  EXPECT_EQ(config->llm.base_url, "https://www.brief.global/api/llm/v1");
+  EXPECT_EQ(config->llm.base_url, "https://backend.example.test/api/llm/v1");
   EXPECT_TRUE(config->llm.require_api_key);
-  EXPECT_EQ(config->relay.base_url, "https://www.brief.global/api/relay");
+  EXPECT_EQ(config->relay.base_url, "https://backend.example.test/api/relay");
 
   const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
-  EXPECT_EQ(defaults.llm.base_url, "https://www.brief.global/api/llm/v1");
+  EXPECT_EQ(defaults.llm.base_url, "https://backend.example.test/api/llm/v1");
   EXPECT_TRUE(defaults.llm.require_api_key);
   EXPECT_EQ(defaults.llm.preset, "brief");
   EXPECT_EQ(defaults.theme, "themes/base.rcss");
-  EXPECT_EQ(defaults.relay.base_url, "https://www.brief.global/api/relay");
+  EXPECT_EQ(defaults.relay.base_url, "https://backend.example.test/api/relay");
 
   std::filesystem::remove(partial_path);
 
@@ -49,7 +85,7 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
 
   pbr::AppConfig brief_config = defaults;
   pbr::ApplyPreset(brief_config, "brief", {});
-  EXPECT_EQ(brief_config.llm.base_url, "https://www.brief.global/api/llm/v1");
+  EXPECT_EQ(brief_config.llm.base_url, "https://backend.example.test/api/llm/v1");
   EXPECT_TRUE(brief_config.llm.require_api_key);
   EXPECT_EQ(brief_config.llm.preset, "brief");
 
@@ -66,7 +102,7 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
 
   pbr::SettingsDraft draft;
   draft.llm_preset = "brief";
-  draft.llm_base_url = "https://www.brief.global/api/llm/v1";
+  draft.llm_base_url = "https://backend.example.test/api/llm/v1";
   draft.llm_model = "brief";  // preset-name mistake → normalized to default
   const pbr::AppConfig brief_from_draft = pbr::ApplyLlmSettingsDraft(defaults, draft);
   EXPECT_EQ(brief_from_draft.llm.model, "xai");

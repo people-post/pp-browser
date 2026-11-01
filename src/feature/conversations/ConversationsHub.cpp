@@ -2688,6 +2688,9 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
         .WithUser("No Brief API key yet — register on the network in Me first.");
   }
 
+  if (llm_base_url.empty()) {
+    return AppError::Config(Err::Config::Invalid, "Brief LLM base URL not configured");
+  }
   const std::string url = llm_base_url + "/keys/rotate";
 
   auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()},

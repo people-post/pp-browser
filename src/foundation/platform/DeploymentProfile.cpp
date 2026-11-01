@@ -1,39 +1,41 @@
 #include "foundation/platform/DeploymentProfile.h"
 
 #include <cstdlib>
-#include <cstring>
+
+#ifndef PP_BROWSER_DEFAULT_ORIGIN
+#define PP_BROWSER_DEFAULT_ORIGIN ""
+#endif
 
 namespace pbr {
 
 namespace {
 
-bool g_sandbox_mode = false;
-
-bool EnvTruthy(const char* name) {
-  const char* value = std::getenv(name);
-  if (value == nullptr || value[0] == '\0') {
-    return false;
-  }
-  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
-         std::strcmp(value, "FALSE") != 0;
+std::string Derive(const char* path) {
+  const std::string origin = BriefOrigin();
+  return origin.empty() ? std::string() : origin + path;
 }
 
 } // namespace
 
-void SetSandboxMode(const bool enabled) {
-  g_sandbox_mode = enabled;
+const char* CompiledDefaultOrigin() {
+  return PP_BROWSER_DEFAULT_ORIGIN;
 }
 
-bool SandboxMode() {
-  return g_sandbox_mode;
-}
-
-const char* BriefOrigin() {
-  return g_sandbox_mode ? kSandboxBriefOrigin : kProductionBriefOrigin;
+std::string BriefOrigin() {
+  std::string origin;
+  if (const char* env = std::getenv("PP_BROWSER_ORIGIN"); env && *env) {
+    origin = env;
+  } else {
+    origin = CompiledDefaultOrigin();
+  }
+  while (!origin.empty() && origin.back() == '/') {
+    origin.pop_back();
+  }
+  return origin;
 }
 
 std::string BriefLlmBaseUrl() {
-  return std::string(BriefOrigin()) + "/api/llm/v1";
+  return Derive("/api/llm/v1");
 }
 
 std::string BriefStreamUrlOverride() {
@@ -45,46 +47,19 @@ std::string DiagnosticsUploadUrl() {
   if (const char* value = std::getenv("PP_BROWSER_DIAGNOSTICS_URL"); value && *value) {
     return value;
   }
-  return std::string(BriefOrigin()) + "/api/support/diagnostics";
+  return Derive("/api/support/diagnostics");
 }
 
 std::string BriefRelayBaseUrl() {
-  return std::string(BriefOrigin()) + "/api/relay";
+  return Derive("/api/relay");
 }
 
 std::string BriefMcpUrl() {
-  return std::string(BriefOrigin()) + "/mcp";
+  return Derive("/mcp");
 }
 
 const char* ProductDirBasename() {
-  return g_sandbox_mode ? kSandboxProductDirName : kProductDirName;
-}
-
-std::string RewriteBriefOriginUrl(std::string url) {
-  if (!g_sandbox_mode || url.empty()) {
-    return url;
-  }
-  const std::string production_prefix = kProductionBriefOrigin;
-  if (url.rfind(production_prefix, 0) == 0) {
-    url.replace(0, production_prefix.size(), kSandboxBriefOrigin);
-  }
-  return url;
-}
-
-bool ResolveSandboxModeFromLaunch(const int argc, char** argv) {
-#ifdef PP_BROWSER_DEV_SANDBOX
-  // Dev builds only (like PP_BROWSER_DEV_PIN): the sandbox backend without a launch flag, so an
-  // iPhone opened from its icon still talks to QA. Never set for a release build.
-  return true;
-#endif
-  if (argv != nullptr) {
-    for (int i = 1; i < argc; ++i) {
-      if (std::strcmp(argv[i], "--sandbox") == 0) {
-        return true;
-      }
-    }
-  }
-  return EnvTruthy("PP_BROWSER_SANDBOX");
+  return kProductDirName;
 }
 
 } // namespace pbr

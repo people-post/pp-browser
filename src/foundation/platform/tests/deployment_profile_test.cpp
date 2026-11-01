@@ -1,48 +1,67 @@
 #include "foundation/platform/DeploymentProfile.h"
 
+#include <cstdlib>
 #include <gtest/gtest.h>
+#include <string>
 
 namespace {
 
-class SandboxModeGuard {
+class ScopedOrigin {
 public:
-  explicit SandboxModeGuard(const bool enabled) { pbr::SetSandboxMode(enabled); }
-  ~SandboxModeGuard() { pbr::SetSandboxMode(false); }
+  explicit ScopedOrigin(const char* value) {
+    if (const char* old = std::getenv("PP_BROWSER_ORIGIN")) {
+      had_ = true;
+      old_ = old;
+    }
+    set(value);
+  }
+  ~ScopedOrigin() { set(had_ ? old_.c_str() : nullptr); }
+
+private:
+  static void set(const char* value) {
+#ifdef _WIN32
+    _putenv_s("PP_BROWSER_ORIGIN", value ? value : "");
+#else
+    if (value) {
+      setenv("PP_BROWSER_ORIGIN", value, 1);
+    } else {
+      unsetenv("PP_BROWSER_ORIGIN");
+    }
+#endif
+  }
+  bool had_ = false;
+  std::string old_;
 };
 
 } // namespace
 
-TEST(DeploymentProfileTest, ProductionDefaults) {
-  SandboxModeGuard guard(false);
-  EXPECT_FALSE(pbr::SandboxMode());
-  EXPECT_STREQ(pbr::BriefOrigin(), pbr::kProductionBriefOrigin);
-  EXPECT_EQ(pbr::BriefLlmBaseUrl(), "https://www.brief.global/api/llm/v1");
-  EXPECT_EQ(pbr::BriefRelayBaseUrl(), "https://www.brief.global/api/relay");
-  EXPECT_EQ(pbr::BriefMcpUrl(), "https://www.brief.global/mcp");
+TEST(DeploymentProfileTest, EnvOriginDerivesUrls) {
+  ScopedOrigin origin("https://backend.example.test");
+  EXPECT_EQ(pbr::BriefOrigin(), "https://backend.example.test");
+  EXPECT_EQ(pbr::BriefLlmBaseUrl(), "https://backend.example.test/api/llm/v1");
+  EXPECT_EQ(pbr::BriefRelayBaseUrl(), "https://backend.example.test/api/relay");
+  EXPECT_EQ(pbr::BriefMcpUrl(), "https://backend.example.test/mcp");
   EXPECT_STREQ(pbr::ProductDirBasename(), pbr::kProductDirName);
 }
 
-TEST(DeploymentProfileTest, SandboxDefaults) {
-  SandboxModeGuard guard(true);
-  EXPECT_TRUE(pbr::SandboxMode());
-  EXPECT_STREQ(pbr::BriefOrigin(), pbr::kSandboxBriefOrigin);
-  EXPECT_EQ(pbr::BriefLlmBaseUrl(), "https://www-en.qa.peoplepost.org/api/llm/v1");
-  EXPECT_EQ(pbr::BriefRelayBaseUrl(), "https://www-en.qa.peoplepost.org/api/relay");
-  EXPECT_EQ(pbr::BriefMcpUrl(), "https://www-en.qa.peoplepost.org/mcp");
-  EXPECT_STREQ(pbr::ProductDirBasename(), pbr::kSandboxProductDirName);
+TEST(DeploymentProfileTest, TrailingSlashIsTrimmed) {
+  ScopedOrigin origin("https://backend.example.test//");
+  EXPECT_EQ(pbr::BriefOrigin(), "https://backend.example.test");
 }
 
-TEST(DeploymentProfileTest, RewritesProductionBriefUrlsWhenSandbox) {
-  SandboxModeGuard guard(true);
-  EXPECT_EQ(pbr::RewriteBriefOriginUrl("https://www.brief.global/api/relay"),
-            "https://www-en.qa.peoplepost.org/api/relay");
-  EXPECT_EQ(pbr::RewriteBriefOriginUrl("https://api.openai.com/v1"), "https://api.openai.com/v1");
+TEST(DeploymentProfileTest, EmptyEnvFallsBackToCompiledDefault) {
+  ScopedOrigin origin("");
+  EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledDefaultOrigin()));
 }
 
-TEST(DeploymentProfileTest, ResolveSandboxFromArgv) {
-  SandboxModeGuard guard(false);
-  char arg0[] = "pp-browser";
-  char arg1[] = "--sandbox";
-  char* argv[] = {arg0, arg1};
-  EXPECT_TRUE(pbr::ResolveSandboxModeFromLaunch(2, argv));
+TEST(DeploymentProfileTest, NoOriginYieldsEmptyUrls) {
+  ScopedOrigin origin(nullptr);
+  if (!std::string(pbr::CompiledDefaultOrigin()).empty()) {
+    GTEST_SKIP() << "a compile-time default origin is configured";
+  }
+  EXPECT_TRUE(pbr::BriefOrigin().empty());
+  EXPECT_TRUE(pbr::BriefLlmBaseUrl().empty());
+  EXPECT_TRUE(pbr::BriefRelayBaseUrl().empty());
+  EXPECT_TRUE(pbr::BriefMcpUrl().empty());
+  EXPECT_TRUE(pbr::DiagnosticsUploadUrl().empty());
 }

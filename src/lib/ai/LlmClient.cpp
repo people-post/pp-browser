@@ -261,6 +261,9 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   if (config_.require_api_key && config_.api_key.empty()) {
     return AppError::Config(Err::Config::MissingKey, "LLM API key not configured");
   }
+  if (config_.base_url.empty()) {
+    return AppError::Config(Err::Config::Invalid, "LLM base URL not configured");
+  }
   if (!config_.api_key.empty() && !BearerAllowedOnUrl(config_.base_url)) {
     return AppError::Config(Err::Config::Invalid,
                             "LLM API key is only sent over https or to localhost; base_url is " + config_.base_url);

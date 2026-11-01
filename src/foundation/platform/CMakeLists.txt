@@ -166,11 +166,12 @@ else()
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 endif()
 
-# Dev only (like PP_BROWSER_DEV_PIN): force the sandbox (QA) backend as if launched with --sandbox,
-# so a phone opened from its icon still talks to QA. Never for a release build.
-set(PP_BROWSER_DEV_SANDBOX OFF CACHE BOOL "Dev only: force the sandbox backend at compile time")
-if(PP_BROWSER_DEV_SANDBOX)
-  target_compile_definitions(pp_foundation_platform_core PRIVATE PP_BROWSER_DEV_SANDBOX=1)
+# Compile-time default backend origin (scheme://host); PP_BROWSER_ORIGIN overrides it at runtime.
+# Empty by default: backend-dependent features stay disabled until an origin is supplied.
+set(PP_BROWSER_DEFAULT_ORIGIN "" CACHE STRING "Default backend origin compiled into the client")
+if(NOT PP_BROWSER_DEFAULT_ORIGIN STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_BROWSER_DEFAULT_ORIGIN="${PP_BROWSER_DEFAULT_ORIGIN}")
 endif()
 
 if(PP_BROWSER_HEADLESS)

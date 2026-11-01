@@ -29,7 +29,7 @@ usage() {
 Usage: $(basename "$0") [options] [-- app args...]
 
   --build-dir DIR    Build tree holding src/app/pp-browser (default: build)
-  --data-dir PATH    Override data root (default: platform data dir; -sandbox with --sandbox)
+  --data-dir PATH    Override data root (default: platform data dir)
   --symbolize FILE   Only symbolize an existing crash dump against the build, then exit
   --binary FILE      Binary to symbolize against (default: the build's pp-browser)
   -h, --help         Show this help
@@ -40,10 +40,6 @@ EOF
 
 detect_data_dir() {
   local product="pp-browser"
-  local arg
-  for arg in "${APP_ARGS[@]+"${APP_ARGS[@]}"}"; do
-    [[ "$arg" == "--sandbox" ]] && product="pp-browser-sandbox"
-  done
   case "$(uname -s)" in
     Darwin) echo "${HOME}/Library/Application Support/${product}/data" ;;
     *) echo "${XDG_DATA_HOME:-${HOME}/.local/share}/${product}" ;;

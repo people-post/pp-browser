@@ -36,14 +36,6 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   if (!config) {
     return config.error();
   }
-  if (SandboxMode()) {
-    const std::string config_path = Config::DiscoverConfigPath(options.argc, options.argv);
-    logging::getLogger("Bootstrap").warning
-        << "Sandbox mode active — config "
-        << (config_path.empty() ? AppPaths::ConfigFilePath() : config_path) << ", data "
-        << AppPaths::DataDir(config->data_dir);
-  }
-
   AppPaths::DataDir(config->data_dir);
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());

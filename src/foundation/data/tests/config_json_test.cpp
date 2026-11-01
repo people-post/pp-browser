@@ -49,12 +49,12 @@ TEST(ConfigJsonTest, EmitsModernConfigKeys) {
 
 TEST(ConfigJsonTest, ResolvesPromotedMcpFallbacks) {
   pbr::AppConfig defaults;
-  defaults.promoted_mcp.url = "https://www.brief.global/mcp";
+  defaults.promoted_mcp.url = "https://backend.example.test/mcp";
 
-  EXPECT_EQ(pbr::ResolvePromotedMcp(defaults, defaults).url, "https://www.brief.global/mcp");
+  EXPECT_EQ(pbr::ResolvePromotedMcp(defaults, defaults).url, "https://backend.example.test/mcp");
 
   pbr::AppConfig empty_promoted;
-  EXPECT_EQ(pbr::ResolvePromotedMcp(empty_promoted, defaults).url, "https://www.brief.global/mcp");
+  EXPECT_EQ(pbr::ResolvePromotedMcp(empty_promoted, defaults).url, "https://backend.example.test/mcp");
 }
 
 TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {

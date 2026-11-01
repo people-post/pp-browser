@@ -22,18 +22,19 @@ namespace pbr {
 
 namespace {
 
-void ApplySandboxBriefUrlRewrites(AppConfig& config) {
-  if (!SandboxMode()) {
+// PP_BROWSER_ORIGIN overrides the backend URLs saved in the config file; a custom LLM endpoint is left alone.
+void ApplyOriginEnvOverride(AppConfig& config) {
+  const char* env = std::getenv("PP_BROWSER_ORIGIN");
+  if (env == nullptr || *env == '\0') {
     return;
   }
-  config.llm.base_url = RewriteBriefOriginUrl(config.llm.base_url);
-  config.promoted_mcp.url = RewriteBriefOriginUrl(config.promoted_mcp.url);
-  config.relay.base_url = RewriteBriefOriginUrl(config.relay.base_url);
-  config.directory.base_url = RewriteBriefOriginUrl(config.directory.base_url);
-  for (ServiceEndpointConfig& provider : config.directory.providers) {
-    provider.base_url = RewriteBriefOriginUrl(provider.base_url);
+  if (config.llm.preset.empty() || config.llm.preset == "brief") {
+    config.llm.base_url = BriefLlmBaseUrl();
   }
-  config.registration.base_url = RewriteBriefOriginUrl(config.registration.base_url);
+  config.promoted_mcp.url = BriefMcpUrl();
+  config.relay.base_url = BriefRelayBaseUrl();
+  config.directory.base_url = BriefRelayBaseUrl();
+  config.registration.base_url = BriefRelayBaseUrl();
 }
 
 } // namespace
@@ -131,7 +132,7 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(), *root);
-  ApplySandboxBriefUrlRewrites(config);
+  ApplyOriginEnvOverride(config);
   const AppConfig defaults = DefaultAppConfig();
   if (config.relay.base_url.empty()) {
     config.relay.base_url = defaults.relay.base_url;
