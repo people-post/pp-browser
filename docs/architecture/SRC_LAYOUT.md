@@ -207,13 +207,13 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
-| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports, bindings |
+| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports |
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 
 ```
 settings
-ai/tools → ai/bindings → ai
+ai/tools → ai
 calls
 conversations → calls
 ```
@@ -233,7 +233,7 @@ Module map: [`src/gui/README.md`](../../src/gui/README.md).
 
 `pp_gui` links `pp_feature_*` (and lib/foundation as needed). Feature must not link or include `gui/`.
 
-Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
+Cross-controller wiring (tool registration, tab ticks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
 
 ## CMake targets
 

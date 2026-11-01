@@ -1,11 +1,7 @@
 # MCP fixtures
 
-Use the built-in mock MCP client during development:
+There is no built-in mock MCP server (PB-081). Tests drive the client's transports directly
+(`src/lib/ai/mcp/tests/`: stdio framing from scripted bytes, HTTP through an injected post).
 
-```cpp
-McpClient client;
-client.Start("mock");
-client.Initialize();
-```
-
-For a real stdio MCP server on Unix, configure `command` and `args` in `config.json` and call `McpClient::Start`.
+For a real stdio MCP server on Unix, configure `command` and `args` in `config.json`; for a remote
+one, `url`.

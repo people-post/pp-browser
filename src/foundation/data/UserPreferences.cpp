@@ -1,4 +1,6 @@
 #include "foundation/data/UserPreferences.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "common/AtomicFileWrite.h"
 #include "foundation/data/ConfigJson.h"
@@ -46,8 +48,11 @@ Roe<MachinePreferences> UserPreferences::LoadMachine(const std::string& data_dir
     return Error("Failed to open machine preferences: " + path);
   }
 
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  auto root = TryParseObject(text);
+  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  if (!text) {
+    return Error(text.error().message + ": " + path);
+  }
+  auto root = TryParseObject(*text);
   if (!root) {
     return Error("Failed to parse machine preferences: " + path);
   }
@@ -85,8 +90,11 @@ Roe<ProfilePreferences> UserPreferences::LoadProfile(const std::string& profile_
     return Error("Failed to open profile preferences: " + path);
   }
 
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  auto root = TryParseObject(text);
+  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  if (!text) {
+    return Error(text.error().message + ": " + path);
+  }
+  auto root = TryParseObject(*text);
   if (!root) {
     return Error("Failed to parse profile preferences: " + path);
   }

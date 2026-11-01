@@ -1,4 +1,6 @@
 #include "lib/content/CasStore.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -95,7 +97,7 @@ Roe<ByteVector> CasStore::ReadBlockFile(const std::string& path) const {
   if (!in) {
     return Error("CAS block not found");
   }
-  return ByteVector((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  return ReadBoundedBytes(in, kMaxCasBlockFileBytes);
 }
 
 Roe<void> CasStore::PutPrivate(const ByteVector& content_id, const ByteVector& plaintext, const ByteVector& dek,

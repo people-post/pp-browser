@@ -21,7 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --chmod=755 pp-node /usr/local/bin/pp-node
 COPY --chown=pp-node:pp-node config.json.example /etc/pp-node/config.json
 
-USER pp-node
+# Numeric, so a runtime that enforces runAsNonRoot can see it is not root (PB-061).
+USER 101
 WORKDIR /var/lib/pp-node
 VOLUME ["/var/lib/pp-node"]
 

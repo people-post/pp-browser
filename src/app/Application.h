@@ -26,7 +26,6 @@ class Context;
 
 namespace pbr {
 
-class ActionRouter;
 class OnboardingController;
 class ConfigSecretsStore;
 class BadgeAggregator;
@@ -107,7 +106,6 @@ private:
   ConversationsHub* messaging_ = nullptr;
   std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
-  std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;
   std::optional<ClientCompatSupport> support_discovery_;
   std::unique_ptr<BadgeAggregator> badges_;

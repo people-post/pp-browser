@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 
 #include <string>
 
@@ -53,4 +54,42 @@ TEST(ProfileRegistryTest, AppliesSessionProfileOverride) {
   EXPECT_TRUE(std::filesystem::exists(expected));
 
   std::filesystem::remove_all(override_dir);
+}
+
+// PB-041: a profile id names a directory under profiles/ and nothing else.
+TEST(ProfileRegistryTest, AProfileIdCannotLeaveTheProfilesDirectory) {
+  EXPECT_TRUE(pbr::ProfileRegistry::IsValidProfileId("default"));
+  EXPECT_TRUE(pbr::ProfileRegistry::IsValidProfileId("node-2.test_B"));
+  for (const char* bad : {"", "..", ".hidden", "../x", "a/b", "a\\b", "/etc", "C:x", "a b", "a\nb"}) {
+    EXPECT_FALSE(pbr::ProfileRegistry::IsValidProfileId(bad)) << bad;
+  }
+  EXPECT_FALSE(pbr::ProfileRegistry::IsValidProfileId(std::string(65, 'a')));
+
+  const std::string data_dir = UniquePath("pp_browser_profile_registry_escape_");
+  std::filesystem::remove_all(data_dir);
+  {
+    auto registry = pbr::ProfileRegistry::Load(data_dir);
+    ASSERT_TRUE(static_cast<bool>(registry));
+    registry->SetSessionProfileOverride("../escaped");
+    EXPECT_FALSE(static_cast<bool>(registry->EnsureActiveProfile()));
+  }
+  EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(data_dir) / "escaped"));
+  std::filesystem::remove_all(data_dir);
+}
+
+TEST(ProfileRegistryTest, AStoredActiveIdThatIsNotAnIdFallsBackToTheDefault) {
+  const std::string data_dir = UniquePath("pp_browser_profile_registry_stored_");
+  std::filesystem::remove_all(data_dir);
+  std::filesystem::create_directories(data_dir);
+  {
+    std::ofstream out(std::filesystem::path(data_dir) / "profiles.json");
+    out << R"({"schema_version":1,"active_profile_id":"../../x","profiles":[{"id":"../../x","label":"x"},{"id":"work","label":"w"}]})";
+  }
+  auto registry = pbr::ProfileRegistry::Load(data_dir);
+  ASSERT_TRUE(static_cast<bool>(registry));
+  EXPECT_EQ(registry->ActiveProfileId(), "default");
+  for (const pbr::ProfileEntry& entry : registry->Profiles()) {
+    EXPECT_TRUE(pbr::ProfileRegistry::IsValidProfileId(entry.id)) << entry.id;
+  }
+  std::filesystem::remove_all(data_dir);
 }

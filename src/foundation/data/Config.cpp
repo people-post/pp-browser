@@ -1,4 +1,6 @@
 #include "foundation/data/Config.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/data/AppPaths.h"
 #include "common/AtomicFileWrite.h"
@@ -149,8 +151,11 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     return Error("Failed to open config file: " + path);
   }
 
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  auto root = TryParseObject(text);
+  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  if (!text) {
+    return Error(text.error().message + ": " + path);
+  }
+  auto root = TryParseObject(*text);
   if (!root) {
     return Error("Failed to parse config: " + path);
   }

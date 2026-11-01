@@ -146,7 +146,6 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 - `BadgeNotifyPorts` — badge refresh / sessions unread for chat (filled from `BadgeAggregator`)
 - `PinGateActionPorts` — PIN overlay submit/cancel/chooser actions for shell (filled from `PinGateController`)
 - `ProfileUnlockPorts` — ensure unlocked, complete with PIN (async heavy work)
-- `ActionRouter` — declarative Rml action → MCP tool map
 
 **Target pattern:**
 
