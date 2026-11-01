@@ -1152,6 +1152,7 @@
     "sidebar.menu.unmute": "Unmute",
     "sidebar.menu.mute_mentions": "Mute mentions too",
     "sidebar.menu.allow_mentions": "Alert on mentions",
+    "sidebar.menu.ask_before_sharing_ai": "Ask before sharing with AI",
     "sidebar.mentioned": "You were mentioned",
     "sidebar.menu.mute_8h": "8 hours",
     "sidebar.menu.mute_1w": "1 week",

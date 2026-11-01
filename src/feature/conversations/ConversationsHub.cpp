@@ -1439,7 +1439,7 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
   RegisterContactEndpoints();
   // The router exists with messaging, agent or not: a send to a person needs no agent.
   if (!router_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
+    router_ = MakeRouter();
   }
   if (shutdown_requested_.load(std::memory_order_acquire)) {
     DiscardMessagingBringUp();
@@ -1638,8 +1638,21 @@ void ConversationsHub::BindAgentInbound(AgentInboundPorts ports) {
   if (router_) {
     router_->SetAgent(agent_inbound_);
   } else if (mesh_messaging_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
+    router_ = MakeRouter();
   }
+}
+
+std::unique_ptr<MessageRouter> ConversationsHub::MakeRouter() {
+  auto router = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
+  // "Don't ask again" for sharing with the AI is kept per chat in the thread prefs.
+  router->SetSharedAiConfirmedPort([this](const std::string& thread_id) {
+    if (!thread_prefs_) {
+      return false;
+    }
+    auto prefs = thread_prefs_->Get(thread_id);
+    return prefs && prefs->share_ai_confirmed;
+  });
+  return router;
 }
 
 void ConversationsHub::BindSessionStore(SessionStore& store) {

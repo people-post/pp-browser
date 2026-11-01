@@ -74,6 +74,15 @@ TEST(SessionMenuTest, AMutedGroupOffersToMuteItsMentionsToo) {
   EXPECT_FALSE(Has(SessionMenuItems(direct), Item::MuteMentions)) << "a direct chat has no mentions";
 }
 
+TEST(SessionMenuTest, AskBeforeSharingWithAiIsOfferedOnlyWhenTheChatWasTold) {
+  for (const SessionKind kind : {SessionKind::Direct, SessionKind::Group}) {
+    SessionMenuState state{.kind = kind};
+    EXPECT_FALSE(Has(SessionMenuItems(state), Item::AskBeforeSharingAi)) << "nothing to undo";
+    state.share_ai_confirmed = true;
+    EXPECT_TRUE(Has(SessionMenuItems(state), Item::AskBeforeSharingAi));
+  }
+}
+
 TEST(SessionMenuTest, DestructiveItemsComeLast) {
   for (const SessionKind kind : {SessionKind::Ai, SessionKind::Direct, SessionKind::Group}) {
     const std::vector<Item> items = Items(kind, false, true);

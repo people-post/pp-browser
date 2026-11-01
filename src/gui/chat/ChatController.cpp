@@ -804,6 +804,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
     if (!facade_->ClearThreadHistory(thread_id, /*forget_memory=*/is_ai)) {
       return;
     }
+    presenter_.ForgetCachedPrefs();  // clearing also resets the chat's "don't ask again" for the AI
     AfterHistoryCleared(thread_id);
   });
 }
@@ -2112,6 +2113,7 @@ void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const A
                           [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
                             if (ok && dont_ask && facade_) {
                               facade_->MarkSharedAiConfirmed(thread_id);
+                              presenter_.ForgetCachedPrefs();
                             }
                             done(ok, dont_ask);
                           });

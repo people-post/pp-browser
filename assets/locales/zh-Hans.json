@@ -1152,6 +1152,7 @@
     "sidebar.menu.unmute": "取消静音",
     "sidebar.menu.mute_mentions": "提及也静音",
     "sidebar.menu.allow_mentions": "被提及时提醒",
+    "sidebar.menu.ask_before_sharing_ai": "共享给 AI 前再次询问",
     "sidebar.mentioned": "有人@了你",
     "sidebar.menu.mute_8h": "8 小时",
     "sidebar.menu.mute_1w": "1 周",

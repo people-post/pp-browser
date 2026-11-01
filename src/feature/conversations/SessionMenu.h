@@ -20,6 +20,8 @@ enum class SessionMenuItem {
   /** A muted group: its mentions silent too (G015) — or alerting again. */
   MuteMentions,
   AllowMentions,
+  /** A chat whose "don't ask again" for sharing with the AI is set: ask again. */
+  AskBeforeSharingAi,
   Archive,
   Unarchive,
   ViewContact,
@@ -43,6 +45,8 @@ struct SessionMenuState {
   bool muted = false;
   /** While muted, mentions are silent too (G015). */
   bool mute_mentions = false;
+  /** "Don't ask again" for sharing this chat with the AI is set. */
+  bool share_ai_confirmed = false;
   bool archived = false;
 };
 
@@ -65,6 +69,9 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   }
   if (state.kind == SessionKind::Group && state.muted) {
     items.push_back(state.mute_mentions ? SessionMenuItem::AllowMentions : SessionMenuItem::MuteMentions);
+  }
+  if (state.share_ai_confirmed) {
+    items.push_back(SessionMenuItem::AskBeforeSharingAi);
   }
   items.push_back(state.archived ? SessionMenuItem::Unarchive : SessionMenuItem::Archive);
   if (state.kind == SessionKind::Direct && state.has_contact) {

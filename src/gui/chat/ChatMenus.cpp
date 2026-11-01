@@ -184,6 +184,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
   state.pinned = prefs.pinned_at != 0;
   state.muted = ThreadIsMuted(prefs.muted_until, util::NowUnixMs());
   state.mute_mentions = prefs.mute_mentions;
+  state.share_ai_confirmed = prefs.share_ai_confirmed;
   state.archived = prefs.archived;
 
   for (const SessionMenuItem item : SessionMenuItems(state)) {
@@ -240,6 +241,14 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id, mute = item == SessionMenuItem::MuteMentions]() {
         presenter_.SetMuteMentions(thread_id, mute);
+        host_.AfterThreadPrefsChanged();
+      };
+      break;
+    case SessionMenuItem::AskBeforeSharingAi:
+      action.id = "session_ask_before_sharing_ai";
+      action.label = Tr("sidebar.menu.ask_before_sharing_ai");
+      action.run = [this, thread_id]() {
+        presenter_.AskBeforeSharingAi(thread_id);
         host_.AfterThreadPrefsChanged();
       };
       break;
