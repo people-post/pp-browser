@@ -47,6 +47,14 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
 | `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/develop/docs/architecture/PLATFORM_INTEGRATION.md)) |
 
+**Mesh heartbeat:** with `mesh_publish` on and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (no switch, fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405; JSON `Content-Type` required, requests with an `Origin` header or a non-loopback `Host` get 403):
+
+```
+curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' http://127.0.0.1:18518/control/state
+```
+
+States only advance `active` → `draining` → `retiring`; `draining` → `active` is allowed, `retiring` is final (409). Contract: [MESH_DIRECTORY.md](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat).
+
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
 **Initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.
@@ -162,8 +170,13 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
-      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"
+      "/ip4/34.233.23.235/udp/443/adp/1.0.0/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
+      "/ip4/50.18.237.202/udp/443/adp/1.0.0/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
+      "/ip4/54.217.120.211/udp/443/adp/1.0.0/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",
+      "/ip4/35.158.70.252/udp/443/adp/1.0.0/p2p/Qmc1TDTb6K4ymGNKMBHG6c45kxu7qA7TtCXdDfZxupStTj",
+      "/ip4/57.181.254.92/udp/443/adp/1.0.0/p2p/QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1",
+      "/ip4/15.164.114.146/udp/443/adp/1.0.0/p2p/QmWpQr3JEyeEVbePLmvRe1onbuM4dwhPG1P5Lo8Su3r97y",
+      "/ip4/3.1.86.213/udp/443/adp/1.0.0/p2p/QmW9utyUR2S9N8Avite7aiS4LCcb2w6fJcd3PzyM2ozL5j"
     ]
   }
 }

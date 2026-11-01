@@ -1,7 +1,7 @@
-#include "lib/messaging/AccountCard.h"
-#include "lib/messaging/PeerCardStore.h"
+#include "lib/people/AccountCard.h"
+#include "lib/people/PeerCardStore.h"
 
-#include "lib/messaging/tests/TestAccount.h"
+#include "lib/people/tests/TestAccount.h"
 
 #include <gtest/gtest.h>
 

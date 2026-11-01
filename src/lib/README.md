@@ -1,8 +1,9 @@
 # `src/lib`
 
-Independent **product peer** libraries (North Star). Peers must not `#include` or
-`PUBLIC_LIBS`-link each other — cross-need goes through `src/common/` contracts and
-`src/feature/` wiring.
+**Product peer** libraries (North Star). A peer may `#include` and `PUBLIC_LIBS`-link a peer of a
+**lower capability** (`lib/messaging` → `lib/people`; [capability-repos CR013](../../projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order));
+two peers of one capability, or an edge against the order, may not — that cross-need goes through
+`src/common/` contracts and `src/feature/` wiring.
 
 | Peer (today) | Path | CMake |
 |--------------|------|-------|

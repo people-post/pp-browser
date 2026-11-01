@@ -1,5 +1,5 @@
 #include "domain/peers/DirectoryShadowCache.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "feature/conversations/InboxController.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/CryptoConstants.h"

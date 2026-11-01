@@ -58,6 +58,7 @@
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 // --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
 
+#include "lib/people/DevicePeerId.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
@@ -354,7 +355,7 @@ public:
       out.set("messaging_ready", Hub().IsMessagingReady());
       out.set("mesh_ready", Hub().IsMeshReady());
       if (auto identity = Hub().Identity().Get()) {
-        out.set("peer_id", PeerRequestAuth::DevicePeerId(identity->public_key_b64).valueOr(""));
+        out.set("peer_id", DevicePeerIdFromKey(identity->public_key_b64).valueOr(""));
       }
       Emit(out);
     } else if (cmd == "locator") {

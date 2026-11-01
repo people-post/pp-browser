@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lib/messaging/PeerCardStore.h"
-#include "lib/messaging/PeerKemKeyStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerCardStore.h"
+#include "lib/people/PeerKemKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

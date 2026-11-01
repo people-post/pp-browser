@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/people/PeerDisplayResolver.h"
+#include "lib/messaging/PeerDisplayResolver.h"
 #include "domain/peers/DirectoryShadowCache.h"
 
 namespace pbr {

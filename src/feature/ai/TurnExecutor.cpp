@@ -3,7 +3,7 @@
 #include "lib/ai/ArticleFeedBlocks.h"
 #include "lib/ai/LocalizedLabels.h"
 #include "lib/ai/ToolResultFormatter.h"
-#include "lib/people/PeopleDiscoveryContactAdapt.h"
+#include "feature/ai/PeopleDiscoveryContactAdapt.h"
 #include "lib/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"

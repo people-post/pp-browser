@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Guard lib peer CMake PUBLIC_LIBS edges (North Star).
-# Mirrors scripts/check/check_base_includes.sh legacy allowlist for link edges.
+# Mirrors scripts/check/check_base_includes.sh: a lib peer links another only down the capability order
+# (projects/capability-repos CR013); the pairs come from check_capability_edges.py --lib-edges.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 python3 - "$ROOT" <<'PY'
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,7 +21,12 @@ lib_peers = {
     "pp_lib_ai",
     "pp_lib_ui",
 }
-legacy = {
+# lib/<a> -> lib/<b> pairs the capability order allows (different capabilities, downward).
+allowed = {
+    "pp_lib_" + pair.replace("->", "->pp_lib_")
+    for pair in subprocess.run(
+        [sys.executable, str(root / "scripts" / "check" / "check_capability_edges.py"), "--lib-edges"],
+        check=True, capture_output=True, text=True).stdout.split()
 }
 
 def peer_of(lib):
@@ -47,10 +54,10 @@ for peer_dir in sorted(p for p in lib_root.iterdir() if p.is_dir()):
             if peer is None or peer == owner:
                 continue
             edge = f"{owner}->{peer}"
-            if edge not in legacy:
-                print(f"FAIL: new lib peer link edge {edge} ({lib})")
+            if edge not in allowed:
+                print(f"FAIL: lib peer link edge {edge} ({lib}) is not down the capability order (CR013)")
                 print(f"  {cmake.relative_to(root)}")
-                print("  Wire via common ports / feature; do not add peer→peer links.")
+                print("  Link only lib peers of a lower capability; within one capability, wire via common / feature.")
                 fail = 1
 sys.exit(fail)
 PY

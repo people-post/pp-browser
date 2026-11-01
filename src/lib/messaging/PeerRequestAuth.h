@@ -3,7 +3,7 @@
 #include "common/Error.h"
 #include "common/thread/ChatBlobTypes.h"
 #include "common/thread/ChatHistoryTypes.h"
-#include "lib/messaging/AccountCardRequest.h"
+#include "lib/people/AccountCardRequest.h"
 
 #include <cstdint>
 #include <functional>
@@ -31,9 +31,6 @@ Roe<std::vector<uint8_t>> SignBytes(const ChatBlobRequest& request);
 Roe<std::vector<uint8_t>> SignBytes(const AccountCardRequest& request);
 
 using SignFn = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
-
-/** This device's Amp PeerId (its mesh identity is the device key). */
-Roe<std::string> DevicePeerId(const std::string& device_public_key_b64);
 
 /** Fill the auth fields and sign, as `account_id` on the link of `local_peer_id`. */
 Roe<void> Sign(ChatHistoryRequest& request, const std::string& account_id, const std::string& local_peer_id,

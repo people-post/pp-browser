@@ -16,7 +16,9 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 
 - [x] Misplaced tests first: calls logic tests under `feature/conversations/tests` → `lib/calls/tests`;
       `common/chat` and `common/ui` tests under `common/tests` → `common/chat/tests`, `common/ui/tests` (14 sites).
-- [ ] people → messaging (21), net → messaging (10), base → messaging (7)
+- [x] people → messaging (21): lib peers follow the capability order (CR013); cards and key stores down
+      into `lib/people`, people + thread compositions up into messaging
+- [ ] net → messaging (10), base → messaging (2)
 - [ ] people → net (5): a port identity declares, the app or net implements
 - [ ] messaging → app (5): messaging declares the ports AI and the shell implement (CR007)
 - [ ] messaging → calls, messaging → node, node → messaging, node → calls, calls → broadcast

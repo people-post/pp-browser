@@ -103,6 +103,8 @@ Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–1
 
 Hard lab: hard-w5 Phase-11 FLIP (peer-a changes address mid-call → reconnected on a new path in 2.3 s).
 
+**A dead UDP socket** (#416). iOS can leave the app's socket dead after a suspend or a path change: no UDP sent or received, HTTPS fine, and Amp's pump drops receive errors quietly — before this, only a relaunch helped. `MeshHost::EnsureUdpSocketAlive` (pp-cpp-mesh `mesh/host/UdpSocketProbe.h`) sends one byte from the socket to its own port and waits for any datagram (300 ms, then a second send and 1 s); a dead socket is closed and bound again on the same port (pp-cpp-amp `DatagramIo::Reopen`), so peers and relays still reach us where they did, then links are probed and reachability re-learned as after a network change. The mesh runs it on every online change above; `ConversationsHub::OnAppForeground` adds the return to the foreground. Each outcome is the Diag line `mesh.udp_socket` ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)).
+
 ## pp-node
 
 Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See [NETWORKING.md](NETWORKING.md) and [projects/adp/STACK.md](../../projects/adp/STACK.md).

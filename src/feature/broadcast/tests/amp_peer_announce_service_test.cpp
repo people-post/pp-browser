@@ -3,7 +3,7 @@
 #include "lib/broadcast/PeerAnnounceCodec.h"
 #include "lib/broadcast/PeerAnnounceKeyResolve.h"
 #include "lib/broadcast/PeerAnnouncePublisher.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"

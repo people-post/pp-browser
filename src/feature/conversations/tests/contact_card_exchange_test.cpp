@@ -2,7 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/AccountCard.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 

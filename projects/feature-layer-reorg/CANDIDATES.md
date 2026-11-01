@@ -14,7 +14,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | `lib/messaging/PublicPskLockCoordinator.*` | `lib/messaging/` | Done; feature test still covers LinkDevice export case |
 | `lib/messaging/EpochBumpCoordinator.*` | `lib/messaging/` | Done |
 | `lib/people/ContactReachability.*` | `lib/people/` | Done |
-| `lib/people/PeerBriefRoute.*` | `lib/people/` | Done |
+| `lib/people/PeerBriefRoute.*` | `lib/people/` | Done; later moved to `lib/messaging/` (capability-repos CR013: it reads a `Thread`) |
 | `lib/mesh/reachability/MobileEphemeralListenGate.*` | `lib/mesh/reachability/` | Done |
 | `lib/ui/PeoplePickerLogic.h` | `lib/ui/` | Done |
 | `lib/ui/CallConflictCopy.*` | `lib/ui/` | Done |

@@ -1,3 +1,4 @@
+#include "lib/people/DevicePeerId.h"
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -10,7 +11,7 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/messaging/PeerRequestAuth.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -43,7 +44,7 @@ public:
       throw std::runtime_error("identity load failed");
     }
     requester_account = requester.Get()->account_id;
-    requester_peer = *PeerRequestAuth::DevicePeerId(requester.Get()->public_key_b64);
+    requester_peer = *DevicePeerIdFromKey(requester.Get()->public_key_b64);
     PeerSigningKeyRecord key;
     key.signing_public_key_b64 = requester.Get()->account_signing_public_key_b64;
     key.source = "test";

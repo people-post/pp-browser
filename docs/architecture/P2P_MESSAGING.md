@@ -80,14 +80,14 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
-      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"
+      "/ip4/34.233.23.235/udp/443/adp/1.0.0/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
+      "/ip4/50.18.237.202/udp/443/adp/1.0.0/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw"
     ]
   }
 }
 ```
 
-**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no Node hosting). Amp UDP accept remains on for Clients. Clients still dial the Brief seed from `bootstrap_peers`. See [p2p-mesh](../../projects/p2p-mesh/).
+**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no Node hosting). Amp UDP accept remains on for Clients. Clients still dial the Brief seeds from `bootstrap_peers` (the example shows two of the built-in seven, `kDefaultMeshBootstrapPeers` in `src/foundation/data/MeshRole.h`; the directory's `GET /v1/mesh/nodes` is preferred at run time). See [p2p-mesh](../../projects/p2p-mesh/).
 Platform defaults use the Brief URLs above. Empty `base_url` values coalesce to those defaults; production never falls back to in-process mocks (`Mock*Client` is test-only).
 
 ## Relay envelope (target — D056, D090)

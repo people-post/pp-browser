@@ -5,7 +5,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/net/OrgBackendClients.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"

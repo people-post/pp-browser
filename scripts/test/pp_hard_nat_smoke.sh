@@ -235,15 +235,15 @@ assert_flip() {
   [[ -n "${line}" ]] || pp_hard_die "${label}: the call never had audio to flip under ($(cat "${marks}"))"
   local after
   after="$(tail -n +"$((line + 1))" "${off_log}")"
-  grep -qE '\[NetworkChange\] network change gen=[0-9]+ .*attachment_changed=1' <<<"${after}" ||
+  grep -qE '\[Diag\] event=network.change gen=[0-9]+ .*attachment_changed=1' <<<"${after}" ||
     pp_hard_die "${label}: the offerer's NetworkMonitor never reported the address change"
-  echo "ok  flip: NetworkMonitor saw the move ($(grep -oE 'network change gen=[0-9]+ online=[^ ]+' <<<"${after}" | head -1))"
+  echo "ok  flip: NetworkMonitor saw the move ($(grep -oE 'event=network.change gen=[0-9]+' <<<"${after}" | head -1))"
   # The dead direct link goes either way: the network-change probe (2 s), or at once when a send in
   # the address gap fails at the OS (unreachable). It is the punched link, or — when the dual-dial
   # election at call start kept the peer's inbound one — a `direct` one.
   grep -qE 'MeshLink\] link dropped .*path=(punched|direct).*reason=(network-changed|transport-failed)' <<<"${after}" ||
     pp_hard_die "${label}: the dead direct link was not dropped (network-change probe / unreachable send)"
-  echo "ok  flip: dead link dropped ($(grep -oE 'path=punched.*reason=(network-changed|transport-failed)' <<<"${after}" | head -1 | sed 's/.*reason=//'))"
+  echo "ok  flip: dead link dropped ($(grep -oE 'path=(punched|direct).*reason=(network-changed|transport-failed)' <<<"${after}" | head -1 | sed -E 's/^path=([a-z]+).*reason=/\1 /'))"
   grep -qx 'not-recovered' "${marks}" && pp_hard_die "${label}: the call never moved to a new path after the flip"
   grep -qx 'standby' "${marks}" || pp_hard_die "${label}: no relay standby came up before the flip (K003)"
   grep -q 'CallMediaLeg failover .* to=relayed' <<<"${after}" ||

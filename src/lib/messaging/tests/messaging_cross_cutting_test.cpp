@@ -57,7 +57,7 @@ public:
               // The peer's device as its kept card lists it (filed under the fixture's readable id).
               return account == "account:peer" ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
             },
-            psk_store, local.Keys(), roster_store) {
+            psk_store, test::ReceiveKeysOf(local), roster_store) {
     std::filesystem::remove_all(data_dir);
     if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
@@ -156,7 +156,7 @@ public:
       envelope.body.e2e.payload_b64 = *payload;
     }
 
-    peer.SignEnvelope(envelope);
+    test::SignEnvelopeAs(peer, envelope);
     return envelope;
   }
 
@@ -190,7 +190,7 @@ public:
       throw std::runtime_error("Failed to encrypt payload");
     }
     envelope.body.e2e.payload_b64 = *payload;
-    peer.SignEnvelope(envelope);
+    test::SignEnvelopeAs(peer, envelope);
     return envelope;
   }
 

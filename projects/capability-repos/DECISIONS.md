@@ -157,3 +157,31 @@ tests move with it.
 - **Public under people-post**, like the pp-cpp-* repos.
 - The runtime core can go to pp-cpp-common any time (P2); the hard lab and pp-node packaging go with node.
 
+## CR013 — Lib peers follow the capability order
+
+**Date:** 2026-10-31  
+**Status:** accepted; amends [SRC_LAYOUT § lib](../../docs/architecture/SRC_LAYOUT.md) ("strict independence")
+
+**Context:** `SRC_LAYOUT` banned every `lib/` → `lib/` include and link, from before the capability order
+existed. With the order gated (CR011), that ban also forbade the dependencies the order describes: account
+cards and the peer key stores are identity (CR008), but `lib/messaging` uses them, so they could not live in
+`lib/people`. The only homes left were `common/` (blocked by their `foundation/crypto` use) or a people
+folder in `foundation/` (against rule 1), and helpers that compose people with messaging types had to bend
+their APIs to stay out of both.
+
+**Decision:** A lib peer may include and link a peer of a **lower capability** (messaging → people,
+net → people, calls → messaging…). Two peers of **one** capability (`lib/calls` / `lib/media`,
+`lib/messaging` / `lib/pricing`) and edges against the order stay banned. The layer checks
+(`check_base_includes.sh`, `check_base_public_libs.sh`) take the allowed pairs from
+`check_capability_edges.py --lib-edges`, so the order has one home.
+
+**Rationale:** The capability gate already gives every cross-capability include a direction and fails on the
+wrong one; the lib-peer ban added nothing on those edges but forced code into the wrong capability. Within a
+capability the ban still keeps engines single-purpose.
+
+**First use:** people → messaging cut from 21 sites to 0 — cards, key stores and `DevicePeerIdFromKey` into
+`lib/people`; the people + thread compositions (`PeerBriefRoute`, `PeerDisplayResolver`,
+`DirectChatTargetFromContact`, `ModelFacingJson`, `LocalKeysFromIdentity`, `GroupInviteStanding`) into
+`lib/messaging`; `PeerDisplaySources` into `feature/conversations`, `PeopleDiscoveryContactAdapt` into
+`feature/ai`.
+
