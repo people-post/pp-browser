@@ -7,7 +7,7 @@ two peers of one capability, or an edge against the order, may not — that cros
 
 | Peer (today) | Path | CMake |
 |--------------|------|-------|
-| people | `lib/people/` | `pp_lib_people` |
+| people | [`capabilities/people/src/lib/people/`](../../capabilities/people/src/lib/people/) (CR022) | `pp_lib_people` |
 | media | `lib/media/` | `pp_lib_media` |
 | net | `lib/net/` | `pp_lib_net` |
 | ui | `lib/ui/` | `pp_lib_ui` (product shell: theme/catalogs/input) |

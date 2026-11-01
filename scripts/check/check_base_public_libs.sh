@@ -43,8 +43,9 @@ def peer_of(lib):
 fail = 0
 # Every pp_lib_* name in a peer's (non-test) CMake — helper PUBLIC_LIBS, variables, raw
 # target_link_libraries — must belong to that peer. Sub-libraries count as their peer.
-lib_root = root / "src" / "lib"
-for peer_dir in sorted(p for p in lib_root.iterdir() if p.is_dir()):
+# src/lib and the capability folders' lib/ (capabilities/<name>/src mirrors src/, CR022).
+lib_roots = [root / "src" / "lib", *sorted((root / "capabilities").glob("*/src/lib"))]
+for peer_dir in sorted(p for lib_root in lib_roots for p in lib_root.iterdir() if p.is_dir()):
     owner = f"pp_lib_{peer_dir.name}"
     if owner not in lib_peers:
         continue

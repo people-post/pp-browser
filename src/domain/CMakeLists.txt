@@ -9,7 +9,6 @@ add_subdirectory(call_media)
 
 # The rest need the full product libs (not in headless configures).
 if(NOT PP_BROWSER_HEADLESS)
-  add_subdirectory(peers)
   add_subdirectory(attachments)
   add_subdirectory(delivery)
 endif()

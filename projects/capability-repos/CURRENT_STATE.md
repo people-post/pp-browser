@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3 waits for a second app
+**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people moved
 
 ## Done
 
@@ -72,7 +72,13 @@
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
+- **P3, capability folders (CR022):** people in `capabilities/people/src/` (`lib/people`, `domain/peers`,
+  `common/directory` → `pp_people_common`); the gate and include checks read the folders
+  (`scripts/check/source_trees.sh`) and the gate fails on a foreign path; its 137 tests are labelled
+  `capability:people`, and a PR that touches neither the folder nor the base skips them.
+
 ## Next
 
-1. Contracts repo (CR010) when convenient.
-2. P3 (capability targets, namespaces) when a second app needs a capability.
+1. The other capability folders, in order: net, social, delivery, pricing, messaging, calls, broadcast, node.
+2. Contracts repo (CR010) when convenient.
+3. P3's namespaces when a second app needs a capability.

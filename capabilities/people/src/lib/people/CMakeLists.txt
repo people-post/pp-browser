@@ -30,6 +30,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
 pp_browser_add_lib_library(pp_lib_people
   SOURCES ${PP_DOMAIN_PEOPLE_SOURCES}
   PUBLIC_LIBS
+    pp_people_common
     pp_foundation_error
     pp_foundation_crypto
     pp_foundation_identity

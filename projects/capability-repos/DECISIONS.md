@@ -381,3 +381,28 @@ and the ledger apps share it. Since CR020 those message formats are what the del
 (`MessageCipher`, `EncryptedPayload`) stays in the base, with the identity formats people uses (`HybridKem`,
 `KemKeyBinding`, `MlDsa`'s `account:` ID, recovery) and the profile's at-rest crypto (vault, PIN, `FileCipher`).
 
+
+## CR022 — Capabilities move into `capabilities/<name>/` before any repo split
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); implementation started (people first)
+
+**Context:** P0–P2 made the capabilities clean in place, but they are still paths scattered under `src/`, held apart
+by a script. Moving one into a repo (CR005 / CR006) would be a large change in one step, and pp-browser's CI runs
+every capability's unit tests on every PR whatever it touched. `third_party/` was considered and rejected: it means
+external code nobody edits, which the checks, formatting and lint skip.
+
+**Decision:**
+- Each capability gets a top-level folder, `capabilities/<name>/`, whose `src/` mirrors the tree it came from
+  (`capabilities/people/src/lib/people/…`), so include paths do not change. Its `CMakeLists.txt` adds that `src/`
+  as an include root of its own targets and is added from `src/CMakeLists.txt` before the libs that use it.
+- The capability gate reads every capability folder too, and fails when a folder holds another capability's paths.
+  Once every capability has moved out of `src/`, a capability's targets see only the include roots below it, and the
+  compiler enforces the order as well.
+- A capability's tests carry the CTest label `capability:<name>` (set once by the folder). CI's changes filter has an
+  output per moved capability that is true when the folder or anything below it changes (the base, `cmake/`,
+  `third_party/`); a PR whose filter is false skips those tests (`ctest -LE`). Pushes to develop and main run every
+  test.
+- A later split of a capability into the capabilities repo is a `git subtree split capabilities/<name>`.
+
+**Order:** people, net, social, delivery, pricing, messaging, calls, broadcast, node — one change each, as in P1.

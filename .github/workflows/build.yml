@@ -44,6 +44,7 @@ jobs:
       src: ${{ steps.filter.outputs.src }}
       apple: ${{ steps.filter.outputs.apple }}
       android: ${{ steps.filter.outputs.android }}
+      people: ${{ steps.filter.outputs.people }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,6 +55,7 @@ jobs:
           filters: |
             src:
               - 'src/**'
+              - 'capabilities/**'
               - 'cmake/**'
               - 'CMakeLists.txt'
               - 'third_party/**'
@@ -68,6 +70,11 @@ jobs:
               - 'src/**/*_Apple.*'
               - 'src/**/*.mm'
               - 'src/**/CMakeLists.txt'
+              - 'capabilities/**/*_Darwin.*'
+              - 'capabilities/**/*_Ios.*'
+              - 'capabilities/**/*_Apple.*'
+              - 'capabilities/**/*.mm'
+              - 'capabilities/**/CMakeLists.txt'
               - 'cmake/**'
               - 'CMakeLists.txt'
               - 'third_party/**'
@@ -77,6 +84,19 @@ jobs:
             android:
               - 'android/**'
               - 'src/**'
+              - 'capabilities/**'
+              - 'cmake/**'
+              - 'CMakeLists.txt'
+              - 'third_party/**'
+              - '.github/workflows/build.yml'
+            # A moved capability's tests (CTest label capability:<name>) run on a PR only when its folder or
+            # something below it changed: the base (src/common, src/foundation), cmake/, third_party/
+            # (projects/capability-repos CR022). A capability's filter lists the folders of those below it.
+            people:
+              - 'capabilities/people/**'
+              - 'src/common/**'
+              - 'src/foundation/**'
+              - 'src/CMakeLists.txt'
               - 'cmake/**'
               - 'CMakeLists.txt'
               - 'third_party/**'
@@ -218,7 +238,17 @@ jobs:
         shell: bash
         env:
           TRACE_DEBUG: "1"
-        run: ctest --test-dir build -C Release --output-on-failure
+          # A PR skips the tests of the capabilities it does not touch (CR022); pushes run every test.
+          PP_UNCHANGED_CAPABILITIES: >-
+            ${{ github.event_name == 'pull_request' && needs.changes.outputs.people != 'true' && 'people' || '' }}
+        run: |
+          skip=($PP_UNCHANGED_CAPABILITIES)
+          if [ ${#skip[@]} -gt 0 ]; then
+            echo "Unchanged capabilities, tests skipped: ${skip[*]}"
+            ctest --test-dir build -C Release --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
+          else
+            ctest --test-dir build -C Release --output-on-failure
+          fi
 
       - name: Smoke run (Linux)
         if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Linux')

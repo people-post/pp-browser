@@ -13,6 +13,7 @@ pp_browser_add_lib_library(pp_lib_pricing
     PaymentPromiseWireCodec.cpp
     PricingControlFamilies.cpp
   PUBLIC_LIBS
+    pp_people_common
     pp_foundation_error
     pp_foundation_crypto)
 

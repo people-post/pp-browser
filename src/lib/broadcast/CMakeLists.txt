@@ -15,6 +15,7 @@ pp_browser_add_lib_library(pp_lib_broadcast
     PeerAnnouncePublisher.cpp
     PeerAnnounceRpcCodec.cpp
   PUBLIC_LIBS
+    pp_people_common
     pp_lib_calls
     pp_foundation_error
     pp_foundation_crypto

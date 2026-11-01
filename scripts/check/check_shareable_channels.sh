@@ -28,7 +28,8 @@ FORBIDDEN = re.compile(
 )
 
 bad = []
-for path in sorted((root / "src").rglob("*")):
+# src/ and the capability folders (capabilities/<name>/src mirrors src/, CR022).
+for path in sorted([*(root / "src").rglob("*"), *(root / "capabilities").rglob("*")]):
     if path.suffix not in {".h", ".hpp", ".cpp", ".cc", ".mm", ".inc"}:
         continue
     rel = path.relative_to(root).as_posix()

@@ -1,7 +1,6 @@
 include(PpBrowserBase)
 
 # Lib peers (strict independence).
-add_subdirectory(people)
 # net is available in headless too (pp-node uses HTTP helpers).
 add_subdirectory(net)
 

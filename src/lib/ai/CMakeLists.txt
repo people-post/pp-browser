@@ -23,6 +23,7 @@ pp_browser_add_lib_library(pp_lib_ai
     TurnTrace.cpp
     WorkingSetPolicy.cpp
   PUBLIC_LIBS
+    pp_people_common
     pp_foundation_crypto
     pp_foundation_error
     pp_foundation_platform_core

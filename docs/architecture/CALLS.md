@@ -603,7 +603,7 @@ is live until the hop attaches (`LiveCalls::NoteDirectHandedToHop`).
 | `src/lib/calls/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/lib/calls/CallMediaKeyExchange.*` | Epoch keys between the peers (mint, wrap, send, take in) |
 | `src/feature/calls/CallInitiationBilling.*` | P001 initiation pricing on invite / accept (offer, payable checks, our floor, per-peer book) |
-| `src/lib/people/PeerAccountBook.*` | Mesh PeerId ↔ account learned from invite / accept (in memory, written back onto the contact); CSM asks it for stream ids and dial keys |
+| `capabilities/people/src/lib/people/PeerAccountBook.*` | Mesh PeerId ↔ account learned from invite / accept (in memory, written back onto the contact); CSM asks it for stream ids and dial keys |
 | pp-cpp-mesh `reach/PeerMediaRelayCaps.h` | Which mesh peers advertised media_relay (V030), from their caps ads |
 | pp-cpp-mesh `reach/SignalingPunchExchange.*`, `CircuitR1Hint.h` | H012 punch over a signaling carrier (offer / answer epochs, bursts); H011 R1 hint (kept until a carrier exists) — carrier-agnostic |
 | `src/feature/calls/CallReachSignals.*` | Call-control as their carrier to the active call's peer, plus the K005 caps update; CSM routes the inbound types to it |
@@ -626,7 +626,7 @@ is live until the hop attaches (`LiveCalls::NoteDirectHandedToHop`).
 | `src/lib/calls/CallMediaControlCodec.*` | The 1:1 call-media control channel's wire messages (hello, migrate / path_add and acks, path release, heartbeat) |
 | `src/lib/calls/CallHopJoinLogic.*` | Pure group-path decisions as people join: which call the hop serves, our accept / a peer's accept / the roster's joined count, an inbound attach on a 1:1, a joiner's hop failure |
 | `src/lib/calls/CallControlCodec.*` | Wire JSON for call controls |
-| `src/lib/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
+| `capabilities/people/src/lib/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
 | pp-cpp-mesh `l4/media_relay/serve/MediaRelayServer.*` | Blind SFU |
 
 ---

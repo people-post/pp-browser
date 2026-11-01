@@ -131,7 +131,7 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 
 | Gate | Contents |
 |------|----------|
-| **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched |
+| **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched; a capability folder's unit tests (`capability:<name>`) only when the PR touches it or what is below it ([SRC_LAYOUT § Capability folders](../architecture/SRC_LAYOUT.md#capability-folders)) |
 | **Nightly** | The app lab — `--suite app` and `--suite app-nat` on develop ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |

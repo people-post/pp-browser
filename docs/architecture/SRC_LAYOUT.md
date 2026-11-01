@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `lib` implements independent product capabilities; `domain` combines them into capabilities features share; `feature` composes those into what the user does; **`gui` presents** them; `app` constructs the graph.
 
-> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt).
+> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). A capability moved out of `src/` keeps the same paths under [`capabilities/<name>/src/`](#capability-folders) (`capabilities/people/src/lib/people/…`); every path in this file reads the same there.
 
 ## Layers
 
@@ -108,6 +108,22 @@ through `common/Localized.h` (the app's catalogs answer). Convenience bundles
 the map and the order and checks includes and CMake links (CR016); edges still to cut are in
 `capability_edges_allowlist.txt`, which may only shrink. A new directory under `lib/`, `domain/` or
 `feature/` must be added to the map.
+
+### Capability folders
+
+A capability moves out of `src/` into its own folder, `capabilities/<name>/`, before any repo split
+([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
+Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`).
+
+- `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
+  sets `PP_BROWSER_CAPABILITY`, builds its `common/` part (`pp_<name>_common`, whose include root is that
+  `src/`) and adds its lib and domain folders; `src/CMakeLists.txt` adds the folders in the capability order,
+  after foundation.
+- The gate and the include checks read every folder as they read `src/` (`scripts/check/source_trees.sh`); the
+  gate fails when a folder holds another capability's path.
+- Its tests carry the CTest label `capability:<name>`. A PR skips them (`ctest -LE`) when neither the folder nor
+  anything below it changed (CI's changes filter, one output per folder); pushes to develop and main run all.
+- A later split into the capabilities repo is a `git subtree split` of the folder.
 
 ## What `src/common` provides
 
@@ -253,7 +269,8 @@ Cross-controller wiring (tool registration, tab ticks) lives in `src/app/`. Sett
 | `pp_pbr_common` | common (in-tree) |
 | `pp_foundation_*` | foundation modules under `src/foundation/` |
 | `pp_foundation` | foundation aggregate (`INTERFACE`) |
-| `pp_lib_*` | lib peers under `src/lib/` |
+| `pp_lib_*` | lib peers under `src/lib/` (or a capability folder's `src/lib/`) |
+| `pp_<capability>_common` | a capability folder's `common/` sources (`pp_people_common`) |
 | `pp_lib` | lib aggregate (`INTERFACE` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt); peers for this build) |
 | `pp_amp_l1` / `pp_amp_l2` / `pp_amp_l3` / `pp_amp_link` | Amp (FetchContent pp-cpp-amp) |
 | `pp_base` | convenience product stack (`INTERFACE` = foundation + Amp + `pp_lib`) |
@@ -273,10 +290,12 @@ Fork product profiles: pp-cpp-ui `PpCppUi.cmake`. Shared `third_party` wiring: `
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under the owning module’s `tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (foundation/lib tests must not depend on `pp_feature`).
 - Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on.
+- Tests in a capability folder are labelled `capability:<name>` (`ctest -L capability:people`), set by the folder.
 
 ## Includes
 
-Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
+Include roots: `${CMAKE_SOURCE_DIR}/src`, and each capability folder's `src/` (public on its targets). Use
+layer-prefixed paths, the same in either root:
 
 ```cpp
 #include "common/ValueJson.h"

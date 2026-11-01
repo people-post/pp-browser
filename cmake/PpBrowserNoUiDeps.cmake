@@ -139,6 +139,7 @@ set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core|tls)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_lib_(people|net)$"
+  "^pp_people_common$"
   "^pp_domain_(registration|node|node_ledger)$"
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"

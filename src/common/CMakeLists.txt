@@ -5,11 +5,8 @@ add_library(pp_pbr_common STATIC
   media/CallMediaHealth.cpp
   chat/ChatPayloadTypes.cpp
   chat/MessagingJson.cpp
-  directory/PeopleDiscoveryBlocks.cpp
   chat/RelayStreamKey.cpp
   chat/SystemControl.cpp
-  directory/DirectoryJson.cpp
-  directory/KeyCard.cpp
   ImageMetadata.cpp
   Localized.cpp
   IPushDeviceRegistrar.cpp
