@@ -1,6 +1,6 @@
 #include "foundation/platform/AndroidPushDeviceRegistrar.h"
 
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 
 #include <mutex>
 #include <string>

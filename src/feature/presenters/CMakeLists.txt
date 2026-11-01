@@ -4,6 +4,7 @@
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
     CallPresenter.cpp
+    CallSystemUiBridge.cpp
     ChatPresenter.cpp
     GroupEventText.cpp
   PUBLIC_LIBS

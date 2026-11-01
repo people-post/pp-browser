@@ -2,7 +2,7 @@
 
 #include "common/Metrics.h"
 #include "common/ShareableLine.h"
-#include "foundation/platform/os/OsPeakRss.h"
+#include "foundation/diagnostics/OsPeakRss.h"
 
 #include <chrono>
 #include <cstdint>

@@ -16,6 +16,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
 #include "lib/net/BlobQuota.h"
+#include "lib/net/ProfileIconClient.h"
 #include "lib/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "lib/people/ProfileIdentityView.h"
@@ -295,7 +296,7 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
-  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
   Roe<void> DeleteRelayBlobById(const std::string& blob_id);

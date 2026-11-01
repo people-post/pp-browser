@@ -62,6 +62,7 @@
 #include "feature/conversations/HubMeshOwner.h"
 #include "feature/conversations/HubSettings.h"
 #include "lib/delivery/BackendClientSet.h"
+#include "lib/net/ProfileIconClient.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -295,7 +296,8 @@ public:
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
-  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  /** Uploads an icon the app prepared (decoded, sized, encoded: PrepareProfileIconFromFile). */
+  Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);

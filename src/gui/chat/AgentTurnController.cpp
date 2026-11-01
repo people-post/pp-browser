@@ -36,7 +36,7 @@
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/AttachmentCache.h"

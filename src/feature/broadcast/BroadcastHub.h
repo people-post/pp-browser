@@ -42,6 +42,8 @@ struct BroadcastMeshDeps {
   std::function<Roe<void>(const BroadcastTipDraft& draft)> announce;
   /** Where `announce` must run (the product: UI, which owns mesh messaging). Empty = inline. */
   std::function<void(std::function<void()>)> post_announce;
+  /** The app runs on a phone (B009: one low video level; a desktop also the high one). */
+  bool mobile = false;
 };
 
 /** What the GUI reads, published by the hub on the media-sessions owner after every step. */

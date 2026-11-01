@@ -3,7 +3,6 @@
 # is ifstream-only; mobile packaged reads use SDL (linked onto core below).
 set(_pp_platform_core_sources
   DeploymentProfile.cpp
-  ImageMetadata.cpp
   PickedFileName.cpp
   Platform.cpp
   PlatformLogDefaults.cpp
@@ -32,7 +31,6 @@ set(_pp_platform_gui_sources
   IncomingLink.cpp
   IosAssetLocator.cpp
   IosPathProvider.cpp
-  IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
@@ -76,7 +74,6 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
     os/OsProcessStats_Default.cpp
-    os/OsPeakRss_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
   )
@@ -93,7 +90,6 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     os/OsExecutablePath_Darwin.cpp
     os/OsLocale_Darwin.mm
     os/OsProcessStats_Default.cpp
-    os/OsPeakRss_Posix.cpp
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
   )
@@ -120,7 +116,6 @@ else()
     os/OsExecutablePath_Linux.cpp
     os/OsDownloadMark_Default.cpp
     os/OsProcessStats_Linux.cpp
-    os/OsPeakRss_Posix.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
   )

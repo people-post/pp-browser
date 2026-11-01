@@ -3,12 +3,23 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/VideoPosterExtractor.h"
+#include "foundation/platform/os/OsDownloadMark.h"
+#include "lib/messaging/AttachmentPlatform.h"
 
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
 ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), broadcast_(*hub_) {
+  // What the attachment cache asks of the OS: the platform's (quarantine mark, video posters).
+  SetAttachmentPlatform({
+      .mark_downloaded = [](const std::string& path) { return os::MarkFileAsDownloaded(path); },
+      .video_poster_jpeg = [](const std::string& path, int max_dimension) {
+        return ExtractVideoPosterJpeg(path, max_dimension);
+      },
+      .soft_poster_jpeg = [](int max_dimension) { return SoftVideoPosterJpeg(max_dimension); },
+  });
   hub_->SetMeshOwner(&mesh_);
   hub_->SetHost({.mobile = Platform::IsMobile(), .desktop = Platform::IsDesktop()});
   // An empty endpoint in the profile's config falls back to the platform's defaults (the app's to know).

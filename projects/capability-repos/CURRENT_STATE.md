@@ -60,6 +60,8 @@
   value, the effective mesh config published to calls — 24 include / 6 link sites left (messaging 11, calls 9,
   base 3, broadcast 1): `Tr()` (9) and platform mechanisms (push registrar, call system UI, user hints, media and
   file helpers, assets), plus config secrets in the base.
+- **P2, platform mechanisms:** into the base, behind ports, or to the app (see CR015's notes) — 14 include / 4 link
+  sites left: `Tr()` (messaging 4, calls 4, base 2), the platform's user-hint keys (calls 2), config secrets (base 1).
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

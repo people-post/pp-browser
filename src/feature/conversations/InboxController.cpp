@@ -5,7 +5,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/platform/ImageMetadata.h"
+#include "common/ImageMetadata.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"

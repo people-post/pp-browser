@@ -51,7 +51,6 @@
 #include "lib/net/ProfileIconFetch.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/people/ProfileIconCache.h"
-#include "foundation/platform/ProfileIconImagePrep.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -1855,7 +1854,7 @@ void ConversationsHub::ResumeGroupRosterChecks() {
   }
 }
 
-Roe<void> ConversationsHub::UploadProfileIconFromPath(const std::string& path) {
+Roe<void> ConversationsHub::UploadProfileIcon(const PreparedProfileIcon& prepared) {
   if (!IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
@@ -1865,15 +1864,6 @@ Roe<void> ConversationsHub::UploadProfileIconFromPath(const std::string& path) {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  auto encoded = PrepareProfileIconFromFile(path);
-  if (!encoded) {
-    return encoded.error();
-  }
-  PreparedProfileIcon prepared;
-  prepared.bytes = std::move(encoded.value().bytes);
-  prepared.content_type = encoded.value().content_type;
-  prepared.kind = encoded.value().kind;
-  prepared.file_extension = encoded.value().file_extension;
   auto uploaded = UploadPreparedProfileIcon(*blob_, Identity(), data_dir_, prepared);
   if (!uploaded) {
     return uploaded.error();

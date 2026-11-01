@@ -1,4 +1,4 @@
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 
 #include <mutex>
 #include "common/PbrCompat.h"

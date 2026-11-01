@@ -830,8 +830,8 @@ Roe<void> ConversationsFacade::SaveProfileNickname(const std::string& nickname) 
 
 Roe<void> ConversationsFacade::RegisterIdentity(const std::string& nickname) { return hub_.RegisterIdentity(nickname); }
 
-Roe<void> ConversationsFacade::UploadProfileIconFromPath(const std::string& path) {
-  return hub_.UploadProfileIconFromPath(path);
+Roe<void> ConversationsFacade::UploadProfileIcon(const PreparedProfileIcon& icon) {
+  return hub_.UploadProfileIcon(icon);
 }
 
 Roe<void> ConversationsFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }

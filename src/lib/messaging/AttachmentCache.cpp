@@ -7,8 +7,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
-#include "foundation/platform/VideoPosterExtractor.h"
-#include "foundation/platform/os/OsDownloadMark.h"
+#include "lib/messaging/AttachmentPlatform.h"
 #include "common/Logger.h"
 #include "foundation/crypto/CryptoUtil.h"
 
@@ -25,6 +24,30 @@
 namespace pbr {
 
 namespace {
+
+/** The poster's size bound (the extractor's default before the hook). */
+constexpr int kVideoPosterMaxDimension = 480;
+
+Roe<void> MarkDownloaded(const std::string& path) {
+  const AttachmentPlatform platform = CurrentAttachmentPlatform();
+  return platform.mark_downloaded ? platform.mark_downloaded(path) : Roe<void>{};
+}
+
+Roe<std::vector<uint8_t>> VideoPoster(const std::string& video_path) {
+  const AttachmentPlatform platform = CurrentAttachmentPlatform();
+  if (!platform.video_poster_jpeg) {
+    return Error("No video poster on this platform");
+  }
+  return platform.video_poster_jpeg(video_path, kVideoPosterMaxDimension);
+}
+
+Roe<std::vector<uint8_t>> SoftPoster() {
+  const AttachmentPlatform platform = CurrentAttachmentPlatform();
+  if (!platform.soft_poster_jpeg) {
+    return Error("No video poster on this platform");
+  }
+  return platform.soft_poster_jpeg(kVideoPosterMaxDimension);
+}
 
 std::string ThreadsRoot(const std::string& profile_dir) {
   return (std::filesystem::path(profile_dir) / "threads").string();
@@ -429,7 +452,7 @@ Roe<std::string> StoreAttachmentViewBytes(const std::string& profile_dir, const 
   if (auto written = WriteBytesAtomic(view_path, plaintext); !written) {
     return written.error();
   }
-  if (auto marked = os::MarkFileAsDownloaded(view_path.string()); !marked) {
+  if (auto marked = MarkDownloaded(view_path.string()); !marked) {
     logging::getLogger("AttachmentCache").warning << marked.error().message << ": " << view_path.filename().string();
   }
   return view_path.string();
@@ -461,7 +484,7 @@ Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const 
     return written.error();
   }
   // Best effort: a failed mark must not lose the file the user is waiting for.
-  if (auto marked = os::MarkFileAsDownloaded(view_path.string()); !marked) {
+  if (auto marked = MarkDownloaded(view_path.string()); !marked) {
     logging::getLogger("AttachmentCache").warning << marked.error().message << ": " << view_path.filename().string();
   }
   return view_path.string();
@@ -509,13 +532,13 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
 
   Roe<std::vector<uint8_t>> jpeg = [&]() -> Roe<std::vector<uint8_t>> {
     if (!AttachmentAllowsInlinePrivateView(mime, known_byte_length, max_receive_bytes)) {
-      return SoftVideoPosterJpeg();
+      return SoftPoster();
     }
     auto view = EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename, load_plaintext);
     if (!view) {
       return view.error();
     }
-    return ExtractVideoPosterJpeg(*view);
+    return VideoPoster(*view);
   }();
   if (!jpeg) {
     return jpeg.error();

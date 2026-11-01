@@ -10,6 +10,8 @@ add_library(pp_pbr_common STATIC
   chat/SystemControl.cpp
   directory/DirectoryJson.cpp
   directory/KeyCard.cpp
+  ImageMetadata.cpp
+  IPushDeviceRegistrar.cpp
   MeshConfig.cpp
   SchemaVersion.cpp
   ServiceEndpoints.cpp

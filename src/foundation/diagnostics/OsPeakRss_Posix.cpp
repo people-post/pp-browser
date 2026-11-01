@@ -1,4 +1,4 @@
-#include "foundation/platform/os/OsPeakRss.h"
+#include "foundation/diagnostics/OsPeakRss.h"
 
 #include <sys/resource.h>
 

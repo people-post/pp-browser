@@ -2,6 +2,7 @@ pp_browser_add_lib_library(pp_lib_messaging
   SOURCES
     AttachmentCache.cpp
     AttachmentDownloadPolicy.cpp
+    AttachmentPlatform.cpp
     AttachmentLimits.cpp
     AttachmentPlaintextMemoryCache.cpp
     AttachmentSuppressionStore.cpp
@@ -47,7 +48,6 @@ pp_browser_add_lib_library(pp_lib_messaging
     pp_foundation_error
     pp_foundation_crypto
     pp_foundation_identity
-    pp_foundation_platform
     sodium
     SQLite::SQLite3)
 

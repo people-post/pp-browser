@@ -9,6 +9,7 @@
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/ProfileIconImagePrep.h"
 #include "lib/net/BriefGuestLlmClient.h"
 
 #include "foundation/crypto/ConfigSecretsStore.h"
@@ -623,8 +624,18 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       });
     });
   };
-  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) {
-    return facade.UploadProfileIconFromPath(path);
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) -> Roe<void> {
+    // The image is the app's to decode and size; the hub uploads what comes out.
+    auto encoded = PrepareProfileIconFromFile(path);
+    if (!encoded) {
+      return encoded.error();
+    }
+    PreparedProfileIcon prepared;
+    prepared.bytes = std::move(encoded->bytes);
+    prepared.content_type = std::move(encoded->content_type);
+    prepared.kind = std::move(encoded->kind);
+    prepared.file_extension = std::move(encoded->file_extension);
+    return facade.UploadProfileIcon(prepared);
   };
   settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
   settings_commands.plan_relay_quota_recovery = [&facade](const Error& quota_error) {

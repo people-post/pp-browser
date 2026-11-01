@@ -1,4 +1,4 @@
-#include "foundation/platform/ImageMetadata.h"
+#include "common/ImageMetadata.h"
 
 #include <cstring>
 #include <fstream>

@@ -1,7 +1,7 @@
 #include "foundation/platform/AiImagePrep.h"
 
 #include "foundation/platform/ImageEncode.h"
-#include "foundation/platform/ImageMetadata.h"
+#include "common/ImageMetadata.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>

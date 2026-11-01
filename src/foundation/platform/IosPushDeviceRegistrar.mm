@@ -1,6 +1,6 @@
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 #if defined(PP_IOS_CALLKIT)
 #include "foundation/platform/IosCallSystemUi.h"
 #endif

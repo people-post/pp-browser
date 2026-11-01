@@ -15,6 +15,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "gui/CallStatusHint.h"
@@ -62,6 +63,7 @@ CallController::CallController()
                               .now_ms = {},
                           }) {
   redirectLogger("CallController");
+  CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
   CallPresenter::Callbacks callbacks;
   callbacks.on_changed = [this]() { Render(); };
   callbacks.notify = [this](const CallNotice& notice) { ShowNotice(notice); };

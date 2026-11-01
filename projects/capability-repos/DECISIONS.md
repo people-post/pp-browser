@@ -233,6 +233,13 @@ publishes the mesh config as it applies on the device, and calls read that. The 
 (`EffectiveBootstrapPeers`) is pure on the normalized config the app hands over. The Brief LLM key rotation takes
 the service's URL from the app.
 
+**Platform mechanisms (2026-11-01):** pure or POSIX mechanisms into the base (`common/ImageMetadata`,
+`foundation/diagnostics/OsPeakRss`); the push registrar's interface and registry into `common/` (the platform
+implements it); the attachment cache's quarantine mark and video posters behind `lib/messaging/AttachmentPlatform`,
+which `ProductStack` installs; the profile icon is prepared by the app and uploaded by the hub; the ring sound's path
+is handed to `CallRingtone`; broadcast takes the phone flag as a value; `CallSystemUiBridge` is a presenter
+(`feature/presenters`, CR019).
+
 ## CR016 — The gate covers links, not only includes
 
 **Date:** 2026-11-01  
