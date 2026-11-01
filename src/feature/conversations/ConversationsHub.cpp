@@ -405,6 +405,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_->SetStopping(shutdown_requested_.load(std::memory_order_acquire));
   mesh_->SetAppProtocols(ProductMeshProtocols());  // advertised from the first advertisement on
   mesh_->SetAddressDisclosure(&address_disclosure_);
+  mesh_->SetOnUdpSocketCheck([this](const mesh::UdpSocketCheck& check) { ReportUdpSocketCheck(log(), check); });
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
     mesh_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
@@ -2903,6 +2904,10 @@ void ConversationsHub::OnAppBackground() {
 }
 
 void ConversationsHub::OnAppForeground() {
+  // #416: iOS can leave the mesh's UDP socket dead across a suspend; the mesh reopens it.
+  if (mesh_ready_ && mesh_) {
+    mesh_->EnsureUdpSocketAlive(mesh::UdpSocketCheckReason::Requested);
+  }
   // The open chat's peer is the one the user is about to talk to: warm its link.
   if (!messaging_ready_ || !mesh_messaging_ || !inbox_) {
     return;
