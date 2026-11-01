@@ -1,14 +1,11 @@
 #pragma once
 
-#include "lib/messaging/HttpRelayClient.h"
+#include "lib/delivery/HttpRelayClient.h"
 #include "common/Secret.h"
 
 #include "common/chat/SystemControl.h"
 
-#include "foundation/data/Config.h"
-#include "foundation/data/MeshRole.h"
-#include "foundation/data/SessionStore.h"
-#include "foundation/data/UserPreferences.h"
+#include "common/MeshConfig.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AccountStateCodec.h"
 #include "lib/net/HttpLockerClient.h"
@@ -37,8 +34,8 @@
 #include "common/Lifetime.h"
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "mesh/media_plane/MeshMediaRelay.h"
-#include "foundation/platform/NetworkMonitor.h"
-#include "common/chat/AttachmentDownloadPolicy.h"
+#include "common/NetworkChange.h"
+#include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "domain/attachments/LargeTransferLane.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
@@ -58,11 +55,14 @@
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/ReachabilityEngine.h"
-#include "mesh/discovery/MeshDirectoryCache.h"
+#include "mesh/types/MeshConfigTypes.h"
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
 #include "feature/conversations/HubMeshOwner.h"
+#include "feature/conversations/HubSettings.h"
+#include "lib/delivery/BackendClientSet.h"
+#include "lib/net/ProfileIconClient.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -106,8 +106,10 @@ class SqlitePskSessionStore;
  */
 class ConversationsHub : public Module {
 public:
-  /** Hot-reloadable network / mesh slice projected from AppConfig. */
+  /** Hot-reloadable network / mesh slice, projected by the app from its config (feature/product). */
   struct NetworkConfig {
+    /** The whole mesh slice as the app now has it (normalized): a mesh change applies all of it. */
+    MeshConfig mesh;
     ServiceEndpointConfig relay;
     DirectoryConfig directory;
     ServiceEndpointConfig registration;
@@ -146,16 +148,13 @@ public:
     bool operator!=(const NotificationPrefs& other) const { return !(*this == other); }
   };
 
-  static NetworkConfig ProjectNetwork(const AppConfig& config);
-  static PolicyPrefs ProjectPolicy(const ProfilePreferences& prefs);
-  static NotificationPrefs ProjectNotifications(const ProfilePreferences& prefs);
 
   ConversationsHub();
   ~ConversationsHub();
 
   /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsEngine). */
-  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
-  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
+  Roe<void> Initialize(const HubSettings& settings, const std::string& profile_data_dir);
+  Roe<void> Reinitialize(const HubSettings& settings, const std::string& profile_data_dir);
   void Shutdown();
   /**
    * Quit when the runtime teardown quiesce timed out: persist stores but free nothing
@@ -180,7 +179,6 @@ public:
   /** Undo RequestShutdown when the teardown was abandoned (profile reset quiesce timed out). */
   void CancelShutdownRequest();
 
-  void BindSessionStore(SessionStore& store);
 
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
   void BindSecrets(ProfileSecretsEngine& secrets);
@@ -298,7 +296,8 @@ public:
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
-  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  /** Uploads an icon the app prepared (decoded, sized, encoded: PrepareProfileIconFromFile). */
+  Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
@@ -349,7 +348,8 @@ public:
   void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);
   void EnsureContactIconCached(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
-  Roe<void> RotateBriefLlmKey();
+  /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
+  Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
   Roe<void> SendChargeRequired(const std::string& peer_identity,
@@ -385,7 +385,8 @@ public:
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   void TickReachabilityUx();
-  void RefreshMeshCapabilities();
+  /** The mesh slice changed in what it hosts / serves: take `mesh` and rewire the mesh objects. */
+  void RefreshMeshCapabilities(const MeshConfig& mesh);
   void WireAttachmentDownloads();
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
@@ -402,6 +403,15 @@ public:
    * Initialize, outlives the hub's Shutdown. None: no mesh, relay messaging only.
    */
   void SetMeshOwner(HubMeshOwner* owner) { mesh_owner_ = owner; }
+  /** What the app runs on (the app's to know): a phone is always a mesh client and is reached by push. */
+  struct Host {
+    bool mobile = false;
+    bool desktop = true;
+  };
+  /** Set before Initialize. */
+  void SetHost(Host host) { host_ = host; }
+  /** The endpoints an empty config entry falls back to (the app's platform defaults); set before Initialize. */
+  void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -440,10 +450,10 @@ private:
   void BindCardAskFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
-  void InstallOrgBackendClients(const AppConfig& config);
-  void UpdateOrgBackendClients(const AppConfig& config);
+  void InstallOrgBackendClients(const HubSettings& settings);
+  void UpdateOrgBackendClients(const HubSettings& settings);
   void WireRelayAuthSigner();
-  Roe<void> StartMesh(const AppConfig& config);
+  Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();
   void PublishMeshConfig();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
@@ -493,9 +503,9 @@ private:
 
   void SyncLanMdnsAdvertisement();
   void OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer& peer);
-  /** k5: OS network monitor lives with the mesh services (started / stopped with them). */
-  void StartNetworkMonitor();
-  void StopNetworkMonitor();
+  /** k5: the network watch (the mesh owner's OS monitor) lives with the mesh services (started / stopped with them). */
+  void StartNetworkWatch();
+  void StopNetworkWatch();
   /** k6: a reachability probe finished — a moved observed address is mobility churn. UI thread. */
   void NoteObservedAddress();
   void PublishMobileCallScopedAddrs();
@@ -504,7 +514,9 @@ private:
 
   std::string data_dir_;
   std::string profile_id_;
-  AppConfig config_;  // UI (the hub's thread)
+  HubSettings config_;  // UI (the hub's thread)
+  /** The policies in force (from the settings, then Apply). */
+  PolicyPrefs policy_;
   /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
@@ -514,7 +526,6 @@ private:
    *  bound by the call stack — declared early, so it outlives them all. */
   SystemControlRegistry system_controls_;
   AgentInboundPorts agent_inbound_;
-  SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;
 
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
@@ -532,7 +543,6 @@ private:
   std::unique_ptr<ThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
-  std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   /** Account cards this device has checked and kept (profile.db). */
@@ -569,21 +579,14 @@ private:
       std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
                             const std::function<void(Roe<ThreadMessage>)>& finish);
-  std::string http_relay_url_;
-  std::string http_directory_url_;
-  std::string http_registration_url_;
-  std::unique_ptr<HttpRelayClient> http_relay_;
-  std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  std::unique_ptr<HttpRegistrationClient> http_registration_;
-  std::unique_ptr<HttpBlobClient> http_blob_;
-  /** The relay as account-locker provider (M023), next to the blob client on the registration base URL. */
-  std::unique_ptr<HttpLockerClient> http_locker_;
-  std::unique_ptr<AccountLockerWorkflow> account_locker_;
-  std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
   /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
   SwitchableDirectoryClient directory_;
+  /** The backend's clients, built from the config's endpoints (the app's defaults fill empty ones). */
+  BackendClientSet clients_{directory_};
+  /** The account locker (M023) on the backend's locker client (declared after the clients: goes first). */
+  std::unique_ptr<AccountLockerWorkflow> account_locker_;
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
@@ -605,9 +608,10 @@ private:
 
   // --- The mesh (borrowed from its owner between start and stop) + app mesh glue ----
   HubMeshOwner* mesh_owner_ = nullptr;
+  Host host_;
   mesh::MeshHost* mesh_ = nullptr;
-  std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
-  std::unique_ptr<NetworkMonitor> network_monitor_;
+  /** The mesh's owner watches the device's network for us while the mesh services run. */
+  bool watching_network_ = false;
   /** Last seed-observed public address (k6 churn). UI thread. */
   std::string last_observed_addr_;
   std::string mesh_last_error_;

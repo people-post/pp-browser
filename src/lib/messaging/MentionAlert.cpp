@@ -1,6 +1,6 @@
 #include "lib/messaging/MentionAlert.h"
 
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 
 #include <algorithm>
 #include "common/PbrCompat.h"

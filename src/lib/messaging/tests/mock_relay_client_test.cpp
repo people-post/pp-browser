@@ -1,5 +1,5 @@
 // The mock relay client the messaging tests lean on: what it answers for a history request.
-#include "lib/messaging/testing/MockRelayClients.h"
+#include "lib/delivery/testing/MockRelayClients.h"
 #include "common/chat/RelayStreamKey.h"
 
 #include <gtest/gtest.h>

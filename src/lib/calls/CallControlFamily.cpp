@@ -1,7 +1,7 @@
 #include "lib/calls/CallControlFamily.h"
 
 #include "lib/calls/CallControlCodec.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 
 #include <cstdio>
 #include <map>
@@ -69,7 +69,7 @@ std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const S
   const bool ours = message.sender_contact_id == kLocalSelfContactId;
   const std::string duration = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : std::string();
   auto line = [&](const std::string& key, std::map<std::string, std::string> args = {}) {
-    return Tr("call.summary." + key + media, args);
+    return Localized("call.summary." + key + media, args);
   };
 
   if (summary->group) {
@@ -117,24 +117,24 @@ std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message) {
   std::string outcome;
   switch (summary->outcome) {
   case CallOutcome::Completed:
-    outcome = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : Tr("call.row.failed");
+    outcome = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : Localized("call.row.failed");
     break;
   case CallOutcome::Missed:
-    outcome = Tr(summary->group ? (summary->started ? "call.row.no_answer" : "call.row.missed")
+    outcome = Localized(summary->group ? (summary->started ? "call.row.no_answer" : "call.row.missed")
                                 : (row.ours ? "call.row.no_answer" : "call.row.missed"));
     break;
   case CallOutcome::Cancelled:
-    outcome = Tr(summary->group ? (summary->started ? "call.row.cancelled" : "call.row.missed")
+    outcome = Localized(summary->group ? (summary->started ? "call.row.cancelled" : "call.row.missed")
                                 : (row.ours ? "call.row.cancelled" : "call.row.missed"));
     break;
   case CallOutcome::Declined:
-    outcome = Tr(summary->group ? "call.row.declined" : (row.ours ? "call.row.declined_by_peer" : "call.row.declined"));
+    outcome = Localized(summary->group ? "call.row.declined" : (row.ours ? "call.row.declined_by_peer" : "call.row.declined"));
     break;
   case CallOutcome::Failed:
-    outcome = Tr("call.row.failed");
+    outcome = Localized("call.row.failed");
     break;
   }
-  row.text = summary->group ? Tr("call.row.group") + " · " + outcome : outcome;
+  row.text = summary->group ? Localized("call.row.group") + " · " + outcome : outcome;
   return row;
 }
 

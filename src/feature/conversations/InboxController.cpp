@@ -4,11 +4,11 @@
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
-#include "foundation/i18n/LocalizationService.h"
-#include "foundation/platform/ImageMetadata.h"
+#include "common/Localized.h"
+#include "common/ImageMetadata.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/messaging/ChatPayloadCodec.h"
-#include "lib/messaging/DirectChatTargetFromContact.h"
+#include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -234,7 +234,7 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   if (newest && newest->id == message_id) {
     if (auto thread = store_.GetThread(thread_id); thread && *thread) {
       Thread updated = **thread;
-      updated.preview = Tr("chat.message.deleted");
+      updated.preview = Localized("chat.message.deleted");
       (void)store_.UpsertThread(updated); // updated_at untouched: deleting does not move the chat up the list
       // Reached from workers too (delete for everyone, a peer's retract): the UI refresh runs on the UI thread.
       if (on_thread_changed_) {

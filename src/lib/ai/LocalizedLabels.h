@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
 #include "lib/ai/ArticleFeedBlocks.h"
 #include "foundation/i18n/LocalizationService.h"
 

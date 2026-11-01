@@ -3,7 +3,7 @@
 #include "common/Error.h"
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/IPskSessionStore.h"
-#include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/people/PeerKemKeyStore.h"
 
 #include <cstdint>

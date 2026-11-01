@@ -13,8 +13,7 @@
 #include "lib/calls/SoftMigrateLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
 #include "lib/people/MeshHopPolicy.h"
-#include "foundation/i18n/LocalizationService.h"
-#include "foundation/platform/PlatformUserHints.h"
+#include "common/Localized.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/ProductBranding.h"
@@ -37,13 +36,13 @@ namespace {
 std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures) {
   const HopPickFailure failure = ClassifyHopPickFailures(hop_failures);
   if (failure == HopPickFailure::AllPayment) {
-    return Tr("call.error.payment_unavailable_media");
+    return Localized("call.error.payment_unavailable_media");
   }
-  std::string msg = Tr("call.error.no_media_relay_hop");
+  std::string msg = Localized("call.error.no_media_relay_hop");
   if (failure != HopPickFailure::AllUndialable) {
     return msg;
   }
-  const std::string tip = Tr(PlatformUserHints::P2pNetworkHintKey(), {{"product", kProductName}});
+  const std::string tip = Localized(kPlatformNetworkHintKey, {{"product", kProductName}});
   if (!tip.empty()) {
     msg += " ";
     msg += tip;
@@ -212,7 +211,7 @@ void CallHopMigrateWorkflow::RunSoftMigrate(const std::string& call_id, SoftMigr
       return;
     }
     if (action == SoftMigrateAction::WaitForAttach) {
-      host_.SetMediaActivity(Tr("call.status.waiting_for_media_path"));
+      host_.SetMediaActivity(Localized("call.status.waiting_for_media_path"));
       // Owner may have already fan-out CallSfuAttach; do not sit behind TailSync-starved polls.
       host_.RequestInboxSync();
       host_.NotifyRingChanged();
@@ -225,10 +224,10 @@ void CallHopMigrateWorkflow::RunSoftMigrate(const std::string& call_id, SoftMigr
 
   pick->ranked = RankHopsForSoftMigrate(*pick, prefer_hop_peer_id);
   if (pick->ranked.empty()) {
-    pick->on_done(Error(Tr("call.error.no_media_relay_hop")));
+    pick->on_done(Error(Localized("call.error.no_media_relay_hop")));
     return;
   }
-  host_.SetMediaActivity(repick ? Tr("call.status.switching_media_path") : Tr("call.status.finding_media_path"));
+  host_.SetMediaActivity(repick ? Localized("call.status.switching_media_path") : Localized("call.status.finding_media_path"));
   host_.NotifyRingChanged();
   pick->failures.reserve(pick->ranked.size());
   TryPickHop(std::move(pick), 0);
@@ -311,7 +310,7 @@ bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::
   }
   log().info << "SoftMigrate re-pick detach call_id=" << call_id << " prefer=" << prefer_hop_peer_id
              << " leaving_prefer_local=" << (in.local_hop_attached ? 1 : 0);
-  host_.SetMediaActivity(Tr("call.status.switching_media_path"));
+  host_.SetMediaActivity(Localized("call.status.switching_media_path"));
   host_.NotifyRingChanged();
   relay_deps_->relay->Detach();
   sfu_.attached = false;
@@ -381,7 +380,7 @@ void CallHopMigrateWorkflow::TryPickHop(std::shared_ptr<HopPick> pick, size_t in
 
 void CallHopMigrateWorkflow::FailHopPick(HopPick& pick) {
   if (pick.failures.empty()) {
-    pick.on_done(Error(Tr("call.error.no_media_relay_hop")));
+    pick.on_done(Error(Localized("call.error.no_media_relay_hop")));
     return;
   }
   std::string summary = "media_relay SoftMigrate failed (" + std::to_string(pick.failures.size()) + " hops): ";
@@ -426,7 +425,7 @@ void CallHopMigrateWorkflow::AttachPickedHop(std::shared_ptr<HopPick> pick, size
   if (seat_ports->IsBound()) {
     seat_ports->note_connecting(pick->call_id);
   }
-  host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
+  host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();
   CallSfuAttachDetail attach;
   attach.call_id = pick->call_id;
@@ -724,7 +723,7 @@ void CallHopMigrateWorkflow::AttachAsLocalHop(HopAttach at, std::function<void(R
   if (!relay_deps_->prefer_local_as_hop || !relay_deps_->relay->IsStarted()) {
     log().warning << "AttachLocalToSfu refused local hop (prefer_local=" << (relay_deps_->prefer_local_as_hop ? 1 : 0)
                   << " started=" << (relay_deps_->relay->IsStarted() ? 1 : 0) << ")";
-    on_done(Error(Tr("call.error.local_media_relay_unavailable")));
+    on_done(Error(Localized("call.error.local_media_relay_unavailable")));
     return;
   }
   log().info << "AttachLocalToSfu as local media_relay hop call_id=" << at.call_id;
@@ -1154,7 +1153,7 @@ void CallHopMigrateWorkflow::ScheduleSlowGuestReattach(const std::string& call_i
   // The call reads Reconnecting (not Connected: nothing flows) while the guest keeps trying at a
   // steady pace: a phone out of coverage comes back without its network moving, and waiting for
   // a move (OnLocalNetworkMoved) left it out of the call for good (lab: group_call_on_the_road).
-  host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+  host_.SetLastMediaError(Localized("call.error.hop_unreachable_guest"));
   guest_.slow_retry_pending =
       outbox_.After(kGuestSfuSlowRetry, hop_migrate_event::GuestReattachRetry{.slow = true}) != 0;
 }
@@ -1184,7 +1183,7 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
   const int attempt = guest_.reattach_attempts;
   log().warning << "Guest SFU duplex lost — reattach attempt=" << attempt
                 << " hop=" << attach.hop_peer_id << " call_id=" << call_id;
-  host_.SetMediaActivity(Tr("call.status.reconnecting"));
+  host_.SetMediaActivity(Localized("call.status.reconnecting"));
   if (attempt == 1) {
     // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
     // The seat stays Live by design (a reattach is not a demotion); Recovery() (Reattaching, then

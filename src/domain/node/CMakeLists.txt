@@ -8,7 +8,6 @@ pp_browser_add_domain_library(pp_domain_node
   PUBLIC_LIBS
     pp_mesh
     pp_lib_people
-    pp_foundation_data
     pp_foundation_runtime_core)
 
 # pp-node's ledger role (pp-ledger relay / miner on the node's mesh runtime): its own library so only

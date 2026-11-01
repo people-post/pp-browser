@@ -3,25 +3,26 @@
 #include "common/Secret.h"
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
-#include "lib/messaging/SendRelayOptions.h"
+#include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
 #include "lib/net/BlobQuota.h"
+#include "lib/net/ProfileIconClient.h"
 #include "lib/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
 #include "lib/pricing/PaymentPromiseWireCodec.h"
-#include "foundation/data/PaymentPromiseTypes.h"
+#include "lib/pricing/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/GroupInviteBatch.h"
@@ -31,7 +32,7 @@
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "feature/conversations/PeerDisplaySources.h"
-#include "lib/messaging/PskSessionCoordinator.h"
+#include "lib/delivery/PskSessionCoordinator.h"
 #include "mesh/reachability/Reachability.h"
 
 #include <cstdint>
@@ -295,7 +296,7 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
-  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
   Roe<void> DeleteRelayBlobById(const std::string& blob_id);
@@ -340,7 +341,7 @@ public:
   /** View file of a stored AI image, materialized from the CAS when missing; nullopt while locked or gone. */
   std::optional<std::string> AiImageViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                              const std::string& mime);
-  Roe<void> RotateBriefLlmKey();
+  Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
   mesh::ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();

@@ -11,6 +11,7 @@ set(_pp_lib_peers
 )
 
 if(NOT PP_BROWSER_HEADLESS)
+  add_subdirectory(delivery)
   add_subdirectory(messaging)
   add_subdirectory(calls)
   add_subdirectory(broadcast)
@@ -23,6 +24,7 @@ if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(ui)
   list(APPEND _pp_lib_peers
     pp_lib_people_cards
+    pp_lib_delivery
     pp_lib_messaging
     pp_lib_calls
     pp_lib_broadcast

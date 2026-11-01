@@ -1,6 +1,6 @@
 #include "common/chat/MessagingJson.h"
-#include "lib/messaging/EnvelopeSigner.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "lib/delivery/EnvelopeSigner.h"
+#include "lib/delivery/RelayWirePayload.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/CryptoUtil.h"
 

@@ -1,4 +1,5 @@
 #include "feature/product/BroadcastParticipant.h"
+#include "foundation/platform/Platform.h"
 
 #include "lib/broadcast/PeerAnnouncePublisher.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -114,6 +115,7 @@ void BroadcastParticipant::Rebuild(ConversationsHub& hub) {
     return;
   }
   BroadcastMeshDeps deps;
+  deps.mobile = Platform::IsMobile();
   deps.links = &chat->links;
   deps.io = chat->io;
   deps.relay = hub.MediaRelay().RelayAttachPorts();

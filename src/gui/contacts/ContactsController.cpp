@@ -8,7 +8,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/PskFingerprint.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/messaging/DirectChatTargetFromContact.h"
+#include "lib/delivery/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/ShortRelayId.h"

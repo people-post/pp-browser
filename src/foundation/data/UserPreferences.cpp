@@ -4,7 +4,7 @@
 
 #include "common/AtomicFileWrite.h"
 #include "foundation/data/ConfigJson.h"
-#include "foundation/data/SchemaVersion.h"
+#include "common/SchemaVersion.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>

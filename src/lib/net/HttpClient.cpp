@@ -2,7 +2,7 @@
 
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
-#include "foundation/platform/CurlSsl.h"
+#include "foundation/tls/CurlSsl.h"
 
 #include "common/PbrCompat.h"
 

@@ -47,11 +47,11 @@ protected:
   /** Starts the mesh on an ephemeral UDP port with no seeds: `node` with a circuit relay, no media relay. */
   mesh::MeshHost* Start(bool node) {
     HubMeshOwner::StartRequest request;
-    request.config.mesh.mesh_enabled = true;
-    request.config.mesh.amp_udp_port = 0;
-    request.config.mesh.node_enabled = node;
-    request.config.mesh.capabilities.circuit_relay = true;
-    request.config.mesh.capabilities.media_relay = false;
+    request.mesh.mesh_enabled = true;
+    request.mesh.amp_udp_port = 0;
+    request.mesh.node_enabled = node;
+    request.mesh.capabilities.circuit_relay = true;
+    request.mesh.capabilities.media_relay = false;
     request.identity = identity_.get();
     request.address_disclosure = &disclosure_;
     auto started = mesh_.Start(std::move(request));

@@ -32,6 +32,9 @@ public:
 
   enum class Tone { IncomingRing, OutgoingRingback };
 
+  /** The incoming ring's WAV file (the app resolves its asset); none: the incoming ring is silent. */
+  static void SetRingSoundPath(std::string path);
+
   /** Speaker from `devices` (must outlive the ringtone). */
   explicit CallRingtone(Tone tone = Tone::IncomingRing, MediaDeviceArbiter& devices = MediaDeviceArbiter::Default());
   ~CallRingtone();

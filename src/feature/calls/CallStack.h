@@ -1,10 +1,10 @@
 #pragma once
 
 #include "mesh/types/AddressDisclosure.h"
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallSessionStore.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"

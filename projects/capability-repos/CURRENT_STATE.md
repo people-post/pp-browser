@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0 and P1 done (no edge against the order); P2's runtime core done
+**Phase:** P0 and P1 done; P2's gate done (no capability reads the product's base); runtime core done
 
 ## Done
 
@@ -38,10 +38,38 @@
   serving, DHT and directory, its own directory row) and lends it to the hub (`HubMeshOwner`: start,
   configure queries, apply serving, stop, release). `MeshExecutors` moved to pp-cpp-mesh's `mesh/types/`
   (v3.0.0), so `AppRuntimeMeshExecutors` lives in `foundation/runtime`. The allowlist is empty.
+- **P2 gated (CR014 – CR020 drafted):** the product's base (`foundation/data`, `platform`, `i18n`) is the gate group
+  **product**, apps only; pp-node is the app **node_app**; the gate counts CMake links. Pricing DTOs moved to
+  `lib/pricing` and five stale links dropped — 68 include / 14 link sites left.
+- **P2, people and node off the product's base:** the config slices they take as values (`MeshConfig`,
+  `ServiceEndpoints`) and the mechanisms parked there (`SchemaVersion`, `DialWorthyMultiaddrs`) into `common/`;
+  the profile manifest stays the product's (`ProfileManifest`); the secure-blob port into `common/` with the OS
+  store in `foundation/platform`, which the app hands to the retired-Keychain cleanup it now runs; pp-node
+  passes the org seed's role in; net's client factory takes endpoints — 60 include / 10 link sites left.
+- **CR020, delivery:** accepted and mapped — `lib/delivery` (sessions, envelopes, codecs, the relay client),
+  `common/chat` + `common/thread` (the records and store ports) and `domain/delivery` sit below messaging and
+  calls, with pricing as its own capability; calls and broadcast use no messaging — 60 include / 9 link sites
+  against the product's base left, no other edge.
+- **TLS, CR019, CR018 step 1:** the per-OS TLS trust is `foundation/tls`; the presenters are
+  `feature/presenters` (the app's); the OS network monitor is the mesh owner's, its value types the base's —
+  51 include / 8 link sites against the product's base left.
+- **CR018 steps 2–4:** LAN mDNS and the mesh directory cache are the mesh owner's; the backend's clients are
+  `lib/delivery/BackendClientSet`, the platform defaults handed in by `ProductStack` — 49 include / 8 link sites
+  left. The seed-reservation renewal waits for `MeshConnectivity` to move.
+- **P2, the hub and calls take values:** `HubSettings` (projected in `feature/product`), the device's role as a
+  value, the effective mesh config published to calls — 24 include / 6 link sites left (messaging 11, calls 9,
+  base 3, broadcast 1): `Tr()` (9) and platform mechanisms (push registrar, call system UI, user hints, media and
+  file helpers, assets), plus config secrets in the base.
+- **P2, platform mechanisms:** into the base, behind ports, or to the app (see CR015's notes) — 14 include / 4 link
+  sites left: `Tr()` (messaging 4, calls 4, base 2), the platform's user-hint keys (calls 2), config secrets (base 1).
+- **P2, text and the rest:** `Tr()` replaced by the base's `Localized(key)` port (the app's catalogs answer), the
+  platform tip key aliased by the app, the config-secrets store in `foundation/data` — 0 include / 0 link sites: the
+  allowlist is empty.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
 ## Next
 
-1. P2: `foundation/data` / `platform` / `Tr()` out of capability code; crypto additions into pp-cpp-crypto.
+1. P2: codes instead of keys for text rendered at write time; `MeshConnectivity` out of the hub (CR018, with the
+   seed reservation); crypto additions into pp-cpp-crypto.
 2. Contracts repo (CR010) when convenient.

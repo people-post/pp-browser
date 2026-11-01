@@ -6,7 +6,7 @@
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallSessionStore.h"
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/ContactsStore.h"

@@ -2,7 +2,7 @@
 
 #include "common/Lifetime.h"
 #include "lib/messaging/GroupTypes.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/people/ContactTypes.h"
 
 #include <cstddef>

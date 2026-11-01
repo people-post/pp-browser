@@ -3,8 +3,7 @@
 #include "domain/delivery/DeliveryOutbox.h"
 #include "domain/delivery/E2ePublicSessionKeys.h"
 #include "domain/delivery/PeerRouteBook.h"
-#include "domain/delivery/PeerTransports.h"
-#include "lib/messaging/ControlLaneEnvelope.h"
+#include "lib/delivery/ControlLaneEnvelope.h"
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
@@ -17,8 +16,8 @@
 namespace pbr {
 
 ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
-                         E2ePublicSessionKeys& keys, PeerTransports& transports, DeliveryOutbox& outbox)
-    : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), transports_(transports),
+                         E2ePublicSessionKeys& keys, std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox)
+    : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), direct_chat_(std::move(direct_chat)),
       outbox_(outbox) {
   redirectLogger("ControlLane");
 }
@@ -60,7 +59,7 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
     route_view.participant_contact_ids = {(*contact)->id};
   }
   const auto peer_relay_id = routes_.ResolveWithDirectory(route_view);
-  IDirectMessageClient* chat = transports_.DirectChat();
+  IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
   if (!peer_relay_id && !(chat && chat->IsPeerReachable(peer_identity))) {
     return Error("No route to the peer");
   }

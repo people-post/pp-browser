@@ -24,6 +24,9 @@ void ApplyPreset(AppConfig& config, const std::string& preset_id, const std::str
  */
 void NormalizeLlmConfig(AppConfig& config);
 
+/** The Brief LLM service's base URL for `config`: its own when the preset is Brief, else the deployment's; no trailing '/'. */
+std::string BriefLlmServiceBaseUrl(const AppConfig& config);
+
 /** Sets require_api_key from preset and whether credentials are configured. */
 void ResolveLlmAuthRequirements(AppConfig& config);
 

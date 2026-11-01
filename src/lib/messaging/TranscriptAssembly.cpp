@@ -1,10 +1,10 @@
 #include "lib/messaging/TranscriptAssembly.h"
 
 #include "lib/messaging/AtAiParser.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/QuoteReply.h"
-#include "lib/messaging/ReactionTypes.h"
+#include "lib/delivery/ReactionTypes.h"
 
 #include "common/EmojiKey.h"
 #include "common/chat/MessagingLimits.h"

@@ -1,14 +1,8 @@
 #pragma once
 
-namespace pbr {
+#include "common/NetworkChange.h"
 
-/** Active data link for mobile gating (N025). Desktop builds return Wifi. */
-enum class NetworkTransport {
-  Unknown,
-  Wifi,
-  Cellular,
-  Other,
-};
+namespace pbr {
 
 /** Best-effort active transport; Unknown when not mobile or unavailable. */
 NetworkTransport ActiveNetworkTransport();

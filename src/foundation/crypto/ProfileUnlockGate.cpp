@@ -3,7 +3,7 @@
 #include "common/Diag.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "common/StartupTiming.h"
 
 #include <stdexcept>
@@ -105,7 +105,7 @@ void ProfileUnlockGate::ReportError(const Error& error) {
     RequestShowUnlock(nullptr);
   }
   if (!silent && ports_.ui.show_error) {
-    ports_.ui.show_error(Tr("pin.error.wrong"));
+    ports_.ui.show_error(Localized("pin.error.wrong"));
   }
 }
 

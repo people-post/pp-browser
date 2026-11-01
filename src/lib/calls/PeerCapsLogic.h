@@ -2,7 +2,7 @@
 
 #include "lib/calls/CallTypes.h"
 #include "mesh/types/MeshHopTypes.h"
-#include "foundation/data/Config.h"
+#include "mesh/types/MeshConfigTypes.h"
 #include "common/MeshAlias.h"
 
 #include <functional>

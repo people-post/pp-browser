@@ -6,7 +6,7 @@
 
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/LlmPreset.h"
-#include "foundation/data/SchemaVersion.h"
+#include "common/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"

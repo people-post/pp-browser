@@ -63,9 +63,9 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/delivery/PeerRequestAuth.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -73,14 +73,15 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
-#include "feature/calls/CallPresenter.h"
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/CallPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
+#include "feature/product/HubSettingsProjection.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
@@ -159,7 +160,6 @@ class Probe {
 public:
   Probe() {
     product_ = std::make_unique<ProductStack>();
-    product_->Hub().BindSessionStore(store_);
     product_->Hub().BindSecrets(secrets_);
     facade_ = std::make_unique<ConversationsFacade>(product_->Hub());
     product_->BindFacade(*facade_);
@@ -892,7 +892,7 @@ public:
       if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
         ReplyError(id, saved.error().message);
       } else {
-        Hub().Apply(ConversationsHub::ProjectNotifications(prefs));
+        Hub().Apply(ProjectNotifications(prefs));
         Object out = Reply(id, true);
         out.set("stay_connected", AppLifecycle::StaysConnected());
         Emit(out);

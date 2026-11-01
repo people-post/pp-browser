@@ -1,51 +1,51 @@
 #include "lib/people/ContactTypes.h"
-#include "lib/messaging/LocalKeysFromIdentity.h"
+#include "lib/delivery/LocalKeysFromIdentity.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "domain/attachments/AmpChatBlobTransport.h"
-#include "domain/delivery/AmpChatHistoryTransport.h"
+#include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 
 #include "common/Diag.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/GroupRosterSync.h"
-#include "lib/messaging/PublicPskLockCoordinator.h"
+#include "lib/delivery/PublicPskLockCoordinator.h"
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
-#include "lib/messaging/DirectChatTargetFromContact.h"
+#include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/pricing/InitiationBillingCodec.h"
 #include "lib/pricing/InitiationPricing.h"
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "mesh/reachability/Reachability.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/E2eIntegrityUtil.h"
-#include "lib/messaging/E2eRelayPayloadCodec.h"
-#include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/delivery/E2eRelayPayloadCodec.h"
+#include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/ControlLaneEnvelope.h"
-#include "lib/messaging/EnvelopeSigner.h"
+#include "lib/delivery/ControlLaneEnvelope.h"
+#include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/messaging/ReactionTypes.h"
-#include "lib/messaging/PskRotateCodec.h"
-#include "lib/messaging/OutboundMessage.h"
-#include "lib/messaging/SendRelayOptions.h"
+#include "lib/delivery/ReactionTypes.h"
+#include "lib/delivery/PskRotateCodec.h"
+#include "lib/delivery/OutboundMessage.h"
+#include "lib/delivery/SendRelayOptions.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/EmojiKey.h"
 #include "common/chat/RelayStreamKey.h"
-#include "lib/messaging/RelayWirePayload.h"
-#include "lib/messaging/PeerBriefRoute.h"
+#include "lib/delivery/RelayWirePayload.h"
+#include "lib/delivery/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/net/RelayInboxCursor.h"
@@ -53,7 +53,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
-#include "foundation/platform/os/OsTime.h"
+#include "common/CivilTime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -106,7 +106,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store), routes_(contacts),
       session_keys_(psk_store, account_keys.Kem()), own_cards_(identity, account_keys),
       card_service_(identity, own_cards_, account_keys, contacts),
-      control_lane_(identity, own_cards_, contacts, routes_, session_keys_, transports_, outbox_) {
+      control_lane_(identity, own_cards_, contacts, routes_, session_keys_, [this]() { return transports_.DirectChat(); }, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_,
@@ -795,7 +795,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
   }
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
-  routes_.RememberFromEnvelope(envelope, outcome);
+  routes_.RememberFromEnvelope(envelope, outcome.sender_verified);
   // A verified message over a link with a device its account's card does not list yet: ask that device
   // for the card (it proves the device is the account's; the envelope signature alone does not).
   if (outcome.sender_verified) {
@@ -1962,7 +1962,7 @@ namespace {
 std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
   const std::time_t seconds = static_cast<std::time_t>(unix_ms / 1000);
   std::tm tm_utc{};
-  if (!os::UtcTime(seconds, &tm_utc)) {
+  if (!civil_time::UtcTime(seconds, &tm_utc)) {
     return {};
   }
   std::ostringstream oss;
@@ -2056,7 +2056,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         std::vector<BackgroundNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
-          routes_.RememberFromEnvelope(envelope, outcome);
+          routes_.RememberFromEnvelope(envelope, outcome.sender_verified);
           FollowUpMembershipAfterIngest(groups_, outcome);
           if (outcome.from_sibling && on_sibling_notice_) {
             on_sibling_notice_();
@@ -2217,7 +2217,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
   if (outcome.about_us == RelayReceiveOutcome::AboutUs::None || outcome.about_us_group_thread_id.empty()) {
     return std::nullopt;
   }
-  const std::string text = Tr(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed
+  const std::string text = Localized(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed
                                   ? "chat.group_event.you_removed"
                                   : "chat.group_event.full");
   inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text);
@@ -2269,7 +2269,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
 std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeGroupDissolvedIn(
     const std::string& thread_id) {
   // In the reader's language: the preview is kept as written, the notice shown once.
-  const std::string text = Tr("chat.group.dissolved_preview");
+  const std::string text = Localized("chat.group.dissolved_preview");
   inbox_.OnInboundMessagePersisted(thread_id, text);
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;

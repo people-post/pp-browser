@@ -1,7 +1,7 @@
 #include "lib/messaging/CopyAsk.h"
 #include "lib/messaging/CardAsk.h"
 
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 
 #include <gtest/gtest.h>
 

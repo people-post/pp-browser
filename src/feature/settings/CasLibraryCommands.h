@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 #include "feature/settings/SettingsPortsViews.h"

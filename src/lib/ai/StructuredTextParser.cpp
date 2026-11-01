@@ -5,7 +5,7 @@
 #include "lib/ai/LocalizedLabels.h"
 #include "lib/ai/WorkingSetPolicy.h"
 #include "common/PlatformLimits.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
 
 #include "common/ValueJson.h"
 #include <algorithm>

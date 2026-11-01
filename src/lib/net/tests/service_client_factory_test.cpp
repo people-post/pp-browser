@@ -5,13 +5,24 @@
 
 #include <memory>
 
+namespace {
+
+/** The endpoints a config names (relay, directory, registration). */
+struct Endpoints {
+  pbr::ServiceEndpointConfig relay;
+  pbr::DirectoryConfig directory;
+  pbr::ServiceEndpointConfig registration;
+};
+
+} // namespace
+
 TEST(OrgBackendClientFactoryTest, BuildsHttpClientsWhenConfigured) {
-  pbr::AppConfig config;
+  Endpoints config;
   config.relay.base_url = "https://relay.example";
   config.directory.base_url = "https://directory.example";
   config.registration.base_url = "https://registration.example";
 
-  auto clients = pbr::CreateOrgBackendClients(config);
+  auto clients = pbr::CreateOrgBackendClients(config.relay, config.directory, config.registration);
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   ASSERT_TRUE(static_cast<bool>(clients.registration));
   ASSERT_TRUE(static_cast<bool>(clients.blob));
@@ -19,8 +30,8 @@ TEST(OrgBackendClientFactoryTest, BuildsHttpClientsWhenConfigured) {
 }
 
 TEST(OrgBackendClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
-  pbr::AppConfig empty_config;
-  auto empty_clients = pbr::CreateOrgBackendClients(empty_config);
+  Endpoints empty_config;
+  auto empty_clients = pbr::CreateOrgBackendClients(empty_config.relay, empty_config.directory, empty_config.registration);
   EXPECT_FALSE(static_cast<bool>(empty_clients.directory));
   EXPECT_FALSE(static_cast<bool>(empty_clients.registration));
   EXPECT_FALSE(static_cast<bool>(empty_clients.blob));
@@ -28,9 +39,9 @@ TEST(OrgBackendClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
 }
 
 TEST(OrgBackendClientFactoryTest, BuildsFailoverDirectoryFromProviders) {
-  pbr::AppConfig config;
+  Endpoints config;
   config.directory.providers = {{"https://dir-a.example", "http"}, {"https://dir-b.example", "http"}};
-  auto clients = pbr::CreateOrgBackendClients(config);
+  auto clients = pbr::CreateOrgBackendClients(config.relay, config.directory, config.registration);
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   // Failover client is opaque; a call fails against unreachable hosts but must route through the wrapper.
   const auto nodes = clients.directory->ListMeshNodes();
@@ -38,13 +49,14 @@ TEST(OrgBackendClientFactoryTest, BuildsFailoverDirectoryFromProviders) {
 }
 
 TEST(OrgBackendClientFactoryTest, SkipsNonHttpDirectoryProviders) {
-  pbr::AppConfig config;
+  Endpoints config;
   config.directory.providers = {{"https://dir-a.example", "amp"}, {"https://dir-b.example", "http"}};
-  auto clients = pbr::CreateOrgBackendClients(config);
+  auto clients = pbr::CreateOrgBackendClients(config.relay, config.directory, config.registration);
   ASSERT_TRUE(static_cast<bool>(clients.directory));
 }
 
 namespace {
+
 
 class ScriptedDirectoryClient : public pp::mesh::IDirectoryClient {
 public:

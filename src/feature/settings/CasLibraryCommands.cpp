@@ -1,6 +1,6 @@
 #include "feature/settings/CasLibraryCommands.h"
 
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ChatBlobTypes.h"
 #include "lib/content/CasLibrary.h"

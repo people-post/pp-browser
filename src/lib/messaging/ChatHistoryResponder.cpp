@@ -1,17 +1,17 @@
 #include "lib/messaging/ChatHistoryResponder.h"
 
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/delivery/PeerRequestAuth.h"
 #include "common/directory/DirectoryJson.h"
 
-#include "lib/messaging/ChatPayloadCodec.h"
-#include "lib/messaging/ReactionTypes.h"
+#include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/ReactionTypes.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/messaging/E2eRelayPayloadCodec.h"
-#include "lib/messaging/EnvelopeSigner.h"
+#include "lib/delivery/E2eRelayPayloadCodec.h"
+#include "lib/delivery/EnvelopeSigner.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "lib/delivery/RelayWirePayload.h"
 
 #include <algorithm>
 #include <optional>

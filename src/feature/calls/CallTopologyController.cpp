@@ -11,11 +11,10 @@
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "lib/pricing/InitiationPricing.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/people/PeerDisplayLabel.h"
-#include "foundation/platform/PlatformUserHints.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/ProductBranding.h"
@@ -415,7 +414,7 @@ void CallTopologyController::PollPendingSfuAttach() {
     return;
   case SfuAttachWaitPollResult::TimeoutLeave:
     ClearSfuAttachWait();
-    host_.SetLastMediaError(Tr("call.error.no_media_relay_hop"));
+    host_.SetLastMediaError(Localized("call.error.no_media_relay_hop"));
     log().warning << "SFU attach wait timed out call_id=" << call_id;
     (void)host_.leave_call(call_id);
     return;
@@ -869,7 +868,7 @@ void CallTopologyController::AttachFromInviteHint(const std::string& call_id, co
   attach.publisher_stream_id = PublisherStreamIdForLocal();
   host_.note_media_attempted(call_id);
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
+  host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();
   if (MigrateFlightBusyFor(call_id)) {
     // Inbound CallSfuAttach already dialing — do not bump flight_.migrate_generation.
@@ -914,7 +913,7 @@ void CallTopologyController::FinishInviteHintAttach(const std::string& call_id, 
 void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, size_t n_joined) {
   host_.note_media_attempted(call_id);
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Tr("call.status.setting_up_group"));
+  host_.SetMediaActivity(Localized("call.status.setting_up_group"));
   host_.NotifyRingChanged();
   JoinWithoutHintInput in;
   in.on_hop_for_call = IsOnSfuForCall(call_id);
@@ -1033,7 +1032,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     return true;  // joiner refused; nothing to schedule for it
   }
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Tr("call.status.setting_up_group"));
+  host_.SetMediaActivity(Localized("call.status.setting_up_group"));
   host_.NotifyRingChanged();
   if (action == RemoteAcceptHopAction::JoinFlight) {
     // Overlapping Accept: keep the in-flight SoftMigrate; bumping gen would Detach mid-attach.
@@ -1103,7 +1102,7 @@ void CallTopologyController::FinishRemoteAcceptMigrate(const std::string& call_i
     log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
     EjectParticipantAfterMigrateFailure(
         call_id, joiner_identity,
-        mig.error().message.empty() ? Tr("call.error.no_media_relay_hop") : mig.error().message);
+        mig.error().message.empty() ? Localized("call.error.no_media_relay_hop") : mig.error().message);
   }
   // Non-initiator WaitForAttach: keep wait; apply deferred CallSfuAttach from owner.
   FlushPendingInboundSfuAttach();
@@ -1180,7 +1179,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
 
   host_.note_media_attempted(call_id);
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Tr("call.status.setting_up_group"));
+  host_.SetMediaActivity(Localized("call.status.setting_up_group"));
   host_.NotifyRingChanged();
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
@@ -1327,7 +1326,7 @@ bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string
     DeferInboundSfuAttach(call_id, attach);
     log().info << "OnInboundSfuAttach deferred (SoftMigrate in flight) call_id=" << call_id;
     BeginSfuAttachWait(call_id);
-    host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
+    host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
     host_.NotifyRingChanged();
     return true;
   }
@@ -1348,7 +1347,7 @@ bool CallTopologyController::RefusePrivateHopMultiaddr(const std::string& call_i
   log().warning << "OnInboundSfuAttach skip private hop MA hop=" << attach.hop_peer_id << " ma=" << attach.hop_multiaddr
                 << " may_dial=" << (may_dial ? 1 : 0) << " lan_hop=" << (lan_hop ? 1 : 0);
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Tr("call.status.looking_for_another_path"));
+  host_.SetMediaActivity(Localized("call.status.looking_for_another_path"));
   host_.NotifyRingChanged();
   ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id, "hop multiaddr not reachable (private)");
   return true;
@@ -1360,7 +1359,7 @@ void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, c
   if (seat_ports->IsBound()) {
     seat_ports->note_connecting(call_id);
   }
-  host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
+  host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();
   const uint64_t gen = ClaimMigrateFlight(call_id);
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, attach, gen](Roe<void> ok) {
@@ -1493,7 +1492,7 @@ void CallTopologyController::ReportSfuAttachFailedToInitiator(const std::string&
   const std::string initiator = SelectCallInitiator(joined_peers);
   if (initiator.empty() || initiator == *local) {
     // Local is initiator (or unknown): cannot ask self — leave with friendly copy.
-    host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+    host_.SetLastMediaError(Localized("call.error.hop_unreachable_guest"));
     ClearSfuAttachWait();
     (void)host_.leave_call(call_id);
     return;
@@ -1514,7 +1513,7 @@ void CallTopologyController::ReportSfuAttachFailedToInitiator(const std::string&
   inbound_gate_.last_fail_hop = failed_hop;
   log().info << "ReportSfuAttachFailed to initiator=" << initiator << " prefs="
              << detail.preferred_hop_peer_ids.size();
-  host_.SetMediaActivity(Tr("call.status.looking_for_another_path"));
+  host_.SetMediaActivity(Localized("call.status.looking_for_another_path"));
   host_.NotifyRingChanged();
   (void)host_.send_direct(initiator, CallControlType::CallSfuAttachFailed, *encoded,
                                  "Call hop attach failed");
@@ -1530,7 +1529,7 @@ void CallTopologyController::RefuseGuestNoSharedHop(const std::string& call_id,
 void CallTopologyController::RefuseGuest(const topology_event::RefuseGuest& refuse_event) {
   const std::string& call_id = refuse_event.call_id;
   const std::string& guest_identity = refuse_event.guest_identity;
-  const std::string message = Tr("call.error.hop_unreachable_guest");
+  const std::string message = Localized("call.error.hop_unreachable_guest");
   CallHopRefuseDetail refuse;
   refuse.call_id = call_id;
   refuse.identity = guest_identity;
@@ -1547,7 +1546,7 @@ void CallTopologyController::RefuseGuest(const topology_event::RefuseGuest& refu
       display = title;
     }
   }
-  const std::string owner_toast = Tr("call.error.hop_unreachable_owner", {{"name", display}});
+  const std::string owner_toast = Localized("call.error.hop_unreachable_owner", {{"name", display}});
   EjectParticipantAfterMigrateFailure(call_id, guest_identity, owner_toast);
 }
 
@@ -1699,7 +1698,7 @@ bool CallTopologyController::IsOnOrHintedHop(const std::string& call_id, const s
 void CallTopologyController::StartHopHintRepick(const std::string& call_id, const std::string& prefer,
                                                 const std::string& guest) {
   log().info << "Hop hint re-pick prefer=" << prefer << " guest=" << guest;
-  host_.SetMediaActivity(Tr("call.status.switching_media_path"));
+  host_.SetMediaActivity(Localized("call.status.switching_media_path"));
   host_.NotifyRingChanged();
   BeginSfuAttachWait(call_id);
   // V035: do not bump flight_.migrate_generation on hop-hint (Leave/teardown only).
@@ -1749,7 +1748,7 @@ void CallTopologyController::OnInboundHopRefuse(const CallHopRefuseDetail& detai
     return;
   }
   const std::string message =
-      detail.message.empty() ? Tr("call.error.hop_unreachable_guest") : detail.message;
+      detail.message.empty() ? Localized("call.error.hop_unreachable_guest") : detail.message;
   host_.SetLastMediaError(message);
   log().warning << "CallHopRefuse call_id=" << detail.call_id << " reason=" << detail.reason;
   ClearSfuAttachWait();

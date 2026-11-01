@@ -2,13 +2,13 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
-#include "lib/messaging/DirectChatTargetFromContact.h"
-#include "lib/messaging/PskRotateCodec.h"
+#include "lib/delivery/DirectChatTargetFromContact.h"
+#include "lib/delivery/PskRotateCodec.h"
 #include "common/chat/RelayEnvelope.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "lib/messaging/PublicPskLockCoordinator.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/PublicPskLockCoordinator.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
 

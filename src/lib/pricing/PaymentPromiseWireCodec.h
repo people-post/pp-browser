@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/data/PaymentPromiseTypes.h"
+#include "lib/pricing/PaymentPromiseTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Error.h"
 

@@ -4,7 +4,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "common/Utilities.h"
 
 #include <chrono>

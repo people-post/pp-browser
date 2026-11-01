@@ -126,7 +126,7 @@ pp-browser implements the **adapter** row:
 | Mesh port | `IChatPeerLinks::LinkRoe` / `ChannelRoe` (identity map from `PeerLinkManager`, code + message kept; `IsAssociationNotReady`, `IsDialInBackoff`, `IsEndpointNotRegistered`) | the link's |
 | L4 (pp-cpp-mesh) | dial-back, DHT (`FindPeerRoe`), circuit tunnel, circuit reach, punch walk, peer reach, media relay | each module's own (`CircuitTunnelErr`, `CircuitReachErr`, `PunchIntroducerWalk::Err`, `PeerReachCoordinator::Err`, `MediaRelayErr`, …); a remote refusal is a wire `code` (pp-cpp-mesh `docs/ERRORS.md`) |
 | Call media | `CallMediaLegCoordinator`, `ICallMediaTransport::on_failed`, `CallMediaConnectCoordinator` (`WrapReachFailure`, `CallMediaRoe`) | `CallMediaErr` (`StaleLink`, `StreamClosed`, …) |
-| Chat send | `IDirectMessageClient` (`AmpDirectChatTransport::WrapLinkFailure`), `HttpRelayClient::Send` | `DirectSendErr`; relay `AppError` codes → `lib/messaging/DeliveryNotice` (`SendFailureFromDirect` / `SendFailureFromRelay`) |
+| Chat send | `IDirectMessageClient` (`AmpDirectChatTransport::WrapLinkFailure`), `HttpRelayClient::Send` | `DirectSendErr`; relay `AppError` codes → `lib/delivery/DeliveryNotice` (`SendFailureFromDirect` / `SendFailureFromRelay`) |
 
 Dial-back / DHT own `PeerLinkManager&` (mesh-internal), so they wrap `PeerLinkManager::Failure`;
 feature-facing L4 that goes through `IChatPeerLinks` wraps that port's `Failure` — the same numeric

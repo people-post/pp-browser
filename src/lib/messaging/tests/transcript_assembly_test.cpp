@@ -1,7 +1,7 @@
 // Which rows a transcript shows and what folds onto them (the GUI draws them).
 #include "lib/messaging/TranscriptAssembly.h"
 
-#include "lib/messaging/ReactionTypes.h"
+#include "lib/delivery/ReactionTypes.h"
 
 #include <gtest/gtest.h>
 

@@ -49,6 +49,11 @@ for module in calls broadcast settings ai; do
   check_absent "$module must not include feature/product/ (only app/ and gui/ compose it)" \
     '#include "feature/product/' "src/feature/$module"
 done
+# The presenters are the app's (capability-repos CR019): only app/ and gui/ (and pp-app-probe) read them.
+for module in conversations calls broadcast settings ai product; do
+  check_absent "$module must not include feature/presenters/ (only app/ and gui/ use them)" \
+    '#include "feature/presenters/' "src/feature/$module"
+done
 
 check_absent "calls must not include conversations/" \
   '#include "feature/conversations/' src/feature/calls

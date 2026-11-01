@@ -1,7 +1,7 @@
 #include "feature/conversations/MeshConnectivityWiring.h"
 
 #include "lib/people/MeshHopPolicy.h"
-#include "foundation/data/MeshRole.h"
+#include "common/MeshConfig.h"
 #include "common/runtime/AppRuntime.h"
 
 #include <algorithm>
@@ -52,8 +52,8 @@ mesh::MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiring
 }
 
 mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in) {
-  MeshConfig mesh_cfg = MeshConfigOf(in);
-  NormalizeMeshConfig(mesh_cfg);
+  // The hub's snapshot: normalized by the app (its seeds, else the deployment's) and effective on this device.
+  const MeshConfig mesh_cfg = MeshConfigOf(in);
   const std::vector<Contact> contacts = ListContacts(in.contacts);
   const auto directory_nodes = in.list_directory_nodes ? in.list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   const auto dht_nodes = in.list_dht_nodes ? in.list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
@@ -77,13 +77,13 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
   };
 
   std::vector<mesh::MeshHopCandidate> rendezvous =
-      BuildCircuitHopList(contacts, directory_nodes, dht_nodes, ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes),
+      BuildCircuitHopList(contacts, directory_nodes, dht_nodes, EffectiveBootstrapPeers(mesh_cfg, directory_nodes),
                           mesh_cfg.prefer_contacts_for_routing, include_seeds);
   rendezvous = KeepCircuitRelays(std::move(rendezvous), directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers);
   // Trusted relays only: the configured org seeds, not the directory's volunteers merged into them.
   // Seeds known unreachable are no park target either: Accept would wait out the park for nothing.
   std::vector<mesh::MeshHopCandidate> seeds = CollectSeedHopCandidates(
-      mesh_cfg.trusted_relays_only ? mesh_cfg.bootstrap_peers : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes));
+      mesh_cfg.trusted_relays_only ? mesh_cfg.bootstrap_peers : EffectiveBootstrapPeers(mesh_cfg, directory_nodes));
   if (!include_seeds) {
     const std::vector<std::string> org = PeerIds(CollectSeedHopCandidates(mesh_cfg.bootstrap_peers));
     std::erase_if(seeds, [&org](const mesh::MeshHopCandidate& hop) {

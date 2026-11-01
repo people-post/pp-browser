@@ -6,10 +6,15 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 #include "app/DiagnosticsUpload.h"
+#include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/ProfileIconImagePrep.h"
+#include "foundation/platform/PlatformUserHints.h"
+#include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
 
-#include "foundation/crypto/ConfigSecretsStore.h"
+#include "foundation/data/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "foundation/platform/PlatformShare.h"
@@ -22,13 +27,15 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
+#include "foundation/platform/OsSecureBlobStore.h"
+#include "lib/people/RetiredKeychainBackup.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/MediaDeviceArbiter.h"
-#include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/delivery/ChatPayloadValidator.h"
 #include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -283,7 +290,6 @@ Application::Application() {
   });
   product_ = std::make_unique<ProductStack>();
   messaging_ = &product_->Hub();
-  messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   product_->BindFacade(*messaging_facade_);
@@ -381,7 +387,7 @@ Roe<void> Application::ResetActiveProfile() {
   }
 
   AppPaths::EnsureDirs(profile_dir);
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
+  if (auto manifest = EnsureProfileManifest(profile_dir); !manifest) {
     return manifest.error();
   }
 
@@ -390,7 +396,7 @@ Roe<void> Application::ResetActiveProfile() {
   }
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
-  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -446,7 +452,7 @@ Roe<void> Application::ResetChatData() {
     return AppError::Storage(Err::Storage::Failed, "Failed to delete chat data: " + ec.message());
   }
 
-  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -561,6 +567,8 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 
   {
     StartupPhase phase("Localization::LoadFromAssets");
+    // The platform's own network tip for the key capabilities use (common/Localized.h).
+    LocalizationService::Instance().SetKeyAlias(kPlatformNetworkHintKey, std::string(PlatformUserHints::P2pNetworkHintKey()));
     if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
         !loaded) {
       log().warning << "Localization catalogs failed to load: " << loaded.error().message;
@@ -620,8 +628,18 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       });
     });
   };
-  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) {
-    return facade.UploadProfileIconFromPath(path);
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) -> Roe<void> {
+    // The image is the app's to decode and size; the hub uploads what comes out.
+    auto encoded = PrepareProfileIconFromFile(path);
+    if (!encoded) {
+      return encoded.error();
+    }
+    PreparedProfileIcon prepared;
+    prepared.bytes = std::move(encoded->bytes);
+    prepared.content_type = std::move(encoded->content_type);
+    prepared.kind = std::move(encoded->kind);
+    prepared.file_extension = std::move(encoded->file_extension);
+    return facade.UploadProfileIcon(prepared);
   };
   settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
   settings_commands.plan_relay_quota_recovery = [&facade](const Error& quota_error) {
@@ -693,7 +711,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return result;
   };
   settings_commands.rotate_brief_llm_key = [this, &facade]() {
-    auto result = facade.RotateBriefLlmKey();
+    auto result = facade.RotateBriefLlmKey(BriefLlmServiceBaseUrl(store_.Snapshot().config));
     if (result) {
       chat_->ReloadAgentConfig();
     }
@@ -1605,6 +1623,12 @@ bool Application::MountPresenters(ui::Context* context) {
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   messaging.SetOnMessagingReady([this]() {
+    // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
+    AppRuntime::PostWorkerNormal([this]() {
+      if (auto removed = RemoveRetiredKeychainBackup(OsSecureBlobStore()); !removed) {
+        log().warning << "Retired Keychain backup not removed: " << removed.error().message;
+      }
+    });
     chat_->OnMessagingReady();
     contacts_->Refresh();
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {

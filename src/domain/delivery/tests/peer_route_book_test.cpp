@@ -1,7 +1,7 @@
 #include "domain/delivery/PeerRouteBook.h"
 
 #include "common/chat/RelayEnvelope.h"
-#include "lib/messaging/RelayReceivePipeline.h"
+#include "common/thread/ThreadTypes.h"
 #include "lib/people/ContactsStore.h"
 
 #include <gtest/gtest.h>
@@ -43,13 +43,10 @@ TEST_F(PeerRouteBookTest, LearnsARouteOnlyFromAVerifiedEnvelope) {
   PeerRouteBook routes(contacts_);
   const Thread thread = DirectThreadWith("account:alice");
 
-  RelayReceiveOutcome unverified;
-  routes.RememberFromEnvelope(FromAccount("account:alice", "relay:forged"), unverified);
+  routes.RememberFromEnvelope(FromAccount("account:alice", "relay:forged"), /*sender_verified=*/false);
   EXPECT_FALSE(routes.Resolve(thread).has_value()) << "an unverified envelope's relay id is anyone's claim";
 
-  RelayReceiveOutcome verified;
-  verified.sender_verified = true;
-  routes.RememberFromEnvelope(FromAccount("account:alice", "relay:alice"), verified);
+  routes.RememberFromEnvelope(FromAccount("account:alice", "relay:alice"), /*sender_verified=*/true);
   EXPECT_EQ(routes.Resolve(thread), std::optional<std::string>("relay:alice"));
 }
 

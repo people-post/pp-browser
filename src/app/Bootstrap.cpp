@@ -6,7 +6,8 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/Config.h"
 #include "foundation/platform/DeploymentProfile.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
+#include "feature/product/HubSettingsProjection.h"
 #include "common/StartupTiming.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/platform/PlatformLogSink.h"
@@ -61,7 +62,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   const std::string profile_data_dir = registry->ActiveProfileDataDir();
   AppPaths::EnsureDirs(profile_data_dir);
 
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_data_dir); !manifest) {
+  if (auto manifest = EnsureProfileManifest(profile_data_dir); !manifest) {
     return manifest.error();
   }
 
@@ -86,7 +87,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
 
   if (auto hub = [&]() -> Roe<void> {
         StartupPhase phase("Bootstrap::ConversationsHub::Initialize");
-        return messaging.Initialize(*config, profile_data_dir);
+        return messaging.Initialize(HubSettingsFrom(*config, *profile_prefs), profile_data_dir);
       }();
       !hub) {
     return hub.error();

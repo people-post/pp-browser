@@ -1,7 +1,7 @@
 #include "feature/conversations/InboxController.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/VoiceBubble.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/TranscriptAssembly.h"
 
 #include <gtest/gtest.h>

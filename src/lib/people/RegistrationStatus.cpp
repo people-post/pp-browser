@@ -1,7 +1,8 @@
 #include "lib/people/RegistrationStatus.h"
 
-#include "foundation/platform/os/OsTime.h"
+#include "common/CivilTime.h"
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 #include <cctype>
 #include <cstdio>
@@ -40,7 +41,7 @@ std::optional<int64_t> ParseIso8601ToUnixMs(const std::string& iso) {
   tm.tm_sec = second;
   tm.tm_isdst = 0;
 
-  const time_t seconds = os::TimeGm(&tm);
+  const time_t seconds = civil_time::TimeGm(&tm);
   if (seconds == static_cast<time_t>(-1)) {
     return std::nullopt;
   }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/DeliveryNotice.h"
+#include "lib/delivery/DeliveryNotice.h"
 
 #include <string>
 

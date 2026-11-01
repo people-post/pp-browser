@@ -1,4 +1,4 @@
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "domain/delivery/DeliveryOutbox.h"
 
 #include "common/runtime/AppRuntime.h"

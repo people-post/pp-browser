@@ -30,7 +30,7 @@ bool LooksTechnical(const std::string& text) {
 } // namespace
 
 const char* CallMediaErrorUserKey(const std::string& technical) {
-  // A sentence with non-ASCII characters is already user copy (a feature's Tr() line).
+  // A sentence with non-ASCII characters is already user copy (a feature's Localized() line).
   if (technical.empty() || !IsAscii(technical)) {
     return nullptr;
   }

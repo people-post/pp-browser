@@ -36,7 +36,7 @@ stay in apps. Owner threads become registered by apps and capabilities instead o
 
 **Date:** 2026-10-29  
 **Status:** accepted; amended by CR006 — "realtime" is the calls and broadcast targets of the one capabilities
-repo, still with no cycle between them
+repo, still with no cycle between them; amended by CR020 (realtime rides delivery, not messaging)
 
 **Context:** They share `lib/media`, have a cycle between them (broadcast → calls 7 include sites, calls → broadcast 2),
 and broadcast alone is 5.6k lines.
@@ -100,7 +100,7 @@ text) declare ports the app implements. Only generic tool / MCP plumbing may lea
 ## CR008 — Identity is people; the backend client is net; pricing is part of messaging
 
 **Date:** 2026-10-30  
-**Status:** accepted; amends DESIGN's identity (people + net + pricing)
+**Status:** accepted; amends DESIGN's identity (people + net + pricing); its "pricing is part of messaging" amended by CR020 (pricing and delivery sit below messaging and calls)
 
 **Context:** The planned identity repo held three different things. People (keys, cards, contacts, devices,
 the locker format) is identity. Net is the Brief backend client (registration, directory, blobs, push):
@@ -184,4 +184,170 @@ capability the ban still keeps engines single-purpose.
 `DirectChatTargetFromContact`, `ModelFacingJson`, `LocalKeysFromIdentity`, `GroupInviteStanding`) into
 `lib/messaging`; `PeerDisplaySources` into `feature/conversations`, `PeopleDiscoveryContactAdapt` into
 `feature/ai`.
+
+
+## CR014 — The composition layer: capabilities declare, `feature/product` composes
+
+**Date:** 2026-11-01  
+**Status:** draft; describes the pattern P1's cuts used (PR #443)
+
+**Context:** Three of P1's hardest cuts ended in `feature/product`: the people picker's ports
+(`MessagingPeoplePickerPorts`), messaging's AI tools (`MessagingTools`) and the mesh (`ProductMesh`, lent to
+the conversations hub through `HubMeshOwner`). The smaller ones followed the same shape: `ChatPresenter`
+takes the preview line's prose from its binder instead of naming AI's parser. The design names the
+capabilities and the order but not the place where they meet.
+
+**Decision:** Rule 7: a capability declares what it needs from a peer as a port or an owner interface, in its
+own vocabulary (V048); the composition layer (`feature/product`, then `app/` and `gui/`) builds the peers and
+wires them. A capability never constructs another capability's root (a hub, a mesh, a stack).
+
+**Consequences:** `feature/product` is the app's composition root below the GUI, and in the capability map
+it is the app's. A second app writes its own composition; it does not reuse `feature/product`.
+
+## CR015 — P2 is gated like P1: the product's base is the apps'
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** P1 worked because the gate counted sites and the allowlist only shrank. P2 ("capabilities stop
+reading `Config`, `UserPreferences`, `MeshRole`, platform hooks, `Tr()`") was a checklist with no count.
+Mapped as a group, the product's base starts at 7 edges / 85 sites: messaging 52, calls 20, people 5,
+base 3, node 2, net 2, broadcast 1. Seventeen of them are pricing DTOs that only sit in `foundation/data`.
+
+**Decision:** `foundation/data`, `foundation/platform` and `foundation/i18n` form the gate group **product**
+(rule 1: config and its format, data paths, platform hooks, user-facing text). It may include the base; only
+the apps (`app`, `node_app`) may include it. Today's sites go in the allowlist, which only shrinks.
+
+**Consequences:** P2 has a number. Misplaced DTOs leave first; the rest is ports and values the app passes in
+(CR014). Platform mechanisms a capability truly needs (time, secure storage) move to the base with a narrow
+interface rather than staying behind the product's.
+
+**First mechanism moved (2026-11-01, Hongwei):** the per-OS TLS trust for curl leaves `foundation/platform` for
+its own base module, `foundation/tls` (`pp_foundation_tls`).
+
+**The hub and calls take values (2026-11-01):** the conversations hub takes `HubSettings` (the mesh slice, the
+endpoints, the initiation floor, the app's data directory, the profile's policies) instead of `AppConfig`, the
+session store and the preferences file; `feature/product/HubSettingsProjection` projects them. The phone rule is
+a value (`ConversationsHub::Host`, `EffectiveMeshConfig` / `MeshRoleOf` in `common/MeshConfig.h`): the hub
+publishes the mesh config as it applies on the device, and calls read that. The seed merge
+(`EffectiveBootstrapPeers`) is pure on the normalized config the app hands over. The Brief LLM key rotation takes
+the service's URL from the app.
+
+**Platform mechanisms (2026-11-01):** pure or POSIX mechanisms into the base (`common/ImageMetadata`,
+`foundation/diagnostics/OsPeakRss`); the push registrar's interface and registry into `common/` (the platform
+implements it); the attachment cache's quarantine mark and video posters behind `lib/messaging/AttachmentPlatform`,
+which `ProductStack` installs; the profile icon is prepared by the app and uploaded by the hub; the ring sound's path
+is handed to `CallRingtone`; broadcast takes the phone flag as a value; `CallSystemUiBridge` is a presenter
+(`feature/presenters`, CR019).
+
+**Text (2026-11-01):** capabilities and the base ask for user-facing text by catalog key through a port in the base
+(`common/Localized.h`: `Localized(key, args)`); the app's `LocalizationService` registers as its translator once
+its catalogs load, and aliases the shared platform-tip key to its platform's. The catalogs and the text stay the
+app's. Still a step short of the plan's "error codes, text in the app": capabilities name keys and some strings
+(call statuses, thread previews, call rows) are rendered at write time. Turning those into codes the app renders is
+per-surface follow-up work. The config-secrets store moved to `foundation/data` (the app's config). With these,
+the gate's product edges are all cut.
+
+## CR016 — The gate covers links, not only includes
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** The include gate missed stale links: `pp_feature_conversations` linked `pp_lib_calls` and
+`pp_lib_media` with no include left, and `pp_domain_peers` linked `pp_lib_messaging` until PR #443. A repo
+split follows the link graph, so a link against the order is the same defect as an include.
+
+**Decision:** `check_capability_edges.py` also reads the libraries the CMake files declare
+(`pp_browser_add_*_library(... PUBLIC_LIBS ...)` and `target_link_libraries`), maps each target to its
+folder's capability, and fails on a link against the order the same way it fails on an include.
+
+## CR017 — pp-node is an app; the node capability is `domain/node`
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** The map put `app/node` (pp-node's main, bootstrap, status HTTP) in the node capability, so node
+counted the config reads an app is meant to make: 9 of node's files read `Config`, most of them pp-node's.
+
+**Decision:** `app/node` is its own group, **node_app**: an app that may include the product's base and the
+capabilities it picks (people, net, node), and nothing above them. The node capability is `domain/node`.
+
+## CR018 — The hub's shell thins before messaging can move
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** With every edge cut, the unit a second app would reuse is still `ConversationsHub`: ~3.5k
+lines tied to `AppConfig`. It builds its own backend clients from URLs and runs mesh glue no messaging needs:
+LAN mDNS, the OS network monitor, the address-disclosure policy, seed-reservation renewal, the mesh
+directory cache.
+
+**Decision:** The hub keeps messaging (stores, workflows, delivery, participants). The mesh glue joins the
+mesh's owner (`ProductMesh`), which tells the hub what it needs through `HubMeshOwner`; the backend clients are
+built by the composition (net's factory) and handed to the hub. Step by step, one concern per change.
+
+**Step 1 (2026-11-01):** the OS network monitor is the mesh owner's: `HubMeshOwner::WatchNetwork` /
+`StopWatchingNetwork`, called where the hub started and stopped its monitor (timing unchanged); the network's
+value types (`NetworkTransport`, `NetworkState`, `NetworkChange`) are the base's (`common/NetworkChange.h`), so
+the hub, `HubParticipant` and the calls stack no longer include the platform's monitor.
+
+**Step 2 (2026-11-01):** LAN mDNS is the mesh owner's: `StartLanDiscovery` / `AdvertiseOnLan` /
+`StopLanDiscovery`. The hub keeps the decisions — which discovered peers are contacts (their endpoints go to
+delivery), and whether to announce at all (the node role, or a call on a phone).
+
+**Step 3 (2026-11-01):** the mesh directory cache is the mesh owner's (`StartDirectoryCache` with the hub's
+directory client and the config; its disk path from the app's data directory). The hub reads the nodes and is told
+when they change. A fetch with no directory configured now fails and keeps the last nodes instead of clearing
+them. The seed-reservation renewal stays with the hub's `MeshConnectivity` (the neutral mesh object participants
+borrow) and moves when that does.
+
+**Step 4 (2026-11-01):** the backend's clients are a delivery-level set (`lib/delivery/BackendClientSet`: the
+relay's message and push-device clients, client compat, the directory, registration, blobs, the locker), built
+from the config's endpoints, kept while an endpoint is unchanged, signing with the profile's identity. The
+platform's default endpoints are the app's: `ProductStack` hands them to the hub (`SetBackendDefaults`).
+
+## CR019 — Presenters are the app's
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); implementation started
+
+**Context:** `ChatPresenter` (the chats list's order, unread, pin, mute, archive and its buttons) and parts of
+`InboxController` sit in messaging. They are UI decisions shaped like `CallPresenter`; they are why messaging
+had to take the preview line's prose from its binder. Another app would bring its own list.
+
+**Decision:** Presenters move to the app side (`gui/` or a presenter folder the app owns);
+messaging exposes the facade they read. Calls' presenter follows the same rule.
+
+**Done (2026-11-01):** `feature/presenters` (`pp_feature_presenters`, mapped to the app) holds `ChatPresenter`,
+`CallPresenter` and the chats list's text (`SessionListText`, `SessionMenu`, `GroupEventText`) with their tests; no
+feature module includes it (`check_feature_includes.sh`). `GroupMentions` stays messaging's (the facade uses it).
+
+## CR020 — Secure delivery below messaging and realtime
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); amends CR003 / CR008's split; implementation started
+
+**Context:** Calls include messaging at 26 sites and broadcast at 8, all narrow: thread record types and the
+store port (call history), `SendRelayOptions`, the pairwise PSK session store, pairwise fanout, system
+controls, the E2E public session logic, `IDirectMessageClient`. What realtime rides is sessions, envelopes, the
+control lane and the outbox — not chat threads, groups or the inbox.
+
+**Decision:** A **delivery** capability under both messaging and realtime: pairwise sessions,
+envelopes and their signing, the control lane, the outbox, the relay and Amp transports. Chat (threads,
+groups, inbox, attachments, pricing) stays messaging. Call history reaches the thread store through a port.
+
+**Consequences:** An app could take secure delivery without chat (a VPN client's control channel, pp-node
+services). Costs a re-map and a few seams; worth settling before anything moves, since it changes what the
+first capabilities repo holds.
+
+**First cut (2026-11-01):** the gate maps **delivery** (`lib/delivery`, `common/chat`, `common/thread`,
+`domain/delivery`) and **pricing** (`lib/pricing`, its own capability, since calls bill too) below messaging
+and calls; calls and broadcast may no longer include messaging, and include it nowhere. Moved into
+`lib/delivery`: the PSK and E2E-public session logic and stores, envelope signing and the wire / payload
+codecs, the control lane's envelopes, `OutboundMessage`, `DeliveryNotice`, `PeerRequestAuth`,
+`PeerBriefRoute`, `DirectChatTargetFromContact`, `TextSpans`, `ReactionTypes`, the relay's message client and
+ports with their mocks, `LocalKeys`. Up into messaging: `PeerTransports` and the chat history transport
+(`feature/conversations`), `AttachmentDownloadPolicy`; `PeopleDiscoveryBlocks` to `common/directory`.
+`ControlLane` takes the direct-chat client as a getter, `PeerRouteBook` the sender's verification as a bool.
+Tests that round-trip through messaging's SQLite store stay messaging's.
 

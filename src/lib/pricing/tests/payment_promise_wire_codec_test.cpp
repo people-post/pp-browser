@@ -1,6 +1,6 @@
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 #include "lib/pricing/PaymentPromiseCodec.h"
-#include "foundation/data/PaymentPromiseTypes.h"
+#include "lib/pricing/PaymentPromiseTypes.h"
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"

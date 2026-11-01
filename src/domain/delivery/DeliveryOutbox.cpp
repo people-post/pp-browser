@@ -2,7 +2,7 @@
 
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "lib/messaging/OutboundMessage.h"
+#include "lib/delivery/OutboundMessage.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
 

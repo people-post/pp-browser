@@ -13,7 +13,7 @@ pp_browser_add_feature_library(pp_feature_broadcast
   PUBLIC_LIBS
     pp_amp_link
     pp_lib_media
-    pp_lib_messaging
+    pp_lib_delivery
     pp_lib_broadcast
     pp_mesh
     pp_foundation_runtime_core

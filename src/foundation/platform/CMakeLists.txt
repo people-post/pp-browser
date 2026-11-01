@@ -3,7 +3,6 @@
 # is ifstream-only; mobile packaged reads use SDL (linked onto core below).
 set(_pp_platform_core_sources
   DeploymentProfile.cpp
-  ImageMetadata.cpp
   PickedFileName.cpp
   Platform.cpp
   PlatformLogDefaults.cpp
@@ -16,7 +15,6 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
-  CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
   DesktopAssetLocator.cpp
@@ -33,7 +31,6 @@ set(_pp_platform_gui_sources
   IncomingLink.cpp
   IosAssetLocator.cpp
   IosPathProvider.cpp
-  IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
@@ -54,24 +51,15 @@ set(_pp_platform_gui_sources
   AndroidLocalNotifier.cpp
   AndroidPushDeviceRegistrar.cpp
   AndroidSystemChrome.cpp
-  os/OsTlsCaPath_Android.cpp
-  os/OsTlsCaPath_Default.cpp
 )
 
-# CurlSsl + ApplyPlatformCurlSsl live in platform_core so ai/net can use TLS
-# defaults without linking the SDL/Rml GUI platform lib.
-if(PP_BROWSER_IS_ANDROID)
-  list(APPEND _pp_platform_core_sources
-    os/OsTlsPlatformCurl_Android.cpp
-    os/OsTlsCaPath_Android.cpp
-  )
-elseif(PP_BROWSER_IS_IOS)
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp IosBackupExclusion_Ios.mm)
-else()
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
+# The platform's TLS trust for curl is a base mechanism: foundation/tls (CR015).
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources IosBackupExclusion_Ios.mm)
 endif()
 
-# Uninstall-surviving blob store (lib/people SecureBlobStore): iOS Keychain; everywhere else a stub.
+# Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; else a stub.
+list(APPEND _pp_platform_core_sources OsSecureBlobStore.cpp)
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
 else()
@@ -86,7 +74,6 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
     os/OsProcessStats_Default.cpp
-    os/OsPeakRss_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
   )
@@ -103,7 +90,6 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     os/OsExecutablePath_Darwin.cpp
     os/OsLocale_Darwin.mm
     os/OsProcessStats_Default.cpp
-    os/OsPeakRss_Posix.cpp
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
   )
@@ -130,7 +116,6 @@ else()
     os/OsExecutablePath_Linux.cpp
     os/OsDownloadMark_Default.cpp
     os/OsProcessStats_Linux.cpp
-    os/OsPeakRss_Posix.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
   )
@@ -252,8 +237,8 @@ if(ANDROID)
   target_link_libraries(pp_foundation_platform PUBLIC log GLESv3 EGL)
 endif()
 
-# iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios (in platform_core) installs a SecTrust
-# verify callback — OpenSSL headers/libs must be on the *core* target that compiles it (B8).
+# iOS: curl uses BoringSSL (the SecTrust verify callback is foundation/tls's now, B8); the platform libs keep
+# the same links for their own Keychain / curl users.
 if(PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_platform_core PUBLIC
     CURL::libcurl

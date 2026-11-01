@@ -114,7 +114,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
 - Respect layer dependencies: `app → feature → domain → lib → foundation → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). A lib peer includes another only **down the capability order** (`lib/messaging` → `lib/people`; [CR013](projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order)); within one capability or against the order, put shared seams in `src/common/` and wire in `feature/`.
-- Respect the **capability order** across layers (people → net / social → messaging → calls → broadcast; node on people + net; AI is app-side) — [SRC_LAYOUT § Capabilities](docs/architecture/SRC_LAYOUT.md#capabilities-across-layers). `scripts/check/check_capability_edges.py` fails on a new edge against it; when you cut one, lower its line in `capability_edges_allowlist.txt`.
+- Respect the **capability order** across layers (people → net / social → delivery → pricing → messaging; calls → broadcast ride delivery and pricing, not messaging; node on people + net; AI is app-side) — [SRC_LAYOUT § Capabilities](docs/architecture/SRC_LAYOUT.md#capabilities-across-layers). `scripts/check/check_capability_edges.py` fails on a new edge against it; when you cut one, lower its line in `capability_edges_allowlist.txt`.
 - **Design as oracle:** tests guard documented intent / purpose IDs, not today’s call graph or harness heals — [TESTING.md § Design as oracle](docs/architecture/TESTING.md#design-as-oracle). Older suites may still drift; when you hit a mismatch in work you are already doing, tighten that case in the same change (no courtesy freeze, no repo-wide rewrite).
 - **Promote test failures downward:** if smoke/hard-lab finds a policy bug that loopback/gtest can reproduce, fix **and** add the cheaper regression — see [TESTING.md § When a higher tier finds a bug](docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
@@ -146,7 +146,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | UI-safe surface | `*Facade` | `ConversationsFacade` |
 | Durable state | `*Store` | thread/CAS/contacts stores |
 | Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
-| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`); the relay's message client is messaging's (`lib/messaging/HttpRelayClient`) |
+| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`); the relay's message client is delivery's (`lib/delivery/HttpRelayClient`) |
 | Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
 | L4 protocol ends | `serve/*Server`, `client/*ClientCoordinator` | `MediaRelayServer` / `MediaRelayClientCoordinator`, `CircuitRelayServer` / `CircuitClientCoordinator`, `DhtServer` / `DhtClient` — [SRC_LAYOUT § L4 protocols](docs/architecture/SRC_LAYOUT.md#l4-protocols-serve-and-client) |
 | Reachability engine | `*Engine` | `ReachabilityEngine` |

@@ -4,7 +4,7 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/ContactJson.h"
-#include "lib/messaging/PeerBriefRoute.h"
+#include "lib/delivery/PeerBriefRoute.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 

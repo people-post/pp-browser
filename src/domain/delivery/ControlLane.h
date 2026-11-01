@@ -4,8 +4,10 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/ThreadTypes.h"
+#include "common/chat/IDirectMessageClient.h"
 
 #include <atomic>
+#include <functional>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -18,7 +20,6 @@ class DeliveryOutbox;
 class E2ePublicSessionKeys;
 class IdentityStore;
 class PeerRouteBook;
-class PeerTransports;
 
 /**
  * The control lane: identified system messages to a peer (call signaling and the like) — E2E under
@@ -30,7 +31,7 @@ class PeerTransports;
 class ControlLane : public Module {
 public:
   ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
-              E2ePublicSessionKeys& keys, PeerTransports& transports, DeliveryOutbox& outbox);
+              E2ePublicSessionKeys& keys, std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox);
 
   /**
    * Send `control` to `peer_identity`. `key_init_b64`: a session init the caller holds (its media-key
@@ -53,7 +54,8 @@ private:
   ContactsStore& contacts_;
   PeerRouteBook& routes_;
   E2ePublicSessionKeys& keys_;
-  PeerTransports& transports_;
+  /** The mesh's direct chat client while Amp is attached; null otherwise. */
+  std::function<IDirectMessageClient*()> direct_chat_;
   DeliveryOutbox& outbox_;
   std::atomic<uint64_t> order_key_{0};
 };

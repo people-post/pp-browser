@@ -1,7 +1,5 @@
 pp_browser_add_feature_library(pp_feature_conversations
   SOURCES
-    ChatPresenter.cpp
-    GroupEventText.cpp
     GroupMentions.cpp
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
@@ -18,6 +16,8 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
     MeshDeliveryOrchestrator.cpp
+    PeerTransports.cpp
+    AmpChatHistoryTransport.cpp
     MeshConnectivityWiring.cpp
     PushDeviceCoordinator.cpp
     MeshNetworkReaction.cpp
@@ -27,16 +27,13 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_domain_attachments
     pp_domain_delivery
     pp_foundation_crypto
-    pp_lib_media
     pp_lib_messaging
     pp_lib_content
     pp_lib_pricing
-    pp_lib_calls
     pp_amp_link
     pp_mesh
     pp_lib_net
     pp_lib_people
-    pp_foundation_platform_core
     pp_foundation_runtime_core
     pp_foundation_runtime
     CURL::libcurl)

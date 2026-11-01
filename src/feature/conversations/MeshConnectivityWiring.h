@@ -4,7 +4,7 @@
 #include "mesh/types/MeshHopTypes.h"
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "lib/people/ContactsStore.h"
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 
 #include <atomic>
 #include <chrono>

@@ -6,10 +6,10 @@
 
 #include <algorithm>
 
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
@@ -830,8 +830,8 @@ Roe<void> ConversationsFacade::SaveProfileNickname(const std::string& nickname) 
 
 Roe<void> ConversationsFacade::RegisterIdentity(const std::string& nickname) { return hub_.RegisterIdentity(nickname); }
 
-Roe<void> ConversationsFacade::UploadProfileIconFromPath(const std::string& path) {
-  return hub_.UploadProfileIconFromPath(path);
+Roe<void> ConversationsFacade::UploadProfileIcon(const PreparedProfileIcon& icon) {
+  return hub_.UploadProfileIcon(icon);
 }
 
 Roe<void> ConversationsFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }
@@ -988,7 +988,9 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
   return true;
 }
 
-Roe<void> ConversationsFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
+Roe<void> ConversationsFacade::RotateBriefLlmKey(const std::string& llm_base_url) {
+  return hub_.RotateBriefLlmKey(llm_base_url);
+}
 
 mesh::ReachabilitySnapshot ConversationsFacade::Reachability() { return hub_.Reachability(); }
 

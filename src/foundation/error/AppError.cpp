@@ -1,6 +1,6 @@
 #include "foundation/error/AppError.h"
 
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -67,91 +67,91 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     case Err::Auth::NotRegistered:
     case Err::Auth::Forbidden:
     case Err::Auth::Expired:
-      return Tr("errors.auth.register_or_rotate");
+      return Localized("errors.auth.register_or_rotate");
     case Err::Auth::RateLimited:
-      return Tr("errors.auth.busy");
+      return Localized("errors.auth.busy");
     case Err::Auth::Generic:
     default:
-      return Tr("errors.auth.failed");
+      return Localized("errors.auth.failed");
     }
   case ErrorCategory::Network:
     switch (static_cast<Err::Network>(code)) {
     case Err::Network::Timeout:
-      return Tr("errors.network.timeout");
+      return Localized("errors.network.timeout");
     case Err::Network::DnsFailed:
-      return Tr("errors.network.dns");
+      return Localized("errors.network.dns");
     case Err::Network::ConnectFailed:
-      return Tr("errors.network.connect");
+      return Localized("errors.network.connect");
     case Err::Network::TlsFailed:
-      return Tr("errors.network.tls");
+      return Localized("errors.network.tls");
     case Err::Network::HttpError:
     case Err::Network::HttpRejected:
-      return Tr("errors.network.http");
+      return Localized("errors.network.http");
     case Err::Network::Unreachable:
     case Err::Network::Generic:
     default:
-      return Tr("errors.network.unreachable");
+      return Localized("errors.network.unreachable");
     }
   case ErrorCategory::Pin:
     switch (static_cast<Err::Pin>(code)) {
     case Err::Pin::Required:
-      return Tr("errors.pin.unlock");
+      return Localized("errors.pin.unlock");
     case Err::Pin::Mismatch:
-      return Tr("errors.pin.mismatch");
+      return Localized("errors.pin.mismatch");
     case Err::Pin::TooShort:
-      return Tr("errors.pin.too_short");
+      return Localized("errors.pin.too_short");
     case Err::Pin::VaultUnavailable:
-      return Tr("errors.pin.vault");
+      return Localized("errors.pin.vault");
     case Err::Pin::Generic:
     default:
-      return Tr("errors.pin.required");
+      return Localized("errors.pin.required");
     }
   case ErrorCategory::Config:
     switch (static_cast<Err::Config>(code)) {
     case Err::Config::MissingKey:
-      return Tr("errors.config.missing_key");
+      return Localized("errors.config.missing_key");
     case Err::Config::Invalid:
-      return Tr("errors.config.invalid");
+      return Localized("errors.config.invalid");
     case Err::Config::Generic:
     default:
-      return Tr("errors.config.invalid");
+      return Localized("errors.config.invalid");
     }
   case ErrorCategory::Storage:
     switch (static_cast<Err::Storage>(code)) {
     case Err::Storage::Unavailable:
-      return Tr("errors.storage.unavailable");
+      return Localized("errors.storage.unavailable");
     case Err::Storage::Failed:
-      return Tr("errors.storage.failed");
+      return Localized("errors.storage.failed");
     case Err::Storage::Generic:
     default:
-      return Tr("errors.storage.failed");
+      return Localized("errors.storage.failed");
     }
   case ErrorCategory::Blob:
     switch (static_cast<Err::Blob>(code)) {
     case Err::Blob::QuotaExceeded:
-      return Tr("errors.blob.quota_exceeded");
+      return Localized("errors.blob.quota_exceeded");
     case Err::Blob::NothingToDelete:
-      return Tr("errors.blob.quota_nothing_to_delete");
+      return Localized("errors.blob.quota_nothing_to_delete");
     case Err::Blob::UploadNotConfigured:
-      return Tr("errors.blob.not_configured");
+      return Localized("errors.blob.not_configured");
     case Err::Blob::UploadNotConfiguredNoDirect:
-      return Tr("errors.blob.not_configured_no_direct");
+      return Localized("errors.blob.not_configured_no_direct");
     case Err::Blob::UploadRejected:
-      return Tr("errors.blob.upload_rejected");
+      return Localized("errors.blob.upload_rejected");
     case Err::Blob::Expired:
-      return Tr("errors.blob.expired");
+      return Localized("errors.blob.expired");
     case Err::Blob::TooLarge:
-      return Tr("errors.blob.too_large");
+      return Localized("errors.blob.too_large");
     case Err::Blob::Unavailable:
-      return Tr("errors.blob.unavailable");
+      return Localized("errors.blob.unavailable");
     case Err::Blob::RateLimited:
-      return Tr("errors.blob.rate_limited");
+      return Localized("errors.blob.rate_limited");
     case Err::Blob::Generic:
     default:
-      return Tr("errors.blob.failed");
+      return Localized("errors.blob.failed");
     }
   case ErrorCategory::Internal:
-    return Tr("errors.internal");
+    return Localized("errors.internal");
   case ErrorCategory::Unknown:
   default:
     return {};
@@ -169,7 +169,7 @@ std::string AppError::Display(const Error& err) {
   if (!err.message.empty()) {
     return err.message;
   }
-  return Tr("errors.internal");
+  return Localized("errors.internal");
 }
 
 std::string AppError::Log(const Error& err) {

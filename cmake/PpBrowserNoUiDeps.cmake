@@ -136,7 +136,7 @@ endfunction()
 # crypto siblings and pp-ledger (the ledger role). Any other pp_* target reachable from root_target
 # fails configure — widening the node is a deliberate edit here.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
-  "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core)$"
+  "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core|tls)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_lib_(people|net)$"
   "^pp_domain_(registration|node|node_ledger)$"

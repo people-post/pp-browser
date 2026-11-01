@@ -1,7 +1,7 @@
 #include "domain/attachments/AmpChatBlobTransport.h"
 
 #include "lib/people/DevicePeerId.h"
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/delivery/PeerRequestAuth.h"
 
 #include "mesh/l4/shared/InboundReply.h"
 

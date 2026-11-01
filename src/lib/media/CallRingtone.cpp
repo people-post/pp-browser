@@ -2,7 +2,6 @@
 #include "lib/media/CallAudioSession.h"
 #include "lib/media/Ringback.h"
 
-#include "foundation/platform/IAssetLocator.h"
 
 #include <SDL3/SDL.h>
 
@@ -10,6 +9,8 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -19,10 +20,24 @@ namespace {
 /** Ringback workers that activated the phone audio session and have not released / handed it over. */
 std::atomic<int> g_ringback_session_holders{0};
 
+std::mutex& RingSoundMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::string& RingSoundPath() {
+  static std::string path;
+  return path;
+}
+
 bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
-  const std::string path = IAssetLocator::Instance().Resolve("sounds/call_ring.wav");
+  std::string path;
+  {
+    std::lock_guard lock(RingSoundMutex());
+    path = RingSoundPath();
+  }
   if (path.empty()) {
-    SDL_Log("CallRingtone: empty path for sounds/call_ring.wav");
+    SDL_Log("CallRingtone: no ring sound set (sounds/call_ring.wav)");
     return false;
   }
   SDL_AudioSpec spec{};
@@ -67,6 +82,11 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
 }
 
 } // namespace
+
+void CallRingtone::SetRingSoundPath(std::string path) {
+  std::lock_guard lock(RingSoundMutex());
+  RingSoundPath() = std::move(path);
+}
 
 CallRingtone::CallRingtone(Tone tone, MediaDeviceArbiter& devices) : devices_(devices), tone_(tone) {}
 

@@ -1,8 +1,8 @@
-#include "lib/messaging/ChatPayloadCodec.h"
-#include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadValidator.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "lib/delivery/RelayWirePayload.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/ValueJson.h"
 

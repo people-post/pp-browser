@@ -19,7 +19,7 @@ pp_browser_add_domain_library(pp_domain_attachments
     pp_lib_net
     pp_lib_content
     pp_foundation_crypto
-    pp_foundation_platform_core
+    pp_foundation_diagnostics
     pp_foundation_runtime_core
     pp_mesh
     pp_amp_link)

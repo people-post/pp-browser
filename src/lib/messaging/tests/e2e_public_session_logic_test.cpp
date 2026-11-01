@@ -1,10 +1,10 @@
-#include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/delivery/E2ePublicSessionLogic.h"
 
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/Utilities.h"
 

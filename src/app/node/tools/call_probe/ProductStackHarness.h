@@ -5,7 +5,7 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/host/MeshHost.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"

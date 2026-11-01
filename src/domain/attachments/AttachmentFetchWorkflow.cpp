@@ -10,7 +10,7 @@
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 #include "lib/content/CasStore.h"
 #include "lib/messaging/AiImageRef.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/runtime/AppRuntime.h"
 

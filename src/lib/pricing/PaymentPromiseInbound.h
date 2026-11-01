@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "foundation/data/PaymentPromiseTypes.h"
+#include "lib/pricing/PaymentPromiseTypes.h"
 #include "common/Error.h"
 
 #include <functional>

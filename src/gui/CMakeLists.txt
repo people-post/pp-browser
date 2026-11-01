@@ -74,6 +74,7 @@ pp_browser_add_feature_library(pp_gui
     pp_feature_calls
     pp_feature_conversations
     pp_feature_product
+    pp_feature_presenters
     pp_foundation_platform
     pp_lib_ui
     ui::core)

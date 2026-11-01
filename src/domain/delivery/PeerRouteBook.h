@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "common/chat/RelayEnvelope.h"
 #include "mesh/types/IDirectoryClient.h"
 
 #include <mutex>
@@ -14,8 +15,7 @@ namespace pbr {
 
 class ContactsStore;
 class DirectoryShadowCache;
-struct RelayEnvelope;
-struct RelayReceiveOutcome;
+
 struct Thread;
 
 /**
@@ -33,7 +33,7 @@ public:
   /** Learn Account → `relay:` (a route only, never a directory answer). */
   void NoteAccountRoute(const std::string& account_id, const std::string& relay_user_id);
   /** Learn the sender's route from an inbound envelope — only one whose signature verified. */
-  void RememberFromEnvelope(const RelayEnvelope& envelope, const RelayReceiveOutcome& outcome);
+  void RememberFromEnvelope(const RelayEnvelope& envelope, bool sender_verified);
 
   /** From what is known locally (contacts, learned routes, the directory cache). */
   std::optional<std::string> Resolve(const Thread& thread) const;

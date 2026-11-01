@@ -1,5 +1,5 @@
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/messaging/PskRotateCodec.h"
+#include "lib/delivery/PskRotateCodec.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/ValueJson.h"
 

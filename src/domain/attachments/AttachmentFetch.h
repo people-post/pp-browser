@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadCatalog.h"
 #include "lib/net/OrgBackendClients.h"

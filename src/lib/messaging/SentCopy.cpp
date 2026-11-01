@@ -1,6 +1,6 @@
 #include "lib/messaging/SentCopy.h"
 
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"

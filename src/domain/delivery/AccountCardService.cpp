@@ -1,7 +1,7 @@
 #include "domain/delivery/AccountCardService.h"
 
 #include "domain/peers/AccountCardPolicy.h"
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/delivery/PeerRequestAuth.h"
 
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"

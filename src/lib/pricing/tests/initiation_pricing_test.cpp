@@ -1,7 +1,7 @@
 #include "lib/pricing/InitiationBillingCodec.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/InitiationPricing.h"
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

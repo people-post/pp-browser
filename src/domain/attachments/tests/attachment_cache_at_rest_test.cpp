@@ -2,6 +2,7 @@
 #include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/AttachmentPlatform.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 
 #include <filesystem>
@@ -9,10 +10,6 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
-
-#ifdef __APPLE__
-#include <sys/xattr.h>
-#endif
 
 namespace pbr {
 namespace {
@@ -30,6 +27,7 @@ protected:
   }
 
   void TearDown() override {
+    SetAttachmentPlatform({});
     AttachmentPlaintextMemoryCache::Instance().Clear();
     std::filesystem::remove_all(dir_);
   }
@@ -43,21 +41,8 @@ protected:
   const ByteVector plain_{'h', 'e', 'l', 'l', 'o', '-', 'b', 'l', 'o', 'b'};
 };
 
-TEST_F(AttachmentCacheAtRestTest, ViewFileIsMarkedAsDownloadedFromInternet) {
-#ifdef __APPLE__
-  auto hash = AttachmentContentHash(plain_);
-  ASSERT_TRUE(hash);
-  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "application/msword", "a.doc",
-                                       [&]() -> Roe<ByteVector> { return plain_; });
-  ASSERT_TRUE(view) << view.error().message;
-  char buf[256] = {};
-  const ssize_t n = ::getxattr(view->c_str(), "com.apple.quarantine", buf, sizeof(buf), 0, 0);
-  ASSERT_GT(n, 0) << "quarantine xattr missing";
-  EXPECT_EQ(std::string(buf, static_cast<size_t>(n)).rfind("0081;", 0), 0u);
-#else
-  GTEST_SKIP() << "macOS only";
-#endif
-}
+// That a view is marked as downloaded: AttachmentPlatformTest (lib/messaging, through the platform hook); that
+// the OS marker sets the quarantine attribute: OsDownloadMarkTest (foundation/platform).
 
 TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
   auto hash = AttachmentContentHash(plain_);
@@ -174,6 +159,10 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
 
   ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "video/mp4", big, "clip.mp4", dek));
 
+  // The platform's stand-in poster (the app installs it); the video itself is never decoded here.
+  SetAttachmentPlatform({.soft_poster_jpeg = [](int) -> Roe<std::vector<uint8_t>> {
+    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+  }});
   auto poster = EnsureAttachmentPosterFromContent(profile_dir_, profile_id_, thread_id_, *hash, "video/mp4", "clip.mp4",
                                                   dek, big.size(), kLimit);
   ASSERT_TRUE(poster) << poster.error().message;

@@ -8,7 +8,7 @@
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPathProvider.h"
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/IosAssetLocator.h"
 #include "foundation/platform/IosLocalNotifier.h"
 #include "foundation/platform/IosPathProvider.h"

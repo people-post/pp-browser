@@ -3,7 +3,7 @@
 // Messaging's view of a test account (lib/people/tests/TestAccount.h): signing what its device sends and
 // receiving as it.
 
-#include "lib/messaging/EnvelopeSigner.h"
+#include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/people/tests/TestAccount.h"
 

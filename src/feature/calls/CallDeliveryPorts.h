@@ -1,7 +1,7 @@
 #pragma once
 
-#include "lib/messaging/SendRelayOptions.h"
-#include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/delivery/SendRelayOptions.h"
+#include "lib/delivery/E2ePublicSessionLogic.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Error.h"

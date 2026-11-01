@@ -1,7 +1,7 @@
 #include "feature/conversations/PushDeviceCoordinator.h"
 
 #include "lib/net/IPushDeviceClient.h"
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "common/PbrCompat.h"
 

@@ -1,7 +1,7 @@
 #include "lib/ai/LocalActionRender.h"
 
 #include "common/CivilTime.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ai/LocalActionWords.h"
 #include "lib/ai/LocalizedLabels.h"
