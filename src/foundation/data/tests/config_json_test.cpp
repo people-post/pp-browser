@@ -181,6 +181,21 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_TRUE(parsed.show_advanced_settings);
 }
 
+TEST(ConfigJsonTest, NotificationPreviewDefaultsToShownWhenAbsentAndRoundTrips) {
+  auto legacy = pbr::TryParseObject(R"({ "schema_version": 14, "show_notifications": true })");
+  ASSERT_TRUE(legacy.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.show_notification_preview = false;
+  pbr::ProfilePrefsFromObject(*legacy, loaded);
+  EXPECT_TRUE(loaded.show_notification_preview);
+
+  pbr::ProfilePreferences hidden;
+  hidden.show_notification_preview = false;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(hidden), parsed);
+  EXPECT_FALSE(parsed.show_notification_preview);
+}
+
 namespace {
 
 // Answers every lookup, so the test sees which names the config layer is willing to ask for.

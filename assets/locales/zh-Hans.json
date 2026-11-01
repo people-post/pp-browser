@@ -145,6 +145,8 @@
     "settings.notifications": "显示通知",
     "settings.notifications.on": "开",
     "settings.notifications.off": "关",
+    "settings.notifications.preview": "通知里显示消息内容",
+    "notification.hidden_body": "新消息",
     "settings.notifications.help": "关闭后不再弹出消息通知，也不推送到锁屏；来电仍会响铃，消息仍会收取。",
     "settings.stay_connected": "后台保持连接",
     "settings.stay_connected.help": "适用于没有推送服务的手机：PP 在后台时也能收到来电和消息。会显示一条常驻通知，并更耗电。",

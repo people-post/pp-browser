@@ -16,6 +16,7 @@
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
+#include "gui/chat/NotificationBody.h"
 #include "feature/conversations/SessionListText.h"
 #include "feature/conversations/SessionMenu.h"
 #include "gui/chat/BriefFeedIntent.h"
@@ -2347,9 +2348,12 @@ void ChatController::WireMessagingBindings() {
   });
   facade_->SetOnBackgroundUnread(
       [this](std::string title, std::string body, std::string thread_id, bool mentions_us) {
-        if (!Store().Snapshot().profile_prefs.show_notifications) {
+        const ProfilePreferences& profile_prefs = Store().Snapshot().profile_prefs;
+        if (!profile_prefs.show_notifications) {
           return;
         }
+        body = NotificationBodyFor(profile_prefs.show_notification_preview, std::move(body),
+                                   Tr("notification.hidden_body"));
         // A muted thread still counts as unread in the list; it just does not notify — unless the message
         // mentions us (G015), and then once a minute per group at most.
         const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
