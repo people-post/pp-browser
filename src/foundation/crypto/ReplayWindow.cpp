@@ -24,4 +24,15 @@ bool ReplayWindow::Accept(const uint64_t seq) {
   return pending_.insert(seq).second;
 }
 
+void ReplayWindow::CatchUpTo(const uint64_t seq) {
+  if (seq <= last_contiguous_) {
+    return;
+  }
+  last_contiguous_ = seq;
+  std::erase_if(pending_, [seq](const uint64_t pending) { return pending <= seq; });
+  while (pending_.erase(last_contiguous_ + 1) > 0) {
+    ++last_contiguous_;
+  }
+}
+
 } // namespace pbr

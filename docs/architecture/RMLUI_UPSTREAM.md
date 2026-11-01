@@ -29,7 +29,7 @@ See `../pp-cpp-ui/docs/PROVENANCE.md` and [ADR 001](https://github.com/people-po
 
 ## Build flags / product profile
 
-Supported knobs are `PP_BROWSER_*` plus the pp-cpp-ui pin in [`cmake/PpCppUi.cmake`](../../cmake/PpCppUi.cmake). Prefer a sibling `../pp-cpp-ui` checkout when integrating unreleased `develop`; FetchContent falls back to `PP_CPP_UI_GIT_TAG` (release tags on `main`).
+Supported knobs are `PP_BROWSER_*` plus the pp-cpp-ui pin in [`cmake/PpCppUi.cmake`](../../cmake/PpCppUi.cmake). Prefer a sibling `../pp-cpp-ui` checkout when integrating unreleased `develop`; FetchContent falls back to `PP_CPP_UI_GIT_TAG` (release tags on `main`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) always takes the tag.
 
 | Option | Effect |
 |--------|--------|

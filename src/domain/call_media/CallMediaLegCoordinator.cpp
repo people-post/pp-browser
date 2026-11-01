@@ -1574,7 +1574,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
 
       Bundle* target = FindByCallId(hello_call_id);
-      if (IsPendingCallId(holder->call_id) && target && target != holder && target->Reconnecting()) {
+      // PB-018: once a call's bundle is bound to a peer, a hello for it from another PeerId (anyone
+      // who learned the call id can dial) neither joins it nor replaces it while it reconnects.
+      // (params.peer_key is a dial alias that can move; remote_peer_id is the authenticated peer.)
+      const bool from_another_peer = target && target != holder && !target->remote_peer_id.empty() &&
+                                     !link->RemotePeerId().empty() && target->remote_peer_id != link->RemotePeerId();
+      if (IsPendingCallId(holder->call_id) && target && target != holder && target->Reconnecting() &&
+          !from_another_peer) {
         // k4: a peer that lost the path the old way (tear down, redial) sends a fresh hello: take it
         // instead of waiting out the window for a migration it will never send.
         CallMediaLegLog().info << "CallMediaLeg fresh hello replaces reconnecting call_id=" << hello_call_id;
@@ -1594,11 +1600,15 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         pre.offerer = target->offerer;
         pre.local_wins_glare = LocalWinsForBundle(*target, *link);
         pre.other_bundle_busy = OtherBundleBusy(hello_call_id);
+        pre.from_another_peer = from_another_peer;
         const auto pre_decision = DecideCallMediaInboundHello(pre);
         if (pre_decision == CallMediaInboundHelloDecision::RejectBusy ||
-            pre_decision == CallMediaInboundHelloDecision::RejectGlare) {
+            pre_decision == CallMediaInboundHelloDecision::RejectGlare ||
+            pre_decision == CallMediaInboundHelloDecision::RejectPeer) {
           target->remote_offerer = saved_remote_offerer;
-          const char* reason = pre_decision == CallMediaInboundHelloDecision::RejectBusy ? "busy" : "glare";
+          const char* reason = pre_decision == CallMediaInboundHelloDecision::RejectBusy   ? "busy"
+                               : pre_decision == CallMediaInboundHelloDecision::RejectGlare ? "glare"
+                                                                                           : "peer";
           CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id=" << hello_call_id
                                  << " peer=" << link->PeerKey() << " reason=" << reason
                                  << " (existing bundle kept)";

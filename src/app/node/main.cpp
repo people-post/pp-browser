@@ -365,6 +365,11 @@ int main(int argc, char** argv) {
   if (auto bind = pbr::ParseStatusHttpBind(status_addr_spec)) {
     pbr::StatusHttpAuthConfig auth;
     auth.bearer_token = status_token;
+    if (status_token.empty() && !pbr::IsLoopbackStatusBindHost(bind->host)) {
+      // PB-027: anyone who reaches the port reads /status and /metrics. A firewall may be all that
+      // stands in front of it; set PP_NODE_STATUS_TOKEN (a refusal here is planned once deploys do).
+      root.warning << "status HTTP on " << bind->host << " without a token: set PP_NODE_STATUS_TOKEN";
+    }
     pbr::NodeBootstrapResult* boot_ptr = &(*boot);
     // Lab only (pp_local_test.sh --suite dht): GET /dht/find?peer_id=… starts a DHT lookup.
     pbr::StatusHttpActions actions;

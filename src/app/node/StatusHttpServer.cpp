@@ -3,11 +3,13 @@
 #include "common/Logger.h"
 
 #include <asio/io_context.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/write.hpp>
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <system_error>
 #include <utility>
@@ -18,9 +20,14 @@ namespace {
 
 using tcp = asio::ip::tcp;
 constexpr size_t kMaxRequestBytes = 16 * 1024;
+// PB-027: a client that opens connections and sends nothing (or one byte a minute) cannot hold the
+// node's file descriptors: each request must arrive within the deadline, and only so many are open.
+constexpr std::chrono::seconds kRequestDeadline{5};
+constexpr int kMaxOpenConnections = 64;
 
 void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig auth,
-                      StatusHttpServer::SnapshotFn snapshot, StatusHttpActions actions) {
+                      StatusHttpServer::SnapshotFn snapshot, StatusHttpActions actions,
+                      std::shared_ptr<std::atomic<int>> open) {
   auto buf = std::make_shared<std::string>();
   buf->reserve(1024);
   auto chunk = std::make_shared<std::array<char, 1024>>();
@@ -32,8 +39,25 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
     StatusHttpActions actions;
     std::shared_ptr<std::string> buf;
     std::shared_ptr<std::array<char, 1024>> chunk;
+    std::shared_ptr<std::atomic<int>> open;
+    std::unique_ptr<asio::steady_timer> deadline;
 
-    void Start() { ReadMore(); }
+    ~Reader() { open->fetch_sub(1, std::memory_order_acq_rel); }
+
+    void Start() {
+      deadline = std::make_unique<asio::steady_timer>(socket->get_executor(), kRequestDeadline);
+      // Weak: the timer must not keep a finished connection alive; it only closes a slow one.
+      deadline->async_wait([weak = std::weak_ptr<Reader>(shared_from_this())](const std::error_code& ec) {
+        if (ec) {
+          return;  // cancelled: the connection finished first
+        }
+        if (auto self = weak.lock()) {
+          std::error_code ignored;
+          self->socket->close(ignored);
+        }
+      });
+      ReadMore();
+    }
 
     void ReadMore() {
       auto self = shared_from_this();
@@ -90,6 +114,7 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
   reader->actions = std::move(actions);
   reader->buf = std::move(buf);
   reader->chunk = std::move(chunk);
+  reader->open = std::move(open);
   reader->Start();
 }
 
@@ -103,6 +128,7 @@ struct StatusHttpServer::Impl {
   StatusHttpActions actions;
   std::string bound;
   std::atomic<bool> stopping{false};
+  std::shared_ptr<std::atomic<int>> open = std::make_shared<std::atomic<int>>(0);
 
   void ScheduleAccept() {
     if (stopping.load() || !acceptor) {
@@ -114,7 +140,13 @@ struct StatusHttpServer::Impl {
         return;
       }
       if (!ec) {
-        HandleConnection(socket, auth, snapshot, actions);
+        if (open->fetch_add(1, std::memory_order_acq_rel) >= kMaxOpenConnections) {
+          open->fetch_sub(1, std::memory_order_acq_rel);
+          std::error_code ignored;
+          socket->close(ignored);  // full: refuse at once rather than queue
+        } else {
+          HandleConnection(socket, auth, snapshot, actions, open);
+        }
       } else if (ec != asio::error::operation_aborted) {
         logging::getLogger("pp-node").warning << "status HTTP accept: " << ec.message();
       }

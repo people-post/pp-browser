@@ -1190,7 +1190,7 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
   if (ShouldIgnoreInvite(*invite, sender_identity, local_identity, relay_created_at_ms, relay_server_time_ms)) {
     return Answer{};
   }
-  const std::string inviter = invite->inviter_identity.empty() ? sender_identity : invite->inviter_identity;
+  const std::string& inviter = sender_identity;  // ShouldIgnoreInvite: the inviter is the sender
   const std::optional<CallSession> crossed = CrossedCall(*invite, inviter, local_identity);
   if (crossed && crossed->call_id < invite->call_id) {
     log().info << "Calling each other: our call_id=" << crossed->call_id << " wins over call_id=" << invite->call_id
@@ -1274,6 +1274,14 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
                                              const std::string& local_identity,
                                              const std::optional<int64_t> relay_created_at_ms,
                                              const std::optional<int64_t> relay_server_time_ms) {
+  // PB-054: an invite names its sender as the inviter (every client writes its own identity). One
+  // naming someone else would ring as that caller, send our accept to them, and make them the
+  // call's initiator — whom SenderIsInCall then trusts.
+  if (!invite.inviter_identity.empty() && invite.inviter_identity != sender_identity) {
+    log().warning << "CallInvite ignored: inviter " << invite.inviter_identity << " is not the sender "
+                  << sender_identity << " call_id=" << invite.call_id;
+    return true;
+  }
   // Already joined this call — ignore redelivered / duplicate invites (would demote to Ringing
   // and flicker ring chrome over the in-call banner).
   if (auto existing = sessions_.FindParticipant(invite.call_id, local_identity);

@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -64,12 +65,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * keyboard. {@link SDLSurface} alone often misses IME inset dispatch, so this activity also
  * listens on {@code mLayout}.
  *
- * Native argv (via {@link #getArguments()}):
+ * Native argv (via {@link #getArguments()}), for a developer's {@code adb shell am start}:
  * <ul>
  *   <li>{@code --ez startup_timing true} → {@code --startup-timing}</li>
  *   <li>{@code --ez debug true} → {@code --debug}</li>
- *   <li>{@code -e pp_native_args "--startup-timing --debug"} → split on whitespace</li>
+ *   <li>{@code -e pp_native_args "--startup-timing --debug"} → split on whitespace; debuggable builds only</li>
  * </ul>
+ * A launch from a link (contact invites: VIEW / BROWSABLE) carries none — a web page can put extras on
+ * an {@code intent:} URI, and argv takes {@code --config}, {@code --profile}, {@code --pin} (PB-026).
  */
 public class MainActivity extends SDLActivity {
     private static final String TAG = "pp-browser";
@@ -128,7 +131,7 @@ public class MainActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         final Intent intent = getIntent();
-        if (intent == null) {
+        if (intent == null || launchedFromLink(intent)) {
             return new String[0];
         }
         final ArrayList<String> args = new ArrayList<>();
@@ -138,7 +141,8 @@ public class MainActivity extends SDLActivity {
         if (intent.getBooleanExtra("debug", false)) {
             args.add("--debug");
         }
-        final String raw = intent.getStringExtra("pp_native_args");
+        // Any argv (another app could send it, explicitly addressed): a developer build only.
+        final String raw = isDebuggableBuild() ? intent.getStringExtra("pp_native_args") : null;
         if (raw != null && !raw.trim().isEmpty()) {
             for (String part : raw.trim().split("\\s+")) {
                 if (!part.isEmpty()) {
@@ -147,6 +151,14 @@ public class MainActivity extends SDLActivity {
             }
         }
         return args.toArray(new String[0]);
+    }
+
+    private static boolean launchedFromLink(final Intent intent) {
+        return Intent.ACTION_VIEW.equals(intent.getAction()) || intent.hasCategory(Intent.CATEGORY_BROWSABLE);
+    }
+
+    private boolean isDebuggableBuild() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     @Override
