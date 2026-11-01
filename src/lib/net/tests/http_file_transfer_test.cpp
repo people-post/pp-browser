@@ -249,7 +249,8 @@ TEST_F(HttpFileTransferTest, ADrippingServerIsAbortedByTheSpeedLimitAndLeavesNot
 }
 
 TEST_F(HttpFileTransferTest, AFastUploadIsNotCaughtByTheSpeedFloor) {
-  HttpClient::SetStreamingStallLimitForTest(5000, 1);
+  // A 3 s window: curl's Expect: 100-continue pause and a slow CI runner must not look like a stall.
+  HttpClient::SetStreamingStallLimitForTest(5000, 3);
   const std::string path = Write("fast.bin", 2 * 1024 * 1024);
   auto response = HttpClient::PutFile(server_.Url(), path);
   HttpClient::SetStreamingStallLimitForTest(0, 0);

@@ -1,4 +1,5 @@
 #include "gui/chat/VoiceComposer.h"
+#include "lib/media/VoiceSupport.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/tests/voice_test_support.h"
 
@@ -12,6 +13,12 @@ namespace pbr {
 namespace {
 
 using namespace voice_test;
+
+// Linux has no voice messages (VoiceSupport_Linux.cpp): the microphone button is hidden and these tests do not apply.
+#define SKIP_WITHOUT_VOICE()                                                                         \
+  if (!VoiceMessagesSupported()) {                                                                    \
+    GTEST_SKIP() << "voice messages are not supported on this platform";                            \
+  }
 
 /** The app's UI queue, run by the test. */
 struct UiQueue {
@@ -145,7 +152,22 @@ struct Harness {
   std::unique_ptr<VoiceComposer> composer;
 };
 
+// Where voice messages are not supported, the microphone button never shows and a press does nothing.
+TEST(VoiceComposer, NoButtonWherePlatformHasNoVoiceMessages) {
+  if (VoiceMessagesSupported()) {
+    GTEST_SKIP() << "this platform supports voice messages";
+  }
+  Harness h;
+  h.composer->Refresh();
+  EXPECT_FALSE(h.state.show_voice);
+  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  h.ui.RunAll();
+  EXPECT_EQ(h.opens.load(), 0);
+  EXPECT_TRUE(h.sent.empty());
+}
+
 TEST(VoiceComposer, TheMessageGoesToTheChatItWasRecordedIn) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.composer->BeginAt(0, nullptr, /*hold=*/false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
@@ -158,6 +180,7 @@ TEST(VoiceComposer, TheMessageGoesToTheChatItWasRecordedIn) {
 }
 
 TEST(VoiceComposer, AHoldWhoseFingerIsGoneIsDiscardedAndNeverSent) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.fingers = {7};
   h.composer->BeginAt(100, nullptr, /*hold=*/true);
@@ -177,6 +200,7 @@ TEST(VoiceComposer, AHoldWhoseFingerIsGoneIsDiscardedAndNeverSent) {
 }
 
 TEST(VoiceComposer, ASecondFingerComingAndGoingDoesNotEndTheHold) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.fingers = {7};
   h.composer->BeginAt(100, nullptr, true);
@@ -193,6 +217,7 @@ TEST(VoiceComposer, ASecondFingerComingAndGoingDoesNotEndTheHold) {
 }
 
 TEST(VoiceComposer, AtTheLimitItSendsOnlyIfTheFingerIsStillDown) {
+  SKIP_WITHOUT_VOICE();
   for (const bool finger_still_down : {true, false}) {
     Harness h(/*max_seconds=*/1);
     h.source = [opens = h.opens_ptr]() {
@@ -220,6 +245,7 @@ TEST(VoiceComposer, AtTheLimitItSendsOnlyIfTheFingerIsStillDown) {
 }
 
 TEST(VoiceComposer, AMouseHoldWithNoTouchIsEndedByTheRelease) {
+  SKIP_WITHOUT_VOICE();
   Harness h; // no touch fingers listed at all: a mouse on a tablet
   h.composer->BeginAt(100, nullptr, true);
   ASSERT_TRUE(h.WaitTimer("0:03"));
@@ -231,6 +257,7 @@ TEST(VoiceComposer, AMouseHoldWithNoTouchIsEndedByTheRelease) {
 }
 
 TEST(VoiceComposer, ACallRefusesANewRecordingAndEndsARunningOne) {
+  SKIP_WITHOUT_VOICE();
   {
     Harness h;
     h.call_live = true;
@@ -256,6 +283,7 @@ TEST(VoiceComposer, ACallRefusesANewRecordingAndEndsARunningOne) {
 }
 
 TEST(VoiceComposer, LockingOrLeavingThrowsAwayARunningRecording) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.composer->BeginAt(0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
@@ -267,6 +295,7 @@ TEST(VoiceComposer, LockingOrLeavingThrowsAwayARunningRecording) {
 }
 
 TEST(VoiceComposer, LockingAMomentAfterTheReleaseStillSendsNothingAndDeletesTheFile) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.composer->BeginAt(0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
@@ -279,6 +308,7 @@ TEST(VoiceComposer, LockingAMomentAfterTheReleaseStillSendsNothingAndDeletesTheF
 }
 
 TEST(VoiceComposer, ACancelIsSilentEvenWhenTheMicrophoneThenFails) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   auto gate = std::make_shared<std::atomic<bool>>(false);
   auto opens = std::make_shared<std::atomic<int>>(0);
@@ -293,6 +323,7 @@ TEST(VoiceComposer, ACancelIsSilentEvenWhenTheMicrophoneThenFails) {
 }
 
 TEST(VoiceComposer, AReleaseBeforeTheMicrophoneIsReadyIsTooShortNotADeviceError) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   auto gate = std::make_shared<std::atomic<bool>>(false);
   auto opens = std::make_shared<std::atomic<int>>(0);
@@ -307,6 +338,7 @@ TEST(VoiceComposer, AReleaseBeforeTheMicrophoneIsReadyIsTooShortNotADeviceError)
 }
 
 TEST(VoiceComposer, ARecordingWaitsForAPlayingClipToLetGoOfTheSpeaker) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.defer_playback_stop = true;
   h.composer->BeginAt(0, nullptr, false);
@@ -319,6 +351,7 @@ TEST(VoiceComposer, ARecordingWaitsForAPlayingClipToLetGoOfTheSpeaker) {
 }
 
 TEST(VoiceComposer, CancelledWhileWaitingForTheClipNeverOpensTheMicrophone) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.defer_playback_stop = true;
   h.composer->BeginAt(0, nullptr, false);
@@ -330,6 +363,7 @@ TEST(VoiceComposer, CancelledWhileWaitingForTheClipNeverOpensTheMicrophone) {
 }
 
 TEST(VoiceComposer, TheFirstPressOnlyAsksForThePermission) {
+  SKIP_WITHOUT_VOICE();
   Harness h;
   h.mic = MicPermission::NotDetermined;
   h.composer->BeginAt(0, nullptr, true);
