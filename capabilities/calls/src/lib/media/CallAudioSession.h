@@ -6,11 +6,17 @@ namespace pbr {
  * Platform audio session for in-call capture/playback.
  * Speakerphone toggle is meaningful on phone-like devices (Android / iOS);
  * desktop stubs return SupportsSpeakerToggle() == false.
- * Default route is earpiece; speakerphone is opt-in per call.
+ * Default route is earpiece; speakerphone is opt-in per call, chosen any time the call is on screen.
  */
 namespace CallAudioSession {
 
+/** Takes the phone's call audio session and applies the call's speaker choice (IsSpeakerphoneOn). */
 void ActivateForVoipCall();
+/**
+ * Releases the session and puts the OS route back on the earpiece. The call's speaker choice survives: a media
+ * rebuild mid-call (failover, retry) activates again with it. Whoever ends the call clears the choice
+ * (SetSpeakerphoneOn(false)).
+ */
 void Deactivate();
 /**
  * An audio user is about to start I/O without ActivateForVoipCall (ringtone / ringback open their
@@ -21,7 +27,12 @@ void CancelPendingDeactivate();
 
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();
+/** The call's speaker choice. */
 bool IsSpeakerphoneOn();
+/**
+ * Sets the call's speaker choice: routed now when the session is active (ringback or call media), else when
+ * ActivateForVoipCall next takes it — so it may be set while the call is still ringing out or connecting.
+ */
 void SetSpeakerphoneOn(bool on);
 /** True when a speaker-route change needs the SDL devices closed and reopened (Android AudioRecord goes silent otherwise). */
 bool SpeakerToggleNeedsDeviceReopen();

@@ -11,7 +11,7 @@ namespace pbr {
 namespace CallAudioSession {
 namespace {
 
-/** Default earpiece; user opts into speakerphone. Reset each call on Deactivate. */
+/** The call's speaker choice: default earpiece; kept across Deactivate (a media rebuild), cleared when the call ends. */
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 
@@ -103,7 +103,6 @@ void ActivateForVoipCall() {
 
 void Deactivate() {
   g_session_active.store(false);
-  g_speakerphone.store(false);
   ApplySpeakerphoneLocked(false);
   ApplyVoipModeLocked(false);
 }
