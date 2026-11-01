@@ -14,7 +14,9 @@
 
 #include "common/Module.h"
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -27,6 +29,8 @@ namespace pbr {
 
 class GroupMembershipWorkflow : public Module {
 public:
+  ~GroupMembershipWorkflow();
+
   GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                          GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
                          AccountKeyResolver& account_keys);
@@ -180,6 +184,9 @@ private:
 
   mutable std::mutex unreachable_mutex_;
   std::set<std::pair<std::string, std::string>> unreachable_;
+
+  /** False once destroyed: the retry one-shots of ResumePendingGroupSends check it before touching `this`. */
+  std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
 };
 
 } // namespace pbr

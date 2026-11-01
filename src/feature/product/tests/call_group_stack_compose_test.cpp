@@ -267,6 +267,9 @@ protected:
         if (dissolved_) {
           return std::set<std::string>{};  // a dissolved group (G016): a roster with nobody in it
         }
+        if (unknown_roster_) {
+          return std::nullopt;  // a roster this device does not hold (G016 says nothing about such a group)
+        }
         if (!group_of_[i].empty()) {
           return group_of_[i];
         }
@@ -341,6 +344,7 @@ protected:
   /** Who side i sees in the group; empty: every side. */
   std::set<std::string> group_of_[kSides];
   bool dissolved_ = false;
+  bool unknown_roster_ = false;
 
   static std::string MeshPeerIdOf(size_t i) { return std::string("12D3KooWGroupSide") + static_cast<char>('A' + i); }
 
@@ -1400,6 +1404,27 @@ TEST_F(CallGroupStackComposeTest, ADissolvedGroupEndsItsLiveCall) {
     EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::Idle) << "side " << i << Describe(call_id);
   }
   EXPECT_EQ(sides_[kB].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
+}
+
+// G016, the other way: a roster this device does not hold yet (a member who just joined, a restored device still
+// checking) is not a dissolved group. The call is placed and the invite rings.
+TEST_F(CallGroupStackComposeTest, AnUnknownRosterStillPlacesAndRings) {
+  group_id_ = "group-1";
+  unknown_roster_ = true;
+  Thread thread;
+  thread.id = "thread-group-call";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = *group_id_;
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(sides_[kA].store->UpsertThread(thread));
+  auto started = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kB].ui->TopPendingInvite().value().has_value();
+  });
+  EXPECT_TRUE(sides_[kB].ui->TopPendingInvite().value().has_value()) << "B rang";
 }
 
 // G016: no call can be started in a dissolved group.
