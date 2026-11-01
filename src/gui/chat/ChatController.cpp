@@ -411,6 +411,7 @@ ChatController::ChatController()
   presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
+      .prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); },
   });
   scroller_.SetDirtyTurns([]() { DirtyChatTurns(); });
   working_set_.SetWidgetLookup([this](const std::string& entry_id) -> const TurnWidgetState* {

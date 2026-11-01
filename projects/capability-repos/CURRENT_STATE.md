@@ -29,6 +29,10 @@
   `BackgroundSyncScheduler.h`, `ContextBudget` at the common root; `DirectoryShadowCache` on mesh's
   `IDirectoryClient`, the profile-icon fetch and upload in `lib/net` — 2 edges / 8 sites left
   (messaging → app, messaging → node).
+- **P1, messaging → app:** 5 sites → 0 — `MessagingTools` (messaging's AI tools) and its tests in
+  `feature/product`, where messaging meets AI; the chats list's preview prose a `ChatPresenter` port
+  (`Callbacks::prose`) the GUI and pp-app-probe fill with `StructuredTextParser::PlainText`;
+  `kGroupMemberLimit` in `MessagingLimits.h` — 1 edge / 3 sites left (messaging → node).
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

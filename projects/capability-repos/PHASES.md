@@ -25,7 +25,9 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       `Config` section) to the common root
 - [x] people → net (5): `DirectoryShadowCache` on mesh's `IDirectoryClient`; profile icons (`ProfileIconFetch`,
       `ProfileIconClient`) into `lib/net`; the peers tests on fake directories
-- [ ] messaging → app (5): messaging declares the ports AI and the shell implement (CR007)
+- [x] messaging → app (5): messaging's AI tools (`MessagingTools`) and their tests into `feature/product`;
+      the chats list's preview prose a `ChatPresenter` port the GUI fills with AI's parser (CR007);
+      `kGroupMemberLimit` into `MessagingLimits.h`; an unused `lib/ui` include dropped
 - [x] node → messaging, node → calls, messaging → calls, calls → broadcast: the product's L4 protocol ids and
       `ProductMeshProtocols()` into the base (`common/ProtocolIds.h`); the people-picker ports into
       `feature/product`; an unused broadcast include out of calls

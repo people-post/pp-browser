@@ -7,6 +7,5 @@
 # Identity using the backend client (directory, blob fetch for profile icons): a port people declares.
 # AI's tool registry and structured text, and lib/ui types, from the conversations feature: messaging
 # declares the ports AI and the shell implement (CR007).
-messaging -> app 5
 # The conversations hub naming node services and mesh executors: the app wires them in.
 messaging -> node 3

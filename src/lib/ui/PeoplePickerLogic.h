@@ -1,13 +1,12 @@
 #pragma once
 
+#include "common/chat/MessagingLimits.h"
+
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 namespace pbr {
-
-/** A group holds at most this many members (the owner's device checks it; G014 may add a hard stop). */
-inline constexpr int kGroupMemberLimit = 50;
 
 enum class PeoplePickerMode {
   Free,

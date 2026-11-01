@@ -19,7 +19,6 @@
 #include "lib/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "lib/people/ProfileIdentityView.h"
-#include "lib/ui/ChatWidgetTypes.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 #include "foundation/data/PaymentPromiseTypes.h"

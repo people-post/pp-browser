@@ -37,7 +37,7 @@
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
 #include "gui/chat/ChatController.h"
-#include "feature/conversations/MessagingTools.h"
+#include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductOwners.h"

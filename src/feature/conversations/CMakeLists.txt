@@ -11,7 +11,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     AccountLockerWorkflow.cpp
     InboxController.cpp
     MessageRouter.cpp
-    MessagingTools.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp

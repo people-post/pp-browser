@@ -14,7 +14,6 @@
 #include "common/EmojiKey.h"
 #include "feature/conversations/SessionListText.h"
 #include "foundation/platform/ILocalNotifier.h"
-#include "lib/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
@@ -252,7 +251,8 @@ void ChatPresenter::Refresh() {
     row.title = facade_->ResolveThreadLabel(thread).title;
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
-    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(GroupEventPreviewOr(thread, local_account)));
+    const std::string text = GroupEventPreviewOr(thread, local_account);
+    row.preview = SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text);
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);

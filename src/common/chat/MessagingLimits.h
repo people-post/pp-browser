@@ -10,6 +10,8 @@ inline constexpr size_t kMaxE2ePlaintextBytes = 128 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeJsonBytes = 256 * 1024;
 inline constexpr size_t kMaxPollBatchMessages = 100;
+/** A group holds at most this many members (the owner's device checks it; G014 may add a hard stop). */
+inline constexpr int kGroupMemberLimit = 50;
 /** WorkManager backup when alerts on (milliseconds). */
 inline constexpr uint64_t kWorkManagerAlertsOnBackupIntervalMs = 3ULL * 60ULL * 60ULL * 1000ULL;
 /** WorkManager when alerts off (~15 min Android minimum). */

@@ -1,7 +1,7 @@
 // The local "operate the app" renderer fed with what the REAL messaging tools return (registered on a real registry; no devices).
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
-#include "feature/conversations/MessagingTools.h"
+#include "feature/product/MessagingTools.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ai/LocalActionRender.h"
 #include "lib/messaging/ModelFacingJson.h"
