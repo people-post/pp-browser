@@ -782,6 +782,10 @@ void GroupMembershipWorkflow::EndDissolvedFromLocker(const AccountStateGroup& gr
   }
 }
 
+GroupMembershipWorkflow::~GroupMembershipWorkflow() {
+  alive_->store(false);
+}
+
 Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
   auto local = LocalRelayIdentity();
   if (!local) {
@@ -888,9 +892,18 @@ void GroupMembershipWorkflow::ResumePendingGroupSends(const size_t attempt) {
     }
   }
   if (!all_sent && attempt < std::size(kRetryDelaysMs)) {
-    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRetryDelaysMs[attempt]), [this, attempt]() {
-      AppRuntime::PostWorkerNormal([this, attempt]() { ResumePendingGroupSends(attempt + 1); });
-    });
+    // The workflow goes with the messaging session (profile reset, account switch); a retry that outlives it does nothing.
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRetryDelaysMs[attempt]),
+                                           [this, attempt, alive = alive_]() {
+                                             if (!alive->load()) {
+                                               return;
+                                             }
+                                             AppRuntime::PostWorkerNormal([this, attempt, alive]() {
+                                               if (alive->load()) {
+                                                 ResumePendingGroupSends(attempt + 1);
+                                               }
+                                             });
+                                           });
   }
 }
 

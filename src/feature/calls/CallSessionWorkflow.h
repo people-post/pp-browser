@@ -241,6 +241,8 @@ private:
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
   /** Whether `identity` is in the group now (true when membership is not checked). */
   bool InGroup(const std::string& group_id, const std::string& identity) const;
+  /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
+  bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /**
    * V053: who is no longer in the group is no longer in its call — they are taken as gone (the
    * key rotates without them); this device, if it is the one, leaves. Only who this device saw in
