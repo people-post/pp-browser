@@ -9,7 +9,7 @@ two peers of one capability, or an edge against the order, may not — that cros
 |--------------|------|-------|
 | people | [`capabilities/people/src/lib/people/`](../../capabilities/people/src/lib/people/) (CR022) | `pp_lib_people` |
 | media | `lib/media/` | `pp_lib_media` |
-| net | `lib/net/` | `pp_lib_net` |
+| net | [`capabilities/net/src/lib/net/`](../../capabilities/net/src/lib/net/) (CR022) | `pp_lib_net` |
 | ui | `lib/ui/` | `pp_lib_ui` (product shell: theme/catalogs/input) |
 | messaging | `lib/messaging/` | `pp_lib_messaging` |
 | calls | `lib/calls/` | `pp_lib_calls` |

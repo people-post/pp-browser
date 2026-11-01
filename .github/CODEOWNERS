@@ -2,7 +2,7 @@
 # protection enables "require review from code owners"; until then it is documentation for reviewers.
 #
 # Network layer, Amp, call connection, chat protocol, server contracts, CI / release, Android shell.
-src/lib/net/                      @yhw1630
+capabilities/net/src/lib/net/     @yhw1630
 src/lib/messaging/                @yhw1630
 src/feature/calls/                   @yhw1630
 cmake/PpCppAmp.cmake                 @yhw1630
@@ -30,8 +30,8 @@ src/app/DiagnosticsUpload.*          @yhw1630 @gzdemon77
 # Identity, crypto, registration, local backup: both.
 src/foundation/crypto/               @yhw1630 @gzdemon77
 src/foundation/identity/             @yhw1630 @gzdemon77
-src/lib/people/IdentityStore.*    @yhw1630 @gzdemon77
-src/domain/registration/            @yhw1630 @gzdemon77
+capabilities/people/src/lib/people/IdentityStore.*  @yhw1630 @gzdemon77
+capabilities/net/src/domain/registration/  @yhw1630 @gzdemon77
 
 # Apple platform, media, call UI, AI client, GUI, assets.
 src/lib/media/                    @gzdemon77

@@ -113,16 +113,18 @@ the map and the order and checks includes and CMake links (CR016); edges still t
 
 A capability moves out of `src/` into its own folder, `capabilities/<name>/`, before any repo split
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
-Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`).
+Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **net** (`lib/net`, `domain/registration`).
 
 - `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
-  sets `PP_BROWSER_CAPABILITY`, builds its `common/` part (`pp_<name>_common`, whose include root is that
-  `src/`) and adds its lib and domain folders; `src/CMakeLists.txt` adds the folders in the capability order,
-  after foundation.
+  calls `pp_browser_capability(<name>)` (`cmake/PpBrowserCapability.cmake`): the lib / domain / feature helpers
+  then add that `src/` as an include root of their targets, and its tests get the label. It builds its `common/`
+  part, if any (`pp_<name>_common`), and adds its lib and domain folders; `src/CMakeLists.txt` adds the folders in
+  the capability order, after foundation.
 - The gate and the include checks read every folder as they read `src/` (`scripts/check/source_trees.sh`); the
   gate fails when a folder holds another capability's path.
 - Its tests carry the CTest label `capability:<name>`. A PR skips them (`ctest -LE`) when neither the folder nor
-  anything below it changed (CI's changes filter, one output per folder); pushes to develop and main run all.
+  anything below it changed (CI's changes filter: one filter per folder, the one below it plus the folder); pushes
+  to develop and main run all.
 - A later split into the capabilities repo is a `git subtree split` of the folder.
 
 ## What `src/common` provides

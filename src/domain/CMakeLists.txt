@@ -3,7 +3,6 @@ include(PpBrowserDomain)
 # Domain modules: capabilities composed from lib peers that features share (docs/architecture/
 # SRC_LAYOUT.md). Acyclic, in this order: a module may use only the ones above it
 # (scripts/check/check_domain_includes.sh). Each names what it links (no pp_base).
-add_subdirectory(registration)
 add_subdirectory(node)
 add_subdirectory(call_media)
 

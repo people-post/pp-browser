@@ -5,6 +5,7 @@ add_subdirectory(common)
 add_subdirectory(foundation)
 # Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order.
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/people ${CMAKE_BINARY_DIR}/capabilities/people)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/net ${CMAKE_BINARY_DIR}/capabilities/net)
 add_subdirectory(lib)
 
 # Convenience INTERFACE: all foundation modules (not Amp — Amp is FetchContent lib).

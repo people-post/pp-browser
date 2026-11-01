@@ -44,7 +44,8 @@ jobs:
       src: ${{ steps.filter.outputs.src }}
       apple: ${{ steps.filter.outputs.apple }}
       android: ${{ steps.filter.outputs.android }}
-      people: ${{ steps.filter.outputs.people }}
+      # The filters that matched, as a JSON list: the Test step reads the capability folders' from it.
+      changes: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -90,10 +91,10 @@ jobs:
               - 'third_party/**'
               - '.github/workflows/build.yml'
             # A moved capability's tests (CTest label capability:<name>) run on a PR only when its folder or
-            # something below it changed: the base (src/common, src/foundation), cmake/, third_party/
-            # (projects/capability-repos CR022). A capability's filter lists the folders of those below it.
-            people:
-              - 'capabilities/people/**'
+            # something below it changed: the base (src/common, src/foundation), cmake/, third_party/ and the
+            # capabilities before it (projects/capability-repos CR022). Each filter is the one below it plus its
+            # folder; the Test step lists the folders.
+            capability_base: &capability_base
               - 'src/common/**'
               - 'src/foundation/**'
               - 'src/CMakeLists.txt'
@@ -101,6 +102,12 @@ jobs:
               - 'CMakeLists.txt'
               - 'third_party/**'
               - '.github/workflows/build.yml'
+            people: &people
+              - *capability_base
+              - 'capabilities/people/**'
+            net: &net
+              - *people
+              - 'capabilities/net/**'
 
   lint:
     needs: changes
@@ -238,11 +245,19 @@ jobs:
         shell: bash
         env:
           TRACE_DEBUG: "1"
-          # A PR skips the tests of the capabilities it does not touch (CR022); pushes run every test.
-          PP_UNCHANGED_CAPABILITIES: >-
-            ${{ github.event_name == 'pull_request' && needs.changes.outputs.people != 'true' && 'people' || '' }}
+          # A PR skips the tests of the capability folders it does not touch (CR022); pushes run every test.
+          PP_IS_PR: ${{ github.event_name == 'pull_request' }}
+          PP_CHANGED_FILTERS: ${{ needs.changes.outputs.changes }}
         run: |
-          skip=($PP_UNCHANGED_CAPABILITIES)
+          skip=()
+          if [ "$PP_IS_PR" = true ]; then
+            for capability in people net; do
+              case "$PP_CHANGED_FILTERS" in
+                *"\"$capability\""*) ;;
+                *) skip+=("$capability") ;;
+              esac
+            done
+          fi
           if [ ${#skip[@]} -gt 0 ]; then
             echo "Unchanged capabilities, tests skipped: ${skip[*]}"
             ctest --test-dir build -C Release --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
