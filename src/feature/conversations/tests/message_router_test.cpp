@@ -2,11 +2,13 @@
 
 #include "common/PlatformLimits.h"
 #include "common/thread/ThreadTypes.h"
+#include "feature/conversations/SharedAiConsent.h"
 
 #include <gtest/gtest.h>
 
 #include <optional>
 #include <string>
+#include <unordered_set>
 
 TEST(MessageRouterTest, BoundsStructuredUserPayloadWithoutRestrictingText) {
   const std::optional<std::string> at_limit(std::in_place, pbr::kMaxUserPayloadBytes, 'x');
@@ -18,6 +20,27 @@ TEST(MessageRouterTest, BoundsStructuredUserPayloadWithoutRestrictingText) {
   ASSERT_FALSE(rejected);
   EXPECT_EQ(rejected.error().message,
             "User payload exceeds limit of " + std::to_string(pbr::kMaxUserPayloadBytes) + " bytes");
+}
+
+// "@ai+ …" asks before sharing unless the chat's "don't ask again" is in force: ticked this session, or stored.
+TEST(MessageRouterTest, ASharedAiChatTheUserTickedIsNotAskedAgainUntilItIsCleared) {
+  std::unordered_set<std::string> stored;  // what the thread prefs hold
+  pbr::SharedAiConsent consent;
+  consent.SetStored([&stored](const std::string& thread_id) { return stored.count(thread_id) > 0; });
+
+  EXPECT_FALSE(consent.Given("g")) << "asks by default";
+  stored.insert("g");  // ticked in an earlier session
+  EXPECT_TRUE(consent.Given("g")) << "routed without asking";
+  EXPECT_FALSE(consent.Given("other")) << "per chat";
+
+  stored.erase("g");  // "Ask before sharing with AI"
+  consent.Forget("g");
+  EXPECT_FALSE(consent.Given("g")) << "asks again";
+
+  consent.Remember("g");  // ticked now: holds even before the stored setting is read back
+  EXPECT_TRUE(consent.Given("g"));
+  consent.Forget("g");
+  EXPECT_FALSE(consent.Given("g"));
 }
 
 TEST(MessageRouterTest, AiThreadDropsTheAtAiPrefixAndOtherThreadsKeepTheText) {

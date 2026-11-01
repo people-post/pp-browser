@@ -346,6 +346,18 @@ void ChatPresenter::SetMuteMentions(const std::string& thread_id, const bool mut
   UpdatePrefs(thread_id, [mute](ThreadLocalPrefs& prefs) { prefs.mute_mentions = mute; });
 }
 
+void ChatPresenter::AskBeforeSharingAi(const std::string& thread_id) {
+  if (!facade_ || !facade_->ClearSharedAiConfirmed(thread_id)) {
+    if (callbacks_.prefs_failed) {
+      callbacks_.prefs_failed();
+    }
+    Changed();
+    return;
+  }
+  ForgetCachedPrefs();  // the facade wrote the stored row, not the cache
+  Refresh();
+}
+
 void ChatPresenter::SetArchived(const std::string& thread_id, const bool archived) {
   UpdatePrefs(thread_id, [archived](ThreadLocalPrefs& prefs) { prefs.archived = archived; });
 }
@@ -769,6 +781,8 @@ Roe<void> ChatPresenter::HandOverAndClose(const std::string& thread_id, const st
   }
   return CloseThread(thread_id);
 }
+
+void ChatPresenter::ForgetCachedPrefs() { prefs_.reset(); }
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
   if (prefs_) {

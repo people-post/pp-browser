@@ -6,11 +6,11 @@
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/SharedAiConsent.h"
 
 #include <functional>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -61,6 +61,10 @@ public:
                          std::function<void(bool confirmed, bool dont_ask_again)> done)>;
   void SetSharedAiConfirmCallback(SharedAiConfirmCallback callback);
   void MarkSharedAiConfirmed(const std::string& thread_id);
+  /** The user is to be asked again for this chat (the session's tick; the stored setting is cleared by the caller). */
+  void ClearSharedAiConfirmed(const std::string& thread_id);
+  /** Whether a chat's "don't ask again" is stored (per chat, kept across restarts); read on every check. */
+  void SetSharedAiConfirmedPort(SharedAiConsent::StoredPort port);
 
 private:
   bool AgentBusy() const { return agent_.is_busy && agent_.is_busy(); }
@@ -72,7 +76,7 @@ private:
   IThreadStore& store_;
   std::function<void(const std::string&, const std::optional<std::string>&)> on_local_action_;
   SharedAiConfirmCallback shared_ai_confirm_;
-  std::unordered_set<std::string> shared_ai_confirmed_threads_;
+  SharedAiConsent shared_ai_consent_;
 };
 
 } // namespace pbr

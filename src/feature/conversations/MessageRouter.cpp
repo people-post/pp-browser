@@ -28,11 +28,19 @@ void MessageRouter::SetSharedAiConfirmCallback(SharedAiConfirmCallback callback)
 }
 
 void MessageRouter::MarkSharedAiConfirmed(const std::string& thread_id) {
-  shared_ai_confirmed_threads_.insert(thread_id);
+  shared_ai_consent_.Remember(thread_id);
+}
+
+void MessageRouter::ClearSharedAiConfirmed(const std::string& thread_id) {
+  shared_ai_consent_.Forget(thread_id);
+}
+
+void MessageRouter::SetSharedAiConfirmedPort(SharedAiConsent::StoredPort port) {
+  shared_ai_consent_.SetStored(std::move(port));
 }
 
 bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
-  return shared_ai_confirmed_threads_.find(thread_id) == shared_ai_confirmed_threads_.end();
+  return !shared_ai_consent_.Given(thread_id);
 }
 
 bool MessageRouter::IsAgentToolPayload(const ThreadKind kind, const std::optional<std::string>& user_payload) {
