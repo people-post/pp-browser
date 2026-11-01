@@ -87,6 +87,8 @@ struct ChatShellState {
   int archived_count = 0;
   bool showing_archived = false;
   ui::String archived_entry_label;
+  /** Rows remain beyond the window the sidebar draws (the "Loading…" line). */
+  bool sessions_more = false;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

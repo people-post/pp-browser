@@ -773,6 +773,7 @@ void ChatController::AfterThreadPrefsChanged() {
 }
 
 void ChatController::OnToggleArchived() {
+  session_window_.Reset();  // the other list starts at its first rows
   presenter_.ToggleArchived();
   RefreshFromMessaging();
   NotifySurfaceChanged();
@@ -879,6 +880,7 @@ void ChatController::OnProfileDataReset() {
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
+  session_window_.Reset();
   working_set_.ClearAll();
   widgets_.ClearAll();
   pending_reply_.reset();
@@ -906,7 +908,11 @@ void ChatController::ApplySessionList() {
   shell_.archived_entry_label =
       list.showing_archived ? Tr("sidebar.archived.back").c_str()
                             : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count)}}).c_str();
-  for (const ChatSessionRow& from : list.rows) {
+  const size_t visible = session_window_.Visible(list.rows.size());
+  shell_.sessions_more = session_window_.More(list.rows.size());
+  shell_.sessions.reserve(visible);
+  for (size_t i = 0; i < visible; ++i) {
+    const ChatSessionRow& from = list.rows[i];
     SessionRow row;
     row.id = from.id.c_str();
     // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
@@ -927,6 +933,22 @@ void ChatController::ApplySessionList() {
 
 void ChatController::OnMessagesScroll() {
   scroller_.OnMessagesScroll();
+}
+
+void ChatController::OnSessionsScroll() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::Element* el = context_->GetDocument(0)->GetElementById("sidebar-sessions");
+  if (!el) {
+    return;
+  }
+  const bool near_bottom = SessionListNearBottom(el->GetScrollTop(), el->GetScrollHeight(), el->GetClientHeight());
+  if (session_window_.ExtendIfNearBottom(presenter_.List().rows.size(), near_bottom)) {
+    ApplySessionList();
+    DirtyShell();
+    NotifySurfaceChanged();
+  }
 }
 
 void ChatController::OnJumpToLatest() {
@@ -2617,6 +2639,7 @@ bool ChatController::Setup(ui::Context* context) {
   if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
         ctor.BindEventCallback("open_new_session_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenNewSession(ev); }));
