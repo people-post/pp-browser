@@ -12,6 +12,24 @@ require_env() {
   fi
 }
 
+# PB-046: the wrapper jar is code every build runs; it must be the official one for the pinned
+# Gradle (gradle-wrapper.properties pins the distribution's checksum). Gradle publishes the jar's at
+# https://services.gradle.org/distributions/gradle-<version>-wrapper.jar.sha256 — update both together.
+GRADLE_WRAPPER_JAR_SHA256="2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046"  # 8.12
+
+verify_gradle_wrapper() {
+  local jar="${ANDROID_DIR}/gradle/wrapper/gradle-wrapper.jar" actual
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "${jar}" | cut -d' ' -f1)"
+  else
+    actual="$(shasum -a 256 "${jar}" | cut -d' ' -f1)"
+  fi
+  if [[ "${actual}" != "${GRADLE_WRAPPER_JAR_SHA256}" ]]; then
+    echo "error: ${jar} is not the official Gradle wrapper (sha256 ${actual})" >&2
+    exit 1
+  fi
+}
+
 run_gradlew() {
   local task="$1"
   local -a version_args=()
@@ -21,6 +39,7 @@ run_gradlew() {
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     version_args+=("-PppBrowserReleaseVersion=${PP_BROWSER_RELEASE_VERSION}")
   fi
+  verify_gradle_wrapper
   # ${arr[@]+"${arr[@]}"}: an empty array trips `set -u` on bash 3.2 (macOS /bin/bash).
   ./gradlew "$task" ${version_args[@]+"${version_args[@]}"}
 }
@@ -65,6 +84,7 @@ case "${cmd}" in
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
+    verify_gradle_wrapper
     if [[ -n "${ANDROID_SERIAL:-}" ]]; then
       ./gradlew installDebug -Pandroid.injected.invoked.from.ide=true \
         -Pandroid.injected.device.serial="${ANDROID_SERIAL}"

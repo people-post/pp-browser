@@ -468,6 +468,11 @@ binds on build and unbinds on teardown (`CallControlFamily.*`). Every signaling 
 **control lane** (`CallControlClient::SendDirect` → `send_control`): applied once while fresh, never a
 transcript row, no thread. A live call holds key rotation and defers background history sync.
 
+**Who may send what** (all on the signed sender): an invite's `inviter_identity` must be its sender
+(`ShouldIgnoreInvite`; one naming someone else does not ring); every other control except the
+`call_summary` applies only when the sender is the call's initiator or a current participant —
+invited, ringing or joined (`SenderIsInCall`).
+
 **History** is one `call_summary` per call (`CallSummaryDetail`: outcome, media, talk time, group or
 not), written when the call ends (`CallSessionWorkflow::SendSummary`), worded from the reader's side:
 
