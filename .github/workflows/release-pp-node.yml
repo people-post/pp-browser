@@ -79,20 +79,26 @@ jobs:
       - name: Parse version
         id: version
         shell: bash
+        env:
+          INPUT_REF: ${{ inputs.ref }}  # PB-009: as env, never pasted into the script text
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             # Dogfood: no GitHub Release; image tag from short SHA
             SHORT="$(git rev-parse --short=8 HEAD)"
             echo "release_version=0.0.0-dev.${SHORT}" >> "$GITHUB_OUTPUT"
             echo "project_version=0.0.0" >> "$GITHUB_OUTPUT"
             echo "publish_github_release=false" >> "$GITHUB_OUTPUT"
             echo "image_latest=false" >> "$GITHUB_OUTPUT"
-            echo "Packaging pp-node dogfood from ${{ inputs.ref }} (${SHORT})"
+            echo "Packaging pp-node dogfood from ${INPUT_REF} (${SHORT})"
           else
             # Tag: pp-node/v1.2.3 or pp-node/v1.2.3-rc1
             REF="${GITHUB_REF_NAME#pp-node/}"
             RELEASE_VERSION="${REF#v}"
+            if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::tag ${GITHUB_REF_NAME} is not pp-node/vX.Y.Z or pp-node/vX.Y.Z-suffix"
+              exit 1
+            fi
             PROJECT_VERSION="${RELEASE_VERSION%%-*}"
             echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
             echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"

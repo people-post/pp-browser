@@ -133,9 +133,13 @@ jobs:
       - name: Resolve version stamps
         id: ver
         shell: bash
+        # PB-009: dispatch inputs arrive as env, never pasted into the script text.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
           set -euo pipefail
-          marketing='${{ inputs.version }}'
+          marketing="${INPUT_VERSION}"
           if [[ -z "$marketing" ]]; then
             marketing="$(sed -n 's/^set(PP_BROWSER_VERSION "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)"
           fi
@@ -143,10 +147,14 @@ jobs:
             echo "::error::Could not resolve PP_BROWSER_VERSION"
             exit 1
           fi
-          build='${{ inputs.build_number }}'
+          build="${INPUT_BUILD_NUMBER}"
           if [[ -z "$build" ]]; then
             # Offset avoids colliding with early local TestFlight uploads (1, 2, 3, …).
-            build="$(( ${{ github.run_number }} + 100 ))"
+            build="$(( GITHUB_RUN_NUMBER + 100 ))"
+          fi
+          if [[ ! "$marketing" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build" =~ ^[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z and build number digits (got ${marketing} / ${build})"
+            exit 1
           fi
           echo "marketing=${marketing}" >> "$GITHUB_OUTPUT"
           echo "build=${build}" >> "$GITHUB_OUTPUT"
@@ -179,7 +187,7 @@ jobs:
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| Ref | \`${{ github.sha }}\` (\`${{ github.ref_name }}\`) |"
+            echo "| Ref | \`${GITHUB_SHA}\` (\`${GITHUB_REF_NAME}\`) |"
             echo "| Version | ${{ steps.ver.outputs.marketing }} (${{ steps.ver.outputs.build }}) |"
             echo ""
             echo "Wait for processing in App Store Connect, answer export compliance if prompted,"

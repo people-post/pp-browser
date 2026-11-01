@@ -68,9 +68,16 @@ jobs:
         shell: bash
         run: |
           RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          # PB-009: the tag name is anyone-with-push's text; only a version goes on into the build.
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
           PROJECT_VERSION="${RELEASE_VERSION%%-*}"
           echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PP_RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          echo "PP_PROJECT_VERSION=${PROJECT_VERSION}" >> "$GITHUB_ENV"
           echo "Packaging pp-browser ${RELEASE_VERSION} for macOS"
 
       - name: Configure
@@ -80,8 +87,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPP_BROWSER_COMPILER_CACHE=ON \
             -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" \
-            -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
-            -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
+            -DPP_BROWSER_VERSION="${PP_PROJECT_VERSION}" \
+            -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
@@ -222,9 +229,16 @@ jobs:
         shell: bash
         run: |
           RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          # PB-009: the tag name is anyone-with-push's text; only a version goes on into the build.
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
           PROJECT_VERSION="${RELEASE_VERSION%%-*}"
           echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PP_RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          echo "PP_PROJECT_VERSION=${PROJECT_VERSION}" >> "$GITHUB_ENV"
           echo "Packaging pp-browser ${RELEASE_VERSION} for Windows"
 
       - name: Configure
@@ -235,8 +249,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPP_BROWSER_COMPILER_CACHE=ON \
             -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" \
-            -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
-            -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
+            -DPP_BROWSER_VERSION="${PP_PROJECT_VERSION}" \
+            -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
@@ -364,9 +378,16 @@ jobs:
         shell: bash
         run: |
           RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          # PB-009: the tag name is anyone-with-push's text; only a version goes on into the build.
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
           PROJECT_VERSION="${RELEASE_VERSION%%-*}"
           echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PP_RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          echo "PP_PROJECT_VERSION=${PROJECT_VERSION}" >> "$GITHUB_ENV"
           echo "Packaging pp-browser ${RELEASE_VERSION} for Android"
 
       - name: Build release APK
@@ -397,8 +418,8 @@ jobs:
             exit 1
           fi
           mkdir -p dist/android
-          cp "$apk" "dist/android/pp-browser-${{ steps.version.outputs.release_version }}-android.apk"
-          echo "Packaged dist/android/pp-browser-${{ steps.version.outputs.release_version }}-android.apk"
+          cp "$apk" "dist/android/pp-browser-${PP_RELEASE_VERSION}-android.apk"
+          echo "Packaged dist/android/pp-browser-${PP_RELEASE_VERSION}-android.apk"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
