@@ -9,7 +9,7 @@
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/people/ContactJson.h"
 
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "common/runtime/AppRuntime.h"
 
 #include "common/Utilities.h"
@@ -740,7 +740,7 @@ void GroupMembershipWorkflow::AppendDissolvedLine(const std::string& group_id, c
   }
   if (auto thread = store_.GetThread(**added); thread && *thread) {
     Thread row = **thread;
-    row.preview = Tr("chat.group.dissolved_preview");
+    row.preview = Localized("chat.group.dissolved_preview");
     row.updated_at = util::NowUnixMs();
     (void)store_.UpsertThread(row);
   }

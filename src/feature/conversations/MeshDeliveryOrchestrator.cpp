@@ -6,7 +6,7 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 
 #include "common/Diag.h"
 #include "lib/delivery/TextSpans.h"
@@ -2217,7 +2217,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
   if (outcome.about_us == RelayReceiveOutcome::AboutUs::None || outcome.about_us_group_thread_id.empty()) {
     return std::nullopt;
   }
-  const std::string text = Tr(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed
+  const std::string text = Localized(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed
                                   ? "chat.group_event.you_removed"
                                   : "chat.group_event.full");
   inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text);
@@ -2269,7 +2269,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
 std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeGroupDissolvedIn(
     const std::string& thread_id) {
   // In the reader's language: the preview is kept as written, the notice shown once.
-  const std::string text = Tr("chat.group.dissolved_preview");
+  const std::string text = Localized("chat.group.dissolved_preview");
   inbox_.OnInboundMessagePersisted(thread_id, text);
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;

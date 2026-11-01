@@ -43,14 +43,16 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       68 include / 14 link sites (`capability_edges_allowlist.txt`). Pricing DTOs into `lib/pricing` (17 sites);
       stale links dropped (conversations → calls / media, calls → broadcast, delivery tests → node,
       content → data).
-- [ ] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
-      `foundation/platform`: the app passes values and ports in. People and node done (the config slices
+- [x] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
+      `foundation/platform`: the app passes values and ports in (`HubSettings`, `HubMeshOwner`,
+      `AttachmentPlatform`, the push registrar port, `MeshRoleOf`). People and node done (the config slices
       `MeshConfig` and `ServiceEndpoints`, `SchemaVersion`, `DialWorthyMultiaddrs` and the secure-blob port into
       `common/`; the OS store in `foundation/platform`, handed in by the app); net has `CurlSsl` left.
 - [ ] The hub's shell thins (CR018): mesh glue into `ProductMesh`, backend clients handed in.
 - [x] Delivery below messaging and realtime (CR020): the gate maps delivery and pricing; calls and broadcast
       no longer include or link messaging.
-- [ ] `Tr()` out of capability code (calls and messaging): error codes, text in the app.
+- [x] `Tr()` out of capability code: text by key through `common/Localized.h`, the app's catalogs answer.
+- [ ] Codes instead of keys where text is rendered at write time (call statuses, thread previews, call rows).
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.
 - [ ] The crypto capabilities add today (message and attachment ciphers, PSK session store) into pp-cpp-crypto.

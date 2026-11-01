@@ -27,6 +27,7 @@ pp_browser_add_lib_library(pp_lib_ai
     pp_foundation_error
     pp_foundation_platform_core
     pp_foundation_tls
+    pp_foundation_i18n
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

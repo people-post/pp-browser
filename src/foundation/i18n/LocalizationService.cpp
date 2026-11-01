@@ -1,5 +1,7 @@
 #include "foundation/i18n/LocalizationService.h"
 
+#include "common/Localized.h"
+
 #include "foundation/platform/AssetIO.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/os/OsLocale.h"
@@ -111,6 +113,8 @@ Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
   }
 
   ResolveAndNotify(false);
+  // Capabilities ask for text by key through the base's port (common/Localized.h): these catalogs answer.
+  SetTranslator([this](std::string_view key, const TextArgs& args) { return Tr(key, args); });
   return {};
 }
 
@@ -132,6 +136,11 @@ void LocalizationService::ClearSystemLocalesForTest() {
   system_locales_override_.clear();
   use_system_locales_override_ = false;
   ResolveAndNotify(true);
+}
+
+void LocalizationService::SetKeyAlias(std::string from, std::string to) {
+  const std::lock_guard<std::mutex> lock(aliases_mutex_);
+  aliases_[std::move(from)] = std::move(to);
 }
 
 std::string LocalizationService::Tr(std::string_view key) const {
@@ -256,7 +265,13 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
 }
 
 std::string LocalizationService::Lookup(std::string_view key) const {
-  const std::string key_str(key);
+  std::string key_str(key);
+  {
+    const std::lock_guard<std::mutex> lock(aliases_mutex_);
+    if (auto alias = aliases_.find(key_str); alias != aliases_.end()) {
+      key_str = alias->second;
+    }
+  }
   const std::string resolved = ResolvedLanguage();
   if (const auto cat = catalogs_.find(resolved); cat != catalogs_.end()) {
     if (const auto it = cat->second.find(key_str); it != cat->second.end()) {

@@ -37,7 +37,7 @@
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/error/AppError.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "common/MultiaddrPeerId.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
@@ -1889,7 +1889,7 @@ namespace {
 /** The sender-side "too big" error: names the limit, in the words people read. */
 Error AttachmentTooLargeError(const uint64_t max_bytes) {
   return AppError::Blob(Err::Blob::TooLarge, "Attachment over the size limit")
-      .WithUser(Tr("chat.attachment.too_large", {{"limit", FormatAttachmentLimit(max_bytes)}}));
+      .WithUser(Localized("chat.attachment.too_large", {{"limit", FormatAttachmentLimit(max_bytes)}}));
 }
 
 std::string ProtectedRelayBlobId(const std::string& profile_dir) {
@@ -2238,7 +2238,7 @@ void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const s
   }
   auto store = std::make_shared<OutgoingAttachmentStore>(data_dir_, profile_id_);
   const auto pick_again = [&](const std::string& why) {
-    return AppError::Blob(Err::Blob::Expired, why).WithUser(Tr("chat.attachment.pick_again"));
+    return AppError::Blob(Err::Blob::Expired, why).WithUser(Localized("chat.attachment.pick_again"));
   };
   auto record = store->Load(record_id, dek);
   if (!record) {

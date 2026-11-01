@@ -34,7 +34,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_mesh
     pp_lib_net
     pp_lib_people
-    pp_foundation_platform_core
     pp_foundation_runtime_core
     pp_foundation_runtime
     CURL::libcurl)

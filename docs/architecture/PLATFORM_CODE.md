@@ -46,7 +46,7 @@ Hard rules:
 | `foundation/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |
 | `foundation/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `foundation/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
-| `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
+| `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()`. Capabilities name the shared key (`common/Localized.h` `kPlatformNetworkHintKey`), which the app aliases to its platform's (`LocalizationService::SetKeyAlias`) |
 | `foundation/platform/NetworkMonitor.*` + `NetworkMonitor_{Linux,Darwin,Win32,Android}` | OS network-change events (portable core de-duplicates; `NetworkMonitorBackend.h` private); Android side `PpNetworkMonitor.java` |
 | `lib/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
 | `lib/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |

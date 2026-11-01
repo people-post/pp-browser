@@ -1,7 +1,7 @@
 #include "lib/messaging/PeerDisplayResolver.h"
 
 #include "lib/people/ContactJson.h"
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/MeshAlias.h"
 
@@ -97,7 +97,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
 PeerDisplayLabel PeerDisplayResolver::ResolveSender(const std::string& sender_contact_id) const {
   PeerDisplayLabel label;
   if (sender_contact_id == kLocalSelfContactId) {
-    label.title = Tr("chat.sender.you");
+    label.title = Localized("chat.sender.you");
     label.trust = PeerLabelTrust::Contact;
     return label;
   }

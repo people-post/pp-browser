@@ -3,17 +3,5 @@
 # Format: [link] from -> to <sites>. Include sites count tests (a capability's tests move with it); link sites
 # count the pp-browser targets a folder's CMakeLists.txt names (CR016).
 #
-# P1 (the capability order) is done: no line may name an edge between capabilities.
-#
-# P2 (CR015): the product's base — foundation/data (Config, MeshRole, UserPreferences, SessionStore, AppPaths),
-# foundation/platform (Platform, NetworkMonitor, os/*), foundation/i18n (Tr) — is the apps' to read; the
-# capabilities take values and ports. Starting point after the pricing DTOs left: 68 include / 14 link sites;
-# people and node then reached 0 (MeshConfig, ServiceEndpoints, SchemaVersion, DialWorthyMultiaddrs into common/;
-# the secure-blob port into common/, its OS store in foundation/platform).
-base -> product 3
-messaging -> product 5
-calls -> product 6
-
-link base -> product 2
-link messaging -> product 1
-link calls -> product 1
+# Empty: P1 (the capability order) and P2's gate (CR015: the product's base — foundation/data, platform, i18n —
+# is the apps' alone) are both done. A new edge against the order fails the gate; fix it, do not list it.

@@ -1,4 +1,4 @@
-#include "foundation/crypto/ConfigSecretsStore.h"
+#include "foundation/data/ConfigSecretsStore.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/FileCipher.h"

@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0 and P1 done (no edge against the order); P2 gated (CR015), runtime core done
+**Phase:** P0 and P1 done; P2's gate done (no capability reads the product's base); runtime core done
 
 ## Done
 
@@ -62,12 +62,14 @@
   file helpers, assets), plus config secrets in the base.
 - **P2, platform mechanisms:** into the base, behind ports, or to the app (see CR015's notes) — 14 include / 4 link
   sites left: `Tr()` (messaging 4, calls 4, base 2), the platform's user-hint keys (calls 2), config secrets (base 1).
+- **P2, text and the rest:** `Tr()` replaced by the base's `Localized(key)` port (the app's catalogs answer), the
+  platform tip key aliased by the app, the config-secrets store in `foundation/data` — 0 include / 0 link sites: the
+  allowlist is empty.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
 ## Next
 
-1. P2: the product edges down (`Config`, `MeshRole`, `Tr()`, platform hooks); the hub's shell (CR018);
-   crypto additions into pp-cpp-crypto.
-2. Settle CR019 (presenters) before anything moves.
-3. Contracts repo (CR010) when convenient.
+1. P2: codes instead of keys for text rendered at write time; `MeshConnectivity` out of the hub (CR018, with the
+   seed reservation); crypto additions into pp-cpp-crypto.
+2. Contracts repo (CR010) when convenient.

@@ -1,4 +1,5 @@
 #include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 
 #include <gtest/gtest.h>
 
@@ -65,4 +66,17 @@ TEST(LocalizationServiceTest, NativeSelfNames) {
   loc.SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(loc.LanguageDisplayLabel("system"), "跟随系统");
   EXPECT_EQ(loc.LanguageDisplayLabel("en"), "English");
+}
+
+// Capabilities ask the base's port (common/Localized.h); the loaded catalogs answer it, and the app's aliases
+// give a shared key its platform's text (capability-repos CR015).
+TEST(LocalizationServiceTest, LoadedCatalogsAnswerTheBasesTranslator) {
+  auto& loc = pbr::LocalizationService::Instance();
+  ASSERT_TRUE(loc.LoadFromAssets(AssetsRoot()));
+  loc.SetPreferredLanguage("en");
+  EXPECT_EQ(pbr::Localized("call.status.reconnecting"), "Reconnecting…");
+
+  loc.SetKeyAlias(pbr::kPlatformNetworkHintKey, "hints.network.lan_linux");
+  EXPECT_EQ(pbr::Localized(pbr::kPlatformNetworkHintKey),
+            "Check both devices are on the same network and UDP is not blocked.");
 }

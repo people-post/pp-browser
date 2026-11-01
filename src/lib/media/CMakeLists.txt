@@ -20,7 +20,6 @@ pp_browser_add_lib_library(pp_lib_media
     VoiceRecorder.cpp
   PUBLIC_LIBS
     pp_foundation_error
-    pp_foundation_platform
     ${PP_BROWSER_SDL3_TARGET}
     Opus::opus
   PRIVATE_LIBS quirc)

@@ -11,6 +11,7 @@ add_library(pp_pbr_common STATIC
   directory/DirectoryJson.cpp
   directory/KeyCard.cpp
   ImageMetadata.cpp
+  Localized.cpp
   IPushDeviceRegistrar.cpp
   MeshConfig.cpp
   SchemaVersion.cpp

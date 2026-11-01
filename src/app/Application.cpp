@@ -10,9 +10,11 @@
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
+#include "foundation/platform/PlatformUserHints.h"
+#include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
 
-#include "foundation/crypto/ConfigSecretsStore.h"
+#include "foundation/data/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "foundation/platform/PlatformShare.h"
@@ -565,6 +567,8 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 
   {
     StartupPhase phase("Localization::LoadFromAssets");
+    // The platform's own network tip for the key capabilities use (common/Localized.h).
+    LocalizationService::Instance().SetKeyAlias(kPlatformNetworkHintKey, std::string(PlatformUserHints::P2pNetworkHintKey()));
     if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
         !loaded) {
       log().warning << "Localization catalogs failed to load: " << loaded.error().message;

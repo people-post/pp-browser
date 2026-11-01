@@ -240,6 +240,14 @@ which `ProductStack` installs; the profile icon is prepared by the app and uploa
 is handed to `CallRingtone`; broadcast takes the phone flag as a value; `CallSystemUiBridge` is a presenter
 (`feature/presenters`, CR019).
 
+**Text (2026-11-01):** capabilities and the base ask for user-facing text by catalog key through a port in the base
+(`common/Localized.h`: `Localized(key, args)`); the app's `LocalizationService` registers as its translator once
+its catalogs load, and aliases the shared platform-tip key to its platform's. The catalogs and the text stay the
+app's. Still a step short of the plan's "error codes, text in the app": capabilities name keys and some strings
+(call statuses, thread previews, call rows) are rendered at write time. Turning those into codes the app renders is
+per-surface follow-up work. The config-secrets store moved to `foundation/data` (the app's config). With these,
+the gate's product edges are all cut.
+
 ## CR016 — The gate covers links, not only includes
 
 **Date:** 2026-11-01  

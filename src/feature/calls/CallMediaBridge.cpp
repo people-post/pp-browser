@@ -5,7 +5,7 @@
 #include "lib/calls/CallTxOnlyEscalateLogic.h"
 #include "lib/calls/SeedParkOutcome.h"
 
-#include "foundation/i18n/LocalizationService.h"
+#include "common/Localized.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
 #include "common/runtime/AppRuntime.h"
@@ -1595,7 +1595,7 @@ void CallMediaBridge::OnDeferredMediaKeyTimeout(const std::string& call_id) {
   pending_answerer_peer_.clear();
   log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id << " — ConnectFailed";
   mesh_connect_failed_ = true;
-  host_.P2pSetLastMediaError(Tr("call.error.media_key_timeout"));
+  host_.P2pSetLastMediaError(Localized("call.error.media_key_timeout"));
   Apply(CallDirectPlannerEvent::KeyTimeout, call_id);
   if (arming_.on_connect_failed) {
     arming_.on_connect_failed(call_id);

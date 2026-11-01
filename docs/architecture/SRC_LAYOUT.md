@@ -102,7 +102,8 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
 
 A capability includes and links only those before it in the order (tests included: they move with it). The
-product's base is the apps' to read; capabilities take values and ports from them. Convenience bundles
+product's base is the apps' to read; capabilities take values and ports from them, and ask for user-facing text by key
+through `common/Localized.h` (the app's catalogs answer). Convenience bundles
 (`pp_foundation`, `pp_lib`, `pp_base`) are the app's. `scripts/check/check_capability_edges.py` (CI lint) holds
 the map and the order and checks includes and CMake links (CR016); edges still to cut are in
 `capability_edges_allowlist.txt`, which may only shrink. A new directory under `lib/`, `domain/` or
