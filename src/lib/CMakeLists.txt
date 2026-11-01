@@ -1,6 +1,6 @@
 include(PpBrowserBase)
 
-# Lib peers (strict independence). people, net and social are capability folders (capabilities/, CR022), added first.
+# Lib peers (strict independence). people, net, social and delivery are capability folders (capabilities/, CR022), added first.
 
 set(_pp_lib_peers
   pp_lib_people
@@ -8,7 +8,6 @@ set(_pp_lib_peers
 )
 
 if(NOT PP_BROWSER_HEADLESS)
-  add_subdirectory(delivery)
   add_subdirectory(messaging)
   add_subdirectory(calls)
   add_subdirectory(broadcast)

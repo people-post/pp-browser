@@ -34,6 +34,7 @@ pp_browser_add_lib_library(pp_lib_delivery
     SqlitePskSessionStore.cpp
     TextSpans.cpp
   PUBLIC_LIBS
+    pp_delivery_common
     pp_lib_people
     pp_lib_net
     pp_foundation_error

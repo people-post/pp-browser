@@ -7,6 +7,7 @@ add_subdirectory(foundation)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/people ${CMAKE_BINARY_DIR}/capabilities/people)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/net ${CMAKE_BINARY_DIR}/capabilities/net)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/social ${CMAKE_BINARY_DIR}/capabilities/social)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/delivery ${CMAKE_BINARY_DIR}/capabilities/delivery)
 add_subdirectory(lib)
 
 # Convenience INTERFACE: all foundation modules (not Amp — Amp is FetchContent lib).
