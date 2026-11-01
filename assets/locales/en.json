@@ -145,6 +145,8 @@
     "settings.notifications": "Show notifications",
     "settings.notifications.on": "On",
     "settings.notifications.off": "Off",
+    "settings.notifications.preview": "Show message content in notifications",
+    "notification.hidden_body": "New message",
     "settings.notifications.help": "Off hides message notifications and lock-screen alerts; calls still ring and messages still arrive.",
     "settings.stay_connected": "Stay connected in the background",
     "settings.stay_connected.help": "For phones without push: calls and messages reach you while PP is in the background. Shows an ongoing notification and uses more battery.",

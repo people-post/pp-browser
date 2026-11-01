@@ -142,6 +142,7 @@ private:
     int profile_avatar_tone = 0;
     ui::String auto_renew_registration = "auto";
     ui::String show_notifications = "on";
+    ui::String show_notification_preview = "on";
     ui::String stay_connected = "off";
     /** The "Stay connected" row shows (Android: phones without a push service). */
     bool stay_connected_available = false;
@@ -197,6 +198,7 @@ private:
   void ToggleReachableWithoutRelay();
   void ToggleTrustedRelays();
   void ToggleShowNotifications();
+  void ToggleShowNotificationPreview();
   void ToggleStayConnected();
   void ToggleReduceTransparency();
   void ToggleCallDiagnostics();

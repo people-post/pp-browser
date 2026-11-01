@@ -262,6 +262,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_avatar_tone = bindings_.profile_avatar_tone;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
+  ui_state_.show_notification_preview = bindings_.show_notification_preview.c_str();
   ui_state_.stay_connected = bindings_.stay_connected.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
@@ -350,6 +351,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_avatar_tone = ui_state_.profile_avatar_tone;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
+  bindings_.show_notification_preview = ui_state_.show_notification_preview.c_str();
   bindings_.stay_connected = ui_state_.stay_connected.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
@@ -534,6 +536,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_avatar_tone", &controller.bindings_.profile_avatar_tone);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
+    ctor.Bind("show_notification_preview", &controller.bindings_.show_notification_preview);
     ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
@@ -589,6 +592,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
     ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
+    ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
@@ -677,6 +681,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_avatar_tone");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
+  host.Dirty("settings", "show_notification_preview");
   host.Dirty("settings", "stay_connected");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
@@ -1815,6 +1820,14 @@ void SettingsController::ToggleTrustedRelays() {
 void SettingsController::ToggleShowNotifications() {
   bindings_.show_notifications =
       bindings_.show_notifications == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("profile", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleShowNotificationPreview() {
+  bindings_.show_notification_preview =
+      bindings_.show_notification_preview == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();

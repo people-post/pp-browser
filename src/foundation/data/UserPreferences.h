@@ -49,6 +49,8 @@ struct ProfilePreferences {
   bool auto_renew_registration = true;
   /** P005 (amended by P010) — message banners; push stays registered and calls ring either way. */
   bool show_notifications = true;
+  /** Banners show the message text; off shows a neutral line instead (sender or group stays in the title). */
+  bool show_notification_preview = true;
   /**
    * P011 — Android: stay connected in the background (a foreground service keeps the app working,
    * the relay polled slowly) so calls and messages arrive without push. Opt-in: costs battery.
