@@ -457,6 +457,21 @@ TEST_F(CallSessionInboundComposeTest, InboundInviteCreatesPendingAndRingingSessi
   EXPECT_EQ((*self)->state, CallParticipantState::Ringing);
 }
 
+// PB-054: an invite names its sender as the inviter. One sent by account:mallory naming account:peer
+// would ring as peer and make peer the call's initiator: it does not ring at all.
+TEST_F(CallSessionInboundComposeTest, AnInviteNamingSomeoneElseAsTheCallerDoesNotRing) {
+  const std::string call_id = "call:spoofed-inviter";
+  auto msg = MakeInviteMessage(call_id);  // inviter_identity "account:peer"
+  ASSERT_TRUE(msg) << msg.error().message;
+
+  (void)OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:mallory"); });
+
+  auto pending = csm_->TopPendingInvite();
+  EXPECT_FALSE(pending && pending->has_value()) << "no ring for a forged caller";
+  auto session = sessions_->LoadSession(call_id);
+  EXPECT_FALSE(session && session->has_value());
+}
+
 TEST_F(CallSessionInboundComposeTest, StaleInviteDroppedByRelayAge) {
   const std::string call_id = "call:stale";
   auto msg = MakeInviteMessage(call_id);
