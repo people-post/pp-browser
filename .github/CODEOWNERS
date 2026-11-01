@@ -3,7 +3,7 @@
 #
 # Network layer, Amp, call connection, chat protocol, server contracts, CI / release, Android shell.
 capabilities/net/src/lib/net/     @yhw1630
-src/lib/messaging/                @yhw1630
+capabilities/messaging/src/lib/messaging/                @yhw1630
 src/feature/calls/                   @yhw1630
 cmake/PpCppAmp.cmake                 @yhw1630
 cmake/PpCppMesh.cmake                @yhw1630

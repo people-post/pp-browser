@@ -113,11 +113,13 @@ the map and the order and checks includes and CMake links (CR016); edges still t
 
 A capability moves out of `src/` into its own folder, `capabilities/<name>/`, before any repo split
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
-Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **net** (`lib/net`, `domain/registration`), **social** (`lib/posts`, `lib/content`), **delivery** (`lib/delivery`, `common/chat`, `common/thread` → `pp_delivery_common`, `domain/delivery`), **pricing** (`lib/pricing`).
+Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **net** (`lib/net`, `domain/registration`), **social** (`lib/posts`, `lib/content`), **delivery** (`lib/delivery`, `common/chat`, `common/thread` → `pp_delivery_common`, `domain/delivery`), **pricing** (`lib/pricing`), **messaging** (`lib/messaging`, `domain/attachments`, `feature/conversations`).
 
 - `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
   calls `pp_browser_capability(<name>)` (`cmake/PpBrowserCapability.cmake`): the lib / domain / feature helpers
-  then add that `src/` as an include root of their targets, and its tests get the label. It builds its `common/`
+  then add that `src/` as an include root of their targets, and its tests get the label. Its targets link only what
+  they name: a feature module there gets no `pp_base` and its tests no `pp_feature`, so the gate, which reads named
+  links, sees every link a folder has. It builds its `common/`
   part, if any (`pp_<name>_common`), and adds its lib and domain folders; `src/CMakeLists.txt` adds the folders in
   the capability order, after foundation.
 - The gate and the include checks read every folder as they read `src/` (`scripts/check/source_trees.sh`); the

@@ -7,7 +7,6 @@ add_subdirectory(settings)
 add_subdirectory(ai)
 add_subdirectory(calls)
 add_subdirectory(broadcast)
-add_subdirectory(conversations)
 add_subdirectory(product)
 add_subdirectory(presenters)
 

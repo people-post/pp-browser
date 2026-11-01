@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery and pricing moved
+**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery, pricing and messaging moved
 
 ## Done
 
@@ -84,9 +84,13 @@
   `pp_delivery_common`, which ai, ui, calls, pricing and broadcast link for the record types) in
   `capabilities/delivery/src/` (63 tests).
 - **P3, pricing's folder:** `lib/pricing` in `capabilities/pricing/src/`.
+- **P3, messaging's folder:** `lib/messaging`, `domain/attachments`, `feature/conversations` in
+  `capabilities/messaging/src/` (484 tests). A feature module in a capability folder links only what it names (no
+  `pp_base`, no `pp_feature` in its tests); that dropped the hub's one hidden UI edge (`SDL_GetTicks` for the
+  reachability banner's timer → `steady_clock`).
 
 ## Next
 
-1. The other capability folders, in order: messaging, calls, broadcast, node.
+1. The other capability folders, in order: calls, broadcast, node.
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.

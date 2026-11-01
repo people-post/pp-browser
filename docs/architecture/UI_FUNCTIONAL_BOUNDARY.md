@@ -282,7 +282,7 @@ move over.
 
 ## Presenter template (target)
 
-`ConversationsFacade` is now realized as a non-owning wrapper over `ConversationsHub&` (see `src/feature/conversations/ConversationsFacade.{h,cpp}`): imperative ops are real methods and event subscribes take `std::function` params. `ConfigApplyBridge` still holds `ConversationsHub&` for `Apply` slices. The template below shows the longer-term listener/actions split.
+`ConversationsFacade` is now realized as a non-owning wrapper over `ConversationsHub&` (see `capabilities/messaging/src/feature/conversations/ConversationsFacade.{h,cpp}`): imperative ops are real methods and event subscribes take `std::function` params. `ConfigApplyBridge` still holds `ConversationsHub&` for `Apply` slices. The template below shows the longer-term listener/actions split.
 
 ```cpp
 // Functional — no RmlUi

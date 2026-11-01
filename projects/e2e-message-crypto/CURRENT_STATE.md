@@ -68,10 +68,10 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 |------|----------|
 | E2E crypto (frozen vectors) | `src/foundation/crypto/tests/crypto_vectors_test.cpp` — **7 tests** |
 | PSK bundle codec | `src/foundation/crypto/tests/psk_bundle_codec_test.cpp` — **3 tests** |
-| PSK session coordinator | `src/feature/conversations/tests/psk_session_coordinator_test.cpp` — **1 test** |
-| Relay encrypt/decrypt + pipeline | `src/feature/conversations/tests/e2e_relay_crypto_test.cpp` — **2 tests** |
-| Chat sync (encrypted envelopes) | `src/feature/conversations/tests/chat_sync_test.cpp` — **13 tests** |
-| Cross-cutting ingest | `src/feature/conversations/tests/messaging_cross_cutting_test.cpp` — **6 tests** |
+| PSK session coordinator | `capabilities/messaging/src/feature/conversations/tests/psk_session_coordinator_test.cpp` — **1 test** |
+| Relay encrypt/decrypt + pipeline | `capabilities/messaging/src/feature/conversations/tests/e2e_relay_crypto_test.cpp` — **2 tests** |
+| Chat sync (encrypted envelopes) | `capabilities/messaging/src/feature/conversations/tests/chat_sync_test.cpp` — **13 tests** |
+| Cross-cutting ingest | `capabilities/messaging/src/feature/conversations/tests/messaging_cross_cutting_test.cpp` — **6 tests** |
 | Live relay (D093, env-gated) | `src/base/messaging/tests/relay_live_integration_test.cpp` |
 
 ## Known gaps (summary)

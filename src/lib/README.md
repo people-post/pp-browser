@@ -12,7 +12,7 @@ two peers of one capability, or an edge against the order, may not — that cros
 | net | [`capabilities/net/src/lib/net/`](../../capabilities/net/src/lib/net/) (CR022) | `pp_lib_net` |
 | ui | `lib/ui/` | `pp_lib_ui` (product shell: theme/catalogs/input) |
 | delivery | [`capabilities/delivery/src/lib/delivery/`](../../capabilities/delivery/src/lib/delivery/) (CR020, CR022) | `pp_lib_delivery` |
-| messaging | `lib/messaging/` | `pp_lib_messaging` |
+| messaging | [`capabilities/messaging/src/lib/messaging/`](../../capabilities/messaging/src/lib/messaging/) (CR022) | `pp_lib_messaging` |
 | calls | `lib/calls/` | `pp_lib_calls` |
 | broadcast | `lib/broadcast/` | `pp_lib_broadcast` |
 | pricing | [`capabilities/pricing/src/lib/pricing/`](../../capabilities/pricing/src/lib/pricing/) (CR022) | `pp_lib_pricing` |

@@ -72,10 +72,10 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Structured AI replies | `src/lib/ai/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/lib/ai/TurnPlan.*`, `src/lib/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
-| AI friend search / selected-result add | `src/feature/conversations/PeopleSearch.cpp`, `ContactActionDispatcher.cpp`, `src/feature/product/MessagingTools.cpp`, `capabilities/people/src/common/directory/PeopleDiscoveryBlocks.*`; planner rules in `src/lib/ai/PromptBuilder.cpp` |
+| AI friend search / selected-result add | `capabilities/messaging/src/feature/conversations/PeopleSearch.cpp`, `ContactActionDispatcher.cpp`, `src/feature/product/MessagingTools.cpp`, `capabilities/people/src/common/directory/PeopleDiscoveryBlocks.*`; planner rules in `src/lib/ai/PromptBuilder.cpp` |
 | QR scan / friend locator | `src/gui/scan/`, `src/lib/media/QrScanner.*`, `QrDecode.*`; contacts owns locator confirmation; [docs/ui/SCANNING.md](docs/ui/SCANNING.md) |
-| P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| Chat storage / SQLite | `src/lib/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
+| P2P messaging | `capabilities/messaging/src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
+| Chat storage / SQLite | `capabilities/messaging/src/lib/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | Mesh channel framing / hangs | [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), pp-cpp-amp `docs/STACK.md` (channels, sessions), pp-cpp-mesh (`host/`, `l4/`) |
 | P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
 | P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |

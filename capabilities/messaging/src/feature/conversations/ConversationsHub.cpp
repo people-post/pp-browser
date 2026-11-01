@@ -77,8 +77,6 @@
 #include "common/StartupTiming.h"
 #include "common/Utilities.h"
 
-#include <SDL3/SDL_timer.h>
-
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -2754,7 +2752,9 @@ void ConversationsHub::TickReachabilityUx() {
     reachability_outbound_since_ms_ = 0;
     return;
   }
-  const uint64_t now = SDL_GetTicks();
+  const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::steady_clock::now().time_since_epoch())
+                                             .count());
   if (reachability_outbound_since_ms_ == 0) {
     reachability_outbound_since_ms_ = now;
     return;

@@ -4,7 +4,12 @@ function(pp_browser_add_feature_library target)
   cmake_parse_arguments(ARG "" "" "SOURCES;PUBLIC_LIBS;PRIVATE_LIBS" ${ARGN})
   add_library(${target} STATIC ${ARG_SOURCES})
   target_include_directories(${target} PUBLIC ${CMAKE_SOURCE_DIR}/src ${PP_BROWSER_CAPABILITY_SRC})
-  target_link_libraries(${target} PUBLIC pp_base pp_pbr_common ${ARG_PUBLIC_LIBS})
+  if(PP_BROWSER_CAPABILITY)
+    # A capability's feature module links only what it names (CR022): pp_base bundles every lib peer, the app's too.
+    target_link_libraries(${target} PUBLIC pp_pbr_common ${ARG_PUBLIC_LIBS})
+  else()
+    target_link_libraries(${target} PUBLIC pp_base pp_pbr_common ${ARG_PUBLIC_LIBS})
+  endif()
   if(ARG_PRIVATE_LIBS)
     target_link_libraries(${target} PRIVATE ${ARG_PRIVATE_LIBS})
   endif()
@@ -25,12 +30,16 @@ function(pp_browser_add_feature_folder_tests lib_target test_target)
 
   add_executable(${test_target} ${_test_sources} ${ARG_EXTRA_SOURCES})
   target_include_directories(${test_target} PRIVATE ${CMAKE_SOURCE_DIR}/src ${PP_BROWSER_CAPABILITY_SRC})
+  # A capability's tests link their module and what they name (CR022), not the app's bundles (pp_feature, pp_base).
+  set(_pp_bundles pp_feature pp_base)
+  if(PP_BROWSER_CAPABILITY)
+    set(_pp_bundles "")
+  endif()
   target_link_libraries(${test_target} PRIVATE
     GTest::gtest
     GTest::gtest_main
     ${lib_target}
-    pp_feature
-    pp_base
+    ${_pp_bundles}
     pp_pbr_common
     ${ARG_LINK_LIBS})
   if(ARG_PRIVATE_DEFINITIONS)
