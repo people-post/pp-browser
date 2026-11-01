@@ -62,6 +62,10 @@ bool ShowsParticipantCount(const CallScreen& screen) {
   return screen.was_connected && regrouping;
 }
 
+bool ShowsCameraFlip(const bool mobile, const bool show_camera, const bool camera_on) {
+  return mobile && show_camera && camera_on;
+}
+
 bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, const bool remote_ended) {
   using Status = CallScreen::Status;
   if (remote_ended || before.kind != CallScreen::Kind::InCall || before.was_connected || before.call_id.empty()) {

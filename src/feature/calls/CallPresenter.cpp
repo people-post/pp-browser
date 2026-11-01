@@ -735,6 +735,20 @@ void CallPresenter::ToggleCamera() {
   }));
 }
 
+void CallPresenter::FlipCamera() {
+  BindToMessaging();
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || !backend->Media().IsActive()) {
+    return;
+  }
+  // The button shows only while the camera is on; a tap that lost the race with turning it off is
+  // logged, not shown.
+  if (auto flipped = backend->Media().FlipCamera(); !flipped) {
+    log().info << "FlipCamera refused: " << flipped.error().message;
+  }
+  Refresh();
+}
+
 void CallPresenter::ToggleSpeaker() {
   if (!CallAudioSession::SupportsSpeakerToggle()) {
     return;

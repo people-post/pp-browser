@@ -111,6 +111,10 @@ std::string CallInProgressRml(const ShellState& state) {
     out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
            "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
     out << "</button>";
+    out << "<button class=\"shell-call-flip\" type=\"button\" data-if=\"call_in_progress_show_flip\" "
+           "data-event-click=\"call_flip_camera()\">";
+    out << "<svg src=\"../icons/camera-flip.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
     out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
     out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
     out << "</button>";

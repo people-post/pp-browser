@@ -115,6 +115,8 @@ public:
   void Retry();
   void ToggleMute();
   void ToggleCamera();
+  /** Phones: front / rear camera while it is on. */
+  void FlipCamera();
   void ToggleSpeaker();
 
 private:

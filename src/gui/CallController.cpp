@@ -9,11 +9,13 @@
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
+#include "lib/calls/CallScreen.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "gui/CallStatusHint.h"
 #include "lib/ui/ShellTypes.h"
@@ -135,6 +137,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_retry = in_call.show_retry,
       .in_call_show_speaker = in_call.show_speaker,
       .in_call_show_camera = in_call.show_camera,
+      .in_call_show_flip = in_call.show_flip,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
       .in_call_mode = in_call.mode,
@@ -880,6 +883,10 @@ void CallController::ToggleCamera() {
   presenter_.ToggleCamera();
 }
 
+void CallController::FlipCamera() {
+  presenter_.FlipCamera();
+}
+
 void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
@@ -937,6 +944,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       });
     }
   }
+  in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;

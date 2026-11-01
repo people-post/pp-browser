@@ -40,5 +40,17 @@ TEST(ShellCallChromeRmlTest, EachModeHasItsOwnChrome) {
   EXPECT_TRUE(Has(immersive, "call_leave()"));
 }
 
+TEST(ShellCallChromeRmlTest, TheFlipButtonSitsNextToTheCameraBehindItsOwnGate) {
+  ShellState state;
+  state.call_in_progress.active = true;
+  for (const CallChromeMode mode : {CallChromeMode::Expanded, CallChromeMode::Immersive}) {
+    state.call_in_progress.mode = mode;
+    const std::string rml = CallInProgressRml(state);
+    EXPECT_TRUE(Has(rml, "data-if=\"call_in_progress_show_flip\" data-event-click=\"call_flip_camera()\""));
+    EXPECT_TRUE(Has(rml, "../icons/camera-flip.svg"));
+    EXPECT_LT(rml.find("call_camera()"), rml.find("call_flip_camera()"));
+  }
+}
+
 } // namespace
 } // namespace pbr

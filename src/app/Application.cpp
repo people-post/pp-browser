@@ -1105,6 +1105,7 @@ void Application::WireCalls() {
     call_actions.retry_connect = [this]() { call_->RetryConnect(); };
     call_actions.toggle_mute = [this]() { call_->ToggleMute(); };
     call_actions.toggle_camera = [this]() { call_->ToggleCamera(); };
+    call_actions.flip_camera = [this]() { call_->FlipCamera(); };
     call_actions.toggle_speaker = [this]() { call_->ToggleSpeaker(); };
     call_actions.open_mid_call_invite_picker = [this]() { call_->OpenMidCallInvitePicker(); };
     call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };

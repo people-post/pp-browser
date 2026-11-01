@@ -48,6 +48,7 @@ struct CallChromeLayer {
   bool in_call_show_retry = false;
   bool in_call_show_speaker = false;
   bool in_call_show_camera = true;
+  bool in_call_show_flip = false;
   int in_call_participant_count = 0;
   std::string in_call_status_hint;
   CallChromeMode in_call_mode = CallChromeMode::Expanded;

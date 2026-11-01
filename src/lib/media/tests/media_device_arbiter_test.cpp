@@ -117,12 +117,12 @@ private:
 /** 64×36 RGBA frames, one per 30 ms. */
 class FakeCamera final : public ICameraEndpoint {
 public:
-  explicit FakeCamera(DeviceLog& log) : log_(log) {}
+  FakeCamera(DeviceLog& log, bool front_facing) : log_(log), front_facing_(front_facing) {}
   ~FakeCamera() override {
     log_.Enter("close camera");
     log_.Leave();
   }
-  CameraGeometry Geometry() const override { return CameraGeometry{0, 64, 36}; }
+  CameraGeometry Geometry() const override { return CameraGeometry{0, 64, 36, front_facing_}; }
   std::optional<VideoFrameRgba> NextFrame() override {
     const auto now = std::chrono::steady_clock::now();
     if (now - last_ < std::chrono::milliseconds(30)) {
@@ -138,6 +138,7 @@ public:
 
 private:
   DeviceLog& log_;
+  bool front_facing_ = false;
   std::chrono::steady_clock::time_point last_{};
 };
 
@@ -146,6 +147,7 @@ public:
   explicit FakeBackend(DeviceLog& log) : log_(log) {}
   std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string* error) override {
     last_display_rotation = format.display_rotation_deg;
+    last_prefer_front = format.prefer_front_facing ? 1 : 0;
     std::this_thread::sleep_for(camera_open_delay.load());
     log_.Enter("open camera");
     log_.Leave();
@@ -153,11 +155,13 @@ public:
       *error = "No camera: none attached";
       return nullptr;
     }
-    return std::make_unique<FakeCamera>(log_);
+    return std::make_unique<FakeCamera>(log_, format.prefer_front_facing);
   }
   std::atomic<bool> camera_present{true};
   std::atomic<std::chrono::milliseconds> camera_open_delay{std::chrono::milliseconds(0)};
   std::atomic<int> last_display_rotation{-1};
+  /** The facing the last camera open asked for: 1 front, 0 rear, -1 none yet. */
+  std::atomic<int> last_prefer_front{-1};
   std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& /*format*/,
                                        const std::function<bool()>& /*still_wanted*/,
                                        std::string* error) override {
@@ -589,6 +593,59 @@ TEST_F(EngineDeviceLeaseTest, FailedCameraOpenFlipsBackAndIsReportedOnce) {
   EXPECT_EQ(*failure, "No camera: none attached");
   EXPECT_FALSE(engine.IsCameraEnabled());
   EXPECT_FALSE(engine.TakeCameraFailure()) << "reported once";
+  engine.Stop();
+}
+
+// Phones: the flip button re-takes the camera with the other facing; the next call starts front.
+TEST_F(EngineDeviceLeaseTest, FlipCameraReopensWithTheOtherFacing) {
+  const auto camera_opens = [this]() {
+    const auto events = log_.Events();
+    return std::count(events.begin(), events.end(), "open camera");
+  };
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 1; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "calls open the front camera first";
+  EXPECT_TRUE(WaitUntil([&] { return engine.CameraFrontFacing(); }));
+
+  ASSERT_TRUE(engine.FlipCamera());
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 2; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 0);
+  EXPECT_TRUE(WaitUntil([&] { return !engine.CameraFrontFacing(); }));
+  EXPECT_TRUE(engine.IsCameraEnabled());
+  const auto events = log_.Events();
+  EXPECT_EQ(std::count(events.begin(), events.end(), "close camera"), 1) << "the front camera was released";
+  EXPECT_TRUE(WaitHolders(MediaDeviceKind::Camera, 1));
+
+  ASSERT_TRUE(engine.FlipCamera());
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 3; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "flips back";
+  ASSERT_TRUE(engine.FlipCamera());
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 4; }));
+  engine.Stop();
+
+  ASSERT_TRUE(engine.StartSfu("call:2", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 5; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "a new call starts with the front camera";
+  engine.Stop();
+}
+
+TEST_F(EngineDeviceLeaseTest, FlipCameraWhileTheCameraIsOffAsksForNothing) {
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  EXPECT_FALSE(engine.FlipCamera()) << "no call media";
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  EXPECT_FALSE(engine.FlipCamera()) << "camera off";
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(backend_->last_prefer_front.load(), -1);
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Camera, 1));
+  EXPECT_TRUE(WaitUntil([&] { return backend_->last_prefer_front.load() != -1; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "a refused flip leaves the facing alone";
   engine.Stop();
 }
 
