@@ -70,7 +70,7 @@ std::string ToolActivityLabel(const std::string& tool_name, const std::string& s
     return Tr("chat.status.reading_page");
   }
   if (tool_name == "search_opensearch") {
-    return Tr("chat.status.searching_nfsc");
+    return Tr("chat.status.searching");
   }
   if (tool_name == "get_quote") {
     return Tr("chat.status.getting_quote");

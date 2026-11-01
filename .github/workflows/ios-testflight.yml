@@ -164,6 +164,7 @@ jobs:
         env:
           PP_BROWSER_VERSION: ${{ steps.ver.outputs.marketing }}
           PP_BROWSER_BUILD_NUMBER: ${{ steps.ver.outputs.build }}
+          PP_BROWSER_DEFAULT_ORIGIN: ${{ secrets.PP_DEFAULT_ORIGIN }}
         run: |
           set -euo pipefail
           ./scripts/platform/ios_build.sh ipa

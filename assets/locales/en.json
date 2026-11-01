@@ -662,7 +662,7 @@
     "chat.status.offline": "Offline",
     "chat.status.searching_web": "Searching the web…",
     "chat.status.reading_page": "Reading a page…",
-    "chat.status.searching_nfsc": "Searching NFSC…",
+    "chat.status.searching": "Searching…",
     "chat.status.getting_quote": "Getting a quote…",
     "chat.view_details": "View details",
     "chat.open_link_title": "Open link to {host}?",

@@ -16,6 +16,10 @@ def ppBrowserCmakeArgs = [
     "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}",
     "-DPP_BROWSER_COMPILER_CACHE=${ppBrowserCompilerCache}",
 ]
+def ppBrowserDefaultOrigin = System.getenv('PP_BROWSER_DEFAULT_ORIGIN') ?: ''
+if (ppBrowserDefaultOrigin) {
+    ppBrowserCmakeArgs += ["-DPP_BROWSER_DEFAULT_ORIGIN=${ppBrowserDefaultOrigin}"]
+}
 if (ppBrowserCompilerCache == 'ON') {
     ppBrowserCmakeArgs += [
         "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
