@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/AccountCard.h"
 
 #include "common/Error.h"
 

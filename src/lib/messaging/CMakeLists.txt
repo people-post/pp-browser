@@ -46,12 +46,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
-    PeerKemKeyStore.cpp
-    AccountCard.cpp
-    PeerCardStore.cpp
-    AccountCardRequest.cpp
     ContactLocator.cpp
-    PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
     TranscriptAssembly.cpp
@@ -59,7 +54,12 @@ pp_browser_add_lib_library(pp_lib_messaging
     SqlitePskSessionStore.cpp
     SqliteThreadStore.cpp
     SyncStateCodec.cpp
+    DirectChatTargetFromContact.cpp
+    ModelFacingJson.cpp
+    PeerBriefRoute.cpp
+    PeerDisplayResolver.cpp
   PUBLIC_LIBS
+    pp_lib_people
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto

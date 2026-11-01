@@ -1,4 +1,4 @@
-#include "lib/people/PeerDisplayResolver.h"
+#include "lib/messaging/PeerDisplayResolver.h"
 
 #include "lib/people/ContactJson.h"
 #include "foundation/i18n/LocalizationService.h"

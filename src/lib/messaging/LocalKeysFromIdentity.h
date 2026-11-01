@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/people/DevicePeerId.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/people/IdentityStore.h"
 
@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-/** The receive pipeline's local keys, from the profile's identity (messaging does not include people). */
+/** The receive pipeline's local keys, from the profile's identity. */
 inline LocalKeys LocalKeysFromIdentity(IdentityStore& identity) {
   return LocalKeys{
       [&identity]() -> Roe<std::string> {
@@ -28,7 +28,7 @@ inline LocalKeys LocalKeysFromIdentity(IdentityStore& identity) {
         if (!local) {
           return local.error();
         }
-        return PeerRequestAuth::DevicePeerId(local->public_key_b64);
+        return DevicePeerIdFromKey(local->public_key_b64);
       },
       [&identity]() { return identity.GetDeviceKemPrivateKey(); },
   };

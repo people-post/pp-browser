@@ -1,3 +1,4 @@
+#include "lib/people/DevicePeerId.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/messaging/ChatHistoryResponder.h"
@@ -7,7 +8,7 @@
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "lib/messaging/PeerRequestAuth.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -95,7 +96,7 @@ public:
     request.limit = 10;
     request.order = "asc";
     auto signed_ok = PeerRequestAuth::Sign(request, requester_account,
-                                           *PeerRequestAuth::DevicePeerId(requester.DevicePublicB64()), now_ms,
+                                           *DevicePeerIdFromKey(requester.DevicePublicB64()), now_ms,
                                            [this](const std::vector<uint8_t>& bytes) { return requester.Sign(bytes); });
     if (!signed_ok) {
       throw std::runtime_error("sign request");

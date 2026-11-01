@@ -1,4 +1,4 @@
-#include "lib/people/PeerBriefRoute.h"
+#include "lib/messaging/PeerBriefRoute.h"
 
 #include "lib/people/ContactIdentity.h"
 #include "common/MeshAlias.h"
