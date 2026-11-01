@@ -79,7 +79,7 @@ expires_at
 4. `HttpDirectoryClient` implements the port; `ConversationsHub` / hop builders consume **only** `NameRecord` / port snapshots
 5. Unit tests: mapping fixtures; mock directory behind the port
 
-**Touchpoints:** `src/base/net/OrgBackendClients*`, `src/foundation/data/Config.h` (`MeshDirectoryNode`), `src/lib/mesh/discovery/*`, `src/feature/conversations/ConversationsHub.cpp`, tests
+**Touchpoints:** `src/base/net/OrgBackendClients*`, `src/foundation/data/Config.h` (`MeshDirectoryNode`), `src/lib/mesh/discovery/*`, `capabilities/messaging/src/feature/conversations/ConversationsHub.cpp`, tests
 
 **Exit:** No hop/UI code parses Brief-only JSON keys outside the HTTP adapter.
 

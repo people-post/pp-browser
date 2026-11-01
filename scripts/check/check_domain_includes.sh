@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/check/source_trees.sh
+source "$ROOT/scripts/check/source_trees.sh"
 FAIL=0
 
 # The domain modules, in their order: a module may include only the ones before it.
@@ -12,9 +14,12 @@ check_absent() {
   local label="$1"
   local pattern="$2"
   local path="$3"
-  if rg -q --glob '*.{h,hpp,c,cc,cpp,cxx,mm}' "$pattern" "$ROOT/$path" 2>/dev/null; then
+  local trees=() tree
+  while IFS= read -r tree; do trees+=("$tree"); done < <(src_trees "$path")
+  [[ ${#trees[@]} -gt 0 ]] || return 0
+  if rg -q --glob '*.{h,hpp,c,cc,cpp,cxx,mm}' "$pattern" "${trees[@]}" 2>/dev/null; then
     echo "FAIL: $label"
-    rg --glob '*.{h,hpp,c,cc,cpp,cxx,mm}' "$pattern" "$ROOT/$path" || true
+    rg --glob '*.{h,hpp,c,cc,cpp,cxx,mm}' "$pattern" "${trees[@]}" || true
     FAIL=1
   fi
 }
@@ -28,8 +33,9 @@ done
 # Rml-free: what a screen shows is decided in feature (presenters) and drawn in gui.
 check_absent "domain must not include RmlUi" '#include [<"](RmlUi|ui/Core\.h|ui/base/)' src/domain
 
-# Every folder under src/domain/ is in ORDER.
-for dir in "$ROOT"/src/domain/*/; do
+# Every folder under src/domain/ (and capabilities/*/src/domain/) is in ORDER.
+for dir in "$ROOT"/src/domain/*/ "$ROOT"/capabilities/*/src/domain/*/; do
+  [[ -d "$dir" ]] || continue
   name="$(basename "$dir")"
   found=0
   for m in "${ORDER[@]}"; do

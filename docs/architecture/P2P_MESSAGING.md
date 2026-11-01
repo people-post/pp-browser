@@ -8,7 +8,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/delivery/BackendClientSet`, built from the configured `base_url`s, the app's platform defaults filling empty ones): the relay's message client is delivery's ([`lib/delivery/HttpRelayClient`](../../src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
+The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/delivery/BackendClientSet`, built from the configured `base_url`s, the app's platform defaults filling empty ones): the relay's message client is delivery's ([`lib/delivery/HttpRelayClient`](../../capabilities/delivery/src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../capabilities/delivery/src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
 Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
@@ -232,23 +232,23 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost`; calls and broadcast ride it as `HubParticipant`s (`feature/product/ProductStack`) |
+| `capabilities/messaging/src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost`; calls and broadcast ride it as `HubParticipant`s (`feature/product/ProductStack`) |
 | pp-cpp-mesh `MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
-| `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
-| `src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
-| `src/lib/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
+| `capabilities/calls/src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `capabilities/messaging/src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
+| `capabilities/messaging/src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
+| `capabilities/messaging/src/lib/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
 | `src/gui/chat/TranscriptRml.*` | The transcript drawn as bound rows (bubbles, cards, system lines, chips); every click argument escaped for its attribute |
-| `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
-| `src/lib/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
-| `src/lib/delivery/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
-| `src/lib/delivery/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
-| `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
-| `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/lib/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
-| `src/feature/conversations/MessageRouter.*` | Composer routing |
-| `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
+| `capabilities/messaging/src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
+| `capabilities/messaging/src/lib/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
+| `capabilities/delivery/src/lib/delivery/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
+| `capabilities/delivery/src/lib/delivery/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
+| `capabilities/messaging/src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
+| `capabilities/messaging/src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
+| `capabilities/messaging/src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `capabilities/messaging/src/lib/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
+| `capabilities/messaging/src/feature/conversations/MessageRouter.*` | Composer routing |
+| `capabilities/messaging/src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/product/MessagingTools.*` | Agent tool definitions (messaging meets AI in the product composition) |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |

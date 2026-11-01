@@ -130,7 +130,7 @@ Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as
 | `IPeerSigningKeyResolver` | `src/base/messaging/` |
 | `PeerSigningKeyStore` | `src/base/messaging/` or `src/base/people/` |
 | `AutoKeyEstablishment` | `src/foundation/crypto/` |
-| Ingest wiring | `src/feature/conversations/` receive pipeline step 2 + 7 |
+| Ingest wiring | `capabilities/messaging/src/feature/conversations/` receive pipeline step 2 + 7 |
 
 ### Session key derivation (E015)
 

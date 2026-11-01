@@ -20,10 +20,10 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 |--------|----------|
 | *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `MeshAlias` (`mesh::` = pp-cpp-mesh's `pp::mesh`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText`, `ShareableLine` + its channels `Metrics` / `Diag` (lines that may leave the device — docs/contracts/DIAGNOSTICS.md), `Secret` (`SecretText`: a secret that cannot be logged), `ProtocolIds` (pp-browser's L4 protocol ids and `ProductMeshProtocols()`), `ContextBudget` (the LLM context budget `Config` holds); the config slices capabilities take as values (`MeshConfig`, `ServiceEndpoints`: CR015); `SchemaVersion` (a JSON file's version check and forward migrators); `DialWorthyMultiaddrs`; `SecureBlobStore` (the uninstall-surviving store's port; the OS store is `foundation/platform/OsSecureBlobStore`) |
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
-| [`directory/`](directory/) | Phone-book glue: `DirectoryJson`, `IdentityTypes`, trust / signing access ports. The rows themselves (`DirectoryTypes`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`) are pp-cpp-mesh's vocabulary, `mesh/types/` |
-| [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, role ports + `IThreadStore` |
-| [`chat/`](chat/) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, people-discovery blocks, `AttachmentDownloadPolicy` |
-| [`media/`](media/) | `CallMediaHealth` |
+| [`directory/`](../../capabilities/people/src/common/directory/) (people's, in `capabilities/people/`, CR022; `pp_people_common`) | Phone-book glue: `DirectoryJson`, `IdentityTypes`, trust / signing access ports. The rows themselves (`DirectoryTypes`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`) are pp-cpp-mesh's vocabulary, `mesh/types/` |
+| [`thread/`](../../capabilities/delivery/src/common/thread/) (delivery's, in `capabilities/delivery/`, CR022) | Thread/message records, history/blob DTOs, sync/memory, role ports + `IThreadStore` |
+| [`chat/`](../../capabilities/delivery/src/common/chat/) (delivery's, CR022; `pp_delivery_common`) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, the system-control lane's records |
+| [`media/`](../../capabilities/calls/src/common/media/) (calls', CR022; `pp_calls_common`) | `CallMediaHealth`, the media leg's wire names |
 | [`ui/`](ui/) | `WorkingSetTypes` |
 
 ### Thread role ports

@@ -26,6 +26,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
+# Capabilities moved out of src/ (CR022): capabilities/<name>/src mirrors the tree, so paths under it read as
+# they did under src/.
+CAPABILITIES = ROOT / "capabilities"
+
+
+def source_roots() -> list[tuple[Path, str | None]]:
+    """(root, the capability its folder is) for src/ and every capabilities/<name>/src."""
+    roots: list[tuple[Path, str | None]] = [(SRC, None)]
+    if CAPABILITIES.is_dir():
+        for folder in sorted(CAPABILITIES.iterdir()):
+            if (folder / "src").is_dir():
+                roots.append((folder / "src", folder.name))
+    return roots
 ALLOWLIST = Path(__file__).with_name("capability_edges_allowlist.txt")
 
 # Capability → its paths under src/ (the longest matching prefix wins). DESIGN § Capabilities in the tree.
@@ -98,23 +111,47 @@ def capability_of(rel: str) -> str | None:
 
 def unmapped_dirs() -> list[str]:
     missing = []
-    for root in MAPPED_ROOTS:
-        for child in sorted((SRC / root).iterdir()):
-            rel = f"{root}/{child.name}"
-            if child.is_dir() and capability_of(rel) is None and rel not in IGNORED:
-                missing.append(rel)
+    for base, _folder in source_roots():
+        for root in MAPPED_ROOTS:
+            if not (base / root).is_dir():
+                continue
+            for child in sorted((base / root).iterdir()):
+                rel = f"{root}/{child.name}"
+                if child.is_dir() and capability_of(rel) is None and rel not in IGNORED:
+                    missing.append(rel)
     return missing
+
+
+def misplaced_files() -> list[str]:
+    """Files in capabilities/<name>/src whose path belongs to another capability (or to none)."""
+    wrong = []
+    for base, folder in source_roots():
+        if folder is None:
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.is_file():
+                rel = path.relative_to(base).as_posix()
+                owner = capability_of(rel)
+                if owner != folder:
+                    wrong.append(f"{path.relative_to(ROOT).as_posix()} belongs to {owner or 'no capability'}")
+    return wrong
 
 
 def count_edges() -> tuple[Counter, dict[tuple[str, str], list[str]]]:
     edges: Counter = Counter()
     sites: dict[tuple[str, str], list[str]] = {}
-    for dirpath, _dirs, files in os.walk(SRC):
+    for base, _folder in source_roots():
+        count_edges_under(base, edges, sites)
+    return edges, sites
+
+
+def count_edges_under(base: Path, edges: Counter, sites: dict[tuple[str, str], list[str]]) -> None:
+    for dirpath, _dirs, files in os.walk(base):
         for name in files:
             if not name.endswith(SOURCE_SUFFIXES):
                 continue
             path = Path(dirpath) / name
-            rel = path.relative_to(SRC).as_posix()
+            rel = path.relative_to(base).as_posix()
             source = capability_of(rel)
             if source is None:
                 continue
@@ -126,8 +163,8 @@ def count_edges() -> tuple[Counter, dict[tuple[str, str], list[str]]]:
                 if target is None or target == source:
                     continue
                 edges[(source, target)] += 1
-                sites.setdefault((source, target), []).append(f"src/{rel}:{number}: {match.group(1)}")
-    return edges, sites
+                where = path.relative_to(ROOT).as_posix()
+                sites.setdefault((source, target), []).append(f"{where}:{number}: {match.group(1)}")
 
 
 TARGET_DEF = re.compile(
@@ -138,16 +175,24 @@ QUOTED = re.compile(r'"[^"]*"')
 BUNDLES = {"pp_foundation", "pp_lib", "pp_base"}
 
 
-def cmake_files() -> list[tuple[str, str]]:
-    """(path under src/, text without comments) for every CMakeLists.txt a capability owns."""
+def cmake_text(path: Path) -> str:
+    lines = (line.split("#", 1)[0] for line in path.read_text(errors="ignore").splitlines())
+    return "\n".join(QUOTED.sub('""', line) for line in lines)
+
+
+def cmake_files() -> list[tuple[str, str, str]]:
+    """(where, capability, text without comments) for every CMakeLists.txt a capability owns."""
     files = []
-    for path in sorted(SRC.rglob("CMakeLists.txt")):
-        rel = path.relative_to(SRC).as_posix()
-        if capability_of(rel) is None:
-            continue
-        lines = (line.split("#", 1)[0] for line in path.read_text(errors="ignore").splitlines())
-        text = "\n".join(QUOTED.sub('""', line) for line in lines)
-        files.append((rel, text))
+    for base, folder in source_roots():
+        for path in sorted(base.rglob("CMakeLists.txt")):
+            rel = path.relative_to(base).as_posix()
+            if capability_of(rel) is None:
+                continue
+            files.append((path.relative_to(ROOT).as_posix(), capability_of(rel), cmake_text(path)))
+        if folder is not None and (base.parent / "CMakeLists.txt").is_file():
+            # The folder's own CMakeLists.txt (its common layer, the include root) is the capability's.
+            top = base.parent / "CMakeLists.txt"
+            files.append((top.relative_to(ROOT).as_posix(), folder, cmake_text(top)))
     return files
 
 
@@ -155,20 +200,19 @@ def count_links() -> tuple[Counter, dict[tuple[str, str], list[str]]]:
     """Links between capabilities: a target named in one capability's CMake that another capability defines."""
     files = cmake_files()
     owner: dict[str, str] = {name: "app" for name in BUNDLES}
-    for rel, text in files:
+    for _where, capability, text in files:
         for name in TARGET_DEF.findall(text):
-            owner[name] = capability_of(rel)
+            owner[name] = capability
     edges: Counter = Counter()
     sites: dict[tuple[str, str], list[str]] = {}
-    for rel, text in files:
-        source = capability_of(rel)
+    for where, source, text in files:
         defined = set(TARGET_DEF.findall(text))
         for name in sorted(set(TARGET_NAME.findall(text)) - defined):
             target = owner.get(name)
             if target is None or target == source:
                 continue
             edges[(source, target)] += 1
-            sites.setdefault((source, target), []).append(f"src/{rel}: {name}")
+            sites.setdefault((source, target), []).append(f"{where}: {name}")
     return edges, sites
 
 
@@ -215,7 +259,8 @@ def check_against(kind: str, edges: Counter, sites: dict, allowlist: Counter) ->
 
 def allowed_lib_edges() -> list[str]:
     """lib/<a> may include lib/<b> when they are different capabilities and the order allows it (CR013)."""
-    modules = sorted(child.name for child in (SRC / "lib").iterdir() if child.is_dir())
+    modules = sorted({child.name for base, _folder in source_roots() if (base / "lib").is_dir()
+                      for child in (base / "lib").iterdir() if child.is_dir()})
     pairs = []
     for source in modules:
         for target in modules:
@@ -232,7 +277,12 @@ def main() -> int:
     missing = unmapped_dirs()
     if missing:
         for rel in missing:
-            print(f"FAIL: src/{rel} belongs to no capability; add it to GROUPS in {Path(__file__).name}")
+            print(f"FAIL: {rel} belongs to no capability; add it to GROUPS in {Path(__file__).name}")
+        return 1
+    misplaced = misplaced_files()
+    if misplaced:
+        for line in misplaced:
+            print(f"FAIL: {line}: a capability folder holds only its own paths (CR022)")
         return 1
 
     edges, sites = count_edges()

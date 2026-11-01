@@ -1,9 +1,6 @@
 include(PpBrowserBase)
 
-# Lib peers (strict independence).
-add_subdirectory(people)
-# net is available in headless too (pp-node uses HTTP helpers).
-add_subdirectory(net)
+# Lib peers (strict independence). people, net, social, delivery, pricing, messaging, calls and broadcast are capability folders (capabilities/, CR022), added first.
 
 set(_pp_lib_peers
   pp_lib_people
@@ -11,15 +8,7 @@ set(_pp_lib_peers
 )
 
 if(NOT PP_BROWSER_HEADLESS)
-  add_subdirectory(delivery)
-  add_subdirectory(messaging)
-  add_subdirectory(calls)
-  add_subdirectory(broadcast)
-  add_subdirectory(pricing)
-  add_subdirectory(content)
-  add_subdirectory(posts)
   add_subdirectory(ai)
-  add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)
   list(APPEND _pp_lib_peers

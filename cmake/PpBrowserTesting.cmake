@@ -39,14 +39,21 @@ function(pp_browser_add_gtest executable_target)
   set(one_value_args WORKING_DIRECTORY)
   cmake_parse_arguments(PP_GTEST "" "${one_value_args}" "" ${ARGN})
 
+  # A capability folder (capabilities/<name>/, CR022) labels its tests: CI skips them when nothing they use changed.
+  set(_pp_labels "")
+  if(PP_BROWSER_CAPABILITY)
+    set(_pp_labels PROPERTIES LABELS "capability:${PP_BROWSER_CAPABILITY}")
+  endif()
   if(PP_GTEST_WORKING_DIRECTORY)
     gtest_discover_tests(
       ${executable_target}
       DISCOVERY_MODE PRE_TEST
-      WORKING_DIRECTORY ${PP_GTEST_WORKING_DIRECTORY})
+      WORKING_DIRECTORY ${PP_GTEST_WORKING_DIRECTORY}
+      ${_pp_labels})
   else()
     gtest_discover_tests(
       ${executable_target}
-      DISCOVERY_MODE PRE_TEST)
+      DISCOVERY_MODE PRE_TEST
+      ${_pp_labels})
   endif()
 endfunction()

@@ -3,6 +3,16 @@
 # (capabilities name what they link; check_capability_edges.py, CR016).
 add_subdirectory(common)
 add_subdirectory(foundation)
+# Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order.
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/people ${CMAKE_BINARY_DIR}/capabilities/people)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/net ${CMAKE_BINARY_DIR}/capabilities/net)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/social ${CMAKE_BINARY_DIR}/capabilities/social)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/delivery ${CMAKE_BINARY_DIR}/capabilities/delivery)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/pricing ${CMAKE_BINARY_DIR}/capabilities/pricing)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/messaging ${CMAKE_BINARY_DIR}/capabilities/messaging)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/calls ${CMAKE_BINARY_DIR}/capabilities/calls)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/broadcast ${CMAKE_BINARY_DIR}/capabilities/broadcast)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/node ${CMAKE_BINARY_DIR}/capabilities/node)
 add_subdirectory(lib)
 
 # Convenience INTERFACE: all foundation modules (not Amp — Amp is FetchContent lib).

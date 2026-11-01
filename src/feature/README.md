@@ -39,9 +39,9 @@ src/feature/
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
 │   └── bindings/
-├── calls/            Call session (`pp_feature_calls`)
-├── broadcast/        Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
-├── conversations/    Conversations hub, chat on delivery; ConversationsFacade; `HubParticipant` (what rides the hub)
+├── calls/            (in capabilities/calls/src/feature/, CR022) Call session (`pp_feature_calls`)
+├── broadcast/        (in capabilities/broadcast/src/feature/, CR022) Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
+├── conversations/    (in capabilities/messaging/src/feature/, CR022) Conversations hub, chat on delivery; ConversationsFacade; `HubParticipant` (what rides the hub)
 ├── product/          `ProductStack` (`pp_feature_product`): the mesh and the hub with calls and broadcast as its participants — the one module that sees all three; only app/ and gui/ include it
 └── presenters/       The app's presenters (`pp_feature_presenters`, CR019): `ChatPresenter` (the chats list) and `CallPresenter` (the call screen) — decisions + buttons, headless; the GUI renders them, pp-app-probe drives them; only app/ and gui/ include it
 ```
@@ -83,7 +83,7 @@ Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"
 app → gui → feature → domain → lib → foundation → common
 ```
 
-Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)), and the domain modules they use. Headless capabilities shared with pp-node (`registration`, `node`) are domain modules ([`src/domain/`](../domain/README.md)). Production code has no upward `#include` edges: `foundation/`/`lib/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Lib peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
+Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)), and the domain modules they use. A module in a capability folder (`capabilities/<name>/src/feature/`, CR022) links only what it names — no `pp_base`, and its tests no `pp_feature` — so its folder holds nothing above it. Headless capabilities shared with pp-node (`registration`, `node`) are domain modules ([`src/domain/`](../domain/README.md)). Production code has no upward `#include` edges: `foundation/`/`lib/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Lib peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 
 ### Intra-feature direction
 

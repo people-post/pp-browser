@@ -3,15 +3,20 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/check/source_trees.sh
+source "$ROOT/scripts/check/source_trees.sh"
 FAIL=0
 
 check_absent() {
   local label="$1"
   local pattern="$2"
   local path="$3"
-  if rg -q --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "$ROOT/$path" 2>/dev/null; then
+  local trees=() tree
+  while IFS= read -r tree; do trees+=("$tree"); done < <(src_trees "$path")
+  [[ ${#trees[@]} -gt 0 ]] || return 0
+  if rg -q --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "${trees[@]}" 2>/dev/null; then
     echo "FAIL: $label"
-    rg --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "$ROOT/$path" || true
+    rg --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "${trees[@]}" || true
     FAIL=1
   fi
 }

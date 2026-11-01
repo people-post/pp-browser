@@ -4,6 +4,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/check/source_trees.sh
+source "$ROOT/scripts/check/source_trees.sh"
 FAIL=0
 
 if ! command -v rg >/dev/null 2>&1; then
@@ -30,9 +32,12 @@ check_tree() {
   local path="$2"
   shift 2
   local extra=("$@")
-  if rg -q -e "$PATTERN_DEFINED" -e "$PATTERN_IFDEF" "$ROOT/$path" --glob '!**/tests/**' "${extra[@]}" 2>/dev/null; then
+  local trees=() tree
+  while IFS= read -r tree; do trees+=("$tree"); done < <(src_trees "$path")
+  [[ ${#trees[@]} -gt 0 ]] || return 0
+  if rg -q -e "$PATTERN_DEFINED" -e "$PATTERN_IFDEF" "${trees[@]}" --glob '!**/tests/**' "${extra[@]}" 2>/dev/null; then
     echo "FAIL: $label"
-    rg -n -e "$PATTERN_DEFINED" -e "$PATTERN_IFDEF" "$ROOT/$path" --glob '!**/tests/**' "${extra[@]}" || true
+    rg -n -e "$PATTERN_DEFINED" -e "$PATTERN_IFDEF" "${trees[@]}" --glob '!**/tests/**' "${extra[@]}" || true
     FAIL=1
   fi
 }

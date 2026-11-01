@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3 waits for a second app
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022)
 
 ## Done
 
@@ -72,7 +72,33 @@
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
+- **P3, capability folders (CR022):** people in `capabilities/people/src/` (`lib/people`, `domain/peers`,
+  `common/directory` → `pp_people_common`); the gate and include checks read the folders
+  (`scripts/check/source_trees.sh`) and the gate fails on a foreign path; its 137 tests are labelled
+  `capability:people`, and a PR that touches neither the folder nor the base skips them.
+- **P3, net's folder:** `lib/net` and `domain/registration` in `capabilities/net/src/`; a folder's
+  `CMakeLists.txt` calls `pp_browser_capability(<name>)`, which makes its `src/` an include root of the targets the
+  helpers make there. CI's filters chain (net's is people's plus its folder); 81 tests labelled `capability:net`.
+- **P3, social's folder:** `lib/posts` and `lib/content` in `capabilities/social/src/` (29 tests).
+- **P3, delivery's folder:** `lib/delivery`, `domain/delivery` and its records (`common/chat`, `common/thread` →
+  `pp_delivery_common`, which ai, ui, calls, pricing and broadcast link for the record types) in
+  `capabilities/delivery/src/` (63 tests).
+- **P3, pricing's folder:** `lib/pricing` in `capabilities/pricing/src/`.
+- **P3, messaging's folder:** `lib/messaging`, `domain/attachments`, `feature/conversations` in
+  `capabilities/messaging/src/` (484 tests). A feature module in a capability folder links only what it names (no
+  `pp_base`, no `pp_feature` in its tests); that dropped the hub's one hidden UI edge (`SDL_GetTicks` for the
+  reachability banner's timer → `steady_clock`).
+- **P3, calls' folder:** `lib/calls`, `lib/media`, `common/media` (→ `pp_calls_common`), `domain/call_media` (still
+  in headless configures, for pp-call-probe) and `feature/calls` in `capabilities/calls/src/` (594 tests); no hidden
+  link to remove. `lib/media` keeps SDL3 and Opus as its own third-party links.
+- **P3, broadcast's folder:** `lib/broadcast` and `feature/broadcast` in `capabilities/broadcast/src/` (94 tests). The
+  call probe (an app tool) had reached the product's base through the feature bundles; it names
+  `pp_foundation_platform` and `pp_foundation_data` itself now.
+- **P3, node's folder:** `domain/node` in `capabilities/node/src/` (6 tests); `src/domain/` keeps only the app's
+  aggregate. Every capability is in its folder: 1521 of 2910 tests carry a capability label; the rest are the base's
+  and the app's. Every capability target's link closure holds only what is below it (checked with CMake's link graph).
+
 ## Next
 
 1. Contracts repo (CR010) when convenient.
-2. P3 (capability targets, namespaces) when a second app needs a capability.
+2. P3's namespaces when a second app needs a capability.

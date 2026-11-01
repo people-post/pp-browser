@@ -176,7 +176,7 @@ Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_
 
 ## Code
 
-The message formats are the delivery capability's (`src/lib/delivery/`, capability-repos CR020); the AEAD blob both
+The message formats are the delivery capability's (`capabilities/delivery/src/lib/delivery/`, capability-repos CR020, CR022); the AEAD blob both
 messages and the at-rest store use is the base's (`src/foundation/crypto/`); generic pieces are pp-cpp-crypto's.
 
 | Component | Where | Role |

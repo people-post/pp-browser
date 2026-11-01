@@ -7,16 +7,17 @@ two peers of one capability, or an edge against the order, may not — that cros
 
 | Peer (today) | Path | CMake |
 |--------------|------|-------|
-| people | `lib/people/` | `pp_lib_people` |
-| media | `lib/media/` | `pp_lib_media` |
-| net | `lib/net/` | `pp_lib_net` |
+| people | [`capabilities/people/src/lib/people/`](../../capabilities/people/src/lib/people/) (CR022) | `pp_lib_people` |
+| media | [`capabilities/calls/src/lib/media/`](../../capabilities/calls/src/lib/media/) (CR022) | `pp_lib_media` |
+| net | [`capabilities/net/src/lib/net/`](../../capabilities/net/src/lib/net/) (CR022) | `pp_lib_net` |
 | ui | `lib/ui/` | `pp_lib_ui` (product shell: theme/catalogs/input) |
-| messaging | `lib/messaging/` | `pp_lib_messaging` |
-| calls | `lib/calls/` | `pp_lib_calls` |
-| broadcast | `lib/broadcast/` | `pp_lib_broadcast` |
-| pricing | `lib/pricing/` | `pp_lib_pricing` |
-| content | `lib/content/` | `pp_lib_content` |
-| posts | `lib/posts/` | `pp_lib_posts` |
+| delivery | [`capabilities/delivery/src/lib/delivery/`](../../capabilities/delivery/src/lib/delivery/) (CR020, CR022) | `pp_lib_delivery` |
+| messaging | [`capabilities/messaging/src/lib/messaging/`](../../capabilities/messaging/src/lib/messaging/) (CR022) | `pp_lib_messaging` |
+| calls | [`capabilities/calls/src/lib/calls/`](../../capabilities/calls/src/lib/calls/) (CR022) | `pp_lib_calls` |
+| broadcast | [`capabilities/broadcast/src/lib/broadcast/`](../../capabilities/broadcast/src/lib/broadcast/) (CR022) | `pp_lib_broadcast` |
+| pricing | [`capabilities/pricing/src/lib/pricing/`](../../capabilities/pricing/src/lib/pricing/) (CR022) | `pp_lib_pricing` |
+| content | [`capabilities/social/src/lib/content/`](../../capabilities/social/src/lib/content/) (CR022) | `pp_lib_content` |
+| posts | [`capabilities/social/src/lib/posts/`](../../capabilities/social/src/lib/posts/) (CR022) | `pp_lib_posts` |
 | ai | `lib/ai/` | `pp_lib_ai` (+ conversation/mcp sublibs) |
 
 The mesh is not a peer here: it is [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)

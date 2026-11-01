@@ -12,7 +12,7 @@ src/foundation/identity (PeerId — native, no libp2p fork)
      ↑
 src/base/mesh (host + reachability + l4 coordinators)
      ↑
-src/feature/conversations (MeshDeliveryOrchestrator, CallMediaBridge, hub)
+capabilities/messaging/src/feature/conversations (MeshDeliveryOrchestrator, CallMediaBridge, hub)
 ```
 
 Subdirectories: `host/`, `identity/`, `reachability/`, `l4/{shared,circuit,media_relay,call_media}/`.

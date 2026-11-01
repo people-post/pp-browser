@@ -18,6 +18,7 @@ pp_browser_add_lib_library(pp_lib_ui
     UiEditSession.cpp
     ViewCatalog.cpp
   PUBLIC_LIBS
+    pp_delivery_common
     pp_foundation_platform
     pp_foundation_i18n
     ui::core)
