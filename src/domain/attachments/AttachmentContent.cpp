@@ -1,4 +1,6 @@
 #include "domain/attachments/AttachmentContent.h"
+#include "common/chat/MessagingLimits.h"
+#include "common/BoundedRead.h"
 
 #include "lib/content/PrivateContent.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -63,7 +65,11 @@ Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, std::strin
   if (!input) {
     return Error("Could not read sent attachment file");
   }
-  const ByteVector plaintext((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  auto read = ReadBoundedBytes(input, kMaxChatAttachmentPlaintextBytes);
+  if (!read) {
+    return Error("Sent attachment file: " + read.error().message);
+  }
+  const ByteVector plaintext = std::move(*read);
   if (plaintext.empty()) {
     return Error("Sent attachment file is empty");
   }

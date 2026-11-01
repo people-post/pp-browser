@@ -1,4 +1,6 @@
 #include "lib/people/ProfileIconCache.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "lib/people/ContactIdentity.h"
 #include "common/Utilities.h"
@@ -84,9 +86,9 @@ Roe<ProfileIconCacheMeta> LoadProfileIconCacheMeta(const std::string& profile_di
   if (!in) {
     return Error("Failed to read profile icon cache metadata");
   }
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  auto root = TryParseObject(ss.str());
+  // An oversized file reads as unparseable (PB-063).
+  const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  const auto root = text ? TryParseObject(*text) : std::nullopt;
   if (!root) {
     return Error("Invalid profile icon cache metadata");
   }

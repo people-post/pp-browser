@@ -1,4 +1,6 @@
 #include "lib/messaging/AttachmentCache.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 
@@ -608,7 +610,7 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
   if (!input) {
     return Error("Failed to read pending attachment ciphertext");
   }
-  return ByteVector((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  return ReadBoundedBytes(input, kMaxCasBlockFileBytes);
 }
 
 void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,

@@ -1,4 +1,5 @@
 #include "lib/messaging/ChatAttachmentPrepare.h"
+#include "common/BoundedRead.h"
 
 #include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AttachmentContentCipher.h"
@@ -20,12 +21,12 @@ Roe<ByteVector> ReadFileBytes(const std::string& path) {
   if (!input) {
     return Error("Could not read attachment file");
   }
-  const ByteVector bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-  if (bytes.empty()) {
-    return Error("Attachment file is empty");
+  auto bytes = ReadBoundedBytes(input, kMaxChatAttachmentPlaintextBytes);
+  if (!bytes) {
+    return Error("Attachment exceeds 4 MiB limit");  // read no further than the limit
   }
-  if (bytes.size() > kMaxChatAttachmentPlaintextBytes) {
-    return Error("Attachment exceeds 4 MiB limit");
+  if (bytes->empty()) {
+    return Error("Attachment file is empty");
   }
   return bytes;
 }

@@ -1,4 +1,6 @@
 #include "foundation/crypto/DataKeyVault.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -102,7 +104,11 @@ Roe<ByteVector> DataKeyVault::ReadVaultFile() const {
   if (!in) {
     return Error("Failed to open vault.bin");
   }
-  ByteVector bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto read = ReadBoundedBytes(in, kMaxProfileJsonFileBytes);  // a vault is well under 1 KiB
+  if (!read) {
+    return Error("Failed to read vault.bin: " + read.error().message);
+  }
+  ByteVector bytes = std::move(*read);
   if (auto checked = CheckVaultHeader(bytes); !checked) {
     return checked.error();
   }
