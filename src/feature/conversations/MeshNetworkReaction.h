@@ -1,11 +1,14 @@
 #pragma once
 
+#include "common/Logger.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "mesh/host/LocalNetworkChange.h"
 #include "mesh/host/MeshHost.h"
+#include "mesh/host/UdpSocketProbe.h"
 
 #include <optional>
 #include "common/MeshAlias.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -18,5 +21,11 @@ mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change);
  * is returned for the participants.
  */
 std::optional<mesh::LocalNetworkChange> ReactMeshToNetworkChange(const NetworkChange& change, mesh::MeshHost* mesh);
+
+/**
+ * #416: what the mesh found of its UDP socket (on a network change, or the app's return to the
+ * foreground) — a Diag line, and the error to the developer log. The mesh's IO lane; does not block.
+ */
+void ReportUdpSocketCheck(logging::Logger& log, const mesh::UdpSocketCheck& check);
 
 } // namespace pbr

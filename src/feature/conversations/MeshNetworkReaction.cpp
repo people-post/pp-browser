@@ -14,6 +14,19 @@ mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
   return local;
 }
 
+void ReportUdpSocketCheck(logging::Logger& log, const mesh::UdpSocketCheck& check) {
+  DiagLine("mesh.udp_socket")
+      .Add("reason", check.reason == mesh::UdpSocketCheckReason::NetworkChange ? ShareWord("network")
+                                                                               : ShareWord("foreground"))
+      .Add("was_alive", check.was_alive)
+      .Add("reopened", check.reopened)
+      .Add("alive", check.alive)
+      .Emit();
+  if (!check.was_alive) {
+    log.warning << "mesh udp socket was dead: " << check.error << (check.alive ? " (reopened)" : "");
+  }
+}
+
 std::optional<mesh::LocalNetworkChange> ReactMeshToNetworkChange(const NetworkChange& change, mesh::MeshHost* mesh) {
   if (change.generation == 0) {
     DiagLine("network.baseline")
