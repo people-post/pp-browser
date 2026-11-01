@@ -1,14 +1,10 @@
 #include "foundation/platform/Platform.h"
-
-#if defined(__ANDROID__)
 #include "foundation/runtime/AppLifecycle.h"
 
 #include <SDL3/SDL.h>
-#elif defined(__APPLE__)
+
+#if defined(__APPLE__)
 #include <TargetConditionals.h>
-#if TARGET_OS_IPHONE
-#include <SDL3/SDL.h>
-#endif
 #endif
 
 namespace pbr {
