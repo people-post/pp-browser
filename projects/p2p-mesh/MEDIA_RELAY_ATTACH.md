@@ -178,7 +178,7 @@ HostSession remains a map object inside `Impl` (not a hierarchical SM). `Stop()`
 ## Golden scenarios (s3 gate)
 
 1. quote → accept → attach → Attached; fan-out audio both ways. — **loopback:** `QuoteAcceptAttachFanout`
-2. attach without quote when policy allows join-on-existing session (call-scoped stranger). — **unit:** `MediaRelayAttachSmTest.AttachFromControlWithoutQuote` + call-scoped admit loopbacks
+2. ~~attach without quote when policy allows join-on-existing session (call-scoped stranger)~~ — **superseded 2026-10-31** (security review PB-021): attach only after the channel's own accept, with the token it issued; a call-scoped guest quotes and accepts first ([MESH.md § pp-node](../../docs/architecture/MESH.md#pp-node)). — **unit:** `MediaRelayAttachSmTest.AttachOnlyAfterThisChannelsAccept`, **loopback:** `MediaRelayServerClientTest.AnAttachNeedsTheTokenThisChannelsAcceptIssued`
 3. Over max HostSessions / participants → Rejected with error JSON. — **unit:** `MediaRelayLogicTest.CallScopedAdmitAndCaps` (`MediaRelayCanOpenHostSession` / `CanAddParticipant`)
 4. SoftMigrate guest reattach after duplex loss → new stream Control→Attached; capture stays up. *(loopback: `GuestDetachThenReattachFanout`, `PreferLocalGuestDetachThenReattachFanout`)*
 5. Service Stop cancels inflight control and active participants without hang. — **loopback:** `StopUnblocksAcceptAndAttachWait`, `StopWithActiveParticipantsDoesNotHang`

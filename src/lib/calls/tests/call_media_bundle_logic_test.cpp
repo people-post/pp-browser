@@ -217,3 +217,28 @@ TEST(CallMediaFailoverTest, SwitchesOnlyToALiveStandbyForALostOrSilentActive) {
 
 } // namespace
 } // namespace pbr
+
+// PB-018: a hello from a PeerId other than the one the call's bundle is bound to is refused in every
+// phase — above all when we dial and lose glare, where a stranger's hello would pass for the answer.
+TEST(CallMediaBundleLogicTest, AHelloFromAnotherPeerIsRefusedInEveryPhase) {
+  using namespace pbr;
+  for (const CallMediaBundlePhase phase :
+       {CallMediaBundlePhase::Idle, CallMediaBundlePhase::OutboundHello, CallMediaBundlePhase::InboundHello,
+        CallMediaBundlePhase::AwaitingMedia, CallMediaBundlePhase::MediaReady}) {
+    for (const bool local_wins : {true, false}) {
+      CallMediaInboundHelloContext ctx;
+      ctx.phase = phase;
+      ctx.has_outbound_control = phase == CallMediaBundlePhase::OutboundHello;
+      ctx.local_wins_glare = local_wins;
+      ctx.from_another_peer = true;
+      EXPECT_EQ(DecideCallMediaInboundHello(ctx), CallMediaInboundHelloDecision::RejectPeer)
+          << static_cast<int>(phase) << " wins=" << local_wins;
+    }
+  }
+  CallMediaInboundHelloContext same_peer;
+  same_peer.phase = CallMediaBundlePhase::OutboundHello;
+  same_peer.has_outbound_control = true;
+  same_peer.local_wins_glare = false;
+  EXPECT_EQ(DecideCallMediaInboundHello(same_peer), CallMediaInboundHelloDecision::AcceptAndYield)
+      << "the peer itself still wins glare as before";
+}

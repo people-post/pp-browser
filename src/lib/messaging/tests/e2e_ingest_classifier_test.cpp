@@ -200,3 +200,32 @@ TEST(E2eIngestClassifierTest, AuthorizedBackfillAcceptsOlderSeqBelowContiguous) 
   EXPECT_EQ(result.sync_state.contiguous_peer_seq, 5u);
   EXPECT_EQ(result.sync_state.loaded_min_seq, 3u);
 }
+
+// PB-064: replay windows live in memory; after a restart the window starts at 0 while the persisted
+// state says 50 messages came in order. A strict private chat's message 52 arriving before 51 is a gap
+// to fill, not a sign the chat was tampered with.
+TEST(E2eIngestClassifierTest, AGapAfterARestartIsAGapNotACompromise) {
+  using namespace pbr;
+
+  IngestClassifierInput input;
+  input.sender_seq = 52;
+  input.session_epoch = 1;
+  input.message_id = "msg-52";
+  input.chat_target_epoch = 1;
+  input.strict_mode = true;
+  input.sync_state = DefaultPeerSyncState();
+  input.sync_state.contiguous_peer_seq = 50;
+  input.sync_state.loaded_max_seq = 50;
+
+  ReplayWindow fresh(32);  // what a restarted app holds
+  const IngestClassifierResult gap = E2eIngestClassifier::Classify(input, fresh);
+  EXPECT_EQ(gap.decision, IngestDecision::AcceptGap);
+  EXPECT_NE(gap.sync_state.phase, PeerSyncPhase::Compromised);
+
+  input.sender_seq = 51;
+  input.message_id = "msg-51";
+  input.sync_state = gap.sync_state;
+  const IngestClassifierResult filled = E2eIngestClassifier::Classify(input, fresh);
+  EXPECT_TRUE(filled.persist_message);
+  EXPECT_EQ(filled.sync_state.contiguous_peer_seq, 52u) << "51 closes the gap up to 52";
+}

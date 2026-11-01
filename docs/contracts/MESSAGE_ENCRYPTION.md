@@ -182,7 +182,7 @@ Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_
 | `CanonicalAad` | Build/parse AAD |
 | `MessageCipher` | AEAD encrypt/decrypt |
 | `EncryptedPayload` | Blob codec + base64 |
-| `ReplayWindow` | Seq acceptance helper (D013 classifier is authoritative) |
+| `ReplayWindow` | Seq acceptance helper (D013 classifier is authoritative); in memory, so the classifier starts it at the persisted `contiguous_peer_seq` (`CatchUpTo`) |
 | `IPskSessionStore` | PSK + retired epochs + public `key_scope` / conversation KEM on `chat_targets` |
 
 Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-message-crypto/PHASES.md) phase c1.
