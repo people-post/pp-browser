@@ -338,5 +338,12 @@ TEST(WaitingAloneTest, TheCallGoingAwayAtTheEndOfTheWaitIsToldOnce) {
   EXPECT_FALSE(EndedAlone(live, gone, 200'000)) << "was not waiting";
 }
 
+TEST(CameraFlipTest, ShownOnlyOnPhonesWithTheCameraOn) {
+  EXPECT_TRUE(ShowsCameraFlip(/*mobile=*/true, /*show_camera=*/true, /*camera_on=*/true));
+  EXPECT_FALSE(ShowsCameraFlip(/*mobile=*/false, true, true)) << "desktop never flips";
+  EXPECT_FALSE(ShowsCameraFlip(true, true, /*camera_on=*/false)) << "nothing to flip while the camera is off";
+  EXPECT_FALSE(ShowsCameraFlip(true, /*show_camera=*/false, true)) << "no flip without the camera button";
+}
+
 } // namespace
 } // namespace pbr

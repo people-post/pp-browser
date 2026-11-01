@@ -941,6 +941,15 @@ select selectbox option:hover {
   image-color: #f9fafb;
 }
 
+.shell-call-flip {
+  background-color: #374151;
+  color: #f9fafb;
+}
+
+.shell-call-flip svg {
+  image-color: #f9fafb;
+}
+
 .shell-call-speaker {
   background-color: #374151;
   color: #f9fafb;

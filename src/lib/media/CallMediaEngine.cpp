@@ -189,6 +189,14 @@ struct CallMediaEngine::Impl {
    * UpdateCameraDisplayRotation (per-frame rotation).
    */
   std::atomic<int> camera_display_rotation{0};
+  /** Facing the next camera open asks for: front at each call's start, turned over by FlipCamera. */
+  std::atomic<bool> camera_prefer_front{true};
+  /** FlipCamera asked the video thread to release the open camera and take the other facing. */
+  std::atomic<bool> camera_reopen_requested{false};
+  /** Facing of the camera the video thread last opened (CameraGeometry.front_facing). */
+  std::atomic<bool> camera_front_facing{false};
+  /** The video thread holds an open camera lease (false while an open is pending or after a release). */
+  std::atomic<bool> camera_open{false};
   /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
   std::mutex camera_failure_mu;
   std::string camera_failure;
@@ -341,6 +349,7 @@ struct CallMediaEngine::Impl {
    *  Never joins: the video thread takes `mutex` to read the send callback. */
   void RequestCameraOffLocked() {
     camera_enabled.store(false, std::memory_order_relaxed);
+    camera_reopen_requested.store(false, std::memory_order_relaxed);  // a flip in flight dies with the camera
   }
 
   void ClearLocalPreview() {
@@ -1030,9 +1039,11 @@ struct CallMediaEngine::Impl {
     }
     request.format.display_rotation_deg = camera_display_rotation.load(std::memory_order_relaxed);
     request.format.fps = kVideoFps;
+    request.format.prefer_front_facing = camera_prefer_front.load(std::memory_order_relaxed);
     auto lease = DeviceArbiter().AcquireCamera(request);
     if (!lease) {
       camera_enabled.store(false, std::memory_order_relaxed);
+      camera_prefer_front.store(true, std::memory_order_relaxed);  // a failed facing is not asked for again
       NoteCameraFailure(lease.error().message);
       SDL_Log("CallMediaEngine: camera: %s", lease.error().message.c_str());
       return nullptr;
@@ -1169,6 +1180,16 @@ struct CallMediaEngine::Impl {
       if (!wanted) {
         camera_requested.reset();
       }
+      // FlipCamera: release the open camera like a turn-off (the preview keeps its last frame);
+      // the open below takes the other facing. A flip pending when the camera is off is dropped.
+      if (camera_reopen_requested.exchange(false, std::memory_order_acq_rel) && wanted && camera) {
+        camera.reset();
+        camera_open.store(false, std::memory_order_release);
+        camera_requested.reset();  // the open below is timed on its own (camera.start lease_ms)
+        if (video_codec) {
+          video_codec->ResetEncoder();
+        }
+      }
       if (wanted && !camera) {
         if (!camera_requested) {
           camera_requested = std::chrono::steady_clock::now();
@@ -1177,12 +1198,15 @@ struct CallMediaEngine::Impl {
         if (camera) {
           camera_lease_ms = ms_since(*camera_requested);
           geometry = EncodeGeometry(camera->Geometry());
+          camera_front_facing.store(geometry.front_facing, std::memory_order_relaxed);
+          camera_open.store(true, std::memory_order_release);
           ConfigureLocalEncoder(geometry);
           applied_bps = 0;
           need_keyframe = true;
         }
       } else if (!wanted && camera) {
         camera.reset();
+        camera_open.store(false, std::memory_order_release);
         if (video_codec) {
           video_codec->ResetEncoder();
         }
@@ -1409,6 +1433,10 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const SessionSpec s
     impl_->active = true;
     impl_->muted.store(false, std::memory_order_relaxed);
     impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->camera_prefer_front.store(true, std::memory_order_relaxed);
+    impl_->camera_reopen_requested.store(false, std::memory_order_relaxed);
+    impl_->camera_open.store(false, std::memory_order_relaxed);
+    impl_->camera_front_facing.store(false, std::memory_order_relaxed);
     impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
     impl_->outbound_drops.store(0, std::memory_order_relaxed);
     impl_->playout_ticks.store(0, std::memory_order_relaxed);
@@ -1657,6 +1685,33 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rota
     impl_->StartVideoLoop();
   }
   return {};
+}
+
+Roe<void> CallMediaEngine::FlipCamera() {
+  std::lock_guard lock(impl_->mutex);
+  if (!impl_->active) {
+    return Error("Call media not active");
+  }
+  if (!impl_->camera_enabled.load(std::memory_order_relaxed)) {
+    return Error("camera is off");
+  }
+  if (!impl_->camera_open.load(std::memory_order_acquire)) {
+    return Error("camera is still opening");  // the facing is not known yet; a tap this early does nothing
+  }
+  if (impl_->camera_reopen_requested.load(std::memory_order_acquire)) {
+    return {};  // one flip is already on its way; a second tap does not undo it
+  }
+  // The video thread owns the lease: it releases the open camera and takes the other facing, with
+  // the display rotation it already has (UpdateCameraDisplayRotation keeps that current). The target
+  // is the opposite of the camera actually open, so a device that gave the same camera twice still flips.
+  impl_->camera_prefer_front.store(!impl_->camera_front_facing.load(std::memory_order_relaxed),
+                                   std::memory_order_relaxed);
+  impl_->camera_reopen_requested.store(true, std::memory_order_release);
+  return {};
+}
+
+bool CallMediaEngine::CameraFrontFacing() const {
+  return impl_->camera_front_facing.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::SetVideoLevel(const uint8_t level) {
