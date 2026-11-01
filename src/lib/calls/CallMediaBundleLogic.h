@@ -46,6 +46,8 @@ enum class CallMediaInboundHelloDecision {
   RejectBusy,
   /** Local wins glare — reject inbound, keep outbound. */
   RejectGlare,
+  /** The call's bundle belongs to another peer (PB-018) — reject inbound, keep the bundle. */
+  RejectPeer,
 };
 
 struct CallMediaInboundHelloContext {
@@ -56,6 +58,11 @@ struct CallMediaInboundHelloContext {
   bool local_wins_glare = true;
   /** Another call already bound/media-ready on this peer coordinator. */
   bool other_bundle_busy = false;
+  /**
+   * The call's bundle is bound to an authenticated PeerId other than the hello's. Anyone who learned
+   * the call id can send one; a peer that lost glare must not take a stranger's hello as the answer.
+   */
+  bool from_another_peer = false;
 };
 
 CallMediaInboundHelloDecision DecideCallMediaInboundHello(const CallMediaInboundHelloContext& ctx);

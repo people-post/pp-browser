@@ -89,10 +89,14 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
   // P2pPeerIdentityForCall as the mapping — with N≥2 remotes it returns an arbitrary peer
   // (dogfood: Moto PeerId → wrong person stream).
   std::string identity = inbound_peer_id;
+  // Whether the hello's PeerId is known to be this account's (a contact's device, a learned mapping):
+  // only then may it stand for the account's answer (PB-018) — a guessed identity just labels the stream.
+  bool identity_known = inbound_peer_id.rfind("account:", 0) == 0;
   if (inbound_peer_id.rfind("account:", 0) != 0) {
     if (auto mapped = host_.RelayIdentityForMeshPeerId(call_id, inbound_peer_id);
         mapped && mapped->has_value() && !mapped->value().empty()) {
       identity = mapped->value();
+      identity_known = true;
     } else if (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0) {
       // Last resort for 1:1 before contacts hydrate — only when dialed peer is the sole remote.
       if (auto sole = host_.P2pPeerIdentityForCall(call_id);
@@ -110,8 +114,14 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
       log().info << "Inbound call-media mapped PeerId→account stream identity peer_id=" << inbound_peer_id
                  << " account=" << identity;
     }
-    // B30: the hello may be the first sign the answerer accepted (the relay's Accept can lag).
-    host_.P2pNoteInboundHello(call_id, identity, inbound_peer_id);
+    // B30: the hello may be the first sign the answerer accepted (the relay's Accept can lag) — from a
+    // PeerId we know is theirs. Anyone holding the call id can dial; their relay Accept still decides.
+    if (identity_known) {
+      host_.P2pNoteInboundHello(call_id, identity, inbound_peer_id);
+    } else {
+      log().info << "Inbound call-media hello from an unmapped PeerId " << inbound_peer_id
+                 << " is not taken as an accept call_id=" << call_id;
+    }
   } else {
     // Do not hash PeerId into a mixer track — SoftMigrate uses Account stream ids. Defer until
     // BeginSession / CallAccept teaches PeerId→Account (moto contact often lacks peer_id).
