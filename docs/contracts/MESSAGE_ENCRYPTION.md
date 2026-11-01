@@ -219,7 +219,7 @@ Regenerate after E023 channel enum change: `projects/e2e-message-crypto/tools/ge
 
 ### AEAD / codec
 
-Alice (`relay:alice123`) → Bob (`relay:bob456`). Envelope fields match Ed25519 e2e vector.
+Alice (`relay:alice123`) → Bob (`relay:bob456`).
 
 | Field | Value |
 |-------|-------|
