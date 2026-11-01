@@ -10,6 +10,14 @@ inline constexpr size_t kSessionListStep = 20;
 /** Distance from the bottom of the sidebar list, in dp, that counts as "near the bottom". */
 inline constexpr float kSessionListNearBottomPx = 64.f;
 
+/**
+ * The drawn rows do not fill the list's viewport (a phone with few rows, a tall desktop window): nothing can
+ * scroll, so no scroll event will ever ask for more. A list that is not laid out yet (client height 0) is left alone.
+ */
+inline bool SessionListNeedsFill(const float scroll_height, const float client_height) {
+  return client_height > 0.5f && scroll_height <= client_height + 0.5f;
+}
+
 inline bool SessionListNearBottom(const float scroll_top, const float scroll_height, const float client_height) {
   const float max_top = std::max(0.f, scroll_height - client_height);
   return max_top > 0.5f && (max_top - scroll_top) <= kSessionListNearBottomPx;
@@ -37,13 +45,18 @@ public:
     return true;
   }
 
-  /** Grows the window when the user is near the bottom and rows remain. True when it grew. */
-  bool ExtendIfNearBottom(const size_t total, const bool near_bottom) {
-    if (!near_bottom || !More(total)) {
+  /** Grows the window by one step when rows remain (a tap on the loading line, a viewport not yet filled). */
+  bool Extend(const size_t total) {
+    if (!More(total)) {
       return false;
     }
     shown_ += kSessionListStep;
     return true;
+  }
+
+  /** Grows the window when the user is near the bottom and rows remain. True when it grew. */
+  bool ExtendIfNearBottom(const size_t total, const bool near_bottom) {
+    return near_bottom && Extend(total);
   }
 
 private:
