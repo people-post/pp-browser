@@ -6,7 +6,10 @@ edge the capability order does not allow unless it is in the allowlist with exac
 allowlist holds the edges still to be cut: a new one, or one that grows, fails; one that shrinks fails too,
 with the line to lower, so the list stays true as edges are cut.
 
-Usage: scripts/check/check_capability_edges.py [--list]   (--list prints every cross-capability edge)
+Usage: scripts/check/check_capability_edges.py [--list | --lib-edges]
+  --list       prints every cross-capability edge
+  --lib-edges  prints the src/lib module pairs one may include from the other ("from->to"): different
+               capabilities, in the order (CR013) — what check_base_includes.sh lets lib peers include
 """
 
 from __future__ import annotations
@@ -124,7 +127,22 @@ def read_allowlist() -> Counter:
     return allowed
 
 
+def allowed_lib_edges() -> list[str]:
+    """lib/<a> may include lib/<b> when they are different capabilities and the order allows it (CR013)."""
+    modules = sorted(child.name for child in (SRC / "lib").iterdir() if child.is_dir())
+    pairs = []
+    for source in modules:
+        for target in modules:
+            a, b = capability_of(f"lib/{source}"), capability_of(f"lib/{target}")
+            if source != target and a and b and a != b and b in ALLOWED[a]:
+                pairs.append(f"{source}->{target}")
+    return pairs
+
+
 def main() -> int:
+    if "--lib-edges" in sys.argv:
+        print("\n".join(allowed_lib_edges()))
+        return 0
     missing = unmapped_dirs()
     if missing:
         for rel in missing:

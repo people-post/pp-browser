@@ -1,4 +1,4 @@
-#include "lib/people/ModelFacingJson.h"
+#include "lib/messaging/ModelFacingJson.h"
 
 #include "common/ValueJson.h"
 

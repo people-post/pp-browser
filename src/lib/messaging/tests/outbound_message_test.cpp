@@ -5,7 +5,7 @@
 
 #include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
@@ -53,7 +53,7 @@ struct Device {
           auto found = cards.find(account);
           return found == cards.end() ? std::nullopt : std::optional<AccountCard>(found->second);
         },
-        *psk, keys.Keys(), *roster);
+        *psk, test::ReceiveKeysOf(keys), *roster);
   }
   ~Device() {
     pipeline.reset();
@@ -92,7 +92,7 @@ struct Device {
         BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id},
                             thread.channel, "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))},
                             NextRelayOrderKey());
-    keys.SignEnvelope(envelope);
+    test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
 

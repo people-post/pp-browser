@@ -14,7 +14,7 @@
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/OutboundMessage.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
@@ -93,7 +93,7 @@ struct Side {
           auto found = cards.find(account_id);
           return found == cards.end() ? std::nullopt : std::optional<AccountCard>(found->second);
         },
-        *psk, keys.Keys(), *roster);
+        *psk, test::ReceiveKeysOf(keys), *roster);
     pipeline->SetSystemControls(&controls);
     pipeline->SetControlLaneSeen(seen.get());
     chat_seq.clear();  // a reinstall numbers its messages from 1 again
@@ -208,7 +208,7 @@ struct Side {
     if (session->key_init_b64) {
       envelope.body.e2e.key_init_b64 = *session->key_init_b64;
     }
-    keys.SignEnvelope(envelope);
+    test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
 
@@ -234,7 +234,7 @@ struct Side {
       RelayEnvelope envelope =
           BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "relay:" + peer_account,
                               {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
-      keys.SignEnvelope(envelope);
+      test::SignEnvelopeAs(keys, envelope);
       out[device.peer_id] = envelope;
     }
     return out;
@@ -249,7 +249,7 @@ struct Side {
       first = envelope;
     }
     first.body.e2e.copies = copies;
-    keys.SignEnvelope(first);
+    test::SignEnvelopeAs(keys, first);
     return first;
   }
 
@@ -365,7 +365,7 @@ struct Side {
                            .payload_b64 = encrypted->copies[i]->payload_b64};
       RelayEnvelope envelope = BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, recipient, {copy},
                                                         NextRelayOrderKey());
-      keys.SignEnvelope(envelope);
+      test::SignEnvelopeAs(keys, envelope);
       out[per_device ? target.target_key.peer_device : recipient] = envelope;
     }
     return out;
@@ -457,7 +457,7 @@ TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
   // Alice's own card, but the envelope signed by Mallory's device: a device her card does not list.
   alice.carry_keys = true;
   RelayEnvelope resigned = alice.Signal(bob);
-  mallory.SignEnvelope(resigned);
+  test::SignEnvelopeAs(mallory, resigned);
   EXPECT_FALSE(bob.Receive(resigned));
 
   // Mallory's card presented as Alice's: its signing key does not hash to her Account ID.
@@ -465,7 +465,7 @@ TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
   AccountCard as_alice = mallory.DeviceCard();
   as_alice.keys.account_id = alice.account;
   claimed.body.e2e.sender_card = AccountCardToJson(as_alice);
-  mallory.SignEnvelope(claimed);
+  test::SignEnvelopeAs(mallory, claimed);
   EXPECT_FALSE(bob.Receive(claimed));
   EXPECT_EQ(kept, 0);
 }

@@ -1,4 +1,4 @@
-#include "lib/messaging/PeerCardStore.h"
+#include "lib/people/PeerCardStore.h"
 
 #include "common/ValueJson.h"
 

@@ -1,5 +1,5 @@
 // The name a thread or a sender shows (contacts here; the directory cache and the group roster through ports).
-#include "lib/people/PeerDisplayResolver.h"
+#include "lib/messaging/PeerDisplayResolver.h"
 
 #include "common/Utilities.h"
 

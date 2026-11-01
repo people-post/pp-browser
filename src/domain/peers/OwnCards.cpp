@@ -1,7 +1,7 @@
 #include "domain/peers/OwnCards.h"
 
+#include "lib/people/DevicePeerId.h"
 #include "foundation/crypto/KemKeyBinding.h"
-#include "lib/messaging/PeerRequestAuth.h"
 
 #include <algorithm>
 
@@ -42,7 +42,7 @@ Roe<std::string> OwnCards::DevicePeerId() {
   if (!identity) {
     return identity.error();
   }
-  return PeerRequestAuth::DevicePeerId(identity->public_key_b64);
+  return DevicePeerIdFromKey(identity->public_key_b64);
 }
 
 Roe<AccountCardDevice> OwnCards::Self() {
@@ -50,7 +50,7 @@ Roe<AccountCardDevice> OwnCards::Self() {
   if (!identity) {
     return identity.error();
   }
-  auto peer_id = PeerRequestAuth::DevicePeerId(identity->public_key_b64);
+  auto peer_id = DevicePeerIdFromKey(identity->public_key_b64);
   if (!peer_id) {
     return peer_id.error();
   }

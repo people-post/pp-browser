@@ -22,6 +22,7 @@ if(NOT PP_BROWSER_HEADLESS)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)
   list(APPEND _pp_lib_peers
+    pp_lib_people_cards
     pp_lib_messaging
     pp_lib_calls
     pp_lib_broadcast

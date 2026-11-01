@@ -1,4 +1,4 @@
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 
 #include "lib/people/ContactIdentity.h"
 #include "common/directory/DirectoryJson.h"

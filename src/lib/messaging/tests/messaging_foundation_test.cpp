@@ -1,5 +1,5 @@
 #include "lib/messaging/AtAiParser.h"
-#include "lib/messaging/PeerKemKeyStore.h"
+#include "lib/people/PeerKemKeyStore.h"
 #include "lib/messaging/PlainTextLinks.h"
 #include "lib/messaging/QuoteReply.h"
 #include "common/chat/MessagingJson.h"

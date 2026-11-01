@@ -3,7 +3,7 @@
 #include "lib/messaging/E2eIngestClassifier.h"
 #include "lib/messaging/E2eRelayPayloadCodec.h"
 #include "lib/messaging/EnvelopeSigner.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupRosterStore.h"
@@ -123,7 +123,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
       store, [&peer_card](const std::string& account) -> std::optional<AccountCard> {
         return account == "account:peer" ? std::optional<AccountCard>(peer_card) : std::nullopt;
       },
-      psk_store, local.Keys(), roster_store);
+      psk_store, test::ReceiveKeysOf(local), roster_store);
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
@@ -148,7 +148,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(payload_b64));
   envelope.body.e2e.payload_b64 = *payload_b64;
 
-  peer.SignEnvelope(envelope);
+  test::SignEnvelopeAs(peer, envelope);
 
   const RelayReceiveOutcome outcome = pipeline.ProcessEnvelope(envelope, local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptBootstrap);
