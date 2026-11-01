@@ -2,12 +2,13 @@
 
 > **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `foundation/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-10-31
 
 ## Landed
 
 | Area | State |
 |------|-------|
+| **Node heartbeat opt-in** (2026-10-31) | The pp-node directory heartbeat (PR #428) is off unless the operator sets `PP_NODE_MESH_HEARTBEAT` (org seeds); www lists no `last_seen_at`, keeps endpoint `updated_at` for address changes, logs the path without IP, and applies the stale cut-off only to heartbeat nodes — privacy P011. Next: signed short-lived node records, [N031](DECISIONS.md#n031--node-liveness-short-lived-signed-records-observed-by-the-mesh) / [NODE_LIVENESS.md](NODE_LIVENESS.md) |
 | **media_relay pending quotes bounded** (2026-09-29) | The hop kept every issued quote until accepted or the service stopped. V050 invitees quote hops while ringing and never accept those, so unaccepted quotes now expire (60 s) and the book is capped (4096; refuse "media-relay busy") — `MediaRelayQuoteBook` (`MediaRelayBundleLogic`), gtests `MediaRelayQuoteBookTest.*`. Hop-side: ships in the next pp-node |
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
 | ADRs | N001–**N029** in [DECISIONS.md](DECISIONS.md) (N027 = mesh directory; N028 = DHT; N029 = name-directory north star) |

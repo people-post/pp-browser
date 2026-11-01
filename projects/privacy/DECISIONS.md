@@ -21,6 +21,7 @@
 ## P004 — Nodes are public by role
 
 **Date:** 2026-09-30
+**Status:** Amended by [P011](#p011--a-nodes-uptime-is-not-public-by-role): "public" covers a node's addresses and services, not when it is up.
 **Decision:** In the Node role (pp-node, desktop Node) the audience is `everyone`.
 **Rationale:** A Node serves relaying, DHT and directory to anyone; its address is published on purpose. Operators who need privacy do not run a Node.
 
@@ -59,3 +60,15 @@
 **Date:** 2026-10-30
 **Decision:** The PIN, the recovery phrase, private keys and the recovery seed (base64, in `LocalIdentity` and the link-device bundle) and API keys are held as `SecretText` (`common/Secret.h`): no `operator<<` and no conversion to a string, so logging one does not compile; `Reveal()` is the only way to the text, at the code that uses it (KDF, cipher, codec, HTTP header). Text converts into a `SecretText` implicitly, so the type is cheap to take where a secret enters. The held text is wiped when the value goes. Binary keys (`ByteVector`: the DEK, ML-DSA / KEM secret keys) stay as they are: nothing streams a byte vector by accident. `DataKeyVault` / `PinKeyDeriver` keep their `std::string_view` PIN: they are the KDF the PIN is revealed to.
 **Rationale:** The same reasoning as P009 for the other direction: the developer log never leaves the device, but it sits in a file, and a phone's logs get copied, shared in a support chat or read by other tools. A secret that cannot be streamed needs no reviewer to notice `<< pin`. Converting found no existing log of a secret.
+
+## P011 — A node's uptime is not public by role
+
+**Date:** 2026-10-31
+**Amends:** P004.
+**Decision:** The pp-node liveness heartbeat to the directory (PR #428) is the operator's choice: `mesh.mesh_heartbeat` / `PP_NODE_MESH_HEARTBEAT`, off by default, meant for org-run seeds. Whatever a heartbeat tells the directory stays out of anything public or durable:
+- `GET /v1/mesh/nodes` lists a node's `state` (`active` / `draining` / `retiring`) but no exact `last_seen_at`, and a heartbeat no longer rewrites `endpoints[].updated_at` (that field says when the addresses changed);
+- the stale cut-off (`MESH_STALE_FILTER_ENABLED`) applies only to nodes that send heartbeats — a node that does not is listed until its registration expires, so no healthy node drops out for not reporting to one server;
+- www logs the heartbeat path without IP, user agent or request id; the server keeps only the latest heartbeat, no history.
+
+**Rationale:** P004 publishes what a node offers (addresses, services) so anyone can use it. A 5-minute heartbeat adds more: a timeline of when each node is up — readable by anyone polling the listing — and the node's real egress address in the directory's logs, which differs from its advertised addresses when it advertises through a relay. It also makes one server the authority on which nodes are alive, against the mesh's direction (N029: the HTTP directory is an interim phone book). The heartbeat stays for the org's own seeds, where a dead node lingering in the list (registrations last 90 days) costs clients dials. The longer-term answer — liveness that travels with signed records and is observed by the mesh, not reported to the directory — is [N031](../p2p-mesh/DECISIONS.md#n031--node-liveness-short-lived-signed-records-observed-by-the-mesh).
+

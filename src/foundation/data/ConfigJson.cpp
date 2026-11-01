@@ -482,6 +482,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("bootstrap_peers", makeArray(std::move(peers)));
   object.set("advertise_multiaddrs", makeArray(std::move(advertise)));
   object.set("mesh_publish", config.mesh_publish);
+  object.set("mesh_heartbeat", config.mesh_heartbeat);
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
@@ -519,6 +520,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto mesh_publish = object.getIf<bool>("mesh_publish")) {
     config.mesh_publish = *mesh_publish;
+  }
+  if (auto mesh_heartbeat = object.getIf<bool>("mesh_heartbeat")) {
+    config.mesh_heartbeat = *mesh_heartbeat;
   }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;

@@ -74,7 +74,7 @@ void PrintUsage(const char* argv0) {
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
       << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
       << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT, PP_NODE_DHT_K,\n"
-      << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
+      << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH, PP_NODE_MESH_HEARTBEAT,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN, PP_NODE_LOG_LEVEL,\n"
       << "  PP_NODE_LEDGER_ROLE, PP_NODE_LEDGER_DIR\n"
       << "\n"
@@ -356,9 +356,11 @@ int main(int argc, char** argv) {
 
   // Operator metrics for /metrics (projects/node-monitoring); goes before the mesh stops.
   pbr::ScopedMetricsCollector node_metrics = pbr::RegisterNodeMetrics(*boot);
-  // Heartbeat runs only where this node publishes itself to a mesh directory.
+  // Heartbeat runs only where the operator turned it on and this node publishes itself to a mesh directory
+  // (opt-in: it tells the directory when the node is up and from where — privacy P011).
   std::optional<pbr::NodeHeartbeat> heartbeat;
-  if (boot->config.mesh.mesh_publish && !boot->config.registration.base_url.empty()) {
+  if (boot->config.mesh.mesh_publish && boot->config.mesh.mesh_heartbeat &&
+      !boot->config.registration.base_url.empty()) {
     heartbeat.emplace(MakeHeartbeatDeps(*boot));
   }
   pbr::StatusHttpServer status_http;
