@@ -14,7 +14,7 @@ two peers of one capability, or an edge against the order, may not — that cros
 | delivery | [`capabilities/delivery/src/lib/delivery/`](../../capabilities/delivery/src/lib/delivery/) (CR020, CR022) | `pp_lib_delivery` |
 | messaging | [`capabilities/messaging/src/lib/messaging/`](../../capabilities/messaging/src/lib/messaging/) (CR022) | `pp_lib_messaging` |
 | calls | [`capabilities/calls/src/lib/calls/`](../../capabilities/calls/src/lib/calls/) (CR022) | `pp_lib_calls` |
-| broadcast | `lib/broadcast/` | `pp_lib_broadcast` |
+| broadcast | [`capabilities/broadcast/src/lib/broadcast/`](../../capabilities/broadcast/src/lib/broadcast/) (CR022) | `pp_lib_broadcast` |
 | pricing | [`capabilities/pricing/src/lib/pricing/`](../../capabilities/pricing/src/lib/pricing/) (CR022) | `pp_lib_pricing` |
 | content | [`capabilities/social/src/lib/content/`](../../capabilities/social/src/lib/content/) (CR022) | `pp_lib_content` |
 | posts | [`capabilities/social/src/lib/posts/`](../../capabilities/social/src/lib/posts/) (CR022) | `pp_lib_posts` |

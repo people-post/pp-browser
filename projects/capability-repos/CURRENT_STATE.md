@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery, pricing, messaging and calls moved
+**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery, pricing, messaging, calls and broadcast moved
 
 ## Done
 
@@ -91,9 +91,12 @@
 - **P3, calls' folder:** `lib/calls`, `lib/media`, `common/media` (→ `pp_calls_common`), `domain/call_media` (still
   in headless configures, for pp-call-probe) and `feature/calls` in `capabilities/calls/src/` (594 tests); no hidden
   link to remove. `lib/media` keeps SDL3 and Opus as its own third-party links.
+- **P3, broadcast's folder:** `lib/broadcast` and `feature/broadcast` in `capabilities/broadcast/src/` (94 tests). The
+  call probe (an app tool) had reached the product's base through the feature bundles; it names
+  `pp_foundation_platform` and `pp_foundation_data` itself now.
 
 ## Next
 
-1. The other capability folders, in order: broadcast, node.
+1. The other capability folders, in order: node.
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.

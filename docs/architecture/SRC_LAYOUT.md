@@ -113,7 +113,7 @@ the map and the order and checks includes and CMake links (CR016); edges still t
 
 A capability moves out of `src/` into its own folder, `capabilities/<name>/`, before any repo split
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
-Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **net** (`lib/net`, `domain/registration`), **social** (`lib/posts`, `lib/content`), **delivery** (`lib/delivery`, `common/chat`, `common/thread` → `pp_delivery_common`, `domain/delivery`), **pricing** (`lib/pricing`), **messaging** (`lib/messaging`, `domain/attachments`, `feature/conversations`), **calls** (`lib/calls`, `lib/media`, `common/media` → `pp_calls_common`, `domain/call_media`, `feature/calls`; `lib/media` links SDL3 and Opus itself, so a split carries those).
+Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **net** (`lib/net`, `domain/registration`), **social** (`lib/posts`, `lib/content`), **delivery** (`lib/delivery`, `common/chat`, `common/thread` → `pp_delivery_common`, `domain/delivery`), **pricing** (`lib/pricing`), **messaging** (`lib/messaging`, `domain/attachments`, `feature/conversations`), **calls** (`lib/calls`, `lib/media`, `common/media` → `pp_calls_common`, `domain/call_media`, `feature/calls`; `lib/media` links SDL3 and Opus itself, so a split carries those), **broadcast** (`lib/broadcast`, `feature/broadcast`).
 
 - `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
   calls `pp_browser_capability(<name>)` (`cmake/PpBrowserCapability.cmake`): the lib / domain / feature helpers
