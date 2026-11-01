@@ -1,6 +1,6 @@
 include(PpBrowserBase)
 
-# Lib peers (strict independence). people and net are capability folders (capabilities/, CR022), added first.
+# Lib peers (strict independence). people, net and social are capability folders (capabilities/, CR022), added first.
 
 set(_pp_lib_peers
   pp_lib_people
@@ -13,8 +13,6 @@ if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(calls)
   add_subdirectory(broadcast)
   add_subdirectory(pricing)
-  add_subdirectory(content)
-  add_subdirectory(posts)
   add_subdirectory(ai)
   add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.

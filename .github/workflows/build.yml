@@ -108,6 +108,9 @@ jobs:
             net: &net
               - *people
               - 'capabilities/net/**'
+            social: &social
+              - *people
+              - 'capabilities/social/**'
 
   lint:
     needs: changes
@@ -251,7 +254,7 @@ jobs:
         run: |
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in people net; do
+            for capability in people net social; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;

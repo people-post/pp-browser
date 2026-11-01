@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people and net moved
+**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net and social moved
 
 ## Done
 
@@ -79,9 +79,10 @@
 - **P3, net's folder:** `lib/net` and `domain/registration` in `capabilities/net/src/`; a folder's
   `CMakeLists.txt` calls `pp_browser_capability(<name>)`, which makes its `src/` an include root of the targets the
   helpers make there. CI's filters chain (net's is people's plus its folder); 81 tests labelled `capability:net`.
+- **P3, social's folder:** `lib/posts` and `lib/content` in `capabilities/social/src/` (29 tests).
 
 ## Next
 
-1. The other capability folders, in order: social, delivery, pricing, messaging, calls, broadcast, node.
+1. The other capability folders, in order: delivery, pricing, messaging, calls, broadcast, node.
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.

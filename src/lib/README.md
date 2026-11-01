@@ -15,8 +15,8 @@ two peers of one capability, or an edge against the order, may not — that cros
 | calls | `lib/calls/` | `pp_lib_calls` |
 | broadcast | `lib/broadcast/` | `pp_lib_broadcast` |
 | pricing | `lib/pricing/` | `pp_lib_pricing` |
-| content | `lib/content/` | `pp_lib_content` |
-| posts | `lib/posts/` | `pp_lib_posts` |
+| content | [`capabilities/social/src/lib/content/`](../../capabilities/social/src/lib/content/) (CR022) | `pp_lib_content` |
+| posts | [`capabilities/social/src/lib/posts/`](../../capabilities/social/src/lib/posts/) (CR022) | `pp_lib_posts` |
 | ai | `lib/ai/` | `pp_lib_ai` (+ conversation/mcp sublibs) |
 
 The mesh is not a peer here: it is [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)

@@ -69,7 +69,7 @@ target is `https://backend.example.test/api/relay/v1`.
   LenUtf8 note ‖ i64 BE issued_at` (fresh within 5 minutes). Reasons: `illegal`, `sexual`, `violence`,
   `harassment`, `spam`, `other`; the note is ≤ 1 KiB. An anonymous report omits `reporter`. The relay
   rate-limits reports by network address and by reporter, and may weigh signed ones more.
-- **Cross-implementation vectors:** `src/lib/posts/tests/data/post_vectors.json` — entries of every kind,
+- **Cross-implementation vectors:** `capabilities/social/src/lib/posts/tests/data/post_vectors.json` — entries of every kind,
   a head, a media presign and a report, signed by `lib/posts`; every implementation (the relay) must parse,
   hash and verify them alike.
 - The relay enforces the protocol limits (S014) and **its quotas per author**, stated in its `post_relay`
