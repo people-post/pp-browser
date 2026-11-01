@@ -89,4 +89,19 @@ TEST(SessionListWindowTest, SidebarLoadingLineFollowsTheMoreFlag) {
 }
 
 } // namespace
+
+TEST(SessionListWindowTest, IncludeReachesTheOpenChatInWholeSteps) {
+  SessionListWindow window;
+  EXPECT_FALSE(window.Include(5)) << "already inside the first window";
+  EXPECT_EQ(window.Visible(100), 20u);
+  EXPECT_TRUE(window.Include(20)) << "row 21 needs the second step";
+  EXPECT_EQ(window.Visible(100), 40u);
+  EXPECT_TRUE(window.Include(75));
+  EXPECT_EQ(window.Visible(100), 80u);
+  EXPECT_FALSE(window.Include(41)) << "never shrinks";
+  EXPECT_EQ(window.Visible(100), 80u);
+  window.Reset();
+  EXPECT_EQ(window.Visible(100), 20u);
+}
+
 } // namespace pbr

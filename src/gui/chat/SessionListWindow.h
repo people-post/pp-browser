@@ -27,6 +27,16 @@ public:
   /** Rows remain beyond the window (the "Loading…" line). */
   bool More(const size_t total) const { return shown_ < total; }
 
+  /** The window reaches row `index` (the open chat must be drawn wherever it sorts). True when it grew. */
+  bool Include(const size_t index) {
+    const size_t need = ((index / kSessionListStep) + 1) * kSessionListStep;
+    if (need <= shown_) {
+      return false;
+    }
+    shown_ = need;
+    return true;
+  }
+
   /** Grows the window when the user is near the bottom and rows remain. True when it grew. */
   bool ExtendIfNearBottom(const size_t total, const bool near_bottom) {
     if (!near_bottom || !More(total)) {

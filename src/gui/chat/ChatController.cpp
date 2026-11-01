@@ -908,6 +908,13 @@ void ChatController::ApplySessionList() {
   shell_.archived_entry_label =
       list.showing_archived ? Tr("sidebar.archived.back").c_str()
                             : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count)}}).c_str();
+  // The open chat is always drawn, wherever it sorts (opened from Contacts, or pushed down by newer ones).
+  for (size_t i = 0; i < list.rows.size(); ++i) {
+    if (list.rows[i].active) {
+      session_window_.Include(i);
+      break;
+    }
+  }
   const size_t visible = session_window_.Visible(list.rows.size());
   shell_.sessions_more = session_window_.More(list.rows.size());
   shell_.sessions.reserve(visible);
