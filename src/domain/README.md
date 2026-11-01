@@ -22,7 +22,7 @@ app → gui → feature → domain → lib → foundation → common
 | Module | CMake | What it does | Used by |
 |--------|-------|--------------|---------|
 | `registration/` | `pp_domain_registration` | Registration finish / renew / nickname over the relay client and the identity store (headless) | conversations, pp-node |
-| `node/` | `pp_domain_node` (+ `pp_domain_node_ledger`) | Node-role mesh services: hosting from capabilities, DHT / directory config, self row, org-seed admission; the ledger role (headless) | conversations, pp-node |
+| `node/` | `pp_domain_node` (+ `pp_domain_node_ledger`) | Node-role mesh services: hosting from capabilities, DHT / directory config, self row, org-seed admission; the ledger role (headless) | product (`ProductMesh`), pp-node |
 | `call_media/` | `pp_domain_call_media` | pp-browser's realtime protocol on the mesh: call-media transport, leg coordinator, frame crypto (headless) | calls, product, pp-call-probe |
 | `peers/` | `pp_domain_peers` | Who a peer is: directory nicknames for strangers (`DirectoryShadowCache`), signing / KEM keys from kept cards and the directory (`AccountKeyResolver`, on mesh's `IDirectoryClient`), the account-card policy, this account's own cards (`OwnCards`) | conversations, gui |
 | `attachments/` | `pp_domain_attachments` | Chat attachments: the peer-direct blob request and its mesh transport (`AmpChatBlobTransport`), CDN upload / fetch, background fetch + decrypt (`AttachmentFetchWorkflow`), the content-store binding (`AttachmentContent`) | conversations, gui |

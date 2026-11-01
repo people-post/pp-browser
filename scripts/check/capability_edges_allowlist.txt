@@ -1,11 +1,5 @@
 # Include edges against the capability order, still to be cut (projects/capability-repos PHASES § P1).
 # check_capability_edges.py fails when one appears, grows or shrinks: lower a count when you cut sites.
 # Format: from -> to <include sites>, tests included (a capability's tests move with it).
-
-# BackgroundSyncScheduler (foundation/runtime, stays app-side: DESIGN § Runtime) reading messaging limits,
-# and common/thread's history types naming the relay envelope.
-# Identity using the backend client (directory, blob fetch for profile icons): a port people declares.
-# AI's tool registry and structured text, and lib/ui types, from the conversations feature: messaging
-# declares the ports AI and the shell implement (CR007).
-# The conversations hub naming node services and mesh executors: the app wires them in.
-messaging -> node 3
+#
+# Empty: every edge is cut (P1). A new edge against the order fails the gate; fix it, do not list it.

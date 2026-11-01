@@ -49,8 +49,11 @@ PeerIds come from pp-cpp-crypto ([MESH_IDENTITY.md](MESH_IDENTITY.md)).
 
 ## In pp-browser
 
-- **Who composes it:** `ConversationsHub` (the app) and `NodeBootstrap` (pp-node) each own one
-  `MeshHost`, built with `AppRuntimeMeshExecutors()` and `MetricsRegistry::Global()`
+- **Who composes it:** `ProductMesh` (the app, `feature/product`) and `NodeBootstrap` (pp-node) each own
+  one `MeshHost`, built with `AppRuntimeMeshExecutors()` (`foundation/runtime`) and
+  `MetricsRegistry::Global()`, and give it the profile's role from `domain/node` (what it hosts and
+  serves, its DHT and directory, its own directory row). `ConversationsHub` runs messaging on the app's:
+  it asks its owner (`HubMeshOwner`) for the mesh once messaging is up and gives it back on the way down
   ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
 - **Spelling:** app code is in `pbr` and writes `mesh::MeshHost`, `mesh::DirectoryHit` through the alias
   in [`common/MeshAlias.h`](../../src/common/MeshAlias.h).

@@ -26,7 +26,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_domain_peers
     pp_domain_attachments
     pp_domain_delivery
-    pp_domain_node
     pp_foundation_crypto
     pp_lib_media
     pp_lib_messaging

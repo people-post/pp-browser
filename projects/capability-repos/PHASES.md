@@ -31,7 +31,10 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 - [x] node → messaging, node → calls, messaging → calls, calls → broadcast: the product's L4 protocol ids and
       `ProductMeshProtocols()` into the base (`common/ProtocolIds.h`); the people-picker ports into
       `feature/product`; an unused broadcast include out of calls
-- [ ] messaging → node
+- [x] messaging → node (3): the mesh leaves the conversations hub — `ProductMesh` (`feature/product`) owns
+      the `MeshHost` and gives it the role (`domain/node`); the hub borrows it through `HubMeshOwner`.
+      `MeshExecutors` into pp-cpp-mesh's `mesh/types/` (v3.0.0), so `AppRuntimeMeshExecutors` is
+      `foundation/runtime`'s
 
 ## P2 — Thin the base (in-repo, then pp-cpp-common / pp-cpp-crypto)
 

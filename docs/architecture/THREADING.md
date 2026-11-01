@@ -318,7 +318,7 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 | Owner | Notes |
 |-------|--------|
 | `CallStack` / `CallMediaBridge` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
-| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; stop L4, then join MeshPump |
+| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; stop L4, then join MeshPump (the hub asks the mesh's owner, `ProductMesh`, to stop it, then to free it) |
 | `AppRuntime` / `ThreadRuntime` | `BeginShutdown` then budgeted coordinator + WorkerPool |
 | LAN mDNS | stop advertise / join watcher before mesh destroy |
 | `ILocalNotifier` | `Shutdown` before UI mailbox teardown |

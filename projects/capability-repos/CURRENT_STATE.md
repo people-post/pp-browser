@@ -1,7 +1,7 @@
 # Capability repos — current state
 
-**Updated:** 2026-10-31  
-**Phase:** P0 done; P1 under way; P2's runtime core done
+**Updated:** 2026-11-01  
+**Phase:** P0 and P1 done (no edge against the order); P2's runtime core done
 
 ## Done
 
@@ -33,11 +33,15 @@
   `feature/product`, where messaging meets AI; the chats list's preview prose a `ChatPresenter` port
   (`Callbacks::prose`) the GUI and pp-app-probe fill with `StructuredTextParser::PlainText`;
   `kGroupMemberLimit` in `MessagingLimits.h` — 1 edge / 3 sites left (messaging → node).
+- **P1, messaging → node:** 3 sites → 0 — the conversations hub no longer builds the mesh: `ProductMesh`
+  (`feature/product`) owns the `MeshHost`, gives it the profile's role from `domain/node` (hosting and
+  serving, DHT and directory, its own directory row) and lends it to the hub (`HubMeshOwner`: start,
+  configure queries, apply serving, stop, release). `MeshExecutors` moved to pp-cpp-mesh's `mesh/types/`
+  (v3.0.0), so `AppRuntimeMeshExecutors` lives in `foundation/runtime`. The allowlist is empty.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
 ## Next
 
-1. P1: one edge per PR.
-2. P2: `foundation/data` / `platform` / `Tr()` out of capability code; crypto additions into pp-cpp-crypto.
-3. Contracts repo (CR010) when convenient.
+1. P2: `foundation/data` / `platform` / `Tr()` out of capability code; crypto additions into pp-cpp-crypto.
+2. Contracts repo (CR010) when convenient.

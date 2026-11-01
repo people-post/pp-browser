@@ -41,12 +41,9 @@ that is not.
 Include sites, tests included (a capability's tests move with it). The gate started from 11 edges, 67 sites;
 moving misplaced tests (P1) took it to 10 edges, 53 sites; cutting people → messaging (CR013) to 9 edges,
 32 sites; net → messaging to 8 edges, 22 sites; the product protocol ids into the base and four small edges
-to 4 edges, 15 sites; base → messaging and people → net to 2 edges, 8 sites; messaging → app to 1 edge, 3 sites
-(`scripts/check/capability_edges_allowlist.txt`).
-
-| Edge | Sites | What it is |
-|------|-------|------------|
-| messaging → node | 3 | the hub naming node services and mesh executors |
+to 4 edges, 15 sites; base → messaging and people → net to 2 edges, 8 sites; messaging → app to 1 edge, 3 sites;
+messaging → node (the mesh moved out of the conversations hub into `ProductMesh`) to none. The allowlist
+(`scripts/check/capability_edges_allowlist.txt`) is empty: a new edge against the order fails the gate.
 
 The heavy directions are allowed: messaging → people (159), messaging → net (35), calls → people (26),
 calls → messaging (25), broadcast → calls (13).

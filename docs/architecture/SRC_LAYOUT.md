@@ -204,7 +204,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 |------|----------|
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
 | `feature/conversations/` | Conversations hub + delivery; never includes calls / broadcast / call_media — they ride the hub as `HubParticipant`s |
-| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; where messaging meets AI (`MessagingTools`) and the people picker (`MessagingPeoplePickerPorts`); only app/ and gui/ include it |
+| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the mesh (`ProductMesh`, built for the profile's role over `domain/node`, lent to the hub as its `HubMeshOwner`) and the hub, and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; where messaging meets AI (`MessagingTools`) and the people picker (`MessagingPeoplePickerPorts`); only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports |
@@ -218,7 +218,7 @@ calls
 conversations → calls
 ```
 
-Feature modules use domain modules directly (`conversations → domain/registration, domain/node`; `calls → domain/call_media`).
+Feature modules use domain modules directly (`conversations → domain/registration`; `product → domain/node`, for the mesh it builds for the profile's role; `calls → domain/call_media`).
 
 ## GUI subfolders
 
