@@ -33,7 +33,7 @@ protected:
     if (!hash) {
       return hash.error();
     }
-    return StoreAttachmentViewBytes(dir_.string(), "thread:1", *hash, "text/plain", "note.txt", plaintext);
+    return StoreAttachmentViewBytes(dir_.string(), "thread-1", *hash, "text/plain", "note.txt", plaintext);
   }
 
   std::filesystem::path dir_;
