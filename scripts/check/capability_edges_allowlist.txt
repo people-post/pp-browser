@@ -2,8 +2,6 @@
 # check_capability_edges.py fails when one appears, grows or shrinks: lower a count when you cut sites.
 # Format: from -> to <include sites>, tests included (a capability's tests move with it).
 
-# CallTypes and the call media protocol id in the conversations hub's ports.
-messaging -> calls 2
 # BackgroundSyncScheduler (foundation/runtime, stays app-side: DESIGN § Runtime) reading messaging limits,
 # and common/thread's history types naming the relay envelope.
 base -> messaging 2
@@ -14,8 +12,3 @@ people -> net 5
 messaging -> app 5
 # The conversations hub naming node services and mesh executors: the app wires them in.
 messaging -> node 3
-# NodeMetrics reading chat types.
-node -> messaging 2
-# Calls naming broadcast (CR003 keeps them in one capability, but not in a cycle).
-calls -> broadcast 2
-node -> calls 1

@@ -24,7 +24,10 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 - [ ] base → messaging (2)
 - [ ] people → net (5): a port identity declares, the app or net implements
 - [ ] messaging → app (5): messaging declares the ports AI and the shell implement (CR007)
-- [ ] messaging → calls, messaging → node, node → messaging, node → calls, calls → broadcast
+- [x] node → messaging, node → calls, messaging → calls, calls → broadcast: the product's L4 protocol ids and
+      `ProductMeshProtocols()` into the base (`common/ProtocolIds.h`); the people-picker ports into
+      `feature/product`; an unused broadcast include out of calls
+- [ ] messaging → node
 
 ## P2 — Thin the base (in-repo, then pp-cpp-common / pp-cpp-crypto)
 

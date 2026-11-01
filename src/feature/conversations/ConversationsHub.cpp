@@ -13,7 +13,7 @@
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/ProductMeshProtocols.h"
+#include "common/ProtocolIds.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
 #include "lib/pricing/PaymentPromiseAvoid.h"
 #include "lib/pricing/PaymentPromiseWireCodec.h"

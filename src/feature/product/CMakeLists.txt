@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_product
     BroadcastParticipant.cpp
     CallsParticipant.cpp
     MakeCallFunctionalPorts.cpp
+    MessagingPeoplePickerPorts.cpp
     ProductStack.cpp
   PUBLIC_LIBS
     pp_feature_conversations

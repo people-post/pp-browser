@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/conversations/ConversationsHub.h"
-#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/product/MessagingPeoplePickerPorts.h"
 #include "feature/product/BroadcastParticipant.h"
 #include "feature/product/CallsParticipant.h"
 

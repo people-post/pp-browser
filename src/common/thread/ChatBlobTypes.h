@@ -1,13 +1,13 @@
 #pragma once
 
+#include "common/ProtocolIds.h"
 #include "common/thread/ThreadChannel.h"
 
 #include <string>
 
 namespace pbr {
 
-/** R019 peer-direct attachment blobs — `/pp/blob/1.0.0`. */
-inline constexpr const char* kBlobProtocolId = "/pp/blob/1.0.0";
+/** R019 peer-direct attachment blobs (the wire id is common/ProtocolIds.h's). */
 inline constexpr const char* kChatBlobProtocolId = kBlobProtocolId;
 
 enum class ChatBlobOp { Fetch, Push, FetchPublic };

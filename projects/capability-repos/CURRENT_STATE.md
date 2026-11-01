@@ -21,6 +21,10 @@
 - **P1, net → messaging:** 10 sites → 0 — the relay's message client (`HttpRelayClient`), the relay and
   peer ports (`RelayClients.h`), the message signing builders and the relay mocks move into messaging; net
   keeps the relay API header, push and its own clients — 8 edges / 22 sites left.
+- **P1, four small edges:** node → messaging, node → calls, messaging → calls, calls → broadcast → 0 — the
+  product's L4 protocol ids and `ProductMeshProtocols()` in `common/ProtocolIds.h` (base), the people-picker
+  ports (`MessagingPeoplePickerPorts`) in `feature/product`, an unused broadcast include dropped from calls —
+  4 edges / 15 sites left (people → net, messaging → app, messaging → node, base → messaging).
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

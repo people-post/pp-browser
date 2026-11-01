@@ -106,7 +106,7 @@
 #include "feature/conversations/MessagingCompatPorts.h"
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "feature/conversations/MessagingShellPorts.h"
-#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/product/MessagingPeoplePickerPorts.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellPinGatePorts.h"

@@ -40,18 +40,15 @@ that is not.
 
 Include sites, tests included (a capability's tests move with it). The gate started from 11 edges, 67 sites;
 moving misplaced tests (P1) took it to 10 edges, 53 sites; cutting people → messaging (CR013) to 9 edges,
-32 sites; net → messaging to 8 edges, 22 sites (`scripts/check/capability_edges_allowlist.txt`).
+32 sites; net → messaging to 8 edges, 22 sites; the product protocol ids into the base and four small edges
+to 4 edges, 15 sites (`scripts/check/capability_edges_allowlist.txt`).
 
 | Edge | Sites | What it is |
 |------|-------|------------|
-| messaging → calls | 2 | `CallTypes` and the call media protocol id in the hub's ports |
 | base → messaging | 2 | `foundation/runtime/BackgroundSyncScheduler` (stays app-side) and `common/thread`'s history types naming the relay envelope |
 | people → net | 5 | directory and blob clients for profile icons |
 | messaging → app | 5 | AI's tool registry and structured text, `lib/ui` types, from the conversations feature |
 | messaging → node | 3 | the hub naming node services and mesh executors |
-| node → messaging | 2 | `NodeMetrics` reading chat types |
-| calls → broadcast | 2 | calls naming broadcast |
-| node → calls | 1 | |
 
 The heavy directions are allowed: messaging → people (159), messaging → net (35), calls → people (26),
 calls → messaging (25), broadcast → calls (13).

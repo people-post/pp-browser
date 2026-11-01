@@ -72,7 +72,7 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
 | Call-media transport | `CallMediaAmpTransport` via `CallStack` | `domain/call_media` (a client of the mesh's io lane and L4 helpers); `CallMediaBridge` in `feature/calls` |
-| App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media: `ProductMeshProtocols`) beside the mesh's own |
+| App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media, account cards: `ProductMeshProtocols`, `common/ProtocolIds.h`) beside the mesh's own |
 | Dial / reach / parking | `MeshConnectivity` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::connectivity`); hop candidates injected by `MakeMeshConnectivityDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
 | Media relay | `MeshMediaRelay` (owned by `ConversationsHub`, built on `MeshConnectivity`) | Borrowed by `CallStack` (`CallStackDeps::media_relay`) and broadcast (`RelayAttachPorts`) |
 

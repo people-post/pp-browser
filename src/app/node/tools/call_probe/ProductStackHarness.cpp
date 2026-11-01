@@ -4,7 +4,7 @@
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/ProductMeshProtocols.h"
+#include "common/ProtocolIds.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"

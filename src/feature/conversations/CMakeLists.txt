@@ -18,7 +18,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     PeopleSearch.cpp
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
-    MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
     MeshConnectivityWiring.cpp
     PushDeviceCoordinator.cpp
