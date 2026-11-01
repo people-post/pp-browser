@@ -307,6 +307,13 @@ when they change. A fetch with no directory configured now fails and keeps the l
 them. The seed-reservation renewal stays with the hub's `MeshConnectivity` (the neutral mesh object participants
 borrow) and moves when that does.
 
+**Step 5 (2026-11-01):** the neutral mesh objects — `MeshConnectivity`, `MeshMediaRelay`, the hop policy feed —
+and the seed-reservation renewal are the mesh owner's. The hub tells it where the mesh is in its life
+(`SetMeshInputs`, `WireMeshObjects`, `DetachMeshObjects`, `BeginMeshStop` / `DropMediaRelayClient` /
+`EndMeshStop`, `RefreshMeshView`, `StayReachable`, `ClearMeshObjects`), in the order it used to run them itself, and
+reaches peers through `Connectivity()`. Calls and broadcast get the objects from `ProductMesh`, not the hub; the
+hub names no media relay.
+
 **Step 4 (2026-11-01):** the backend's clients are a delivery-level set (`lib/delivery/BackendClientSet`: the
 relay's message and push-device clients, client compat, the directory, registration, blobs, the locker), built
 from the config's endpoints, kept while an endpoint is unchanged, signing with the profile's identity. The

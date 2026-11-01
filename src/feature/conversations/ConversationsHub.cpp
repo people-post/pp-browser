@@ -131,9 +131,6 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
 
 ConversationsHub::ConversationsHub() {
   redirectLogger("ConversationsHub");
-  mesh_connectivity_ = std::make_unique<mesh::MeshConnectivity>();
-  mesh_media_relay_ = std::make_unique<mesh::MeshMediaRelay>(*mesh_connectivity_);
-  hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
 }
 
 MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
@@ -174,9 +171,9 @@ void ConversationsHub::NoteLanMdnsPeerId(const std::string& peer_id) {
 }
 
 void ConversationsHub::WireMeshConnectivity() {
-  MeshConnectivityWiringInputs reach = MeshInputs();
-  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
-  hop_policy_feed_->SetInputs(std::move(reach));
+  if (mesh_owner_) {
+    mesh_owner_->SetMeshInputs(MeshInputs());
+  }
 }
 
 void ConversationsHub::AddParticipant(HubParticipant& participant) {
@@ -278,8 +275,9 @@ Roe<void> ConversationsHub::StartMesh(const HubSettings& settings) {
       ApplyMeshAdmissionPolicies();
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
-      mesh_connectivity_->RefreshLocalView();  // advertised addrs follow the probe (media consumers' view)
-      hop_policy_feed_->PushSoon();            // seed reachability gates the rendezvous surface
+      if (mesh_owner_) {
+        mesh_owner_->RefreshMeshView();  // the local view follows the probe; seed reachability gates the hop policy
+      }
       NoteObservedAddress();
       if (on_reachability_updated_) {
         on_reachability_updated_();
@@ -329,9 +327,9 @@ void ConversationsHub::StartMeshServices() {
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnMeshMediaDetach();
   }
-  hop_policy_feed_->Start();  // the policy is in before connectivity wires
-  mesh_connectivity_->Wire();
-  mesh_media_relay_->Wire();
+  if (mesh_owner_) {
+    mesh_owner_->WireMeshObjects();
+  }
   for (HubParticipant* participant : Participants()) {
     participant->OnMeshServicesStarted(*this);
   }
@@ -586,33 +584,14 @@ std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
 void ConversationsHub::SyncStayReachable() {
   const bool want = config_.mesh.reachable_without_relay && host_.desktop && mesh_ && mesh_ready_ &&
                     !shutdown_requested_.load(std::memory_order_acquire);
-  if (!want) {
-    if (stay_reachable_timer_ != 0) {
-      AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
-      stay_reachable_timer_ = 0;
-    }
-    return;
+  if (mesh_owner_) {
+    mesh_owner_->StayReachable(want);
   }
-  if (stay_reachable_timer_ != 0) {
-    return;
-  }
-  // A seed reservation lasts about 30 s; renewing every 20 s keeps contacts able to reach this device by
-  // its PeerId through a seed, with no relay (docs/contracts/ACCOUNT_CARD.md).
-  const auto renew = [this]() {
-    AppRuntime::PostUI([this]() {
-      if (stay_reachable_timer_ != 0 && mesh_ && mesh_ready_) {
-        mesh_connectivity_->Rendezvous().ReserveOnBootstrapSeeds();
-      }
-    });
-  };
-  renew();
-  stay_reachable_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::seconds(20), renew);
 }
 
 void ConversationsHub::StopMesh() {
-  if (stay_reachable_timer_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
-    stay_reachable_timer_ = 0;
+  if (mesh_owner_) {
+    mesh_owner_->StayReachable(false);
   }
   StopNetworkWatch();
   mobile_ephemeral_start_inflight_ = false;
@@ -634,8 +613,9 @@ void ConversationsHub::StopMesh() {
   // MeshHost::Stop (media_relay, circuit, dial-back, runtime; joins workers) → call-media freed →
   // dial registry / circuit reach freed.
   mesh::MeshHost* mesh = mesh_;
-  hop_policy_feed_->Stop();  // its inputs read the mesh
-  mesh_connectivity_->InvalidateAsyncOps();
+  if (mesh_owner_) {
+    mesh_owner_->BeginMeshStop();
+  }
   const std::function<void()> abort_circuits = [mesh]() {
     if (mesh) {
       mesh->AbortInflightCircuitRequests();
@@ -644,7 +624,9 @@ void ConversationsHub::StopMesh() {
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnMeshStopping(abort_circuits);
   }
-  mesh_media_relay_->ResetRelayClient();
+  if (mesh_owner_) {
+    mesh_owner_->DropMediaRelayClient();
+  }
   detach_transports();
   if (mesh && mesh_owner_) {
     mesh_owner_->Stop();
@@ -652,7 +634,9 @@ void ConversationsHub::StopMesh() {
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnMeshStopped();
   }
-  mesh_connectivity_->ResetAfterMeshStop();
+  if (mesh_owner_) {
+    mesh_owner_->EndMeshStop();
+  }
   mesh_ = nullptr;
   if (mesh && mesh_owner_) {
     mesh_owner_->Release();
@@ -805,12 +789,12 @@ void ConversationsHub::ConfigureMeshQueries() {
   inputs.directory = config_.directory;
   inputs.identity = identity_.get();
   inputs.directory_nodes = [this]() { return DirectoryNodes(); };
-  // mesh_ (and its DHT) goes before mesh_connectivity_.
-  inputs.reach_held_down = [connectivity = mesh_connectivity_.get()](const std::string& peer_id) {
+  // The mesh (and its DHT) goes before the owner's connectivity.
+  inputs.reach_held_down = [connectivity = &mesh_owner_->Connectivity()](const std::string& peer_id) {
     return connectivity && mesh::ReachHeldDown(connectivity->ReachFacts(peer_id), mesh::PeerReachRecord::NowMs());
   };
   constexpr size_t kDirectoryPeersPerList = 2;
-  inputs.choose_directory_peers = [connectivity = mesh_connectivity_.get()](const std::vector<std::string>& keys) {
+  inputs.choose_directory_peers = [connectivity = &mesh_owner_->Connectivity()](const std::vector<std::string>& keys) {
     return connectivity ? connectivity->ChoosePeers(keys, kDirectoryPeersPerList) : keys;
   };
   mesh_owner_->ConfigureQueries(inputs);
@@ -995,7 +979,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
         }
         RegisterMeshDirectoryEndpoints();
         ConfigureMeshQueries();
-        hop_policy_feed_->PushSoon();  // directory nodes are rendezvous / seed candidates
+        mesh_owner_->PushHopPolicySoon();  // directory nodes are rendezvous / seed candidates
       });
     });
   }
@@ -1101,7 +1085,11 @@ void ConversationsHub::BuildMessagingObjects() {
         done(false);
         return;
       }
-      mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [done](mesh::CircuitReachRoe reached) {
+      if (!mesh_owner_) {
+        done(false);
+        return;
+      }
+      mesh_owner_->Connectivity().TryEnsurePeerReachableAsync(peer_id, [done](mesh::CircuitReachRoe reached) {
         done(static_cast<bool>(reached));
       });
     });
@@ -2787,16 +2775,17 @@ void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnMeshMediaDetach();
   }
-  mesh_media_relay_->ResetRelayClient();
-  mesh_connectivity_->ResetDialRegistry();
+  if (mesh_owner_) {
+    mesh_owner_->DetachMeshObjects();
+  }
   if (mesh_owner_) {
     mesh_owner_->ApplyServing(config_.mesh);  // what the role serves inbound (circuit, media relay)
   }
   ConfigureMeshQueries();
   ApplyMeshAdmissionPolicies();
-  hop_policy_feed_->Start();  // pushes now: the role may have changed what is a candidate
-  mesh_connectivity_->Wire();
-  mesh_media_relay_->Wire();
+  if (mesh_owner_) {
+    mesh_owner_->WireMeshObjects();  // the hop policy pushes now: the role may have changed what is a candidate
+  }
   for (HubParticipant* participant : Participants()) {
     participant->OnMeshMediaRebound(*this);
   }
@@ -3020,9 +3009,9 @@ void ConversationsHub::Shutdown() {
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnShutdown();
   }
-  mesh_media_relay_->Clear();
-  hop_policy_feed_->Stop();
-  mesh_connectivity_->Clear();
+  if (mesh_owner_) {
+    mesh_owner_->ClearMeshObjects();
+  }
   psk_store_.reset();
   inbox_.reset();
   peer_labels_.reset();

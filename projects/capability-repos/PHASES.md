@@ -48,7 +48,8 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       `AttachmentPlatform`, the push registrar port, `MeshRoleOf`). People and node done (the config slices
       `MeshConfig` and `ServiceEndpoints`, `SchemaVersion`, `DialWorthyMultiaddrs` and the secure-blob port into
       `common/`; the OS store in `foundation/platform`, handed in by the app); net has `CurlSsl` left.
-- [ ] The hub's shell thins (CR018): mesh glue into `ProductMesh`, backend clients handed in.
+- [x] The hub's shell thins (CR018): mesh glue, the neutral mesh objects and the seed reservation into
+      `ProductMesh`; backend clients a delivery-level set handed in.
 - [x] Delivery below messaging and realtime (CR020): the gate maps delivery and pricing; calls and broadcast
       no longer include or link messaging.
 - [x] `Tr()` out of capability code: text by key through `common/Localized.h`, the app's catalogs answer.

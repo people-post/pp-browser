@@ -3,6 +3,7 @@
 #include "feature/broadcast/BroadcastHub.h"
 #include "feature/broadcast/BroadcastServices.h"
 #include "feature/conversations/HubParticipant.h"
+#include "feature/product/ProductMesh.h"
 #include "lib/broadcast/PeerAnnounceTypes.h"
 #include "common/Lifetime.h"
 
@@ -25,7 +26,8 @@ namespace pbr {
  */
 class BroadcastParticipant : public HubParticipant {
 public:
-  explicit BroadcastParticipant(ConversationsHub& hub);
+  /** `mesh` lends the neutral mesh objects (the media relay client, the reach lane); it outlives the participant. */
+  BroadcastParticipant(ConversationsHub& hub, ProductMesh& mesh);
   ~BroadcastParticipant() override;
 
   /** Null while the mesh is down or media_relay is not wired. */
@@ -67,6 +69,7 @@ private:
   void Rebuild(ConversationsHub& hub);
 
   ConversationsHub& hub_;
+  ProductMesh& mesh_;
   std::unique_ptr<BroadcastServices> services_;
   // Borrows the services: declared after them, goes first.
   std::unique_ptr<BroadcastHub> broadcast_;

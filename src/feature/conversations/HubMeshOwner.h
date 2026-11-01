@@ -10,6 +10,8 @@
 #include "mesh/types/IDirectoryClient.h"
 #include "common/Error.h"
 #include "common/NetworkChange.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
+#include "mesh/connectivity/MeshConnectivity.h"
 
 #include <functional>
 #include <string>
@@ -102,6 +104,33 @@ public:
   virtual void MaybeRefreshDirectory() = 0;
   /** Drops the cache (the profile closes). Idempotent. */
   virtual void StopDirectoryCache() = 0;
+
+  // --- The neutral mesh objects (L015): reach, the hop policy, the media relay client. The owner keeps them for
+  // the hub's lifetime and lends them to the features riding the mesh; the hub says where it is in the mesh's
+  // life, and the owner does what that means for them.
+
+  /** Reaching peers on the mesh (dial registry, circuits, rendezvous): messaging reaches peers through it too. */
+  virtual mesh::MeshConnectivity& Connectivity() = 0;
+  /** What the mesh objects read: contacts, directory and DHT nodes, the mesh, LAN notes, where endpoints go. */
+  virtual void SetMeshInputs(const MeshConnectivityWiringInputs& inputs) = 0;
+  /** The mesh services are up (or rebound): the hop policy, then connectivity and the relay client, wire. */
+  virtual void WireMeshObjects() = 0;
+  /** A rewire is starting (the role's capabilities changed): the relay client and the dial registry go. */
+  virtual void DetachMeshObjects() = 0;
+  /** The mesh is about to stop: the hop policy stops reading it; reach work in flight is dropped. */
+  virtual void BeginMeshStop() = 0;
+  /** The features let go: the relay client closes (before the transports detach). */
+  virtual void DropMediaRelayClient() = 0;
+  /** The mesh stopped (its workers joined): connectivity forgets it. */
+  virtual void EndMeshStop() = 0;
+  /** A reachability probe finished: the local view follows the advertised addresses; the hop policy, soon. */
+  virtual void RefreshMeshView() = 0;
+  /** Something the hop policy reads changed (directory nodes): push it soon. */
+  virtual void PushHopPolicySoon() = 0;
+  /** While `want`: a reservation on the mesh seeds, renewed every 20 s (contacts reach us by PeerId, no relay). */
+  virtual void StayReachable(bool want) = 0;
+  /** The profile closes: the mesh objects drop everything. */
+  virtual void ClearMeshObjects() = 0;
 };
 
 } // namespace pbr

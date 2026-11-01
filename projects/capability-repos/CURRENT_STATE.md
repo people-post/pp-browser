@@ -65,11 +65,12 @@
 - **P2, text and the rest:** `Tr()` replaced by the base's `Localized(key)` port (the app's catalogs answer), the
   platform tip key aliased by the app, the config-secrets store in `foundation/data` — 0 include / 0 link sites: the
   allowlist is empty.
+- **Codes and CR018 step 5:** call history rows are codes the GUI words; the neutral mesh objects and the seed
+  reservation are `ProductMesh`'s — the hub owns no mesh object.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
 ## Next
 
-1. P2: codes instead of keys for text rendered at write time; `MeshConnectivity` out of the hub (CR018, with the
-   seed reservation); crypto additions into pp-cpp-crypto.
+1. P2: the crypto additions into pp-cpp-crypto.
 2. Contracts repo (CR010) when convenient.

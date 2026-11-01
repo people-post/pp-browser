@@ -906,7 +906,7 @@ public:
         ReplyError(id, "mesh not ready");
         return;
       }
-      Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
+      product_->Mesh().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
       Emit(Reply(id, true));
     } else if (cmd == "quit") {
       Emit(Reply(id, true));

@@ -4,6 +4,7 @@
 #include "common/Module.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "mesh/discovery/MeshDirectoryCache.h"
+#include "mesh/media_plane/MeshMediaRelay.h"
 
 #include <memory>
 #include "common/PbrCompat.h"
@@ -41,11 +42,32 @@ public:
   void RefreshDirectory() override;
   void MaybeRefreshDirectory() override;
   void StopDirectoryCache() override;
+  mesh::MeshConnectivity& Connectivity() override { return *connectivity_; }
+  /** The media relay client (calls and broadcast). */
+  mesh::MeshMediaRelay& MediaRelay() { return *media_relay_; }
+  void SetMeshInputs(const MeshConnectivityWiringInputs& inputs) override;
+  void WireMeshObjects() override;
+  void DetachMeshObjects() override;
+  void BeginMeshStop() override;
+  void DropMediaRelayClient() override;
+  void EndMeshStop() override;
+  void RefreshMeshView() override;
+  void PushHopPolicySoon() override;
+  void StayReachable(bool want) override;
+  void ClearMeshObjects() override;
 
 private:
   void ConfigureDht(const QueryInputs& inputs, bool node_role);
   void ConfigureDirectory(const QueryInputs& inputs, bool node_role);
 
+  // The neutral mesh objects outlive the mesh they ride (declared before it: they go after it).
+  std::unique_ptr<mesh::MeshConnectivity> connectivity_;
+  /** The media_relay client, built on connectivity (declared after it: goes first). */
+  std::unique_ptr<mesh::MeshMediaRelay> media_relay_;
+  /** Pushes the candidate policy into connectivity while the mesh runs (declared after it: goes first). */
+  std::unique_ptr<MeshHopPolicyFeed> hop_feed_;
+  /** The seed reservation's renewal (coordinator timer); 0 = none. */
+  uint64_t stay_reachable_timer_ = 0;
   std::unique_ptr<mesh::MeshHost> mesh_;
   /** The OS network monitor while the hub watches. */
   std::unique_ptr<NetworkMonitor> network_monitor_;
