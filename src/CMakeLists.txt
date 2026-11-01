@@ -10,6 +10,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/social ${CMAKE_BINARY_DIR}/cap
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/delivery ${CMAKE_BINARY_DIR}/capabilities/delivery)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/pricing ${CMAKE_BINARY_DIR}/capabilities/pricing)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/messaging ${CMAKE_BINARY_DIR}/capabilities/messaging)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/calls ${CMAKE_BINARY_DIR}/capabilities/calls)
 add_subdirectory(lib)
 
 # Convenience INTERFACE: all foundation modules (not Amp — Amp is FetchContent lib).

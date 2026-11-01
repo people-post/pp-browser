@@ -17,6 +17,7 @@ pp_browser_add_lib_library(pp_lib_broadcast
   PUBLIC_LIBS
     pp_people_common
     pp_delivery_common
+    pp_calls_common
     pp_lib_calls
     pp_foundation_error
     pp_foundation_crypto

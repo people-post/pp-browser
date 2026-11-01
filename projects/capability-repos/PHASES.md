@@ -69,7 +69,7 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 - [ ] The namespace and include-path scheme for capabilities ([DESIGN § Open questions](DESIGN.md#open-questions)),
       renamed in-repo.
 - [ ] Capability folders (CR022), one change each, in the order: [x] people, [x] net, [x] social, [x] delivery,
-      [x] pricing, [x] messaging, [ ] calls, [ ] broadcast, [ ] node. Each: `git mv` into `capabilities/<name>/src/`,
+      [x] pricing, [x] messaging, [x] calls, [ ] broadcast, [ ] node. Each: `git mv` into `capabilities/<name>/src/`,
       its `CMakeLists.txt` with the CTest label, a changes-filter output and its `-LE` skip in `build.yml`.
 
 ## Contracts repo (any time, CR010)

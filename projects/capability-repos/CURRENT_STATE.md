@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery, pricing and messaging moved
+**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery, pricing, messaging and calls moved
 
 ## Done
 
@@ -88,9 +88,12 @@
   `capabilities/messaging/src/` (484 tests). A feature module in a capability folder links only what it names (no
   `pp_base`, no `pp_feature` in its tests); that dropped the hub's one hidden UI edge (`SDL_GetTicks` for the
   reachability banner's timer → `steady_clock`).
+- **P3, calls' folder:** `lib/calls`, `lib/media`, `common/media` (→ `pp_calls_common`), `domain/call_media` (still
+  in headless configures, for pp-call-probe) and `feature/calls` in `capabilities/calls/src/` (594 tests); no hidden
+  link to remove. `lib/media` keeps SDL3 and Opus as its own third-party links.
 
 ## Next
 
-1. The other capability folders, in order: calls, broadcast, node.
+1. The other capability folders, in order: broadcast, node.
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.

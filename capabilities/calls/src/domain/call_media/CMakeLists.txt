@@ -9,6 +9,7 @@ pp_browser_add_domain_library(pp_domain_call_media
     CallMediaFrameCrypto.cpp
     CallMediaLegCoordinator.cpp
   PUBLIC_LIBS
+    pp_calls_common
     pp_lib_calls
     pp_mesh_shared
     pp_foundation_crypto

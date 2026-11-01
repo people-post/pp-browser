@@ -4,7 +4,6 @@ include(PpBrowserDomain)
 # SRC_LAYOUT.md). Acyclic, in this order: a module may use only the ones above it
 # (scripts/check/check_domain_includes.sh). Each names what it links (no pp_base).
 add_subdirectory(node)
-add_subdirectory(call_media)
 
 set(_pp_domain_modules
   pp_domain_registration

@@ -7,7 +7,7 @@ namespace {
 
 // M5 (final-review): SetSkipDeviceOpenForTest(true) must short-circuit OpenAudioDevices()
 // before it ever touches VoiceProcessingIo::Open() or an SDL device (constructed here in
-// src/lib/media/tests because pp_lib_media — and so pp_browser_media_test — already
+// capabilities/calls/src/lib/media/tests because pp_lib_media — and so pp_browser_media_test — already
 // links CallMediaEngine.cpp; no real mic/speaker is opened).
 TEST(CallMediaEngineHealthTest, SkipDeviceOpenReportsNoAudioIo) {
   CallMediaEngine engine;

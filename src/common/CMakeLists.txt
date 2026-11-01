@@ -2,7 +2,6 @@ include(PpBrowserWarnings)
 
 # pp-browser cross-module utilities (FetchContent pp_common is the external common layer).
 add_library(pp_pbr_common STATIC
-  media/CallMediaHealth.cpp
   ImageMetadata.cpp
   Localized.cpp
   IPushDeviceRegistrar.cpp

@@ -55,7 +55,7 @@ Linux often masks the bug; **CI on Windows will fail**.
 | Pattern | File |
 |---------|------|
 | Store + schema helper | [`src/base/messaging/tests/call_session_store_test.cpp`](../../src/base/messaging/tests/call_session_store_test.cpp) |
-| Store + feature store on same `profile.db` | [`src/lib/calls/tests/call_media_key_wrap_test.cpp`](../../src/lib/calls/tests/call_media_key_wrap_test.cpp) (`CallMediaKeyStoreEpochTest`) |
+| Store + feature store on same `profile.db` | [`capabilities/calls/src/lib/calls/tests/call_media_key_wrap_test.cpp`](../../capabilities/calls/src/lib/calls/tests/call_media_key_wrap_test.cpp) (`CallMediaKeyStoreEpochTest`) |
 
 Minimal fixture skeleton:
 
@@ -156,15 +156,15 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_leg_coordinator_test` — [`src/domain/call_media/tests/call_media_leg_coordinator_test.cpp`](../../src/domain/call_media/tests/call_media_leg_coordinator_test.cpp) |
+| Direct call-media | `call_media_leg_coordinator_test` — [`capabilities/calls/src/domain/call_media/tests/call_media_leg_coordinator_test.cpp`](../../capabilities/calls/src/domain/call_media/tests/call_media_leg_coordinator_test.cpp) |
 | Media relay fan-out | `media_relay_server_client_test` — pp-cpp-mesh [`tests/media_relay_server_client_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/media_relay_server_client_test.cpp) |
-| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
+| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../capabilities/calls/src/domain/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
 | Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/amp_circuit_media_relay_compose_test.cpp) |
 | AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key; **dialable+DialInBackoff still Connected via circuit** — [`amp_circuit_hop_reach_test.cpp`](../../capabilities/messaging/src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
 | Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |
 | Circuit bridges | `circuit_relay_service_test` |
-| Call phase SM | `call_lifecycle_test` — [`src/lib/calls/tests/call_lifecycle_test.cpp`](../../src/lib/calls/tests/call_lifecycle_test.cpp) |
+| Call phase SM | `call_lifecycle_test` — [`capabilities/calls/src/lib/calls/tests/call_lifecycle_test.cpp`](../../capabilities/calls/src/lib/calls/tests/call_lifecycle_test.cpp) |
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
 | Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue; **MediaKey wait exhaustion → ConnectFailed**; **dialable DialInBackoff + circuit → no Ensure hammer / no ConnectFailed** |

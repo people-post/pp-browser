@@ -4,7 +4,7 @@
 # Network layer, Amp, call connection, chat protocol, server contracts, CI / release, Android shell.
 capabilities/net/src/lib/net/     @yhw1630
 capabilities/messaging/src/lib/messaging/                @yhw1630
-src/feature/calls/                   @yhw1630
+capabilities/calls/src/feature/calls/                   @yhw1630
 cmake/PpCppAmp.cmake                 @yhw1630
 cmake/PpCppMesh.cmake                @yhw1630
 .github/                             @yhw1630
@@ -34,7 +34,7 @@ capabilities/people/src/lib/people/IdentityStore.*  @yhw1630 @gzdemon77
 capabilities/net/src/domain/registration/  @yhw1630 @gzdemon77
 
 # Apple platform, media, call UI, AI client, GUI, assets.
-src/lib/media/                    @gzdemon77
+capabilities/calls/src/lib/media/                    @gzdemon77
 src/lib/ai/                       @gzdemon77
 src/feature/ai/                      @gzdemon77
 src/gui/                             @gzdemon77

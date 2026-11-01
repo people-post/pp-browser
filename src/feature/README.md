@@ -39,7 +39,7 @@ src/feature/
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
 │   └── bindings/
-├── calls/            Call session (`pp_feature_calls`)
+├── calls/            (in capabilities/calls/src/feature/, CR022) Call session (`pp_feature_calls`)
 ├── broadcast/        Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
 ├── conversations/    (in capabilities/messaging/src/feature/, CR022) Conversations hub, chat on delivery; ConversationsFacade; `HubParticipant` (what rides the hub)
 ├── product/          `ProductStack` (`pp_feature_product`): the mesh and the hub with calls and broadcast as its participants — the one module that sees all three; only app/ and gui/ include it

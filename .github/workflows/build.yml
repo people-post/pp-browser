@@ -121,6 +121,9 @@ jobs:
               - *pricing
               - *social
               - 'capabilities/messaging/**'
+            calls: &calls
+              - *pricing
+              - 'capabilities/calls/**'
 
   lint:
     needs: changes
@@ -264,7 +267,7 @@ jobs:
         run: |
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in people net social delivery pricing messaging; do
+            for capability in people net social delivery pricing messaging calls; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;

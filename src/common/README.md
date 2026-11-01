@@ -23,7 +23,7 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 | [`directory/`](../../capabilities/people/src/common/directory/) (people's, in `capabilities/people/`, CR022; `pp_people_common`) | Phone-book glue: `DirectoryJson`, `IdentityTypes`, trust / signing access ports. The rows themselves (`DirectoryTypes`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`) are pp-cpp-mesh's vocabulary, `mesh/types/` |
 | [`thread/`](../../capabilities/delivery/src/common/thread/) (delivery's, in `capabilities/delivery/`, CR022) | Thread/message records, history/blob DTOs, sync/memory, role ports + `IThreadStore` |
 | [`chat/`](../../capabilities/delivery/src/common/chat/) (delivery's, CR022; `pp_delivery_common`) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, the system-control lane's records |
-| [`media/`](media/) | `CallMediaHealth` |
+| [`media/`](../../capabilities/calls/src/common/media/) (calls', CR022; `pp_calls_common`) | `CallMediaHealth`, the media leg's wire names |
 | [`ui/`](ui/) | `WorkingSetTypes` |
 
 ### Thread role ports

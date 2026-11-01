@@ -5,7 +5,6 @@ include(PpBrowserFeature)
 # (decisions and buttons, also driven by pp-app-probe) are the app's: feature/presenters (CR019).
 add_subdirectory(settings)
 add_subdirectory(ai)
-add_subdirectory(calls)
 add_subdirectory(broadcast)
 add_subdirectory(product)
 add_subdirectory(presenters)

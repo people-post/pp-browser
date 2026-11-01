@@ -19,6 +19,7 @@ pp_browser_add_lib_library(pp_lib_media
     VoicePlayer.cpp
     VoiceRecorder.cpp
   PUBLIC_LIBS
+    pp_calls_common
     pp_foundation_error
     ${PP_BROWSER_SDL3_TARGET}
     Opus::opus

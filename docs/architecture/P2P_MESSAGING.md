@@ -8,7 +8,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/delivery/BackendClientSet`, built from the configured `base_url`s, the app's platform defaults filling empty ones): the relay's message client is delivery's ([`lib/delivery/HttpRelayClient`](../../src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
+The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/delivery/BackendClientSet`, built from the configured `base_url`s, the app's platform defaults filling empty ones): the relay's message client is delivery's ([`lib/delivery/HttpRelayClient`](../../capabilities/delivery/src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../capabilities/delivery/src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
 Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
@@ -234,7 +234,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 |------|------|
 | `capabilities/messaging/src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost`; calls and broadcast ride it as `HubParticipant`s (`feature/product/ProductStack`) |
 | pp-cpp-mesh `MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `capabilities/calls/src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `capabilities/messaging/src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `capabilities/messaging/src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
 | `capabilities/messaging/src/lib/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
