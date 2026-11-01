@@ -57,6 +57,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # when it goes; never written by history sync; per device. "You were mentioned" and jump-to-mention read it (additive)
                             # thread_local_prefs.mute_mentions INTEGER NOT NULL DEFAULT 0 (1: while the thread is muted, mentions are silent too;
                             # G015. Added on open when missing — user_version unchanged)
+                            # thread_local_prefs.share_ai_confirmed INTEGER NOT NULL DEFAULT 0 (1: "don't ask again" before sharing this chat
+                            # with the AI; cleared by the session menu or clearing the chat. Added on open when missing — user_version unchanged)
                             # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
                             # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed

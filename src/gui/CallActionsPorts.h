@@ -35,6 +35,7 @@ struct CallActionsPorts {
   std::function<void()> retry_connect;
   std::function<void()> toggle_mute;
   std::function<void()> toggle_camera;
+  std::function<void()> flip_camera;
   std::function<void()> toggle_speaker;
   std::function<void()> open_mid_call_invite_picker;
   std::function<void()> minimize_chrome;

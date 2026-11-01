@@ -77,6 +77,7 @@ public:
   void RetryConnect();
   void ToggleMute();
   void ToggleCamera();
+  void FlipCamera();
   void ToggleSpeaker();
 
   /** V031 mode controls — remount call chrome mount only. */

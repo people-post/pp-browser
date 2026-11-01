@@ -183,6 +183,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_show_retry", &host.state_.call_in_progress.show_retry);
     ctor.Bind("call_in_progress_show_speaker", &host.state_.call_in_progress.show_speaker);
     ctor.Bind("call_in_progress_show_camera", &host.state_.call_in_progress.show_camera);
+    ctor.Bind("call_in_progress_show_flip", &host.state_.call_in_progress.show_flip);
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
     ctor.Bind("call_in_progress_minimized_corner", &host.state_.call_in_progress.minimized_corner);
@@ -269,6 +270,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("call_retry", DataEvent<>([this]() { CallRetry(); }));
     ctor.BindEventCallback("call_mute", DataEvent<>([this]() { CallMute(); }));
     ctor.BindEventCallback("call_camera", DataEvent<>([this]() { CallCamera(); }));
+    ctor.BindEventCallback("call_flip_camera", DataEvent<>([this]() { CallFlipCamera(); }));
     ctor.BindEventCallback("call_speaker", DataEvent<>([this]() { CallSpeaker(); }));
     ctor.BindEventCallback("call_invite", DataEvent<>([this]() { CallInvite(); }));
     ctor.BindEventCallback("call_minimize", DataEvent<>([this]() { CallMinimize(); }));
@@ -863,6 +865,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_retry");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_speaker");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_camera");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_flip");
   DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
   DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_bars");
@@ -2082,6 +2085,12 @@ void ShellHost::CallMute() {
 void ShellHost::CallCamera() {
   if (call_actions_.toggle_camera) {
     call_actions_.toggle_camera();
+  }
+}
+
+void ShellHost::CallFlipCamera() {
+  if (call_actions_.flip_camera) {
+    call_actions_.flip_camera();
   }
 }
 

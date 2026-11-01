@@ -103,6 +103,9 @@ const char* CallScreenStatusName(CallScreen::Status status);
  */
 bool ShowsParticipantCount(const CallScreen& screen);
 
+/** The flip (front / rear camera) button: phones only, next to a shown camera button that is on. */
+bool ShowsCameraFlip(bool mobile, bool show_camera, bool camera_on);
+
 /**
  * The call this device was answering or in went away by itself (not by the user's End — that clears
  * the screen first — and not because someone else ended it) while it had never been live and still

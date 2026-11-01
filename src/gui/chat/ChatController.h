@@ -20,6 +20,7 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/SessionListWindow.h"
 #include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
@@ -302,6 +303,10 @@ private:
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
   void OnMessagesScroll();
+  void OnSessionsScroll();
+  void OnSessionsLoadMore();
+  void FillSessionListAfterLayout();
+  ui::Element* SessionListElement() const;
   void OnJumpToLatest();
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
@@ -390,6 +395,7 @@ private:
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
+  SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
   ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
   std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
   void StashComposerExtras(const std::string& key);

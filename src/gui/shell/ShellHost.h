@@ -237,6 +237,7 @@ private:
   void CallRetry();
   void CallMute();
   void CallCamera();
+  void CallFlipCamera();
   void CallSpeaker();
   void CallInvite();
   void CallMinimize();

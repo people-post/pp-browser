@@ -30,6 +30,8 @@ struct ThreadLocalPrefs {
   bool marked_unread = false;
   /** While muted, mentions are silent too (G015: by default a mention alerts in a muted group). */
   bool mute_mentions = false;
+  /** The user ticked "don't ask again" when sharing the chat with the AI ("@ai+" / "@ai++"): no confirm for this chat. */
+  bool share_ai_confirmed = false;
 };
 
 /**

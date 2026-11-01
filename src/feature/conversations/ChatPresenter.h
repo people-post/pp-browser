@@ -183,6 +183,10 @@ public:
   void Unmute(const std::string& thread_id);
   /** A muted group: its mentions silent too (G015), or alerting again. */
   void SetMuteMentions(const std::string& thread_id, bool mute);
+  /** Undo "don't ask again" for sharing this chat with the AI: it asks again next time. */
+  void AskBeforeSharingAi(const std::string& thread_id);
+  /** The stored settings were changed by someone else (the facade): read them again before the next change. */
+  void ForgetCachedPrefs();
   void SetArchived(const std::string& thread_id, bool archived);
   void MarkUnread(const std::string& thread_id);
   void MarkRead(const std::string& thread_id);

@@ -421,6 +421,8 @@ public:
   bool IsContactReachable(const Contact& contact) const;
 
 private:
+  /** The router with its stored "don't ask again" port bound to the thread prefs. */
+  std::unique_ptr<MessageRouter> MakeRouter();
   /** Bind the billing and payment-promise families (after the signing-key resolver exists). */
   void BindPricingFamilies();
   /** G013: the member check's request / reply on the control lane (bound once the workflow exists). */

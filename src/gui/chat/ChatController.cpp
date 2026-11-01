@@ -25,6 +25,7 @@
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
+#include "gui/chat/NotificationBody.h"
 #include "feature/conversations/SessionListText.h"
 #include "feature/conversations/SessionMenu.h"
 #include "gui/chat/BriefFeedIntent.h"
@@ -863,6 +864,7 @@ void ChatController::AfterThreadPrefsChanged() {
 }
 
 void ChatController::OnToggleArchived() {
+  session_window_.Reset();  // the other list starts at its first rows
   presenter_.ToggleArchived();
   RefreshFromMessaging();
   NotifySurfaceChanged();
@@ -894,6 +896,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
     if (!facade_->ClearThreadHistory(thread_id, /*forget_memory=*/is_ai)) {
       return;
     }
+    presenter_.ForgetCachedPrefs();  // clearing also resets the chat's "don't ask again" for the AI
     AfterHistoryCleared(thread_id);
   });
 }
@@ -968,6 +971,7 @@ void ChatController::OnProfileDataReset() {
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
+  session_window_.Reset();
   working_set_.ClearAll();
   widgets_.ClearAll();
   pending_reply_.reset();
@@ -995,7 +999,18 @@ void ChatController::ApplySessionList() {
   shell_.archived_entry_label =
       list.showing_archived ? Tr("sidebar.archived.back").c_str()
                             : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count)}}).c_str();
-  for (const ChatSessionRow& from : list.rows) {
+  // The open chat is always drawn, wherever it sorts (opened from Contacts, or pushed down by newer ones).
+  for (size_t i = 0; i < list.rows.size(); ++i) {
+    if (list.rows[i].active) {
+      session_window_.Include(i);
+      break;
+    }
+  }
+  const size_t visible = session_window_.Visible(list.rows.size());
+  shell_.sessions_more = session_window_.More(list.rows.size());
+  shell_.sessions.reserve(visible);
+  for (size_t i = 0; i < visible; ++i) {
+    const ChatSessionRow& from = list.rows[i];
     SessionRow row;
     row.id = from.id.c_str();
     // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
@@ -1016,6 +1031,47 @@ void ChatController::ApplySessionList() {
 
 void ChatController::OnMessagesScroll() {
   scroller_.OnMessagesScroll();
+}
+
+void ChatController::OnSessionsScroll() {
+  ui::Element* el = SessionListElement();
+  if (!el) {
+    return;
+  }
+  const bool near_bottom = SessionListNearBottom(el->GetScrollTop(), el->GetScrollHeight(), el->GetClientHeight());
+  if (session_window_.ExtendIfNearBottom(presenter_.List().rows.size(), near_bottom)) {
+    ApplySessionList();
+    DirtyShell();
+    NotifySurfaceChanged();
+  }
+}
+
+void ChatController::OnSessionsLoadMore() {
+  if (session_window_.Extend(presenter_.List().rows.size())) {
+    ApplySessionList();
+    DirtyShell();
+    NotifySurfaceChanged();
+  }
+}
+
+void ChatController::FillSessionListAfterLayout() {
+  // Rows that do not reach the bottom of the list cannot be scrolled, so the scroll event never asks for more:
+  // after a layout, grow the window until the list overflows (or every row is drawn). One step per layout.
+  if (!shell_.sessions_more) {
+    return;
+  }
+  ui::Element* el = SessionListElement();
+  if (!el || !SessionListNeedsFill(el->GetScrollHeight(), el->GetClientHeight())) {
+    return;
+  }
+  OnSessionsLoadMore();
+}
+
+ui::Element* ChatController::SessionListElement() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return nullptr;
+  }
+  return context_->GetDocument(0)->GetElementById("sidebar-sessions");
 }
 
 void ChatController::OnJumpToLatest() {
@@ -2613,6 +2669,7 @@ void ChatController::ShowShareWithAiDialog(const std::string& thread_id, const A
                           [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
                             if (ok && dont_ask && facade_) {
                               facade_->MarkSharedAiConfirmed(thread_id);
+                              presenter_.ForgetCachedPrefs();
                             }
                             done(ok, dont_ask);
                           });
@@ -2866,9 +2923,12 @@ void ChatController::WireMessagingBindings() {
   });
   facade_->SetOnBackgroundUnread(
       [this](std::string title, std::string body, std::string thread_id, bool mentions_us) {
-        if (!Store().Snapshot().profile_prefs.show_notifications) {
+        const ProfilePreferences& profile_prefs = Store().Snapshot().profile_prefs;
+        if (!profile_prefs.show_notifications) {
           return;
         }
+        body = NotificationBodyFor(profile_prefs.show_notification_preview, std::move(body),
+                                   Tr("notification.hidden_body"));
         // A muted thread still counts as unread in the list; it just does not notify — unless the message
         // mentions us (G015), and then once a minute per group at most.
         const std::optional<ThreadLocalPrefs> prefs = presenter_.PrefsOf(thread_id);
@@ -3131,6 +3191,8 @@ bool ChatController::Setup(ui::Context* context) {
   if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
+        ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
         ctor.BindEventCallback("open_new_session_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenNewSession(ev); }));
@@ -3301,6 +3363,7 @@ void ChatController::Update() {
 
 void ChatController::AfterLayout() {
   scroller_.ApplyPolicy();
+  FillSessionListAfterLayout();
 }
 
 void ChatController::Shutdown() {

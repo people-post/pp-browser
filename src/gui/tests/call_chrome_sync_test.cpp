@@ -86,6 +86,15 @@ TEST(CallChromeSyncTest, CameraPresenceRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
+TEST(CallChromeSyncTest, FlipPresenceRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_show_flip = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
 TEST(CallChromeSyncTest, MuteSpeakerCameraDirties) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;

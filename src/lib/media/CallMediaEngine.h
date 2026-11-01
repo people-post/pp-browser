@@ -141,6 +141,14 @@ public:
    * frames rotate to match without reopening the camera or reconfiguring the encoder. Any thread.
    */
   void UpdateCameraDisplayRotation(int display_rotation_deg);
+  /**
+   * Phones: switch between the front and rear camera while the camera is on (error when it is off).
+   * Asynchronous like SetCameraEnabled: the video thread releases the camera and opens the other
+   * facing; the next call starts with the front camera again. Any thread.
+   */
+  Roe<void> FlipCamera();
+  /** Facing of the camera the engine last opened (false before any open). */
+  bool CameraFrontFacing() const;
   bool IsCameraEnabled() const;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
   std::optional<std::string> TakeCameraFailure();

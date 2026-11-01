@@ -225,7 +225,12 @@ Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& threa
 }
 
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
-  return hub_.Inbox().ClearThreadHistory(thread_id, forget_memory);
+  if (auto cleared = hub_.Inbox().ClearThreadHistory(thread_id, forget_memory); !cleared) {
+    return cleared.error();
+  }
+  // A cleared chat starts over: the next "@ai+" asks again.
+  (void)ClearSharedAiConfirmed(thread_id);
+  return {};
 }
 
 Roe<void> ConversationsFacade::ForgetThreadMemory(const std::string& thread_id) {
@@ -714,6 +719,24 @@ bool ConversationsFacade::NeedsSharedAiConfirmFor(const std::string& thread_id, 
 
 void ConversationsFacade::MarkSharedAiConfirmed(const std::string& thread_id) {
   hub_.Router().MarkSharedAiConfirmed(thread_id);
+  // Kept per chat, so the next session does not ask again. A failed write leaves the tick for this session only.
+  if (auto prefs = hub_.ThreadPrefs().Get(thread_id); prefs && !prefs->share_ai_confirmed) {
+    prefs->share_ai_confirmed = true;
+    (void)hub_.ThreadPrefs().Set(*prefs);
+  }
+}
+
+Roe<void> ConversationsFacade::ClearSharedAiConfirmed(const std::string& thread_id) {
+  hub_.Router().ClearSharedAiConfirmed(thread_id);
+  auto prefs = hub_.ThreadPrefs().Get(thread_id);
+  if (!prefs) {
+    return prefs.error();
+  }
+  if (!prefs->share_ai_confirmed) {
+    return {};
+  }
+  prefs->share_ai_confirmed = false;
+  return hub_.ThreadPrefs().Set(*prefs);
 }
 
 bool ConversationsFacade::IsInitiationOutboundBlocked(const std::string& peer_identity) {
