@@ -52,7 +52,8 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 - [x] Delivery below messaging and realtime (CR020): the gate maps delivery and pricing; calls and broadcast
       no longer include or link messaging.
 - [x] `Tr()` out of capability code: text by key through `common/Localized.h`, the app's catalogs answer.
-- [ ] Codes instead of keys where text is rendered at write time (call statuses, thread previews, call rows).
+- [x] Codes where they pay: call history rows (`CallSummaryRow::Outcome`). Stored previews and call statuses stay on
+      keys through the port (CR015's note).
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.
 - [ ] The crypto capabilities add today (message and attachment ciphers, PSK session store) into pp-cpp-crypto.

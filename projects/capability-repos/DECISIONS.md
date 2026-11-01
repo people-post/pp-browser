@@ -248,6 +248,12 @@ app's. Still a step short of the plan's "error codes, text in the app": capabili
 per-surface follow-up work. The config-secrets store moved to `foundation/data` (the app's config). With these,
 the gate's product edges are all cut.
 
+**Codes where they pay (2026-11-01):** call history rows are codes now (`CallSummaryRow::Outcome` and the
+duration; the GUI says the words). Kept on keys, on purpose: thread previews (stored as text when written — a
+code would change what the store holds, and old rows are text), and call statuses / errors (strings through
+`SetMediaActivity` / `SetLastMediaError` and `CallMediaErrorText`'s mapping of raw errors; codes there are a
+redesign of the call error path). With no capability depending on the app's i18n, the port is the boundary.
+
 ## CR016 — The gate covers links, not only includes
 
 **Date:** 2026-11-01  

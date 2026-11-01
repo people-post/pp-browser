@@ -31,7 +31,8 @@ TEST(CallSummaryRowTest, OurCompletedVoiceCallIsOursWithItsDuration) {
   EXPECT_TRUE(row->ours);
   EXPECT_FALSE(row->video);
   EXPECT_TRUE(row->connected);
-  EXPECT_EQ(row->text, "1:11");
+  EXPECT_EQ(row->outcome, CallSummaryRow::Outcome::Connected);
+  EXPECT_EQ(row->duration, "1:11");
 }
 
 TEST(CallSummaryRowTest, TheirVideoCallSitsOnTheirSide) {
@@ -40,7 +41,7 @@ TEST(CallSummaryRowTest, TheirVideoCallSitsOnTheirSide) {
   EXPECT_FALSE(row->ours);
   EXPECT_TRUE(row->video);
   EXPECT_TRUE(row->connected);
-  EXPECT_EQ(row->text, "0:56");
+  EXPECT_EQ(row->duration, "0:56");
 }
 
 TEST(CallSummaryRowTest, OutcomesWithoutADurationAreNotConnected) {
@@ -48,9 +49,25 @@ TEST(CallSummaryRowTest, OutcomesWithoutADurationAreNotConnected) {
     const auto row = CallSummaryRowOf(Summary("account:peer", CallMediaMode::Voice, outcome, std::nullopt));
     ASSERT_TRUE(row);
     EXPECT_FALSE(row->connected);
-    EXPECT_FALSE(row->text.empty());
-    EXPECT_EQ(row->text.find(':'), std::string::npos) << row->text;
+    EXPECT_NE(row->outcome, CallSummaryRow::Outcome::Connected);
+    EXPECT_TRUE(row->duration.empty());
   }
+}
+
+// Which word a side sees (the GUI says it): an unanswered call is "no answer" to its starter and "missed" to the
+// other side; a decline is the peer's to its starter.
+TEST(CallSummaryRowTest, EachSideSeesItsOwnOutcome) {
+  using Outcome = CallSummaryRow::Outcome;
+  EXPECT_EQ(CallSummaryRowOf(Summary(kLocalSelfContactId, CallMediaMode::Voice, CallOutcome::Missed, std::nullopt))->outcome,
+            Outcome::NoAnswer);
+  EXPECT_EQ(CallSummaryRowOf(Summary("account:peer", CallMediaMode::Voice, CallOutcome::Missed, std::nullopt))->outcome,
+            Outcome::Missed);
+  EXPECT_EQ(CallSummaryRowOf(Summary(kLocalSelfContactId, CallMediaMode::Voice, CallOutcome::Declined, std::nullopt))->outcome,
+            Outcome::DeclinedByPeer);
+  EXPECT_EQ(CallSummaryRowOf(Summary("account:peer", CallMediaMode::Voice, CallOutcome::Declined, std::nullopt))->outcome,
+            Outcome::Declined);
+  EXPECT_EQ(CallSummaryRowOf(Summary("account:peer", CallMediaMode::Voice, CallOutcome::Cancelled, std::nullopt))->outcome,
+            Outcome::Missed);
 }
 
 TEST(CallSummaryRowTest, NotASummary) {

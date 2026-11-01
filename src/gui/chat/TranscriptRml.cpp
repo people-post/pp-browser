@@ -131,6 +131,36 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
 }
 
+/** The words of a call summary row: the duration, or the outcome's word; a group call says so first. */
+std::string CallSummaryRowText(const CallSummaryRow& row) {
+  using Outcome = CallSummaryRow::Outcome;
+  std::string outcome;
+  switch (row.outcome) {
+  case Outcome::Connected:
+    outcome = row.duration;
+    break;
+  case Outcome::NoAnswer:
+    outcome = Tr("call.row.no_answer");
+    break;
+  case Outcome::Missed:
+    outcome = Tr("call.row.missed");
+    break;
+  case Outcome::Cancelled:
+    outcome = Tr("call.row.cancelled");
+    break;
+  case Outcome::Declined:
+    outcome = Tr("call.row.declined");
+    break;
+  case Outcome::DeclinedByPeer:
+    outcome = Tr("call.row.declined_by_peer");
+    break;
+  case Outcome::Failed:
+    outcome = Tr("call.row.failed");
+    break;
+  }
+  return row.group ? Tr("call.row.group") + " · " + outcome : outcome;
+}
+
 /** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
 std::string CallRowRml(const CallSummaryRow& row) {
   std::string html = "<div class=\"chat-call-row";
@@ -139,7 +169,7 @@ std::string CallRowRml(const CallSummaryRow& row) {
   }
   html += "\"><svg class=\"chat-call-row-icon\" src=\"";
   html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
-  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(row.text) + "</span></div>";
+  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(CallSummaryRowText(row)) + "</span></div>";
   return html;
 }
 
