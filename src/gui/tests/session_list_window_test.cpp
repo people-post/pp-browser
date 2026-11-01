@@ -104,4 +104,16 @@ TEST(SessionListWindowTest, IncludeReachesTheOpenChatInWholeSteps) {
   EXPECT_EQ(window.Visible(100), 20u);
 }
 
+
+TEST(SessionListWindowTest, AListThatDoesNotFillItsViewportAsksForMore) {
+  EXPECT_TRUE(SessionListNeedsFill(300.f, 600.f)) << "five rows on a tall phone";
+  EXPECT_TRUE(SessionListNeedsFill(600.f, 600.f)) << "exactly filled still cannot scroll";
+  EXPECT_FALSE(SessionListNeedsFill(900.f, 600.f)) << "overflowing: the scroll event takes over";
+  EXPECT_FALSE(SessionListNeedsFill(0.f, 0.f)) << "not laid out yet";
+  SessionListWindow window;
+  EXPECT_TRUE(window.Extend(30));
+  EXPECT_EQ(window.Visible(30), 30u);
+  EXPECT_FALSE(window.Extend(30)) << "nothing left";
+}
+
 } // namespace pbr

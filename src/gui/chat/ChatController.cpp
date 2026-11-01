@@ -1034,10 +1034,7 @@ void ChatController::OnMessagesScroll() {
 }
 
 void ChatController::OnSessionsScroll() {
-  if (!context_ || context_->GetNumDocuments() == 0) {
-    return;
-  }
-  ui::Element* el = context_->GetDocument(0)->GetElementById("sidebar-sessions");
+  ui::Element* el = SessionListElement();
   if (!el) {
     return;
   }
@@ -1047,6 +1044,34 @@ void ChatController::OnSessionsScroll() {
     DirtyShell();
     NotifySurfaceChanged();
   }
+}
+
+void ChatController::OnSessionsLoadMore() {
+  if (session_window_.Extend(presenter_.List().rows.size())) {
+    ApplySessionList();
+    DirtyShell();
+    NotifySurfaceChanged();
+  }
+}
+
+void ChatController::FillSessionListAfterLayout() {
+  // Rows that do not reach the bottom of the list cannot be scrolled, so the scroll event never asks for more:
+  // after a layout, grow the window until the list overflows (or every row is drawn). One step per layout.
+  if (!shell_.sessions_more) {
+    return;
+  }
+  ui::Element* el = SessionListElement();
+  if (!el || !SessionListNeedsFill(el->GetScrollHeight(), el->GetClientHeight())) {
+    return;
+  }
+  OnSessionsLoadMore();
+}
+
+ui::Element* ChatController::SessionListElement() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return nullptr;
+  }
+  return context_->GetDocument(0)->GetElementById("sidebar-sessions");
 }
 
 void ChatController::OnJumpToLatest() {
@@ -3167,6 +3192,7 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
+        ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
         ctor.BindEventCallback("open_new_session_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenNewSession(ev); }));
@@ -3337,6 +3363,7 @@ void ChatController::Update() {
 
 void ChatController::AfterLayout() {
   scroller_.ApplyPolicy();
+  FillSessionListAfterLayout();
 }
 
 void ChatController::Shutdown() {

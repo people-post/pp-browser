@@ -304,6 +304,9 @@ private:
   void OnRetryPeerDial();
   void OnMessagesScroll();
   void OnSessionsScroll();
+  void OnSessionsLoadMore();
+  void FillSessionListAfterLayout();
+  ui::Element* SessionListElement() const;
   void OnJumpToLatest();
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
