@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/data/Config.h"
-#include "foundation/identity/MultiaddrPeerId.h"
+#include "common/MultiaddrPeerId.h"
 #include "common/DialWorthyMultiaddrs.h"
 #include "common/MeshAlias.h"
 
@@ -10,11 +10,6 @@
 #include <vector>
 
 namespace pbr {
-
-enum class MeshRole {
-  Client,
-  Node,
-};
 
 /**
  * L0 Brief seed ADP multiaddrs (N002 / A017 / N027).

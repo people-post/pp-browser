@@ -5,10 +5,7 @@
 
 #include "common/chat/SystemControl.h"
 
-#include "foundation/data/Config.h"
-#include "foundation/data/MeshRole.h"
-#include "foundation/data/SessionStore.h"
-#include "foundation/data/UserPreferences.h"
+#include "common/MeshConfig.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AccountStateCodec.h"
 #include "lib/net/HttpLockerClient.h"
@@ -63,6 +60,7 @@
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
 #include "feature/conversations/HubMeshOwner.h"
+#include "feature/conversations/HubSettings.h"
 #include "lib/delivery/BackendClientSet.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
@@ -107,8 +105,10 @@ class SqlitePskSessionStore;
  */
 class ConversationsHub : public Module {
 public:
-  /** Hot-reloadable network / mesh slice projected from AppConfig. */
+  /** Hot-reloadable network / mesh slice, projected by the app from its config (feature/product). */
   struct NetworkConfig {
+    /** The whole mesh slice as the app now has it (normalized): a mesh change applies all of it. */
+    MeshConfig mesh;
     ServiceEndpointConfig relay;
     DirectoryConfig directory;
     ServiceEndpointConfig registration;
@@ -147,16 +147,13 @@ public:
     bool operator!=(const NotificationPrefs& other) const { return !(*this == other); }
   };
 
-  static NetworkConfig ProjectNetwork(const AppConfig& config);
-  static PolicyPrefs ProjectPolicy(const ProfilePreferences& prefs);
-  static NotificationPrefs ProjectNotifications(const ProfilePreferences& prefs);
 
   ConversationsHub();
   ~ConversationsHub();
 
   /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsEngine). */
-  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
-  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
+  Roe<void> Initialize(const HubSettings& settings, const std::string& profile_data_dir);
+  Roe<void> Reinitialize(const HubSettings& settings, const std::string& profile_data_dir);
   void Shutdown();
   /**
    * Quit when the runtime teardown quiesce timed out: persist stores but free nothing
@@ -181,7 +178,6 @@ public:
   /** Undo RequestShutdown when the teardown was abandoned (profile reset quiesce timed out). */
   void CancelShutdownRequest();
 
-  void BindSessionStore(SessionStore& store);
 
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
   void BindSecrets(ProfileSecretsEngine& secrets);
@@ -350,7 +346,8 @@ public:
   void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);
   void EnsureContactIconCached(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
-  Roe<void> RotateBriefLlmKey();
+  /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
+  Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
   Roe<void> SendChargeRequired(const std::string& peer_identity,
@@ -386,7 +383,8 @@ public:
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   void TickReachabilityUx();
-  void RefreshMeshCapabilities();
+  /** The mesh slice changed in what it hosts / serves: take `mesh` and rewire the mesh objects. */
+  void RefreshMeshCapabilities(const MeshConfig& mesh);
   void WireAttachmentDownloads();
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
@@ -403,6 +401,13 @@ public:
    * Initialize, outlives the hub's Shutdown. None: no mesh, relay messaging only.
    */
   void SetMeshOwner(HubMeshOwner* owner) { mesh_owner_ = owner; }
+  /** What the app runs on (the app's to know): a phone is always a mesh client and is reached by push. */
+  struct Host {
+    bool mobile = false;
+    bool desktop = true;
+  };
+  /** Set before Initialize. */
+  void SetHost(Host host) { host_ = host; }
   /** The endpoints an empty config entry falls back to (the app's platform defaults); set before Initialize. */
   void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
 
@@ -443,10 +448,10 @@ private:
   void BindCardAskFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
-  void InstallOrgBackendClients(const AppConfig& config);
-  void UpdateOrgBackendClients(const AppConfig& config);
+  void InstallOrgBackendClients(const HubSettings& settings);
+  void UpdateOrgBackendClients(const HubSettings& settings);
   void WireRelayAuthSigner();
-  Roe<void> StartMesh(const AppConfig& config);
+  Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();
   void PublishMeshConfig();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
@@ -507,7 +512,9 @@ private:
 
   std::string data_dir_;
   std::string profile_id_;
-  AppConfig config_;  // UI (the hub's thread)
+  HubSettings config_;  // UI (the hub's thread)
+  /** The policies in force (from the settings, then Apply). */
+  PolicyPrefs policy_;
   /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
@@ -517,7 +524,6 @@ private:
    *  bound by the call stack — declared early, so it outlives them all. */
   SystemControlRegistry system_controls_;
   AgentInboundPorts agent_inbound_;
-  SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;
 
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
@@ -600,6 +606,7 @@ private:
 
   // --- The mesh (borrowed from its owner between start and stop) + app mesh glue ----
   HubMeshOwner* mesh_owner_ = nullptr;
+  Host host_;
   mesh::MeshHost* mesh_ = nullptr;
   /** The mesh's owner watches the device's network for us while the mesh services run. */
   bool watching_network_ = false;

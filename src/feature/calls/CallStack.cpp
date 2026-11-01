@@ -2,7 +2,7 @@
 #include "lib/calls/CallControlFamily.h"
 
 
-#include "foundation/data/MeshRole.h"
+#include "common/MeshConfig.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/PeerCapsLogic.h"
@@ -469,7 +469,7 @@ CallPeerCaps CallStack::LocalPeerCaps() const {
   // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
   const auto view = LocalMeshView();
   const auto cfg = mesh_config();
-  caps.media_relay = ResolveMeshRole(*cfg) == MeshRole::Node && cfg->capabilities.media_relay && view->amp_up &&
+  caps.media_relay = MeshRoleOf(*cfg) == MeshRole::Node && cfg->capabilities.media_relay && view->amp_up &&
                      view->media_relay_started;
   return caps;
 }
@@ -644,7 +644,7 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   }
 
   const bool listening =
-      ResolveMeshRole(*mesh_config()) == MeshRole::Node || amp_up || WantEphemeralListen();
+      MeshRoleOf(*mesh_config()) == MeshRole::Node || amp_up || WantEphemeralListen();
   if (!listening) {
     return {};
   }

@@ -34,7 +34,7 @@ public:
   void StartLanDiscovery(std::function<void(const mesh::LanMdnsDiscoveredPeer&)> on_peer) override;
   void AdvertiseOnLan(const std::string& peer_id, int amp_udp_port) override;
   void StopLanDiscovery() override;
-  void StartDirectoryCache(mesh::IDirectoryClient& directory, const AppConfig& config,
+  void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& app_data_dir,
                            std::function<void()> on_updated) override;
   bool HasDirectoryCache() const override { return directory_cache_ != nullptr; }
   std::vector<mesh::MeshDirectoryNode> DirectoryNodesSnapshot() const override;

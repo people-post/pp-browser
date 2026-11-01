@@ -6,6 +6,8 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 #include "app/DiagnosticsUpload.h"
+#include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "lib/net/BriefGuestLlmClient.h"
 
@@ -285,7 +287,6 @@ Application::Application() {
   });
   product_ = std::make_unique<ProductStack>();
   messaging_ = &product_->Hub();
-  messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   product_->BindFacade(*messaging_facade_);
@@ -392,7 +393,7 @@ Roe<void> Application::ResetActiveProfile() {
   }
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
-  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -448,7 +449,7 @@ Roe<void> Application::ResetChatData() {
     return AppError::Storage(Err::Storage::Failed, "Failed to delete chat data: " + ec.message());
   }
 
-  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -695,7 +696,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return result;
   };
   settings_commands.rotate_brief_llm_key = [this, &facade]() {
-    auto result = facade.RotateBriefLlmKey();
+    auto result = facade.RotateBriefLlmKey(BriefLlmServiceBaseUrl(store_.Snapshot().config));
     if (result) {
       chat_->ReloadAgentConfig();
     }

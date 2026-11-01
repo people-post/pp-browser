@@ -988,7 +988,9 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
   return true;
 }
 
-Roe<void> ConversationsFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
+Roe<void> ConversationsFacade::RotateBriefLlmKey(const std::string& llm_base_url) {
+  return hub_.RotateBriefLlmKey(llm_base_url);
+}
 
 mesh::ReachabilitySnapshot ConversationsFacade::Reachability() { return hub_.Reachability(); }
 

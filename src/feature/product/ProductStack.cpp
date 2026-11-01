@@ -10,6 +10,7 @@ namespace pbr {
 
 ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), broadcast_(*hub_) {
   hub_->SetMeshOwner(&mesh_);
+  hub_->SetHost({.mobile = Platform::IsMobile(), .desktop = Platform::IsDesktop()});
   // An empty endpoint in the profile's config falls back to the platform's defaults (the app's to know).
   const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
   hub_->SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});

@@ -225,6 +225,14 @@ interface rather than staying behind the product's.
 **First mechanism moved (2026-11-01, Hongwei):** the per-OS TLS trust for curl leaves `foundation/platform` for
 its own base module, `foundation/tls` (`pp_foundation_tls`).
 
+**The hub and calls take values (2026-11-01):** the conversations hub takes `HubSettings` (the mesh slice, the
+endpoints, the initiation floor, the app's data directory, the profile's policies) instead of `AppConfig`, the
+session store and the preferences file; `feature/product/HubSettingsProjection` projects them. The phone rule is
+a value (`ConversationsHub::Host`, `EffectiveMeshConfig` / `MeshRoleOf` in `common/MeshConfig.h`): the hub
+publishes the mesh config as it applies on the device, and calls read that. The seed merge
+(`EffectiveBootstrapPeers`) is pure on the normalized config the app hands over. The Brief LLM key rotation takes
+the service's URL from the app.
+
 ## CR016 — The gate covers links, not only includes
 
 **Date:** 2026-11-01  

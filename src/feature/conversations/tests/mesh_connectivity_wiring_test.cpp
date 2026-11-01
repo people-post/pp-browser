@@ -2,7 +2,7 @@
 
 #include "lib/people/ContactsStore.h"
 #include "lib/people/MeshHopPolicy.h"
-#include "foundation/data/MeshRole.h"
+#include "common/MeshConfig.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/runtime/ProductOwners.h"
@@ -25,6 +25,8 @@ namespace {
 constexpr const char* kFriend = "12D3KooWFriendNode";
 constexpr const char* kPlain = "12D3KooWPlainContact";
 constexpr const char* kVolunteer = "12D3KooWDirectoryVolunteer";
+constexpr const char* kSeedA = "12D3KooWOrgSeedA";
+constexpr const char* kSeedB = "12D3KooWOrgSeedB";
 
 class MeshConnectivityWiringTest : public ::testing::Test {
 protected:
@@ -53,7 +55,8 @@ protected:
   }
 
   MeshConnectivityWiringInputs Inputs(const bool trusted_only) {
-    MeshConfig cfg;  // the org seeds are whatever normalization makes of the configured list
+    MeshConfig cfg;  // as the app hands it over: normalized, here with two org seeds
+    cfg.bootstrap_peers = OrgSeeds();
     cfg.trusted_relays_only = trusted_only;
     MeshConnectivityWiringInputs in;
     in.contacts = contacts_.get();
@@ -75,6 +78,11 @@ protected:
     };
     in.seed_dial_ok = []() { return true; };
     return in;
+  }
+
+  static std::vector<std::string> OrgSeeds() {
+    return {std::string("/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/") + kSeedA,
+            std::string("/ip4/203.0.113.2/udp/443/adp/1.0.0/p2p/") + kSeedB};
   }
 
   static std::vector<std::string> Ids(const std::vector<mesh::MeshHopCandidate>& hops) {
@@ -100,9 +108,7 @@ TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
   EXPECT_EQ(std::find(open_surface.begin(), open_surface.end(), kPlain), open_surface.end())
       << "a contact that is no circuit relay is not offered as one (#379)";
 
-  MeshConfig normalized;
-  NormalizeMeshConfig(normalized);
-  const std::vector<std::string> seeds = Ids(CollectSeedHopCandidates(normalized.bootstrap_peers));
+  const std::vector<std::string> seeds = Ids(CollectSeedHopCandidates(OrgSeeds()));
   ASSERT_FALSE(seeds.empty());
   std::vector<std::string> seeds_and_friend = seeds;
   seeds_and_friend.push_back(kFriend);
@@ -117,9 +123,7 @@ TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
 // Seeds a probe found unreachable are neither on the rendezvous surface nor a park target: Accept
 // waits for the park, and waiting on seeds that cannot connect held every answer for 12 s.
 TEST_F(MeshConnectivityWiringTest, UnreachableSeedsAreNoParkTarget) {
-  MeshConfig normalized;
-  NormalizeMeshConfig(normalized);
-  const std::vector<std::string> seeds = Ids(CollectSeedHopCandidates(normalized.bootstrap_peers));
+  const std::vector<std::string> seeds = Ids(CollectSeedHopCandidates(OrgSeeds()));
   ASSERT_FALSE(seeds.empty());
   const auto reachable = Ids(ComputeMeshHopPolicy(Inputs(false)).Seeds());
   for (const std::string& seed : seeds) {

@@ -8,7 +8,7 @@
 #include "mesh/l4/media_relay/MediaRelayTypes.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "common/DialWorthyMultiaddrs.h"
-#include "foundation/identity/MultiaddrPeerId.h"
+#include "common/MultiaddrPeerId.h"
 
 #include <algorithm>
 #include <unordered_set>

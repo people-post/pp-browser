@@ -36,13 +36,9 @@
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "foundation/data/LlmPreset.h"
-#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/data/MeshRole.h"
-#include "foundation/data/SessionStore.h"
-#include "foundation/data/UserPreferences.h"
+#include "common/MultiaddrPeerId.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/delivery/ChatPayloadCodec.h"
@@ -62,8 +58,6 @@
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/conversations/MeshNetworkReaction.h"
-#include "foundation/platform/NetworkConnectivity.h"
-#include "foundation/platform/Platform.h"
 #include "mesh/l4/circuit/CircuitBridgeTarget.h"
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/l4/media_relay/MediaRelayTypes.h"
@@ -243,8 +237,8 @@ void ConversationsHub::WireRelayAuthSigner() {
   });
 }
 
-void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
-  clients_.Apply({config.relay, config.directory, config.registration});
+void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
+  clients_.Apply({settings.relay, settings.directory, settings.registration});
   relay_ = clients_.Relay();
   push_devices_ = clients_.PushDevices();
   client_compat_ = clients_.ClientCompat();
@@ -255,11 +249,11 @@ void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
   }
 }
 
-void ConversationsHub::InstallOrgBackendClients(const AppConfig& config) {
-  UpdateOrgBackendClients(config);
+void ConversationsHub::InstallOrgBackendClients(const HubSettings& settings) {
+  UpdateOrgBackendClients(settings);
 }
 
-Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
+Roe<void> ConversationsHub::StartMesh(const HubSettings& settings) {
   StartupPhase phase("ConversationsHub::StartMesh");
   if (shutdown_requested_.load(std::memory_order_acquire) || AppRuntime::IsShuttingDown()) {
     return Error("shutdown in progress");
@@ -272,7 +266,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   }
 
   HubMeshOwner::StartRequest request;
-  request.config = config;
+  request.mesh = settings.mesh;
   request.identity = identity_.get();
   request.address_disclosure = &address_disclosure_;
   request.stopping = shutdown_requested_.load(std::memory_order_acquire);
@@ -401,7 +395,7 @@ void ConversationsHub::PublishMobileCallScopedAddrs() {
 
 
 void ConversationsHub::SyncMobileEphemeralListen() {
-  if (!Platform::IsMobile() || !messaging_ready_) {
+  if (!host_.mobile || !messaging_ready_) {
     return;
   }
   // D10/A017: Amp UDP accept is always on — TCP ephemeral listen retired. Refresh mDNS for LAN.
@@ -422,9 +416,8 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
     return;
   }
 
-  const MeshRole role = ResolveMeshRole(config_.mesh);
-  const bool node_listen = role == MeshRole::Node;
-  const bool ephemeral = Platform::IsMobile() && ParticipantsWantEphemeralListen();
+  const bool node_listen = IsHelpNetworkEnabled();
+  const bool ephemeral = host_.mobile && ParticipantsWantEphemeralListen();
   if (!node_listen && !ephemeral) {
     mesh_owner_->AdvertiseOnLan({}, 0);
     return;
@@ -486,7 +479,7 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer
 
 mesh::DirectAudience ConversationsHub::EffectiveDirectAudience() const {
   // P004: a Node is reachable by role — its address is published anyway.
-  return ResolveMeshRole(config_.mesh) == MeshRole::Node ? mesh::DirectAudience::Everyone : config_.mesh.direct_connections;
+  return IsHelpNetworkEnabled() ? mesh::DirectAudience::Everyone : config_.mesh.direct_connections;
 }
 
 void ConversationsHub::PublishAddressDisclosure() {
@@ -513,9 +506,9 @@ void ConversationsHub::PublishAddressDisclosure() {
 void ConversationsHub::ApplyMeshAdmissionPolicies() {
   PublishAddressDisclosure();
   const bool prefer = config_.mesh.prefer_contacts_for_routing;
-  const bool node = ResolveMeshRole(config_.mesh) == MeshRole::Node;
+  const bool node = IsHelpNetworkEnabled();
   // A017: Amp listen is always on; treat mobile in-call as link-scope hosting.
-  const bool mobile_ephemeral = Platform::IsMobile() && ParticipantsWantEphemeralListen();
+  const bool mobile_ephemeral = host_.mobile && ParticipantsWantEphemeralListen();
   std::unordered_set<std::string> contact_ids;
   if (contacts_) {
     if (auto listed = contacts_->List()) {
@@ -577,7 +570,8 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
 
 
 void ConversationsHub::PublishMeshConfig() {
-  auto snapshot = std::make_shared<const MeshConfig>(config_.mesh);
+  // As it applies on this device (a phone is a client): what the mesh's readers act on.
+  auto snapshot = std::make_shared<const MeshConfig>(EffectiveMeshConfig(config_.mesh, host_.mobile));
   {
     std::lock_guard lock(mesh_config_mu_);
     mesh_config_snapshot_ = std::move(snapshot);
@@ -591,7 +585,7 @@ std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
 }
 
 void ConversationsHub::SyncStayReachable() {
-  const bool want = config_.mesh.reachable_without_relay && Platform::IsDesktop() && mesh_ && mesh_ready_ &&
+  const bool want = config_.mesh.reachable_without_relay && host_.desktop && mesh_ && mesh_ready_ &&
                     !shutdown_requested_.load(std::memory_order_acquire);
   if (!want) {
     if (stay_reachable_timer_ != 0) {
@@ -784,7 +778,7 @@ void ConversationsHub::RegisterDhtBootstrapEndpoints() {
   MeshConfig mesh_cfg = config_.mesh;
   std::vector<mesh::MeshDirectoryNode> directory_nodes;
   directory_nodes = DirectoryNodes();
-  for (const std::string& ma : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes)) {
+  for (const std::string& ma : EffectiveBootstrapPeers(mesh_cfg, directory_nodes)) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || ma.empty()) {
       continue;
@@ -808,7 +802,8 @@ void ConversationsHub::ConfigureMeshQueries() {
   }
   RegisterDhtBootstrapEndpoints();
   HubMeshOwner::QueryInputs inputs;
-  inputs.config = config_;
+  inputs.mesh = config_.mesh;
+  inputs.directory = config_.directory;
   inputs.identity = identity_.get();
   inputs.directory_nodes = [this]() { return DirectoryNodes(); };
   // mesh_ (and its DHT) goes before mesh_connectivity_.
@@ -870,7 +865,7 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   }
   // Same Amp warm path as open-chat WarmPeerForThread — call invite/accept should share it.
   mesh_messaging_->WarmPeerByKey(peer_id);
-  if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
+  if (mesh_ && mesh_->AmpDht() && IsHelpNetworkEnabled() &&
       config_.mesh.capabilities.dht) {
     mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](mesh::AmpDhtProtocol::FindPeerRoe result) {
       if (!result) {
@@ -882,7 +877,7 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
 }
 
 
-Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
+Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
   }
@@ -890,7 +885,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   // forever with "shutdown in progress".
   shutdown_requested_.store(false, std::memory_order_release);
 
-  config_ = config;
+  config_ = settings;
+  policy_ = settings.policy;
   PublishMeshConfig();
   data_dir_ = profile_data_dir;
   std::error_code ec;
@@ -927,7 +923,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     }
   }
 
-  InstallOrgBackendClients(config);
+  InstallOrgBackendClients(settings);
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
@@ -993,7 +989,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   if (directory_.Configured() && mesh_owner_) {
     // The directory's mesh nodes, kept by the mesh's owner. An update lands where the refresh ran (a worker):
     // the hub's work is ours — hop to UI.
-    mesh_owner_->StartDirectoryCache(directory_, config_, [this]() {
+    mesh_owner_->StartDirectoryCache(directory_, config_.app_data_dir, [this]() {
       AppRuntime::PostUI([this]() {
         if (shutdown_requested_.load(std::memory_order_acquire)) {
           return;
@@ -1158,12 +1154,9 @@ void ConversationsHub::BuildMessagingObjects() {
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get(),
                                                        &directory_);
-  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
-    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
-    group_invite_gate_->SetInboundPolicy(policy);
-    group_membership_->SetInboundPolicy(policy);
-    NotifyPolicyPrefs(ProjectPolicy(*prefs));
-  }
+  group_invite_gate_->SetInboundPolicy(policy_.group_invite_policy);
+  group_membership_->SetInboundPolicy(policy_.group_invite_policy);
+  NotifyPolicyPrefs(policy_);
 }
 
 Roe<void> ConversationsHub::BuildLocalMessagingStack() {
@@ -1348,14 +1341,15 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   return {};
 }
 
-Roe<void> ConversationsHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir) {
+Roe<void> ConversationsHub::Reinitialize(const HubSettings& settings, const std::string& profile_data_dir) {
   if (!initialized_) {
-    return Initialize(config, profile_data_dir);
+    return Initialize(settings, profile_data_dir);
   }
 
-  config_ = config;
+  config_ = settings;
+  policy_ = settings.policy;
   PublishMeshConfig();
-  UpdateOrgBackendClients(config);
+  UpdateOrgBackendClients(settings);
   if (mesh_messaging_) {
     mesh_messaging_->SetRelayClient(relay_);
   }
@@ -1387,10 +1381,6 @@ std::unique_ptr<MessageRouter> ConversationsHub::MakeRouter() {
     return prefs && prefs->share_ai_confirmed;
   });
   return router;
-}
-
-void ConversationsHub::BindSessionStore(SessionStore& store) {
-  session_store_ = &store;
 }
 
 void ConversationsHub::BindSecrets(ProfileSecretsEngine& secrets) {
@@ -1480,7 +1470,7 @@ mesh::ReachabilitySnapshot ConversationsHub::Reachability() const {
 }
 
 bool ConversationsHub::IsHelpNetworkEnabled() const {
-  return ResolveMeshRole(config_.mesh) == MeshRole::Node;
+  return MeshRoleOf(EffectiveMeshConfig(config_.mesh, host_.mobile)) == MeshRole::Node;
 }
 
 void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) {
@@ -2446,9 +2436,7 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
                                                   mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
-  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
-    attachment_downloads_->SetDownloadPolicy(AttachmentDownloadPolicyFromString(prefs->attachment_download_policy));
-  }
+  attachment_downloads_->SetDownloadPolicy(policy_.attachment_download_policy);
   attachment_downloads_->SetOnChanged([this]() {
     if (mesh_messaging_) {
       mesh_messaging_->NotifyMessagesChanged();
@@ -2705,7 +2693,7 @@ Roe<ThreadMessage> ConversationsHub::BuildPaymentPromiseControlMessage(const std
   return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
 }
 
-Roe<void> ConversationsHub::RotateBriefLlmKey() {
+Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   if (!IsInitialized()) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
@@ -2722,16 +2710,7 @@ Roe<void> ConversationsHub::RotateBriefLlmKey() {
         .WithUser("No Brief API key yet — register on the network in Me first.");
   }
 
-  const AppConfig& config =
-      (session_store_ && session_store_->IsInitialized()) ? session_store_->Snapshot().config : config_;
-  std::string base_url = config.llm.base_url;
-  if (ResolvePreset(config) != "brief" || base_url.empty()) {
-    base_url = BriefLlmBaseUrl();
-  }
-  while (!base_url.empty() && base_url.back() == '/') {
-    base_url.pop_back();
-  }
-  const std::string url = base_url + "/keys/rotate";
+  const std::string url = llm_base_url + "/keys/rotate";
 
   auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()},
                                                {"Content-Type", "application/json"}});
@@ -2786,7 +2765,7 @@ Roe<void> ConversationsHub::RotateBriefLlmKey() {
 }
 
 void ConversationsHub::TickReachabilityUx() {
-  if (!config_.mesh.node_enabled || Platform::IsMobile()) {
+  if (!IsHelpNetworkEnabled()) {
     return;
   }
   const mesh::ReachabilitySnapshot snap = Reachability();
@@ -2808,14 +2787,12 @@ void ConversationsHub::TickReachabilityUx() {
   }
 }
 
-void ConversationsHub::RefreshMeshCapabilities() {
+void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
   if (!messaging_ready_ || !mesh_) {
     return;
   }
-  if (session_store_ && session_store_->IsInitialized()) {
-    config_.mesh = session_store_->Snapshot().config.mesh;
-    PublishMeshConfig();
-  }
+  config_.mesh = mesh;
+  PublishMeshConfig();
   // Rewire sequence (L015): dependents let go of the mesh objects → reset → rewire → rebind.
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnMeshMediaDetach();
@@ -2880,11 +2857,12 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
     }
   }
   if (mesh_changed && messaging_ready_) {
-    RefreshMeshCapabilities();
+    RefreshMeshCapabilities(next.mesh);
   }
 }
 
 void ConversationsHub::Apply(const PolicyPrefs& prefs) {
+  policy_ = prefs;  // a stack built later takes it too
   if (!initialized_) {
     return;
   }
@@ -2907,32 +2885,6 @@ void ConversationsHub::Apply(const NotificationPrefs& prefs) {
   }
   // Banners only: the push registration does not follow the setting (P005).
   (void)PushDeviceCoordinator::Register(*this);
-}
-
-ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig& config) {
-  NetworkConfig out;
-  out.relay = config.relay;
-  out.directory = config.directory;
-  out.registration = config.registration;
-  out.node_enabled = config.mesh.node_enabled;
-  out.circuit_relay = config.mesh.capabilities.circuit_relay;
-  out.media_relay = config.mesh.capabilities.media_relay;
-  out.dht = config.mesh.capabilities.dht;
-  out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
-  out.direct_connections = config.mesh.direct_connections;
-  out.trusted_relays_only = config.mesh.trusted_relays_only;
-  out.reachable_without_relay = config.mesh.reachable_without_relay;
-  return out;
-}
-
-ConversationsHub::PolicyPrefs ConversationsHub::ProjectPolicy(const ProfilePreferences& prefs) {
-  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
-          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy),
-          .call_invite_policy = mesh::InboundAudienceFromName(prefs.call_invite_policy, mesh::InboundAudience::Everyone)};
-}
-
-ConversationsHub::NotificationPrefs ConversationsHub::ProjectNotifications(const ProfilePreferences& prefs) {
-  return {.show_notifications = prefs.show_notifications, .stay_connected = prefs.stay_connected};
 }
 
 void ConversationsHub::SuspendMeshColdPeers() {

@@ -9,6 +9,7 @@ pp_browser_add_feature_library(pp_feature_product
     MakeCallFunctionalPorts.cpp
     MessagingPeoplePickerPorts.cpp
     MessagingTools.cpp
+    HubSettingsProjection.cpp
     ProductMesh.cpp
     ProductStack.cpp
   PUBLIC_LIBS

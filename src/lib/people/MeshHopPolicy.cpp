@@ -1,7 +1,7 @@
 #include "lib/people/MeshHopPolicy.h"
 
 #include "common/DialWorthyMultiaddrs.h"
-#include "foundation/identity/MultiaddrPeerId.h"
+#include "common/MultiaddrPeerId.h"
 #include "common/MeshAlias.h"
 
 #include <algorithm>

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
+#include "common/ServiceEndpoints.h"
 #include "lib/people/IdentityStore.h"
 #include "mesh/host/MeshHost.h"
 #include "mesh/reachability/LanMdnsDiscovery.h"
@@ -30,8 +31,8 @@ namespace pbr {
 class HubMeshOwner {
 public:
   struct StartRequest {
-    /** The profile's config; its mesh slice says the role. */
-    AppConfig config;
+    /** The mesh slice (normalized; the owner applies the device's role). */
+    MeshConfig mesh;
     /** The device's keys (the mesh's identity). */
     IdentityStore* identity = nullptr;
     /** Who may learn our address; outlives the mesh. */
@@ -46,7 +47,9 @@ public:
 
   /** What the DHT and directory ask, as the hub knows it now. */
   struct QueryInputs {
-    AppConfig config;
+    MeshConfig mesh;
+    /** The directory providers (an Amp one is asked through the mesh's directory twin). */
+    DirectoryConfig directory;
     IdentityStore* identity = nullptr;
     /** The directory's mesh nodes worth dialling (read again whenever the directory twin lists nodes). */
     std::function<std::vector<mesh::MeshDirectoryNode>()> directory_nodes;
@@ -83,11 +86,11 @@ public:
   virtual void StopLanDiscovery() = 0;
 
   /**
-   * Keeps the directory's mesh nodes fresh and on disk (the app's data directory, from `config`): the mesh's
-   * directory twin first, then `directory`. `on_updated` runs on a worker after a refresh lands. Once per
-   * profile; `directory` must outlive StopDirectoryCache.
+   * Keeps the directory's mesh nodes fresh and on disk (in `app_data_dir`): the mesh's directory twin first,
+   * then `directory`. `on_updated` runs on a worker after a refresh lands. Once per profile; `directory` must
+   * outlive StopDirectoryCache.
    */
-  virtual void StartDirectoryCache(mesh::IDirectoryClient& directory, const AppConfig& config,
+  virtual void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& app_data_dir,
                                    std::function<void()> on_updated) = 0;
   /** Whether the directory cache runs. */
   virtual bool HasDirectoryCache() const = 0;

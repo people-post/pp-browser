@@ -2,6 +2,7 @@
 // checked: what the open thread shows as it switches, the queue of AI sends of other threads and how it drains,
 // the queued bubble, the stop key, and the fate of a held send.
 #include "gui/chat/AgentTurnController.h"
+#include "foundation/data/SessionStore.h"
 
 #include <gtest/gtest.h>
 

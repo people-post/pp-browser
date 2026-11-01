@@ -3,6 +3,8 @@
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/types/MeshConfigTypes.h"
 
+#include "mesh/types/MeshConfigTypes.h"
+
 #include <string>
 #include <vector>
 #include "common/MeshAlias.h"
@@ -79,5 +81,30 @@ struct MeshConfig {
   mesh::MediaRelayBudgetConfig media_relay_budget;
   mesh::MediaRelayVideoConfig media_relay_video;
 };
+
+enum class MeshRole {
+  Client,
+  Node,
+};
+
+/** `config` as it applies on this device: a phone is always a client (N001), whatever `node_enabled` says. */
+inline MeshConfig EffectiveMeshConfig(MeshConfig config, const bool mobile) {
+  if (mobile) {
+    config.node_enabled = false;
+  }
+  return config;
+}
+
+/** The role an effective config says (EffectiveMeshConfig): a node when `node_enabled`. */
+inline MeshRole MeshRoleOf(const MeshConfig& effective) {
+  return effective.node_enabled ? MeshRole::Node : MeshRole::Client;
+}
+
+/**
+ * Seed multiaddrs to dial / warm: the directory's mesh nodes first, then the config's seeds (a normalized config
+ * — the app fills its defaults), deduped by PeerId (N027).
+ */
+std::vector<std::string> EffectiveBootstrapPeers(const MeshConfig& config,
+                                                 const std::vector<mesh::MeshDirectoryNode>& directory_nodes = {});
 
 } // namespace pbr

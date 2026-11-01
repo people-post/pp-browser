@@ -2,11 +2,11 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
-#include "feature/conversations/ConversationsHub.h"
+#include "feature/product/HubSettingsProjection.h"
 
 #include <gtest/gtest.h>
 
-TEST(ConversationsHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
+TEST(HubSettingsProjectionTest, ProjectsNetworkSliceFromAppConfig) {
   pbr::AppConfig config = pbr::Config::DefaultAppConfig();
   config.relay.base_url = "https://relay.example";
   config.directory.base_url = "https://dir.example";
@@ -18,7 +18,7 @@ TEST(ConversationsHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
   config.mesh.prefer_contacts_for_routing = false;
   config.llm.model = "ignored-by-network-slice";
 
-  const pbr::ConversationsHub::NetworkConfig slice = pbr::ConversationsHub::ProjectNetwork(config);
+  const pbr::ConversationsHub::NetworkConfig slice = pbr::ProjectNetwork(config);
   EXPECT_EQ(slice.relay.base_url, "https://relay.example");
   EXPECT_EQ(slice.directory.base_url, "https://dir.example");
   EXPECT_EQ(slice.registration.base_url, "https://reg.example");
@@ -30,14 +30,14 @@ TEST(ConversationsHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
 
   pbr::AppConfig other = config;
   other.llm.model = "different-llm";
-  EXPECT_EQ(pbr::ConversationsHub::ProjectNetwork(other), slice);
+  EXPECT_EQ(pbr::ProjectNetwork(other), slice);
 
   other.mesh.node_enabled = true;
-  EXPECT_NE(pbr::ConversationsHub::ProjectNetwork(other), slice);
+  EXPECT_NE(pbr::ProjectNetwork(other), slice);
 }
 
 /** N009: Client may store circuit_relay=true on disk; hosting still requires Node. Consume does not. */
-TEST(ConversationsHubConfigTest, ClientCircuitRelayFlagDoesNotImplyHostingRole) {
+TEST(HubSettingsProjectionTest, ClientCircuitRelayFlagDoesNotImplyHostingRole) {
   pbr::AppConfig config = pbr::Config::DefaultAppConfig();
   config.mesh.node_enabled = false;
   config.mesh.capabilities.circuit_relay = true;
@@ -48,28 +48,45 @@ TEST(ConversationsHubConfigTest, ClientCircuitRelayFlagDoesNotImplyHostingRole) 
                config.mesh.capabilities.circuit_relay);
 }
 
-TEST(ConversationsHubConfigTest, ProjectsPolicyAndNotificationPrefs) {
+TEST(HubSettingsProjectionTest, ProjectsPolicyAndNotificationPrefs) {
   pbr::ProfilePreferences prefs = pbr::UserPreferences::DefaultProfile();
   prefs.group_invite_policy = "everyone";
   prefs.attachment_download_policy = "on_demand";
   prefs.show_notifications = false;
   prefs.appearance = "dark";
 
-  const pbr::ConversationsHub::PolicyPrefs policy = pbr::ConversationsHub::ProjectPolicy(prefs);
+  const pbr::ConversationsHub::PolicyPrefs policy = pbr::ProjectPolicy(prefs);
   EXPECT_EQ(policy.group_invite_policy, pbr::GroupInvitePolicy::Everyone);
   EXPECT_EQ(policy.attachment_download_policy, pbr::AttachmentDownloadPolicy::OnDemand);
 
   const pbr::ConversationsHub::NotificationPrefs notifications =
-      pbr::ConversationsHub::ProjectNotifications(prefs);
+      pbr::ProjectNotifications(prefs);
   EXPECT_FALSE(notifications.show_notifications);
 
   pbr::ProfilePreferences other = prefs;
   other.appearance = "light";
-  EXPECT_EQ(pbr::ConversationsHub::ProjectPolicy(other), policy);
-  EXPECT_EQ(pbr::ConversationsHub::ProjectNotifications(other), notifications);
+  EXPECT_EQ(pbr::ProjectPolicy(other), policy);
+  EXPECT_EQ(pbr::ProjectNotifications(other), notifications);
 
   other.group_invite_policy = "nobody";
-  EXPECT_NE(pbr::ConversationsHub::ProjectPolicy(other), policy);
+  EXPECT_NE(pbr::ProjectPolicy(other), policy);
   other.show_notifications = true;
-  EXPECT_NE(pbr::ConversationsHub::ProjectNotifications(other), notifications);
+  EXPECT_NE(pbr::ProjectNotifications(other), notifications);
+}
+
+// The hub's settings are values the app projects (capability-repos CR015): its config's slices and the profile's
+// policies, nothing the hub reads itself.
+TEST(HubSettingsProjectionTest, TheHubsSettingsCarryTheConfigsSlicesAndTheProfilesPolicies) {
+  pbr::AppConfig config = pbr::Config::DefaultAppConfig();
+  config.relay.base_url = "https://relay.example";
+  config.initiation_floor = 7;
+  pbr::ProfilePreferences prefs;
+  prefs.group_invite_policy = "anyone";
+  prefs.attachment_download_policy = "never";
+  const pbr::HubSettings settings = pbr::HubSettingsFrom(config, prefs);
+  EXPECT_EQ(settings.relay.base_url, "https://relay.example");
+  EXPECT_EQ(settings.mesh.bootstrap_peers, config.mesh.bootstrap_peers) << "normalized by the app";
+  EXPECT_EQ(settings.initiation_floor, 7);
+  EXPECT_FALSE(settings.app_data_dir.empty());
+  EXPECT_EQ(settings.policy, pbr::ProjectPolicy(prefs));
 }

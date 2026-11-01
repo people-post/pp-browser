@@ -56,6 +56,9 @@
 - **CR018 steps 2–4:** LAN mDNS and the mesh directory cache are the mesh owner's; the backend's clients are
   `lib/delivery/BackendClientSet`, the platform defaults handed in by `ProductStack` — 49 include / 8 link sites
   left. The seed-reservation renewal waits for `MeshConnectivity` to move.
+- **P2, the hub and calls take values:** `HubSettings` (projected in `feature/product`), the device's role as a
+  value, the effective mesh config published to calls — 25 include / 8 link sites left (messaging 12, calls 9,
+  base 3, broadcast 1).
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

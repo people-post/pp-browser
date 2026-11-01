@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallSessionStore.h"
 #include "lib/calls/CallMediaKeyStore.h"

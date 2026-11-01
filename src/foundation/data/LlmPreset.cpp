@@ -137,4 +137,15 @@ void ResolveLlmAuthRequirements(AppConfig& config) {
   }
 }
 
+std::string BriefLlmServiceBaseUrl(const AppConfig& config) {
+  std::string base_url = config.llm.base_url;
+  if (ResolvePreset(config) != "brief" || base_url.empty()) {
+    base_url = BriefLlmBaseUrl();
+  }
+  while (!base_url.empty() && base_url.back() == '/') {
+    base_url.pop_back();
+  }
+  return base_url;
+}
+
 } // namespace pbr

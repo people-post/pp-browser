@@ -1,6 +1,6 @@
 #include "lib/calls/PeerCapsLogic.h"
 
-#include "foundation/data/MeshRole.h"
+#include "common/MultiaddrPeerId.h"
 #include "common/MeshAlias.h"
 
 #include <unordered_set>

@@ -340,7 +340,7 @@ public:
   /** View file of a stored AI image, materialized from the CAS when missing; nullopt while locked or gone. */
   std::optional<std::string> AiImageViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                              const std::string& mime);
-  Roe<void> RotateBriefLlmKey();
+  Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
   mesh::ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();

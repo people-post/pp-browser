@@ -1,6 +1,6 @@
 #include "feature/calls/CallMediaPlane.h"
 
-#include "foundation/data/MeshRole.h"
+#include "common/MeshConfig.h"
 #include "mesh/reach/PeerReachSelect.h"
 
 #include <functional>
@@ -69,8 +69,8 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.objects_snap = ports.objects_snap;
   deps.work = ports.work;
   const auto snapshot = mesh_config();
-  MeshConfig mesh_cfg = *snapshot;
-  NormalizeMeshConfig(mesh_cfg);
+  // The hub's snapshot: normalized by the app and effective on this device (a phone is a client).
+  const MeshConfig& mesh_cfg = *snapshot;
   deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
   deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
   deps.trusted_relays_only = mesh_cfg.trusted_relays_only;
@@ -81,7 +81,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
     return mesh::ReachHeldDown(connectivity->ReachFacts(peer_id), mesh::PeerReachRecord::NowMs());
   };
   deps.prefer_local_as_hop =
-      ResolveMeshRole(*snapshot) == MeshRole::Node && mesh_cfg.capabilities.media_relay && use_amp_relay;
+      MeshRoleOf(*snapshot) == MeshRole::Node && mesh_cfg.capabilities.media_relay && use_amp_relay;
   const std::vector<std::string> advertised =
       deps_.local_listen_multiaddrs ? deps_.local_listen_multiaddrs() : std::vector<std::string>{};
   if (!advertised.empty()) {

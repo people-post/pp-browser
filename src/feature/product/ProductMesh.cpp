@@ -1,7 +1,6 @@
 #include "feature/product/ProductMesh.h"
 
 #include "domain/node/NodeMeshServices.h"
-#include "foundation/data/AppPaths.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "common/ProtocolIds.h"
@@ -33,10 +32,10 @@ std::string AmpDirectoryPeerKeyFromBaseUrl(const std::string& base_url) {
 }
 
 /** The directory's query peers: the Amp providers the config names, then the seeds; deduped. */
-std::vector<std::string> DirectoryQueryKeys(const AppConfig& config, const MeshConfig& mesh_cfg) {
+std::vector<std::string> DirectoryQueryKeys(const DirectoryConfig& directory, const MeshConfig& mesh_cfg) {
   std::vector<std::string> keys;
   std::unordered_set<std::string> seen;
-  DirectoryConfig dir_cfg = config.directory;
+  DirectoryConfig dir_cfg = directory;
   NormalizeDirectoryConfig(dir_cfg);
   for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(dir_cfg)) {
     const std::string transport = provider.transport.empty() ? "http" : provider.transport;
@@ -101,7 +100,7 @@ Roe<mesh::MeshHost*> ProductMesh::Start(StartRequest request) {
   if (request.identity == nullptr) {
     return Error("no identity for the mesh");
   }
-  MeshConfig product_mesh_cfg = request.config.mesh;
+  MeshConfig product_mesh_cfg = request.mesh;
   NormalizeMeshConfig(product_mesh_cfg);
   const bool node = ResolveMeshRole(product_mesh_cfg) == MeshRole::Node;
 
@@ -112,7 +111,7 @@ Roe<mesh::MeshHost*> ProductMesh::Start(StartRequest request) {
   if (auto pub = request.identity->GetDeviceMlDsaPublicKey()) {
     mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
-  ApplyNodeHosting(mesh_cfg, request.config.mesh, node);
+  ApplyNodeHosting(mesh_cfg, request.mesh, node);
   // Skip the blocking UPnP / seed probe when the app is already quitting.
   mesh_cfg.start_reachability_probe = node && !request.stopping;
   if (node) {
@@ -143,7 +142,7 @@ void ProductMesh::ConfigureQueries(const QueryInputs& inputs) {
   if (!mesh_ || !mesh_->Amp() || inputs.identity == nullptr) {
     return;
   }
-  const bool node = ResolveMeshRole(inputs.config.mesh) == MeshRole::Node;
+  const bool node = ResolveMeshRole(inputs.mesh) == MeshRole::Node;
   ConfigureDht(inputs, node);
   ConfigureDirectory(inputs, node);
 }
@@ -152,12 +151,12 @@ void ProductMesh::ConfigureDht(const QueryInputs& inputs, const bool node_role) 
   if (!mesh_->AmpDht()) {
     return;
   }
-  MeshConfig mesh_cfg = inputs.config.mesh;
+  MeshConfig mesh_cfg = inputs.mesh;
   NormalizeMeshConfig(mesh_cfg);
   const std::vector<mesh::MeshDirectoryNode> directory_nodes =
       inputs.directory_nodes ? inputs.directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   // The DHT's liveness is the reach record's (pp-cpp-mesh docs/DHT.md D5).
-  ConfigureNodeAmpDht(*mesh_, *inputs.identity, inputs.config.mesh, node_role,
+  ConfigureNodeAmpDht(*mesh_, *inputs.identity, inputs.mesh, node_role,
                       CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes), inputs.reach_held_down);
 }
 
@@ -165,11 +164,11 @@ void ProductMesh::ConfigureDirectory(const QueryInputs& inputs, const bool node_
   if (!mesh_->AmpDirectory()) {
     return;
   }
-  MeshConfig mesh_cfg = inputs.config.mesh;
+  MeshConfig mesh_cfg = inputs.mesh;
   NormalizeMeshConfig(mesh_cfg);
   // A refresh asks a couple of providers that are up or answered lately — not every one, and not
   // one the mesh found gone (pp-cpp-mesh docs/PEER_REACH.md, § 5).
-  ConfigureNodeAmpDirectory(*mesh_, node_role, DirectoryQueryKeys(inputs.config, mesh_cfg),
+  ConfigureNodeAmpDirectory(*mesh_, node_role, DirectoryQueryKeys(inputs.directory, mesh_cfg),
                             inputs.choose_directory_peers);
   if (!node_role) {
     return;
@@ -248,7 +247,7 @@ void ProductMesh::AdvertiseOnLan(const std::string& peer_id, const int amp_udp_p
   lan_mdns_->SetAdvertisement(peer_id, amp_udp_port, {});
 }
 
-void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const AppConfig& config,
+void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& app_data_dir,
                                       std::function<void()> on_updated) {
   StopDirectoryCache();
   mesh::IDirectoryClient* client = &directory;
@@ -261,8 +260,7 @@ void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const A
     }
     return mesh::MeshDirectoryNodesFromNameRecords(*records);
   }, AppRuntimeMeshExecutors().blocking);
-  directory_cache_->SetPersistPath(
-      (std::filesystem::path(AppPaths::DataDir(config.data_dir)) / "mesh_directory_nodes.json").string());
+  directory_cache_->SetPersistPath((std::filesystem::path(app_data_dir) / "mesh_directory_nodes.json").string());
   directory_cache_->LoadPersisted();
   // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
   directory_cache_->SetAsyncFetcher([this, client](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {

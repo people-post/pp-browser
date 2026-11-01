@@ -150,7 +150,7 @@ crypto
 | `foundation/i18n/` | Localization catalogs |
 | `foundation/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `foundation/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
-| `foundation/identity/` | PeerId helpers for product code (`MultiaddrPeerId.h`); the derivation is pp-cpp-crypto's (`crypto/PeerId.h`) |
+| `foundation/identity/` | The mesh PeerId link target (`pp_foundation_identity`: pp-cpp-crypto; reading one out of a multiaddr is `common/MultiaddrPeerId.h`); the derivation is pp-cpp-crypto's (`crypto/PeerId.h`) |
 
 ### Lib (peers, down the capability order)
 

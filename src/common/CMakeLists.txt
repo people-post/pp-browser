@@ -10,6 +10,7 @@ add_library(pp_pbr_common STATIC
   chat/SystemControl.cpp
   directory/DirectoryJson.cpp
   directory/KeyCard.cpp
+  MeshConfig.cpp
   SchemaVersion.cpp
   ServiceEndpoints.cpp
   ui/WorkingSetCodec.cpp

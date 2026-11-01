@@ -1,4 +1,5 @@
 #include "gui/chat/AgentTurnController.h"
+#include "foundation/data/SessionStore.h"
 #include "lib/ai/WorkingSetPolicy.h"
 #include "lib/ai/LocalizedLabels.h"
 #include "common/directory/PeopleDiscoveryBlocks.h"
