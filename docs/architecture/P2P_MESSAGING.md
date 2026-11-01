@@ -8,7 +8,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-The conversations hub (`ConversationsHub`) builds the HTTP clients from the configured `base_url`s: the relay's message client is messaging's ([`lib/delivery/HttpRelayClient`](../../src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
+The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/delivery/BackendClientSet`, built from the configured `base_url`s, the app's platform defaults filling empty ones): the relay's message client is delivery's ([`lib/delivery/HttpRelayClient`](../../src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
 Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 

@@ -63,6 +63,7 @@
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
 #include "feature/conversations/HubMeshOwner.h"
+#include "lib/delivery/BackendClientSet.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -402,6 +403,8 @@ public:
    * Initialize, outlives the hub's Shutdown. None: no mesh, relay messaging only.
    */
   void SetMeshOwner(HubMeshOwner* owner) { mesh_owner_ = owner; }
+  /** The endpoints an empty config entry falls back to (the app's platform defaults); set before Initialize. */
+  void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -568,21 +571,14 @@ private:
       std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
                             const std::function<void(Roe<ThreadMessage>)>& finish);
-  std::string http_relay_url_;
-  std::string http_directory_url_;
-  std::string http_registration_url_;
-  std::unique_ptr<HttpRelayClient> http_relay_;
-  std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  std::unique_ptr<HttpRegistrationClient> http_registration_;
-  std::unique_ptr<HttpBlobClient> http_blob_;
-  /** The relay as account-locker provider (M023), next to the blob client on the registration base URL. */
-  std::unique_ptr<HttpLockerClient> http_locker_;
-  std::unique_ptr<AccountLockerWorkflow> account_locker_;
-  std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
   /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
   SwitchableDirectoryClient directory_;
+  /** The backend's clients, built from the config's endpoints (the app's defaults fill empty ones). */
+  BackendClientSet clients_{directory_};
+  /** The account locker (M023) on the backend's locker client (declared after the clients: goes first). */
+  std::unique_ptr<AccountLockerWorkflow> account_locker_;
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;

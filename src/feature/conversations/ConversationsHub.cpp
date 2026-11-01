@@ -64,7 +64,6 @@
 #include "feature/conversations/MeshNetworkReaction.h"
 #include "foundation/platform/NetworkConnectivity.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/data/PlatformDefaults.h"
 #include "mesh/l4/circuit/CircuitBridgeTarget.h"
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/l4/media_relay/MediaRelayTypes.h"
@@ -239,117 +238,20 @@ void ConversationsHub::WireRelayAuthSigner() {
   if (!identity_) {
     return;
   }
-  auto signer = [this](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> {
+  clients_.SetSigner([this](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> {
     return identity_->SignBytes(sign_bytes);
-  };
-  if (http_relay_) {
-    http_relay_->SetAuthSigner(signer);
-  }
-  if (http_push_devices_) {
-    http_push_devices_->SetAuthSigner(signer);
-  }
-  if (http_blob_) {
-    http_blob_->SetAuthSigner(signer);
-  }
-  if (http_locker_) {
-    http_locker_->SetAuthSigner(signer);
-  }
+  });
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
-  const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
-  const std::string relay_url =
-      config.relay.base_url.empty() ? defaults.relay.base_url : config.relay.base_url;
-  const std::string directory_url =
-      config.directory.base_url.empty() ? defaults.directory.base_url : config.directory.base_url;
-  const std::string registration_url = config.registration.base_url.empty()
-                                           ? defaults.registration.base_url
-                                           : config.registration.base_url;
-
-  if (!relay_url.empty()) {
-    if (!http_relay_ || http_relay_url_ != relay_url) {
-      http_relay_url_ = relay_url;
-      http_relay_ = std::make_unique<HttpRelayClient>(http_relay_url_);
-      http_push_devices_ = std::make_unique<HttpPushDeviceClient>(http_relay_url_);
-      http_client_compat_ = std::make_unique<HttpClientCompatClient>(http_relay_url_);
-      WireRelayAuthSigner();
-    }
-    relay_ = http_relay_.get();
-    push_devices_ = http_push_devices_.get();
-    client_compat_ = http_client_compat_.get();
-  } else {
-    http_relay_.reset();
-    http_push_devices_.reset();
-    http_client_compat_.reset();
-    http_relay_url_.clear();
-    relay_ = nullptr;
-    push_devices_ = nullptr;
-    client_compat_ = nullptr;
-    log().warning << "relay.base_url is empty; relay client disabled";
-  }
-
-  if (!directory_url.empty() || !config.directory.providers.empty()) {
-    DirectoryConfig dir_cfg = config.directory;
-    if (dir_cfg.base_url.empty()) {
-      dir_cfg.base_url = directory_url;
-    }
-    NormalizeDirectoryConfig(dir_cfg);
-    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(dir_cfg);
-    std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends;
-    backends.reserve(providers.size());
-    std::string fingerprint;
-    for (const ServiceEndpointConfig& provider : providers) {
-      const std::string transport = provider.transport.empty() ? "http" : provider.transport;
-      if (transport != "http") {
-        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureMeshQueries (the mesh owner) +
-        // MeshDirectoryCache Amp-first fetcher (N029 nd4). Factory skips the same way.
-        continue;
-      }
-      fingerprint.append(provider.base_url).push_back('|');
-      backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
-    }
-    if (backends.empty()) {
-      http_directory_url_.clear();
-      directory_.SetBackend(nullptr);
-      log().warning << "directory providers empty; directory client disabled";
-    } else if (!directory_.Configured() || http_directory_url_ != fingerprint) {
-      http_directory_url_ = std::move(fingerprint);
-      if (backends.size() == 1) {
-        directory_.SetBackend(std::shared_ptr<mesh::IDirectoryClient>(std::move(backends.front())));
-      } else {
-        directory_.SetBackend(std::make_shared<FailoverDirectoryClient>(std::move(backends)));
-      }
-    }
-  } else {
-    http_directory_url_.clear();
-    directory_.SetBackend(nullptr);
-    log().warning << "directory.base_url is empty; directory client disabled";
-  }
-
-  if (!registration_url.empty()) {
-    if (!http_registration_ || http_registration_url_ != registration_url) {
-      http_registration_url_ = registration_url;
-      http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
-      http_blob_ = std::make_unique<HttpBlobClient>(http_registration_url_);
-      http_locker_ = std::make_unique<HttpLockerClient>(http_registration_url_);
-      WireRelayAuthSigner();
-    }
-    registration_ = http_registration_.get();
-    blob_ = http_blob_.get();
-    if (account_locker_) {
-      account_locker_->SetClient(http_locker_.get());
-    }
-  } else {
-    http_registration_.reset();
-    if (account_locker_) {
-      account_locker_->SetClient(nullptr);
-    }
-    http_blob_.reset();
-    http_locker_.reset();
-    http_registration_url_.clear();
-    registration_ = nullptr;
-    blob_ = nullptr;
-    log().warning << "registration.base_url is empty; registration client disabled";
+  clients_.Apply({config.relay, config.directory, config.registration});
+  relay_ = clients_.Relay();
+  push_devices_ = clients_.PushDevices();
+  client_compat_ = clients_.ClientCompat();
+  registration_ = clients_.Registration();
+  blob_ = clients_.Blob();
+  if (account_locker_) {
+    account_locker_->SetClient(clients_.Locker());
   }
 }
 
@@ -1240,7 +1142,7 @@ void ConversationsHub::BuildMessagingObjects() {
               }
             }
           }});
-  account_locker_->SetClient(http_locker_.get());
+  account_locker_->SetClient(clients_.Locker());
   account_locker_->SetDataDir(data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
   account_locker_->SetOnWritten([this]() {
@@ -3186,18 +3088,13 @@ void ConversationsHub::Shutdown() {
   if (mesh_owner_) {
     mesh_owner_->StopDirectoryCache();
   }
-  http_relay_.reset();
-  http_registration_.reset();
-  http_push_devices_.reset();
-  http_client_compat_.reset();
+  clients_.Clear();
   relay_ = nullptr;
   push_devices_ = nullptr;
   client_compat_ = nullptr;
   directory_.SetBackend(nullptr);
   registration_ = nullptr;
-  http_relay_url_.clear();
-  http_directory_url_.clear();
-  http_registration_url_.clear();
+  blob_ = nullptr;
   identity_.reset();
   if (contacts_) {
     contacts_->SetOnChanged({});

@@ -53,6 +53,9 @@
 - **TLS, CR019, CR018 step 1:** the per-OS TLS trust is `foundation/tls`; the presenters are
   `feature/presenters` (the app's); the OS network monitor is the mesh owner's, its value types the base's —
   51 include / 8 link sites against the product's base left.
+- **CR018 steps 2–4:** LAN mDNS and the mesh directory cache are the mesh owner's; the backend's clients are
+  `lib/delivery/BackendClientSet`, the platform defaults handed in by `ProductStack` — 49 include / 8 link sites
+  left. The seed-reservation renewal waits for `MeshConnectivity` to move.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

@@ -11,7 +11,7 @@
 # people and node then reached 0 (MeshConfig, ServiceEndpoints, SchemaVersion, DialWorthyMultiaddrs into common/;
 # the secure-blob port into common/, its OS store in foundation/platform).
 base -> product 3
-messaging -> product 31
+messaging -> product 30
 calls -> product 15
 broadcast -> product 1
 link base -> product 2

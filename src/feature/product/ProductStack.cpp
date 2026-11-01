@@ -1,6 +1,8 @@
 #include "feature/product/ProductStack.h"
 
 #include "feature/conversations/ConversationsFacade.h"
+#include "foundation/data/PlatformDefaults.h"
+#include "foundation/platform/Platform.h"
 
 #include "common/PbrCompat.h"
 
@@ -8,6 +10,9 @@ namespace pbr {
 
 ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), broadcast_(*hub_) {
   hub_->SetMeshOwner(&mesh_);
+  // An empty endpoint in the profile's config falls back to the platform's defaults (the app's to know).
+  const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
+  hub_->SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});
   // Order matters: up in this order (calls, then broadcast), down in reverse.
   hub_->AddParticipant(calls_);
   hub_->AddParticipant(broadcast_);

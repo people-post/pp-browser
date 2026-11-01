@@ -3,6 +3,7 @@
 # messaging and realtime both ride. Below messaging and calls in the capability order.
 pp_browser_add_lib_library(pp_lib_delivery
   SOURCES
+    BackendClientSet.cpp
     ChatPayloadCodec.cpp
     ChatPayloadValidator.cpp
     ControlLaneEnvelope.cpp

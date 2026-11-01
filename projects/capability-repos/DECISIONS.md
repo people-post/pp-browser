@@ -278,6 +278,11 @@ when they change. A fetch with no directory configured now fails and keeps the l
 them. The seed-reservation renewal stays with the hub's `MeshConnectivity` (the neutral mesh object participants
 borrow) and moves when that does.
 
+**Step 4 (2026-11-01):** the backend's clients are a delivery-level set (`lib/delivery/BackendClientSet`: the
+relay's message and push-device clients, client compat, the directory, registration, blobs, the locker), built
+from the config's endpoints, kept while an endpoint is unchanged, signing with the profile's identity. The
+platform's default endpoints are the app's: `ProductStack` hands them to the hub (`SetBackendDefaults`).
+
 ## CR019 — Presenters are the app's
 
 **Date:** 2026-11-01  
