@@ -50,6 +50,9 @@
   `common/chat` + `common/thread` (the records and store ports) and `domain/delivery` sit below messaging and
   calls, with pricing as its own capability; calls and broadcast use no messaging — 60 include / 9 link sites
   against the product's base left, no other edge.
+- **TLS, CR019, CR018 step 1:** the per-OS TLS trust is `foundation/tls`; the presenters are
+  `feature/presenters` (the app's); the OS network monitor is the mesh owner's, its value types the base's —
+  51 include / 8 link sites against the product's base left.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

@@ -2,6 +2,7 @@
 
 #include "feature/conversations/HubMeshOwner.h"
 #include "common/Module.h"
+#include "foundation/platform/NetworkMonitor.h"
 
 #include <memory>
 #include "common/PbrCompat.h"
@@ -27,12 +28,16 @@ public:
   void ApplyServing(const MeshConfig& config) override;
   void Stop() override;
   void Release() override;
+  void WatchNetwork(std::function<void(const NetworkChange&)> on_change) override;
+  void StopWatchingNetwork() override;
 
 private:
   void ConfigureDht(const QueryInputs& inputs, bool node_role);
   void ConfigureDirectory(const QueryInputs& inputs, bool node_role);
 
   std::unique_ptr<mesh::MeshHost> mesh_;
+  /** The OS network monitor while the hub watches. */
+  std::unique_ptr<NetworkMonitor> network_monitor_;
   /** A node tries UPnP on its first start only. */
   bool upnp_auto_tried_ = false;
 };

@@ -82,6 +82,7 @@ ProductMesh::ProductMesh() {
 }
 
 ProductMesh::~ProductMesh() {
+  StopWatchingNetwork();
   Stop();
   Release();
 }
@@ -204,6 +205,23 @@ void ProductMesh::Stop() {
 
 void ProductMesh::Release() {
   mesh_.reset();
+}
+
+void ProductMesh::WatchNetwork(std::function<void(const NetworkChange&)> on_change) {
+  if (network_monitor_) {
+    return;
+  }
+  network_monitor_ = std::make_unique<NetworkMonitor>();
+  if (!network_monitor_->Start(std::move(on_change))) {
+    log().info << "network monitor unavailable on this platform";
+  }
+}
+
+void ProductMesh::StopWatchingNetwork() {
+  if (network_monitor_) {
+    network_monitor_->Stop();
+    network_monitor_.reset();
+  }
 }
 
 } // namespace pbr

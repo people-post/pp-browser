@@ -6,6 +6,7 @@
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/types/DirectoryTypes.h"
 #include "common/Error.h"
+#include "common/NetworkChange.h"
 
 #include <functional>
 #include <string>
@@ -65,6 +66,13 @@ public:
   virtual void Stop() = 0;
   /** Frees the stopped mesh. */
   virtual void Release() = 0;
+  /**
+   * Watches the device's network (the OS monitor is the app's): each change, the baseline first, reaches
+   * `on_change` on a monitor thread until StopWatchingNetwork. The hub watches while its mesh services run.
+   */
+  virtual void WatchNetwork(std::function<void(const NetworkChange&)> on_change) = 0;
+  /** No `on_change` call is running or will run once this returns. Idempotent. */
+  virtual void StopWatchingNetwork() = 0;
 };
 
 } // namespace pbr

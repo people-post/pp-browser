@@ -37,7 +37,7 @@
 #include "common/Lifetime.h"
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "mesh/media_plane/MeshMediaRelay.h"
-#include "foundation/platform/NetworkMonitor.h"
+#include "common/NetworkChange.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "domain/attachments/LargeTransferLane.h"
@@ -493,9 +493,9 @@ private:
 
   void SyncLanMdnsAdvertisement();
   void OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer& peer);
-  /** k5: OS network monitor lives with the mesh services (started / stopped with them). */
-  void StartNetworkMonitor();
-  void StopNetworkMonitor();
+  /** k5: the network watch (the mesh owner's OS monitor) lives with the mesh services (started / stopped with them). */
+  void StartNetworkWatch();
+  void StopNetworkWatch();
   /** k6: a reachability probe finished — a moved observed address is mobility churn. UI thread. */
   void NoteObservedAddress();
   void PublishMobileCallScopedAddrs();
@@ -607,7 +607,8 @@ private:
   HubMeshOwner* mesh_owner_ = nullptr;
   mesh::MeshHost* mesh_ = nullptr;
   std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
-  std::unique_ptr<NetworkMonitor> network_monitor_;
+  /** The mesh's owner watches the device's network for us while the mesh services run. */
+  bool watching_network_ = false;
   /** Last seed-observed public address (k6 churn). UI thread. */
   std::string last_observed_addr_;
   std::string mesh_last_error_;

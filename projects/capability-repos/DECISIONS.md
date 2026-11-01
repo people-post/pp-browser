@@ -263,6 +263,11 @@ directory cache.
 mesh's owner (`ProductMesh`), which tells the hub what it needs through `HubMeshOwner`; the backend clients are
 built by the composition (net's factory) and handed to the hub. Step by step, one concern per change.
 
+**Step 1 (2026-11-01):** the OS network monitor is the mesh owner's: `HubMeshOwner::WatchNetwork` /
+`StopWatchingNetwork`, called where the hub started and stopped its monitor (timing unchanged); the network's
+value types (`NetworkTransport`, `NetworkState`, `NetworkChange`) are the base's (`common/NetworkChange.h`), so
+the hub, `HubParticipant` and the calls stack no longer include the platform's monitor.
+
 ## CR019 — Presenters are the app's
 
 **Date:** 2026-11-01  

@@ -445,7 +445,7 @@ void ConversationsHub::StartMeshServices() {
   }
   PublishNodeAdvertisedAddrs();
   SyncLanMdnsAdvertisement();
-  StartNetworkMonitor();
+  StartNetworkWatch();
 }
 
 void ConversationsHub::NoteObservedAddress() {
@@ -465,23 +465,21 @@ void ConversationsHub::NoteObservedAddress() {
   last_observed_addr_ = observed;
 }
 
-void ConversationsHub::StartNetworkMonitor() {
-  if (network_monitor_) {
+void ConversationsHub::StartNetworkWatch() {
+  if (watching_network_ || !mesh_owner_) {
     return;
   }
-  network_monitor_ = std::make_unique<NetworkMonitor>();
-  // Backend thread → straight to the mesh / calls entry points (both any-thread). StopMesh stops the
-  // monitor before it tears the mesh down, so mesh_ outlives every callback.
-  if (!network_monitor_->Start([this](const NetworkChange& change) { OnLocalNetworkChanged(change); })) {
-    log().info << "network monitor unavailable on this platform";
-  }
+  watching_network_ = true;
+  // Monitor thread → straight to the mesh / calls entry points (both any-thread). StopMesh stops the
+  // watch before it tears the mesh down, so mesh_ outlives every callback.
+  mesh_owner_->WatchNetwork([this](const NetworkChange& change) { OnLocalNetworkChanged(change); });
 }
 
-void ConversationsHub::StopNetworkMonitor() {
-  if (network_monitor_) {
-    network_monitor_->Stop();
-    network_monitor_.reset();
+void ConversationsHub::StopNetworkWatch() {
+  if (watching_network_ && mesh_owner_) {
+    mesh_owner_->StopWatchingNetwork();
   }
+  watching_network_ = false;
 }
 
 void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
@@ -726,7 +724,7 @@ void ConversationsHub::StopMesh() {
     AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
     stay_reachable_timer_ = 0;
   }
-  StopNetworkMonitor();
+  StopNetworkWatch();
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
   mobile_ephemeral_stop_inflight_ = false;

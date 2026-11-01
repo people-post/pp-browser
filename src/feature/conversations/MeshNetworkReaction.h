@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Logger.h"
-#include "foundation/platform/NetworkMonitor.h"
+#include "common/NetworkChange.h"
 #include "mesh/host/LocalNetworkChange.h"
 #include "mesh/host/MeshHost.h"
 #include "mesh/host/UdpSocketProbe.h"

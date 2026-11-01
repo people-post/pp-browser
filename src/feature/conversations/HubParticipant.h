@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/conversations/HubPolicyPrefs.h"
-#include "foundation/platform/NetworkMonitor.h"
+#include "common/NetworkChange.h"
 #include "mesh/host/LocalNetworkChange.h"
 #include "common/Error.h"
 

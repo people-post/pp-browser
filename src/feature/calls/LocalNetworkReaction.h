@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/platform/NetworkMonitor.h"
+#include "common/NetworkChange.h"
 #include "mesh/host/LocalNetworkChange.h"
 #include "lib/calls/CallMobility.h"
 #include "common/MeshAlias.h"
