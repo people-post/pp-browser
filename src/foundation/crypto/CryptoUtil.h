@@ -1,28 +1,20 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
+#include "crypto/SodiumUtil.h"
 
-#include "common/Error.h"
-
-#include <string>
-#include <string_view>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-/** One-time libsodium init — safe to call repeatedly. */
-void EnsureSodiumInit();
-
-Roe<ByteVector> HexToBytes(std::string_view hex);
-std::string BytesToHex(const ByteVector& bytes);
-
-Roe<ByteVector> Base64Decode(const std::string& encoded);
-std::string Base64Encode(const ByteVector& bytes);
-/** RFC 4648 §5 base64url without padding (links, QR payloads). */
-std::string Base64UrlEncode(const ByteVector& bytes);
-Roe<ByteVector> Base64UrlDecode(const std::string& encoded);
-
-/** BLAKE2b-256 of `data` (32 bytes). */
-ByteVector Blake2b256(const ByteVector& data);
+// pp-cpp-crypto's libsodium helpers, spelled in pbr (capability-repos P2: the base keeps no copy).
+using ::pp::Base64Decode;
+using ::pp::Base64Encode;
+using ::pp::Base64UrlDecode;
+using ::pp::Base64UrlEncode;
+using ::pp::Blake2b256;
+using ::pp::BytesToHex;
+using ::pp::EnsureSodiumInit;
+using ::pp::HexToBytes;
 
 } // namespace pbr

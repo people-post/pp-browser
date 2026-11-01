@@ -1,6 +1,6 @@
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 
-#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"

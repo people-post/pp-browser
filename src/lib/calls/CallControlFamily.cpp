@@ -114,27 +114,26 @@ std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message) {
   row.ours = summary->group ? summary->started : message.sender_contact_id == kLocalSelfContactId;
   row.video = summary->media_mode == CallMediaMode::Video;
   row.connected = summary->outcome == CallOutcome::Completed && summary->duration_ms.has_value();
-  std::string outcome;
+  row.group = summary->group;
+  using Outcome = CallSummaryRow::Outcome;
   switch (summary->outcome) {
   case CallOutcome::Completed:
-    outcome = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : Localized("call.row.failed");
+    row.outcome = summary->duration_ms ? Outcome::Connected : Outcome::Failed;
+    row.duration = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : std::string();
     break;
   case CallOutcome::Missed:
-    outcome = Localized(summary->group ? (summary->started ? "call.row.no_answer" : "call.row.missed")
-                                : (row.ours ? "call.row.no_answer" : "call.row.missed"));
+    row.outcome = (summary->group ? summary->started : row.ours) ? Outcome::NoAnswer : Outcome::Missed;
     break;
   case CallOutcome::Cancelled:
-    outcome = Localized(summary->group ? (summary->started ? "call.row.cancelled" : "call.row.missed")
-                                : (row.ours ? "call.row.cancelled" : "call.row.missed"));
+    row.outcome = (summary->group ? summary->started : row.ours) ? Outcome::Cancelled : Outcome::Missed;
     break;
   case CallOutcome::Declined:
-    outcome = Localized(summary->group ? "call.row.declined" : (row.ours ? "call.row.declined_by_peer" : "call.row.declined"));
+    row.outcome = !summary->group && row.ours ? Outcome::DeclinedByPeer : Outcome::Declined;
     break;
   case CallOutcome::Failed:
-    outcome = Localized("call.row.failed");
+    row.outcome = Outcome::Failed;
     break;
   }
-  row.text = summary->group ? Localized("call.row.group") + " · " + outcome : outcome;
   return row;
 }
 

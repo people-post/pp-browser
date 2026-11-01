@@ -12,7 +12,7 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ReactionTypes.h"
 
-#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/delivery/ChatPayloadValidator.h"

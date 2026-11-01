@@ -1,4 +1,4 @@
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"

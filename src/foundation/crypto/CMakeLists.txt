@@ -1,10 +1,6 @@
 pp_browser_add_foundation_library(pp_foundation_crypto
   SOURCES
     AttachmentContentHash.cpp
-    AttachmentContentCipher.cpp
-    AutoKeyEstablishment.cpp
-    CanonicalAad.cpp
-    CryptoUtil.cpp
     DataKeyVault.cpp
     EncryptedPayload.cpp
     FileCipher.cpp
@@ -15,16 +11,11 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     KemKeyBinding.cpp
     MlDsa.cpp
     MessageCipher.cpp
-    MediaKeyWrap.cpp
     PinKeyDeriver.cpp
     PinResolver.cpp
     ProfileSecretsEngine.cpp
     ProfileUnlockGate.cpp
-    PskBundleCodec.cpp
     LinkDeviceCodec.cpp
-    PskFingerprint.cpp
-    ReplayWindow.cpp
-    SessionKeyDeriver.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_crypto

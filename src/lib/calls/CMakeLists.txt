@@ -2,6 +2,7 @@
 # logic. Messaging carries call control without knowing it (docs/architecture/CALLS.md).
 pp_browser_add_lib_library(pp_lib_calls
   SOURCES
+    MediaKeyWrap.cpp
     CallControlCodec.cpp
     CallControlFamily.cpp
     CallMediaErrorText.cpp

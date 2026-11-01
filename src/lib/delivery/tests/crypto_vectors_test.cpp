@@ -1,11 +1,10 @@
-#include "foundation/crypto/CanonicalAad.h"
+#include "lib/delivery/CanonicalAad.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/EncryptedPayload.h"
 #include "foundation/crypto/MessageCipher.h"
-#include "foundation/crypto/PskFingerprint.h"
-#include "foundation/crypto/ReplayWindow.h"
-#include "foundation/crypto/SessionKeyDeriver.h"
+#include "lib/delivery/PskFingerprint.h"
+#include "lib/delivery/SessionKeyDeriver.h"
 
 #include <gtest/gtest.h>
 
@@ -140,15 +139,6 @@ TEST(CryptoVectors, CanonicalAadRoundTrip) {
   EXPECT_EQ(parsed.value().sender_seq, fields.sender_seq);
   EXPECT_EQ(parsed.value().session_epoch, fields.session_epoch);
   EXPECT_EQ(parsed.value().timestamp, fields.timestamp);
-}
-
-TEST(CryptoVectors, ReplayWindowAcceptsOutOfOrderWithinWindow) {
-  ReplayWindow window(32);
-  EXPECT_TRUE(window.Accept(1));
-  EXPECT_TRUE(window.Accept(3));
-  EXPECT_FALSE(window.Accept(3));
-  EXPECT_TRUE(window.Accept(2));
-  EXPECT_EQ(window.LastContiguous(), 3u);
 }
 
 TEST(CryptoVectors, PskFingerprintDeterministic) {

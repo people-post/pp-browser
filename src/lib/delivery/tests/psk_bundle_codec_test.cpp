@@ -1,6 +1,6 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PskBundleCodec.h"
+#include "lib/delivery/PskBundleCodec.h"
 
 #include <gtest/gtest.h>
 

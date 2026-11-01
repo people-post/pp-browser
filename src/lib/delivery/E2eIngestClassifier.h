@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/crypto/ReplayWindow.h"
+#include "crypto/ReplayWindow.h"
 #include "common/thread/SyncStateTypes.h"
 
 #include <cstdint>
@@ -8,6 +8,9 @@
 #include <string>
 
 namespace pbr {
+
+/** Replay protection per (thread, epoch, sender): pp-cpp-crypto's. */
+using ::pp::ReplayWindow;
 
 enum class IngestDecision {
   BenignDuplicate,

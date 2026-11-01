@@ -248,6 +248,12 @@ app's. Still a step short of the plan's "error codes, text in the app": capabili
 per-surface follow-up work. The config-secrets store moved to `foundation/data` (the app's config). With these,
 the gate's product edges are all cut.
 
+**Codes where they pay (2026-11-01):** call history rows are codes now (`CallSummaryRow::Outcome` and the
+duration; the GUI says the words). Kept on keys, on purpose: thread previews (stored as text when written — a
+code would change what the store holds, and old rows are text), and call statuses / errors (strings through
+`SetMediaActivity` / `SetLastMediaError` and `CallMediaErrorText`'s mapping of raw errors; codes there are a
+redesign of the call error path). With no capability depending on the app's i18n, the port is the boundary.
+
 ## CR016 — The gate covers links, not only includes
 
 **Date:** 2026-11-01  
@@ -301,6 +307,13 @@ when they change. A fetch with no directory configured now fails and keeps the l
 them. The seed-reservation renewal stays with the hub's `MeshConnectivity` (the neutral mesh object participants
 borrow) and moves when that does.
 
+**Step 5 (2026-11-01):** the neutral mesh objects — `MeshConnectivity`, `MeshMediaRelay`, the hop policy feed —
+and the seed-reservation renewal are the mesh owner's. The hub tells it where the mesh is in its life
+(`SetMeshInputs`, `WireMeshObjects`, `DetachMeshObjects`, `BeginMeshStop` / `DropMediaRelayClient` /
+`EndMeshStop`, `RefreshMeshView`, `StayReachable`, `ClearMeshObjects`), in the order it used to run them itself, and
+reaches peers through `Connectivity()`. Calls and broadcast get the objects from `ProductMesh`, not the hub; the
+hub names no media relay.
+
 **Step 4 (2026-11-01):** the backend's clients are a delivery-level set (`lib/delivery/BackendClientSet`: the
 relay's message and push-device clients, client compat, the directory, registration, blobs, the locker), built
 from the config's endpoints, kept while an endpoint is unchanged, signing with the profile's identity. The
@@ -350,4 +363,21 @@ ports with their mocks, `LocalKeys`. Up into messaging: `PeerTransports` and the
 (`feature/conversations`), `AttachmentDownloadPolicy`; `PeopleDiscoveryBlocks` to `common/directory`.
 `ControlLane` takes the direct-chat client as a getter, `PeerRouteBook` the sender's verification as a bool.
 Tests that round-trip through messaging's SQLite store stay messaging's.
+
+## CR021 — pp-browser's crypto formats are delivery's; pp-cpp-crypto takes only generic pieces
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); amends P2's "crypto additions into pp-cpp-crypto"
+
+**Context:** P2 planned to move "the crypto capabilities add" — message and attachment ciphers, the PSK session
+store — into pp-cpp-crypto. Most of it is pp-browser's wire format (payload encoding, AAD, HKDF info strings, PSK
+bundles, the KEM binding domain, `account:` IDs); pp-cpp-crypto's own rule keeps product wire formats in the apps,
+and the ledger apps share it. Since CR020 those message formats are what the delivery capability defines.
+
+**Decision:** pp-cpp-crypto takes the generic pieces only: base64url, BLAKE2b-256 and `ReplayWindow` (v1.1.0);
+`foundation/crypto/CryptoUtil.h` names pp-cpp-crypto's helpers. The message formats move to `lib/delivery`
+(`SessionKeyDeriver`, `CanonicalAad`, `PskBundleCodec`, `PskFingerprint`, `AutoKeyEstablishment`, `IPskSessionStore`,
+`AttachmentContentCipher`) and `MediaKeyWrap` to `lib/calls`. The AEAD blob both messages and the at-rest store use
+(`MessageCipher`, `EncryptedPayload`) stays in the base, with the identity formats people uses (`HybridKem`,
+`KemKeyBinding`, `MlDsa`'s `account:` ID, recovery) and the profile's at-rest crypto (vault, PIN, `FileCipher`).
 

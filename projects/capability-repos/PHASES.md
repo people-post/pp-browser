@@ -48,14 +48,19 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       `AttachmentPlatform`, the push registrar port, `MeshRoleOf`). People and node done (the config slices
       `MeshConfig` and `ServiceEndpoints`, `SchemaVersion`, `DialWorthyMultiaddrs` and the secure-blob port into
       `common/`; the OS store in `foundation/platform`, handed in by the app); net has `CurlSsl` left.
-- [ ] The hub's shell thins (CR018): mesh glue into `ProductMesh`, backend clients handed in.
+- [x] The hub's shell thins (CR018): mesh glue, the neutral mesh objects and the seed reservation into
+      `ProductMesh`; backend clients a delivery-level set handed in.
 - [x] Delivery below messaging and realtime (CR020): the gate maps delivery and pricing; calls and broadcast
       no longer include or link messaging.
 - [x] `Tr()` out of capability code: text by key through `common/Localized.h`, the app's catalogs answer.
-- [ ] Codes instead of keys where text is rendered at write time (call statuses, thread previews, call rows).
+- [x] Codes where they pay: call history rows (`CallSummaryRow::Outcome`). Stored previews and call statuses stay on
+      keys through the port (CR015's note).
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.
-- [ ] The crypto capabilities add today (message and attachment ciphers, PSK session store) into pp-cpp-crypto.
+- [x] The crypto pp-browser adds: generic pieces into pp-cpp-crypto v1.1.0 (base64url, BLAKE2b-256, `ReplayWindow`;
+      `CryptoUtil` now names pp-cpp-crypto's); pp-browser's message formats into delivery (`lib/delivery`:
+      session keys, AAD, PSK bundles / fingerprints, `key_init`, the PSK store port, the attachment cipher;
+      `MediaKeyWrap` into `lib/calls`). pp-cpp-crypto keeps its rule: no product wire formats.
 
 ## P3 — Capability targets (in-repo)
 

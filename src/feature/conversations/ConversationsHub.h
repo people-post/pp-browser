@@ -33,7 +33,6 @@
 #include "lib/pricing/InitiationBillingStore.h"
 #include "common/Lifetime.h"
 #include "mesh/connectivity/MeshConnectivity.h"
-#include "mesh/media_plane/MeshMediaRelay.h"
 #include "common/NetworkChange.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
@@ -98,8 +97,8 @@ class SqlitePskSessionStore;
  *   which builds it for the profile's role) between start and stop — Amp stack + L4 + reachability.
  * - **Participants (`HubParticipant`):** features riding messaging and the mesh (calls, live
  *   broadcast), owned and wired at the feature level (feature/product/ProductStack). The hub drives
- *   their lifecycle and lends them its stores, messaging and neutral mesh objects; it never names
- *   them.
+ *   their lifecycle and lends them its stores and messaging; the neutral mesh objects are the mesh
+ *   owner's (ProductMesh, CR018). It never names them.
  *
  * UI/tools talk through ConversationsFacade / ports — not Hub accessors.
  * Profile secrets + identity DEK registration remain injected (`BindSecrets`).
@@ -233,9 +232,6 @@ public:
   std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
-  /** The neutral mesh objects (L015): outlive every participant; rewired between detach and rebind. */
-  mesh::MeshConnectivity& Connectivity() { return *mesh_connectivity_; }
-  mesh::MeshMediaRelay& MediaRelay() { return *mesh_media_relay_; }
   /** What the mesh's reach reads (the mesh, directory / DHT nodes, seed probe, LAN notes). */
   MeshConnectivityWiringInputs MeshInputs();
   /** The mesh config as last published (immutable snapshot — read from any thread). */
@@ -594,14 +590,6 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
-  // --- Neutral mesh objects (L015) — lent to participants; outlive them ---
-  /** Reaching peers (dial registry, listen book, circuit reach, rendezvous, punch walk). */
-  std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;
-  /** The media_relay client, built on connectivity (declared after it: goes first). */
-  std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_;
-  /** Pushes the candidate policy into connectivity while the mesh runs (declared after it: goes first). */
-  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;
-
   /** Registered participants (calls, broadcast); read from any thread. */
   mutable std::mutex participants_mu_;
   std::vector<HubParticipant*> participants_;
@@ -628,8 +616,6 @@ private:
   uint64_t lifecycle_background_id_ = 0;
   uint64_t lifecycle_foreground_id_ = 0;
   bool mesh_ready_ = false;
-  /** Renews our reservation on the mesh seeds while mesh.reachable_without_relay is on (desktop). */
-  uint64_t stay_reachable_timer_ = 0;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
   /** What a restore brought back, until messaging is up to apply it. */

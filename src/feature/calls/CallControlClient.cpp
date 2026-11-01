@@ -8,7 +8,7 @@
 #include "lib/delivery/PairwiseFanoutLogic.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/SessionKeyDeriver.h"
+#include "lib/delivery/SessionKeyDeriver.h"
 
 #include <utility>
 #include "common/PbrCompat.h"

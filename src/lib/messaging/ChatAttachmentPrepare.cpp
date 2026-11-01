@@ -1,7 +1,7 @@
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "common/BoundedRead.h"
 
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "lib/messaging/AttachmentCache.h"
 

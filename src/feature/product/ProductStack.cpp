@@ -11,7 +11,7 @@
 
 namespace pbr {
 
-ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), broadcast_(*hub_) {
+ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls_(mesh_), broadcast_(*hub_, mesh_) {
   // What the attachment cache asks of the OS: the platform's (quarantine mark, video posters).
   SetAttachmentPlatform({
       .mark_downloaded = [](const std::string& path) { return os::MarkFileAsDownloaded(path); },

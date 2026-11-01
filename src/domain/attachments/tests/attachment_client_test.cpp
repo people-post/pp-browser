@@ -2,7 +2,7 @@
 #include "domain/attachments/AttachmentClient.h"
 
 #include "domain/attachments/ChatBlobRequest.h"
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/error/AppError.h"

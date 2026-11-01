@@ -81,11 +81,15 @@ mesh::MeshNodeHit NodeHitFromDirectoryRow(const mesh::MeshDirectoryNode& row) {
 
 } // namespace
 
-ProductMesh::ProductMesh() {
+ProductMesh::ProductMesh()
+    : connectivity_(std::make_unique<mesh::MeshConnectivity>()),
+      media_relay_(std::make_unique<mesh::MeshMediaRelay>(*connectivity_)),
+      hop_feed_(std::make_unique<MeshHopPolicyFeed>(*connectivity_)) {
   redirectLogger("ProductMesh");
 }
 
 ProductMesh::~ProductMesh() {
+  StayReachable(false);
   StopDirectoryCache();
   StopLanDiscovery();
   StopWatchingNetwork();
@@ -319,6 +323,75 @@ void ProductMesh::StopLanDiscovery() {
     lan_mdns_->Stop();
     lan_mdns_.reset();
   }
+}
+
+void ProductMesh::SetMeshInputs(const MeshConnectivityWiringInputs& inputs) {
+  connectivity_->SetDeps(MakeMeshConnectivityDeps(inputs));
+  hop_feed_->SetInputs(inputs);
+}
+
+void ProductMesh::WireMeshObjects() {
+  hop_feed_->Start();  // the policy is in before connectivity wires
+  connectivity_->Wire();
+  media_relay_->Wire();
+}
+
+void ProductMesh::DetachMeshObjects() {
+  media_relay_->ResetRelayClient();
+  connectivity_->ResetDialRegistry();
+}
+
+void ProductMesh::BeginMeshStop() {
+  hop_feed_->Stop();  // its inputs read the mesh
+  connectivity_->InvalidateAsyncOps();
+}
+
+void ProductMesh::DropMediaRelayClient() {
+  media_relay_->ResetRelayClient();
+}
+
+void ProductMesh::EndMeshStop() {
+  connectivity_->ResetAfterMeshStop();
+}
+
+void ProductMesh::RefreshMeshView() {
+  connectivity_->RefreshLocalView();  // advertised addrs follow the probe (media consumers' view)
+  hop_feed_->PushSoon();              // seed reachability gates the rendezvous surface
+}
+
+void ProductMesh::PushHopPolicySoon() {
+  hop_feed_->PushSoon();
+}
+
+void ProductMesh::StayReachable(const bool want) {
+  if (!want) {
+    if (stay_reachable_timer_ != 0) {
+      AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
+      stay_reachable_timer_ = 0;
+    }
+    return;
+  }
+  if (stay_reachable_timer_ != 0) {
+    return;
+  }
+  // A seed reservation lasts about 30 s; renewing every 20 s keeps contacts able to reach this device by its
+  // PeerId through a seed, with no relay (docs/contracts/ACCOUNT_CARD.md).
+  const auto renew = [this]() {
+    AppRuntime::PostUI([this]() {
+      if (stay_reachable_timer_ != 0 && mesh_) {
+        connectivity_->Rendezvous().ReserveOnBootstrapSeeds();
+      }
+    });
+  };
+  renew();
+  stay_reachable_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::seconds(20), renew);
+}
+
+void ProductMesh::ClearMeshObjects() {
+  StayReachable(false);
+  media_relay_->Clear();
+  hop_feed_->Stop();
+  connectivity_->Clear();
 }
 
 } // namespace pbr

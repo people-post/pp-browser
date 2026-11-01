@@ -3,8 +3,8 @@
 #include "lib/messaging/SentCopy.h"
 
 #include "common/directory/IContactTrustAccess.h"
-#include "foundation/crypto/ReplayWindow.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/E2eIngestClassifier.h"
+#include "lib/delivery/IPskSessionStore.h"
 #include "lib/people/AccountCard.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/delivery/DeliveryNotice.h"

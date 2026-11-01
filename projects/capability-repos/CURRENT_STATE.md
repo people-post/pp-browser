@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0 and P1 done; P2's gate done (no capability reads the product's base); runtime core done
+**Phase:** P0, P1 and P2 done; P3 waits for a second app
 
 ## Done
 
@@ -65,11 +65,14 @@
 - **P2, text and the rest:** `Tr()` replaced by the base's `Localized(key)` port (the app's catalogs answer), the
   platform tip key aliased by the app, the config-secrets store in `foundation/data` — 0 include / 0 link sites: the
   allowlist is empty.
+- **Codes and CR018 step 5:** call history rows are codes the GUI words; the neutral mesh objects and the seed
+  reservation are `ProductMesh`'s — the hub owns no mesh object.
+- **P2, crypto (CR021):** pp-cpp-crypto v1.1.0 (base64url, BLAKE2b-256, `ReplayWindow`) pinned; delivery's crypto
+  formats in `lib/delivery`, `MediaKeyWrap` in `lib/calls`. P2 is done.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
 ## Next
 
-1. P2: codes instead of keys for text rendered at write time; `MeshConnectivity` out of the hub (CR018, with the
-   seed reservation); crypto additions into pp-cpp-crypto.
-2. Contracts repo (CR010) when convenient.
+1. Contracts repo (CR010) when convenient.
+2. P3 (capability targets, namespaces) when a second app needs a capability.

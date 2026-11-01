@@ -31,13 +31,20 @@ std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const S
 /**
  * A call summary as the transcript draws it (2026-10-23): an icon for voice / video, the duration
  * or a one-word outcome, on the starter's side of the chat like a message. `ours` = this user
- * started the call (the row sits right); `connected` = it had a duration (else drawn muted).
+ * started the call (the row sits right); `connected` = it had a duration (else drawn muted). The
+ * words are the app's (capability-repos CR015): the row says which outcome, the GUI says it.
  */
 struct CallSummaryRow {
+  /** The one-word outcome when there is no duration. */
+  enum class Outcome { Connected, NoAnswer, Missed, Cancelled, Declined, DeclinedByPeer, Failed };
   bool ours = false;
   bool video = false;
   bool connected = false;
-  std::string text;
+  /** A group call (the row leads with that). */
+  bool group = false;
+  Outcome outcome = Outcome::Failed;
+  /** "m:ss" / "h:mm:ss" when connected; empty otherwise. */
+  std::string duration;
 };
 std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message);
 

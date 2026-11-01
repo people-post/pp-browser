@@ -1,4 +1,4 @@
-#include "foundation/crypto/PskBundleCodec.h"
+#include "lib/delivery/PskBundleCodec.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"

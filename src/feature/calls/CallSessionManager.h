@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mesh/types/AddressDisclosure.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"

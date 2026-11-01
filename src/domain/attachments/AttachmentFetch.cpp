@@ -1,7 +1,7 @@
 #include "domain/attachments/AttachmentFetch.h"
 
 #include "common/chat/MessagingLimits.h"
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/error/AppError.h"
 #include "lib/messaging/AttachmentCache.h"

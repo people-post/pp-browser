@@ -15,7 +15,7 @@ namespace pbr {
 namespace {
 
 /** The call stack's view of the hub: its stores, delivery through messaging, the mesh objects. */
-CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
+CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   CallStackDeps deps;
   deps.address_disclosure = &hub.AddressDisclosure();
   deps.store = &hub.Store();
@@ -139,8 +139,8 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
   };
   deps.prefetch_peer_reachability = [&hub](const std::string& identity) { hub.PrefetchPeerReachability(identity); };
   deps.sync_mobile_ephemeral_listen = [&hub]() { hub.SyncMobileEphemeralListen(); };
-  deps.connectivity = &hub.Connectivity();
-  deps.media_relay = &hub.MediaRelay();
+  deps.connectivity = &mesh.Connectivity();
+  deps.media_relay = &mesh.MediaRelay();
   return deps;
 }
 
@@ -197,7 +197,7 @@ std::vector<IDekConsumer*> CallsParticipant::DekConsumers() {
 }
 
 void CallsParticipant::OnMessagingBuilt(ConversationsHub& hub) {
-  stack_.BuildSessions(MakeCallStackDeps(hub));
+  stack_.BuildSessions(MakeCallStackDeps(hub, mesh_));
   stack_.RunOnOwner([billing = hub.InitiationBilling()](CallSessionManager& calls) {
     calls.SetInitiationBillingStore(billing);
   });
