@@ -151,6 +151,11 @@ public:
     std::function<void()> on_changed;
     /** A settings write the store refused (the renderer tells the user). */
     std::function<void()> prefs_failed;
+    /**
+     * A message's text as prose, for the preview line: the app's (an AI reply is structured blocks,
+     * CR007). None = the text as stored.
+     */
+    std::function<std::string(const std::string& text)> prose;
   };
 
   ChatPresenter();

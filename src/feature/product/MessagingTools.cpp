@@ -1,4 +1,4 @@
-#include "feature/conversations/MessagingTools.h"
+#include "feature/product/MessagingTools.h"
 
 #include "lib/messaging/ModelFacingJson.h"
 

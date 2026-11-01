@@ -3,7 +3,6 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
-#include "lib/net/SwitchableDirectoryClient.h"
 
 #include <gtest/gtest.h>
 
@@ -18,6 +17,17 @@ ByteVector TestDek() {
   EnsureSodiumInit();
   return ByteVector(kDataEncryptionKeySize, 7);
 }
+
+/** No directory: every lookup fails, so keys come from cards alone. */
+class NoDirectory : public mesh::IDirectoryClient {
+public:
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& /*query*/) override { return None(); }
+  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override { return None(); }
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override { return None(); }
+
+private:
+  static Error None() { return Error("Directory not configured"); }
+};
 
 /** One device of an account: its identity (own device keys) and its own card store. */
 struct Device {
@@ -59,7 +69,7 @@ struct Device {
   IdentityStore identity;
   PeerSigningKeyStore signing;
   PeerKemKeyStore kem;
-  SwitchableDirectoryClient directory;
+  NoDirectory directory;
   std::unique_ptr<PeerCardStore> cards;
   std::unique_ptr<AccountKeyResolver> keys;
   std::unique_ptr<OwnCards> own;

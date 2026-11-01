@@ -1,10 +1,13 @@
 # Headless-safe runtime: pp-cpp-common's AppRuntime (worker pool, coordinator, UI mailbox, owner
-# threads; common/runtime/) with the product's owners registered, and the product version (pp-node, tests).
+# threads; common/runtime/) with the product's owners registered, the executors every mesh takes
+# (AppRuntimeMeshExecutors), and the product version (pp-node, tests).
 pp_browser_add_foundation_library(pp_foundation_runtime_core
   SOURCES
+    AppRuntimeMeshExecutors.cpp
     ProductOwners.cpp
   PUBLIC_LIBS
     pp_common
+    pp_mesh_types
 )
 
 target_compile_definitions(pp_foundation_runtime_core PUBLIC

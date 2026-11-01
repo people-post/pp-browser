@@ -9,6 +9,17 @@
 
 namespace pbr {
 
+/** The relay poll's pace in the foreground (and during a call). */
+inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
+/**
+ * In the background a phone is reached by push only (power): its work is paused (AppLifecycle) and
+ * the relay poll with it. A push / WorkManager wake resumes the work for this long — enough to fetch
+ * the inbox and ring — then it pauses again.
+ */
+inline constexpr uint64_t kBackgroundWakeWindowMs = 20000;
+/** P011 — staying connected in the background (opt-in, Android): the relay poll's pace there. */
+inline constexpr uint64_t kStayConnectedRelayPollIntervalMs = 30000;
+
 /**
  * Owns the relay poll (foreground only) and the wakes (P010).
  * Poll runs on the coordinator timer wheel; wake paths post immediate coordinator messages. In the

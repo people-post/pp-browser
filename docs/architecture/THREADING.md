@@ -104,7 +104,7 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 
 Drives periodic **policy** (not Amp UDP drain):
 
-- Relay poll: foreground ~2s; background none — push only, a wake resumes the paused work for 20 s (`MessagingLimits.h`, P010); ~2s during a call in the background, 30 s when staying connected — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
+- Relay poll: foreground ~2s; background none — push only, a wake resumes the paused work for 20 s (`BackgroundSyncScheduler.h`, P010); ~2s during a call in the background, 30 s when staying connected — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
 - Hub policy: peer sweep, mDNS, reachability UX — `ConversationsHub` (~1s)
 - Peer idle sweep: ~15s internal where applicable
 
@@ -318,7 +318,7 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 | Owner | Notes |
 |-------|--------|
 | `CallStack` / `CallMediaBridge` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
-| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; stop L4, then join MeshPump |
+| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; stop L4, then join MeshPump (the hub asks the mesh's owner, `ProductMesh`, to stop it, then to free it) |
 | `AppRuntime` / `ThreadRuntime` | `BeginShutdown` then budgeted coordinator + WorkerPool |
 | LAN mDNS | stop advertise / join watcher before mesh destroy |
 | `ILocalNotifier` | `Shutdown` before UI mailbox teardown |

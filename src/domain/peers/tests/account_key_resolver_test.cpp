@@ -2,7 +2,6 @@
 
 #include "common/directory/DirectoryJson.h"
 #include "lib/people/tests/TestAccount.h"
-#include "lib/net/SwitchableDirectoryClient.h"
 
 #include <gtest/gtest.h>
 
@@ -15,18 +14,33 @@
 namespace pbr {
 namespace {
 
-/** A directory that answers every account lookup with `hit`, counting the lookups. */
+/**
+ * A directory that answers every account lookup with `hit`, counting the lookups — or, once
+ * `reachable` is false, answers none.
+ */
 class OneEntryDirectory : public mesh::IDirectoryClient {
 public:
   mesh::DirectoryHit hit;
   int lookups = 0;
+  bool reachable = true;
 
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& /*query*/) override {
+    if (!reachable) {
+      return Error("Directory unreachable");
+    }
     return std::vector<mesh::DirectoryHit>{hit};
   }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override { return hit; }
+  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override { return Answer(); }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override {
     ++lookups;
+    return Answer();
+  }
+
+private:
+  Roe<mesh::DirectoryHit> Answer() const {
+    if (!reachable) {
+      return Error("Directory unreachable");
+    }
     return hit;
   }
 };
@@ -48,8 +62,6 @@ protected:
     std::filesystem::remove_all(dir_);
     std::filesystem::create_directories(dir_);
     cards_ = std::make_unique<PeerCardStore>((dir_ / "profile.db").string());
-    directory_backend_ = std::make_shared<OneEntryDirectory>();
-    directory_.SetBackend(directory_backend_);
     resolver_ = std::make_unique<AccountKeyResolver>(signing_, kem_, *cards_, directory_);
   }
   void TearDown() override {
@@ -65,23 +77,22 @@ protected:
   PeerSigningKeyStore signing_;
   PeerKemKeyStore kem_;
   std::unique_ptr<PeerCardStore> cards_;
-  std::shared_ptr<OneEntryDirectory> directory_backend_;
-  SwitchableDirectoryClient directory_;
+  OneEntryDirectory directory_;
   std::unique_ptr<AccountKeyResolver> resolver_;
 };
 
 TEST_F(AccountKeyResolverTest, TakesTheDirectorysKeysOnceAndKeepsThemAsACard) {
-  directory_backend_->hit = EntryFor(alice_);
+  directory_.hit = EntryFor(alice_);
   auto kem = resolver_->Kem().Resolve(kind_, alice_.account_id);
   ASSERT_TRUE(kem) << kem.error().message;
   EXPECT_EQ(kem->kem_public_key_b64, alice_.KemPublicB64());
   auto signing = resolver_->Signing().Resolve(kind_, alice_.account_id);
   ASSERT_TRUE(signing) << signing.error().message;
   EXPECT_EQ(signing->signing_public_key_b64, alice_.SigningPublicB64());
-  EXPECT_EQ(directory_backend_->lookups, 1) << "one lookup brings both keys";
+  EXPECT_EQ(directory_.lookups, 1) << "one lookup brings both keys";
 
   // A later run (empty key stores) finds the kept card without the directory.
-  directory_.SetBackend(nullptr);
+  directory_.reachable = false;
   PeerSigningKeyStore signing_after;
   PeerKemKeyStore kem_after;
   AccountKeyResolver after(signing_after, kem_after, *cards_, directory_);
@@ -91,23 +102,23 @@ TEST_F(AccountKeyResolverTest, TakesTheDirectorysKeysOnceAndKeepsThemAsACard) {
 }
 
 TEST_F(AccountKeyResolverTest, RefusesAnEntryWhoseKeysAreNotTheAccounts) {
-  directory_backend_->hit = EntryFor(alice_);
-  directory_backend_->hit.kem_public_key_b64 = mallory_.KemPublicB64();  // a substituted KEM key
+  directory_.hit = EntryFor(alice_);
+  directory_.hit.kem_public_key_b64 = mallory_.KemPublicB64();  // a substituted KEM key
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
-  directory_backend_->hit = EntryFor(alice_);
-  directory_backend_->hit.kem_binding_signature_b64.reset();  // no binding at all
+  directory_.hit = EntryFor(alice_);
+  directory_.hit.kem_binding_signature_b64.reset();  // no binding at all
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
-  directory_backend_->hit = EntryFor(mallory_);  // someone else's entry under Alice's id
-  directory_backend_->hit.account_id = alice_.account_id;
+  directory_.hit = EntryFor(mallory_);  // someone else's entry under Alice's id
+  directory_.hit.account_id = alice_.account_id;
   EXPECT_FALSE(resolver_->Signing().Resolve(kind_, alice_.account_id));
   EXPECT_FALSE(kem_.Get(kind_, alice_.account_id).has_value());
   EXPECT_FALSE(cards_->Get(alice_.account_id).value().has_value());
 }
 
 TEST_F(AccountKeyResolverTest, WithNoDirectoryOnlyKeptCardsAnswer) {
-  directory_.SetBackend(nullptr);
+  directory_.reachable = false;
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
   ASSERT_TRUE(cards_->AddKeyCard(KeyCard{.account_id = alice_.account_id,
@@ -119,7 +130,7 @@ TEST_F(AccountKeyResolverTest, WithNoDirectoryOnlyKeptCardsAnswer) {
 }
 
 TEST_F(AccountKeyResolverTest, KeepsACarriedCardOnlyForTheAccountItWasCarriedFor) {
-  directory_.SetBackend(nullptr);
+  directory_.reachable = false;
   const Object card = KeyCardToJson(alice_.Card());
 
   EXPECT_FALSE(resolver_->AddCarriedCard(card, 0, "group_roster", mallory_.account_id))

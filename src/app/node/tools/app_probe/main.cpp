@@ -81,6 +81,7 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
+#include "lib/ai/StructuredTextParser.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactClock.h"
@@ -179,6 +180,8 @@ public:
       Emit(event);
     };
     presenter_.BindCallbacks(std::move(callbacks));
+    // The preview line reads an AI reply as prose, as the app's does.
+    chats_.BindCallbacks({.prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); }});
     chats_.BindFacade(facade_.get());
   }
 

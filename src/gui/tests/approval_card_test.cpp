@@ -5,7 +5,7 @@
 #include "common/Utilities.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
-#include "feature/conversations/MessagingTools.h"
+#include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ai/ToolRegistry.h"

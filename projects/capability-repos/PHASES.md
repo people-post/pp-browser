@@ -21,10 +21,20 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 - [x] net → messaging (10): the relay's message client and the relay / peer ports are messaging's
       (`lib/messaging/RelayClients.h`, `HttpRelayClient`, `RelayMessageSignPayload`, mocks in
       `lib/messaging/testing`); net keeps the relay API header and its own clients
-- [ ] base → messaging (2)
-- [ ] people → net (5): a port identity declares, the app or net implements
-- [ ] messaging → app (5): messaging declares the ports AI and the shell implement (CR007)
-- [ ] messaging → calls, messaging → node, node → messaging, node → calls, calls → broadcast
+- [x] base → messaging (2): the relay poll's cadences into `BackgroundSyncScheduler.h`; `ContextBudget` (a
+      `Config` section) to the common root
+- [x] people → net (5): `DirectoryShadowCache` on mesh's `IDirectoryClient`; profile icons (`ProfileIconFetch`,
+      `ProfileIconClient`) into `lib/net`; the peers tests on fake directories
+- [x] messaging → app (5): messaging's AI tools (`MessagingTools`) and their tests into `feature/product`;
+      the chats list's preview prose a `ChatPresenter` port the GUI fills with AI's parser (CR007);
+      `kGroupMemberLimit` into `MessagingLimits.h`; an unused `lib/ui` include dropped
+- [x] node → messaging, node → calls, messaging → calls, calls → broadcast: the product's L4 protocol ids and
+      `ProductMeshProtocols()` into the base (`common/ProtocolIds.h`); the people-picker ports into
+      `feature/product`; an unused broadcast include out of calls
+- [x] messaging → node (3): the mesh leaves the conversations hub — `ProductMesh` (`feature/product`) owns
+      the `MeshHost` and gives it the role (`domain/node`); the hub borrows it through `HubMeshOwner`.
+      `MeshExecutors` into pp-cpp-mesh's `mesh/types/` (v3.0.0), so `AppRuntimeMeshExecutors` is
+      `foundation/runtime`'s
 
 ## P2 — Thin the base (in-repo, then pp-cpp-common / pp-cpp-crypto)
 

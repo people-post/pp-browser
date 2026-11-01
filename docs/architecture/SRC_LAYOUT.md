@@ -190,7 +190,7 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/registration/` | Registration finish / renew / nickname (`pp_domain_registration`) — **headless**, linked by pp-node |
 | `domain/node/` | Node-role mesh services (`pp_domain_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
 | `domain/call_media/` | pp-browser's realtime protocol on the mesh (`pp_domain_call_media`): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it; headless (pp-call-probe links it) |
-| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames and display names, relay-directory signing / KEM keys, profile icons; the people → messaging bridges |
+| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames for strangers, signing / KEM keys from kept cards and the directory (mesh's `IDirectoryClient`, no backend client), the account-card policy, this account's own cards. Profile icons over HTTP and the blob store are `lib/net` (`ProfileIconFetch`, `ProfileIconClient`) |
 | `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
 | `domain/delivery/` | Delivery (`pp_domain_delivery`): the mesh transports for direct chat and chat history; the send path (routes, outbox and retries, the control lane) |
 
@@ -204,7 +204,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 |------|----------|
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
 | `feature/conversations/` | Conversations hub + delivery; never includes calls / broadcast / call_media — they ride the hub as `HubParticipant`s |
-| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
+| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the mesh (`ProductMesh`, built for the profile's role over `domain/node`, lent to the hub as its `HubMeshOwner`) and the hub, and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; where messaging meets AI (`MessagingTools`) and the people picker (`MessagingPeoplePickerPorts`); only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports |
@@ -218,7 +218,7 @@ calls
 conversations → calls
 ```
 
-Feature modules use domain modules directly (`conversations → domain/registration, domain/node`; `calls → domain/call_media`).
+Feature modules use domain modules directly (`conversations → domain/registration`; `product → domain/node`, for the mesh it builds for the profile's role; `calls → domain/call_media`).
 
 ## GUI subfolders
 

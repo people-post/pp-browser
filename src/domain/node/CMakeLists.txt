@@ -1,10 +1,9 @@
 include(PpBrowserDomain)
 
-# Node-role mesh services: what a node hosts, its DHT / directory config and self row; and the
-# executors every mesh takes (AppRuntimeMeshExecutors). Headless — the desktop hub and pp-node share it.
+# Node-role mesh services: what a node hosts, its DHT / directory config and self row. Headless —
+# the product's mesh (feature/product ProductMesh) and pp-node share it.
 pp_browser_add_domain_library(pp_domain_node
   SOURCES
-    AppRuntimeMeshExecutors.cpp
     NodeMeshServices.cpp
   PUBLIC_LIBS
     pp_mesh

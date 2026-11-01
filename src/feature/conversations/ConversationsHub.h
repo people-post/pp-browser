@@ -62,6 +62,7 @@
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
+#include "feature/conversations/HubMeshOwner.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -93,7 +94,8 @@ class SqlitePskSessionStore;
  * Ownership planes:
  * - **ConversationsCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
  *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
- * - **MeshHost (`mesh_`):** shared with headless `pp-node` — Amp stack + L4 + reachability.
+ * - **MeshHost (`mesh_`):** borrowed from its owner (`HubMeshOwner`: feature/product's ProductMesh,
+ *   which builds it for the profile's role) between start and stop — Amp stack + L4 + reachability.
  * - **Participants (`HubParticipant`):** features riding messaging and the mesh (calls, live
  *   broadcast), owned and wired at the feature level (feature/product/ProductStack). The hub drives
  *   their lifecycle and lends them its stores, messaging and neutral mesh objects; it never names
@@ -393,8 +395,13 @@ public:
    * Shared Amp mesh composition root. Mesh UX (status chrome, reachability, relay load) should
    * read through here. Null before the stack is up; callers must degrade gracefully.
    */
-  mesh::MeshHost* Mesh() { return mesh_.get(); }
-  const mesh::MeshHost* Mesh() const { return mesh_.get(); }
+  mesh::MeshHost* Mesh() { return mesh_; }
+  const mesh::MeshHost* Mesh() const { return mesh_; }
+  /**
+   * Who builds the mesh for the profile's role and frees it (ProductStack's ProductMesh); set before
+   * Initialize, outlives the hub's Shutdown. None: no mesh, relay messaging only.
+   */
+  void SetMeshOwner(HubMeshOwner* owner) { mesh_owner_ = owner; }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -465,8 +472,8 @@ private:
   std::vector<mesh::MeshDirectoryNode> DirectoryNodes() const;
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
-  void ConfigureAmpDhtProtocol();
-  void ConfigureAmpDirectoryProtocol();
+  /** The DHT and directory for the role (the mesh owner's), against the seeds and directory nodes as now. */
+  void ConfigureMeshQueries();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const mesh::PeerRoutingRecord& record);
   /** The messaging objects (orchestrator, groups, actions) over the open stores; participants told. */
   void BuildMessagingObjects();
@@ -596,14 +603,14 @@ private:
   mutable std::mutex participants_mu_;
   std::vector<HubParticipant*> participants_;
 
-  // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
-  std::unique_ptr<mesh::MeshHost> mesh_;
+  // --- The mesh (borrowed from its owner between start and stop) + app mesh glue ----
+  HubMeshOwner* mesh_owner_ = nullptr;
+  mesh::MeshHost* mesh_ = nullptr;
   std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<NetworkMonitor> network_monitor_;
   /** Last seed-observed public address (k6 churn). UI thread. */
   std::string last_observed_addr_;
   std::string mesh_last_error_;
-  bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;

@@ -1,4 +1,4 @@
-#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/product/MessagingPeoplePickerPorts.h"
 
 #include "feature/conversations/ConversationsHub.h"
 #include "common/PbrCompat.h"

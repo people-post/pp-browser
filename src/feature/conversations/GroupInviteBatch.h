@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
-#include "lib/ui/PeoplePickerLogic.h"
+#include "common/chat/MessagingLimits.h"
 
 #include <functional>
 #include <string>

@@ -4,7 +4,6 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
-#include "lib/broadcast/BroadcastJoinTicket.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"

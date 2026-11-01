@@ -1,9 +1,10 @@
 #pragma once
 
 #include "feature/conversations/ConversationsHub.h"
-#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/product/MessagingPeoplePickerPorts.h"
 #include "feature/product/BroadcastParticipant.h"
 #include "feature/product/CallsParticipant.h"
+#include "feature/product/ProductMesh.h"
 
 #include <memory>
 #include "common/PbrCompat.h"
@@ -13,9 +14,10 @@ namespace pbr {
 class ConversationsFacade;
 
 /**
- * The app's feature-level composition: the conversations hub (messaging + mesh host) with the
- * features that ride it — calls and live broadcast — registered as its participants. Conversations
- * never names calls or broadcast; this is where they meet.
+ * The app's feature-level composition: the mesh (ProductMesh, built for the profile's role), the
+ * conversations hub on it, and the features that ride the hub — calls and live broadcast —
+ * registered as its participants. Conversations never names calls, broadcast or the node role;
+ * this is where they meet.
  */
 class ProductStack {
 public:
@@ -35,7 +37,9 @@ public:
   MessagingPeoplePickerPorts PeoplePickerPorts();
 
 private:
-  // The hub is declared first so it goes last: participants unbind from its registry on the way down.
+  // The mesh goes after the hub (the hub's shutdown gives it back); the hub after its participants,
+  // which unbind from its registry on the way down.
+  ProductMesh mesh_;
   std::unique_ptr<ConversationsHub> hub_;
   CallsParticipant calls_;
   BroadcastParticipant broadcast_;

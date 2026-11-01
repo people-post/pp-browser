@@ -10,15 +10,8 @@ inline constexpr size_t kMaxE2ePlaintextBytes = 128 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeJsonBytes = 256 * 1024;
 inline constexpr size_t kMaxPollBatchMessages = 100;
-inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
-/**
- * In the background a phone is reached by push only (power): its work is paused (AppLifecycle) and
- * the relay poll with it. A push / WorkManager wake resumes the work for this long — enough to fetch
- * the inbox and ring — then it pauses again.
- */
-inline constexpr uint64_t kBackgroundWakeWindowMs = 20000;
-/** P011 — staying connected in the background (opt-in, Android): the relay poll's pace there. */
-inline constexpr uint64_t kStayConnectedRelayPollIntervalMs = 30000;
+/** A group holds at most this many members (the owner's device checks it; G014 may add a hard stop). */
+inline constexpr int kGroupMemberLimit = 50;
 /** WorkManager backup when alerts on (milliseconds). */
 inline constexpr uint64_t kWorkManagerAlertsOnBackupIntervalMs = 3ULL * 60ULL * 60ULL * 1000ULL;
 /** WorkManager when alerts off (~15 min Android minimum). */

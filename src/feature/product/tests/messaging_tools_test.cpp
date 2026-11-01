@@ -1,6 +1,6 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ConversationsFacade.h"
-#include "feature/conversations/MessagingTools.h"
+#include "feature/product/MessagingTools.h"
 
 #include <gtest/gtest.h>
 

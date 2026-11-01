@@ -1,10 +1,10 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
-#include "domain/node/AppRuntimeMeshExecutors.h"
+#include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "lib/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/ProductMeshProtocols.h"
+#include "common/ProtocolIds.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"

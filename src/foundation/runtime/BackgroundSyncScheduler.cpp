@@ -1,6 +1,5 @@
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
-#include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"

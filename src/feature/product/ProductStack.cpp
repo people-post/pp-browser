@@ -7,6 +7,7 @@
 namespace pbr {
 
 ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), broadcast_(*hub_) {
+  hub_->SetMeshOwner(&mesh_);
   // Order matters: up in this order (calls, then broadcast), down in reverse.
   hub_->AddParticipant(calls_);
   hub_->AddParticipant(broadcast_);

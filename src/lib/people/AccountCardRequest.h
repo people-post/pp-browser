@@ -3,6 +3,7 @@
 #include "lib/people/AccountCard.h"
 
 #include "common/Error.h"
+#include "common/ProtocolIds.h"
 
 #include <cstdint>
 #include <optional>
@@ -11,8 +12,7 @@
 
 namespace pbr {
 
-/** Amp app protocol for asking a device for its account's card (docs/contracts/ACCOUNT_CARD.md#card-exchange-over-amp). */
-inline constexpr const char* kAccountCardProtocolId = "/pp/account-card/1.0.0";
+// The Amp app protocol it travels on, kAccountCardProtocolId, is common/ProtocolIds.h's.
 
 /**
  * `get_card`: whose card is asked for, and who asks — signed with the requester's account key over its

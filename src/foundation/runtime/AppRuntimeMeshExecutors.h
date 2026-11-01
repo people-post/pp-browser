@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mesh/shared/MeshExecutors.h"
+#include "mesh/types/MeshExecutors.h"
 
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
