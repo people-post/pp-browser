@@ -4,8 +4,7 @@
 //
 //   python3 DEV/tools/fake_blob_server.py --port 8767 &
 //   for p in send receive open; do
-//     PP_E2E_BLOB_URL=http://127.0.0.1:8767 PP_E2E_DIR=<dir> PP_E2E_PHASE=$p PP_E2E_MB=100 \
-//       pp_browser_domain_attachments_test --gtest_filter='LargeAttachmentE2e*'
+//     PP_E2E_BLOB_URL=http://127.0.0.1:8767 PP_E2E_DIR=<dir> PP_E2E_PHASE=$p PP_E2E_MB=100 pp_browser_domain_attachments_test --gtest_filter='LargeAttachmentE2e*'
 //   done
 //
 // The limits are passed in by the test (the shipping default is still 4 MB); the CDN is plain http on loopback,
