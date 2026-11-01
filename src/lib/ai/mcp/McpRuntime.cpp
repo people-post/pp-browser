@@ -14,10 +14,6 @@ bool StartMcpClient(McpClient& client, const McpConfig& config) {
     if (!client.StartHttp(config.url)) {
       return false;
     }
-  } else if (config.command == "mock") {
-    if (!client.Start("mock")) {
-      return false;
-    }
   } else if (Platform::SupportsSubprocessMcp()) {
     if (!client.Start(config.command, config.args)) {
       return false;
