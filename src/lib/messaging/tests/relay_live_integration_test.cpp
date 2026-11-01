@@ -1,6 +1,6 @@
+#include "lib/messaging/HttpRelayClient.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
-#include "lib/net/OrgBackendClientsImpl.h"
 
 #include <cstdlib>
 #include <gtest/gtest.h>

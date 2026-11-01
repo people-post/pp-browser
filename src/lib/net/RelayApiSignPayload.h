@@ -1,10 +1,9 @@
 #pragma once
 
-#include "common/thread/ChatHistoryTypes.h"
-#include "common/chat/RelayEnvelope.h"
 
 #include <cstdint>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -20,18 +19,11 @@ enum class RelayApiOp : uint8_t {
   ClearInbox = 6,
 };
 
-std::vector<uint8_t> BuildRelayApiSendSignBytes(const RelayWireSendRecord& record, int64_t timestamp);
-
-std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_contact_id,
-                                                     const std::string& cursor, int64_t timestamp);
-
-std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_contact_id,
-                                                    const std::string& cursor, int64_t timestamp);
-
-std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& requester_contact_id,
-                                                      const std::string& before_created_at, int64_t timestamp);
-
-std::vector<uint8_t> BuildRelayApiStreamHistorySignBytes(const ChatHistoryRequest& request, int64_t timestamp);
+/**
+ * The relay API's signed header: domain `pp-browser:relay-api-v1`, version, `op`, `timestamp`. Each call's
+ * fields follow it (messaging's: lib/messaging/RelayMessageSignPayload.h; push devices': below).
+ */
+void AppendRelayApiHeader(std::ostringstream& oss, RelayApiOp op, int64_t timestamp);
 
 std::vector<uint8_t> BuildRelayApiDeviceSignBytes(RelayApiOp op, const std::string& relay_user_id,
                                                   const std::string& platform, const std::string& device_id,

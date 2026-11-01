@@ -11,12 +11,12 @@ namespace pbr {
 OrgBackendClients CreateOrgBackendClients(const AppConfig& config) {
   OrgBackendClients clients;
 
+  // The relay's message client is messaging's (lib/messaging/HttpRelayClient): the conversations hub builds it.
   if (!config.relay.base_url.empty()) {
-    clients.relay = std::make_unique<HttpRelayClient>(config.relay.base_url);
     clients.client_compat = std::make_unique<HttpClientCompatClient>(config.relay.base_url);
   } else {
     logging::getLogger("OrgBackendClientFactory").warning
-        << "relay.base_url is empty; relay client not created";
+        << "relay.base_url is empty; client compat client not created";
   }
 
   {

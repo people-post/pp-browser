@@ -1,5 +1,5 @@
+#include "lib/messaging/RelayMessageSignPayload.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/net/RelayApiSignPayload.h"
 
 #include <gtest/gtest.h>
 

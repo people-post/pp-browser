@@ -1,5 +1,6 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 
+#include "lib/messaging/RelayClients.h"
 #include "feature/conversations/InboxController.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "lib/messaging/ChatSyncLogic.h"

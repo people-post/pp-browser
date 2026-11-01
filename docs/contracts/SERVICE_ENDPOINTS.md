@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-Relay, directory, and registration share a common resolution pattern. All client creation goes through [`CreateOrgBackendClients`](../../src/base/net/OrgBackendClientFactory.cpp) so future libp2p transports can plug in without changing messaging or agent code.
+Relay, directory, and registration share a common resolution pattern. Code calls the ports (`IRelayClient` — messaging's, `lib/messaging/RelayClients.h`; `IDirectoryClient`; `IRegistrationClient`), never an implementation, so other transports can plug in without changing messaging or agent code. The app builds the HTTP clients (`ConversationsHub`); [`CreateOrgBackendClients`](../../src/lib/net/OrgBackendClientFactory.cpp) builds net's own (directory, registration, blobs, client compat) the same way.
 
 ## Resolution order
 
@@ -11,7 +11,7 @@ For each of `relay`, `directory`, and `registration`:
 | Priority | Condition | Implementation |
 |----------|-----------|----------------|
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
-| 2 | otherwise | Client not created (`CreateOrgBackendClients` leaves unset); production defaults always fill Brief URLs |
+| 2 | otherwise | Client not created (left unset); production defaults always fill Brief URLs |
 
 Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.global/api/relay`. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 

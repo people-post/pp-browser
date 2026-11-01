@@ -18,7 +18,10 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       `common/chat` and `common/ui` tests under `common/tests` → `common/chat/tests`, `common/ui/tests` (14 sites).
 - [x] people → messaging (21): lib peers follow the capability order (CR013); cards and key stores down
       into `lib/people`, people + thread compositions up into messaging
-- [ ] net → messaging (10), base → messaging (2)
+- [x] net → messaging (10): the relay's message client and the relay / peer ports are messaging's
+      (`lib/messaging/RelayClients.h`, `HttpRelayClient`, `RelayMessageSignPayload`, mocks in
+      `lib/messaging/testing`); net keeps the relay API header and its own clients
+- [ ] base → messaging (2)
 - [ ] people → net (5): a port identity declares, the app or net implements
 - [ ] messaging → app (5): messaging declares the ports AI and the shell implement (CR007)
 - [ ] messaging → calls, messaging → node, node → messaging, node → calls, calls → broadcast

@@ -1,5 +1,6 @@
 #include "domain/delivery/PeerTransports.h"
 
+#include "lib/messaging/RelayClients.h"
 #include "domain/attachments/AmpChatBlobTransport.h"
 #include "domain/delivery/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"

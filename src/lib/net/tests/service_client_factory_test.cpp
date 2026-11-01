@@ -1,4 +1,3 @@
-#include "common/chat/MessagingJson.h"
 #include "lib/net/OrgBackendClientFactory.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 
@@ -13,33 +12,15 @@ TEST(OrgBackendClientFactoryTest, BuildsHttpClientsWhenConfigured) {
   config.registration.base_url = "https://registration.example";
 
   auto clients = pbr::CreateOrgBackendClients(config);
-  ASSERT_TRUE(static_cast<bool>(clients.relay));
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   ASSERT_TRUE(static_cast<bool>(clients.registration));
   ASSERT_TRUE(static_cast<bool>(clients.blob));
   ASSERT_TRUE(static_cast<bool>(clients.client_compat));
-
-  pbr::RelayEnvelope envelope;
-  envelope.envelope_version = pbr::kRelayEnvelopeVersion;
-  envelope.message_id = "msg-1";
-  envelope.sender_relay_id = "relay:self";
-  envelope.sender_contact_id = "relay:self";
-  envelope.route.kind = "direct";
-  envelope.route.channel = pbr::ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "dGVzdA==";
-  envelope.sender_seq = 1;
-  envelope.order_key = 1;
-  envelope.stream_key = "v1:e2e:1:relay:peer:relay:self";
-  envelope.recipient_contact_id = "relay:peer";
-  envelope.timestamp = 1;
-  const auto http_send = clients.relay->Send(envelope);
-  EXPECT_FALSE(static_cast<bool>(http_send));
 }
 
 TEST(OrgBackendClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
   pbr::AppConfig empty_config;
   auto empty_clients = pbr::CreateOrgBackendClients(empty_config);
-  EXPECT_FALSE(static_cast<bool>(empty_clients.relay));
   EXPECT_FALSE(static_cast<bool>(empty_clients.directory));
   EXPECT_FALSE(static_cast<bool>(empty_clients.registration));
   EXPECT_FALSE(static_cast<bool>(empty_clients.blob));
@@ -112,23 +93,4 @@ TEST(OrgBackendClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
   ASSERT_EQ(nodes->size(), 1u);
   EXPECT_EQ(nodes->front().relay_user_id, "relay:ok");
   EXPECT_EQ(second_ptr->list_calls, 1);
-}
-
-TEST(OrgBackendClientFactoryTest, MockClientsRemainAvailableForTests) {
-  pbr::MockRelayClient mock_relay;
-
-  pbr::RelayEnvelope envelope;
-  envelope.envelope_version = pbr::kRelayEnvelopeVersion;
-  envelope.message_id = "msg-1";
-  envelope.sender_relay_id = "relay:self";
-  envelope.sender_contact_id = "relay:self";
-  envelope.route.kind = "direct";
-  envelope.route.channel = pbr::ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "dGVzdA==";
-  envelope.sender_seq = 1;
-  envelope.order_key = 1;
-  envelope.stream_key = "v1:e2e:1:relay:peer:relay:self";
-  envelope.recipient_contact_id = "relay:peer";
-  envelope.timestamp = 1;
-  EXPECT_TRUE(static_cast<bool>(mock_relay.Send(envelope)));
 }

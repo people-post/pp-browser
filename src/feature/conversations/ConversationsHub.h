@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/HttpRelayClient.h"
 #include "common/Secret.h"
 
 #include "common/chat/SystemControl.h"

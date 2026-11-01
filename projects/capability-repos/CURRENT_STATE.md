@@ -18,6 +18,9 @@
 - **P1, people → messaging:** 21 sites → 0 (cards, key stores, `DevicePeerIdFromKey` into `lib/people`; the
   people + thread compositions into `lib/messaging`, `feature/conversations`, `feature/ai`) — 9 edges / 32
   sites left.
+- **P1, net → messaging:** 10 sites → 0 — the relay's message client (`HttpRelayClient`), the relay and
+  peer ports (`RelayClients.h`), the message signing builders and the relay mocks move into messaging; net
+  keeps the relay API header, push and its own clients — 8 edges / 22 sites left.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

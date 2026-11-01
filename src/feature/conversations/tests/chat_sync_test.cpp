@@ -1,3 +1,4 @@
+#include "lib/messaging/testing/MockRelayClients.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/messaging/E2eRelayPayloadCodec.h"

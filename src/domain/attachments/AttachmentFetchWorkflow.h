@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/chat/AttachmentDownloadPolicy.h"

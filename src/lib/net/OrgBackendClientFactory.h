@@ -10,8 +10,8 @@
 
 namespace pbr {
 
+/** The backend's clients net owns (the relay's message client is messaging's: lib/messaging/HttpRelayClient). */
 struct OrgBackendClients {
-  std::unique_ptr<IRelayClient> relay;
   std::unique_ptr<mesh::IDirectoryClient> directory;
   std::unique_ptr<IRegistrationClient> registration;
   std::unique_ptr<IBlobClient> blob;

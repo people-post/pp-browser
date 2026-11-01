@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "domain/delivery/AmpAccountCardTransport.h"
 #include "common/Module.h"
 #include "common/chat/IDirectMessageClient.h"

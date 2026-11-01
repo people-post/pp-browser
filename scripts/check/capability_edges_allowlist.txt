@@ -2,8 +2,6 @@
 # check_capability_edges.py fails when one appears, grows or shrinks: lower a count when you cut sites.
 # Format: from -> to <include sites>, tests included (a capability's tests move with it).
 
-# The backend client below messaging: chat DTOs it carries (relay envelope, history) become its own.
-net -> messaging 10
 # CallTypes and the call media protocol id in the conversations hub's ports.
 messaging -> calls 2
 # BackgroundSyncScheduler (foundation/runtime, stays app-side: DESIGN § Runtime) reading messaging limits,

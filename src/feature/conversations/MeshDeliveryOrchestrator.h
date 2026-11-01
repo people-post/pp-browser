@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "mesh/host/DisclosureGatedPeerLinks.h"
 #include "common/Module.h"
 #include "lib/people/ContactsStore.h"
