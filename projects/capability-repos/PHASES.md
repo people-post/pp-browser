@@ -38,8 +38,14 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 
 ## P2 — Thin the base (in-repo, then pp-cpp-common / pp-cpp-crypto)
 
+- [x] Gated (CR015 – CR017): `foundation/data`, `foundation/platform`, `foundation/i18n` are the group
+      **product**, only the apps (`app`, `node_app`) may use it; the gate counts CMake links too. Baseline
+      68 include / 14 link sites (`capability_edges_allowlist.txt`). Pricing DTOs into `lib/pricing` (17 sites);
+      stale links dropped (conversations → calls / media, calls → broadcast, delivery tests → node,
+      content → data).
 - [ ] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
       `foundation/platform`: the app passes values and ports in.
+- [ ] The hub's shell thins (CR018): mesh glue into `ProductMesh`, backend clients handed in.
 - [ ] `Tr()` out of capability code (calls and messaging): error codes, text in the app.
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.

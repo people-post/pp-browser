@@ -1,8 +1,24 @@
 # Source layers: common → foundation → lib → domain → feature → gui → app.
-# Convenience INTERFACE `pp_base` = foundation + Amp + mesh + lib (feature/app link).
+# Convenience INTERFACEs `pp_foundation` and `pp_base` = foundation + Amp + mesh + lib: the app's and its tools'
+# (capabilities name what they link; check_capability_edges.py, CR016).
 add_subdirectory(common)
 add_subdirectory(foundation)
 add_subdirectory(lib)
+
+# Convenience INTERFACE: all foundation modules (not Amp — Amp is FetchContent lib).
+add_library(pp_foundation INTERFACE)
+target_link_libraries(pp_foundation INTERFACE
+  pp_foundation_error
+  pp_foundation_runtime_core
+  pp_foundation_runtime
+  pp_foundation_platform_core
+  pp_foundation_platform
+  pp_foundation_data
+  pp_foundation_diagnostics
+  pp_foundation_i18n
+  pp_foundation_crypto
+  pp_foundation_identity
+)
 
 # Product-stack convenience (legacy name). Prefer linking specific pp_foundation_* /
 # pp_lib_* / pp_amp_* / pp_mesh_* targets when a narrower dependency is enough.

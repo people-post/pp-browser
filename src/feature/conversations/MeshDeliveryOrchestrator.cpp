@@ -21,7 +21,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/pricing/InitiationBillingCodec.h"
 #include "lib/pricing/InitiationPricing.h"
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "mesh/reachability/Reachability.h"

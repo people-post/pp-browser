@@ -5,7 +5,7 @@
 #include "lib/calls/CallTypes.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/people/IdentityStore.h"
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 
 #include <cstdint>
 #include <string>

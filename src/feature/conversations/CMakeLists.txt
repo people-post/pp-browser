@@ -27,11 +27,9 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_domain_attachments
     pp_domain_delivery
     pp_foundation_crypto
-    pp_lib_media
     pp_lib_messaging
     pp_lib_content
     pp_lib_pricing
-    pp_lib_calls
     pp_amp_link
     pp_mesh
     pp_lib_net

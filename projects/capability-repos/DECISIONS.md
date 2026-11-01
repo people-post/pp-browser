@@ -185,3 +185,107 @@ capability the ban still keeps engines single-purpose.
 `lib/messaging`; `PeerDisplaySources` into `feature/conversations`, `PeopleDiscoveryContactAdapt` into
 `feature/ai`.
 
+
+## CR014 — The composition layer: capabilities declare, `feature/product` composes
+
+**Date:** 2026-11-01  
+**Status:** draft; describes the pattern P1's cuts used (PR #443)
+
+**Context:** Three of P1's hardest cuts ended in `feature/product`: the people picker's ports
+(`MessagingPeoplePickerPorts`), messaging's AI tools (`MessagingTools`) and the mesh (`ProductMesh`, lent to
+the conversations hub through `HubMeshOwner`). The smaller ones followed the same shape: `ChatPresenter`
+takes the preview line's prose from its binder instead of naming AI's parser. The design names the
+capabilities and the order but not the place where they meet.
+
+**Decision:** Rule 7: a capability declares what it needs from a peer as a port or an owner interface, in its
+own vocabulary (V048); the composition layer (`feature/product`, then `app/` and `gui/`) builds the peers and
+wires them. A capability never constructs another capability's root (a hub, a mesh, a stack).
+
+**Consequences:** `feature/product` is the app's composition root below the GUI, and in the capability map
+it is the app's. A second app writes its own composition; it does not reuse `feature/product`.
+
+## CR015 — P2 is gated like P1: the product's base is the apps'
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** P1 worked because the gate counted sites and the allowlist only shrank. P2 ("capabilities stop
+reading `Config`, `UserPreferences`, `MeshRole`, platform hooks, `Tr()`") was a checklist with no count.
+Mapped as a group, the product's base starts at 7 edges / 85 sites: messaging 52, calls 20, people 5,
+base 3, node 2, net 2, broadcast 1. Seventeen of them are pricing DTOs that only sit in `foundation/data`.
+
+**Decision:** `foundation/data`, `foundation/platform` and `foundation/i18n` form the gate group **product**
+(rule 1: config and its format, data paths, platform hooks, user-facing text). It may include the base; only
+the apps (`app`, `node_app`) may include it. Today's sites go in the allowlist, which only shrinks.
+
+**Consequences:** P2 has a number. Misplaced DTOs leave first; the rest is ports and values the app passes in
+(CR014). Platform mechanisms a capability truly needs (time, secure storage) move to the base with a narrow
+interface rather than staying behind the product's.
+
+## CR016 — The gate covers links, not only includes
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** The include gate missed stale links: `pp_feature_conversations` linked `pp_lib_calls` and
+`pp_lib_media` with no include left, and `pp_domain_peers` linked `pp_lib_messaging` until PR #443. A repo
+split follows the link graph, so a link against the order is the same defect as an include.
+
+**Decision:** `check_capability_edges.py` also reads the libraries the CMake files declare
+(`pp_browser_add_*_library(... PUBLIC_LIBS ...)` and `target_link_libraries`), maps each target to its
+folder's capability, and fails on a link against the order the same way it fails on an include.
+
+## CR017 — pp-node is an app; the node capability is `domain/node`
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** The map put `app/node` (pp-node's main, bootstrap, status HTTP) in the node capability, so node
+counted the config reads an app is meant to make: 9 of node's files read `Config`, most of them pp-node's.
+
+**Decision:** `app/node` is its own group, **node_app**: an app that may include the product's base and the
+capabilities it picks (people, net, node), and nothing above them. The node capability is `domain/node`.
+
+## CR018 — The hub's shell thins before messaging can move
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** With every edge cut, the unit a second app would reuse is still `ConversationsHub`: ~3.5k
+lines tied to `AppConfig`. It builds its own backend clients from URLs and runs mesh glue no messaging needs:
+LAN mDNS, the OS network monitor, the address-disclosure policy, seed-reservation renewal, the mesh
+directory cache.
+
+**Decision:** The hub keeps messaging (stores, workflows, delivery, participants). The mesh glue joins the
+mesh's owner (`ProductMesh`), which tells the hub what it needs through `HubMeshOwner`; the backend clients are
+built by the composition (net's factory) and handed to the hub. Step by step, one concern per change.
+
+## CR019 — Presenters are the app's
+
+**Date:** 2026-11-01  
+**Status:** draft (proposed)
+
+**Context:** `ChatPresenter` (the chats list's order, unread, pin, mute, archive and its buttons) and parts of
+`InboxController` sit in messaging. They are UI decisions shaped like `CallPresenter`; they are why messaging
+had to take the preview line's prose from its binder. Another app would bring its own list.
+
+**Decision (proposed):** Presenters move to the app side (`gui/` or a presenter folder the app owns);
+messaging exposes the facade they read. Calls' presenter follows the same rule.
+
+## CR020 — Secure delivery below messaging and realtime (to discuss)
+
+**Date:** 2026-11-01  
+**Status:** draft (proposed); not started — changes CR003 / CR008's split
+
+**Context:** Calls include messaging at 26 sites and broadcast at 8, all narrow: thread record types and the
+store port (call history), `SendRelayOptions`, the pairwise PSK session store, pairwise fanout, system
+controls, the E2E public session logic, `IDirectMessageClient`. What realtime rides is sessions, envelopes, the
+control lane and the outbox — not chat threads, groups or the inbox.
+
+**Decision (proposed):** A **delivery** capability under both messaging and realtime: pairwise sessions,
+envelopes and their signing, the control lane, the outbox, the relay and Amp transports. Chat (threads,
+groups, inbox, attachments, pricing) stays messaging. Call history reaches the thread store through a port.
+
+**Consequences:** An app could take secure delivery without chat (a VPN client's control channel, pp-node
+services). Costs a re-map and a few seams; worth settling before anything moves, since it changes what the
+first capabilities repo holds.

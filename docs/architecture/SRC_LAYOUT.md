@@ -83,6 +83,7 @@ every capability, and a capability's DTOs under `common/<capability>/` belong to
 base (common, foundation) ─► people ─┬─► net ─────┬─► messaging ─► calls ─► broadcast
                                      └─► social ──┘
                              people, net ─► node            app (shell, GUI, AI): anything
+product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node): people, net, node, product
 ```
 
 | Capability | Paths |
@@ -93,11 +94,15 @@ base (common, foundation) ─► people ─┬─► net ─────┬─�
 | messaging | `lib/messaging`, `lib/pricing`, `common/chat`, `common/thread`, `domain/delivery`, `domain/attachments`, `feature/conversations` |
 | calls | `lib/calls`, `lib/media`, `common/media`, `domain/call_media`, `feature/calls` |
 | broadcast | `lib/broadcast`, `feature/broadcast` |
-| node | `domain/node`, `app/node` |
+| node | `domain/node` |
+| node_app | `app/node` — pp-node, an app (CR017) |
+| product | `foundation/data`, `foundation/platform`, `foundation/i18n` — config, paths, platform hooks, text (CR015) |
 | app | `app`, `gui`, `feature/product`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
 
-A capability includes only those before it in the order (tests included: they move with it).
-`scripts/check/check_capability_edges.py` (CI lint) holds the map and the order; edges still to cut are in
+A capability includes and links only those before it in the order (tests included: they move with it). The
+product's base is the apps' to read; capabilities take values and ports from them. Convenience bundles
+(`pp_foundation`, `pp_lib`, `pp_base`) are the app's. `scripts/check/check_capability_edges.py` (CI lint) holds
+the map and the order and checks includes and CMake links (CR016); edges still to cut are in
 `capability_edges_allowlist.txt`, which may only shrink. A new directory under `lib/`, `domain/` or
 `feature/` must be added to the map.
 

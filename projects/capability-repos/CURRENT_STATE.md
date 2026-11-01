@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0 and P1 done (no edge against the order); P2's runtime core done
+**Phase:** P0 and P1 done (no edge against the order); P2 gated (CR015), runtime core done
 
 ## Done
 
@@ -38,10 +38,15 @@
   serving, DHT and directory, its own directory row) and lends it to the hub (`HubMeshOwner`: start,
   configure queries, apply serving, stop, release). `MeshExecutors` moved to pp-cpp-mesh's `mesh/types/`
   (v3.0.0), so `AppRuntimeMeshExecutors` lives in `foundation/runtime`. The allowlist is empty.
+- **P2 gated (CR014 – CR020 drafted):** the product's base (`foundation/data`, `platform`, `i18n`) is the gate group
+  **product**, apps only; pp-node is the app **node_app**; the gate counts CMake links. Pricing DTOs moved to
+  `lib/pricing` and five stale links dropped — 68 include / 14 link sites left.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
 ## Next
 
-1. P2: `foundation/data` / `platform` / `Tr()` out of capability code; crypto additions into pp-cpp-crypto.
-2. Contracts repo (CR010) when convenient.
+1. P2: the product edges down (`Config`, `MeshRole`, `Tr()`, platform hooks); the hub's shell (CR018);
+   crypto additions into pp-cpp-crypto.
+2. Settle CR019 (presenters) and CR020 (secure delivery) before anything moves.
+3. Contracts repo (CR010) when convenient.

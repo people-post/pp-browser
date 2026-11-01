@@ -1,6 +1,5 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/ConfigJson.h"
-#include "foundation/data/PricingTypes.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
@@ -24,12 +23,6 @@ TEST(PricingConfigTest, RoundTripsInitiationFloor) {
   bare.set("theme", "themes/base.rcss");
   pbr::AppConfigFromObject(bare, missing);
   EXPECT_EQ(missing.initiation_floor, 0);
-}
-
-TEST(PricingTypesTest, CurrencyStub) {
-  EXPECT_STREQ(pbr::kPricingCurrencyId, "pp_credit");
-  EXPECT_STREQ(pbr::kPricingCurrencyDisplayName, "Credits");
-  EXPECT_FALSE(pbr::PaymentRailsAvailable());
 }
 
 } // namespace

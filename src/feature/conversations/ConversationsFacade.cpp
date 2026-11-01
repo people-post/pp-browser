@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"

@@ -31,7 +31,7 @@
 #include "CallVideoTileRenderer.h"
 #include "gui/UserFeedback.h"
 
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 
 #include "common/Utilities.h"
 

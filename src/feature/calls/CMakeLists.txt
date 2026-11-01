@@ -27,7 +27,6 @@ pp_browser_add_feature_library(pp_feature_calls
     pp_foundation_crypto
     pp_lib_media
     pp_lib_messaging
-    pp_lib_broadcast
     pp_lib_pricing
     pp_lib_calls
     pp_amp_link

@@ -21,7 +21,7 @@
 #include "lib/people/ProfileIdentityView.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
 #include "lib/pricing/PaymentPromiseWireCodec.h"
-#include "foundation/data/PaymentPromiseTypes.h"
+#include "lib/pricing/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/GroupInviteBatch.h"

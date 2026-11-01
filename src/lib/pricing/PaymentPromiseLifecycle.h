@@ -2,7 +2,7 @@
 
 #include "common/directory/IAccountSigningAccess.h"
 #include "common/directory/IContactTrustAccess.h"
-#include "foundation/data/PaymentPromiseTypes.h"
+#include "lib/pricing/PaymentPromiseTypes.h"
 #include "lib/pricing/PaymentPromiseInbound.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "common/Error.h"

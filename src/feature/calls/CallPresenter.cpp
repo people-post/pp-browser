@@ -5,7 +5,7 @@
 #include "lib/media/CallAudioSession.h"
 #include "lib/media/CallMediaEngine.h"
 #include "feature/calls/CallUiBackend.h"
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
