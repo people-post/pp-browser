@@ -622,6 +622,7 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraReopensWithTheOtherFacing) {
   ASSERT_TRUE(engine.FlipCamera());
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 3; }));
   EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "flips back";
+  EXPECT_TRUE(WaitUntil([&] { return engine.CameraFrontFacing(); }));
   ASSERT_TRUE(engine.FlipCamera());
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 4; }));
   engine.Stop();
@@ -630,6 +631,58 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraReopensWithTheOtherFacing) {
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 5; }));
   EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "a new call starts with the front camera";
+  engine.Stop();
+}
+
+// A flip whose rear camera does not open leaves the camera off, and the next open asks for the front again.
+TEST_F(EngineDeviceLeaseTest, AFailedReopenAfterAFlipGoesBackToTheFrontCamera) {
+  const auto camera_opens = [this]() {
+    const auto events = log_.Events();
+    return std::count(events.begin(), events.end(), "open camera");
+  };
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 1; }));
+  EXPECT_TRUE(WaitUntil([&] { return engine.CameraFrontFacing(); }));
+
+  backend_->camera_present = false;
+  ASSERT_TRUE(engine.FlipCamera());
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 2; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 0) << "the rear camera was asked for";
+  std::optional<std::string> failure;
+  for (int i = 0; i < 200 && !failure; ++i) {
+    failure = engine.TakeCameraFailure();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_TRUE(failure);
+  EXPECT_FALSE(engine.IsCameraEnabled());
+
+  backend_->camera_present = true;
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 3; }));
+  EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "front again, not the facing that failed";
+  engine.Stop();
+}
+
+// A tap while the first open is still pending is refused: the facing is not known yet, nothing changes.
+TEST_F(EngineDeviceLeaseTest, FlipCameraWhileStillOpeningIsRefused) {
+  const auto camera_opens = [this]() {
+    const auto events = log_.Events();
+    return std::count(events.begin(), events.end(), "open camera");
+  };
+  backend_->camera_open_delay = std::chrono::milliseconds(300);
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_FALSE(engine.FlipCamera()) << "still opening";
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 1 && engine.CameraFrontFacing(); }));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(camera_opens(), 1) << "the refused tap did not re-open";
+  EXPECT_EQ(backend_->last_prefer_front.load(), 1);
   engine.Stop();
 }
 
