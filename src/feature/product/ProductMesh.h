@@ -3,6 +3,7 @@
 #include "feature/conversations/HubMeshOwner.h"
 #include "common/Module.h"
 #include "foundation/platform/NetworkMonitor.h"
+#include "mesh/discovery/MeshDirectoryCache.h"
 
 #include <memory>
 #include "common/PbrCompat.h"
@@ -33,6 +34,13 @@ public:
   void StartLanDiscovery(std::function<void(const mesh::LanMdnsDiscoveredPeer&)> on_peer) override;
   void AdvertiseOnLan(const std::string& peer_id, int amp_udp_port) override;
   void StopLanDiscovery() override;
+  void StartDirectoryCache(mesh::IDirectoryClient& directory, const AppConfig& config,
+                           std::function<void()> on_updated) override;
+  bool HasDirectoryCache() const override { return directory_cache_ != nullptr; }
+  std::vector<mesh::MeshDirectoryNode> DirectoryNodesSnapshot() const override;
+  void RefreshDirectory() override;
+  void MaybeRefreshDirectory() override;
+  void StopDirectoryCache() override;
 
 private:
   void ConfigureDht(const QueryInputs& inputs, bool node_role);
@@ -43,6 +51,8 @@ private:
   std::unique_ptr<NetworkMonitor> network_monitor_;
   /** LAN discovery and announcement while the hub's mesh services run. */
   std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
+  /** The directory's mesh nodes, for the profile's lifetime (across mesh restarts). */
+  std::unique_ptr<mesh::MeshDirectoryCache> directory_cache_;
   /** A node tries UPnP on its first start only. */
   bool upnp_auto_tried_ = false;
 };

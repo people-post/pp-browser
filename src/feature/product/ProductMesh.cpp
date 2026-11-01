@@ -1,10 +1,15 @@
 #include "feature/product/ProductMesh.h"
 
 #include "domain/node/NodeMeshServices.h"
+#include "foundation/data/AppPaths.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "common/ProtocolIds.h"
 #include "mesh/discovery/AmpDirectoryProtocol.h"
+#include "mesh/discovery/NameDirectory.h"
+#include "common/runtime/AppRuntime.h"
+
+#include <filesystem>
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "mesh/l4/media_relay/serve/MediaRelayServer.h"
 
@@ -82,6 +87,7 @@ ProductMesh::ProductMesh() {
 }
 
 ProductMesh::~ProductMesh() {
+  StopDirectoryCache();
   StopLanDiscovery();
   StopWatchingNetwork();
   Stop();
@@ -240,6 +246,74 @@ void ProductMesh::AdvertiseOnLan(const std::string& peer_id, const int amp_udp_p
   }
   // Empty host_ips → LanMdnsDiscovery enumerates LAN IFs (Amp typically binds 0.0.0.0).
   lan_mdns_->SetAdvertisement(peer_id, amp_udp_port, {});
+}
+
+void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const AppConfig& config,
+                                      std::function<void()> on_updated) {
+  StopDirectoryCache();
+  mesh::IDirectoryClient* client = &directory;
+  directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([client]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
+    // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
+    mesh::DirectoryClientNameDirectory names(*client);
+    auto records = names.ListService("mesh_node");
+    if (!records) {
+      return records.error();
+    }
+    return mesh::MeshDirectoryNodesFromNameRecords(*records);
+  }, AppRuntimeMeshExecutors().blocking);
+  directory_cache_->SetPersistPath(
+      (std::filesystem::path(AppPaths::DataDir(config.data_dir)) / "mesh_directory_nodes.json").string());
+  directory_cache_->LoadPersisted();
+  // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
+  directory_cache_->SetAsyncFetcher([this, client](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
+    auto fetch_http = [client, done]() {
+      AppRuntime::PostWorkerNormal([client, done]() {
+        mesh::DirectoryClientNameDirectory names(*client);
+        auto records = names.ListService("mesh_node");
+        if (!records) {
+          done(records.error());
+          return;
+        }
+        done(mesh::MeshDirectoryNodesFromNameRecords(*records));
+      });
+    };
+    if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+      mesh_->AmpDirectory()->ListMeshNodesAsync([done, fetch_http](mesh::AmpDirectoryProtocol::ListRoe amp_nodes) {
+        if (amp_nodes) {
+          auto rows = mesh::MeshDirectoryNodesFromHits(*amp_nodes);
+          if (!rows.empty()) {
+            done(std::move(rows));
+            return;
+          }
+        }
+        fetch_http();
+      });
+      return;
+    }
+    fetch_http();
+  });
+  directory_cache_->SetOnUpdated(std::move(on_updated));
+  directory_cache_->RequestRefresh();
+}
+
+std::vector<mesh::MeshDirectoryNode> ProductMesh::DirectoryNodesSnapshot() const {
+  return directory_cache_ ? directory_cache_->Snapshot() : std::vector<mesh::MeshDirectoryNode>{};
+}
+
+void ProductMesh::RefreshDirectory() {
+  if (directory_cache_) {
+    directory_cache_->RequestRefresh();
+  }
+}
+
+void ProductMesh::MaybeRefreshDirectory() {
+  if (directory_cache_) {
+    directory_cache_->MaybeRefresh();
+  }
+}
+
+void ProductMesh::StopDirectoryCache() {
+  directory_cache_.reset();
 }
 
 void ProductMesh::StopLanDiscovery() {

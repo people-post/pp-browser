@@ -272,6 +272,12 @@ the hub, `HubParticipant` and the calls stack no longer include the platform's m
 `StopLanDiscovery`. The hub keeps the decisions — which discovered peers are contacts (their endpoints go to
 delivery), and whether to announce at all (the node role, or a call on a phone).
 
+**Step 3 (2026-11-01):** the mesh directory cache is the mesh owner's (`StartDirectoryCache` with the hub's
+directory client and the config; its disk path from the app's data directory). The hub reads the nodes and is told
+when they change. A fetch with no directory configured now fails and keeps the last nodes instead of clearing
+them. The seed-reservation renewal stays with the hub's `MeshConnectivity` (the neutral mesh object participants
+borrow) and moves when that does.
+
 ## CR019 — Presenters are the app's
 
 **Date:** 2026-11-01  

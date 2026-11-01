@@ -6,6 +6,7 @@
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/types/DirectoryTypes.h"
+#include "mesh/types/IDirectoryClient.h"
 #include "common/Error.h"
 #include "common/NetworkChange.h"
 
@@ -80,6 +81,24 @@ public:
   virtual void AdvertiseOnLan(const std::string& peer_id, int amp_udp_port) = 0;
   /** Stops listening and announcing. Idempotent. */
   virtual void StopLanDiscovery() = 0;
+
+  /**
+   * Keeps the directory's mesh nodes fresh and on disk (the app's data directory, from `config`): the mesh's
+   * directory twin first, then `directory`. `on_updated` runs on a worker after a refresh lands. Once per
+   * profile; `directory` must outlive StopDirectoryCache.
+   */
+  virtual void StartDirectoryCache(mesh::IDirectoryClient& directory, const AppConfig& config,
+                                   std::function<void()> on_updated) = 0;
+  /** Whether the directory cache runs. */
+  virtual bool HasDirectoryCache() const = 0;
+  /** The cached nodes (every row; empty when not running). Any thread. */
+  virtual std::vector<mesh::MeshDirectoryNode> DirectoryNodesSnapshot() const = 0;
+  /** Refresh now. */
+  virtual void RefreshDirectory() = 0;
+  /** Refresh when it is due (the hub's 1 s tick). */
+  virtual void MaybeRefreshDirectory() = 0;
+  /** Drops the cache (the profile closes). Idempotent. */
+  virtual void StopDirectoryCache() = 0;
 };
 
 } // namespace pbr

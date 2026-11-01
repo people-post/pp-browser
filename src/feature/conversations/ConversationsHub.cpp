@@ -41,7 +41,6 @@
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/data/MeshRole.h"
-#include "foundation/data/AppPaths.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -412,8 +411,8 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   }
   StartMeshServices();
   ConfigureMeshQueries();
-  if (mesh_directory_cache_) {
-    mesh_directory_cache_->RequestRefresh();
+  if (mesh_owner_) {
+    mesh_owner_->RefreshDirectory();
   }
   if (shutdown_requested_.load(std::memory_order_acquire)) {
     StopMesh();
@@ -858,12 +857,12 @@ void ConversationsHub::RegisterContactEndpoints() {
 }
 
 std::vector<mesh::MeshDirectoryNode> ConversationsHub::DirectoryNodes() const {
-  return mesh_directory_cache_ ? DirectoryNodesForDial(mesh_directory_cache_->Snapshot())
+  return mesh_owner_ ? DirectoryNodesForDial(mesh_owner_->DirectoryNodesSnapshot())
                                : std::vector<mesh::MeshDirectoryNode>{};
 }
 
 void ConversationsHub::RegisterMeshDirectoryEndpoints() {
-  if (!mesh_messaging_ || !mesh_directory_cache_) {
+  if (!mesh_messaging_ || !mesh_owner_ || !mesh_owner_->HasDirectoryCache()) {
     return;
   }
   const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
@@ -1089,58 +1088,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     }
   });
 
-  if (directory_.Configured()) {
-    mesh_directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([this]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
-      // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
-      if (!directory_.Configured()) {
-        return std::vector<mesh::MeshDirectoryNode>{};
-      }
-      mesh::DirectoryClientNameDirectory names(directory_);
-      auto records = names.ListService("mesh_node");
-      if (!records) {
-        return records.error();
-      }
-      return mesh::MeshDirectoryNodesFromNameRecords(*records);
-    }, AppRuntimeMeshExecutors().blocking);
-    const std::string persist =
-        (std::filesystem::path(AppPaths::DataDir(config_.data_dir)) / "mesh_directory_nodes.json").string();
-    mesh_directory_cache_->SetPersistPath(persist);
-    mesh_directory_cache_->LoadPersisted();
-    // N029 nd4: Amp directory twin first (no worker park), then HTTP on Normal.
-    mesh_directory_cache_->SetAsyncFetcher([this](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
-      auto fetch_http = [this, done]() {
-        AppRuntime::PostWorkerNormal([this, done]() {
-          if (!directory_.Configured()) {
-            done(std::vector<mesh::MeshDirectoryNode>{});
-            return;
-          }
-          mesh::DirectoryClientNameDirectory names(directory_);
-          auto records = names.ListService("mesh_node");
-          if (!records) {
-            done(records.error());
-            return;
-          }
-          done(mesh::MeshDirectoryNodesFromNameRecords(*records));
-        });
-      };
-      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
-        mesh_->AmpDirectory()->ListMeshNodesAsync(
-            [done, fetch_http](mesh::AmpDirectoryProtocol::ListRoe amp_nodes) {
-              if (amp_nodes) {
-                auto rows = mesh::MeshDirectoryNodesFromHits(*amp_nodes);
-                if (!rows.empty()) {
-                  done(std::move(rows));
-                  return;
-                }
-              }
-              fetch_http();
-            });
-        return;
-      }
-      fetch_http();
-    });
-    // Lands where the refresh ran (a worker): the hub's work is ours — hop to UI.
-    mesh_directory_cache_->SetOnUpdated([this]() {
+  if (directory_.Configured() && mesh_owner_) {
+    // The directory's mesh nodes, kept by the mesh's owner. An update lands where the refresh ran (a worker):
+    // the hub's work is ours — hop to UI.
+    mesh_owner_->StartDirectoryCache(directory_, config_, [this]() {
       AppRuntime::PostUI([this]() {
         if (shutdown_requested_.load(std::memory_order_acquire)) {
           return;
@@ -1150,7 +1101,6 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         hop_policy_feed_->PushSoon();  // directory nodes are rendezvous / seed candidates
       });
     });
-    mesh_directory_cache_->RequestRefresh();
   }
 
   if (secrets_ != nullptr) {
@@ -1376,9 +1326,7 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   // the call sessions here abandoned a call already ringing over the relay).
   WireMeshConnectivity();
   RegisterContactEndpoints();
-  if (mesh_directory_cache_) {
-    RegisterMeshDirectoryEndpoints();
-  }
+  RegisterMeshDirectoryEndpoints();
   if (shutdown_requested_.load(std::memory_order_acquire)) {
     DiscardMessagingBringUp();
     return Error("shutdown in progress");
@@ -1567,8 +1515,8 @@ void ConversationsHub::TickMesh() {
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
   }
-  if (mesh_directory_cache_) {
-    mesh_directory_cache_->MaybeRefresh();
+  if (mesh_owner_) {
+    mesh_owner_->MaybeRefreshDirectory();
   }
   if (mesh_ && mesh_->AmpDht()) {
     mesh_->AmpDht()->Tick();
@@ -3235,7 +3183,9 @@ void ConversationsHub::Shutdown() {
   inbox_.reset();
   peer_labels_.reset();
   directory_shadows_.reset();
-  mesh_directory_cache_.reset();
+  if (mesh_owner_) {
+    mesh_owner_->StopDirectoryCache();
+  }
   http_relay_.reset();
   http_registration_.reset();
   http_push_devices_.reset();

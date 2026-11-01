@@ -58,7 +58,7 @@
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/ReachabilityEngine.h"
-#include "mesh/discovery/MeshDirectoryCache.h"
+#include "mesh/types/MeshConfigTypes.h"
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
@@ -532,7 +532,6 @@ private:
   std::unique_ptr<ThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
-  std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   /** Account cards this device has checked and kept (profile.db). */
