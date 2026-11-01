@@ -1,11 +1,11 @@
 #pragma once
 
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "common/Module.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/chat/RelayEnvelope.h"
 #include "common/thread/ThreadTypes.h"
-#include "lib/messaging/DeliveryNotice.h"
+#include "lib/delivery/DeliveryNotice.h"
 
 #include <functional>
 #include <mutex>

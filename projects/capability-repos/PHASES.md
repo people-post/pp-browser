@@ -48,6 +48,8 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       `MeshConfig` and `ServiceEndpoints`, `SchemaVersion`, `DialWorthyMultiaddrs` and the secure-blob port into
       `common/`; the OS store in `foundation/platform`, handed in by the app); net has `CurlSsl` left.
 - [ ] The hub's shell thins (CR018): mesh glue into `ProductMesh`, backend clients handed in.
+- [x] Delivery below messaging and realtime (CR020): the gate maps delivery and pricing; calls and broadcast
+      no longer include or link messaging.
 - [ ] `Tr()` out of capability code (calls and messaging): error codes, text in the app.
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.

@@ -1,14 +1,14 @@
 // What a send of ours writes and puts on the wire (OutboundMessage), checked against the receive
 // pipeline of the peer it goes to.
-#include "lib/messaging/OutboundMessage.h"
+#include "lib/delivery/OutboundMessage.h"
 #include "foundation/error/AppError.h"
 
-#include "lib/messaging/EnvelopeSigner.h"
+#include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
-#include "lib/messaging/ReactionTypes.h"
+#include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "common/chat/MessagingLimits.h"

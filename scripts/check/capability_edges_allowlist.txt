@@ -18,5 +18,5 @@ calls -> product 16
 broadcast -> product 1
 link base -> product 2
 link net -> product 1
-link messaging -> product 5
+link messaging -> product 4
 link calls -> product 2

@@ -1,7 +1,7 @@
 #include "gui/chat/TranscriptRml.h"
 
 #include "lib/messaging/QuoteReply.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 
 #include <gtest/gtest.h>
 

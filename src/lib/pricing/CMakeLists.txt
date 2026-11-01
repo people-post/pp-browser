@@ -14,7 +14,6 @@ pp_browser_add_lib_library(pp_lib_pricing
     PricingControlFamilies.cpp
   PUBLIC_LIBS
     pp_foundation_error
-    pp_foundation_data
     pp_foundation_crypto)
 
 if(PP_BROWSER_BUILD_TESTS)

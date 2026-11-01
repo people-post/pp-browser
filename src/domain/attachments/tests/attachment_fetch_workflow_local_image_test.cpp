@@ -4,7 +4,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 #include "lib/content/CasStore.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/Utilities.h"

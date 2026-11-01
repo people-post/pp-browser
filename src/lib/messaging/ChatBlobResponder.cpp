@@ -1,13 +1,13 @@
 #include "lib/messaging/ChatBlobResponder.h"
 
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/delivery/PeerRequestAuth.h"
 #include "common/directory/DirectoryJson.h"
 
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include <unordered_set>
 #include "common/PbrCompat.h"

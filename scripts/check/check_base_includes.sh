@@ -179,11 +179,11 @@ check_absent "net must not include messaging/MessagingJson.h (use common/chat/)"
 check_absent "net must not include base/messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
   '#include "base/messaging/EnvelopeSigner.h"' src/lib/net
 check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
-  '#include "lib/messaging/EnvelopeSigner.h"' src/lib/net
+  '#include "lib/delivery/EnvelopeSigner.h"' src/lib/net
 check_absent "net must not include base/messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "base/messaging/RelayWirePayload.h"' src/lib/net
 check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
-  '#include "lib/messaging/RelayWirePayload.h"' src/lib/net
+  '#include "lib/delivery/RelayWirePayload.h"' src/lib/net
 # messaging -> people and net -> people are down the capability order: the lib peer check below governs them (CR013).
 check_absent "must not include base/people/ (moved to lib/people/)" \
   '#include "base/people/' src

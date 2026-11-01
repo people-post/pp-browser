@@ -1,6 +1,6 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/ReactionTypes.h"
+#include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"

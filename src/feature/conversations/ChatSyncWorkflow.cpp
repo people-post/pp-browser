@@ -1,17 +1,17 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "feature/conversations/InboxController.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "lib/messaging/ChatSyncLogic.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "lib/delivery/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/ContactsStore.h"
-#include "lib/messaging/PeerBriefRoute.h"
+#include "lib/delivery/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>

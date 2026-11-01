@@ -1,7 +1,7 @@
 #include "domain/attachments/OutgoingAttachmentStore.h"
 
 #include "foundation/crypto/FileCipher.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 

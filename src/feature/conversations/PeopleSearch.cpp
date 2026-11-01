@@ -1,7 +1,7 @@
 #include "feature/conversations/PeopleSearch.h"
 
 #include "common/Utilities.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
 #include "lib/people/DirectoryHitRank.h"
 #include "lib/people/PeopleLookupFailure.h"
 #include "feature/conversations/ConversationsHub.h"

@@ -7,9 +7,10 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "lib/people/AccountCard.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/DeliveryNotice.h"
-#include "lib/messaging/E2eIngestClassifier.h"
-#include "lib/messaging/PublicPskLockCoordinator.h"
+#include "lib/delivery/DeliveryNotice.h"
+#include "lib/delivery/LocalKeys.h"
+#include "lib/delivery/E2eIngestClassifier.h"
+#include "lib/delivery/PublicPskLockCoordinator.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
@@ -129,18 +130,6 @@ inline constexpr int64_t kControlLaneSignedSkewMs = 60 * 60 * 1000;
  * through the relay, waiting there no longer than `max_age_ms` (relay clock).
  */
 bool ControlLaneFresh(const RelayEnvelope& envelope, int64_t max_age_ms, int64_t now_ms);
-
-/**
- * This device's account id and KEM keys (people's): what decrypting, PSK rotation and group membership
- * need of the local identity — the account's KEM opens account copies, the device's its device pairs (M021).
- */
-struct LocalKeys {
-  std::function<Roe<std::string>()> account_id;
-  std::function<Roe<ByteVector>()> kem_private_key;
-  /** This device's PeerId: copies for it are its own; other devices' are its siblings'. */
-  std::function<Roe<std::string>()> device_peer_id;
-  std::function<Roe<ByteVector>()> device_kem_private_key;
-};
 
 /** An account's newest kept account card — its device list (docs/contracts/ACCOUNT_CARD.md); none when not known. */
 using AccountCardLookup = std::function<std::optional<AccountCard>(const std::string& account_id)>;

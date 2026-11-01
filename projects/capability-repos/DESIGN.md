@@ -61,10 +61,10 @@ already left for pp-cpp-common (§ Runtime core).
 ```
 pp-cpp-common (+ runtime) ──────┬─► pp-cpp-crypto ─► pp-cpp-amp ─► pp-cpp-mesh
                                 │
-           base ─► people ─┬─► net ───────────┐
-                           ├─► social ────────┼─► messaging ─► calls ─► broadcast
-                           │                  │
-                           └──────────────────┴─► node (people, net)
+           base ─► people ─┬─► net ──────┬─► delivery ─► pricing ─┬─► messaging (+ social)
+                           ├─► social    │                         └─► calls ─► broadcast
+                           │             │
+                           └─────────────┴─► node (people, net)
 
 apps:  pp-browser (UI, AI, composition)   pp-node (headless roles)   VPN client   ledger apps
 ```
@@ -74,8 +74,10 @@ apps:  pp-browser (UI, AI, composition)   pp-node (headless roles)   VPN client 
 | people | base | identity: keys, cards, contacts, devices, the locker format (CR008) |
 | net | base, people | the Brief backend client: registration, directory, blobs, push — deployment-specific (CR008) |
 | social | base, people | posts + the content store; never above messaging (CR009) |
-| messaging | base, people, net, social | records, delivery, attachments, the conversations hub, pricing (CR008) |
-| calls | … + messaging | messaging carries call signaling |
+| delivery | base, people, net | sessions, envelopes and codecs, the control lane, the outbox, the relay's message client, the records they carry and the store ports (CR020) |
+| pricing | … + delivery | initiation pricing and payment promises, for messages and calls (CR020) |
+| messaging | … + delivery, pricing, social | chat: the stores, inbox, groups, attachments, history, the conversations hub (CR008, CR020) |
+| calls | base, people, net, delivery, pricing | delivery carries call signaling; call history reaches the records through delivery's store port (CR020) |
 | broadcast | … + calls | calls + broadcast are "realtime" (CR003); calls never names broadcast |
 | node | base, people, net | node services and roles; reaches messaging and calls only through ports the app wires |
 | app | anything | pp-browser's shell, GUI, AI (CR007), composition |

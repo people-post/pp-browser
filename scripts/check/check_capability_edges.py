@@ -41,11 +41,13 @@ GROUPS: dict[str, list[str]] = {
     "net": ["lib/net", "domain/registration"],
     # Public posts and the content store they share with attachments (CR009). Never above messaging.
     "social": ["lib/posts", "lib/content"],
-    # Messaging, with pricing inside it (CR008): records, delivery, attachments, the conversations hub.
-    "messaging": [
-        "lib/messaging", "lib/pricing", "common/chat", "common/thread",
-        "domain/delivery", "domain/attachments", "feature/conversations",
-    ],
+    # Secure delivery (CR020): sessions, envelopes and their codecs, the control lane, the outbox, the relay's
+    # message client, and the records they carry (threads, messages, channels) with the store ports.
+    "delivery": ["lib/delivery", "common/chat", "common/thread", "domain/delivery"],
+    # Initiation pricing and payment promises: what contacting someone costs, for messages and calls alike.
+    "pricing": ["lib/pricing"],
+    # Chat on top of delivery (CR008, CR020): the stores, inbox, groups, attachments, history, the hub.
+    "messaging": ["lib/messaging", "domain/attachments", "feature/conversations"],
     "calls": ["lib/calls", "lib/media", "common/media", "domain/call_media", "feature/calls"],
     "broadcast": ["lib/broadcast", "feature/broadcast"],
     "node": ["domain/node"],
@@ -61,9 +63,12 @@ ALLOWED: dict[str, set[str]] = {
     "people": {"base"},
     "net": {"base", "people"},
     "social": {"base", "people"},
-    "messaging": {"base", "people", "net", "social"},
-    "calls": {"base", "people", "net", "social", "messaging"},
-    "broadcast": {"base", "people", "net", "social", "messaging", "calls"},
+    "delivery": {"base", "people", "net"},
+    "pricing": {"base", "people", "net", "delivery"},
+    "messaging": {"base", "people", "net", "social", "delivery", "pricing"},
+    # Realtime rides delivery, not chat (CR020): call history reaches the records through delivery's store port.
+    "calls": {"base", "people", "net", "delivery", "pricing"},
+    "broadcast": {"base", "people", "net", "delivery", "pricing", "calls"},
     "node": {"base", "people", "net"},
     "product": {"base"},
     "node_app": {"base", "product", "people", "net", "node"},

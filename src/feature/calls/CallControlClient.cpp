@@ -5,8 +5,8 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/calls/CallMediaKeyStore.h"
-#include "lib/messaging/PairwiseFanoutLogic.h"
-#include "lib/messaging/SendRelayOptions.h"
+#include "lib/delivery/PairwiseFanoutLogic.h"
+#include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
 

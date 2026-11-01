@@ -1,6 +1,7 @@
 pp_browser_add_lib_library(pp_lib_messaging
   SOURCES
     AttachmentCache.cpp
+    AttachmentDownloadPolicy.cpp
     AttachmentLimits.cpp
     AttachmentPlaintextMemoryCache.cpp
     AttachmentSuppressionStore.cpp
@@ -8,25 +9,14 @@ pp_browser_add_lib_library(pp_lib_messaging
     AtAiParser.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
-    PeerRequestAuth.cpp
-    ChatPayloadCodec.cpp
     ThreadLocalPrefsStore.cpp
-    PairwiseFanoutLogic.cpp
     PeerThreadLogic.cpp
     GroupInviteGate.cpp
     RelayReceivePipeline.cpp
-    ControlLaneEnvelope.cpp
-    ControlLaneSeenStore.cpp
-    E2ePublicSessionLogic.cpp
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp
-    ChatPayloadValidator.cpp
     ChatSyncLogic.cpp
     ConversationSummaryCodec.cpp
-    DeliveryNotice.cpp
-    E2eIngestClassifier.cpp
-    E2eRelayPayloadCodec.cpp
-    EnvelopeSigner.cpp
     EpochBumpCoordinator.cpp
     GroupE2ePayloadCodec.cpp
     GroupMembershipApply.cpp
@@ -35,33 +25,23 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupRosterSync.cpp
     GroupRosterSyncCodec.cpp
     GroupRosterSyncFamily.cpp
-    TextSpans.cpp
     MentionAlert.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
-    OutboundMessage.cpp
     SentCopy.cpp
     CopyAsk.cpp
     CardAsk.cpp
     ThreadMentionsStore.cpp
-    PskRotateCodec.cpp
-    PskSessionCoordinator.cpp
-    PublicPskLockCoordinator.cpp
     ContactLocator.cpp
-    RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
     TranscriptAssembly.cpp
     TranscriptCipher.cpp
-    SqlitePskSessionStore.cpp
     SqliteThreadStore.cpp
     SyncStateCodec.cpp
-    DirectChatTargetFromContact.cpp
     ModelFacingJson.cpp
-    PeerBriefRoute.cpp
     PeerDisplayResolver.cpp
-    HttpRelayClient.cpp
-    RelayMessageSignPayload.cpp
   PUBLIC_LIBS
+    pp_lib_delivery
     pp_lib_people
     pp_lib_net
     pp_foundation_error
@@ -73,11 +53,5 @@ pp_browser_add_lib_library(pp_lib_messaging
     SQLite::SQLite3)
 
 if(PP_BROWSER_BUILD_TESTS)
-  # Mock relay and peer-history clients: test binaries only, never linked into the app.
-  pp_browser_add_lib_library(pp_lib_messaging_testing
-    SOURCES
-      testing/MockRelayClients.cpp
-    PUBLIC_LIBS
-      pp_lib_messaging)
   add_subdirectory(tests)
 endif()

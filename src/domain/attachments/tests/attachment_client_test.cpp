@@ -1,4 +1,4 @@
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "domain/attachments/AttachmentClient.h"
 
 #include "domain/attachments/ChatBlobRequest.h"

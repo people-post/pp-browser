@@ -1,6 +1,6 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "common/thread/E2eIntegrityUtil.h"
-#include "lib/messaging/E2eIngestClassifier.h"
+#include "lib/delivery/E2eIngestClassifier.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/SyncStateCodec.h"
 

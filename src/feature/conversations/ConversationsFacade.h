@@ -3,14 +3,14 @@
 #include "common/Secret.h"
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
-#include "lib/messaging/SendRelayOptions.h"
+#include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
@@ -31,7 +31,7 @@
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "feature/conversations/PeerDisplaySources.h"
-#include "lib/messaging/PskSessionCoordinator.h"
+#include "lib/delivery/PskSessionCoordinator.h"
 #include "mesh/reachability/Reachability.h"
 
 #include <cstdint>

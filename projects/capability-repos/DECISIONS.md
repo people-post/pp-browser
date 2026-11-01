@@ -36,7 +36,7 @@ stay in apps. Owner threads become registered by apps and capabilities instead o
 
 **Date:** 2026-10-29  
 **Status:** accepted; amended by CR006 — "realtime" is the calls and broadcast targets of the one capabilities
-repo, still with no cycle between them
+repo, still with no cycle between them; amended by CR020 (realtime rides delivery, not messaging)
 
 **Context:** They share `lib/media`, have a cycle between them (broadcast → calls 7 include sites, calls → broadcast 2),
 and broadcast alone is 5.6k lines.
@@ -100,7 +100,7 @@ text) declare ports the app implements. Only generic tool / MCP plumbing may lea
 ## CR008 — Identity is people; the backend client is net; pricing is part of messaging
 
 **Date:** 2026-10-30  
-**Status:** accepted; amends DESIGN's identity (people + net + pricing)
+**Status:** accepted; amends DESIGN's identity (people + net + pricing); its "pricing is part of messaging" amended by CR020 (pricing and delivery sit below messaging and calls)
 
 **Context:** The planned identity repo held three different things. People (keys, cards, contacts, devices,
 the locker format) is identity. Net is the Brief backend client (registration, directory, blobs, push):
@@ -272,20 +272,32 @@ had to take the preview line's prose from its binder. Another app would bring it
 **Decision (proposed):** Presenters move to the app side (`gui/` or a presenter folder the app owns);
 messaging exposes the facade they read. Calls' presenter follows the same rule.
 
-## CR020 — Secure delivery below messaging and realtime (to discuss)
+## CR020 — Secure delivery below messaging and realtime
 
 **Date:** 2026-11-01  
-**Status:** draft (proposed); not started — changes CR003 / CR008's split
+**Status:** accepted (Hongwei, 2026-11-01); amends CR003 / CR008's split; implementation started
 
 **Context:** Calls include messaging at 26 sites and broadcast at 8, all narrow: thread record types and the
 store port (call history), `SendRelayOptions`, the pairwise PSK session store, pairwise fanout, system
 controls, the E2E public session logic, `IDirectMessageClient`. What realtime rides is sessions, envelopes, the
 control lane and the outbox — not chat threads, groups or the inbox.
 
-**Decision (proposed):** A **delivery** capability under both messaging and realtime: pairwise sessions,
+**Decision:** A **delivery** capability under both messaging and realtime: pairwise sessions,
 envelopes and their signing, the control lane, the outbox, the relay and Amp transports. Chat (threads,
 groups, inbox, attachments, pricing) stays messaging. Call history reaches the thread store through a port.
 
 **Consequences:** An app could take secure delivery without chat (a VPN client's control channel, pp-node
 services). Costs a re-map and a few seams; worth settling before anything moves, since it changes what the
 first capabilities repo holds.
+
+**First cut (2026-11-01):** the gate maps **delivery** (`lib/delivery`, `common/chat`, `common/thread`,
+`domain/delivery`) and **pricing** (`lib/pricing`, its own capability, since calls bill too) below messaging
+and calls; calls and broadcast may no longer include messaging, and include it nowhere. Moved into
+`lib/delivery`: the PSK and E2E-public session logic and stores, envelope signing and the wire / payload
+codecs, the control lane's envelopes, `OutboundMessage`, `DeliveryNotice`, `PeerRequestAuth`,
+`PeerBriefRoute`, `DirectChatTargetFromContact`, `TextSpans`, `ReactionTypes`, the relay's message client and
+ports with their mocks, `LocalKeys`. Up into messaging: `PeerTransports` and the chat history transport
+(`feature/conversations`), `AttachmentDownloadPolicy`; `PeopleDiscoveryBlocks` to `common/directory`.
+`ControlLane` takes the direct-chat client as a getter, `PeerRouteBook` the sender's verification as a bool.
+Tests that round-trip through messaging's SQLite store stay messaging's.
+

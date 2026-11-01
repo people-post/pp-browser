@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/chat/AttachmentDownloadPolicy.h"
+#include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "lib/messaging/GroupTypes.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "common/PbrCompat.h"

@@ -2,7 +2,7 @@
 
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/messaging/E2eRelayPayloadCodec.h"
+#include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/PbrCompat.h"

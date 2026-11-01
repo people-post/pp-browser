@@ -1,15 +1,15 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/messaging/E2eIngestClassifier.h"
-#include "lib/messaging/E2eRelayPayloadCodec.h"
-#include "lib/messaging/EnvelopeSigner.h"
+#include "lib/delivery/E2eIngestClassifier.h"
+#include "lib/delivery/E2eRelayPayloadCodec.h"
+#include "lib/delivery/EnvelopeSigner.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

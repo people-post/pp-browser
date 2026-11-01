@@ -11,7 +11,7 @@
 
 #include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"

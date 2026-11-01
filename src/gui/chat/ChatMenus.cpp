@@ -7,7 +7,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
-#include "lib/messaging/SendRelayOptions.h"
+#include "lib/delivery/SendRelayOptions.h"
 
 #include <ui/base/SystemInterface.h>
 #include <ui/dom/Context.h>

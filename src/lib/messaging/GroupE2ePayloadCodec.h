@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/E2ePublicSessionLogic.h"
+#include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/CryptoTypes.h"

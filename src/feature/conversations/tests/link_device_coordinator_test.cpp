@@ -4,7 +4,7 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/LinkDeviceCoordinator.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
 

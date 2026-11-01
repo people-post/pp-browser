@@ -1,7 +1,7 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
 
 #include "common/chat/MessagingJson.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "lib/delivery/RelayWirePayload.h"
 #include "mesh/testing/mesh_test_harness.h"
 #include "common/MeshAlias.h"
 

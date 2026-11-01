@@ -17,7 +17,9 @@ lib_peers = {
     "pp_lib_people",
     "pp_lib_media",
     "pp_lib_net",
+    "pp_lib_delivery",
     "pp_lib_messaging",
+    "pp_lib_pricing",
     "pp_lib_ai",
     "pp_lib_ui",
 }

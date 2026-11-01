@@ -2,7 +2,7 @@
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 
 #include "common/Utilities.h"
 

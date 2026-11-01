@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/HttpRelayClient.h"
+#include "lib/delivery/HttpRelayClient.h"
 #include "common/Secret.h"
 
 #include "common/chat/SystemControl.h"
@@ -38,7 +38,7 @@
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "mesh/media_plane/MeshMediaRelay.h"
 #include "foundation/platform/NetworkMonitor.h"
-#include "common/chat/AttachmentDownloadPolicy.h"
+#include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "domain/attachments/LargeTransferLane.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"

@@ -1,9 +1,8 @@
 #include "domain/delivery/PeerRouteBook.h"
 
 #include "domain/peers/DirectoryShadowCache.h"
-#include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/people/ContactIdentity.h"
-#include "lib/messaging/PeerBriefRoute.h"
+#include "lib/delivery/PeerBriefRoute.h"
 
 namespace pbr {
 
@@ -25,10 +24,10 @@ void PeerRouteBook::NoteAccountRoute(const std::string& account_id, const std::s
   account_to_relay_[account_id] = relay_user_id;
 }
 
-void PeerRouteBook::RememberFromEnvelope(const RelayEnvelope& envelope, const RelayReceiveOutcome& outcome) {
+void PeerRouteBook::RememberFromEnvelope(const RelayEnvelope& envelope, const bool sender_verified) {
   // Learned only from an envelope whose signature verified: its sender_relay_id is then the
   // sender's own signed claim, not whatever an unauthenticated envelope said.
-  if (!outcome.sender_verified) {
+  if (!sender_verified) {
     return;
   }
   NoteAccountRoute(envelope.sender_contact_id, envelope.sender_relay_id);

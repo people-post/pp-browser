@@ -3,7 +3,7 @@
 #include "lib/messaging/SqliteThreadSchema.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"

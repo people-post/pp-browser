@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/people/ContactTypes.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
 #include "common/MeshAlias.h"
 
 #include <vector>

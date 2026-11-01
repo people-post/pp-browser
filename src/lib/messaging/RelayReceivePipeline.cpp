@@ -4,20 +4,20 @@
 
 #include "lib/people/AccountCard.h"
 
-#include "lib/messaging/DeliveryNotice.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterSync.h"
 
 #include <cstdlib>
 
-#include "lib/messaging/ChatPayloadCodec.h"
-#include "lib/messaging/ReactionTypes.h"
+#include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/ReactionTypes.h"
 
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/ChatPayloadTypes.h"
-#include "lib/messaging/ChatPayloadValidator.h"
-#include "lib/messaging/E2eRelayPayloadCodec.h"
-#include "lib/messaging/EnvelopeSigner.h"
+#include "lib/delivery/ChatPayloadValidator.h"
+#include "lib/delivery/E2eRelayPayloadCodec.h"
+#include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterVersion.h"
@@ -27,15 +27,15 @@
 #include "common/chat/MessagingLimits.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PskRotateCodec.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "lib/delivery/PskRotateCodec.h"
+#include "lib/delivery/RelayWirePayload.h"
 #include "lib/messaging/SyncStateCodec.h"
 #include "lib/messaging/GroupInviteGate.h"
-#include "lib/messaging/PublicPskLockCoordinator.h"
+#include "lib/delivery/PublicPskLockCoordinator.h"
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
-#include "lib/messaging/ControlLaneSeenStore.h"
+#include "lib/delivery/ControlLaneSeenStore.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"

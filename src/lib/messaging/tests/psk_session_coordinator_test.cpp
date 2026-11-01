@@ -1,10 +1,10 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/PskBundleCodec.h"
-#include "lib/messaging/E2eRelayPayloadCodec.h"
+#include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/messaging/SqliteThreadStore.h"
-#include "lib/messaging/PskSessionCoordinator.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
+#include "lib/delivery/PskSessionCoordinator.h"
+#include "lib/delivery/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

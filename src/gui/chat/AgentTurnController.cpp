@@ -1,7 +1,7 @@
 #include "gui/chat/AgentTurnController.h"
 #include "lib/ai/WorkingSetPolicy.h"
 #include "lib/ai/LocalizedLabels.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
 #include "common/ValueJson.h"
 
 #include <chrono>

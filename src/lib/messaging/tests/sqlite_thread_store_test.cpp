@@ -1,4 +1,4 @@
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/SqliteThreadStore.h"
 

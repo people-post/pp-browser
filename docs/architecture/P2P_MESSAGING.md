@@ -8,7 +8,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-The conversations hub (`ConversationsHub`) builds the HTTP clients from the configured `base_url`s: the relay's message client is messaging's ([`lib/messaging/HttpRelayClient`](../../src/lib/messaging/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/messaging/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
+The conversations hub (`ConversationsHub`) builds the HTTP clients from the configured `base_url`s: the relay's message client is messaging's ([`lib/delivery/HttpRelayClient`](../../src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
 Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
@@ -23,7 +23,7 @@ Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always call
 | `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
 | `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
 
-CI constructs `MockRelayClient` (`lib/messaging/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
+CI constructs `MockRelayClient` (`lib/delivery/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
 
 ## Data model
 
@@ -241,8 +241,8 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/gui/chat/TranscriptRml.*` | The transcript drawn as bound rows (bubbles, cards, system lines, chips); every click argument escaped for its attribute |
 | `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/lib/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
-| `src/lib/messaging/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
-| `src/lib/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
+| `src/lib/delivery/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
+| `src/lib/delivery/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
 | `src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
 | `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |

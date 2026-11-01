@@ -46,6 +46,10 @@
   the profile manifest stays the product's (`ProfileManifest`); the secure-blob port into `common/` with the OS
   store in `foundation/platform`, which the app hands to the retired-Keychain cleanup it now runs; pp-node
   passes the org seed's role in; net's client factory takes endpoints — 60 include / 10 link sites left.
+- **CR020, delivery:** accepted and mapped — `lib/delivery` (sessions, envelopes, codecs, the relay client),
+  `common/chat` + `common/thread` (the records and store ports) and `domain/delivery` sit below messaging and
+  calls, with pricing as its own capability; calls and broadcast use no messaging — 60 include / 9 link sites
+  against the product's base left, no other edge.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
@@ -53,5 +57,5 @@
 
 1. P2: the product edges down (`Config`, `MeshRole`, `Tr()`, platform hooks); the hub's shell (CR018);
    crypto additions into pp-cpp-crypto.
-2. Settle CR019 (presenters) and CR020 (secure delivery) before anything moves.
+2. Settle CR019 (presenters) before anything moves.
 3. Contracts repo (CR010) when convenient.

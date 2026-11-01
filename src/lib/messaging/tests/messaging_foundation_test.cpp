@@ -4,8 +4,8 @@
 #include "lib/messaging/QuoteReply.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "common/chat/PeopleDiscoveryBlocks.h"
-#include "lib/messaging/RelayWirePayload.h"
+#include "common/directory/PeopleDiscoveryBlocks.h"
+#include "lib/delivery/RelayWirePayload.h"
 
 #include <functional>
 #include "lib/messaging/tests/TestAccount.h"

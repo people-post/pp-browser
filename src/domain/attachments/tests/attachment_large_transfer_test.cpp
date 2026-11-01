@@ -8,7 +8,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "domain/attachments/AttachmentContent.h"
 
 #include <atomic>

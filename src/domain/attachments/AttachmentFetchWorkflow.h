@@ -1,9 +1,9 @@
 #pragma once
 
-#include "lib/messaging/RelayClients.h"
+#include "lib/delivery/RelayClients.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
-#include "common/chat/AttachmentDownloadPolicy.h"
+#include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "domain/attachments/LargeTransferLane.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"

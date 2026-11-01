@@ -9,7 +9,7 @@
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
