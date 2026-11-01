@@ -64,10 +64,12 @@ struct CloseChatPlan {
     DeleteAi,
     /** Leave the group (the owner stays). */
     Leave,
-    /** Drop the group here only: an orphaned or solo group — no owner on the roster, or nobody reachable. */
+    /** Drop the group here only: a member's orphaned group — no owner on the roster, or nobody reachable. */
     Dismiss,
-    /** The owner leaves: hand the group to one of `successors` (reachable members), or dismiss it here. */
+    /** The owner leaves: hand the group to one of `successors` (reachable members), or dissolve it. */
     LeaveAsOwner,
+    /** The owner, with nobody to hand the group to (solo, or only unreachable members): dissolve it for everyone. */
+    Dissolve,
   };
   Kind kind = Kind::Delete;
   std::string group_id;
@@ -195,6 +197,8 @@ public:
   /** Leave the group, then close the chat; a leave that cannot be sent dismisses the group here. */
   Roe<void> LeaveGroupAndClose(const std::string& thread_id, const std::string& group_id);
   Roe<void> DismissGroupAndClose(const std::string& thread_id, const std::string& group_id);
+  /** G016: the owner dissolves the group for everyone. The chat stays (read-only), so nothing is closed. */
+  Roe<void> DissolveGroup(const std::string& group_id);
   Roe<void> HandOverAndClose(const std::string& thread_id, const std::string& group_id, const std::string& successor);
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
@@ -245,6 +249,8 @@ public:
    * group, or an "@ai" question (the agent's, sent the usual way) — then nothing was sent.
    */
   bool SendsWithMentions(const std::string& thread_id, const std::string& text, const std::vector<TextSpan>& spans);
+  /** The text part of that rule: spans, and not an "@ai" question (a text that starts `@ai` is the agent's; its spans drop). */
+  static bool KeepsMentionSpans(const std::string& text, const std::vector<TextSpan>& spans);
   /** Sends it (SendsWithMentions was true). */
   Roe<void> SendWithMentions(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
 
@@ -252,8 +258,16 @@ public:
 
   /** What highlighting a group's mentions is checked against now; none for a chat that is not a group. */
   std::optional<MentionRoster> MentionRosterOf(const std::string& thread_id) const;
-  /** The composer's `@` picker for a group: its other members by public name (and `@everyone` for the owner). */
-  std::vector<MentionCandidate> MentionCandidatesFor(const std::string& thread_id, const std::string& query);
+  /**
+   * The composer's `@` picker for a group, unfiltered: its other members by public name (and `@everyone` for the
+   * owner). Static and given the facade by value so a worker can run it holding nothing of the presenter; the
+   * AppRuntime teardown gate drains workers before the messaging graph (and so the facade) goes.
+   */
+  static std::vector<MentionCandidate> ReadMentionCandidates(ConversationsFacade* facade, const std::string& thread_id);
+  /** The messaging facade, for a worker that reads for the presenter (null before messaging is ready). */
+  ConversationsFacade* Facade() const { return facade_; }
+  /** `spans` without the mentions of anyone no longer on the group's roster (read now, at send). */
+  std::vector<TextSpan> SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const;
   /**
    * A tap on highlighted mention `run_index` of a message in the open group (EligibleMentionRuns' order): the
    * saved contact it names; none for `@everyone`, ourselves, or someone who is not a contact.
@@ -261,6 +275,8 @@ public:
   std::optional<std::string> MentionedContact(const std::string& message_id, size_t run_index);
 
 private:
+  /** A group's list preview: its latest membership line in the transcript's words, else the stored preview. */
+  std::string GroupEventPreviewOr(const Thread& thread, const std::string& local_account);
   /**
    * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store
    * can be listed, then kept in step with every write. Empty, and read again next time, while it

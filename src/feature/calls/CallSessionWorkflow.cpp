@@ -219,6 +219,12 @@ Roe<Thread> CallSessionWorkflow::CheckCanStartCall(const std::string& origin_thr
   if ((*thread)->kind != ThreadKind::Direct && (*thread)->kind != ThreadKind::Group) {
     return Error("Calls require a direct or group thread");
   }
+  // A group call needs us in the group: one that was dissolved (G016) or that we left has no members to call. A
+  // roster this device does not hold yet says nothing and does not refuse.
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id &&
+      KnownOutOfGroup(*(*thread)->group_id, local_identity)) {
+    return Error("You are no longer in this group");
+  }
   // P001: block outbound dial when initiation offer > 0 and payment rails unavailable.
   if (auto payable = billing_.CheckCanPlace(invitee_identities, local_identity); !payable) {
     return payable.error();
@@ -1268,6 +1274,13 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
     log().info << "CallInvite ignored; already joined call_id=" << invite.call_id;
     return true;
   }
+  // A group call from someone the roster this device holds does not list (removed, or the group was dissolved and
+  // nobody is in it, G016) does not ring. A roster not held yet says nothing and is no reason to stay silent.
+  if (invite.origin_group_id && !invite.origin_group_id->empty() &&
+      KnownOutOfGroup(*invite.origin_group_id, sender_identity)) {
+    log().info << "CallInvite ignored; sender not in the group call_id=" << invite.call_id;
+    return true;
+  }
   // B24: a replayed invite for a call this device already ended must not re-arm the ring
   // (it hijacked the accept button mid-call and joined a dead call id).
   if (auto ended = sessions_.LoadSession(invite.call_id);
@@ -1900,6 +1913,14 @@ bool CallSessionWorkflow::InGroup(const std::string& group_id, const std::string
   }
   auto members = host_.wire.group_members(group_id);
   return members && members->count(identity) > 0;
+}
+
+bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std::string& identity) const {
+  if (!host_.wire.group_members) {
+    return false;
+  }
+  auto members = host_.wire.group_members(group_id);
+  return members.has_value() && members->count(identity) == 0;  // an unknown roster (nullopt) refuses nobody
 }
 
 void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity, const int64_t now) {

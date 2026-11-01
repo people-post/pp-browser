@@ -623,6 +623,11 @@ std::optional<GroupMembershipControlType> GroupMembershipCodec::ControlTypeFromM
   return GroupMembershipControlTypeFromWire(*control_type);
 }
 
+bool GroupMembershipCodec::IsHiddenInDirectThread(const ThreadMessage& message) {
+  const auto type = ControlTypeFromMessage(message);
+  return type && *type != GroupMembershipControlType::GroupInvite;
+}
+
 Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const ThreadMessage& message) {
   const auto control_type = ControlTypeFromMessage(message);
   if (!control_type || *control_type != GroupMembershipControlType::GroupInvite) {
@@ -637,6 +642,14 @@ Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const Thre
     return Error("Missing invite detail");
   }
   return DecodeInvite(*detail);
+}
+
+Roe<std::string> GroupMembershipCodec::EncodeGroupDissolved(const std::string& group_id,
+                                                            const std::string& owner_identity) {
+  if (group_id.empty()) {
+    return Error("group_dissolved: group_id required");
+  }
+  return DumpJson(MakeStringObject({{"group_id", group_id}, {"owner", owner_identity}}));
 }
 
 Roe<ThreadMessage> GroupMembershipCodec::BuildSystemMessage(const std::string& thread_id,

@@ -82,7 +82,16 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
         return std::nullopt;
       }
       auto roster = rosters->ListMembers(group_id);
-      if (!roster || roster->empty()) {
+      if (!roster) {
+        return std::nullopt;
+      }
+      if (roster->empty()) {
+        // A group the owner dissolved (G016) has no members: nobody is in it, and a call of it ends. Any other empty
+        // roster is a group we do not hold, which says nothing.
+        auto metadata = rosters->LoadMetadata(group_id);
+        if (metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved) {
+          return std::set<std::string>{};
+        }
         return std::nullopt;
       }
       std::set<std::string> members;

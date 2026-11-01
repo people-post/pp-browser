@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsFacade.h"
+#include "feature/conversations/GroupMentions.h"
 
 #include <algorithm>
 
@@ -163,6 +164,8 @@ void ConversationsFacade::IncrementUnread(const std::string& thread_id) {
 
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
 
+void ConversationsFacade::KeepThreadListed(const std::string& thread_id) { hub_.Inbox().KeepListed(thread_id); }
+
 bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
   if (thread_id.empty() || !active_call_query_) {
     return false;
@@ -259,7 +262,20 @@ std::vector<TranscriptRow> ConversationsFacade::BuildTranscript(const std::strin
 }
 
 TranscriptFacts ConversationsFacade::TranscriptFactsFor() {
-  return hub_.Inbox().Facts();
+  TranscriptFacts facts = hub_.Inbox().Facts();
+  facts.member_name = [this](const std::string& account_id) { return MemberPublicNameOf(account_id); };
+  if (auto identity = GetIdentity()) {
+    facts.local_account = identity->account_id;
+  }
+  return facts;
+}
+
+std::string ConversationsFacade::MemberPublicNameOf(const std::string& account_id) {
+  std::optional<Contact> contact;
+  if (auto found = FindContactByIdentity(account_id, mesh::ContactIdKind::Account); found && *found) {
+    contact = **found;
+  }
+  return MemberPublicName(account_id, KeptCardNickname(account_id), contact);
 }
 
 const std::string& ConversationsFacade::ProfileDataDir() const {
@@ -518,6 +534,12 @@ Roe<RelayDeleteResult> ConversationsFacade::ClearUndeliveredOlderThan(const int 
 Roe<void> ConversationsFacade::DismissLocalGroup(const std::string& group_id) {
   return hub_.Groups().DismissLocalGroup(group_id);
 }
+
+Roe<void> ConversationsFacade::DissolveGroup(const std::string& group_id) {
+  return hub_.Groups().DissolveGroup(group_id);
+}
+
+bool ConversationsFacade::IsGroupDissolved(const std::string& group_id) { return hub_.Groups().IsDissolved(group_id); }
 
 Roe<bool> ConversationsFacade::IsLocalOwner(const std::string& group_id) { return hub_.Groups().IsLocalOwner(group_id); }
 

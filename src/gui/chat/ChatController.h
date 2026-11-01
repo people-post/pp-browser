@@ -155,6 +155,8 @@ private:
   void AfterHistoryCleared(const std::string& thread_id);
   /** After a chat's settings changed (the presenter refreshed its list): badges and the surface follow. */
   void AfterThreadPrefsChanged() override;
+  /** G016: asks once, then the owner dissolves the group for everyone (the chat stays, read-only). */
+  void DissolveGroupAfterConfirm(const std::string& group_id);
   /** Run a close (`action`) and, when it went through, clear what the open chat held; tells the user
    *  when it failed (`show_error_text`: the action's own message, else "could not delete"). */
   void CloseChatWith(const std::string& thread_id, const std::function<Roe<void>()>& action,

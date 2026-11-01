@@ -81,6 +81,33 @@ TEST(TranscriptMentionsTest, OnlyEligibleSpansAreHighlighted) {
   EXPECT_EQ(Rml(ours, Roster()).find("chat-mention"), std::string::npos);
 }
 
+bool MentionsMe(const TranscriptRow& row, const std::optional<MentionRoster>& roster) {
+  const auto rows = RenderTranscript({row}, TranscriptFacts{}, roster);
+  return !rows.empty() && rows[0].mentions_me;
+}
+
+TEST(TranscriptMentionsTest, OnlyAPeersMessageThatMentionsMeTintsTheRow) {
+  // A peer mentions this account: the row is flagged.
+  EXPECT_TRUE(MentionsMe(Row("m1", kBob, "hi @Me", {Span(TextSpanKind::Mention, 3, 6, kMe)}), Roster()));
+  // Someone else only, or no span at all.
+  EXPECT_FALSE(MentionsMe(Row("m2", kBob, "hi @Alice", {Span(TextSpanKind::Mention, 3, 9, kAlice)}), Roster()));
+  EXPECT_FALSE(MentionsMe(Row("m3", kBob, "hi @Me", {}), Roster()));
+  // A direct chat has no roster: plain text, no row.
+  EXPECT_FALSE(MentionsMe(Row("m4", kBob, "hi @Me", {Span(TextSpanKind::Mention, 3, 6, kMe)}), std::nullopt));
+  // Our own message never gets the row, even when it names us.
+  EXPECT_FALSE(MentionsMe(Row("m5", kLocalSelfContactId, "hi @Me", {Span(TextSpanKind::Mention, 3, 6, kMe)}), Roster()));
+}
+
+TEST(TranscriptMentionsTest, AnEligibleEveryoneTintsTheRowAnIneligibleOneDoesNot) {
+  EXPECT_TRUE(MentionsMe(Row("m1", kOwner, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), Roster()));
+  // From a member who is not the owner: plain text, no row.
+  EXPECT_FALSE(MentionsMe(Row("m2", kBob, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), Roster()));
+  // Our own @everyone (we are the owner) does not tint our row.
+  MentionRoster me_owner = Roster();
+  me_owner.owner = kMe;
+  EXPECT_FALSE(MentionsMe(Row("m3", kLocalSelfContactId, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), me_owner));
+}
+
 TEST(TranscriptMentionsTest, Utf8TextIsSplitByBytesAndEscaped) {
   const std::string name = "\xE5\xBC\xA0<\xE4\xB8\x89>";  // 张<三> (a name with markup characters)
   const std::string text = "\xE4\xBD\xA0\xE5\xA5\xBD @" + name + " & bye";  // 你好 @张<三> & bye

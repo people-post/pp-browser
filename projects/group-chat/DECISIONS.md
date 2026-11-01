@@ -166,3 +166,23 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Stated limits:** (1) Each member gets its own ciphertext (G008), so a sender can give different members different spans — e.g. tell one member alone they are mentioned. Low harm; not detected. (2) The marker is per device: opening the chat on one device leaves the others' (no read state between devices yet). (3) A mention held past 10 min, or one whose roster never settles, is never notified (it still shows highlighted).  
 **Alternatives:** Match `@nickname` in the text at the receiver (misattribution, bypasses mute on a guess); a mention-only content type (every later text feature costs another type and an "update to view"); put spans in a JSON tail (JSON is forbidden in signed/hashed bytes, WIRE_SCHEMAS); check membership at decode (drops highlights when the roster is late); decide notifications once on arrival (a restored or new member misses them); a per-thread flag (stays set after the mentioning message is deleted); let any member use `@everyone` (spam of a whole group); no way to mute mentions (a muted group can still ring every 60 s).  
 **Cross-link:** [WIRE_SCHEMAS § text_spans](../../docs/contracts/WIRE_SCHEMAS.md), [DATA_LAYOUT § profile.db](../../docs/contracts/DATA_LAYOUT.md), G008 (per-member ciphertexts), G012 (owner-signed roster), G013 (roster check), G014 (size limit 50).
+
+---
+
+## G016 — The owner dissolves a group for everyone
+
+**Date:** 2026-10-31
+**Status:** Accepted (Kenneth, 2026-10-31); Hongwei may amend; **implemented** 2026-10-31 (the marker is `group_metadata.sync_state` `dissolved`, no new column; wire in [WIRE_SCHEMAS § Group dissolved](../../docs/contracts/WIRE_SCHEMAS.md))
+**Decision:** The owner's choice is "dissolve the group", which ends it for every member. It replaces "dismiss on this device only" (G009) for a group with other members; leaving with a transfer stays as it is.
+
+1. **Wire:** new membership `control_type` `group_dissolved`, sent by the owner as a DM to every roster member and carrying the owner-signed roster statement form (G012) with the group id and a `dissolved` marker, so a receiver checks it the same way as other owner events.
+2. **Receiver:** only from the owner the signed roster names, in a group it is in. It empties the roster and marks the group dissolved. **The thread and its messages stay**, read-only, with one line: "{owner} dissolved this group". The composer is off; the user removes the thread when they want to. Late or repeated copies do nothing. Traffic for a dissolved group is dropped. An unanswered invite to it is void.
+3. **Offline members** get it from the inbox like other membership events. A member who missed it and sends again gets no delivery from peers who dissolved; the inbox delivers the dissolve when they come back, and that is enough.
+4. **Owner:** confirm once with plain wording, then fan out and remove locally. If some sends fail, the rest still go; retries use the outbox.
+5. **Solo owner:** same choice, nothing to send.
+
+**Rationale:** On device test, an owner used "dismiss on this device only". The owner was removed from its own roster and its thread was deleted, nothing was sent, and the other members kept fanning out to it, so the group was left with no owner and silent drops. Kenneth: dissolving ends the group for everyone; each member keeps the chat with a line saying so, and deletes it themselves.
+**Alternatives:** Keep the local dismiss (the case above); transfer only (a group can never end while one other member remains, and that member becomes owner unasked).
+**Old apps:** an app before this does not know `group_dissolved`: it stores a plain system line in its direct chat with the owner (the DM's `display` text) and its group stays live for it; its sends are dropped by every app that dissolved, and it is told nothing more. The product is unreleased, so no shim.
+**Tombstone:** none. The kept thread and the dissolved marker on the group are enough; a member who deleted the chat has no thread, so later traffic is rejected as for any unknown group.
+

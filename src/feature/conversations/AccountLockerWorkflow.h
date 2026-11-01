@@ -30,6 +30,11 @@ public:
   struct Sources {
     std::function<Roe<std::vector<AccountStateGroup>>()> groups;
     std::function<Roe<std::vector<PeerCardFloor>>()> card_floors;
+    /**
+     * Groups the locker holds as dissolved by the owner (G016), taken here at a sync: the account's own state, so
+     * a device that missed the dissolve (it was off) ends the group too. Null: not taken.
+     */
+    std::function<void(const std::vector<AccountStateGroup>&)> take_dissolved;
   };
 
   AccountLockerWorkflow(IdentityStore& identity, ContactsStore& contacts, Sources sources);

@@ -1,3 +1,5 @@
+#include "foundation/i18n/LocalizationService.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/ReactionTypes.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
@@ -183,6 +185,31 @@ TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip
   EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("Peer called"), std::string::npos);
   EXPECT_TRUE(rows[1].sender_label.empty());
   EXPECT_TRUE(rows[1].time_label.empty());
+}
+
+// G016: the group's own chat says who ended it; the owner's device says "You".
+TEST(TranscriptRmlTest, ADissolvedGroupSaysWhoDissolvedIt) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto line_from = [](const std::string& sender) {
+    TranscriptRow row;
+    row.message = GroupMembershipCodec::BuildSystemMessage(
+                      "t", GroupMembershipControlType::GroupDissolved, "Group dissolved",
+                      GroupMembershipCodec::EncodeGroupDissolved("group:hike", "account:alice").value(), sender)
+                      .value();
+    TranscriptFacts facts;
+    facts.sender_label = [](const std::string& id) { return id == "account:alice" ? std::string("Alice") : std::string(); };
+    const auto rows = RenderTranscript({row}, facts);
+    EXPECT_EQ(rows.size(), 1u);
+    return rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str());
+  };
+  EXPECT_NE(line_from("account:alice").find("Alice dissolved this group"), std::string::npos);
+  EXPECT_NE(line_from(kLocalSelfContactId).find("You dissolved this group"), std::string::npos);
+  EXPECT_NE(line_from("account:stranger").find("This group was dissolved"), std::string::npos) << "no name to give";
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_NE(line_from("account:alice").find("Alice 解散了这个群"), std::string::npos);
+  EXPECT_NE(line_from(kLocalSelfContactId).find("你解散了这个群"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
 } // namespace

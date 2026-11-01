@@ -756,10 +756,12 @@ select selectbox option {
   cursor: pointer;
 }
 
-/* A mention / @everyone in a group message (group-chat G015): accent, bold; a member's opens them. */
+/* A mention / @everyone in a group message (group-chat G015): a tinted chip, bold; a member's opens them. */
 .chat-mention {
   font-weight: bold;
   cursor: pointer;
+  padding: 0 3dp;
+  border-radius: 4dp;
 }
 
 .chat-mention--everyone {
@@ -3190,6 +3192,12 @@ input.checkbox {
 .message-row-user {
   margin: 8dp 0;
   padding-left: 48dp;
+}
+
+/* A peer's message that mentions this account (group-chat G015): the row is tinted (colors-*.rcss). */
+.message-row-mentions-me {
+  padding: 4dp 8dp;
+  border-radius: 4dp;
 }
 
 .sender-label {

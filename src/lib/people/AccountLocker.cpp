@@ -288,6 +288,11 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
                              [&](const AccountStateGroup& g) { return g.group_id == theirs.group_id; });
     if (mine == merged.extras.groups.end()) {
       merged.extras.groups.push_back(theirs);
+    } else if (mine->dissolved || theirs.dissolved) {
+      // G016: a group the owner ended stays ended, whatever epoch the other copy has.
+      if (!mine->dissolved || (theirs.dissolved && theirs.roster_epoch > mine->roster_epoch)) {
+        *mine = theirs;
+      }
     } else if (theirs.roster_epoch > mine->roster_epoch ||
                (theirs.roster_epoch == mine->roster_epoch && (theirs.left || !mine->left))) {
       // The newer roster; at the same epoch, being out of the group wins, else the stored one stands (members'

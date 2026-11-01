@@ -116,6 +116,7 @@
            data-class-message-row-ai="row.row_class == 'message-row-ai'"
            data-class-message-row-peer="row.row_class == 'message-row-peer'"
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
+           data-class-message-row-mentions-me="row.mentions_me"
            data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>

@@ -94,6 +94,7 @@ public:
   /** One more unread in `thread_id` (an AI answer that arrived while its page was not shown). */
   void IncrementUnread(const std::string& thread_id);
   Roe<std::vector<Thread>> ListThreads();
+  void KeepThreadListed(const std::string& thread_id);
   /** True when an active local call is for this thread (origin / peer / group). */
   bool ThreadHasActiveCall(const std::string& thread_id);
   /** Calls answer ThreadHasActiveCall (feature-level wiring sets it; none: never). */
@@ -203,6 +204,9 @@ public:
 
   // --- Groups ---------------------------------------------------------------
   Roe<void> DismissLocalGroup(const std::string& group_id);
+  /** G016: the owner ends the group for everyone; its chat stays here, read-only. */
+  Roe<void> DissolveGroup(const std::string& group_id);
+  bool IsGroupDissolved(const std::string& group_id);
   Roe<bool> IsLocalOwner(const std::string& group_id);
   Roe<std::vector<GroupRosterMember>> ListGroupRoster(const std::string& group_id);
   bool IsMemberUnreachable(const std::string& group_id, const std::string& member_identity);
@@ -226,6 +230,8 @@ public:
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();
+  /** A group member's public name — what a mention inserts and a group line shows (GroupMentions.h). */
+  std::string MemberPublicNameOf(const std::string& account_id);
   Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, mesh::ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
   std::optional<mesh::DirectoryHit> GetDirectoryShadow(const std::string& peer_id);

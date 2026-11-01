@@ -20,6 +20,7 @@
 #include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterVersion.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/ShortRelayId.h"
@@ -213,14 +214,61 @@ Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& messag
   return {};
 }
 
+Roe<void> RelayReceivePipeline::ApplyGroupDissolved(const ThreadMessage& message, const std::string& actor_identity,
+                                                    const std::string& local_account,
+                                                    RelayReceiveOutcome* outcome) const {
+  if (outcome) {
+    outcome->suppress_inbox_chrome = true;  // the DM that carried it is bookkeeping; the group's chat gets the notice
+  }
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  if (!detail) {
+    return Error("group_dissolved: no detail");
+  }
+  auto statement = group_roster_sync_codec::DecodeStatement(*detail);
+  if (!statement) {
+    return statement.error();
+  }
+  auto applied = ApplyGroupDissolvedToRoster(group_roster_, *statement, actor_identity, local_account);
+  if (!applied) {
+    return applied.error();
+  }
+  if (applied->applied) {
+    log().info << "group dissolved group_id=" << statement->group_id;
+  }
+  // The line is written after the roster is: a copy redelivered after a crash in between finishes it. Only the
+  // owner's own copy of a dissolve may do so, whatever else arrives for a group that is over.
+  auto metadata = group_roster_.LoadMetadata(statement->group_id);
+  if (metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved &&
+      (*metadata)->owner_identity == actor_identity) {
+    if (auto added = EnsureDissolvedLine(store_, statement->group_id, actor_identity, actor_identity);
+        added && *added && outcome) {
+      outcome->dissolved_group_thread_id = *added;
+    }
+  }
+  if (outcome) {
+    for (const PendingGroupInvite& invite : applied->voided_invites) {
+      if (!invite.outbound) {
+        outcome->voided_invite_cards.emplace_back(invite.inviter_identity, invite.invite_nonce);
+      }
+    }
+  }
+  return {};
+}
+
 void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const {
   if (controls_ && controls_->Quiet(message)) {
+    outcome.suppress_inbox_chrome = true;
+  }
+  // A membership event arrives in the direct chat with its sender (the group thread has its own line): no unread
+  // count, preview or notice for it there. Only the invitation is news in that chat.
+  if (GroupMembershipCodec::IsHiddenInDirectThread(message)) {
     outcome.suppress_inbox_chrome = true;
   }
 }
 
 Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
-                                                  const std::string& local_account) const {
+                                                  const std::string& local_account,
+                                                  RelayReceiveOutcome* outcome) const {
   auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   if (!refused) {
     return refused.error();
@@ -232,6 +280,21 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     return Error("group_invite_refused for no invite of ours from its sender");
   }
   (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
+  if (refused->reason == kInviteRefusedGroupDissolved) {
+    // G016: the owner ended the group before our accept reached it. If we had already made the group on accept, it
+    // ends here too — the chat stays, saying so; the invite's card ends either way.
+    auto ended = EndGroupInRoster(group_roster_, refused->group_id, actor_identity, 0);
+    if (ended && ended->applied) {
+      if (auto added = EnsureDissolvedLine(store_, refused->group_id, actor_identity, actor_identity);
+          added && *added && outcome) {
+        outcome->dissolved_group_thread_id = *added;
+      }
+    }
+    if (outcome) {
+      outcome->voided_invite_cards.emplace_back(actor_identity, refused->invite_nonce);
+    }
+    return {};
+  }
   // G014: we were never added — drop the group we made on accept; its chat stays, read-only, saying why.
   if (!local_account.empty()) {
     (void)group_roster_.RemoveMember(refused->group_id, local_account);
@@ -250,6 +313,10 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
                                                               "The group is full: you were not added", *detail,
                                                               actor_identity)) {
         (void)store_.AppendMessage(*sys);
+        if (outcome) {
+          outcome->about_us = RelayReceiveOutcome::AboutUs::GroupFull;
+          outcome->about_us_group_thread_id = (*thread)->id;
+        }
       }
     }
   }
@@ -267,6 +334,15 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
 
   // Each kind is decoded by its own branch; a decode error there is a real error.
   const std::optional<GroupMembershipControlType> kind = GroupMembershipCodec::ControlTypeFromMessage(message);
+  // Whatever this event changes is applied when the function returns: the composer's `@` lines see a new version.
+  struct BumpOnExit {
+    bool active;
+    ~BumpOnExit() {
+      if (active) {
+        GroupRosterVersion::Bump();
+      }
+    }
+  } bump_on_exit{kind.has_value()};
 
   auto ignore_if_not_member = [this, &local_account](const std::string& group_id) -> Roe<bool> {
     if (local_account.empty() || group_id.empty()) {
@@ -280,7 +356,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   };
 
   if (kind == GroupMembershipControlType::GroupInviteRefused) {
-    return ApplyInviteRefused(message, actor_identity, local_account);
+    return ApplyInviteRefused(message, actor_identity, local_account, outcome);
   }
   if (kind == GroupMembershipControlType::GroupInviteAccept ||
       kind == GroupMembershipControlType::GroupInviteDecline) {
@@ -292,11 +368,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
       auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
                                                response->group_id, local_account, util::NowUnixMs());
-      if (!applied && applied.error().message == kGroupFullError) {
+      if (!applied && (applied.error().message == kGroupFullError ||
+                       applied.error().message == group_roster_sync::kGroupDissolvedError)) {
         if (outcome) {
           outcome->refuse_invite_group_id = response->group_id;
           outcome->refuse_invite_nonce = response->invite_nonce;
           outcome->refuse_invite_member = actor_identity;
+          outcome->refuse_invite_reason = applied.error().message == kGroupFullError ? kInviteRefusedGroupFull
+                                                                                      : kInviteRefusedGroupDissolved;
         }
         return {};
       }
@@ -318,6 +397,17 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
                                                    response->group_id);
         !declined) {
       return declined.error();
+    }
+    // The decline arrived in the direct chat, where it is not shown: the inviter's record of it is a line in the
+    // group's thread.
+    if (auto thread = store_.FindGroupThread(response->group_id); thread && *thread) {
+      if (auto detail = GroupMembershipCodec::EncodeInviteResponse(response->invite_nonce, response->group_id)) {
+        if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
+                                                                GroupMembershipControlType::GroupInviteDecline,
+                                                                "Invitation declined", *detail, actor_identity)) {
+          (void)store_.AppendMessage(*sys);
+        }
+      }
     }
     return {};
   }
@@ -352,7 +442,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       }
     }
     auto thread = store_.FindGroupThread(joined->group_id);
-    if (thread && *thread) {
+    // The newcomer wrote "You joined the group" itself when it accepted: this is the same join, not a second line.
+    if (thread && *thread && joined->member_identity != local_account) {
       auto detail = GroupMembershipCodec::EncodeMemberJoined(joined->group_id, joined->member_identity, joined->role,
                                                              joined->roster_epoch);
       if (detail) {
@@ -462,6 +553,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
             (*thread)->id, GroupMembershipControlType::MemberRemoved, "Member removed", *detail, actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
+          if (outcome && !local_account.empty() && removed->member_identity == local_account) {
+            outcome->about_us = RelayReceiveOutcome::AboutUs::Removed;
+            outcome->about_us_group_thread_id = (*thread)->id;
+          }
         }
       }
     }
@@ -508,6 +603,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return ApplyRosterStatement(message, actor_identity, local_account, outcome);
   }
 
+  if (kind == GroupMembershipControlType::GroupDissolved) {
+    return ApplyGroupDissolved(message, actor_identity, local_account, outcome);
+  }
+
   if (!invite_gate_) {
     return {};
   }
@@ -532,6 +631,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   } else if (*known) {
     if ((*known)->owner_identity != actor_identity) {
       return Error("Invite rejected: sender does not own the group");
+    }
+    if ((*known)->sync_state == GroupSyncState::Dissolved) {
+      return {};  // G016: the group is over; an invite to it is void
     }
     auto member = group_roster_.IsMember(invite->group_id, local_account);
     if (!member) {
@@ -912,6 +1014,10 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
     auto thread = store_.FindGroupThread(copy.target.group_id);
     if (!thread || !*thread) {
       return;  // a group this device does not hold
+    }
+    if (auto metadata = group_roster_.LoadMetadata(copy.target.group_id);
+        metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved) {
+      return;  // G016: nothing more is filed in a group that ended
     }
     thread_id = (*thread)->id;
   } else {

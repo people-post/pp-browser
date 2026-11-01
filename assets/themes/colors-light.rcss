@@ -258,11 +258,26 @@ select selectbox option:hover {
 }
 
 .chat-mention {
-  color: #4a6cf7;
+  color: #3730a3;
+  background-color: #e0e7ff;
 }
 
+/* In our own (blue) bubble the text stays white; only the chip shows. */
 .bubble-user .chat-mention {
   color: #ffffff;
+  background-color: #ffffff40;
+}
+
+/* A peer's message that mentions this account: the whole row is tinted, with a bar on its left. */
+.message-row-mentions-me {
+  background-color: #fdf3e1;
+  border-left: 3dp #d97706;
+}
+
+/* On the tinted row the text sits on the tint: no bubble of its own. */
+.message-row-mentions-me .bubble-assistant {
+  background-color: transparent;
+  border-width: 0;
 }
 
 .chat-inline-link {

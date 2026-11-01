@@ -134,13 +134,15 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
   const std::string current_local = thread.local_title;
   const std::string shared_default = facade->ResolveThreadLabel(thread).shared_title.value_or(thread.title);
 
-  actions.push_back({
-      "group_members",
-      Tr("chat.menu.group_members"),
-      nullptr,
-      [this]() { OpenGroupMembers(); },
-      "../icons/group.svg",
-  });
+  if (!facade->IsGroupDissolved(group_id)) {  // G016: an ended group has no members to list
+    actions.push_back({
+        "group_members",
+        Tr("chat.menu.group_members"),
+        nullptr,
+        [this]() { OpenGroupMembers(); },
+        "../icons/group.svg",
+    });
+  }
   actions.push_back({
       "rename_for_me",
       Tr("chat.group.rename_for_me"),

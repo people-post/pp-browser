@@ -75,5 +75,20 @@ TEST(AccountStateCodecTest, ALeftGroupRoundTripsAsATombstone) {
   EXPECT_FALSE(AccountStateCodec::GroupToJson(group).contains("left")) << "a group we are in carries no flag";
 }
 
+TEST(AccountStateCodecTest, ADissolvedGroupRoundTripsAsATerminalTombstone) {
+  AccountStateGroup group;
+  group.group_id = "group:hike";
+  group.owner_identity = "account:alice";
+  group.roster_epoch = 4;
+  group.left = true;
+  group.dissolved = true;
+  auto parsed = AccountStateCodec::GroupFromJson(AccountStateCodec::GroupToJson(group));
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_TRUE(parsed->left);
+  EXPECT_TRUE(parsed->dissolved);
+  group.dissolved = false;
+  EXPECT_FALSE(AccountStateCodec::GroupToJson(group).contains("dissolved"));
+}
+
 } // namespace
 } // namespace pbr

@@ -641,6 +641,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
+    mentions_.SyncThread();  // a group chat: its @ lines are read now, before anyone types `@`
     // Opened at its oldest unread mention (G015), read before the open dropped the marker.
     if (const std::optional<std::string>& mention = presenter_.OpenedAtMention()) {
       (void)scroller_.JumpToMessage(*mention);
@@ -702,6 +703,9 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       CloseChatWith(thread_id, [this, thread_id, group_id]() { return presenter_.DismissGroupAndClose(thread_id, group_id); });
     });
     return;
+  case CloseChatPlan::Kind::Dissolve:
+    DissolveGroupAfterConfirm(group_id);
+    return;
   case CloseChatPlan::Kind::Leave:
     confirm_then("chat.group.leave_title", "chat.group.leave_confirm", [this, thread_id, group_id]() {
       CloseChatWith(thread_id, [this, thread_id, group_id]() { return presenter_.LeaveGroupAndClose(thread_id, group_id); });
@@ -736,14 +740,10 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                      });
                    }
                    actions.push_back({
-                       "dismiss_local",
-                       Tr("chat.group.dismiss_local"),
+                       "dissolve",
+                       Tr("chat.group.dissolve"),
                        nullptr,
-                       [this, thread_id, group_id]() {
-                         CloseChatWith(thread_id, [this, thread_id, group_id]() {
-                           return presenter_.DismissGroupAndClose(thread_id, group_id);
-                         });
-                       },
+                       [this, group_id]() { DissolveGroupAfterConfirm(group_id); },
                        "../icons/trash.svg",
                        true,
                    });
@@ -752,6 +752,19 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                  });
     return;
   }
+}
+
+void ChatController::DissolveGroupAfterConfirm(const std::string& group_id) {
+  ShowConfirm(Tr("chat.group.dissolve_title"), Tr("chat.group.dissolve_confirm"), [this, group_id](const bool ok) {
+    if (!ok) {
+      return;
+    }
+    // The chat stays for everyone, read-only: nothing is closed, the screen only refreshes.
+    if (auto dissolved = presenter_.DissolveGroup(group_id); !dissolved) {
+      UserFeedback::Fail(dissolved.error().message);
+    }
+    RefreshFromMessaging();
+  });
 }
 
 void ChatController::AfterThreadPrefsChanged() {
@@ -847,6 +860,7 @@ void ChatController::RefreshFromMessaging() {
   DirtyChat();
   DirtyShell();
   NotifySurfaceChanged();
+  mentions_.SyncThread();  // the open group's @ lines: reloaded when its members or names may have changed
   const NavBadgeState& badges = ChromeSnapshot().nav_badges;
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
     ShellRemountNavRail();
@@ -1467,7 +1481,8 @@ void ChatController::OnSendMessage() {
   }
   // Mentions mark the typed text only (a prefix of `out`), never the quote under it (G015).
   const std::string thread_id = ActiveThreadId();
-  if (std::vector<TextSpan> spans = mentions_.SpansFor(thread_id, text);
+  // Picks of members who left since are dropped here (read at send), as the receiver would not light them anyway.
+  if (std::vector<TextSpan> spans = presenter_.SpansOnRoster(thread_id, mentions_.SpansFor(thread_id, text));
       presenter_.SendsWithMentions(thread_id, out, spans)) {
     close_keyboard();
     SendWithMentions(thread_id, text, out, std::move(spans));
