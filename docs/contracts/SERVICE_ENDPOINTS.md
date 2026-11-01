@@ -13,21 +13,21 @@ For each of `relay`, `directory`, and `registration`:
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
 | 2 | otherwise | Client not created (left unset); production defaults always fill Brief URLs |
 
-Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.global/api/relay`. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
+Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
 ## Config shape
 
 ```json
 {
-  "relay": { "base_url": "https://www.brief.global/api/relay", "transport": "http" },
+  "relay": { "base_url": "https://backend.example.test/api/relay", "transport": "http" },
   "directory": {
-    "base_url": "https://www.brief.global/api/relay",
+    "base_url": "https://backend.example.test/api/relay",
     "transport": "http",
     "providers": [
-      { "base_url": "https://www.brief.global/api/relay", "transport": "http" }
+      { "base_url": "https://backend.example.test/api/relay", "transport": "http" }
     ]
   },
-  "registration": { "base_url": "https://www.brief.global/api/relay" }
+  "registration": { "base_url": "https://backend.example.test/api/relay" }
 }
 ```
 
@@ -92,7 +92,7 @@ Peer protocol / app-version capability is **not** a directory concern. Peers dis
 
 ## HTTP relay blobs (icons + chat attachments)
 
-Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://www.brief.global/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). Server never inspects ciphertext for chat files (`application/octet-stream`).
+Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://backend.example.test/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). Server never inspects ciphertext for chat files (`application/octet-stream`).
 
 Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlobSignPayload` — domain + u8 version=`1`, then length-prefixed UTF-8 / BE integers matching www `SignatureVerifier`.
 
@@ -253,7 +253,7 @@ Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failur
 
 Default assistant preset uses OpenAI-compatible completions at:
 
-`POST https://www.brief.global/api/llm/v1/chat/completions`
+`POST https://backend.example.test/api/llm/v1/chat/completions`
 
 | Requirement | Detail |
 |-------------|--------|
@@ -277,7 +277,7 @@ Lost registered key or expired registration: use **Renew registration** in Me �
 
 ### Streamed answers
 
-`POST https://www.brief.global/api/llm/v1/pp/chat/stream` — JSON request (`message`, optional `intent`, `context.history` / `summary`, `client.capabilities`; up to 6 MB), `text/event-stream` response (`data: {"type": meta|status|token|done|handoff|error}` … `data: [DONE]`, `: ping` heartbeat every 10 s of silence). Same Bearer, limits and error shapes as the completions endpoint; one streamed answer counts as one request. Stopping is closing the connection: www aborts its upstream request and brief_AI stops generating. The wire contract is owned by brief_AI (`docs/contracts/pp-client.md` in that repo, v0.3); www relays the body unchanged and adds no user id. `PP_BROWSER_BRIEF_STREAM_URL` (dev only) redirects the client to a local fake server; the Bearer goes to an override only over https or loopback.
+`POST https://backend.example.test/api/llm/v1/pp/chat/stream` — JSON request (`message`, optional `intent`, `context.history` / `summary`, `client.capabilities`; up to 6 MB), `text/event-stream` response (`data: {"type": meta|status|token|done|handoff|error}` … `data: [DONE]`, `: ping` heartbeat every 10 s of silence). Same Bearer, limits and error shapes as the completions endpoint; one streamed answer counts as one request. Stopping is closing the connection: www aborts its upstream request and brief_AI stops generating. The wire contract is owned by brief_AI (`docs/contracts/pp-client.md` in that repo, v0.3); www relays the body unchanged and adds no user id. `PP_BROWSER_BRIEF_STREAM_URL` (dev only) redirects the client to a local fake server; the Bearer goes to an override only over https or loopback.
 
 ## libp2p (deferred)
 

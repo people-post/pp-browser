@@ -13,7 +13,7 @@ How to resolve, edit, and verify machine/profile settings. Normative disk layout
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
-**Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`; a dev build can force it at compile time with CMake `-DPP_BROWSER_DEV_SANDBOX=ON` / the `PP_BROWSER_DEV_SANDBOX` define, so a phone opened from its icon still uses QA — never for a release build) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
+**Backend origin:** set `PP_BROWSER_ORIGIN` at runtime or CMake `-DPP_BROWSER_DEFAULT_ORIGIN=…` at build time (see [BUILD.md](BUILD.md#backend-origin)). With neither, backend URLs are empty and backend-dependent features are disabled.
 
 Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/foundation/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
@@ -39,7 +39,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
 | `PP_NODE_MESH_HEARTBEAT` | `libp2p.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
-| `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. sandbox `https://www-en.qa.peoplepost.org/api/relay`) |
+| `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. `https://backend.example.test/api/relay`) |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
@@ -154,18 +154,18 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 {
   "llm": {
     "preset": "brief",
-    "base_url": "https://www.brief.global/api/llm/v1",
+    "base_url": "https://backend.example.test/api/llm/v1",
     "model": "xai",
     "require_api_key": false
   },
-  "promoted_mcp": { "url": "https://www.brief.global/mcp" },
+  "promoted_mcp": { "url": "https://backend.example.test/mcp" },
   "mcp_servers": [
     { "id": "my-tooling", "url": "https://example.com/mcp", "enabled": true }
   ],
   "search": { "provider": "duckduckgo" },
-  "relay": { "base_url": "https://www.brief.global/api/relay" },
-  "directory": { "base_url": "https://www.brief.global/api/relay" },
-  "registration": { "base_url": "https://www.brief.global/api/relay" },
+  "relay": { "base_url": "https://backend.example.test/api/relay" },
+  "directory": { "base_url": "https://backend.example.test/api/relay" },
+  "registration": { "base_url": "https://backend.example.test/api/relay" },
   "libp2p": {
     "node_enabled": true,
     "mesh_enabled": true,
@@ -270,7 +270,7 @@ Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, n
 
 These two files and the pending crash record are all that Me → Security → Send diagnostics sends: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 
-The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `--sandbox` or `XDG_DATA_HOME`.
+The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `XDG_DATA_HOME`.
 
 Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps, tees non-logger console output to `logs/console.log`, and on a crash keeps `diagnostics/crash-<stamp>.{txt,log}` plus a symbolized backtrace (`crash-<stamp>-symbolized.txt`, using the dump's `image_base=`).
 
@@ -279,9 +279,9 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_CONFIG` | Explicit config file path |
-| `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
+| `PP_BROWSER_ORIGIN` | Backend origin (`scheme://host`); overrides the compile-time default and saved backend URLs |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
-| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<brief origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
+| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |

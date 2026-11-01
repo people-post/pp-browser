@@ -9,7 +9,7 @@
 | Track | Status |
 |-------|--------|
 | **Planning** | Done — [DESIGN.md](DESIGN.md), [DECISIONS.md](DECISIONS.md) R001–R021 |
-| **www server** | Shipped — [relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md) |
+| **www server** | Shipped (server-side design lives with the relay gateway) |
 | **pp-browser i1–i3** | **Done** — blob client + profile icon UX + directory icon render |
 | **pp-browser a1–a4** | **Done** — wire/codec, composer send, CDN receive/display, quota UX |
 | **pp-browser a6** | **Done** — Smart download, suppression, libp2p chat-blob, fetch ladder, outbound peer upload |

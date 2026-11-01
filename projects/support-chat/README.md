@@ -1,11 +1,11 @@
 # Support chat (customer entry)
 
 **Status:** implementing (client entry)  
-**Server design (canonical):** [`web2/www/Plans/2026-08-24-support-chat-design.md`](../../../web2/www/Plans/2026-08-24-support-chat-design.md)
+**Server design (canonical):** owned by the relay gateway
 
 ## Product meaning
 
-**PP Support** is the **app / product customer-support team** (help with PP), not a “relay support” desk. Staff answer from `support.brief.global`. Messenger/relay is only the delivery path — the same ops group may also run a relay, but that is unrelated to what the Me-tab entry means for users.
+**PP Support** is the **app / product customer-support team** (help with PP), not a “relay support” desk. Staff answer from the support site. Messenger/relay is only the delivery path — the same ops group may also run a relay, but that is unrelated to what the Me-tab entry means for users.
 
 ## One-line goal
 

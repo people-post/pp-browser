@@ -1,7 +1,7 @@
 # Relay blob upload — decisions
 
 ADRs for profile icons and chat attachments. Product answers locked **2026-08-24** (planning session; R008 amended + R019–R021 same day).  
-Normative summary: [DESIGN.md](DESIGN.md). Server wire: [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md).
+Normative summary: [DESIGN.md](DESIGN.md). The server wire contract is owned by the relay gateway.
 
 ---
 

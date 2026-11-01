@@ -156,7 +156,7 @@ Normative UX summary: [DESIGN.md](DESIGN.md).
 
 **Decision:**
 
-1. **Group 1 (all):** **Brief** (HTTP relay / `brief.global` poll health) + **Direct** (libp2p running and seed dial OK).
+1. **Group 1 (all):** **Brief** (HTTP relay / backend poll health) + **Direct** (libp2p running and seed dial OK).
 2. **Group 2 (Help on):** divider · **Help** · **Inbound** binary (dial-back on/off). Outbound is not a separate glyph; Outbound-only shows Direct on + Inbound off + sparse label.
 3. Brief health = last `PollInbox` ok/fail (`Unknown` until first poll). Not a substitute for Me → Network detail.
 4. Remove 3-bar reach strength meter from the bar.

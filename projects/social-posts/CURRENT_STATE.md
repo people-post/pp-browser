@@ -13,9 +13,9 @@ no UI, no network.
 statement, the relay post API, `/pp/posts/1.0.0`, head discovery, publish outbox, refresh.
 
 **P2 relay side (2026-10-23):** the post relay service
-[nfsc-brief-web3/app-posts#1](https://github.com/nfsc-brief-web3/app-posts/pull/1) (verify / keep / serve,
+app-posts PR 1 (verify / keep / serve,
 tested against `lib/posts` vectors; merged 2026-10-24) and the gateway route
-[app-static-api#201](https://github.com/nfsc-brief-reader/app-static-api/pull/201)
+gateway PR 201
 (`/api/relay/v1/posts/*` → app-posts). Deploy needs an `app-posts` ECR repository, the service, and
 `BRF_WWW_POSTS_URI`.
 
@@ -31,11 +31,11 @@ S027 extension section on every entry, with their limits; report sign bytes (S02
 a full post, a reply that quotes, an entry with extensions, and two reports. 21 unit tests.
 
 **Relay for P2 (2026-10-30):** the new format in the relay
-([app-posts#2](https://github.com/nfsc-brief-web3/app-posts/pull/2), merged); withheld stubs, suspended authors,
+(app-posts PR 2, merged); withheld stubs, suspended authors,
 the scan step before media is served, reports, refusal codes, the single-entry read and the operator's
-`moderate` CLI ([app-posts#3](https://github.com/nfsc-brief-web3/app-posts/pull/3), in review); the gateway
+`moderate` CLI (app-posts PR 3, in review); the gateway
 serving registered accounts only, refusing other authors' writes as `not_served`
-([app-static-api#217](https://github.com/nfsc-brief-reader/app-static-api/pull/217), in review).
+(gateway PR 217, in review).
 
 **Next:**
 1. Merge and deploy the relay (app-posts ECR repository and service, `BRF_WWW_POSTS_URI`).

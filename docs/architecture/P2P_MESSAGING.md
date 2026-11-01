@@ -2,7 +2,7 @@
 
 **Tier:** architecture
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI sessions, direct, and group threads; local persistence as source of truth; HTTP relay/directory/registration transport against Brief by default (`https://www.brief.global/api/relay`).
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI sessions, direct, and group threads; local persistence as source of truth; HTTP relay/directory/registration transport against the configured backend origin (`https://backend.example.test/api/relay`).
 
 **Normative wire shapes:** [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](../contracts/COMPATIBILITY.md).
 
@@ -69,9 +69,9 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
 ```json
 {
   "data_dir": "~/.local/share/pp-browser",
-  "relay": { "base_url": "https://www.brief.global/api/relay" },
-  "directory": { "base_url": "https://www.brief.global/api/relay" },
-  "registration": { "base_url": "https://www.brief.global/api/relay" },
+  "relay": { "base_url": "https://backend.example.test/api/relay" },
+  "directory": { "base_url": "https://backend.example.test/api/relay" },
+  "registration": { "base_url": "https://backend.example.test/api/relay" },
   "libp2p": {
     "node_enabled": true,
     "mesh_enabled": true,
