@@ -24,20 +24,20 @@ bool IsGranted() {
   if (env == nullptr || activity == nullptr) {
     return false;
   }
-  jclass cls = env->GetObjectClass(activity);
-  if (cls == nullptr) {
-    return false;
-  }
-  jmethodID mid = env->GetMethodID(cls, "checkSelfPermission", "(Ljava/lang/String;)I");
+  // SDL hands out a new local reference each time; this runs on SDL's native thread, whose JNI frame never pops.
   bool granted = false;
-  if (mid != nullptr) {
-    jstring name = env->NewStringUTF(kRecordAudio);
-    granted = env->CallIntMethod(activity, mid, name) == 0;
-    env->DeleteLocalRef(name);
-  } else {
-    env->ExceptionClear();
+  if (jclass cls = env->GetObjectClass(activity); cls != nullptr) {
+    jmethodID mid = env->GetMethodID(cls, "checkSelfPermission", "(Ljava/lang/String;)I");
+    if (mid != nullptr) {
+      jstring name = env->NewStringUTF(kRecordAudio);
+      granted = env->CallIntMethod(activity, mid, name) == 0;
+      env->DeleteLocalRef(name);
+    } else {
+      env->ExceptionClear();
+    }
+    env->DeleteLocalRef(cls);
   }
-  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
   return granted;
 }
 

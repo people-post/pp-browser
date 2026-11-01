@@ -496,8 +496,9 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
 void AttachmentFetchWorkflow::SetProgress(const std::string& key, const int percent) {
   {
     std::lock_guard lock(mutex_);
+    // Every change redraws the chat; a large download would ask for a hundred. Five points at a time, and the end.
     auto& shown = progress_[key];
-    if (shown == percent) {
+    if (shown == percent || (percent < 100 && percent - shown < 5)) {
       return;
     }
     shown = percent;

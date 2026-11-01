@@ -14,18 +14,21 @@ VoicePlayback::VoicePlayback(VoicePlaybackPorts ports, MediaDeviceArbiter& devic
   if (!ports_.post_ui) {
     ports_.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
   }
+  // The clip thread may outlive this object (Shutdown stops the player without joining): its callbacks hold their
+  // own copy of `post` and touch `this` only on the UI thread, after the alive check.
   const auto alive = alive_;
+  const auto post = ports_.post_ui;
   VoicePlayerCallbacks callbacks;
-  callbacks.on_progress = [this, alive](const std::string& id, const uint64_t serial, const int64_t position_ms,
-                                        const int64_t duration_ms) {
-    ports_.post_ui([this, alive, id, serial, position_ms, duration_ms]() {
+  callbacks.on_progress = [this, alive, post](const std::string& id, const uint64_t serial, const int64_t position_ms,
+                                              const int64_t duration_ms) {
+    post([this, alive, id, serial, position_ms, duration_ms]() {
       if (alive->load()) {
         OnProgress(id, serial, position_ms, duration_ms);
       }
     });
   };
-  callbacks.on_ended = [this, alive](const std::string& id, const uint64_t serial, const VoicePlayEnd end) {
-    ports_.post_ui([this, alive, id, serial, end]() {
+  callbacks.on_ended = [this, alive, post](const std::string& id, const uint64_t serial, const VoicePlayEnd end) {
+    post([this, alive, id, serial, end]() {
       if (alive->load()) {
         OnEnded(id, serial, end);
       }

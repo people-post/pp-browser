@@ -1213,15 +1213,17 @@ void ChatController::OnAttachFile(ui::Event* ev) {
 }
 
 void ChatController::ShowPictureSendChoice(std::string path) {
-  // Only one of the three runs; Cancel releases the file (the two sends hand it to StartAttachmentUpload).
+  // Only one of the three runs; Cancel releases the file (the two sends hand it to StartAttachmentUpload). A sheet
+  // closed without choosing (tap beside it, Escape) releases it too, so no private copy outlives the choice.
+  auto release = [this](const std::string& picture) { release_pick_(picture); };
   auto actions = PictureChoiceActions(
-      std::move(path),
+      path,
       [this](const std::string& picture, const bool original) {
         StartAttachmentUpload(picture, original ? OutgoingPickSource::Original : OutgoingPickSource::Photo);
       },
-      [this](const std::string& picture) { release_pick_(picture); }, Tr("chat.attach.send_compressed"),
-      Tr("chat.attach.send_original"), Tr("common.cancel"));
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+      release, Tr("chat.attach.send_compressed"), Tr("chat.attach.send_original"), Tr("common.cancel"));
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions),
+                                               [release, picture = std::move(path)]() { release(picture); });
 }
 
 void ChatController::OnAttachCapture(ui::Event* ev) {

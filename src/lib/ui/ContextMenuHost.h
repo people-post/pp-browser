@@ -69,11 +69,14 @@ public:
   /// A descendant with the attribute `menu-anchor-end` marks where the item's body ends: the list opens there.
   void SetAnchorResolver(std::function<ui::Element*(ui::Element* target)> resolver) { anchor_resolver_ = std::move(resolver); }
   void ShowAt(const ContextMenuRequest& request);
-  /// Show an explicit action list (no copy/select/paste text actions).
-  void ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions);
+  /// Show an explicit action list (no copy/select/paste text actions). `on_dismissed` runs once if the menu goes
+  /// away without any of its actions running (tap outside, Escape, another menu replacing it).
+  void ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions,
+                   std::function<void()> on_dismissed = {});
   /// ShowActions for a list that belongs above `position` (a picker over the composer): a float menu ends there
   /// when it fits above, so it does not cover what is being typed. Compact layout: the action sheet as usual.
-  void ShowActionsAbove(ui::Vector2i position, std::vector<ContextMenuAction> actions);
+  void ShowActionsAbove(ui::Vector2i position, std::vector<ContextMenuAction> actions,
+                        std::function<void()> on_dismissed = {});
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();
@@ -124,7 +127,10 @@ private:
     ui::Vector2i position;
     std::vector<ContextMenuAction> actions;
     bool above = false;
+    std::function<void()> on_dismissed;
   };
+  /// The open action list's "closed without choosing" notice; cleared once an action runs.
+  std::function<void()> on_dismissed_;
   /// The open float menu ends at its position instead of starting there (ShowActionsAbove).
   bool float_above_ = false;
   bool next_show_above_ = false;

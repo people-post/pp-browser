@@ -34,7 +34,7 @@ public:
   static void SetStreamingStallLimitForTest(long min_bytes_per_s, long window_s);
   /**
    * PUT the file's bytes read straight from disk (never the whole file in memory). No total time limit, only a
-   * stall limit (no byte moved for 60 s fails), so a large upload on a slow link can finish. The response body
+   * speed floor (under 2 KB/s for 30 s running fails; see SetStreamingStallLimitForTest), so a large upload on a slow link can finish. The response body
    * is read up to a small cap. `progress` is called as bytes go out.
    */
   static Roe<HttpResponse> PutFile(const std::string& url, const std::string& path,
