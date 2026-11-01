@@ -2,9 +2,17 @@
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/CrashReportEnvelope.h"
 
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <string>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -47,6 +55,34 @@ TEST(CrashDump, WriteReadClearPending) {
   std::error_code ec;
   std::filesystem::remove_all(dir, ec);
 }
+
+#if !defined(_WIN32)
+TEST(CrashDump, NativeBacktraceListsFrames) {
+  const std::string dir = TempDir();
+  const std::string path = dir + "/backtrace.txt";
+  const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  ASSERT_GE(fd, 0);
+  pbr::CrashDump::WriteNativeBacktrace(fd);
+  ::close(fd);
+
+  std::ifstream in(path);
+  const std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const std::size_t tag = body.find("backtrace_frames=");
+  ASSERT_NE(tag, std::string::npos) << body;
+  EXPECT_GE(std::atoi(body.c_str() + tag + std::string("backtrace_frames=").size()), 3) << body;
+#if defined(__ANDROID__)
+  EXPECT_NE(body.find("frame 0 pc=0x"), std::string::npos) << body;
+  EXPECT_NE(body.find(" off=0x"), std::string::npos) << body;
+  EXPECT_NE(body.find(" module=/"), std::string::npos) << body;
+#else
+  // macOS / glibc print raw addresses only.
+  EXPECT_NE(body.find("\n0x"), std::string::npos) << body;
+#endif
+
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+#endif
 
 TEST(CrashReportEnvelope, BuildsFingerprintAndJson) {
   const std::string dump =
