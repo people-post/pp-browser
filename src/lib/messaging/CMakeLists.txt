@@ -59,8 +59,11 @@ pp_browser_add_lib_library(pp_lib_messaging
     ModelFacingJson.cpp
     PeerBriefRoute.cpp
     PeerDisplayResolver.cpp
+    HttpRelayClient.cpp
+    RelayMessageSignPayload.cpp
   PUBLIC_LIBS
     pp_lib_people
+    pp_lib_net
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto
@@ -70,5 +73,11 @@ pp_browser_add_lib_library(pp_lib_messaging
     SQLite::SQLite3)
 
 if(PP_BROWSER_BUILD_TESTS)
+  # Mock relay and peer-history clients: test binaries only, never linked into the app.
+  pp_browser_add_lib_library(pp_lib_messaging_testing
+    SOURCES
+      testing/MockRelayClients.cpp
+    PUBLIC_LIBS
+      pp_lib_messaging)
   add_subdirectory(tests)
 endif()

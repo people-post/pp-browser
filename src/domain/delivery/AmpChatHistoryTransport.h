@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"

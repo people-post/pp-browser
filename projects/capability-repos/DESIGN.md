@@ -40,11 +40,10 @@ that is not.
 
 Include sites, tests included (a capability's tests move with it). The gate started from 11 edges, 67 sites;
 moving misplaced tests (P1) took it to 10 edges, 53 sites; cutting people → messaging (CR013) to 9 edges,
-32 sites (`scripts/check/capability_edges_allowlist.txt`).
+32 sites; net → messaging to 8 edges, 22 sites (`scripts/check/capability_edges_allowlist.txt`).
 
 | Edge | Sites | What it is |
 |------|-------|------------|
-| net → messaging | 10 | chat DTOs the backend client carries (relay envelope, history) |
 | messaging → calls | 2 | `CallTypes` and the call media protocol id in the hub's ports |
 | base → messaging | 2 | `foundation/runtime/BackgroundSyncScheduler` (stays app-side) and `common/thread`'s history types naming the relay envelope |
 | people → net | 5 | directory and blob clients for profile icons |

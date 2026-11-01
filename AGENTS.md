@@ -146,7 +146,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | UI-safe surface | `*Facade` | `ConversationsFacade` |
 | Durable state | `*Store` | thread/CAS/contacts stores |
 | Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
-| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
+| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`); the relay's message client is messaging's (`lib/messaging/HttpRelayClient`) |
 | Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
 | L4 protocol ends | `serve/*Server`, `client/*ClientCoordinator` | `MediaRelayServer` / `MediaRelayClientCoordinator`, `CircuitRelayServer` / `CircuitClientCoordinator`, `DhtServer` / `DhtClient` — [SRC_LAYOUT § L4 protocols](docs/architecture/SRC_LAYOUT.md#l4-protocols-serve-and-client) |
 | Reachability engine | `*Engine` | `ReachabilityEngine` |

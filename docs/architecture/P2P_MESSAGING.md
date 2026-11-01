@@ -8,12 +8,9 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-[`CreateOrgBackendClients`](../../src/base/net/OrgBackendClientFactory.cpp) picks an implementation per endpoint:
+The conversations hub (`ConversationsHub`) builds the HTTP clients from the configured `base_url`s: the relay's message client is messaging's ([`lib/messaging/HttpRelayClient`](../../src/lib/messaging/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/messaging/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
-1. `base_url` set (platform default or config) → HTTP client (`HttpRelayClient`, etc.)
-2. else client left unset (should not happen after defaults / empty coalesce)
-
-Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
 **Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
@@ -26,7 +23,7 @@ Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always call
 | `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
 | `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
 
-CI constructs `MockRelayClient` in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
+CI constructs `MockRelayClient` (`lib/messaging/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
 
 ## Data model
 
