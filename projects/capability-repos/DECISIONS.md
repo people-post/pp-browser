@@ -385,7 +385,8 @@ and the ledger apps share it. Since CR020 those message formats are what the del
 ## CR022 — Capabilities move into `capabilities/<name>/` before any repo split
 
 **Date:** 2026-11-01  
-**Status:** accepted (Hongwei, 2026-11-01); implementation started (people first)
+**Status:** accepted (Hongwei, 2026-11-01); implemented 2026-11-01 — all nine folders; current state in
+[SRC_LAYOUT § Capability folders](../../docs/architecture/SRC_LAYOUT.md#capability-folders)
 
 **Context:** P0–P2 made the capabilities clean in place, but they are still paths scattered under `src/`, held apart
 by a script. Moving one into a repo (CR005 / CR006) would be a large change in one step, and pp-browser's CI runs
@@ -406,3 +407,10 @@ external code nobody edits, which the checks, formatting and lint skip.
 - A later split of a capability into the capabilities repo is a `git subtree split capabilities/<name>`.
 
 **Order:** people, net, social, delivery, pricing, messaging, calls, broadcast, node — one change each, as in P1.
+
+**Notes (implementation):**
+- Feature modules linked the app's bundles (`pp_base`; their tests `pp_feature`) through the feature helper, which the
+  gate, reading named links, did not see. In a capability folder they link only what they name (Hongwei chose this
+  over moving them as they were). It surfaced one hidden edge, the hub's `SDL_GetTicks`, now `steady_clock`.
+- `src/` stays an include root of every target, so an app path still compiles in a capability; the gate stops it.
+  Capability roots come only through links, so the compiler stops a capability including one above or beside it.

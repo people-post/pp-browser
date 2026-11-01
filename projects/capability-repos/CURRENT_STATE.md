@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: capability folders (CR022), people, net, social, delivery, pricing, messaging, calls and broadcast moved
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022)
 
 ## Done
 
@@ -94,9 +94,11 @@
 - **P3, broadcast's folder:** `lib/broadcast` and `feature/broadcast` in `capabilities/broadcast/src/` (94 tests). The
   call probe (an app tool) had reached the product's base through the feature bundles; it names
   `pp_foundation_platform` and `pp_foundation_data` itself now.
+- **P3, node's folder:** `domain/node` in `capabilities/node/src/` (6 tests); `src/domain/` keeps only the app's
+  aggregate. Every capability is in its folder: 1521 of 2910 tests carry a capability label; the rest are the base's
+  and the app's. Every capability target's link closure holds only what is below it (checked with CMake's link graph).
 
 ## Next
 
-1. The other capability folders, in order: node.
-2. Contracts repo (CR010) when convenient.
-3. P3's namespaces when a second app needs a capability.
+1. Contracts repo (CR010) when convenient.
+2. P3's namespaces when a second app needs a capability.

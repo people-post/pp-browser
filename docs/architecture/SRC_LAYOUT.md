@@ -113,7 +113,10 @@ the map and the order and checks includes and CMake links (CR016); edges still t
 
 A capability moves out of `src/` into its own folder, `capabilities/<name>/`, before any repo split
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
-Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **net** (`lib/net`, `domain/registration`), **social** (`lib/posts`, `lib/content`), **delivery** (`lib/delivery`, `common/chat`, `common/thread` → `pp_delivery_common`, `domain/delivery`), **pricing** (`lib/pricing`), **messaging** (`lib/messaging`, `domain/attachments`, `feature/conversations`), **calls** (`lib/calls`, `lib/media`, `common/media` → `pp_calls_common`, `domain/call_media`, `feature/calls`; `lib/media` links SDL3 and Opus itself, so a split carries those), **broadcast** (`lib/broadcast`, `feature/broadcast`).
+Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`); `src/` keeps the
+base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the app's `feature/` modules). The
+`common/` parts of people, delivery and calls build as `pp_people_common`, `pp_delivery_common` and `pp_calls_common`;
+`lib/media` links SDL3 and Opus itself, so a split of calls carries those.
 
 - `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
   calls `pp_browser_capability(<name>)` (`cmake/PpBrowserCapability.cmake`): the lib / domain / feature helpers
@@ -124,6 +127,9 @@ Moved so far: **people** (`lib/people`, `domain/peers`, `common/directory`), **n
   the capability order, after foundation.
 - The gate and the include checks read every folder as they read `src/` (`scripts/check/source_trees.sh`); the
   gate fails when a folder holds another capability's path.
+- A target sees the include roots of what it links, so a capability's code cannot even include a capability above
+  it or beside it: the compiler holds the order too. `src/` stays an include root of every target, so an app path
+  (`feature/product/…`, `gui/…`) still resolves there; the gate is what stops it.
 - Its tests carry the CTest label `capability:<name>`. A PR skips them (`ctest -LE`) when neither the folder nor
   anything below it changed (CI's changes filter: one filter per folder, the one below it plus the folder); pushes
   to develop and main run all.

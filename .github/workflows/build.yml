@@ -127,6 +127,9 @@ jobs:
             broadcast: &broadcast
               - *calls
               - 'capabilities/broadcast/**'
+            node: &node
+              - *net
+              - 'capabilities/node/**'
 
   lint:
     needs: changes
@@ -270,7 +273,7 @@ jobs:
         run: |
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in people net social delivery pricing messaging calls broadcast; do
+            for capability in people net social delivery pricing messaging calls broadcast node; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;
