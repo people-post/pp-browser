@@ -30,7 +30,6 @@ pp_browser_add_lib_library(pp_lib_calls
     SoftMigrateLogic.cpp
   PUBLIC_LIBS
     pp_foundation_error
-    pp_foundation_data
     pp_foundation_crypto
     sodium
     SQLite::SQLite3)

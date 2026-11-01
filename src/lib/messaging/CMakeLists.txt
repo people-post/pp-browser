@@ -45,7 +45,6 @@ pp_browser_add_lib_library(pp_lib_messaging
     pp_lib_people
     pp_lib_net
     pp_foundation_error
-    pp_foundation_data
     pp_foundation_crypto
     pp_foundation_identity
     pp_foundation_platform

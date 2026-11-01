@@ -53,7 +53,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
-#include "foundation/platform/os/OsTime.h"
+#include "common/CivilTime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1962,7 +1962,7 @@ namespace {
 std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
   const std::time_t seconds = static_cast<std::time_t>(unix_ms / 1000);
   std::tm tm_utc{};
-  if (!os::UtcTime(seconds, &tm_utc)) {
+  if (!civil_time::UtcTime(seconds, &tm_utc)) {
     return {};
   }
   std::ostringstream oss;
