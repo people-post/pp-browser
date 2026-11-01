@@ -296,13 +296,21 @@ sequenceDiagram
   Topo->>DM: FanOut call_sfu_attach
   DM-->>CSM: peers CallSfuAttach
   CSM->>Topo: OnInboundSfuAttach
-  L2P->>L2P: ReleaseDirectTransport (keep engine capture)
+  L2P->>L2P: ReleaseDirectTransport once the others are heard on the hop (≤ 10 s; keep engine capture)
 
   Note over L2P,Topo: 1:1 connect fail — Retry libp2p dial only (no auto SFU)
   L2P-->>CSM: ConnectFailed
   UI->>CSM: RetryP2pMedia
   CSM->>L2P: rebuild offerer dial
 ```
+
+**The move keeps its 1:1 link until the others are on the hop (#431).** The picker drops its 1:1
+leg only when every remote stream has been heard on the hop since its own attach, or after
+`kKeepDirectUntilHopHeardMs` (10 s) — `ReleaseDirectAfterHopAttachNow`. Meanwhile the leg keeps the
+link to the 1:1 peer alive, and call control to a peer with a live link goes over it at once as
+well as by the relay (`ControlAlsoGoesDirect`): the peer gets `call_sfu_attach` in milliseconds
+rather than whenever its inbox delivers (seen at ~30 s). The receiving control lane applies the
+first copy and drops the other.
 
 ---
 
