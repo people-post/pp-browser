@@ -48,6 +48,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_punch_served_total` | counter | `role` = `introducer` \| `target` \| `target_declined` | Punch requests served; `target_declined`: an initiator our address-disclosure audience does not allow (projects/privacy T1) |
 | `pp_circuit_relay_requests_total` | counter | `op` = `bridge` \| `reserve`; `result` = `accepted` \| `refused_admission` \| `refused_standby_full` (bridge) / `accepted` \| `refused` (reserve) | |
 | `pp_circuit_relay_tunnels_total` | counter | `result` = `bridged` \| `failed` | Tunnels that ended setup |
+| `pp_circuit_relay_bridge_failures_total` | counter | `reason` = `target_not_reserved` \| `target_unreachable` \| `busy` \| `refused` \| `not_ready` \| `bad_request` \| `generic` | Admitted bridges (`requests_total{op=bridge,result=accepted}`) that then failed, by the refusal the dialer heard; `target_not_reserved` is the "not registered" a callee not parked on this relay causes (pp-cpp-mesh ≥ v2.5.0) |
 | `pp_circuit_relay_setup_seconds` | histogram | | Request → bridged (buckets 0.05 … 10) |
 | `pp_circuit_relay_tunnels` | gauge | `state` = `bridged` \| `setup` | Open now |
 | `pp_circuit_relay_reservations` | gauge | | Answerers parked here |
