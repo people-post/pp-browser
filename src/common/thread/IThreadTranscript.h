@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
-#include "common/thread/ContextBudget.h"
+#include "common/ContextBudget.h"
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <optional>

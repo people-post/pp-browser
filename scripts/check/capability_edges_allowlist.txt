@@ -4,9 +4,7 @@
 
 # BackgroundSyncScheduler (foundation/runtime, stays app-side: DESIGN § Runtime) reading messaging limits,
 # and common/thread's history types naming the relay envelope.
-base -> messaging 2
 # Identity using the backend client (directory, blob fetch for profile icons): a port people declares.
-people -> net 5
 # AI's tool registry and structured text, and lib/ui types, from the conversations feature: messaging
 # declares the ports AI and the shell implement (CR007).
 messaging -> app 5

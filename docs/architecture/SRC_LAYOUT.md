@@ -190,7 +190,7 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/registration/` | Registration finish / renew / nickname (`pp_domain_registration`) — **headless**, linked by pp-node |
 | `domain/node/` | Node-role mesh services (`pp_domain_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
 | `domain/call_media/` | pp-browser's realtime protocol on the mesh (`pp_domain_call_media`): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it; headless (pp-call-probe links it) |
-| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames and display names, relay-directory signing / KEM keys, profile icons; the people → messaging bridges |
+| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames for strangers, signing / KEM keys from kept cards and the directory (mesh's `IDirectoryClient`, no backend client), the account-card policy, this account's own cards. Profile icons over HTTP and the blob store are `lib/net` (`ProfileIconFetch`, `ProfileIconClient`) |
 | `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
 | `domain/delivery/` | Delivery (`pp_domain_delivery`): the mesh transports for direct chat and chat history; the send path (routes, outbox and retries, the control lane) |
 

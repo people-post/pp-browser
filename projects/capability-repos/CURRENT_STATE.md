@@ -25,6 +25,10 @@
   product's L4 protocol ids and `ProductMeshProtocols()` in `common/ProtocolIds.h` (base), the people-picker
   ports (`MessagingPeoplePickerPorts`) in `feature/product`, an unused broadcast include dropped from calls —
   4 edges / 15 sites left (people → net, messaging → app, messaging → node, base → messaging).
+- **P1, base → messaging and people → net:** 7 sites → 0 — the relay poll's cadences in
+  `BackgroundSyncScheduler.h`, `ContextBudget` at the common root; `DirectoryShadowCache` on mesh's
+  `IDirectoryClient`, the profile-icon fetch and upload in `lib/net` — 2 edges / 8 sites left
+  (messaging → app, messaging → node).
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

@@ -1,4 +1,4 @@
-#include "domain/peers/ProfileIconFetch.h"
+#include "lib/net/ProfileIconFetch.h"
 
 #include "lib/net/HttpClient.h"
 #include "common/Utilities.h"

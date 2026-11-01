@@ -1,22 +1,17 @@
 include(PpBrowserDomain)
 
-# Who a peer is, for any feature: directory nicknames for strangers (DirectoryShadowCache) and the
-# names threads and senders show (PeerDisplaySources), their signing / KEM keys from kept account
-# cards and the directory (AccountKeyResolver), profile icons; and the people → messaging bridges messaging cannot include
-# (LocalKeysFromIdentity, GroupInviteStanding).
+# Who a peer is, for any feature: directory nicknames for strangers (DirectoryShadowCache), their
+# signing / KEM keys from kept account cards and the directory (AccountKeyResolver), the account-card
+# policy and this account's own cards (OwnCards). The directory is mesh's interface: no backend client.
 pp_browser_add_domain_library(pp_domain_peers
   SOURCES
     DirectoryShadowCache.cpp
-    ProfileIconClient.cpp
-    ProfileIconFetch.cpp
     AccountKeyResolver.cpp
     AccountCardPolicy.cpp
     OwnCards.cpp
   PUBLIC_LIBS
     pp_lib_people
     pp_lib_people_cards
-    pp_lib_net
-    pp_lib_messaging
     pp_mesh
     pp_foundation_runtime_core)
 

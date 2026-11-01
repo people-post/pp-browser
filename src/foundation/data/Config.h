@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/thread/ContextBudget.h"
+#include "common/ContextBudget.h"
 #include "foundation/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"

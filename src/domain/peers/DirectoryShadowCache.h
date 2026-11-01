@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/net/OrgBackendClients.h"
+#include "mesh/types/IDirectoryClient.h"
 #include "lib/people/ContactTypes.h"
 #include "common/MeshAlias.h"
 

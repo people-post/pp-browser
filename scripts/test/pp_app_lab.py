@@ -877,7 +877,7 @@ def scenario_push_wakes_background_callee(lab):
     return {"ring_after_push_s": round(rang, 2)}
 
 
-# The app's background wake window (MessagingLimits.h kBackgroundWakeWindowMs).
+# The app's background wake window (BackgroundSyncScheduler.h kBackgroundWakeWindowMs).
 BACKGROUND_WAKE_WINDOW_S = 20
 # After a call ends in the background the app keeps working this long (AppLifecycle kCallEndGraceMs).
 CALL_END_GRACE_S = 5
