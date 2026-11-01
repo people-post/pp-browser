@@ -4,6 +4,8 @@
 #include <SDL3_image/SDL_image.h>
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -242,8 +244,12 @@ TEST_F(ImageMetadataTest, StripFailsClosedOnAnythingMalformed) {
   EXPECT_FALSE(StripJpegLocation(no_end));
   std::vector<uint8_t> half(good.begin(), good.begin() + static_cast<std::ptrdiff_t>(good.size() / 2));
   EXPECT_FALSE(StripJpegLocation(half));
-  std::vector<uint8_t> garbage_between = good;
-  garbage_between.insert(garbage_between.begin() + 2, {0x12, 0x34, 0x56, 0x78});
+  ASSERT_GE(good.size(), 4u);
+  // Built front to back: GCC 14 -O3 flags an insert in the middle here as out of bounds (-Werror).
+  const std::array<uint8_t, 4> garbage = {0x12, 0x34, 0x56, 0x78};
+  std::vector<uint8_t> garbage_between(good.begin(), good.begin() + 2);
+  garbage_between.insert(garbage_between.end(), garbage.begin(), garbage.end());
+  garbage_between.insert(garbage_between.end(), good.begin() + 2, good.end());
   EXPECT_FALSE(StripJpegLocation(garbage_between)) << "bytes where a marker must be";
 }
 
