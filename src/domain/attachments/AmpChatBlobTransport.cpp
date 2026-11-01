@@ -1,5 +1,6 @@
 #include "domain/attachments/AmpChatBlobTransport.h"
 
+#include "lib/people/DevicePeerId.h"
 #include "lib/messaging/PeerRequestAuth.h"
 
 #include "mesh/l4/shared/InboundReply.h"
@@ -104,7 +105,7 @@ Roe<ChatBlobRequest> SignedForSend(ChatBlobRequest request, IdentityStore& ident
   if (!local) {
     return local.error();
   }
-  auto peer_id = peer_override.empty() ? PeerRequestAuth::DevicePeerId(local->public_key_b64) : Roe<std::string>(peer_override);
+  auto peer_id = peer_override.empty() ? DevicePeerIdFromKey(local->public_key_b64) : Roe<std::string>(peer_override);
   if (!peer_id) {
     return peer_id.error();
   }

@@ -6,7 +6,7 @@
 #include "common/chat/RelayEnvelope.h"
 #include "common/thread/IThreadStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/people/IdentityStore.h"
 #include "mesh/host/DisclosureGatedPeerLinks.h"
 #include "mesh/host/MeshPorts.h"

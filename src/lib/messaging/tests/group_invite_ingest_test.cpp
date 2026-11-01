@@ -8,7 +8,7 @@
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/MlDsa.h"
@@ -169,7 +169,7 @@ struct PartyHarness {
     }
     envelope.body.e2e.payload_b64 = *payload;
 
-    peer.SignEnvelope(envelope);
+    test::SignEnvelopeAs(peer, envelope);
     return envelope;
   }
 

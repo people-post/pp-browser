@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-/** The invite gate's view of an inviter, from the contacts (messaging does not include people). */
+/** The invite gate's view of an inviter, from the contacts. */
 inline GroupInviteGate::StandingFn InviterStandingFromContacts(ContactsStore& contacts) {
   return [&contacts](const std::string& identity) {
     auto contact = contacts.FindByIdentity(identity);

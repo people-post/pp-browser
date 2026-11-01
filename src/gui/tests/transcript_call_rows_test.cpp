@@ -6,7 +6,7 @@
 #include "lib/people/ContactsStore.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "gui/chat/TranscriptRml.h"
 #include "common/Utilities.h"
 #include "common/chat/SystemControl.h"

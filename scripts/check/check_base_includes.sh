@@ -53,18 +53,16 @@ check_absent "common must not include base/" \
 check_absent "common must not include feature/" \
   '#include "feature/' src/common
 
-# Legacy lib→lib edges still present. Remove entries as peels land.
-# Format: from->to (module folder names under src/lib/).
-# (empty — all historical lib peer edges cleared)
-LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
-EOF
-)
+# Lib peers include each other only down the capability order (projects/capability-repos CR013): a peer
+# in a higher capability may include one in a lower one (messaging -> people); two peers of one capability,
+# or an edge against the order, may not. The pairs come from the capability gate, the one home of the order.
+ALLOWED_LIB_EDGES=$(python3 "$ROOT/scripts/check/check_capability_edges.py" --lib-edges)
 
-DOMAIN_MODULES=(people messaging calls broadcast pricing content net mesh media ai ui)
+DOMAIN_MODULES=(people messaging calls broadcast pricing content posts net media ai ui)
 
-is_legacy_edge() {
+is_allowed_lib_edge() {
   local edge="$1"
-  printf '%s\n' "$LEGACY_DOMAIN_EDGES" | grep -qx "$edge"
+  printf '%s\n' "$ALLOWED_LIB_EDGES" | grep -qx "$edge"
 }
 
 # Scan production sources under src/lib for lib→lib includes.
@@ -95,13 +93,14 @@ scan_lib_peer_includes() {
       [[ "$is_lib_dest" -eq 1 ]] || continue
 
       edge="$from->$dest"
-      if ! is_legacy_edge "$edge"; then
-        echo "FAIL: new lib peer edge $edge (not on legacy allowlist)"
+      if ! is_allowed_lib_edge "$edge"; then
+        echo "FAIL: lib peer edge $edge is not down the capability order (CR013)"
         echo "  $rel: $line"
-        echo "  Promote a contract to src/common/ or wire in feature/; do not add peer→peer includes."
+        echo "  Include only lib peers of a lower capability; within one capability, share through"
+        echo "  src/common/ or wire in feature/."
         FAIL=1
       fi
-    done < <(rg -n '#include "(base|lib)/(people|messaging|calls|broadcast|pricing|content|net|mesh|media|ai|ui)/' "$file" || true)
+    done < <(rg -n '#include "(base|lib)/(people|messaging|calls|broadcast|pricing|content|posts|net|media|ai|ui)/' "$file" || true)
   done < <(find "$root_dir" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) \
     ! -path '*/tests/*' -print0)
 }
@@ -185,10 +184,7 @@ check_absent "net must not include base/messaging/RelayWirePayload.h (use common
   '#include "base/messaging/RelayWirePayload.h"' src/lib/net
 check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "lib/messaging/RelayWirePayload.h"' src/lib/net
-check_absent_prod "messaging must not include lib/people/ (wire via common/feature)" \
-  '#include "lib/people/' src/lib/messaging
-check_absent_prod "net must not include lib/people/ (use common/directory + feature wiring)" \
-  '#include "lib/people/' src/lib/net
+# messaging -> people and net -> people are down the capability order: the lib peer check below governs them (CR013).
 check_absent "must not include base/people/ (moved to lib/people/)" \
   '#include "base/people/' src
 check_absent "must not include base/media/ (moved to lib/media/)" \
@@ -228,7 +224,6 @@ for shim in \
   src/lib/messaging/IThreadStore.h \
   src/lib/messaging/MessagingJson.h \
   src/lib/messaging/ChatBlobRequestUtil.h \
-  src/lib/messaging/PeerBriefRoute.h \
   src/lib/mesh \
   src/common/directory/DirectoryTypes.h \
   src/common/directory/IDirectoryClient.h \

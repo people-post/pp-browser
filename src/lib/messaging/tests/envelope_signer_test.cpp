@@ -1,7 +1,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/EnvelopeSigner.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/chat/MessagingJson.h"
 
 #include <gtest/gtest.h>

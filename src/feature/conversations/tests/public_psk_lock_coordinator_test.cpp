@@ -2,7 +2,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/PskRotateCodec.h"
 #include "common/chat/RelayEnvelope.h"
 #include "lib/messaging/SqliteThreadStore.h"

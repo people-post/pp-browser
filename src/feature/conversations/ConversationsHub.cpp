@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "lib/people/DevicePeerId.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "domain/node/AppRuntimeMeshExecutors.h"
@@ -20,14 +21,14 @@
 
 #include "lib/people/ContactReachability.h"
 #include "lib/messaging/GroupInviteGate.h"
-#include "domain/peers/GroupInviteStanding.h"
+#include "lib/messaging/GroupInviteStanding.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/messaging/PeerRequestAuth.h"
-#include "lib/messaging/PeerCardStore.h"
+#include "lib/people/PeerCardStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -40,7 +41,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -3220,7 +3221,7 @@ Roe<std::string> ConversationsHub::OwnContactLocator() {
     return Error("Account not set up");
   }
   ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
-  if (auto self = PeerRequestAuth::DevicePeerId(identity->public_key_b64)) {
+  if (auto self = DevicePeerIdFromKey(identity->public_key_b64)) {
     locator.devices.push_back(*self);
   }
   if (account_keys_) {

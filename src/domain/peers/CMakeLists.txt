@@ -14,6 +14,7 @@ pp_browser_add_domain_library(pp_domain_peers
     OwnCards.cpp
   PUBLIC_LIBS
     pp_lib_people
+    pp_lib_people_cards
     pp_lib_net
     pp_lib_messaging
     pp_mesh

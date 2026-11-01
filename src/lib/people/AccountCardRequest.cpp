@@ -1,4 +1,4 @@
-#include "lib/messaging/AccountCardRequest.h"
+#include "lib/people/AccountCardRequest.h"
 
 #include "common/ValueJson.h"
 
