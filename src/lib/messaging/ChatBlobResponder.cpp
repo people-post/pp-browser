@@ -3,7 +3,7 @@
 #include "lib/delivery/PeerRequestAuth.h"
 #include "common/directory/DirectoryJson.h"
 
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/messaging/AttachmentCache.h"

@@ -9,7 +9,7 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 
 #include <functional>
 #include <mutex>

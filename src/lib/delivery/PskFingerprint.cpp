@@ -1,4 +1,4 @@
-#include "foundation/crypto/PskFingerprint.h"
+#include "lib/delivery/PskFingerprint.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"

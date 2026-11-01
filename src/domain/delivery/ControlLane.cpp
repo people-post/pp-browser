@@ -4,7 +4,7 @@
 #include "domain/delivery/E2ePublicSessionKeys.h"
 #include "domain/delivery/PeerRouteBook.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
-#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/people/ContactsStore.h"

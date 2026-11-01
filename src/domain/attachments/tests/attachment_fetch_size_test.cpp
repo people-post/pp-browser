@@ -1,6 +1,6 @@
 #include "domain/attachments/AttachmentFetch.h"
 
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "common/Utilities.h"

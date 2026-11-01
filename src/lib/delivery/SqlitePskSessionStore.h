@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/IDekConsumer.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 #include "foundation/crypto/CryptoTypes.h"
 
 #include "common/Module.h"

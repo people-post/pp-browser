@@ -1,4 +1,4 @@
-#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "lib/delivery/AutoKeyEstablishment.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"

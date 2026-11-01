@@ -6,7 +6,7 @@
 
 #include "gui/BadgeAggregator.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PskFingerprint.h"
+#include "lib/delivery/PskFingerprint.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"

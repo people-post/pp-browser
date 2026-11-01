@@ -364,3 +364,20 @@ ports with their mocks, `LocalKeys`. Up into messaging: `PeerTransports` and the
 `ControlLane` takes the direct-chat client as a getter, `PeerRouteBook` the sender's verification as a bool.
 Tests that round-trip through messaging's SQLite store stay messaging's.
 
+## CR021 — pp-browser's crypto formats are delivery's; pp-cpp-crypto takes only generic pieces
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); amends P2's "crypto additions into pp-cpp-crypto"
+
+**Context:** P2 planned to move "the crypto capabilities add" — message and attachment ciphers, the PSK session
+store — into pp-cpp-crypto. Most of it is pp-browser's wire format (payload encoding, AAD, HKDF info strings, PSK
+bundles, the KEM binding domain, `account:` IDs); pp-cpp-crypto's own rule keeps product wire formats in the apps,
+and the ledger apps share it. Since CR020 those message formats are what the delivery capability defines.
+
+**Decision:** pp-cpp-crypto takes the generic pieces only: base64url, BLAKE2b-256 and `ReplayWindow` (v1.1.0);
+`foundation/crypto/CryptoUtil.h` names pp-cpp-crypto's helpers. The message formats move to `lib/delivery`
+(`SessionKeyDeriver`, `CanonicalAad`, `PskBundleCodec`, `PskFingerprint`, `AutoKeyEstablishment`, `IPskSessionStore`,
+`AttachmentContentCipher`) and `MediaKeyWrap` to `lib/calls`. The AEAD blob both messages and the at-rest store use
+(`MessageCipher`, `EncryptedPayload`) stays in the base, with the identity formats people uses (`HybridKem`,
+`KemKeyBinding`, `MlDsa`'s `account:` ID, recovery) and the profile's at-rest crypto (vault, PIN, `FileCipher`).
+

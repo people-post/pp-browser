@@ -1,8 +1,15 @@
-# Secure delivery (projects/capability-repos CR020): pairwise and public E2E sessions, envelopes and their
+# Secure delivery (projects/capability-repos CR020): pairwise and public E2E sessions (their key derivation, AAD,
+# PSK bundles and fingerprints, auto key establishment), envelopes and their
 # signing, the record payload codecs, the control lane's envelopes, the relay's message client — what
 # messaging and realtime both ride. Below messaging and calls in the capability order.
 pp_browser_add_lib_library(pp_lib_delivery
   SOURCES
+    AutoKeyEstablishment.cpp
+    CanonicalAad.cpp
+    PskBundleCodec.cpp
+    PskFingerprint.cpp
+    SessionKeyDeriver.cpp
+    AttachmentContentCipher.cpp
     BackendClientSet.cpp
     ChatPayloadCodec.cpp
     ChatPayloadValidator.cpp

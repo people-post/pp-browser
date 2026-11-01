@@ -1,4 +1,4 @@
-#include "foundation/crypto/SessionKeyDeriver.h"
+#include "lib/delivery/SessionKeyDeriver.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"

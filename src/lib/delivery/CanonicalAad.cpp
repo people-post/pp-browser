@@ -1,4 +1,4 @@
-#include "foundation/crypto/CanonicalAad.h"
+#include "lib/delivery/CanonicalAad.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 

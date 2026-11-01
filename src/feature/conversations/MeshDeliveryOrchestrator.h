@@ -15,7 +15,7 @@
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/people/PeerKemKeyStore.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"

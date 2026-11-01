@@ -57,7 +57,10 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       keys through the port (CR015's note).
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.
-- [ ] The crypto capabilities add today (message and attachment ciphers, PSK session store) into pp-cpp-crypto.
+- [x] The crypto pp-browser adds: generic pieces into pp-cpp-crypto v1.1.0 (base64url, BLAKE2b-256, `ReplayWindow`;
+      `CryptoUtil` now names pp-cpp-crypto's); pp-browser's message formats into delivery (`lib/delivery`:
+      session keys, AAD, PSK bundles / fingerprints, `key_init`, the PSK store port, the attachment cipher;
+      `MediaKeyWrap` into `lib/calls`). pp-cpp-crypto keeps its rule: no product wire formats.
 
 ## P3 — Capability targets (in-repo)
 

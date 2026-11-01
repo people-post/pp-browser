@@ -1,10 +1,10 @@
 #include "lib/delivery/PublicPskLockCoordinator.h"
 
-#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
-#include "foundation/crypto/PskBundleCodec.h"
+#include "lib/delivery/PskBundleCodec.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Utilities.h"

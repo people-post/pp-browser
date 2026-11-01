@@ -4,7 +4,7 @@
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/attachments/AttachmentMetrics.h"
-#include "foundation/crypto/AttachmentContentCipher.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"
 
 #include "common/Error.h"

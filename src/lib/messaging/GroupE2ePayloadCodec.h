@@ -4,7 +4,7 @@
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 
 #include "common/Error.h"
 

@@ -7,7 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
-#include "foundation/crypto/IPskSessionStore.h"
+#include "lib/delivery/IPskSessionStore.h"
 
 #include <cstdint>
 #include <functional>

@@ -174,16 +174,22 @@ Peer verify keys: `PeerSigningKeyStore` / `PeerKemKeyStore`, filled from account
 
 Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_epoch` (E019).
 
-## `base/crypto` module (target)
+## Code
 
-| Component | Role |
-|-----------|------|
-| `SessionKeyDeriver` | HKDF-SHA256 |
-| `CanonicalAad` | Build/parse AAD |
-| `MessageCipher` | AEAD encrypt/decrypt |
-| `EncryptedPayload` | Blob codec + base64 |
-| `ReplayWindow` | Seq acceptance helper (D013 classifier is authoritative); in memory, so the classifier starts it at the persisted `contiguous_peer_seq` (`CatchUpTo`) |
-| `IPskSessionStore` | PSK + retired epochs + public `key_scope` / conversation KEM on `chat_targets` |
+The message formats are the delivery capability's (`src/lib/delivery/`, capability-repos CR020); the AEAD blob both
+messages and the at-rest store use is the base's (`src/foundation/crypto/`); generic pieces are pp-cpp-crypto's.
+
+| Component | Where | Role |
+|-----------|-------|------|
+| `SessionKeyDeriver` | `lib/delivery` | HKDF-SHA256 |
+| `CanonicalAad` | `lib/delivery` | Build/parse AAD |
+| `PskBundleCodec`, `PskFingerprint`, `AutoKeyEstablishment` | `lib/delivery` | PSK bundles, their fingerprints, `key_init` |
+| `IPskSessionStore` | `lib/delivery` | PSK + retired epochs + public `key_scope` / conversation KEM on `chat_targets` |
+| `AttachmentContentCipher` | `lib/delivery` | Per-file attachment key and AEAD |
+| `MediaKeyWrap` | `lib/calls` | A call's or a broadcast's media key wrapped for a peer |
+| `MessageCipher` | `foundation/crypto` | AEAD encrypt/decrypt |
+| `EncryptedPayload` | `foundation/crypto` | Blob codec + base64 |
+| `ReplayWindow` | pp-cpp-crypto (`crypto/ReplayWindow.h`) | Seq acceptance helper (D013 classifier is authoritative); in memory, so the classifier starts it at the persisted `contiguous_peer_seq` (`CatchUpTo`) |
 
 Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-message-crypto/PHASES.md) phase c1.
 

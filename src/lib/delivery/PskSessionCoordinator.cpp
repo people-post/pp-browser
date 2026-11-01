@@ -1,7 +1,7 @@
 #include "lib/delivery/PskSessionCoordinator.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PskBundleCodec.h"
+#include "lib/delivery/PskBundleCodec.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/PbrCompat.h"
