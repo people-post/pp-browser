@@ -6,7 +6,7 @@
 #include "feature/conversations/InboxController.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "common/Utilities.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

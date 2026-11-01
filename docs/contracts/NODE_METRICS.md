@@ -48,6 +48,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_punch_served_total` | counter | `role` = `introducer` \| `target` \| `target_declined` | Punch requests served; `target_declined`: an initiator our address-disclosure audience does not allow (projects/privacy T1) |
 | `pp_circuit_relay_requests_total` | counter | `op` = `bridge` \| `reserve`; `result` = `accepted` \| `refused_admission` \| `refused_standby_full` (bridge) / `accepted` \| `refused` (reserve) | |
 | `pp_circuit_relay_tunnels_total` | counter | `result` = `bridged` \| `failed` | Tunnels that ended setup |
+| `pp_circuit_relay_bridge_failures_total` | counter | `reason` = `target_not_reserved` \| `target_unreachable` \| `busy` \| `refused` \| `not_ready` \| `bad_request` \| `generic` | Admitted bridges (`requests_total{op=bridge,result=accepted}`) that then failed, by the refusal the dialer heard; `target_not_reserved` is the "not registered" a callee not parked on this relay causes (pp-cpp-mesh ≥ v2.5.0) |
 | `pp_circuit_relay_setup_seconds` | histogram | | Request → bridged (buckets 0.05 … 10) |
 | `pp_circuit_relay_tunnels` | gauge | `state` = `bridged` \| `setup` | Open now |
 | `pp_circuit_relay_reservations` | gauge | | Answerers parked here |
@@ -58,6 +59,10 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_dht_inbound_rate_limited_total` | counter | | Refused by the per-peer limit |
 | `pp_dht_store_rejected_total` | counter | | |
 | `pp_dht_lookups_total` | counter | | `find_peer` lookups issued |
+| `pp_node_heartbeat_total` | counter | `result` = `ok` \| `auth` \| `stale` \| `not_registered` \| `unknown_peer` \| `rejected` \| `http_error` \| `network` | Mesh directory heartbeats sent, by reply (`http_error` = 429 / 5xx / sign failure); present only when the heartbeat runs ([MESH_DIRECTORY](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat)) |
+| `pp_node_heartbeat_last_success_timestamp_seconds` | gauge | | Unix seconds of the last accepted heartbeat; absent until the first |
+| `pp_node_heartbeat_state` | gauge | `state` = `active` \| `draining` \| `retiring` | 1 for the state being reported |
+| `pp_node_heartbeat_clock_skew_seconds` | gauge | | Server time minus local time at the last reply that carried `server_time` (200, and 401 when present) |
 
 Owner names: `pp-media-sess` (`pp-connectivity` until 2026-10: mesh control moved onto the mesh's io lane). Histogram buckets (seconds): 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5.
 

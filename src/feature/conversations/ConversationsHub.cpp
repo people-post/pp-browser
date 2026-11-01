@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "lib/people/DevicePeerId.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "domain/node/AppRuntimeMeshExecutors.h"
@@ -20,14 +21,14 @@
 
 #include "lib/people/ContactReachability.h"
 #include "lib/messaging/GroupInviteGate.h"
-#include "domain/peers/GroupInviteStanding.h"
+#include "lib/messaging/GroupInviteStanding.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/messaging/PeerRequestAuth.h"
-#include "lib/messaging/PeerCardStore.h"
+#include "lib/people/PeerCardStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -40,7 +41,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -405,6 +406,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_->SetStopping(shutdown_requested_.load(std::memory_order_acquire));
   mesh_->SetAppProtocols(ProductMeshProtocols());  // advertised from the first advertisement on
   mesh_->SetAddressDisclosure(&address_disclosure_);
+  mesh_->SetOnUdpSocketCheck([this](const mesh::UdpSocketCheck& check) { ReportUdpSocketCheck(log(), check); });
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
     mesh_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
@@ -2920,6 +2922,10 @@ void ConversationsHub::OnAppBackground() {
 }
 
 void ConversationsHub::OnAppForeground() {
+  // #416: iOS can leave the mesh's UDP socket dead across a suspend; the mesh reopens it.
+  if (mesh_ready_ && mesh_) {
+    mesh_->EnsureUdpSocketAlive(mesh::UdpSocketCheckReason::Requested);
+  }
   // The open chat's peer is the one the user is about to talk to: warm its link.
   if (!messaging_ready_ || !mesh_messaging_ || !inbox_) {
     return;
@@ -3237,7 +3243,7 @@ Roe<std::string> ConversationsHub::OwnContactLocator() {
     return Error("Account not set up");
   }
   ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
-  if (auto self = PeerRequestAuth::DevicePeerId(identity->public_key_b64)) {
+  if (auto self = DevicePeerIdFromKey(identity->public_key_b64)) {
     locator.devices.push_back(*self);
   }
   if (account_keys_) {

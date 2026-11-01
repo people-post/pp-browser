@@ -1,7 +1,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 
 #include "common/directory/DirectoryJson.h"
-#include "lib/messaging/tests/TestAccount.h"
+#include "lib/people/tests/TestAccount.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 
 #include <gtest/gtest.h>

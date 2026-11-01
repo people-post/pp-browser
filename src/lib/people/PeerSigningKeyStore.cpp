@@ -1,4 +1,4 @@
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"

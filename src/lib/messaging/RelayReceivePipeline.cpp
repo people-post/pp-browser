@@ -2,7 +2,7 @@
 
 #include "lib/messaging/SentCopy.h"
 
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/AccountCard.h"
 
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterSync.h"

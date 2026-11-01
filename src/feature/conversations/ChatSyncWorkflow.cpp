@@ -10,7 +10,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/ContactsStore.h"
-#include "lib/people/PeerBriefRoute.h"
+#include "lib/messaging/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>

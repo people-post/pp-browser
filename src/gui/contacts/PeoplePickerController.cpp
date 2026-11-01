@@ -5,7 +5,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/people/ContactJson.h"

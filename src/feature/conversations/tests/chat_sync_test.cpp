@@ -2,7 +2,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/messaging/E2eRelayPayloadCodec.h"
 #include "lib/messaging/EnvelopeSigner.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/chat/RelayStreamKey.h"
 #include "lib/messaging/RelayWirePayload.h"
 #include "lib/messaging/SqliteThreadStore.h"
@@ -14,11 +14,11 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "domain/peers/LocalKeysFromIdentity.h"
+#include "lib/messaging/LocalKeysFromIdentity.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "common/MeshAlias.h"
 
@@ -146,7 +146,7 @@ public:
     envelope.timestamp = static_cast<int64_t>(seq);
     envelope.stream_key =
         BuildCanonicalRelayStreamKey(local_relay_id, "relay:peer", ThreadChannel::E2e, envelope.session_epoch);
-    peer.SignEnvelope(envelope);
+    test::SignEnvelopeAs(peer, envelope);
     return envelope;
   }
 

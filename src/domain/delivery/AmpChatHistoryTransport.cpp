@@ -1,5 +1,6 @@
 #include "domain/delivery/AmpChatHistoryTransport.h"
 
+#include "lib/people/DevicePeerId.h"
 #include "mesh/l4/shared/InboundReply.h"
 
 #include "lib/messaging/ChatHistoryResponder.h"
@@ -94,7 +95,7 @@ struct AmpChatHistoryTransport::Impl {
                       const std::string local_account_id = !local_identity->account_id.empty()
                                                                ? local_identity->account_id
                                                                : local_identity->relay_user_id;
-                      auto local_device = PeerRequestAuth::DevicePeerId(local_identity->public_key_b64);
+                      auto local_device = DevicePeerIdFromKey(local_identity->public_key_b64);
                       if (!local_device) {
                         return;
                       }
@@ -229,7 +230,7 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
     return;
   }
   ChatHistoryRequest signed_request = request;
-  auto peer_id = local_peer_id_override_.empty() ? PeerRequestAuth::DevicePeerId(local->public_key_b64)
+  auto peer_id = local_peer_id_override_.empty() ? DevicePeerIdFromKey(local->public_key_b64)
                                                  : Roe<std::string>(local_peer_id_override_);
   if (!peer_id) {
     (*finish)(peer_id.error());

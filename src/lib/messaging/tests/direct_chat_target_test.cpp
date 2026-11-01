@@ -1,4 +1,4 @@
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/people/ContactTypes.h"
 #include "common/MeshAlias.h"

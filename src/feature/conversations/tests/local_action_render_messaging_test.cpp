@@ -4,7 +4,7 @@
 #include "feature/conversations/MessagingTools.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ai/LocalActionRender.h"
-#include "lib/people/ModelFacingJson.h"
+#include "lib/messaging/ModelFacingJson.h"
 
 #include "common/ValueJson.h"
 

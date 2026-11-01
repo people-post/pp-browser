@@ -12,9 +12,11 @@ namespace {
 constexpr const char kRegisterDomain[] = "pp-browser:relay-register-v1";
 constexpr const char kProfileDomain[] = "pp-browser:relay-profile-v1";
 constexpr const char kRevokeDomain[] = "pp-browser:relay-revoke-v1";
+constexpr const char kHeartbeatDomain[] = "pp-browser:relay-heartbeat-v1";
 constexpr uint8_t kRegisterSignVersion = 2;
 constexpr uint8_t kProfileSignVersion = 1;
 constexpr uint8_t kRevokeSignVersion = 1;
+constexpr uint8_t kHeartbeatSignVersion = 1;
 
 } // namespace
 
@@ -59,6 +61,18 @@ std::vector<uint8_t> BuildAccountRevokeSignBytes(const std::string& relay_user_i
   RelaySignAppendDomain(oss, kRevokeDomain);
   RelaySignAppendU8(oss, kRevokeSignVersion);
   RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendI64(oss, timestamp);
+  return RelaySignOssToBytes(oss);
+}
+
+std::vector<uint8_t> BuildRelayHeartbeatSignBytes(const std::string& relay_user_id, const std::string& peer_id,
+                                                  const std::string& state, const int64_t timestamp) {
+  std::ostringstream oss;
+  RelaySignAppendDomain(oss, kHeartbeatDomain);
+  RelaySignAppendU8(oss, kHeartbeatSignVersion);
+  RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendWireLenUtf8(oss, peer_id);
+  RelaySignAppendWireLenUtf8(oss, state);
   RelaySignAppendI64(oss, timestamp);
   return RelaySignOssToBytes(oss);
 }

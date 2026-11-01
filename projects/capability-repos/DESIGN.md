@@ -39,11 +39,11 @@ that is not.
 ### Edges against the order
 
 Include sites, tests included (a capability's tests move with it). The gate started from 11 edges, 67 sites;
-moving misplaced tests (P1) took it to 10 edges, 53 sites (`scripts/check/capability_edges_allowlist.txt`).
+moving misplaced tests (P1) took it to 10 edges, 53 sites; cutting people → messaging (CR013) to 9 edges,
+32 sites (`scripts/check/capability_edges_allowlist.txt`).
 
 | Edge | Sites | What it is |
 |------|-------|------------|
-| people → messaging | 21 | thread / chat types and the direct-message port used from identity code; `AccountCard` (identity) lives in `lib/messaging` |
 | net → messaging | 10 | chat DTOs the backend client carries (relay envelope, history) |
 | messaging → calls | 2 | `CallTypes` and the call media protocol id in the hub's ports |
 | base → messaging | 2 | `foundation/runtime/BackgroundSyncScheduler` (stays app-side) and `common/thread`'s history types naming the relay envelope |
@@ -103,7 +103,7 @@ people, net and node from that repo.
    or one that grows, fails; the allowlist only shrinks.
 3. **Layers inside, capabilities across** (CR011). The layer rules of
    [SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md) hold inside every capability; a capability's DTOs under
-   `common/<capability>/` belong to it.
+   `common/<capability>/` belong to it. Lib peers include each other only down the capability order (CR013).
 4. **The app owns the version set.** A capabilities repo pins dependencies only for its own CI; each app keeps
    one pin list that wins (as pp-cpp-mesh: "a consumer that already has the targets keeps its own").
 5. **A capability owns its contracts and tests.** Wire, disk and HTTP contracts, unit and in-process tests move

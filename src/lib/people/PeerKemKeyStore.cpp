@@ -1,4 +1,4 @@
-#include "lib/messaging/PeerKemKeyStore.h"
+#include "lib/people/PeerKemKeyStore.h"
 
 #include "common/directory/DirectoryJson.h"
 #include "foundation/crypto/KemKeyBinding.h"

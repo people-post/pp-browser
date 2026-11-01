@@ -1,5 +1,4 @@
 set(PP_DOMAIN_PEOPLE_SOURCES
-  DirectChatTargetFromContact.cpp
   AvatarGlyph.cpp
   ProfileIconCache.cpp
   AccountStateCodec.cpp
@@ -20,11 +19,13 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   MeshHopPolicy.cpp
   PeerAccountBook.cpp
   PeopleLookupFailure.cpp
-  PeerBriefRoute.cpp
   PeerDisplayLabel.cpp
-  ModelFacingJson.cpp
-  PeerDisplayResolver.cpp
   RegistrationStatus.cpp
+  AccountCard.cpp
+  DevicePeerId.cpp
+  AccountCardRequest.cpp
+  PeerKemKeyStore.cpp
+  PeerSigningKeyStore.cpp
 )
 
 pp_browser_add_lib_library(pp_lib_people
@@ -36,6 +37,15 @@ pp_browser_add_lib_library(pp_lib_people
     pp_foundation_identity
     pp_foundation_platform_core
     sodium)
+
+if(NOT PP_BROWSER_HEADLESS)
+  # Peers' cards in the profile database (SQLite): the app's, not the headless node's, which builds no SQLite.
+  pp_browser_add_lib_library(pp_lib_people_cards
+    SOURCES PeerCardStore.cpp
+    PUBLIC_LIBS
+      pp_lib_people
+      SQLite::SQLite3)
+endif()
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

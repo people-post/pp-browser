@@ -1,4 +1,4 @@
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/AccountCard.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"

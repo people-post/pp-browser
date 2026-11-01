@@ -10,7 +10,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 
 #include <functional>
 #include <optional>

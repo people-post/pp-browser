@@ -1,4 +1,4 @@
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "domain/delivery/AmpChatHistoryTransport.h"
 
 #include "foundation/crypto/CryptoConstants.h"

@@ -60,6 +60,18 @@ flowchart LR
 - `GET /v1/users/by-account/:id` and `GET /v1/users/:relay_user_id` — return doc including `entity_kind` + `capabilities` (exact lookup OK).
 - **New** `GET /v1/mesh/nodes` — non-expired `entity_kind=mesh_node`; return account_id, nickname, endpoints, capabilities, expires_at.
 
+### Heartbeat
+
+pp-node proves liveness so a stopped node drops out of `GET /v1/mesh/nodes` before its registration expires.
+
+- `POST {registration.base_url}/v1/mesh/heartbeat` `{relay_user_id, peer_id, state, timestamp, signature}`; `state` ∈ `active` | `draining` | `retiring`; `timestamp` is Unix ms.
+- Signature: ML-DSA-65 by the **account** key over `"pp-browser:relay-heartbeat-v1" 0x00 | u8(1) | u64be(len)+relay_user_id | u64be(len)+peer_id | u64be(len)+state | i64be(timestamp)` (`BuildRelayHeartbeatSignBytes`).
+- The server accepts ±15 min of clock skew and only a timestamp strictly greater than the stored one; pp-node keeps its own timestamps strictly increasing.
+- Cadence: every 5 minutes and immediately on a state change; `retiring` once on shutdown (3 s timeout).
+- Replies: `200 {success, server_time, state, last_seen_at, expires_at}`. `404 not_registered` / `registration_expired` ⇒ pp-node re-registers through the normal publish path (backoff 10 s doubling to 5 min); `404 unknown_peer`, `409 stale_timestamp`, `429`, 5xx and network errors ⇒ retry next period; `401` ⇒ logged as an error (with a clock-skew hint when `server_time` differs by more than 60 s).
+- A heartbeat extends the registration; a node silent past its expiry must register again.
+- Operator control and series: [CONFIGURATION](../../docs/ops/CONFIGURATION.md), [NODE_METRICS](../../docs/contracts/NODE_METRICS.md).
+
 ### Client config
 
 - `directory.providers[]` (ordered) or keep single `directory.base_url` as provider[0] with `transport` (transitional).

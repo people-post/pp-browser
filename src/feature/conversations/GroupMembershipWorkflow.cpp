@@ -1,7 +1,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "lib/messaging/GroupRosterVersion.h"
 
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupTypes.h"
@@ -10,7 +10,7 @@
 #include "lib/people/ContactJson.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include "common/Utilities.h"
 

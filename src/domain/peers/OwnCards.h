@@ -2,7 +2,7 @@
 
 #include "common/directory/KeyCard.h"
 #include "domain/peers/AccountKeyResolver.h"
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/AccountCard.h"
 #include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
