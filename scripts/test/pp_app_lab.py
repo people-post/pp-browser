@@ -487,6 +487,16 @@ def summaries_settle(u, thread, want, timeout=20):
         time.sleep(0.5)
 
 
+def chats_with_settle(u, peer, want=1, timeout=20):
+    """`u`'s chats with `peer`, once there are `want` (the call's record lands with the inbox that carries it)."""
+    deadline = time.time() + timeout
+    while True:
+        got = [t for t in u.cmd("threads")["threads"] if t["peer"] == peer]
+        if len(got) >= want or time.time() > deadline:
+            return got
+        time.sleep(0.5)
+
+
 # --- scenarios ------------------------------------------------------------------------------------
 
 def scenario_first_contact(lab):
@@ -511,7 +521,7 @@ def scenario_first_contact(lab):
     got = summaries_settle(a, a_thread, 1)
     if len(got) != 1 or got[0].get("outcome") != "completed":
         raise ProbeError("alice's history: %s" % got)
-    b_threads = [t for t in b.cmd("threads")["threads"] if t["peer"] == a.account]
+    b_threads = chats_with_settle(b, a.account)
     if len(b_threads) != 1:
         raise ProbeError("bob has %d chats with alice" % len(b_threads))
     got = summaries_settle(b, b_threads[0]["id"], 1)
