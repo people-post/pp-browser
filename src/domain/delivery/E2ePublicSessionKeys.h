@@ -4,7 +4,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "lib/messaging/E2ePublicSessionLogic.h"
-#include "lib/messaging/PeerKemKeyStore.h"
+#include "lib/people/PeerKemKeyStore.h"
 
 #include <cstdint>
 #include <optional>

@@ -1,6 +1,6 @@
 # Capability repos — current state
 
-**Updated:** 2026-10-30  
+**Updated:** 2026-10-31  
 **Phase:** P0 done; P1 under way; P2's runtime core done
 
 ## Done
@@ -13,6 +13,11 @@
   sites against the order (`capability_edges_allowlist.txt`).
 - **P1, misplaced tests:** calls logic tests to `lib/calls/tests`, `common/chat` and `common/ui` tests beside
   their code — 10 edges / 53 sites left.
+- **CR013:** lib peers include and link each other down the capability order (the layer checks read the
+  pairs from the capability gate).
+- **P1, people → messaging:** 21 sites → 0 (cards, key stores, `DevicePeerIdFromKey` into `lib/people`; the
+  people + thread compositions into `lib/messaging`, `feature/conversations`, `feature/ai`) — 9 edges / 32
+  sites left.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

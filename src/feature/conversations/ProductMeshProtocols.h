@@ -3,7 +3,7 @@
 #include "common/chat/IDirectMessageClient.h"
 #include "common/media/CallMediaProtocol.h"
 #include "common/thread/ChatBlobTypes.h"
-#include "lib/messaging/AccountCardRequest.h"
+#include "lib/people/AccountCardRequest.h"
 
 #include <string>
 #include <vector>

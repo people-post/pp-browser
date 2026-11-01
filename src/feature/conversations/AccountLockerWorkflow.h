@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/PeerCardStore.h"
+#include "lib/people/PeerCardStore.h"
 #include "lib/net/LockerClient.h"
 #include "lib/people/AccountLocker.h"
 #include "lib/people/ContactsStore.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
 #include "lib/people/ContactTypes.h"

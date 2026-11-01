@@ -1,14 +1,13 @@
 #include "lib/messaging/PeerRequestAuth.h"
 
-#include "lib/messaging/PeerSigningKeyStore.h"
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/PeerSigningKeyStore.h"
+#include "lib/people/AccountCard.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
 #include "common/thread/ThreadChannel.h"
 #include "common/directory/DirectoryJson.h"
 
 #include "common/Serialize.hpp"
-#include "crypto/PeerId.h"
 
 #include <cstdlib>
 #include <sstream>
@@ -100,14 +99,6 @@ std::function<Roe<std::string>()> ResolvedKey(IPeerSigningKeyResolver& keys, con
 }
 
 } // namespace
-
-Roe<std::string> DevicePeerId(const std::string& device_public_key_b64) {
-  auto key = Base64Decode(device_public_key_b64);
-  if (!key) {
-    return key.error();
-  }
-  return pp::PeerIdFromMlDsaPublicKey(*key);
-}
 
 Roe<std::vector<uint8_t>> SignBytes(const ChatHistoryRequest& request) {
   auto oss = Begin("history", request.requester_account_id, request.requester_peer_id, request.timestamp_ms);

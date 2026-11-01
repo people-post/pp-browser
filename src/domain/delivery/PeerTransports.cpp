@@ -5,7 +5,7 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "mesh/reachability/Reachability.h"

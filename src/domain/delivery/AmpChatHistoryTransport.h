@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"

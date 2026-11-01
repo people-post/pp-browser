@@ -10,7 +10,7 @@
 #include "lib/media/CallMediaAdaptation.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/broadcast/BroadcastJoinTicket.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/PairwiseFanoutLogic.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/messaging/SendRelayOptions.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/AccountCardRequest.h"
+#include "lib/people/AccountCardRequest.h"
 #include "mesh/host/MeshPorts.h"
 
 #include "common/Error.h"
