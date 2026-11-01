@@ -12,6 +12,7 @@ add_library(pp_pbr_common STATIC
   directory/DirectoryJson.cpp
   directory/KeyCard.cpp
   ui/WorkingSetCodec.cpp
+  BoundedRead.cpp
   LengthPrefixedCodec.cpp
   ShareableLine.cpp
 )

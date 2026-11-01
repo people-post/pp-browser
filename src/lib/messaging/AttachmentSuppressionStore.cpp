@@ -1,4 +1,6 @@
 #include "lib/messaging/AttachmentSuppressionStore.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -44,9 +46,9 @@ Roe<void> AttachmentSuppressionStore::LoadUnlocked() const {
   if (!input) {
     return Error("Failed to read attachment suppression store");
   }
-  std::ostringstream buffer;
-  buffer << input.rdbuf();
-  auto root = TryParseObject(buffer.str());
+  // An oversized file reads as unparseable (PB-063).
+  const auto text = ReadBounded(input, kMaxProfileJsonFileBytes);
+  const auto root = text ? TryParseObject(*text) : std::nullopt;
   if (!root) {
     return Error("Invalid attachment suppression store");
   }

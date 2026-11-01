@@ -1,4 +1,6 @@
 #include "lib/content/CasStore.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -99,11 +101,14 @@ Roe<ByteVector> CasStore::ReadBlockFile(const std::string& path) const {
   if (!in) {
     return Error("CAS block not found");
   }
-  // One allocation of the file's size (an iterator copy would double the vector while it grows).
+  // Bounded (PB-063) and one allocation of the file's size: a large attachment's block is read once, not grown.
   std::error_code ec;
   const auto size = std::filesystem::file_size(path, ec);
   if (ec) {
-    return ByteVector((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return ReadBoundedBytes(in, kMaxCasBlockFileBytes);
+  }
+  if (size > kMaxCasBlockFileBytes) {
+    return Error("CAS block is over the size limit");
   }
   ByteVector bytes(static_cast<size_t>(size));
   in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));

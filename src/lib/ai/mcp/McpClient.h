@@ -48,7 +48,7 @@ public:
   void Stop();
   bool IsRunning() const { return running_; }
   /** A local process server (its reads keep kMcpReadTimeoutMs whatever request bound is asked). */
-  bool IsStdio() const { return running_ && !http_ && !mock_; }
+  bool IsStdio() const { return running_ && !http_; }
   /**
    * Whether the last request reached the server and got an answer, even a failing one (an HTTP status of any
    * kind, a JSON-RPC error). False when it never got there: no connection, a timeout, a dead process.
@@ -63,8 +63,6 @@ public:
   Roe<std::vector<McpTool>> ListTools(long timeout_s = 0);
   Roe<Object> CallTool(const std::string& name, const Object& arguments);
 
-  static McpClient& MockInstance();
-
   /**
    * One JSON-RPC message from a line-framed stdio stream: the line whose `id` equals `expected_id`, as the whole
    * response object. Notifications and other lines are skipped, at most kMaxMcpSkippedLines. A line over
@@ -77,7 +75,6 @@ private:
   Roe<Object> Request(const std::string& method, const Object& params, long timeout_s = 0);
 
   bool running_ = false;
-  bool mock_ = false;
   bool http_ = false;
   bool answered_ = false;
   std::string http_url_;

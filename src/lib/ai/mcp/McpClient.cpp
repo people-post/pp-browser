@@ -21,18 +21,6 @@ Object EmptyObject() {
   return {};
 }
 
-Object MakeStringPropsQuerySchema() {
-  Object query;
-  query.set("type", "string");
-  Object properties;
-  properties.set("query", query);
-  Object schema;
-  schema.set("type", "object");
-  schema.set("properties", properties);
-  schema.set("required", ArrayValue({Value(std::string("query"))}));
-  return schema;
-}
-
 } // namespace
 
 McpClient::McpClient() {
@@ -50,21 +38,14 @@ void McpClient::Stop() {
   process_.Stop();
   stdio_carry_.clear();
   running_ = false;
-  mock_ = false;
   http_ = false;
   http_url_.clear();
 }
 
 bool McpClient::Start(const std::string& command, const std::vector<std::string>& args) {
   Stop();
-  if (command == "mock") {
-    log().info << "Starting mock MCP client";
-    mock_ = true;
-    running_ = true;
-    return true;
-  }
   if (!process_.Start(command, args)) {
-    // A server that cannot start is a failure the user sees, never a silent switch to the mock (PB-056).
+    // A server that cannot start is a failure the user sees (PB-056).
     log().error << "Could not start MCP process: " << command;
     return false;
   }
@@ -87,37 +68,7 @@ bool McpClient::StartHttp(const std::string& url) {
 }
 
 Roe<Object> McpClient::Request(const std::string& method, const Object& params, const long timeout_s) {
-  answered_ = mock_;
-  if (mock_) {
-    if (method == "initialize") {
-      Object out;
-      out.set("protocolVersion", "2024-11-05");
-      out.set("capabilities", EmptyObject());
-      return out;
-    }
-    if (method == "tools/list") {
-      Object tool;
-      tool.set("name", "user_search");
-      tool.set("description", "Search users by query");
-      tool.set("inputSchema", MakeStringPropsQuerySchema());
-      Object out;
-      out.set("tools", ArrayValue({ObjectValue(std::move(tool))}));
-      return out;
-    }
-    if (method == "tools/call") {
-      const auto name = params.getString("name").value_or("");
-      if (name == "user_search") {
-        Object text_block;
-        text_block.set("type", "text");
-        text_block.set("text", R"([{"name":"Ada","email":"ada@example.com"}])");
-        Object out;
-        out.set("content", ArrayValue({ObjectValue(std::move(text_block))}));
-        return out;
-      }
-    }
-    return EmptyObject();
-  }
-
+  answered_ = false;
   if (http_) {
     Object req;
     req.set("jsonrpc", "2.0");
@@ -317,15 +268,6 @@ Roe<Object> McpClient::ReadStdioResponse(const McpReadFn& read, const int64_t ex
       return Error("MCP sent " + std::to_string(skipped) + " lines without the awaited response");
     }
   }
-}
-
-McpClient& McpClient::MockInstance() {
-  static McpClient client;
-  if (!client.running_) {
-    client.Start("mock");
-    client.Initialize();
-  }
-  return client;
 }
 
 } // namespace pbr

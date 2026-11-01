@@ -1,4 +1,6 @@
 #include "foundation/data/SchemaVersion.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "common/AtomicFileWrite.h"
 #include "common/ValueJson.h"
@@ -89,8 +91,11 @@ Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_d
   if (!in) {
     return Roe<void>::error(Error("Failed to open profile manifest"));
   }
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  auto root = TryParseObject(text);
+  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  if (!text) {
+    return Roe<void>::error(Error("Failed to read profile manifest: " + text.error().message));
+  }
+  auto root = TryParseObject(*text);
   if (!root) {
     return Roe<void>::error(Error("Failed to parse profile manifest"));
   }

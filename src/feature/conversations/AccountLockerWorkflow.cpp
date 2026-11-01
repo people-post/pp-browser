@@ -1,4 +1,6 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/RecoverySeed.h"
@@ -118,8 +120,11 @@ void AccountLockerWorkflow::SetDataDir(std::string data_dir) {
     return;
   }
   std::ifstream in(std::filesystem::path(data_dir_) / kStateFile);
-  std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  auto json = TryParseObject(text);
+  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  if (!text) {
+    return;
+  }
+  auto json = TryParseObject(*text);
   if (!json) {
     return;
   }

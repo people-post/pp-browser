@@ -35,7 +35,6 @@
 #include "lib/ui/InputCoordinator.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
-#include "feature/ai/bindings/ActionRouter.h"
 #include "gui/chat/ChatController.h"
 #include "feature/conversations/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
@@ -287,7 +286,6 @@ Application::Application() {
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   product_->BindFacade(*messaging_facade_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
-  action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
   badges_ = std::make_unique<BadgeAggregator>();
   input_ = std::make_unique<InputCoordinator>();
@@ -605,10 +603,6 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 }
 
 SettingsToolPorts Application::WireSettings(ui::Context* context) {
-  action_router_->Attach(context);
-  action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
-    DataModelHost::Instance().Dirty(model, binding);
-  });
   ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() {
@@ -2098,7 +2092,6 @@ void Application::Shutdown() {
 
     {
       StartupPhase phase("Shutdown::RmlUi");
-      action_router_->Detach();
       ui::RemoveContext("main");
 #ifdef PPBROWSER_ENABLE_DEBUGGER
       ui::Debugger::Shutdown();

@@ -1,4 +1,5 @@
 #include "domain/attachments/AttachmentContent.h"
+#include "common/chat/MessagingLimits.h"
 
 #include "common/chat/MessagingLimits.h"
 #include "lib/content/PrivateContent.h"

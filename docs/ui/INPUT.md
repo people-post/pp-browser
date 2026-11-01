@@ -141,7 +141,6 @@ Register extra actions with `ContextMenuHost::RegisterProvider`.
 
 See [RML_PROFILE.md](RML_PROFILE.md) for allowed elements.
 
-## ActionRouter vs InputCoordinator
+## InputCoordinator
 
-- **ActionRouter** (`src/feature/ai/bindings/`) — RML `data-event-click` and MCP tool routing.
-- **InputCoordinator** — keyboard shortcuts registered from C++ (global quit, etc.).
+Keyboard shortcuts registered from C++ (global quit, etc.). RML clicks reach their controller's own handlers; there is no generic RML-action → tool router.

@@ -1,4 +1,6 @@
 #include "lib/net/RelayInboxCursor.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "common/ValueJson.h"
 
@@ -24,9 +26,9 @@ std::string LoadRelayInboxCursor(const std::string& profile_data_dir, const std:
   if (!in) {
     return {};
   }
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  auto root = TryParseObject(ss.str());
+  // An oversized file reads as unparseable (PB-063).
+  const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  const auto root = text ? TryParseObject(*text) : std::nullopt;
   if (!root) {
     return {};
   }
