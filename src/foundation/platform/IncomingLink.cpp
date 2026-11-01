@@ -1,6 +1,7 @@
 #include "foundation/platform/IncomingLink.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 
 #include <cctype>
 #include <mutex>

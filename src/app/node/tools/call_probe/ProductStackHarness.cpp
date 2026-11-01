@@ -1,10 +1,10 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
-#include "domain/node/AppRuntimeMeshExecutors.h"
+#include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "lib/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "feature/conversations/ProductMeshProtocols.h"
+#include "common/ProtocolIds.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -19,7 +19,8 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/dht/AmpDhtProtocol.h"
@@ -90,7 +91,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   if (!clock) {
     return Error("null Amp clock");
   }
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ProductRuntimeConfig());
   AppRuntime::InitializeUI();
 
   auto harness = std::unique_ptr<ProductStackHarness>(new ProductStackHarness());

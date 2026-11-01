@@ -60,6 +60,8 @@ enum class LiveCallEndReason {
   Orphaned,
   /** Both called each other at once: this call gave way to the other one (no history entry). */
   Merged,
+  /** Another of our devices took (or declined) this incoming call: it stops ringing here (M021 d5; no history). */
+  AnsweredElsewhere,
 };
 
 /** How a call's media is doing (V037 Status) and what it has reached — per call. */

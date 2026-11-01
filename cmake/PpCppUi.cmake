@@ -1,7 +1,8 @@
 # Fetch / add people-post/pp-cpp-ui (first-party ui:: engine + FreeType/HarfBuzz/LunaSVG + SDL/GL).
 #
 # Prefer a local sibling checkout when present (ppweb3 workspace layout) — use this
-# when integrating unreleased develop before cutting a pp-cpp-ui release tag.
+# when integrating unreleased develop before cutting a pp-cpp-ui release tag. Packaged
+# (release) builds never take the sibling.
 # Otherwise pin a release tag from that repo's main line (PP_CPP_UI_GIT_TAG).
 #
 # Include after cmake/dependencies.cmake so FreeType can reuse libp2p zlib;
@@ -15,7 +16,7 @@ set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
 set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
   CACHE STRING "Git remote for pp-cpp-ui")
-pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.5.1"
+pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.6.1"
   "Release tag on pp-cpp-ui main (not a branch name)")
 
 # UI engine unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
@@ -31,7 +32,8 @@ set(FT_REQUIRE_BROTLI OFF CACHE BOOL "" FORCE)
 set(_pp_ui_sibling "${CMAKE_SOURCE_DIR}/../pp-cpp-ui")
 if(PP_CPP_UI_SOURCE_DIR)
   set(_pp_ui_src "${PP_CPP_UI_SOURCE_DIR}")
-elseif(EXISTS "${_pp_ui_sibling}/CMakeLists.txt")
+elseif(NOT PP_BROWSER_PACKAGED_BUILD AND EXISTS "${_pp_ui_sibling}/CMakeLists.txt")
+  # Development only (PB-001): a release build compiles the pinned tag, whatever sits beside it.
   set(_pp_ui_src "${_pp_ui_sibling}")
   message(STATUS "pp-browser: using sibling pp-cpp-ui at ${_pp_ui_src}")
 else()

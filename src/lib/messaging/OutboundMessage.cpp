@@ -9,6 +9,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/error/AppError.h"
 
 #include <algorithm>
 #include <utility>
@@ -262,6 +263,9 @@ RelayEnvelope EnvelopeFrom(const ThreadMessage& message, const EnvelopeSender& s
   if (introduces) {
     envelope.body.e2e.sender_card = sender.card;
   }
+  if (sender.card) {
+    envelope.body.e2e.sender_card_at = sender.card->getIf<int64_t>("issued_at");  // M021 d6: on every envelope
+  }
   if (copies.size() == 1) {
     const RelayCopy only = copies.front();
     envelope = WithSingleRelayCopy(std::move(envelope), only);
@@ -305,6 +309,10 @@ bool DirectSendTriesAmpFirst(const bool amp_reachable, const bool has_relay_rout
   return amp_reachable && !(critical_lane && has_relay_route);
 }
 
+bool ControlAlsoGoesDirect(const bool peer_connected, const bool has_relay_route, const bool critical_lane) {
+  return critical_lane && has_relay_route && peer_connected;
+}
+
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
                                        const std::string& route_party, std::vector<RelayCopy> copies,
@@ -321,8 +329,10 @@ bool OutboxSendStillWanted(const bool control_lane, const int64_t age_ms, const 
   return control_lane ? age_ms <= kControlRetryWindowMs : !thread_paused;
 }
 
-bool OutboxRetryAgain(const int attempts) {
-  return attempts < kMaxOutboxRetryAttempts;
+bool OutboxRetryAgain(const int attempts, const Error& failure) {
+  const bool refused = AppError::CategoryOf(failure) == ErrorCategory::Network &&
+                       static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected;
+  return !refused && attempts < kMaxOutboxRetryAttempts;
 }
 
 } // namespace pbr

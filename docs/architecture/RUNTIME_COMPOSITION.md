@@ -109,7 +109,6 @@ flowchart LR
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>lib/ui/</small>"]
-    ActionRouter["ActionRouter<br/><small>feature/ai/bindings/</small>"]
     ClientCompat["ClientCompatController<br/><small>feature/ui/</small>"]
     Badges["BadgeAggregator<br/><small>feature/ui/</small>"]
     Input["InputCoordinator<br/><small>lib/ui/</small>"]
@@ -128,7 +127,6 @@ flowchart LR
   App --> PeoplePicker
   App --> UnlockGate
   App --> Pin
-  App --> ActionRouter
   App --> ClientCompat
   App --> Badges
   App --> Input
@@ -282,9 +280,9 @@ flowchart TB
 
 | Thread / queue | Owner class | Location | Role |
 |----------------|-------------|----------|------|
-| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `foundation/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
-| **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
-| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
+| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · pp-cpp-common `common/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
+| **Coordinator** | `CoordinatorThread` | pp-cpp-common `common/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
+| **Worker pool** | `WorkerPool` via `AppRuntime` | pp-cpp-common `common/` · `common/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
 | **Media capture / video** | `CallMediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `lib/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
@@ -305,7 +303,7 @@ Full model: [THREADING.md](THREADING.md).
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns the `ProductStack` (hub + participants), `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns the `ProductStack` (hub + participants), `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **ProductStack** | `feature/product/` | The app's feature-level composition: owns `ConversationsHub` and the features riding it as `HubParticipant`s — `CallsParticipant` (owns `CallStack`) and `BroadcastParticipant` (owns `BroadcastHub`); the only feature module that sees conversations, calls and broadcast |
@@ -313,7 +311,6 @@ Full model: [THREADING.md](THREADING.md).
 | **MeshHost** | pp-cpp-mesh `mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
 | **CallStack** | `feature/calls/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; owned by `CallsParticipant` |
 | **ConversationsFacade** | `feature/conversations/` | Non-owning wrapper over `ConversationsHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
-| **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `gui/` | Relay client-compat check; app-owned; deferred startup |
 | **BadgeAggregator** | `gui/` | Nav unread badges; app-owned; `BindSource` via `ConversationsFacade`; chat via `BadgeNotifyPorts` |
 | **BadgeNotifyPorts** | `gui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
@@ -337,6 +334,6 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileIdentityView** | `lib/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
-| **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
+| **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by `foundation/runtime/ProductOwners.h`) | UI mailbox + worker pool + coordinator + owner threads |
 | **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

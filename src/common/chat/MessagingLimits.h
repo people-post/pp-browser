@@ -10,15 +10,8 @@ inline constexpr size_t kMaxE2ePlaintextBytes = 128 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeJsonBytes = 256 * 1024;
 inline constexpr size_t kMaxPollBatchMessages = 100;
-inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
-/**
- * In the background a phone is reached by push only (power): its work is paused (AppLifecycle) and
- * the relay poll with it. A push / WorkManager wake resumes the work for this long — enough to fetch
- * the inbox and ring — then it pauses again.
- */
-inline constexpr uint64_t kBackgroundWakeWindowMs = 20000;
-/** P011 — staying connected in the background (opt-in, Android): the relay poll's pace there. */
-inline constexpr uint64_t kStayConnectedRelayPollIntervalMs = 30000;
+/** A group holds at most this many members (the owner's device checks it; G014 may add a hard stop). */
+inline constexpr int kGroupMemberLimit = 50;
 /** WorkManager backup when alerts on (milliseconds). */
 inline constexpr uint64_t kWorkManagerAlertsOnBackupIntervalMs = 3ULL * 60ULL * 60ULL * 1000ULL;
 /** WorkManager when alerts off (~15 min Android minimum). */
@@ -41,8 +34,12 @@ inline constexpr size_t kMaxOpenThreadDbs = 16;
 /** D042 — cap merged annotations per target message. */
 inline constexpr size_t kMaxAnnotationsPerTarget = 32;
 
-/** R008 / R021 — Soft max plaintext attachment size for Smart auto-download. */
-inline constexpr uint64_t kMaxChatAttachmentPlaintextBytes = 4ULL * 1024ULL * 1024ULL;
+/**
+ * Largest plaintext attachment sent or answered peer-to-peer (`/pp/blob/1.0.0`, 15 s timeout), whatever the
+ * account's tier: a bigger one goes through the server only. The send, receive and auto-download limits live
+ * in `AttachmentLimits` (lib/messaging).
+ */
+inline constexpr uint64_t kMaxDirectAttachmentBytes = 4ULL * 1024ULL * 1024ULL;
 
 /** D040 — AI compaction (v3). */
 inline constexpr int kCompactionTurnThreshold = 20;

@@ -49,8 +49,11 @@ PeerIds come from pp-cpp-crypto ([MESH_IDENTITY.md](MESH_IDENTITY.md)).
 
 ## In pp-browser
 
-- **Who composes it:** `ConversationsHub` (the app) and `NodeBootstrap` (pp-node) each own one
-  `MeshHost`, built with `AppRuntimeMeshExecutors()` and `MetricsRegistry::Global()`
+- **Who composes it:** `ProductMesh` (the app, `feature/product`) and `NodeBootstrap` (pp-node) each own
+  one `MeshHost`, built with `AppRuntimeMeshExecutors()` (`foundation/runtime`) and
+  `MetricsRegistry::Global()`, and give it the profile's role from `domain/node` (what it hosts and
+  serves, its DHT and directory, its own directory row). `ConversationsHub` runs messaging on the app's:
+  it asks its owner (`HubMeshOwner`) for the mesh once messaging is up and gives it back on the way down
   ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
 - **Spelling:** app code is in `pbr` and writes `mesh::MeshHost`, `mesh::DirectoryHit` through the alias
   in [`common/MeshAlias.h`](../../src/common/MeshAlias.h).
@@ -72,7 +75,7 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
 | Call-media transport | `CallMediaAmpTransport` via `CallStack` | `domain/call_media` (a client of the mesh's io lane and L4 helpers); `CallMediaBridge` in `feature/calls` |
-| App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media: `ProductMeshProtocols`) beside the mesh's own |
+| App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media, account cards: `ProductMeshProtocols`, `common/ProtocolIds.h`) beside the mesh's own |
 | Dial / reach / parking | `MeshConnectivity` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::connectivity`); hop candidates injected by `MakeMeshConnectivityDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
 | Media relay | `MeshMediaRelay` (owned by `ConversationsHub`, built on `MeshConnectivity`) | Borrowed by `CallStack` (`CallStackDeps::media_relay`) and broadcast (`RelayAttachPorts`) |
 
@@ -103,6 +106,8 @@ Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–1
 
 Hard lab: hard-w5 Phase-11 FLIP (peer-a changes address mid-call → reconnected on a new path in 2.3 s).
 
+**A dead UDP socket** (#416). iOS can leave the app's socket dead after a suspend or a path change: no UDP sent or received, HTTPS fine, and Amp's pump drops receive errors quietly — before this, only a relaunch helped. `MeshHost::EnsureUdpSocketAlive` (pp-cpp-mesh `mesh/host/UdpSocketProbe.h`) sends one byte from the socket to its own port and waits for any datagram (300 ms, then a second send and 1 s); a dead socket is closed and bound again on the same port (pp-cpp-amp `DatagramIo::Reopen`), so peers and relays still reach us where they did, then links are probed and reachability re-learned as after a network change. The mesh runs it on every online change above; `ConversationsHub::OnAppForeground` adds the return to the foreground. Each outcome is the Diag line `mesh.udp_socket` ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)).
+
 ## pp-node
 
 Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See [NETWORKING.md](NETWORKING.md) and [projects/adp/STACK.md](../../projects/adp/STACK.md).
@@ -113,6 +118,22 @@ one pp-ledger role on its mesh runtime (`domain/node/NodeLedgerRole`, over pp-le
 ledger's protocols advertised through `MeshHost::SetAppProtocols` only while they are bound — the
 mesh refuses opens for protocols nothing serves. It stops (stop → join) before `MeshHost::Stop`.
 Operator flags: [BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node).
+
+**What a relay serves for others** (pp-cpp-mesh ≥ v2.6.0, security review PB-020–023 / 053; any node
+hosting a circuit or media relay, a seed above all):
+
+| Relay | Bound |
+|-------|-------|
+| Circuit: target protocol | the call-media carrier, a media relay, a nested circuit, or a lab `/test/…` protocol — the far leg opens with the relay's identity, so nothing else (DHT, directory, chat) is reachable through it |
+| Circuit: bridges / reservations | 4096 live bridges, 32 per dialer PeerId; 8192 parked reservations — past them, `Busy` |
+| Circuit: timeouts | a dialer's `timeout_ms` at most 30 s for bridge setup, 60 s for a reservation |
+| Circuit: new targets | 16 new target addresses a minute per dialer |
+| Media relay: attach | only after that channel's own quote → accept, with exactly the (random) `session_token` the accept issued |
+| Media relay: size | 512 sessions, 32 participants each, 64 subscriptions per participant — past them, `Busy` |
+| Punch: burst | at most 10 s of the window a peer names (the product asks 2 s) |
+
+Still open: who may join an existing call's media-relay session (admitted on the call id), and which
+introducers a punch target trusts to name the initiator.
 
 ## Related docs
 

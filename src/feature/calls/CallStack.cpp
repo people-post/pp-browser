@@ -9,7 +9,8 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/punch/AmpPunchCoordinator.h"
@@ -82,6 +83,8 @@ void CallStack::Dispatch(CallStackEvent& event) {
       [this, now](auto& e) {
         using E = std::decay_t<decltype(e)>;
         if constexpr (std::is_same_v<E, calls_event::LocalNetworkChanged>) {
+          last_attachment_ = e.attachment;
+          attachment_known_ = true;
           AfterMobilityEvent(mobility_.OnAttachment(e.attachment, e.changed, now));
           if (e.moved && call_sessions_) {
             call_sessions_->OnLocalNetworkMoved();
@@ -217,6 +220,7 @@ void CallStack::PublishUiState() {
     if (const LiveCall* shown = live.Shown()) {
       state.active_call_id = shown->Id();
       state.live_since_ms = shown->MediaProgress().live_since_ms;
+      state.alone_until_ms = call_sessions_->AloneUntilMs(shown->Id());
     }
     state.accepting_call_id = call_sessions_->AcceptingCallId();
     if (const LiveCall* ring = live.TheRing()) {
@@ -332,6 +336,18 @@ void CallStack::BindMediaProducts() {
   }
   CallDirectPathDeps direct = media_plane_->DirectPathDeps();
   direct.path_policy = [this](const std::string& call_id) { return PathPolicyFor(call_id); };
+  if (direct.diag_env) {
+    // The attachment is the stack's (the mesh knows nothing of cellular); both are read on the owner.
+    direct.diag_env = [this, mesh_env = std::move(direct.diag_env)](const std::string& peer_key) {
+      CallConnectEnv env = mesh_env(peer_key);
+      env.attachment_known = attachment_known_;
+      env.attachment = last_attachment_;
+      return env;
+    };
+  }
+  direct.advertised_relays = [this](const std::string& call_id) {
+    return peer_parked_.call_id == call_id ? peer_parked_.relays : std::vector<std::string>{};
+  };
   call_sessions_->AttachDirectPath(std::move(direct));
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
   // Call state ports (mesh stop cleared them): one bind point with BuildSessions.
@@ -356,7 +372,7 @@ Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path,
 }
 
 void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (call_sessions_) {
     // The manager holds every live call's state (ringing, accepting, media): rebuilding it ended
     // a call already ringing or in progress. Its ports reach the owner's current objects.
@@ -431,6 +447,13 @@ void CallStack::BindSessionProviders() {
     }
   });
   call_sessions_->SetLocalPeerCapsProvider([this]() { return LocalPeerCaps(); });
+  // H013: what our CallAccept advertises (the published view, never the MeshHost) and what the
+  // answerer's advertised (kept for the call our reach is for: one 1:1 call reaches at a time).
+  call_sessions_->SetParkedRelaysProvider([this]() { return LocalMeshView()->parked_relays; });
+  call_sessions_->SetCallPeerParkedRelaysSink(
+      [this](const std::string& call_id, const std::vector<std::string>& relays) {
+        peer_parked_ = PeerParkedRelays{call_id, relays};
+      });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
@@ -553,7 +576,7 @@ bool CallStack::WantEphemeralListen() const {
 }
 
 void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   DetachMeshMedia();
   // The 1:1 path lets go of its streams between two circuit aborts, then the transport stops.
   if (abort_inflight_circuit) {
@@ -648,7 +671,7 @@ CallSessionManager* CallStack::Calls() {
 }
 
 void CallStack::BindCallState() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (!call_sessions_) {
     return;
   }
@@ -695,7 +718,7 @@ void CallStack::SyncHubEphemeralListen() {
 }
 
 void CallStack::ResetSessionsOnOwner() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (deps_.system_controls) {
     deps_.system_controls->Unbind("call");
   }
@@ -723,7 +746,7 @@ void CallStack::Shutdown() {
 }
 
 void CallStack::ReleaseOnOwner() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   mobility_wake_.Disarm();
   DetachMeshMedia();
   if (mesh::MeshConnectivity* shared = connectivity()) {

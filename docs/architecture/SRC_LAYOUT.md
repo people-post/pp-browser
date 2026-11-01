@@ -57,7 +57,7 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 |-------|-------------------|
 | **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ `pp_crypto` for wire Base64) and other common headers. |
 | **foundation** | **Exception:** small **ordered bands** (not peer-independent). Config/paths/crypto naturally stack. Documented below. |
-| **lib** | **Strict independence.** Peers must not `#include` or `PUBLIC_LIBS`-link each other. Cross-need → contract/DTO in `common`; wire in `feature` (or `app` for lifetimes). |
+| **lib** | **Peers only down the capability order** ([CR013](../../projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order)). A peer may `#include` and `PUBLIC_LIBS`-link a peer of a lower capability (`lib/messaging` → `lib/people`); two peers of one capability (`lib/calls` / `lib/media`, `lib/messaging` / `lib/pricing`), or an edge against the order, may not — share through a contract/DTO in `common`, or wire in `feature` (or `app` for lifetimes). `check_base_includes.sh` / `check_base_public_libs.sh` take the allowed pairs from `check_capability_edges.py --lib-edges`. |
 | **domain** | **Ordered**, acyclic: a module uses only the ones before it in [`src/domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt) (`check_domain_includes.sh` holds the order). |
 | **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. Must not include `gui/`. |
 | **gui** | May use feature/lib/foundation; must not include `app/`. Bands share `pp_gui` for now. |
@@ -72,6 +72,34 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 - **Domain:** combines two or more libs into a capability, or is used by two or more features — and owns **no user-facing lifecycle** (no hub, session, screen). "Would a second feature want this without the first one's hub?" Yes → domain. It owns a hub / session / screen → feature.
 - **Feature:** a top-level thing the user does (conversations, a call, a broadcast, the agent, settings): its hub / session and its screen's decisions, composed from domain and lib.
 - **App:** exists only to run and wire the product.
+
+## Capabilities (across layers)
+
+Layers order code horizontally; **capabilities** cut vertically through them, so that another app can pick
+one ([capability-repos](../../projects/capability-repos/DESIGN.md)). Both hold: the layer rules apply inside
+every capability, and a capability's DTOs under `common/<capability>/` belong to it.
+
+```
+base (common, foundation) ─► people ─┬─► net ─────┬─► messaging ─► calls ─► broadcast
+                                     └─► social ──┘
+                             people, net ─► node            app (shell, GUI, AI): anything
+```
+
+| Capability | Paths |
+|------------|-------|
+| people | `lib/people`, `domain/peers`, `common/directory` |
+| net | `lib/net`, `domain/registration` |
+| social | `lib/posts`, `lib/content` |
+| messaging | `lib/messaging`, `lib/pricing`, `common/chat`, `common/thread`, `domain/delivery`, `domain/attachments`, `feature/conversations` |
+| calls | `lib/calls`, `lib/media`, `common/media`, `domain/call_media`, `feature/calls` |
+| broadcast | `lib/broadcast`, `feature/broadcast` |
+| node | `domain/node`, `app/node` |
+| app | `app`, `gui`, `feature/product`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
+
+A capability includes only those before it in the order (tests included: they move with it).
+`scripts/check/check_capability_edges.py` (CI lint) holds the map and the order; edges still to cut are in
+`capability_edges_allowlist.txt`, which may only shrink. A new directory under `lib/`, `domain/` or
+`feature/` must be added to the map.
 
 ## What `src/common` provides
 
@@ -109,7 +137,7 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version; owner threads and a runner's executor on one (`RuntimeOwnerExecutor`) |
+| `foundation/runtime/` | The product's side of the process runtime: its owner threads (`ProductOwners`: `kMediaSessionsOwner`, `ProductRuntimeConfig`), lifecycle, branding/version. `AppRuntime`, the coordinator, owner threads and `RuntimeOwnerExecutor` are pp-cpp-common's (`common/runtime/`, bridged into `pbr` by `PbrCompat.h`) |
 | `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; `platform/ui/` = window host + RmlUi Backend + overlays. See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
@@ -117,18 +145,18 @@ crypto
 | `foundation/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
 | `foundation/identity/` | PeerId helpers for product code (`MultiaddrPeerId.h`); the derivation is pp-cpp-crypto's (`crypto/PeerId.h`) |
 
-### Lib (strict peers)
+### Lib (peers, down the capability order)
 
 | Path | Contents |
 |------|----------|
-| `lib/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`); link-device and local account backup (`LinkDeviceCoordinator`, `LocalAccountBackup`); a peer's Brief route (`PeerBriefRoute`, `ContactRelayRoute`); the name a thread or sender shows (`PeerDisplayResolver`; the directory cache and group titles through `PeerDisplaySources`) |
-| `lib/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the inbound receive engine (`RelayReceivePipeline`: verify, replay, decrypt, membership, control lane; the local keys through a `LocalKeys` port) and the group invite gate (`GroupInviteGate`; the inviter's standing through a port); the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); what a send of ours writes and puts on the wire (`OutboundMessage`: the row, the sealed payload, the envelope); what a transcript shows (`TranscriptAssembly`; the GUI draws it); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) — features wire it to `lib/content` |
+| `lib/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`); link-device (`LinkDeviceCoordinator`); account recovery — the encrypted account locker and the account state it keeps (`AccountLocker`, `AccountStateCodec`, the contacts' sync register `ContactClock`), the link bundle a recovery phrase rebuilds (`RecoveryBundle`), the uninstall-surviving blob store (`SecureBlobStore`; iOS Keychain); account cards and what is known of peers' keys (`AccountCard`, `AccountCardRequest`, `PeerCardStore`, `PeerSigningKeyStore`, `PeerKemKeyStore`); a device's PeerId from its key (`DevicePeerIdFromKey`) |
+| `lib/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; the inbound receive engine (`RelayReceivePipeline`: verify, replay, decrypt, membership, control lane; the local keys through a `LocalKeys` port) and the group invite gate (`GroupInviteGate`; the inviter's standing through a port; both filled from people by `LocalKeysFromIdentity`, `GroupInviteStanding`); messaging over people: a peer's Brief route (`PeerBriefRoute`, `ContactRelayRoute`), the name a thread or sender shows (`PeerDisplayResolver`; the directory cache and group titles through `feature/conversations/PeerDisplaySources`), a direct thread's target from a contact (`DirectChatTargetFromContact`), what the AI model is told about people and threads (`ModelFacingJson`); the ports to the relay and to peers (`RelayClients`: `IRelayClient`, peer-direct history and chat blobs) and the relay's message API over HTTP (`HttpRelayClient`, signing with `RelayMessageSignPayload`; mocks in `lib/messaging/testing`); the control lane (`ControlLaneEnvelope`, `ControlLaneSeenStore`); what a send of ours writes and puts on the wire (`OutboundMessage`: the row, the sealed payload, the envelope); what a transcript shows (`TranscriptAssembly`; the GUI draws it); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) — features wire it to `lib/content` |
 | `lib/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec and its system-control family (`CallControlFamily`), session and media-key stores and what a call's rows say (`CallSessionQueries`: who is in it, a peer's roster applied), the media key exchange (`CallMediaKeyExchange`, its control-lane sends through a port), the call-to-media seat (`CallMediaSeat`), the calls on this device and what they show (`LiveCalls`: call state, media Status, path gates), pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `CallPathMobility`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
 | `lib/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
 | `lib/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
 | `lib/posts/` | Public posts ([social-posts](../../projects/social-posts/DESIGN.md)): entries and head statements (`PostEntry`: canonical bytes, hash, sign / verify, chain, fork), kind bodies and protocol limits (`PostBodies`, `PostTypes`), the profile's post store (`PostStore`: entries with forks and stubs, heads, the device's own lane), the device's writer (`PostAuthor`). Keys come from callers; no lib peers |
 | `lib/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`domain/attachments/AttachmentContent`, `ChatBlobContentSource`) |
-| `lib/net/` | HTTP client, service clients (no people/messaging policy) |
+| `lib/net/` | HTTP client and the Brief backend's own clients: registration, directory, blobs, the locker, push devices, client compat; the relay API's signed header (`RelayApiSignPayload`). No messaging types: the relay's message client is messaging's |
 | `lib/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `lib/ai/` | LLM client, turn types, parsers, payload plan builder; turn planning and the Brief turn runner (`TurnPlanner`, `BriefTurnRunner`); tool permissions and their prompt (`ToolPermissionPolicy`, `ToolPermissionPrompt`, `ParkedApproval`); `conversation/`, `mcp/` and `tools/` (web search, MCP tool adapters, the registry built from them) sublibs |
 | `lib/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
@@ -162,7 +190,7 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/registration/` | Registration finish / renew / nickname (`pp_domain_registration`) — **headless**, linked by pp-node |
 | `domain/node/` | Node-role mesh services (`pp_domain_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
 | `domain/call_media/` | pp-browser's realtime protocol on the mesh (`pp_domain_call_media`): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it; headless (pp-call-probe links it) |
-| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames and display names, relay-directory signing / KEM keys, profile icons; the people → messaging bridges |
+| `domain/peers/` | Who a peer is (`pp_domain_peers`): directory nicknames for strangers, signing / KEM keys from kept cards and the directory (mesh's `IDirectoryClient`, no backend client), the account-card policy, this account's own cards. Profile icons over HTTP and the blob store are `lib/net` (`ProfileIconFetch`, `ProfileIconClient`) |
 | `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
 | `domain/delivery/` | Delivery (`pp_domain_delivery`): the mesh transports for direct chat and chat history; the send path (routes, outbox and retries, the control lane) |
 
@@ -176,21 +204,21 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 |------|----------|
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
 | `feature/conversations/` | Conversations hub + delivery; never includes calls / broadcast / call_media — they ride the hub as `HubParticipant`s |
-| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
+| `feature/product/` | `ProductStack` (`pp_feature_product`): owns the mesh (`ProductMesh`, built for the profile's role over `domain/node`, lent to the hub as its `HubMeshOwner`) and the hub, and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; where messaging meets AI (`MessagingTools`) and the people picker (`MessagingPeoplePickerPorts`); only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
-| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports, bindings |
+| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports |
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 
 ```
 settings
-ai/tools → ai/bindings → ai
+ai/tools → ai
 calls
 conversations → calls
 ```
 
-Feature modules use domain modules directly (`conversations → domain/registration, domain/node`; `calls → domain/call_media`).
+Feature modules use domain modules directly (`conversations → domain/registration`; `product → domain/node`, for the mesh it builds for the profile's role; `calls → domain/call_media`).
 
 ## GUI subfolders
 
@@ -205,7 +233,7 @@ Module map: [`src/gui/README.md`](../../src/gui/README.md).
 
 `pp_gui` links `pp_feature_*` (and lib/foundation as needed). Feature must not link or include `gui/`.
 
-Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
+Cross-controller wiring (tool registration, tab ticks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
 
 ## CMake targets
 

@@ -43,3 +43,37 @@ TEST(TurnExecutorTest, ExecutesToolAndBuildsScratchMessages) {
   EXPECT_EQ(result.scratch_append[1].role, "tool");
   EXPECT_FALSE(result.people_list_blocks.has_value());
 }
+
+// The tools' contact JSON is model-facing and carries no remark; the people-list row still shows it (remark first,
+// nickname in small print), taken from the local contacts on the device.
+TEST(TurnExecutorTest, ContactRowsShowTheRemarkFromTheLocalContacts) {
+  pbr::ToolRegistry registry;
+  registry.Register(pbr::MakeTool(
+      pbr::ToolDefinition{"list_contacts", "contacts", pbr::Object{}}, pbr::ToolMeta{.risk = "read"},
+      [](const pbr::Object&) -> pbr::Roe<std::string> {
+        return std::string(R"([{"id":"c1","local":{"trust":"unknown"},"remote":{"nickname":"Wang"}}])");
+      }));
+  pbr::TurnPlan plan;
+  plan.render_mode = pbr::RenderMode::PeopleList;
+  plan.response_goal = pbr::ResponseGoal::PeopleDiscovery;
+  plan.tools.push_back({.name = "list_contacts", .arguments = pbr::Object{}});
+
+  pbr::TurnExecutionOptions options;
+  options.local_contacts = [] {
+    return std::vector<pbr::LocalPlanContact>{{.id = "c1", .remark = "欠钱的老王", .nickname = "Wang"}};
+  };
+  const pbr::TurnExecutionResult result = pbr::TurnExecutor::Execute(plan, registry, {}, options);
+  ASSERT_TRUE(result.people_list_blocks.has_value());
+  const std::string& blocks = *result.people_list_blocks;
+  EXPECT_NE(blocks.find(R"("title":"欠钱的老王")"), std::string::npos) << blocks;
+  EXPECT_NE(blocks.find("~Wang"), std::string::npos) << blocks;
+  // The model-facing scratch (what a model would read) has no remark.
+  for (const pbr::ChatMessage& message : result.scratch_append) {
+    EXPECT_EQ(message.content.find("欠钱的老王"), std::string::npos) << message.content;
+  }
+
+  // Without the port the row is the nickname, as before.
+  const pbr::TurnExecutionResult plain = pbr::TurnExecutor::Execute(plan, registry);
+  ASSERT_TRUE(plain.people_list_blocks.has_value());
+  EXPECT_EQ(plain.people_list_blocks->find("欠钱的老王"), std::string::npos);
+}

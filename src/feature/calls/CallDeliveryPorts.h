@@ -26,6 +26,11 @@ struct CallDeliveryPorts {
   std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
                               const std::optional<std::string>& key_init_b64, bool urgent)>
       send_control;
+  /**
+   * A control notice to our own account's other devices (M021 d5: a call answered here stops ringing there);
+   * nothing when this device is the account's only one. Unset: not told.
+   */
+  std::function<pp::Roe<void>(const ThreadMessage& control)> notify_own_devices;
   /** A message into a thread's chat stream (direct or group): the call summary. */
   std::function<pp::Roe<ThreadMessage>(const std::string& thread_id, const std::string& text,
                                        const SendRelayOptions& options)>

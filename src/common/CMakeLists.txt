@@ -12,7 +12,9 @@ add_library(pp_pbr_common STATIC
   directory/DirectoryJson.cpp
   directory/KeyCard.cpp
   ui/WorkingSetCodec.cpp
+  BoundedRead.cpp
   LengthPrefixedCodec.cpp
+  ShareableLine.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${CMAKE_SOURCE_DIR}/src)
 # pp_mesh_types: the mesh vocabulary (directory rows, hops, relay scope, disclosure) app types embed.
@@ -21,4 +23,7 @@ pp_browser_apply_warnings(pp_pbr_common)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
+  # Tests filed under their capability's common/ subdir (SRC_LAYOUT § Capabilities).
+  add_subdirectory(chat/tests)
+  add_subdirectory(ui/tests)
 endif()

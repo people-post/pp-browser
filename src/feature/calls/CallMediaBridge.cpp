@@ -8,7 +8,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -88,10 +89,14 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
   // P2pPeerIdentityForCall as the mapping — with N≥2 remotes it returns an arbitrary peer
   // (dogfood: Moto PeerId → wrong person stream).
   std::string identity = inbound_peer_id;
+  // Whether the hello's PeerId is known to be this account's (a contact's device, a learned mapping):
+  // only then may it stand for the account's answer (PB-018) — a guessed identity just labels the stream.
+  bool identity_known = inbound_peer_id.rfind("account:", 0) == 0;
   if (inbound_peer_id.rfind("account:", 0) != 0) {
     if (auto mapped = host_.RelayIdentityForMeshPeerId(call_id, inbound_peer_id);
         mapped && mapped->has_value() && !mapped->value().empty()) {
       identity = mapped->value();
+      identity_known = true;
     } else if (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0) {
       // Last resort for 1:1 before contacts hydrate — only when dialed peer is the sole remote.
       if (auto sole = host_.P2pPeerIdentityForCall(call_id);
@@ -109,8 +114,14 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
       log().info << "Inbound call-media mapped PeerId→account stream identity peer_id=" << inbound_peer_id
                  << " account=" << identity;
     }
-    // B30: the hello may be the first sign the answerer accepted (the relay's Accept can lag).
-    host_.P2pNoteInboundHello(call_id, identity, inbound_peer_id);
+    // B30: the hello may be the first sign the answerer accepted (the relay's Accept can lag) — from a
+    // PeerId we know is theirs. Anyone holding the call id can dial; their relay Accept still decides.
+    if (identity_known) {
+      host_.P2pNoteInboundHello(call_id, identity, inbound_peer_id);
+    } else {
+      log().info << "Inbound call-media hello from an unmapped PeerId " << inbound_peer_id
+                 << " is not taken as an accept call_id=" << call_id;
+    }
   } else {
     // Do not hash PeerId into a mixer track — SoftMigrate uses Account stream ids. Defer until
     // BeginSession / CallAccept teaches PeerId→Account (moto contact often lacks peer_id).
@@ -197,6 +208,10 @@ CallMediaBridge::~CallMediaBridge() {
 
 void CallMediaBridge::SetReachDeps(mesh::PeerReachPorts reach) {
   reach_.SetDeps(std::move(reach));
+}
+
+void CallMediaBridge::SetConnectDiagProbe(CallConnectEnvProbe probe) {
+  connect_.SetDiagProbe(std::move(probe));
 }
 
 void CallMediaBridge::SetSeedWarm(std::function<void()> warm) {
@@ -1115,6 +1130,10 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (!err.empty()) {
     host_.P2pSetLastMediaError(err);
   }
+  // H013: the caller tells the answerer it stopped (read before StopMeshMedia clears the session).
+  const bool tell_peer = session_offerer_ && !call_id.empty() && call_id == media_call_id_ &&
+                         !media_peer_identity_.empty();
+  const std::string gave_up_peer = media_peer_identity_;
   // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
   reach_.AbortCircuitAttempts();
   // StopMeshMedia also resets the seed-park outcome; this failure is what it explains (dogfood 2026-10-01:
@@ -1138,11 +1157,23 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (arming_.on_connect_failed) {
     arming_.on_connect_failed(call_id);
   }
+  if (tell_peer && arming_.on_gave_up_reaching) {
+    arming_.on_gave_up_reaching(call_id, gave_up_peer);
+  }
   mesh_connect_failed_ = true;
   if (seed_unreachable) {
     seed_park_state_->unreachable.store(true, std::memory_order_release);
   }
   host_.P2pNotifyRingChanged();
+}
+
+void CallMediaBridge::OnPeerGaveUpReaching(const std::string& call_id) {
+  if (call_id.empty() || call_id != media_call_id_ || session_offerer_ || mesh_connect_failed_ || !connect_.InFlight()) {
+    log().info << "peer gave up reaching us; not waiting for it call_id=" << call_id;
+    return;
+  }
+  log().info << "peer gave up reaching us; stop waiting call_id=" << call_id;
+  SurfaceConnectFailed(call_id, {}, /*stop_media=*/true);
 }
 
 std::string CallMediaBridge::CallPeerMeshId() {
@@ -1184,6 +1215,16 @@ mesh::PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectC
   const CallPathPolicy policy = PathPolicyFor(params.call_id);
   request.exclude_direct = std::exchange(force_circuit_ensure_, false) || policy.relay_only;
   request.allow_punch = policy.punch_at_start;
+  if (params.offerer) {
+    // H013: the answerer said where it is parked; its relays go first.
+    if (advertised_relays_) {
+      request.advertised_relays = advertised_relays_(params.call_id);
+    }
+  } else {
+    // H013: the caller starts only once our CallAccept crossed its inbox — wait for it, until it tells
+    // us it gave up (OnPeerGaveUpReaching), the link comes up, or this hold ends.
+    request.await_hold_ms = answerer_await_hold_ms_;
+  }
   return request;
 }
 
@@ -1455,7 +1496,7 @@ void CallMediaBridge::RunOffererStart(const std::string& call_id, const std::str
 
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   media_attempted_calls_.Insert(call_id);
   RunAnswererStart(call_id, peer_identity);
 }
@@ -1602,7 +1643,7 @@ void CallMediaBridge::StartDeferredAnswerer(const std::string& call_id) {
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Bridge state, the connect sequence and CallMediaEngine::Stop (SDL capture — CALLS.md) are
   // calls-owner only; every stop reaches here through the owner's events.
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   StopMeshMediaOnUi(call_id);
 }
 
@@ -1769,7 +1810,7 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     return Error("call_id required");
   }
   // Restarts the engine and the connect sequence — calls owner only.
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return Error("Call session not found");
@@ -1809,7 +1850,7 @@ Roe<void> CallMediaBridge::ResumeMeshMediaFromInbound(const std::string& call_id
   if (call_id.empty()) {
     return Error("call_id required");
   }
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return Error("Call session not found");

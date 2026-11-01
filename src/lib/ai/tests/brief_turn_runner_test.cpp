@@ -42,7 +42,7 @@ struct Recorder {
   std::vector<std::string> deltas;
   std::vector<std::string> statuses;
   int done = 0, handoff = 0, error = 0, cancelled = 0;
-  std::string response, finish, error_message, partial;
+  std::string response, finish, role, error_message, partial, capability, reason;
   size_t sources = 0;
   bool retryable = false;
 
@@ -54,13 +54,19 @@ struct Recorder {
     sinks.on_status = [this](const std::string& tool, const std::string& phase, const std::string&) {
       statuses.push_back(tool + ":" + phase);
     };
-    sinks.on_done = [this](const std::string& r, const std::string& f, const std::vector<pbr::BriefAiSource>& s) {
+    sinks.on_done = [this](const std::string& r, const std::string& f, const std::vector<pbr::BriefAiSource>& s,
+                           const std::string& ro) {
       ++done;
       response = r;
       finish = f;
+      role = ro;
       sources = s.size();
     };
-    sinks.on_handoff = [this]() { ++handoff; };
+    sinks.on_handoff = [this](const std::string& c, const std::string& r) {
+      ++handoff;
+      capability = c;
+      reason = r;
+    };
     sinks.on_error = [this](const std::string& m, bool r, const std::string& p) {
       ++error;
       error_message = m;
@@ -104,6 +110,14 @@ TEST(BriefTurnRunnerTest, NormalAnswerAccumulatesDeltasAndFiresDone) {
   EXPECT_EQ(rec.Terminals(), 1);
 }
 
+TEST(BriefTurnRunnerTest, DoneRoleReachesTheSink) {
+  Recorder rec;
+  BriefAiEvent done = Done("Hello");
+  done.role = "pp_assistant";
+  RunScript(Script({Token("Hello"), done}, BriefAiOutcome::Done), rec);
+  EXPECT_EQ(rec.role, "pp_assistant");
+}
+
 TEST(BriefTurnRunnerTest, EmptyDoneResponseUsesAccumulatedText) {
   Recorder rec;
   RunScript(Script({Token("a"), Token("b"), Done("")}, BriefAiOutcome::Done), rec);
@@ -115,9 +129,13 @@ TEST(BriefTurnRunnerTest, HandoffFiresOnlyHandoff) {
   Recorder rec;
   BriefAiEvent handoff;
   handoff.type = BriefAiEvent::Type::Handoff;
+  handoff.capability = "search_people";
+  handoff.reason = "app_action";
   RunScript(Script({handoff}, BriefAiOutcome::Handoff), rec);
   EXPECT_TRUE(rec.deltas.empty());
   EXPECT_EQ(rec.handoff, 1);
+  EXPECT_EQ(rec.capability, "search_people"); // the tool travels to the sink
+  EXPECT_EQ(rec.reason, "app_action");        // and so does the reason
   EXPECT_EQ(rec.Terminals(), 1);
 }
 

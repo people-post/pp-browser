@@ -28,11 +28,19 @@ void MessageRouter::SetSharedAiConfirmCallback(SharedAiConfirmCallback callback)
 }
 
 void MessageRouter::MarkSharedAiConfirmed(const std::string& thread_id) {
-  shared_ai_confirmed_threads_.insert(thread_id);
+  shared_ai_consent_.Remember(thread_id);
+}
+
+void MessageRouter::ClearSharedAiConfirmed(const std::string& thread_id) {
+  shared_ai_consent_.Forget(thread_id);
+}
+
+void MessageRouter::SetSharedAiConfirmedPort(SharedAiConsent::StoredPort port) {
+  shared_ai_consent_.SetStored(std::move(port));
 }
 
 bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
-  return shared_ai_confirmed_threads_.find(thread_id) == shared_ai_confirmed_threads_.end();
+  return !shared_ai_consent_.Given(thread_id);
 }
 
 bool MessageRouter::IsAgentToolPayload(const ThreadKind kind, const std::optional<std::string>& user_payload) {
@@ -42,6 +50,22 @@ bool MessageRouter::IsAgentToolPayload(const ThreadKind kind, const std::optiona
   }
   const auto doc = TryParseObject(*user_payload);
   return doc && !doc->getString("type") && doc->getString("tool").value_or("") != "";
+}
+
+std::optional<std::string> MessageRouter::LocalActionTool(const std::optional<std::string>& user_payload) {
+  if (!user_payload || user_payload->empty()) {
+    return std::nullopt;
+  }
+  const auto doc = TryParseObject(*user_payload);
+  if (!doc || doc->getString("type").value_or("") != "local_action") {
+    return std::nullopt;
+  }
+  return doc->getString("tool").value_or("");
+}
+
+bool MessageRouter::IsAgentLocalActionPayload(const std::optional<std::string>& user_payload) {
+  const auto tool = LocalActionTool(user_payload);
+  return tool && (*tool == "open_conversation" || *tool == "start_conversation" || *tool == "search_people");
 }
 
 Roe<void> MessageRouter::ValidateUserPayload(const std::optional<std::string>& user_payload) {
@@ -55,6 +79,9 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
                                        const AtAiMode mode) {
   if (!agent_.submit_scoped_assist) {
     return Error("Agent not bound");
+  }
+  if (AgentBusy()) {
+    return Error(kAgentBusyError); // before the "@ai++" question goes to the peer
   }
 
   auto thread = store_.GetThread(thread_id);
@@ -71,8 +98,12 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
     SendRelayOptions user_opts;
     user_opts.generation = "user";
     user_opts.ai_invoke_mode = "shared_full";
-    user_opts.seq_owner_contact_id = seq_owner;
-    auto sent = mesh_messaging_.SendUserMessage(thread_id, prompt, user_opts);
+    const bool group = (*thread)->kind == ThreadKind::Group;
+    if (!group) {
+      user_opts.seq_owner_contact_id = seq_owner;
+    }
+    auto sent = group ? mesh_messaging_.SendGroupMessage(thread_id, prompt, user_opts)
+                      : mesh_messaging_.SendUserMessage(thread_id, prompt, user_opts);
     if (!sent) {
       return sent.error();
     }
@@ -100,6 +131,29 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     return Error("Thread not found");
   }
 
+  // A button of the on-device app-action flow, in an AI thread or (after "@ai") a person-to-person chat: never
+  // relayed to a peer. "Add a remark" opens the contact page; the rest runs on the device.
+  if (const auto local_tool = LocalActionTool(user_payload)) {
+    if (*local_tool == "edit_remark") {
+      if (on_local_action_) {
+        on_local_action_(text, user_payload);
+      }
+      return {};
+    }
+    if (!IsAgentLocalActionPayload(user_payload)) {
+      log().warning << "local action payload with an unknown tool ignored: " << *local_tool;
+      return {};
+    }
+    if (!agent_.submit_local_action) {
+      return Error("Agent not bound");
+    }
+    if (AgentBusy()) {
+      return Error(kAgentBusyError);
+    }
+    agent_.submit_local_action(thread_id, text, *user_payload, HandlesAtAi((*thread)->kind));
+    return {};
+  }
+
   if (user_payload && !user_payload->empty() && on_local_action_ &&
       !IsAgentToolPayload((*thread)->kind, user_payload)) {
     on_local_action_(text, user_payload);
@@ -107,9 +161,19 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   }
 
   const AtAiParseResult at_ai = ParseAtAiPrefix(text);
-  if ((*thread)->kind == ThreadKind::Direct && at_ai.is_ai_invoke) {
+  // A group used to send "@ai++ …" as plain text while the chat already showed "thinking" (B111).
+  if (HandlesAtAi((*thread)->kind) && at_ai.is_ai_invoke) {
+    if (AgentBusy()) {
+      return Error(kAgentBusyError); // nothing sent, no confirm asked: the UI queues it
+    }
     if (at_ai.mode == AtAiMode::SharedReply || at_ai.mode == AtAiMode::SharedFull) {
-      if (NeedsSharedAiConfirm(thread_id) && shared_ai_confirm_) {
+      if (agent_.is_app_action_request && agent_.submit_scoped_assist && agent_.is_app_action_request(at_ai.prompt)) {
+        // "@ai++ 搜索用户 ken": an app action is not shared. Nothing goes to the peer (no prompt, no confirm); the
+        // agent says so on this device.
+        agent_.submit_scoped_assist(thread_id, at_ai.prompt, {}, at_ai.mode);
+        return {};
+      }
+      if (NeedsSharedAiConfirmFor(thread_id, text)) { // the one rule the UI also asks before it sends
         shared_ai_confirm_(thread_id, at_ai.mode, at_ai.prompt,
                            [this, thread_id, mode = at_ai.mode, prompt = at_ai.prompt](
                                const bool confirmed, const bool dont_ask_again) {
@@ -119,7 +183,9 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
                              if (dont_ask_again) {
                                MarkSharedAiConfirmed(thread_id);
                              }
-                             RouteSharedAi(thread_id, prompt, mode);
+                             if (auto routed = RouteSharedAi(thread_id, prompt, mode); !routed) {
+                               log().warning << "Confirmed shared AI send failed: " << routed.error().message;
+                             }
                            });
         return {};
       }
@@ -153,8 +219,38 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   if (!agent_.submit_to_thread) {
     return Error("Agent not bound");
   }
+  if (AgentBusy()) {
+    return Error(kAgentBusyError);
+  }
   agent_.submit_to_thread(thread_id, TextForAgent((*thread)->kind, text), std::move(user_payload));
   return {};
+}
+
+Roe<void> MessageRouter::RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text) {
+  const AtAiParseResult at_ai = ParseAtAiPrefix(text);
+  if (!at_ai.is_ai_invoke || (at_ai.mode != AtAiMode::SharedReply && at_ai.mode != AtAiMode::SharedFull)) {
+    return Route(thread_id, text);
+  }
+  return RouteSharedAi(thread_id, at_ai.prompt, at_ai.mode);
+}
+
+bool MessageRouter::NeedsSharedAiConfirmFor(const std::string& thread_id, const std::string& text) const {
+  if (!shared_ai_confirm_) {
+    return false;
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread || !HandlesAtAi((*thread)->kind)) {
+    return false;
+  }
+  const AtAiParseResult at_ai = ParseAtAiPrefix(text);
+  if (!at_ai.is_ai_invoke || (at_ai.mode != AtAiMode::SharedReply && at_ai.mode != AtAiMode::SharedFull)) {
+    return false;
+  }
+  // An app action ("@ai++ 搜索用户 ken") shares nothing and is never confirmed.
+  if (agent_.is_app_action_request && agent_.is_app_action_request(at_ai.prompt)) {
+    return false;
+  }
+  return NeedsSharedAiConfirm(thread_id);
 }
 
 std::string MessageRouter::TextForAgent(const ThreadKind kind, const std::string& text) {
@@ -166,12 +262,19 @@ std::string MessageRouter::TextForAgent(const ThreadKind kind, const std::string
   return at_ai.is_ai_invoke ? at_ai.prompt : text;
 }
 
+bool MessageRouter::HandlesAtAi(const ThreadKind kind) {
+  return kind == ThreadKind::Direct || kind == ThreadKind::Group;
+}
+
 bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::string& text,
                                      const std::optional<std::string>& user_payload) const {
   if (text.empty()) {
     return false;
   }
   auto thread = store_.GetThread(thread_id);
+  if (IsAgentLocalActionPayload(user_payload)) {
+    return true;
+  }
   if (user_payload && !user_payload->empty()) {
     return thread && *thread && IsAgentToolPayload((*thread)->kind, user_payload);
   }
@@ -179,10 +282,7 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
     return true;
   }
 
-  if ((*thread)->kind == ThreadKind::Direct) {
-    return ParseAtAiPrefix(text).is_ai_invoke;
-  }
-  if ((*thread)->kind == ThreadKind::Group) {
+  if (HandlesAtAi((*thread)->kind)) {
     return ParseAtAiPrefix(text).is_ai_invoke;
   }
   return true;

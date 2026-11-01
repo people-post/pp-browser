@@ -212,11 +212,19 @@ std::string PromptBuilder::BuildPlannerPrompt(const std::string& tools_summary) 
   out << "- Choose tools from the live catalog the runtime should execute BEFORE synthesis.\n";
   out << "- Never invent tool names; if the catalog is empty, use an empty tools array.\n";
   out << "- Lookup / discovery: use read tools (people search, feeds, web search, list inbox).\n";
-  out << "- Mutations (add contact, start chat, register, nickname): only when the user clearly asks "
+  out << "- Mutations (start chat, register, nickname): only when the user clearly asks "
          "to change state and required args are available; otherwise discover first or leave tools empty.\n";
   out << "- Use web_search for live/news/market/weather/time-sensitive questions when that tool is listed.\n";
   out << "- Use blog_articles (or other feed tools in the catalog) for article feed requests; not web_search.\n";
   out << "- Use search_people or list_contacts for people discovery; set render_mode to people_list.\n";
+  out << "- Requests to find OR add a friend/contact by ID, name, or nickname use search_people, "
+         "response_goal people_discovery, and render_mode people_list. Pass only the supplied identifier "
+         "or name as query, preserving a full account:… or relay:… ID exactly. For example, "
+         "'帮我加昵称小明为好友' searches for '小明'; 'find account:abc' searches for 'account:abc'.\n";
+  out << "- The user adds a person by clicking Add contact on a real search result. Never plan add_contact "
+         "or invent a directory hit, even for a request phrased as 'add'. If no target can be resolved "
+         "from the request or conversation, ask for the ID or nickname. Use list_contacts only when "
+         "the user specifically asks about their saved contacts.\n";
   out << "- Use list_conversations / open_conversation when the user asks about inbox or opening a chat.\n";
   out << "- Use an empty tools array for pure conversation with no external lookup.\n";
   out << "- At most 4 tools. Provide concrete query arguments.\n";

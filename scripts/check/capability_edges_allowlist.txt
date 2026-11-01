@@ -1,0 +1,5 @@
+# Include edges against the capability order, still to be cut (projects/capability-repos PHASES § P1).
+# check_capability_edges.py fails when one appears, grows or shrinks: lower a count when you cut sites.
+# Format: from -> to <include sites>, tests included (a capability's tests move with it).
+#
+# Empty: every edge is cut (P1). A new edge against the order fails the gate; fix it, do not list it.

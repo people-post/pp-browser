@@ -6,7 +6,13 @@
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "feature/conversations/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
+#include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/CameraCaptureFlow.h"
+#include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/VoiceComposer.h"
+#include "gui/chat/VoicePlayback.h"
+#include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
@@ -14,6 +20,8 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/SessionListWindow.h"
+#include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -42,6 +50,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <functional>
 #include <utility>
@@ -105,7 +114,11 @@ public:
   void AfterLayout();
   void Shutdown();
   void OnApplicationPause();
+  /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
+  void CancelVoice();
   void FinalizeThreadDisplay();
+  /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
+  void PrefillDraft(const std::string& text);
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
   void OnFindSomeone() override;
@@ -117,6 +130,12 @@ public:
   void OnMeshReady();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
+  /** Escape after the shell closed nothing (desktop). Not in the composer: NotInComposer. */
+  enum class ComposerEscape { NotInComposer, Handled, Idle };
+  ComposerEscape OnComposerEscape();
+  /** The composer shows the unsent text of the conversation now open (Home has its own). App-wired to every
+   * nav-tab change, and called after every display sync. */
+  void SyncDraftOwner();
 
 private:
   using ChatState = ChatScreenState;
@@ -145,6 +164,8 @@ private:
   void AfterHistoryCleared(const std::string& thread_id);
   /** After a chat's settings changed (the presenter refreshed its list): badges and the surface follow. */
   void AfterThreadPrefsChanged() override;
+  /** G016: asks once, then the owner dissolves the group for everyone (the chat stays, read-only). */
+  void DissolveGroupAfterConfirm(const std::string& group_id);
   /** Run a close (`action`) and, when it went through, clear what the open chat held; tells the user
    *  when it failed (`show_error_text`: the action's own message, else "could not delete"). */
   void CloseChatWith(const std::string& thread_id, const std::function<Roe<void>()>& action,
@@ -169,8 +190,33 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
-  void OnAttachFile();
-  void StartAttachmentUpload(const std::string& path);
+  void OnAttachFile(ui::Event* ev = nullptr);
+  /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
+  void OnAttachCapture(ui::Event* ev = nullptr);
+  void OpenCameraCapture(CameraCaptureKind kind);
+  CaptureFlowPorts MakeCaptureFlowPorts();
+  /** Recompute `show_capture` (call, upload, chat kind); dirty only on a change. */
+  void RefreshShowCapture();
+  /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
+  void ShowPictureSendChoice(std::string path);
+  void ToggleVoiceMode();
+  /**
+   * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
+   * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
+   * offers Retry / Discard.
+   */
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
+                             const std::string& voice_thread_id = {});
+  /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
+  void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
+  /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
+  void OnRetryAttachmentSend();
+  void OnDiscardAttachmentSend();
+  /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
+  void RefreshPendingAttachmentChip(bool force);
+  void ShowFailedAttachment(const std::string& record_id, const std::string& name);
+  /** Progress for the chip: the percent line, with a "please stay in PP" hint for a large file. */
+  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress();
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
@@ -212,12 +258,55 @@ private:
   void SyncShellSessions() override;
   void UpdateThreadChrome();
   void ResetChatPanelState();
+  std::string failed_record_id_;
+  /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
+  std::string failed_voice_path_;
+  std::string failed_voice_thread_;
+  std::chrono::steady_clock::time_point last_voice_call_check_{};
+  /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
+  /** Deletes a picked / captured file once it is read or given up; tests swap it to count the releases. */
+  std::function<void(const std::string& path)> release_pick_ = [](const std::string& path) { ReleasePickedFile(path); };
+  int attach_menu_x_ = 12;
+  int attach_menu_y_ = 120;
+  /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
+  std::unordered_set<std::string> opening_message_ids_;
+  std::string pending_chip_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
-  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) override;
+  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
+                         const std::string& entry_id) override;
+  QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
+  void PutBackDraft(const std::string& thread_id, const std::string& text) override;
+  /** Text that did not go out goes back to `key`'s composer (a thread id, or ThreadDrafts::kHome). */
+  void PutTextBack(const std::string& key, const std::string& text, bool prepend);
+  /** The draft key of what the composer shows now: Home, or the open thread ("" = none shown). */
+  std::string CurrentDraftKey() const;
+  /** An AI send while another thread's turn runs: confirm "@ai+" sharing first, then queue it (B112). */
+  void QueueAgentSend(const std::string& thread_id, const std::string& text, std::optional<std::string> payload,
+                      bool thread_created_for_this, bool already_confirmed = false);
+  /** The "share with the AI?" dialog for an "@ai+" / "@ai++" send; "don't ask again" is remembered. */
+  void ConfirmShareWithAi(const std::string& thread_id, const std::string& text, std::function<void(bool ok)> then);
+  /** The dialog itself (also the router's confirm hook): the one copy of its wording. */
+  void ShowShareWithAiDialog(const std::string& thread_id, AtAiMode mode,
+                             std::function<void(bool ok, bool dont_ask)> done);
+  /** A send that did not go out: its text back in the composer, if that thread is open and the composer empty. */
+  void RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text);
+  /** The open thread's queued send is cancelled: its text goes back to the composer. */
+  void CancelQueuedHere();
+  /** Same decision SendUserText makes, before the composer is cleared: false = keep the draft. */
+  bool ComposerSendAllowed(const std::string& text);
+  /** The composer's send of a group text with mentions (`reply`: the typed text; `out`: with any quote). */
+  void SendWithMentions(const std::string& thread_id, const std::string& reply, const std::string& out,
+                        std::vector<TextSpan> spans);
+  /** Enter / Tab choose the `@` picker's first line while it is open over the composer. */
+  void RegisterMentionPickerKeys();
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
   void OnMessagesScroll();
+  void OnSessionsScroll();
+  void OnSessionsLoadMore();
+  void FillSessionListAfterLayout();
+  ui::Element* SessionListElement() const;
   void OnJumpToLatest();
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
@@ -250,6 +339,8 @@ private:
   ConversationsFacade* facade_ = nullptr;
   /** The chats list's decisions and buttons (pp-app-probe drives the same presenter). */
   ChatPresenter presenter_;
+  /** When each muted group last alerted on a mention (G015: at most once a minute). */
+  std::unordered_map<std::string, int64_t> muted_mention_alert_ms_;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;
@@ -285,6 +376,13 @@ private:
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
+  /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
+  ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
+  /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */
+  std::unique_ptr<VoiceComposer> voice_;
+  std::unique_ptr<VoicePlayback> voice_playback_;
+  /** The chat the voice parts last saw: another one cancels a recording and stops a clip. */
+  std::string voice_thread_;
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }
@@ -294,7 +392,15 @@ private:
     }
   }
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
+  bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
+  std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
+  SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
+  ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
+  std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
+  void StashComposerExtras(const std::string& key);
+  void RestoreComposerExtras(const std::string& key);
+  void ForgetComposerExtras(const std::string& key);
 };
 
 } // namespace pbr

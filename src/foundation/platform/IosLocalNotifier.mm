@@ -1,7 +1,8 @@
 #include "foundation/platform/IosLocalNotifier.h"
 
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "common/Logger.h"
 
 #import <UserNotifications/UserNotifications.h>

@@ -9,8 +9,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/media/CallMediaAdaptation.h"
 #include "lib/calls/CallSessionLogic.h"
-#include "lib/broadcast/BroadcastJoinTicket.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
 #include "lib/messaging/PairwiseFanoutLogic.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -18,7 +17,7 @@
 #include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/MeshHopPolicy.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -152,8 +151,9 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
                                             const std::string& skip) {
     return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
-  ports.send_summary = [this](const std::string& thread_id, const CallSummaryDetail& summary, bool local_only) {
-    return control_.SendSummary(thread_id, summary, local_only);
+  ports.send_summary = [this](const std::string& thread_id, const CallSummaryDetail& summary, bool local_only,
+                              SummaryWrite write) {
+    return control_.SendSummary(thread_id, summary, local_only, write);
   };
   ports.resolve_call_thread = [this](const std::string& inviter,
                                      const std::optional<std::string>& group_id) -> std::optional<std::string> {
@@ -230,6 +230,14 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
   ports.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
     if (call_peer_caps_sink_) {
       call_peer_caps_sink_(call_id, caps);
+    }
+  };
+  ports.parked_relays = [this]() -> std::vector<std::string> {
+    return parked_relays_ ? parked_relays_() : std::vector<std::string>{};
+  };
+  ports.note_call_peer_parked_relays = [this](const std::string& call_id, const std::vector<std::string>& relays) {
+    if (call_peer_parked_relays_sink_) {
+      call_peer_parked_relays_sink_(call_id, relays);
     }
   };
   ports.prefetch_reach = [this](const std::string& identity) {
@@ -563,6 +571,9 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
   ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
   ports.on_handed_to_hop = [this](const std::string& call_id) { live_calls_.NoteDirectHandedToHop(call_id); };
   ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
+  ports.on_gave_up_reaching = [this](const std::string& call_id, const std::string& peer_identity) {
+    SendConnectGiveUp(call_id, peer_identity);
+  };
   ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
   ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
   ports.on_media_key_ready = [this](const std::string& call_id) { live_calls_.NoteMediaKeyReady(call_id); };
@@ -616,10 +627,12 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     direct_path_->SetReachDeps(deps.Reach());
   }
   CallMediaBridge& path = *direct_path_;
+  path.SetConnectDiagProbe(std::move(deps.diag_env));
   path.SetSeedWarm(std::move(deps.seed_warm));
   path.SetSeedReserve(std::move(deps.seed_reserve));
   path.SetSeedParkAwait(std::move(deps.seed_park_await));
   path.SetPathPolicyProvider(std::move(deps.path_policy));
+  path.SetAdvertisedRelaysProvider(std::move(deps.advertised_relays));
   path.SetDirectArmingPorts(DirectArmingPorts());
   path.SetSeatPorts(DirectSeatPorts());
   SetDirectMediaPorts(MakeDirectMediaPorts());
@@ -629,6 +642,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
 void CallSessionManager::DetachDirectPathReach() {
   if (direct_path_) {
     direct_path_->SetReachDeps({});
+    direct_path_->SetConnectDiagProbe({});  // it reads the dial registry the reach just let go
   }
 }
 
@@ -938,6 +952,10 @@ void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
 }
 
 void CallSessionManager::SetCallPeerCapsSink(CallPeerCapsSink sink) { call_peer_caps_sink_ = std::move(sink); }
+void CallSessionManager::SetParkedRelaysProvider(ParkedRelaysProvider provider) { parked_relays_ = std::move(provider); }
+void CallSessionManager::SetCallPeerParkedRelaysSink(CallPeerParkedRelaysSink sink) {
+  call_peer_parked_relays_sink_ = std::move(sink);
+}
 
 void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
   local_mesh_peer_id_ = std::move(callback);
@@ -1057,7 +1075,48 @@ void CallSessionManager::SetPendingAcceptVoiceOnly(const bool voice_only) {
 
 void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                                            InitiationChargeDecision charge_decision) {
-  workflow_.AcceptInviteAsync(call_id, charge_decision, std::move(on_done));
+  workflow_.AcceptInviteAsync(call_id, charge_decision,
+                              [this, call_id, on_done = std::move(on_done)](Roe<void> accepted) {
+                                if (accepted) {
+                                  TellOwnDevicesAnswered(call_id, true);
+                                }
+                                if (on_done) {
+                                  on_done(std::move(accepted));
+                                }
+                              });
+}
+
+void CallSessionManager::TellOwnDevicesAnswered(const std::string& call_id, const bool accepted) {
+  if (!delivery_.notify_own_devices) {
+    return;
+  }
+  auto local = TopologyLocalIdentity();
+  auto detail = CallControlCodec::EncodeAnsweredElsewhere(call_id, accepted);
+  if (!local || !detail) {
+    return;
+  }
+  auto control = CallControlCodec::BuildSystemMessage("", CallControlType::CallAnsweredElsewhere,
+                                                      accepted ? "Answered on another device" : "Declined on another device",
+                                                      *detail, *local);
+  if (!control) {
+    return;
+  }
+  if (auto told = delivery_.notify_own_devices(*control); !told) {
+    log().info << "own devices not told the call was answered call_id=" << call_id << ": " << told.error().message;
+  }
+}
+
+Roe<void> CallSessionManager::HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
+                                                      const std::string& local_identity) {
+  if (sender_identity != local_identity) {
+    log().info << "call_answered_elsewhere dropped: not from our own account (" << sender_identity << ")";
+    return {};
+  }
+  auto answered = CallControlCodec::DecodeAnsweredElsewhere(detail_json);
+  if (!answered) {
+    return answered.error();
+  }
+  return workflow_.StopRingingAnsweredElsewhere(answered->first, local_identity);
 }
 
 
@@ -1065,7 +1124,11 @@ void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::func
 
 
 Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
-  return workflow_.DeclineInvite(call_id);
+  auto declined = workflow_.DeclineInvite(call_id);
+  if (declined) {
+    TellOwnDevicesAnswered(call_id, false);
+  }
+  return declined;
 }
 
 
@@ -1336,6 +1399,10 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   // Everything but an invite (and the stream's summary) speaks about a call the sender is in: its
   // initiator or a current participant. A peer who declined or left it, or never was in it, does not
   // end it, change its roster or steer its media.
+  // M021 d5: from our own account only — before the in-call gate (our own account is not a peer of the call).
+  if (*type == CallControlType::CallAnsweredElsewhere) {
+    return HandleAnsweredElsewhere(*detail, sender_identity, *local);
+  }
   // V053: who dropped out of a group call may ask to join it, and its end reaches them too.
   const bool from_offered = (*type == CallControlType::CallJoinRequest || *type == CallControlType::CallEnded) &&
                             SenderMayJoin(detail_json, sender_identity);
@@ -1392,7 +1459,45 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallSummary:
     return {};  // history in the chat stream, not signaling
+  case CallControlType::CallAnsweredElsewhere:
+    return {};  // handled above, from our own account only
+  case CallControlType::CallConnectGiveUp:
+    return HandleInboundConnectGiveUp(detail_json, sender_identity);
   }
+  return {};
+}
+
+void CallSessionManager::SendConnectGiveUp(const std::string& call_id, const std::string& peer_identity) {
+  CallConnectGiveUpDetail detail;
+  detail.call_id = call_id;
+  if (auto local = control_.LocalRelayIdentity()) {
+    detail.identity = *local;
+  }
+  auto encoded = CallControlCodec::EncodeConnectGiveUp(detail);
+  if (!encoded) {
+    return;
+  }
+  if (auto sent = control_.SendDirect(peer_identity, CallControlType::CallConnectGiveUp, *encoded, ""); !sent) {
+    log().warning << "CallConnectGiveUp send failed call_id=" << call_id << " err=" << sent.error().message;
+    return;
+  }
+  log().info << "CallConnectGiveUp sent call_id=" << call_id << " peer=" << peer_identity;
+}
+
+Roe<void> CallSessionManager::HandleInboundConnectGiveUp(const std::string& detail_json,
+                                                         const std::string& sender_identity) {
+  auto detail = CallControlCodec::DecodeConnectGiveUp(detail_json);
+  if (!detail) {
+    return detail.error();
+  }
+  const LiveCall* call = live_calls_.Find(detail->call_id);
+  const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
+  if (!peer || *peer != sender_identity || !direct_path_) {
+    log().info << "CallConnectGiveUp ignored call_id=" << detail->call_id << " from=" << sender_identity;
+    return {};
+  }
+  log().info << "CallConnectGiveUp inbound call_id=" << detail->call_id << " from=" << sender_identity;
+  direct_path_->OnPeerGaveUpReaching(detail->call_id);
   return {};
 }
 

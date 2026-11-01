@@ -2,8 +2,11 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
+#include "feature/conversations/GroupMentions.h"
 #include "feature/conversations/SessionMenu.h"
+#include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/people/ContactTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -11,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -32,6 +36,8 @@ struct ChatSessionRow {
   int unread_count = 0;
   /** Marked unread by hand with no real unread count: a dot, not a number. */
   bool unread_dot = false;
+  /** An unread message here mentions us (G015): the row says "You were mentioned". */
+  bool mentioned = false;
   bool pinned = false;
   bool muted = false;
   std::string date_label;
@@ -58,10 +64,12 @@ struct CloseChatPlan {
     DeleteAi,
     /** Leave the group (the owner stays). */
     Leave,
-    /** Drop the group here only: an orphaned or solo group — no owner on the roster, or nobody reachable. */
+    /** Drop the group here only: a member's orphaned group — no owner on the roster, or nobody reachable. */
     Dismiss,
-    /** The owner leaves: hand the group to one of `successors` (reachable members), or dismiss it here. */
+    /** The owner leaves: hand the group to one of `successors` (reachable members), or dissolve it. */
     LeaveAsOwner,
+    /** The owner, with nobody to hand the group to (solo, or only unreachable members): dissolve it for everyone. */
+    Dissolve,
   };
   Kind kind = Kind::Delete;
   std::string group_id;
@@ -77,6 +85,45 @@ struct ChatGroupSheet {
   /** Members the owner may remove for being unreachable (never this device): identity, then the name to show. */
   std::vector<std::pair<std::string, std::string>> unreachable_members;
 };
+
+/** One person on the group's member list, before any text is chosen for the badges. */
+struct GroupMemberRow {
+  std::string identity;
+  /** Contact name, else the server nickname, else the short account id. */
+  std::string title;
+  /** The saved contact's id; empty for someone who is not a contact yet. */
+  std::string contact_id;
+  bool is_owner = false;
+  bool unreachable = false;
+  /** Invited by this device, not on the roster yet (not a member; not counted in "N members"). */
+  bool invited = false;
+  /** Invited more than an hour ago and still not joined. */
+  bool invited_stale = false;
+
+  bool IsContact() const { return !contact_id.empty(); }
+  bool operator==(const GroupMemberRow&) const = default;
+};
+
+/**
+ * `contact`: the saved contact for this member, when there is one. Name: the contact's, else
+ * `card_nickname` (the member's own, from the account card the roster carried), else the short account id.
+ */
+GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
+                                   bool unreachable, const std::string& card_nickname = {});
+/** An invite waiting longer than this shows the "not joined yet" hint (it expires at kGroupInviteTtlMs). */
+inline constexpr int64_t kInviteStaleAfterMs = 60LL * 60 * 1000;
+
+/**
+ * The row for someone this device invited who has not joined: nothing when they are already on the
+ * roster (`roster_identities`), else a row marked `invited`, `invited_stale` after an hour. `contact` and
+ * `card_nickname` name them as for a member.
+ */
+std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
+                                              const std::unordered_set<std::string>& roster_identities,
+                                              const std::optional<Contact>& contact, int64_t now_ms,
+                                              const std::string& card_nickname = {});
+/** Unreachable members first (the owner re-invites them), then the owner, then by name. */
+void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);
@@ -104,6 +151,11 @@ public:
     std::function<void()> on_changed;
     /** A settings write the store refused (the renderer tells the user). */
     std::function<void()> prefs_failed;
+    /**
+     * A message's text as prose, for the preview line: the app's (an AI reply is structured blocks,
+     * CR007). None = the text as stored.
+     */
+    std::function<std::string(const std::string& text)> prose;
   };
 
   ChatPresenter();
@@ -120,8 +172,13 @@ public:
 
   // --- buttons ----------------------------------------------------------------------------------
 
-  /** Open a chat: it is read (a "marked unread" dot goes too), its notification is cleared. */
+  /**
+   * Open a chat: it is read (a "marked unread" dot goes too, and its mention marker), its notification is
+   * cleared. OpenedAtMention() then names the oldest unread message that mentioned us there, if any.
+   */
   bool SelectThread(const std::string& thread_id);
+  /** The last SelectThread's chat had an unread mention: the message to show first (G015). */
+  const std::optional<std::string>& OpenedAtMention() const { return opened_at_mention_; }
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */
@@ -129,6 +186,12 @@ public:
   void SetPinned(const std::string& thread_id, bool pinned);
   void Mute(const std::string& thread_id, SessionMuteChoice choice);
   void Unmute(const std::string& thread_id);
+  /** A muted group: its mentions silent too (G015), or alerting again. */
+  void SetMuteMentions(const std::string& thread_id, bool mute);
+  /** Undo "don't ask again" for sharing this chat with the AI: it asks again next time. */
+  void AskBeforeSharingAi(const std::string& thread_id);
+  /** The stored settings were changed by someone else (the facade): read them again before the next change. */
+  void ForgetCachedPrefs();
   void SetArchived(const std::string& thread_id, bool archived);
   void MarkUnread(const std::string& thread_id);
   void MarkRead(const std::string& thread_id);
@@ -143,6 +206,8 @@ public:
   /** Leave the group, then close the chat; a leave that cannot be sent dismisses the group here. */
   Roe<void> LeaveGroupAndClose(const std::string& thread_id, const std::string& group_id);
   Roe<void> DismissGroupAndClose(const std::string& thread_id, const std::string& group_id);
+  /** G016: the owner dissolves the group for everyone. The chat stays (read-only), so nothing is closed. */
+  Roe<void> DissolveGroup(const std::string& group_id);
   Roe<void> HandOverAndClose(const std::string& thread_id, const std::string& group_id, const std::string& successor);
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
@@ -179,6 +244,7 @@ public:
   void StartQuoteReply(const std::string& quoted);
   void CancelQuoteReply() { quote_source_.clear(); }
   bool QuotingReply() const { return !quote_source_.empty(); }
+  const std::string& QuoteSource() const { return quote_source_; }
   /** The quote bar's one line: the quoted text, newlines flattened, cut at 120 characters with "…". */
   std::string QuotePreview() const;
   /** A draft that can be sent (not too long); the error's message is an i18n key. */
@@ -187,8 +253,39 @@ public:
   std::string ComposeWithQuote(const std::string& reply) const;
   /** Send `text` into the open chat the way the composer does (the message router: a person, or the agent). */
   Roe<void> SendToChat(const std::string& text);
+  /**
+   * A group text with the mentions the composer marked (G015). False when it is not one: no spans, not a
+   * group, or an "@ai" question (the agent's, sent the usual way) — then nothing was sent.
+   */
+  bool SendsWithMentions(const std::string& thread_id, const std::string& text, const std::vector<TextSpan>& spans);
+  /** The text part of that rule: spans, and not an "@ai" question (a text that starts `@ai` is the agent's; its spans drop). */
+  static bool KeepsMentionSpans(const std::string& text, const std::vector<TextSpan>& spans);
+  /** Sends it (SendsWithMentions was true). */
+  Roe<void> SendWithMentions(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
+
+  // --- mentions in a group (G015) -------------------------------------------------------------
+
+  /** What highlighting a group's mentions is checked against now; none for a chat that is not a group. */
+  std::optional<MentionRoster> MentionRosterOf(const std::string& thread_id) const;
+  /**
+   * The composer's `@` picker for a group, unfiltered: its other members by public name (and `@everyone` for the
+   * owner). Static and given the facade by value so a worker can run it holding nothing of the presenter; the
+   * AppRuntime teardown gate drains workers before the messaging graph (and so the facade) goes.
+   */
+  static std::vector<MentionCandidate> ReadMentionCandidates(ConversationsFacade* facade, const std::string& thread_id);
+  /** The messaging facade, for a worker that reads for the presenter (null before messaging is ready). */
+  ConversationsFacade* Facade() const { return facade_; }
+  /** `spans` without the mentions of anyone no longer on the group's roster (read now, at send). */
+  std::vector<TextSpan> SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const;
+  /**
+   * A tap on highlighted mention `run_index` of a message in the open group (EligibleMentionRuns' order): the
+   * saved contact it names; none for `@everyone`, ourselves, or someone who is not a contact.
+   */
+  std::optional<std::string> MentionedContact(const std::string& message_id, size_t run_index);
 
 private:
+  /** A group's list preview: its latest membership line in the transcript's words, else the stored preview. */
+  std::string GroupEventPreviewOr(const Thread& thread, const std::string& local_account);
   /**
    * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store
    * can be listed, then kept in step with every write. Empty, and read again next time, while it
@@ -208,6 +305,7 @@ private:
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> prefs_;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   std::string quote_source_;
+  std::optional<std::string> opened_at_mention_;
 };
 
 } // namespace pbr

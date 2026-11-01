@@ -3,6 +3,9 @@
 namespace pbr {
 
 CallMediaInboundHelloDecision DecideCallMediaInboundHello(const CallMediaInboundHelloContext& ctx) {
+  if (ctx.from_another_peer) {
+    return CallMediaInboundHelloDecision::RejectPeer;
+  }
   if (ctx.other_bundle_busy) {
     return CallMediaInboundHelloDecision::RejectBusy;
   }

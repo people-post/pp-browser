@@ -25,6 +25,9 @@ TEST(DeleteForEveryoneTest, OnlyOurOwnMessagesThatWentOut) {
   ThreadMessage unsent = Sent();
   unsent.sender_seq.reset();
   EXPECT_FALSE(CanDeleteForEveryone(unsent));
+  ThreadMessage from_sibling = unsent;
+  from_sibling.sender_device = "QmSibling";  // sent by another of our devices: its copy here has no number
+  EXPECT_TRUE(CanDeleteForEveryone(from_sibling));
   for (const ChatContentType type : {ChatContentType::System, ChatContentType::Annotation, ChatContentType::Deleted}) {
     ThreadMessage other = Sent();
     other.content_type = type;

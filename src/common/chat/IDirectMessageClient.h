@@ -5,20 +5,15 @@
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 
+#include "common/ProtocolIds.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
 
 namespace pbr {
 
-/** rpc-kind live chat — separate OPEN from history (handler ownership). */
-inline constexpr const char* kRpcChatProtocolId = "/pp/rpc/chat/1.0.0";
-/** rpc-kind peer history sync — separate OPEN from live chat. */
-inline constexpr const char* kRpcHistoryProtocolId = "/pp/rpc/history/1.0.0";
-/** rpc-kind peer-announce tips — separate OPEN from chat/history (Spine B). */
-inline constexpr const char* kRpcPeerAnnounceProtocolId = "/pp/rpc/peer-announce/1.0.0";
-/** rpc-kind live broadcast ticket + ladder control (Spine F). */
-inline constexpr const char* kRpcBroadcastProtocolId = "/pp/rpc/broadcast/1.0.0";
+// The wire ids (kRpcChatProtocolId, kRpcHistoryProtocolId, …) are common/ProtocolIds.h's.
 inline constexpr const char* kDirectChatProtocolId = kRpcChatProtocolId;
 /** D060 peer-direct history — `/pp/rpc/history/1.0.0` (rpc kind; own OPEN). */
 inline constexpr const char* kChatHistoryProtocolId = kRpcHistoryProtocolId;
@@ -56,7 +51,10 @@ public:
 
   virtual ~IDirectMessageClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
-  /** A link to `peer_key` is up now (M022: that device gets its copy over it, the others share the relay). */
+  /**
+   * A link to `peer_key` is up now (M022: that device gets its copy over it, the others share the relay);
+   * an account: to any of its devices.
+   */
   virtual bool IsPeerConnected(const std::string& peer_key) const { return false; }
   virtual DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) = 0;
 

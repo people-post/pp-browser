@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "mesh/host/DisclosureGatedPeerLinks.h"
 #include "common/Module.h"
 #include "lib/people/ContactsStore.h"
@@ -7,11 +8,15 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
+#include "lib/messaging/CardAsk.h"
+#include "lib/messaging/CopyAsk.h"
+#include "lib/messaging/ThreadMentionsStore.h"
+#include "lib/messaging/SentCopy.h"
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerKemKeyStore.h"
+#include "lib/people/PeerKemKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
@@ -41,7 +46,9 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <map>
 #include <mutex>
+#include <set>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -137,6 +144,13 @@ public:
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
+  /** Where a live message that mentions us is marked (G015); null: not marked. */
+  void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
+  /**
+   * A group's member check settled (its roster changed): its held mentions are decided — those still under
+   * kHeldMentionMaxAgeMs that reach us are marked and alert like a fresh one; the rest are dropped.
+   */
+  void DecideHeldMentions(const std::string& group_id);
   /**
    * Bind Amp chat/history/blob on an existing orchestrator.
    * Prefer this over destroying/recreating the orchestrator after messaging is ready —
@@ -159,6 +173,38 @@ public:
   OwnCards& OwnAccountCards() { return own_cards_; }
   /** Our device list changed (our address goes to our other devices too, M021). */
   void SetOnOwnDevicesChanged(std::function<void()> changed) { on_own_devices_changed_ = std::move(changed); }
+  /** A verified notice from another device of our own account arrived (M023: time to sync the locker). */
+  /** G016: a group ended by an answer or another device of ours: its chat gets the one unread count, preview and notice. */
+  void SurfaceGroupDissolved(const std::string& thread_id);
+  void SetOnSiblingNotice(std::function<void()> callback) { on_sibling_notice_ = std::move(callback); }
+  /**
+   * Our other devices hear that something of the account changed here (the account locker was written, M023): the
+   * same `device_list` notice through our own mailbox — receiving any sibling notice prompts a sync.
+   */
+  void NudgeSiblings();
+  /**
+   * A control notice to our own account's other devices (one record to our own mailbox, sealed to the account
+   * KEM): applied there by its family (M021 d5: a call taken here). Nothing when our card lists only us.
+   */
+  Roe<void> NotifyOwnDevices(const ThreadMessage& control);
+  /**
+   * What we sent shows on our other devices (M021 d3): a sent-copy notice to our own mailbox, when our card lists
+   * other devices. Off the caller's thread.
+   */
+  void MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target);
+  /**
+   * A copy may be missing for this device (M021 §9): once kMissingCopyWaitMs passed without the message arriving
+   * another way (a copy over a link), ask the sending device for one (`copy_ask`, carrying our card). Once per
+   * message.
+   */
+  void NoteMissingCopy(const RelayReceiveOutcome::MissingCopy& missing);
+  /**
+   * Another account's device asks for a copy of a message we sent: if this device sent it and the asking device
+   * is on the asker's card, seal it one copy in their device pair and send it (direct or group).
+   */
+  void AnswerCopyAsk(const CopyAsk& ask, const std::string& asker_account);
+  /** M021 d6: another account asks for our newer card (`card_ask`): the device named sends it (`device_list`). */
+  void AnswerCardAsk(const std::string& to_device, const std::string& asker_account);
   void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -174,9 +220,12 @@ public:
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
-  /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
+  /**
+   * Fired on UI thread when a background ingest bumps unread (for OS notify). `mentions_us`: a group message
+   * that mentions us (G015, MessageMentionsUs) — it alerts even in a muted group, rate-limited.
+   */
   void SetOnBackgroundUnread(
-      std::function<void(std::string title, std::string body, std::string thread_id)> callback);
+      std::function<void(std::string title, std::string body, std::string thread_id, bool mentions_us)> callback);
   /**
    * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
    * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
@@ -246,6 +295,11 @@ public:
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
                         const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
+  /**
+   * Our card to each of `accounts` on the control lane (the `device_list` notice, as to our siblings): a device
+   * they do not know yet — one restored from a recovery phrase — is on their list before they next write.
+   */
+  void NotifyContactsOfDevices(const std::vector<std::string>& accounts);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
@@ -325,7 +379,53 @@ private:
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
-  std::function<void(std::string, std::string, std::string)> on_background_unread_;
+  std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
+  /** Whether a stored inbound message in `thread_id` mentions us (G015). */
+  /** A persisted message's notice for a user who is away (not attentive — the open chat too); none otherwise. */
+  struct BackgroundNotice {
+    std::string title;
+    std::string body;
+    std::string thread_id;
+    bool mentions_us = false;
+  };
+  std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
+                                                      const std::string& local_account);
+  /**
+   * A group event about this account (removed; its accept met a full group) arrived in a direct message that stays
+   * quiet: the GROUP thread counts it unread, and the user away gets a notice for it.
+   */
+  std::optional<BackgroundNotice> NoteEventAboutUs(const RelayReceiveOutcome& outcome);
+  /**
+   * G016: a group dissolved. Its chat gets the one unread count / preview, and the notice for a user who is away;
+   * the DM that carried the news gets none. None when the outcome dissolved no group.
+   */
+  std::optional<BackgroundNotice> NoticeGroupDissolved(const RelayReceiveOutcome& outcome);
+  std::optional<BackgroundNotice> NoticeGroupDissolvedIn(const std::string& thread_id);
+  /** A live message that mentions us is marked (unless its chat is open); one that cannot be decided is held. */
+  void NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account);
+  struct HeldMention {
+    std::string group_id;
+    std::string thread_id;
+    ThreadMessage message;
+    std::string local_account;
+    int64_t held_at_ms = 0;
+  };
+  ThreadMentionsStore* mentions_ = nullptr;
+  /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
+  static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
+  std::mutex asked_copies_mutex_;
+  std::set<std::string> asked_copies_;  // message ids asked for (bounded)
+  /** M021 d6: an envelope said its sender's list is newer than ours — ask that device for it, through the relay. */
+  void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at);
+  std::mutex card_asks_mutex_;
+  std::map<std::string, int64_t> card_asks_;  // account → the newest list asked for
+  Roe<void> ResendDirectCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
+                             const AccountCardDevice& device);
+  Roe<void> ResendGroupCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
+                            const AccountCardDevice& device);
+  std::mutex held_mentions_mutex_;
+  std::vector<HeldMention> held_mentions_;
+  bool InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message, const std::string& local_account);
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
@@ -339,6 +439,8 @@ private:
   Roe<void> SignEnvelope(RelayEnvelope& envelope);
   /** Our card to our other devices, through our own mailbox (M022). */
   void NotifySiblings();
+  /** The issue time of the own card our siblings were last told (a mesh bring-up does not repeat it). */
+  std::atomic<int64_t> siblings_told_card_at_{0};
   /** A link to device `peer_id` is up (its copy goes over it, M022). */
   bool LinkedTo(const std::string& peer_id) const;
   /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
@@ -347,6 +449,7 @@ private:
   E2ePublicSessionKeys session_keys_;
   /** Our cards: the key card carried with every key_init, the account card served to who asks. */
   OwnCards own_cards_;
+  std::function<void()> on_sibling_notice_;
   std::function<void()> on_own_devices_changed_;
   AccountCardService card_service_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */

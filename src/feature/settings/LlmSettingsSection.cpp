@@ -39,7 +39,7 @@ void LlmSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, Setti
   state.llm_preset = ResolvePreset(config);
   state.llm_base_url = config.llm.base_url;
   state.llm_model = config.llm.model;
-  state.llm_api_key = config.llm.api_key;
+  state.llm_api_key = config.llm.api_key.Reveal();
   state.llm_api_key_env = bootstrap.config.llm_api_key_env;
   // brief_llm_key_masked is owned by ProfileSettingsSection (via load_profile_identity port).
 }
@@ -66,7 +66,7 @@ void LlmSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionSt
   state.llm_preset = ResolvePreset(defaults);
   state.llm_base_url = defaults.llm.base_url;
   state.llm_model = defaults.llm.model;
-  state.llm_api_key = defaults.llm.api_key;
+  state.llm_api_key = defaults.llm.api_key.Reveal();
   state.llm_api_key_env = defaults.llm_api_key_env;
 }
 

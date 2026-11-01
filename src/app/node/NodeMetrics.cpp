@@ -1,11 +1,9 @@
 #include "app/node/NodeMetrics.h"
 
 #include "amp/link/Types.h"
-#include "common/chat/IDirectMessageClient.h"
-#include "common/thread/ChatBlobTypes.h"
+#include "common/ProtocolIds.h"
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "mesh/discovery/DirectoryTypes.h"
-#include "common/media/CallMediaProtocol.h"
 #include "mesh/l4/shared/L4ProtocolIds.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/dial_back/DialBackTypes.h"

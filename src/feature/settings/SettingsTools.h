@@ -20,6 +20,11 @@ struct SettingsToolPorts {
   std::function<SettingsReachabilityView()> load_reachability;
   std::function<PinProtectionView()> load_pin_protection;
   std::function<void(bool try_upnp)> run_reachability_probe;
+  /**
+   * Ensure the PP Support contact and open its chat (SettingsCommands::open_support_chat). Tools run on the worker
+   * pool, so the app wires a version that runs on the UI thread and waits; not filled by SettingsToolPortsFromCommands.
+   */
+  std::function<Roe<void>()> open_support_chat;
 };
 
 /** Me-tab / Govern tools (prefs, status, safe config) as an MCP-shaped provider. */

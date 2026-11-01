@@ -72,6 +72,8 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Structured AI replies | `src/lib/ai/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/lib/ai/TurnPlan.*`, `src/lib/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
+| AI friend search / selected-result add | `src/feature/conversations/PeopleSearch.cpp`, `ContactActionDispatcher.cpp`, `src/feature/product/MessagingTools.cpp`, `src/common/chat/PeopleDiscoveryBlocks.*`; planner rules in `src/lib/ai/PromptBuilder.cpp` |
+| QR scan / friend locator | `src/gui/scan/`, `src/lib/media/QrScanner.*`, `QrDecode.*`; contacts owns locator confirmation; [docs/ui/SCANNING.md](docs/ui/SCANNING.md) |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Chat storage / SQLite | `src/lib/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | Mesh channel framing / hangs | [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), pp-cpp-amp `docs/STACK.md` (channels, sessions), pp-cpp-mesh (`host/`, `l4/`) |
@@ -91,6 +93,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — [at-rest A007](projects/at-rest-crypto/DECISIONS.md) |
 | pp-node / node role | `src/app/node/` (thin: main, bootstrap, status HTTP), `src/domain/node/NodeMeshServices.*` (shared with desktop `MeshRole::Node`), probes in `src/app/node/tools/`; link allowlist + `scripts/dev/pp_node_closure.sh` — [docs/ops/BUILD.md](docs/ops/BUILD.md#headless-mesh-node-pp-node) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/foundation/data/`, `src/foundation/runtime/`, `src/foundation/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
+| Metrics / diagnostics a user can send | `common/ShareableLine.h`, `common/Diag.h`, `common/Metrics.h` — no free text leaves the device; [docs/contracts/DIAGNOSTICS.md](docs/contracts/DIAGNOSTICS.md) |
 | Doc map / contracts | [docs/README.md](docs/README.md) |
 | In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |
@@ -110,7 +113,8 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
-- Respect layer dependencies: `app → feature → domain → lib → foundation → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **lib peer → lib peer** edges; put shared seams in `src/common/` and wire in `feature/`.
+- Respect layer dependencies: `app → feature → domain → lib → foundation → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). A lib peer includes another only **down the capability order** (`lib/messaging` → `lib/people`; [CR013](projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order)); within one capability or against the order, put shared seams in `src/common/` and wire in `feature/`.
+- Respect the **capability order** across layers (people → net / social → messaging → calls → broadcast; node on people + net; AI is app-side) — [SRC_LAYOUT § Capabilities](docs/architecture/SRC_LAYOUT.md#capabilities-across-layers). `scripts/check/check_capability_edges.py` fails on a new edge against it; when you cut one, lower its line in `capability_edges_allowlist.txt`.
 - **Design as oracle:** tests guard documented intent / purpose IDs, not today’s call graph or harness heals — [TESTING.md § Design as oracle](docs/architecture/TESTING.md#design-as-oracle). Older suites may still drift; when you hit a mismatch in work you are already doing, tighten that case in the same change (no courtesy freeze, no repo-wide rewrite).
 - **Promote test failures downward:** if smoke/hard-lab finds a policy bug that loopback/gtest can reproduce, fix **and** add the cheaper regression — see [TESTING.md § When a higher tier finds a bug](docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
@@ -142,7 +146,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | UI-safe surface | `*Facade` | `ConversationsFacade` |
 | Durable state | `*Store` | thread/CAS/contacts stores |
 | Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
-| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
+| Org HTTP client bag | `OrgBackendClients` | `lib/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`); the relay's message client is messaging's (`lib/messaging/HttpRelayClient`) |
 | Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
 | L4 protocol ends | `serve/*Server`, `client/*ClientCoordinator` | `MediaRelayServer` / `MediaRelayClientCoordinator`, `CircuitRelayServer` / `CircuitClientCoordinator`, `DhtServer` / `DhtClient` — [SRC_LAYOUT § L4 protocols](docs/architecture/SRC_LAYOUT.md#l4-protocols-serve-and-client) |
 | Reachability engine | `*Engine` | `ReachabilityEngine` |

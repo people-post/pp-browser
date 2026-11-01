@@ -16,7 +16,8 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "foundation/platform/PlatformUserHints.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "mesh/types/MeshHopDial.h"
@@ -1016,7 +1017,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     // 2nd concurrent accept: re-fan-out the attach so a joiner that missed the SoftMigrate fan-out
     // while still Ringing can WaitForAttach → attach.
     SyncSfuSubscriptions(call_id);
-    RefanOutLocalHopForJoiner(call_id, joiner_identity);
+    RefanOutHopForJoiner(call_id, joiner_identity);
     ClearSfuAttachWait();
     host_.NotifyRingChanged();
     return true;
@@ -1051,8 +1052,21 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   return true;
 }
 
-void CallTopologyController::RefanOutLocalHopForJoiner(const std::string& call_id, const std::string& joiner_identity) {
-  if (!relay_deps_.relay || !relay_deps_.relay->IsLocalHopAttached()) {
+void CallTopologyController::RefanOutHopForJoiner(const std::string& call_id, const std::string& joiner_identity) {
+  if (!relay_deps_.relay) {
+    return;
+  }
+  if (!relay_deps_.relay->IsLocalHopAttached()) {
+    // On a remote hop the call's owner tells the joiner where the group is. Without it someone who
+    // answered after the SoftMigrate fan-out was told nothing, waited out the attach wait and left with
+    // no_media_relay_hop while the others saw one fewer (lab: group_fourth_answers_late). One sender.
+    auto local = host_.local_relay_identity();
+    if (!local || !sfu_.attached || !guest_.active_attach || guest_.active_call_id != call_id ||
+        !IsStickyInitiator(call_id, *local)) {
+      return;
+    }
+    log().info << "OnRemoteAcceptJoined re-fan-out CallSfuAttach (remote hop) joiner=" << joiner_identity;
+    AnnounceLocalPublisher(call_id, *guest_.active_attach);
     return;
   }
   auto hop = relay_deps_.relay->LocalPeerIdBase58();
@@ -1580,7 +1594,7 @@ void CallTopologyController::Handle(TopologyEvent& event) {
 
 void CallTopologyController::Defer(std::function<void()> step) {
   // A hop flow's finish step runs as the next event, never inside the flow that reported it.
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   outbox_.Emit(topology_event::Continue{steps_.Store(std::move(step))});
 }
 

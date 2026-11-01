@@ -15,7 +15,8 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformUserHints.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 
@@ -987,8 +988,10 @@ void CallHopMigrateWorkflow::Handle(HopMigrateEvent& event) {
           RefanOutPickedHop(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectAfterAttach>) {
           ReleaseDirectSettled(e);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectWhenHopHeard>) {
+          ReleaseDirectWhenHopHeard(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::GuestReattachRetry>) {
-          OnGuestSfuTransportLost();
+          OnGuestReattachRetry(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::Continue>) {
           steps_.Run(e.id);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::RelayAttached>) {
@@ -1072,16 +1075,40 @@ void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::Relea
       }
     }
   }
-  ReleaseDirectFor(release.call_id);
   host_.ClearMediaActivity();
 }
 
+void CallHopMigrateWorkflow::ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait) {
+  const bool still_on_hop = sfu_.attached && media_.ActiveCallId() == wait.call_id;
+  std::vector<int64_t> heard_ms;
+  if (still_on_hop) {
+    const CallMediaEngineHealth health = media_.HealthSnapshot();
+    if (health.sfu_mode) {
+      for (const CallMediaStreamHealth& stream : health.streams) {
+        heard_ms.push_back(stream.last_rx_ms);
+      }
+    }
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (!ReleaseDirectAfterHopAttachNow(still_on_hop, heard_ms, wait.attached_ms, now_ms, wait.deadline_ms)) {
+    if (outbox_.After(std::chrono::milliseconds(kKeepDirectRecheckMs), wait) != 0) {
+      return;  // looked at again shortly
+    }
+  }
+  log().info << "ReleaseDirect after hop attach call_id=" << wait.call_id << " waited_ms=" << (now_ms - wait.attached_ms)
+             << " heard=" << heard_ms.size();
+  ReleaseDirectFor(wait.call_id);
+}
+
 void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
-  // Advance lifecycle (DirectConnected via ReleaseDirect) + clear Connecting immediately, and again
-  // after a settle delay. Do not gate on migrate gen — stampede leaves gen_at_start permanently
-  // stale (dogfood UI).
-  ReleaseDirectFor(at.call_id);
+  // Clear Connecting immediately, and again after a settle delay. Do not gate on migrate gen —
+  // stampede leaves gen_at_start permanently stale (dogfood UI). #431 (b): the 1:1 leg goes once the
+  // others are heard on the hop (at most kKeepDirectUntilHopHeardMs): until then its live link is how
+  // the peer gets our CallSfuAttach at once, control going direct-first.
   host_.ClearMediaActivity();
+  const int64_t attached_ms = util::NowUnixMs();
+  ReleaseDirectWhenHopHeard(hop_migrate_event::ReleaseDirectWhenHopHeard{
+      .call_id = at.call_id, .attached_ms = attached_ms, .deadline_ms = attached_ms + kKeepDirectUntilHopHeardMs});
   hop_migrate_event::ReleaseDirectAfterAttach release{at.call_id, at.gen_at_start, BuildSfuAttachFanout(at.attach),
                                                      at.self_hop};
   if (outbox_.After(std::chrono::milliseconds(3500), release) == 0) {
@@ -1089,29 +1116,67 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
   }
 }
 
-void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
+std::optional<std::string> CallHopMigrateWorkflow::GuestReattachCallId() const {
   if (!sfu_.attached || flight_.in_flight || guest_.reattach_in_flight) {
-    return;
+    return std::nullopt;
   }
   if (!relay_deps_->relay || relay_deps_->relay->IsLocalHopAttached()) {
-    return;
+    return std::nullopt;
   }
   if (!guest_.active_attach || guest_.active_call_id.empty()) {
-    return;
+    return std::nullopt;
   }
-  const std::string call_id = guest_.active_call_id;
-  if (!media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
+  if (!media_.IsSfuMode() || media_.ActiveCallId() != guest_.active_call_id) {
+    return std::nullopt;
+  }
+  return guest_.active_call_id;
+}
+
+void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
+  const std::optional<std::string> call_id = GuestReattachCallId();
+  if (!call_id) {
     return;
   }
   if (guest_.reattach_attempts >= kMaxGuestSfuReattachAttempts) {
-    log().warning << "Guest SFU reattach exhausted attempts=" << guest_.reattach_attempts
-                  << " call_id=" << call_id;
-    // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
-    // The call still reads Reconnecting (not Connected: nothing flows) until the device's network
-    // comes back or moves (OnLocalNetworkMoved tries again) or the user leaves.
-    host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+    ScheduleSlowGuestReattach(*call_id);
     return;
   }
+  StartGuestReattachAttempt(*call_id);
+}
+
+void CallHopMigrateWorkflow::ScheduleSlowGuestReattach(const std::string& call_id) {
+  if (guest_.slow_retry_pending) {
+    return;
+  }
+  log().warning << "Guest SFU reattach quick attempts spent=" << guest_.reattach_attempts << ", again every "
+                << kGuestSfuSlowRetry.count() << " ms call_id=" << call_id;
+  // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
+  // The call reads Reconnecting (not Connected: nothing flows) while the guest keeps trying at a
+  // steady pace: a phone out of coverage comes back without its network moving, and waiting for
+  // a move (OnLocalNetworkMoved) left it out of the call for good (lab: group_call_on_the_road).
+  host_.SetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+  guest_.slow_retry_pending =
+      outbox_.After(kGuestSfuSlowRetry, hop_migrate_event::GuestReattachRetry{.slow = true}) != 0;
+}
+
+void CallHopMigrateWorkflow::OnGuestReattachRetry(const hop_migrate_event::GuestReattachRetry& retry) {
+  if (retry.slow) {
+    guest_.slow_retry_pending = false;
+  }
+  // Another attach brought the transport back meanwhile: nothing to retry.
+  if (relay_deps_->relay && relay_deps_->relay->IsAttached()) {
+    return;
+  }
+  if (!retry.slow) {
+    OnGuestSfuTransportLost();
+    return;
+  }
+  if (const std::optional<std::string> call_id = GuestReattachCallId()) {
+    StartGuestReattachAttempt(*call_id);
+  }
+}
+
+void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_id) {
   ++guest_.reattach_attempts;
   guest_.reattach_in_flight = true;
   const CallSfuAttachDetail attach = *guest_.active_attach;
@@ -1148,7 +1213,7 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
     }
     log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message
                   << " call_id=" << call_id;
-    const int backoff_ms = 400 * attempt;
+    const int backoff_ms = 400 * std::min(attempt, kMaxGuestSfuReattachAttempts);
     outbox_.After(std::chrono::milliseconds(backoff_ms), hop_migrate_event::GuestReattachRetry{});
   });
 }
@@ -1223,7 +1288,7 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
 }
 
 Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   if (!IsMigrateGenerationCurrent(at.gen_at_start)) {
     relay_deps_->relay->Detach();
     return Error("reattach aborted");

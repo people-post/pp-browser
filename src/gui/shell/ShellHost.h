@@ -82,6 +82,7 @@ public:
   void BindPinGateActions(PinGateActionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
+  void BindScanAction(std::function<void()> action);
 
   void Initialize(ui::Context* context);
   void SyncLayout();
@@ -225,7 +226,8 @@ private:
   void PinGateUseDefault();
   void PinGateIdentityNew();
   void PinGateIdentityLink();
-  void PinGateIdentityRestore();
+  void PinGateIdentityPhrase();
+  void PinGateUseSavedCopy();
   void PinGateForgotToggle();
   void CallAccept();
   void CallAcceptVoice();
@@ -235,6 +237,7 @@ private:
   void CallRetry();
   void CallMute();
   void CallCamera();
+  void CallFlipCamera();
   void CallSpeaker();
   void CallInvite();
   void CallMinimize();
@@ -356,6 +359,7 @@ private:
   PinGateActionPorts pin_gate_actions_;
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
+  std::function<void()> scan_action_;
 
 };
 

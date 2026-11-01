@@ -314,9 +314,24 @@ CameraGeometry CameraDeviceLease::Geometry() const {
   return state_->endpoint ? state_->endpoint->Geometry() : CameraGeometry{};
 }
 
+std::string CameraDeviceLease::CaptureError() const {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint ? state_->endpoint->CaptureError() : "camera unavailable";
+}
+
 std::optional<VideoFrameRgba> CameraDeviceLease::NextFrame() {
   std::lock_guard lock(state_->io_mu);
   return state_->endpoint ? state_->endpoint->NextFrame() : std::nullopt;
+}
+
+bool CameraDeviceLease::SetZoom(float factor) {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint && state_->endpoint->SetZoom(factor);
+}
+
+CameraZoomState CameraDeviceLease::ZoomState() const {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint ? state_->endpoint->ZoomState() : CameraZoomState{};
 }
 
 // ---------------------------------------------------------------------------------------------

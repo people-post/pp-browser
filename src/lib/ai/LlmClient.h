@@ -5,6 +5,7 @@
 #include "common/Module.h"
 #include "common/PbrCompat.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -64,6 +65,12 @@ public:
 
   // Merge leading consecutive system messages into one. Safe for strict chat templates (e.g. Qwen).
   static std::vector<ChatMessage> CoalesceLeadingSystemMessages(std::vector<ChatMessage> messages);
+
+  /**
+   * Tests: called with every completions request body just before it is sent (any thread), so a test can count
+   * model calls and read what they would carry. Empty to remove.
+   */
+  static void SetRequestObserverForTests(std::function<void(const std::string& body)> observer);
 
 private:
   LlmConfig config_;

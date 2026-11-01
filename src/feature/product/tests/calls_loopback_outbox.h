@@ -1,7 +1,9 @@
 #pragma once
 
-#include "foundation/runtime/RuntimeOwnerExecutor.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/RuntimeOwnerExecutor.h"
+#include "foundation/runtime/ProductOwners.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/PbrCompat.h"
 
 #include <chrono>
 #include <functional>
@@ -26,7 +28,7 @@ public:
 
 private:
   std::function<void(Event&)> handle_;
-  RuntimeOwnerExecutor executor_{OwnerThreadId::MediaSessions};
+  RuntimeOwnerExecutor executor_{kMediaSessionsOwner};
   OwnerTasks tasks_{executor_};
 };
 

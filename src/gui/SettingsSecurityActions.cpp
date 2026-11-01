@@ -1,14 +1,22 @@
 #include "gui/SettingsSecurityActions.h"
 
+#include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
+#include "gui/DiagnosticsFeedback.h"
+#include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "lib/ui/DataEvent.h"
 
 #include <ui/base/SystemInterface.h>
 #include <ui/data/DataModelHandle.h>
 
+#include <chrono>
+#include <ctime>
 #include <utility>
 
 namespace pbr {
@@ -23,10 +31,90 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("pin_change_confirm", &pin_change_confirm_);
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  ctor.Bind("recovery_phrase", &recovery_phrase_);
+  ctor.Bind("recovery_phrase_pin", &recovery_phrase_pin_);
+  ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
+  ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
+  ctor.BindEventCallback("save_account_copy", DataEvent<>([this]() { SaveAccountCopy(); }));
   ctor.BindEventCallback("clear_undelivered_older_than", DataEvent<>([this]() { ClearUndeliveredOlderThan(); }));
   ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { ResetToolPermissions(); }));
   ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { ResetProfile(); }));
   ctor.BindEventCallback("reset_chats", DataEvent<>([this]() { ResetChats(); }));
+  ctor.Bind("diagnostics_sending", &diagnostics_sending_);
+  ctor.Bind("diagnostics_send_label", &diagnostics_send_label_);
+  ctor.Bind("diagnostics_last_id", &diagnostics_last_id_);
+  ctor.Bind("diagnostics_last_label", &diagnostics_last_label_);
+  ctor.BindEventCallback("send_diagnostics", DataEvent<>([this]() { SendDiagnostics(); }));
+  ctor.BindEventCallback("copy_diagnostics_id", DataEvent<>([this]() { CopyDiagnosticsId(); }));
+  ctor.BindEventCallback("open_diagnostics_help", DataEvent<>([this]() { OpenDiagnosticsHelp(); }));
+}
+
+void SettingsSecurityActions::RefreshDiagnostics() {
+  const std::string last = commands_.last_diagnostics_id ? commands_.last_diagnostics_id() : std::string();
+  diagnostics_send_label_ =
+      Tr(diagnostics_sending_ ? "settings.security.diagnostics.sending" : "settings.security.diagnostics.send").c_str();
+  diagnostics_last_id_ = last.c_str();
+  diagnostics_last_label_ = last.empty() ? "" : Tr("settings.security.diagnostics.last_id", {{"id", last}}).c_str();
+  DataModelHost& model = DataModelHost::Instance();
+  model.Dirty("settings", "diagnostics_sending");
+  model.Dirty("settings", "diagnostics_send_label");
+  model.Dirty("settings", "diagnostics_last_id");
+  model.Dirty("settings", "diagnostics_last_label");
+}
+
+void SettingsSecurityActions::SendDiagnostics() {
+  if (diagnostics_sending_) {
+    return;
+  }
+  if (!commands_.send_diagnostics || !feedback_.show_confirm) {
+    host_.ReportFailure(Error("Diagnostics are not available")
+                            .WithUser(Tr("settings.security.diagnostics.unavailable")));
+    return;
+  }
+  feedback_.show_confirm(
+      Tr("settings.security.diagnostics.confirm_title"), Tr("settings.security.diagnostics.confirm_body"),
+      [this](const bool ok) {
+        if (!ok || diagnostics_sending_) {
+          return;
+        }
+        diagnostics_sending_ = true;
+        RefreshDiagnostics();
+        commands_.send_diagnostics([this](DiagnosticsUploadResult result) {
+          diagnostics_sending_ = false;
+          const std::string last = commands_.last_diagnostics_id ? commands_.last_diagnostics_id() : std::string();
+          // A fresh send has just written its own reference; QuotaKey names the one on file from before.
+          const std::string text = DiagnosticsResultText(result, last);
+          RefreshDiagnostics();
+          if (result.kind == DiagnosticsUploadKind::Sent) {
+            host_.ShowStatus("");
+            UserFeedback::Ok(text);
+          } else {
+            host_.ReportFailure(Error(text).WithUser(text));
+          }
+        });
+      },
+      Tr("settings.security.diagnostics.confirm_ok"));
+}
+
+void SettingsSecurityActions::CopyDiagnosticsId() {
+  const std::string id = diagnostics_last_id_.c_str();
+  if (id.empty()) {
+    return;
+  }
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->SetClipboardText(id.c_str());
+  }
+}
+
+void SettingsSecurityActions::OpenDiagnosticsHelp() {
+  // help_key "troubleshooting/send-diagnostics" is the support article; the question is prefilled, the user sends it.
+  if (!commands_.open_support_chat) {
+    host_.ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
+    return;
+  }
+  if (auto opened = commands_.open_support_chat(Tr("settings.security.diagnostics.help_question")); !opened) {
+    host_.ReportFailure(opened.error());
+  }
 }
 
 void SettingsSecurityActions::ClearPinFields() {
@@ -131,6 +219,95 @@ void SettingsSecurityActions::ExportLinkDevice() {
           });
         },
         {});
+  });
+}
+
+void SettingsSecurityActions::ShowRecoveryPhrase() {
+  if (!commands_.recovery_phrase) {
+    host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.recovery.not_ready")));
+    return;
+  }
+  // A profile on the app default PIN gets its phrase as it gets everything else (by design: the unlocked app is
+  // enough there); a chosen PIN is asked for again.
+  const bool default_pin = host_.Store().Snapshot().profile_prefs.pin_is_default;
+  const SecretText pin = default_pin ? SecretText(kDefaultProfilePin) : SecretText(recovery_phrase_pin_.c_str());
+  if (pin.empty()) {
+    host_.ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.recovery.pin_required")));
+    return;
+  }
+  recovery_phrase_pin_ = "";
+  AppRuntime::PostWorkerNormal([this, pin]() {
+    auto phrase = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
+                                            : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
+    AppRuntime::PostUI([this, phrase = std::move(phrase)]() mutable {
+      if (!phrase) {
+        host_.ReportFailure(phrase.error());
+        host_.PushToView(false);
+        return;
+      }
+      if (!*phrase) {
+        host_.ReportFailure(Error("No recovery phrase").WithUser(Tr("settings.security.recovery.none")));
+        return;
+      }
+      recovery_phrase_ = phrase->value().Reveal().c_str();  // shown to its owner, on their screen
+      host_.PushToView(false);
+      // Not left on screen: it hides by itself.
+      const uint64_t shown = ++recovery_shown_count_;
+      AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRecoveryPhraseShownMs), [this, shown]() {
+        AppRuntime::PostUI([this, shown]() {
+          if (shown == recovery_shown_count_) {
+            HideRecoveryPhrase();
+          }
+        });
+      });
+    });
+  });
+}
+
+void SettingsSecurityActions::HideRecoveryPhrase() {
+  recovery_phrase_ = "";
+  recovery_phrase_pin_ = "";
+  ++recovery_shown_count_;
+  host_.PushToView(false);
+}
+
+namespace {
+
+/** `pp-account-2026-10-30.json`: the day it was saved, so copies sort and the newest is easy to tell. */
+std::string AccountCopyFileName() {
+  const std::time_t now = std::time(nullptr);
+  std::tm local{};
+#if defined(_WIN32)
+  localtime_s(&local, &now);
+#else
+  localtime_r(&now, &local);
+#endif
+  char day[16] = {};
+  std::strftime(day, sizeof(day), "%Y-%m-%d", &local);
+  return std::string("pp-account-") + day + ".json";
+}
+
+} // namespace
+
+void SettingsSecurityActions::SaveAccountCopy() {
+  EnsureUnlocked(Tr("settings.security.copy.not_ready"), [this]() {
+    AppRuntime::PostWorkerNormal([this]() {
+      auto copy = commands_.export_account_copy ? commands_.export_account_copy()
+                                                : Roe<std::string>(Error("Messaging is not ready"));
+      AppRuntime::PostUI([this, copy = std::move(copy)]() mutable {
+        if (!copy) {
+          host_.ReportFailure(copy.error());
+          return;
+        }
+        SaveFileAs(Backend::GetWindow(), AccountCopyFileName(), std::move(*copy), [](const bool saved) {
+          AppRuntime::PostUI([saved]() {
+            if (saved) {
+              UserFeedback::Ok(Tr("settings.security.copy.saved"));
+            }
+          });
+        });
+      });
+    });
   });
 }
 

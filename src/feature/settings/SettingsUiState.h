@@ -78,6 +78,8 @@ struct SettingsUiState {
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */
   std::string show_notifications = "on";
+  /** UI switch value: "on" shows message text in notifications, "off" a neutral line. */
+  std::string show_notification_preview = "on";
   /** P011 — stay connected in the background: "on" / "off" (Android only). */
   std::string stay_connected = "off";
   std::string brief_llm_key_masked;
@@ -111,6 +113,8 @@ struct SettingsUiState {
   bool security_can_change_pin = false;
   /** Registered + unlocked — copy a link-device payload. */
   bool security_can_export_link = false;
+  /** The account has a recovery phrase to show (M023; accounts minted before have none). */
+  bool security_has_recovery_phrase = false;
   /** G007 — everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */

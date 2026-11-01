@@ -18,6 +18,13 @@
 namespace pbr {
 namespace {
 
+/** Camera formats a metric may name (constexpr: see ShareableLine::Pick); any other reads `other`. */
+constexpr ShareWord kCameraFormats[] = {
+    "SDL_PIXELFORMAT_NV12",     "SDL_PIXELFORMAT_NV21",     "SDL_PIXELFORMAT_YUY2",     "SDL_PIXELFORMAT_UYVY",
+    "SDL_PIXELFORMAT_YVYU",     "SDL_PIXELFORMAT_MJPG",     "SDL_PIXELFORMAT_IYUV",     "SDL_PIXELFORMAT_YV12",
+    "SDL_PIXELFORMAT_P010",     "SDL_PIXELFORMAT_XRGB8888", "SDL_PIXELFORMAT_ARGB8888", "SDL_PIXELFORMAT_RGBA8888",
+    "SDL_PIXELFORMAT_BGRA8888", "SDL_PIXELFORMAT_UNKNOWN"};
+
 class SdlAudioEndpoint final : public IAudioEndpoint {
 public:
   explicit SdlAudioEndpoint(SDL_AudioStream* stream) : stream_(stream) {}
@@ -208,6 +215,30 @@ public:
 
   CameraGeometry Geometry() const override { return geometry_; }
 
+  std::string CaptureError() const override {
+    return SDL_GetCameraPermissionState(camera_) < 0 ? "Camera permission denied" : std::string();
+  }
+
+  bool SetZoom(float factor) override {
+    const auto props = SDL_GetCameraProperties(camera_);
+    if (!SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false)) {
+      return false;
+    }
+    const float maximum = SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f);
+    return SDL_SetFloatProperty(props, "SDL.camera.coremedia.zoom", std::clamp(factor, 1.f, maximum));
+  }
+
+  CameraZoomState ZoomState() const override {
+    const auto props = SDL_GetCameraProperties(camera_);
+    if (!SDL_LockProperties(props)) { return {}; }
+    const CameraZoomState state{SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false),
+                                SDL_GetFloatProperty(props, "SDL.camera.coremedia.zoom_current", 1.f),
+                                SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f),
+                                SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_ramping", false)};
+    SDL_UnlockProperties(props);
+    return state;
+  }
+
   std::optional<VideoFrameRgba> NextFrame() override {
     Uint64 timestamp_ns = 0;
     SDL_Surface* surface = SDL_AcquireCameraFrame(camera_, &timestamp_ns);
@@ -282,7 +313,7 @@ public:
                         .borrowed = IsBorrowedCameraName(SDL_GetCameraName(cameras[i]))});
     }
     SDL_free(cameras);
-    const std::vector<SDL_CameraID> candidates = OrderCameraCandidates(listed);
+    const std::vector<SDL_CameraID> candidates = OrderCameraCandidates(listed, format.prefer_front_facing);
 
     std::string last_error;
     for (const SDL_CameraID id : candidates) {
@@ -299,8 +330,8 @@ public:
       // MJPG/NV12 on Windows); conversion happens per frame. Landscape sensor buffers; the holder
       // rotates / crops into the encode size.
       want.format = SDL_PIXELFORMAT_UNKNOWN;
-      want.width = std::max(geometry.encode_width, geometry.encode_height);
-      want.height = std::min(geometry.encode_width, geometry.encode_height);
+      want.width = format.capture_width > 0 ? format.capture_width : std::max(geometry.encode_width, geometry.encode_height);
+      want.height = format.capture_height > 0 ? format.capture_height : std::min(geometry.encode_width, geometry.encode_height);
       want.framerate_numerator = format.fps;
       want.framerate_denominator = 1;
       const auto open_t0 = std::chrono::steady_clock::now();
@@ -332,7 +363,11 @@ public:
             .Add("cam_fps", have_spec && got.framerate_denominator > 0
                                 ? got.framerate_numerator / got.framerate_denominator
                                 : -1)
-            .Add("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "?")
+            .Pick("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "", kCameraFormats)
+            .Add("native_min_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
+                SDL_GetCameraProperties(camera), "SDL.camera.coremedia.min_frame_ns", 0)))
+            .Add("native_max_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
+                SDL_GetCameraProperties(camera), "SDL.camera.coremedia.max_frame_ns", 0)))
             .Add("encode_w", geometry.encode_width)
             .Add("encode_h", geometry.encode_height)
             .Emit();
@@ -368,12 +403,11 @@ public:
     if (!ok) {
       if (reason != "unsupported") {
         SDL_Log("MediaDeviceArbiter: vpio open failed (%s) open_ms=%lld", reason.c_str(), static_cast<long long>(open_ms));
-        // Reason text is an OS status message, never a device or person name.
+        // The reason (an OS status message) stays in the SDL log above: a shareable line takes no free text.
         MetricsLine("device.open")
             .Add("kind", "vpio")
             .Add("result", "failed")
             .Add("open_ms", static_cast<int64_t>(open_ms))
-            .Add("reason", reason)
             .Emit();
       }
       *error = reason.empty() ? std::string("vpio open failed") : reason;

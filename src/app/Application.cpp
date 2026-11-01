@@ -1,14 +1,23 @@
 #include "app/Application.h"
+#include "foundation/platform/ui/PlatformNavigation.h"
+#include "common/ValueJson.h"
+#include <map>
 #include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
+#include "app/DiagnosticsUpload.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "lib/net/BriefGuestLlmClient.h"
 
 #include "foundation/crypto/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "foundation/platform/PlatformShare.h"
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
@@ -22,15 +31,16 @@
 #include "lib/messaging/ChatPayloadValidator.h"
 #include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "lib/ui/InputCoordinator.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
-#include "feature/ai/bindings/ActionRouter.h"
 #include "gui/chat/ChatController.h"
-#include "feature/conversations/MessagingTools.h"
+#include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPathProvider.h"
@@ -39,6 +49,7 @@
 #include "foundation/platform/AppEventHooks.h"
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ui/FrameDrawPolicy.h"
 #include "foundation/platform/ui/SdlAppEvents.h"
 #include "foundation/platform/StayConnectedService.h"
 #include "foundation/platform/WindowIcon.h"
@@ -49,6 +60,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
@@ -59,6 +71,8 @@
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
 #include "gui/contacts/ContactsController.h"
+#include "gui/scan/QrScanController.h"
+#include "gui/scan/ElementScanPreview.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
@@ -87,11 +101,12 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UserFeedback.h"
 #include "lib/people/ContactTypes.h"
+#include "lib/people/SupportContact.h"
 #include "common/Utilities.h"
 #include "feature/conversations/MessagingCompatPorts.h"
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "feature/conversations/MessagingShellPorts.h"
-#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/product/MessagingPeoplePickerPorts.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellPinGatePorts.h"
@@ -125,6 +140,9 @@ namespace pbr {
 
 namespace {
 
+/** A saved copy of the account: a sealed snapshot (at most 1 MiB + 256 bytes) as base64 inside JSON. */
+constexpr size_t kMaxSavedAccountCopyBytes = 2 * 1024 * 1024;
+
 /** Runtime teardown quiesce budgets (THREADING.md § Teardown quiesce). Quit must stay inside
  * AppRuntime::kShutdownDeadlineBudget (3 s watchdog); reset can wait for a slow relay call. */
 constexpr std::chrono::milliseconds kQuitQuiesceBudget{2000};
@@ -137,6 +155,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
                                  ContactsController& contacts, ChatController& chat) {
   shell.SetOnNavTabChanged([badges, &shell, &settings, &contacts, &chat](NavTab tab) {
     static NavTab previous = NavTab::Home;
+    chat.CancelVoice(); // a recording is not carried to another tab, and a clip stops
     if (previous == NavTab::Me && tab != NavTab::Me) {
       settings.OnMeSurfaceClosed();
     }
@@ -146,6 +165,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (tab == NavTab::Sessions) {
       chat.OnSessionsTabActivated();
     }
+    chat.SyncDraftOwner(); // every tab change: the composer shows that place's own unsent text
     if (tab == NavTab::Contacts) {
       contacts.OnNavTabActivated();
     }
@@ -207,11 +227,44 @@ void ApplyUiDocumentLanguage(ui::Context* context) {
   document->SetAttribute("lang", LocalizationService::Instance().ResolvedLanguage().c_str());
 }
 
+/**
+ * Runs `task` on the UI thread and waits for its result: assistant tools run on the worker pool, while shell
+ * navigation and support_discovery_ are UI-thread state. A UI thread that does not get to it in time (busy,
+ * shutting down) reads as "unavailable".
+ */
+Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
+  if (!task) {
+    return Error("unavailable");
+  }
+  if (AppRuntime::CurrentlyOnUI()) {
+    return task();
+  }
+  struct Slot {
+    std::mutex mu;
+    std::condition_variable cv;
+    std::optional<Roe<void>> result;
+  };
+  auto slot = std::make_shared<Slot>();
+  AppRuntime::PostUI([slot, task]() {
+    Roe<void> result = task();
+    {
+      std::lock_guard lock(slot->mu);
+      slot->result.emplace(std::move(result));
+    }
+    slot->cv.notify_all();
+  });
+  std::unique_lock lock(slot->mu);
+  if (!slot->cv.wait_for(lock, std::chrono::seconds(5), [&]() { return slot->result.has_value(); })) {
+    return Error("UI thread did not run the task in time");
+  }
+  return std::move(*slot->result);
+}
+
 } // namespace
 
 Application::Application() {
   redirectLogger("Application");
-  AppRuntimeConfig runtime;
+  AppRuntimeConfig runtime = ProductRuntimeConfig();
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
   secrets_ = std::make_unique<ProfileSecretsEngine>();
@@ -235,7 +288,6 @@ Application::Application() {
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   product_->BindFacade(*messaging_facade_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
-  action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
   badges_ = std::make_unique<BadgeAggregator>();
   input_ = std::make_unique<InputCoordinator>();
@@ -245,6 +297,7 @@ Application::Application() {
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
   contacts_ = std::make_unique<ContactsController>();
+  qr_scan_ = std::make_unique<QrScanController>(MediaDeviceArbiter::Default());
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
   chat_shell_bridge_ = std::make_unique<ChatShellBridge>();
@@ -313,12 +366,6 @@ Roe<void> Application::ResetActiveProfile() {
   if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
     if (auto revoked = messaging_facade_->RevokeRegistration(); !revoked) {
       log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
-    }
-  }
-  // Reset means "I do not want this account": drop the uninstall-surviving backup too.
-  if (messaging_facade_) {
-    if (auto dropped = messaging_facade_->DeleteLocalBackup(); !dropped) {
-      log().warning << "Local account backup not deleted: " << dropped.error().message;
     }
   }
 
@@ -424,6 +471,7 @@ Roe<void> Application::ResetChatData() {
 }
 
 Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  qr_scan_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
   }
@@ -498,6 +546,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
     return false;
   }
   RegisterCallVideoTileElement();
+  RegisterScanPreviewElement();
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
   ui::Debugger::Initialise(ui::CreateContext("debugger", ui::Vector2i(0, 0)));
@@ -556,10 +605,6 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 }
 
 SettingsToolPorts Application::WireSettings(ui::Context* context) {
-  action_router_->Attach(context);
-  action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
-    DataModelHost::Instance().Dirty(model, binding);
-  });
   ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() {
@@ -579,8 +624,10 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return facade.UploadProfileIconFromPath(path);
   };
   settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
-  settings_commands.plan_relay_quota_recovery = [&facade]() { return facade.PlanRelayQuotaRecovery(); };
-  settings_commands.free_oldest_relay_blob_slot = [&facade]() { return facade.FreeOldestRelayBlobSlot(); };
+  settings_commands.plan_relay_quota_recovery = [&facade](const Error& quota_error) {
+    return facade.PlanRelayQuotaRecovery(quota_error);
+  };
+  settings_commands.delete_relay_blob = [&facade](const std::string& blob_id) { return facade.DeleteRelayBlobById(blob_id); };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
   settings_commands.list_cas_library = [this](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
@@ -750,23 +797,40 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  settings_commands.change_pin = [this, &facade](const std::string& current_pin,
-                                                  const std::string& new_pin) -> Roe<void> {
+  settings_commands.change_pin = [this](const SecretText& current_pin, const SecretText& new_pin) -> Roe<void> {
     DataKeyVault* vault = secrets_->Vault();
     if (vault == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
     }
-    if (auto changed = vault->ChangePin(current_pin, new_pin); !changed) {
+    if (auto changed = vault->ChangePin(current_pin.Reveal(), new_pin.Reveal()); !changed) {
       return changed.error();
     }
-    facade.WriteLocalBackupAsync(); // the backup keeps a copy of the vault: refresh it under the new PIN
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
+  settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
+  settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {
+    auto list = facade.OwnDevices();
+    if (!list) {
+      return list.error();
+    }
+    std::vector<std::string> peer_ids;
+    peer_ids.reserve(list->devices.size());
+    for (const AccountCardDevice& device : list->devices) {
+      peer_ids.push_back(device.peer_id);
+    }
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out);
+  };
+  settings_commands.remove_own_device = [&facade](const std::string& peer_id) {
+    return facade.RemoveOwnDevice(peer_id);
+  };
+  settings_commands.make_main_device = [&facade](const std::string& peer_id) { return facade.MakeMainDevice(peer_id); };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
-  settings_commands.open_support_chat = [this, &facade]() -> Roe<void> {
+  settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
     if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
       return Error(Tr("support.unavailable"));
     }
@@ -788,9 +852,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     std::string contact_id;
     if (found->has_value()) {
       Contact contact = **found;
-      if (contact.local.display_name != display_name) {
-        contact.local.display_name = display_name;
-        SyncContactMirrors(contact);
+      if (ApplySupportTitle(contact, display_name)) {
         auto saved = Conversations().Contacts().Upsert(contact);
         if (!saved) {
           return saved.error();
@@ -800,12 +862,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
         contact_id = (*found)->id;
       }
     } else {
-      Contact contact;
-      contact.id = util::GenerateUuid();
-      contact.local.display_name = display_name;
-      contact.local.trust = TrustLevel::Unknown;
-      contact.remote.ids.push_back({mesh::ContactIdKind::Account, account_id, true});
-      SyncContactMirrors(contact);
+      Contact contact = MakeSupportContact(util::GenerateUuid(), account_id, display_name);
       auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
         return saved.error();
@@ -830,11 +887,68 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     if (chat_) {
       chat_->FinalizeThreadDisplay();
+      chat_->PrefillDraft(prefilled_text);
     }
     return {};
   };
+  settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
+    DiagnosticsUploadDeps deps;
+    deps.data_dir = store_.Snapshot().data_dir;
+    // The bundle's self-check refuses to send when any of these appears in it (a line that got past the shareable rule).
+    if (auto identity = facade.GetIdentity()) {
+      deps.known_identifiers = {identity->account_id, identity->peer_id, identity->relay_user_id};
+    }
+    // The self-check strips a leading scheme itself; the bare ids are passed too so either form is caught.
+    auto add_bare = [&deps](const std::string& id) {
+      for (const char* scheme : {"account:", "relay:", "peer:", "call:"}) {
+        const std::string prefix = scheme;
+        if (id.compare(0, prefix.size(), prefix) == 0 && id.size() > prefix.size()) {
+          deps.known_identifiers.push_back(id.substr(prefix.size()));
+          return;
+        }
+      }
+    };
+    for (const std::string& id : std::vector<std::string>(deps.known_identifiers)) {
+      add_bare(id);
+    }
+    if (auto contacts = Conversations().Contacts().List()) {
+      for (const Contact& contact : *contacts) {
+        for (const auto& id : contact.ids) {
+          deps.known_identifiers.push_back(id.value);
+          add_bare(id.value);
+        }
+      }
+    }
+    // The AI stream's key: registered, else guest, else mint a guest key now (same helpers as the chat).
+    deps.bearer = [&facade]() -> Roe<std::string> {
+      auto identity = facade.GetIdentity();
+      if (!identity) {
+        return Error("Messaging is not ready");
+      }
+      std::string key = ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
+      if (!key.empty()) {
+        return key;
+      }
+      auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
+      if (!minted) {
+        return minted.error();
+      }
+      LocalIdentity updated = *identity;
+      updated.brief_llm_guest_api_key = minted->llm_api_key;
+      (void)facade.UpdateLocalIdentity(updated);
+      return minted->llm_api_key.Reveal();
+    };
+    SendDiagnostics(std::move(deps), std::move(on_done));
+  };
+  settings_commands.last_diagnostics_id = [this]() -> std::string {
+    const auto last = ReadLastUpload(store_.Snapshot().data_dir);
+    return last ? last->upload_id : std::string();
+  };
   // Copy ports before BindCommands moves the command bag.
-  const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
+  SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
+  settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {
+    return RunOnUiAndWait([open]() { return open({}); });
+  };
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
@@ -855,6 +969,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
+  qr_scan_->BindShellNavigation(shell_navigation);
+  contacts_->BindScanPorts(ScanPorts{
+      .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
+  });
+  shell.BindScanAction([this]() { contacts_->OnScanQr(); });
   contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));
   contacts_->BindSurfaceNotify(ContactsSurfaceNotifyPorts{
       .push_surface = [this](const ContactsSurfaceSnapshot& snap) {
@@ -890,7 +1009,13 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  people_picker_->BindPickerPorts(product_->PeoplePickerPorts());
+  MessagingPeoplePickerPorts picker_ports = product_->PeoplePickerPorts();
+  picker_ports.invite_members_async = [facade = messaging_facade_.get()](
+                                          const std::string& group_id, std::vector<std::string> contact_ids,
+                                          std::function<void(GroupInviteBatchResult)> done) {
+    facade->InviteMembersAsync(group_id, std::move(contact_ids), std::move(done));
+  };
+  people_picker_->BindPickerPorts(std::move(picker_ports));
   people_picker_->BindShellNavigation(shell_navigation);
   people_picker_->BindShellFeedback(shared_feedback);
   people_picker_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "people_picker_chrome"));
@@ -985,6 +1110,7 @@ void Application::WireCalls() {
     call_actions.retry_connect = [this]() { call_->RetryConnect(); };
     call_actions.toggle_mute = [this]() { call_->ToggleMute(); };
     call_actions.toggle_camera = [this]() { call_->ToggleCamera(); };
+    call_actions.flip_camera = [this]() { call_->FlipCamera(); };
     call_actions.toggle_speaker = [this]() { call_->ToggleSpeaker(); };
     call_actions.open_mid_call_invite_picker = [this]() { call_->OpenMidCallInvitePicker(); };
     call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
@@ -1005,16 +1131,35 @@ void Application::WireUnlockPinAndFlow() {
   unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
-    gate_complete.complete_with_pin = [this](const std::string& pin, const bool create_mode) {
+    gate_complete.complete_with_pin = [this](const SecretText& pin, const bool create_mode) {
       unlock_gate_->CompleteWithPin(pin, create_mode);
     };
     gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
-    gate_complete.complete_link_device = [this](const std::string& pin, const std::string& bundle_json,
+    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle_json,
                                                 const bool set_default_pin) {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
-    gate_complete.complete_restore_backup = [this](const std::string& pin, const bool set_default_pin) {
-      unlock_gate_->CompleteRestoreBackup(pin, set_default_pin);
+    gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
+                                                   const bool set_default_pin,
+                                                   const std::vector<std::string>& saved_copies) {
+      unlock_gate_->CompletePhraseRestore(pin, phrase, set_default_pin, saved_copies);
+    };
+    gate_complete.pick_saved_copy = [](std::function<void(std::string, std::optional<std::string>)> picked) {
+      ShowOpenFileDialog(Backend::GetWindow(), [picked = std::move(picked)](std::vector<std::string> paths) {
+        std::string name;
+        std::optional<std::string> text;
+        if (!paths.empty()) {
+          name = std::filesystem::path(paths.front()).filename().string();
+          if (name.empty()) {
+            name = paths.front();
+          }
+          text = ReadPickedFile(paths.front(), kMaxSavedAccountCopyBytes);
+          ReleasePickedFile(paths.front());
+        }
+        AppRuntime::PostUI([picked, name = std::move(name), text = std::move(text)]() mutable {
+          picked(std::move(name), std::move(text));
+        });
+      });
     };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
@@ -1035,10 +1180,6 @@ void Application::WireUnlockPinAndFlow() {
     (void)store_.SaveProfilePrefs(prefs);
   };
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
-  unlock_ports.ui.show_identity_restore = [this](const std::string& nickname) {
-    pin_gate_->ShowIdentityRestore(nickname);
-  };
-  unlock_ports.ui.show_restore_pin = [this](const bool wrong_pin) { pin_gate_->ShowRestorePin(wrong_pin); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
@@ -1055,12 +1196,14 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
-  unlock_ports.import_link_device = [&facade](const std::string& pin,
+  unlock_ports.import_link_device = [&facade](const SecretText& pin,
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
-  unlock_ports.local_backup_nickname = [&facade]() { return facade.LocalBackupNickname(); };
-  unlock_ports.restore_local_backup = [&facade](const std::string& pin) { return facade.RestoreLocalBackup(pin); };
+  unlock_ports.restore_recovery_phrase = [&facade](const SecretText& pin, const SecretText& phrase,
+                                                   const std::vector<std::string>& saved_copies) {
+    return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+  };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
@@ -1166,7 +1309,8 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
-    pin_actions.on_identity_restore = [this]() { pin_gate_->OnIdentityRestore(); };
+    pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
+    pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
@@ -1181,6 +1325,7 @@ void Application::WireUnlockPinAndFlow() {
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);
+    qr_scan_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
 }
@@ -1199,13 +1344,64 @@ void Application::WireAgentAndConfig() {
         agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
       }
     };
+    inbound.is_busy = [this]() { return agent_session_ && agent_session_->IsBusy(); };
     inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
                                       std::optional<std::string> user_payload) {
       if (agent_session_) {
         agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
       }
     };
+    // Buttons of the on-device app-action flow ({"type":"local_action",...}) run in the session, no model.
+    inbound.submit_local_action = [this](const std::string& thread_id, const std::string& text,
+                                         const std::string& payload, const bool in_peer_chat) {
+      const auto doc = TryParseObject(payload);
+      if (!agent_session_ || !doc) {
+        return;
+      }
+      Object args;
+      for (const auto& [key, value] : doc->fields()) {
+        if (key != "type" && key != "tool") {
+          args.set(key, value);
+        }
+      }
+      agent_session_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""), std::move(args),
+                                        in_peer_chat);
+    };
+    inbound.is_app_action_request = [this](const std::string& text) {
+      return agent_session_ && agent_session_->IsAppActionRequest(text);
+    };
     messaging_facade_->BindAgentInbound(std::move(inbound));
+
+    // The planner matches names against the user's remark and the other side's nickname, on the device only.
+    // Called on a worker (like the messaging tools): the contacts store and the thread store lock themselves.
+    agent_session_->SetLocalContactsSource([this]() {
+      std::vector<LocalPlanContact> out;
+      if (!messaging_facade_) {
+        return out;
+      }
+      auto contacts = messaging_facade_->SearchLocalContacts("");
+      if (!contacts) {
+        return out;
+      }
+      std::map<std::string, std::pair<std::string, int64_t>> direct_threads; // contact id -> (thread id, updated)
+      if (auto threads = messaging_facade_->ListThreads()) {
+        for (const Thread& thread : *threads) {
+          if (thread.kind == ThreadKind::Direct && thread.participant_contact_ids.size() == 1) {
+            direct_threads[thread.participant_contact_ids.front()] = {thread.id, thread.updated_at};
+          }
+        }
+      }
+      out.reserve(contacts->size());
+      for (const Contact& contact : *contacts) {
+        LocalPlanContact flat{.id = contact.id, .remark = contact.local.display_name, .nickname = contact.remote.nickname};
+        if (const auto it = direct_threads.find(contact.id); it != direct_threads.end()) {
+          flat.thread_id = it->second.first;
+          flat.last_contact_ms = it->second.second;
+        }
+        out.push_back(std::move(flat));
+      }
+      return out;
+    });
   }
   if (agent_session_) {
     agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
@@ -1237,6 +1433,11 @@ bool Application::MountPresenters(ui::Context* context) {
     return false;
   }
 
+  if (!qr_scan_->RegisterModel(context)) {
+    log().error << "QrScanController RegisterModel failed";
+    return false;
+  }
+
   if (!people_picker_->RegisterModel(context)) {
     log().error << "PeoplePickerController RegisterModel failed";
     return false;
@@ -1264,6 +1465,9 @@ bool Application::MountPresenters(ui::Context* context) {
   PeoplePickerNotifyPorts chat_people_picker_notify;
   chat_people_picker_notify.open_free = [this]() { people_picker_->OpenFree(); };
   chat_people_picker_notify.open_from_dm = [this](const std::string& id) { people_picker_->OpenFromDm(id); };
+  chat_people_picker_notify.open_group_members = [this](const std::string& thread_id) {
+    people_picker_->OpenForGroupMembers(thread_id);
+  };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
   EmojiPickerNotifyPorts emoji_notify;
@@ -1469,6 +1673,18 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
       emoji_picker_->Close();
     }
   });
+  // Escape (not the system Back) in the composer: cancel this chat's queued AI question / stop its turn (B112).
+  PlatformNavigation::SetEscapeKeyHandler([this]() {
+    switch (chat_->OnComposerEscape()) {
+    case ChatController::ComposerEscape::Handled:
+      return 1;
+    case ChatController::ComposerEscape::Idle:
+      return 2;
+    case ChatController::ComposerEscape::NotInComposer:
+      break;
+    }
+    return 0;
+  });
 
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
   config_apply_->InstallListeners();
@@ -1622,6 +1838,7 @@ void Application::Run() {
       contacts_->Tick();
     }
     call_->Tick();
+    qr_scan_->Tick();
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
@@ -1630,8 +1847,11 @@ void Application::Run() {
     chat_->AfterLayout();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
+    qr_scan_->NotifyFrameEnd();
+    // Android in the background: events and posted tasks run above, nothing draws (B127).
+    const bool draw_frame = ShouldDrawFrame(Platform::Detect() == PlatformKind::Android, AppLifecycle::IsForeground());
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
-    if (Backend::CanRender()) {
+    if (draw_frame && Backend::CanRender()) {
       const auto draw_started = std::chrono::steady_clock::now(); // after AfterLayout / NotifyFrameEnd
       Backend::BeginFrame();
       context->Render();
@@ -1675,7 +1895,7 @@ void Application::Run() {
           ++slow_frames_skipped;
         }
       }
-    } else if (skip_log_countdown-- <= 0) {
+    } else if (draw_frame && skip_log_countdown-- <= 0) {
       log().warning << "CanRender=false; skipping frame (docs=" << context->GetNumDocuments() << ")";
       skip_log_countdown = 120;
     }
@@ -1693,6 +1913,14 @@ void Application::Shutdown() {
   // Shutdown is invoked without going through RequestExit (failed Initialize, tests).
   Backend::HideWindow();
   StartupMark("shutdown_window_hidden");
+  // Arm the product's exit deadline before joining an OS camera open (which may be in a driver).
+  if (qr_scan_) {
+    qr_scan_->Shutdown();
+    qr_scan_->BindShellNavigation({});
+    qr_scan_->BindFlowCoordinator({});
+  }
+  contacts_->BindScanPorts({});
+  shell_->BindScanAction({});
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
   {
@@ -1869,7 +2097,6 @@ void Application::Shutdown() {
 
     {
       StartupPhase phase("Shutdown::RmlUi");
-      action_router_->Detach();
       ui::RemoveContext("main");
 #ifdef PPBROWSER_ENABLE_DEBUGGER
       ui::Debugger::Shutdown();

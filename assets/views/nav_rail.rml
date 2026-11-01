@@ -35,6 +35,15 @@
     </button>
     <button class="shell-nav-tab" type="button"
             data-if="layout_mode == 'expanded'"
+            data-event-click="open_scan_qr()" title="{{i18n:scan.title}}">
+      <div class="shell-nav-tab-icon-wrap">
+        <svg src="../icons/qr-scan.svg" width="22" height="22" crop-to-content="true"></svg>
+      </div>
+      <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:scan.title}}</p>
+      <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
+    </button>
+    <button class="shell-nav-tab" type="button"
+            data-if="layout_mode == 'expanded'"
             data-class-shell-nav-tab--active="nav_tab == 'me'"
             data-event-click="select_nav_tab('me')">
       <div class="shell-nav-tab-icon-wrap">

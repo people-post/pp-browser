@@ -204,7 +204,7 @@ Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-h
 
 ### Chat
 
-`.chat-panel`, `.chat-header`, `.chat-header-title-row`, `.chat-header-title`, `.chat-header-meta-row`, `.chat-header-subtitle`, `.chat-peer-path`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+`.chat-panel`, `.chat-header`, `.chat-header-title-row`, `.chat-header-title`, `.chat-header-meta-row`, `.chat-header-subtitle`, `.chat-peer-path`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`, `.chat-mention` / `.chat-mention--everyone` (a highlighted group mention: accent, bold; inverse in `.bubble-user`)
 
 ### Home landing
 
@@ -243,7 +243,7 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 
 ### Sidebar
 
-`.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-session--ai`, `.sidebar-session--private`, `.sidebar-session--public`, `.sidebar-session--group`, `.sidebar-unread`, `.badge-count`
+`.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-session--ai`, `.sidebar-session--private`, `.sidebar-session--public`, `.sidebar-session--group`, `.sidebar-unread`, `.badge-count`, `.sidebar-session-mention` ("You were mentioned" ahead of the preview: accent, bold, never cut)
 
 ### Contacts
 

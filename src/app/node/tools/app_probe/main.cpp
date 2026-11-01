@@ -10,6 +10,9 @@
 //   register {nickname}                 register on the relay (first run)
 //   open_chat {account}                 find the person in the directory and open the chat
 //   send {thread, text}                 a text message
+//   send_mentions {thread, text, mentions: [account], everyone}
+//                                       a group text marking `@<nickname>` for each account (the first `@` not yet
+//                                       marked, through the next space) and `@everyone` (G015)
 //   threads / messages {thread}         what this user sees
 //   call {thread, video, [accounts]}    the call button: a 1:1 chat, or a group (every other member,
 //                                       or the picked `accounts`)
@@ -29,10 +32,20 @@
 //   remove_member {thread, account}     the owner removes a member from the group
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
-//   backup_sessions                     what the account backup keeps of the chats: the public sessions
-//   restore_sessions {bundle}           put them back as a backup restore does (each pair marked to
-//                                       start its next epoch)
+//   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
+//   locker_publish                      sync this account's state with its locker at the relay: take what another
+//                                       device changed, store what changed here {version} (M023)
+//   contacts                            the address book {contacts: [{account, remark}]}
+//   rename_contact {account, remark}    the user's remark for a contact
+//   remove_contact {account}            take the contact out of the address book
+//   locker_fetch {phrase}               the locker a recovery phrase opens: {found, relay_user_id, nickname,
+//                                       contacts: [account ids], groups: [group ids], card_floors}
+//   locker_export {path}                save the account's state as an exported locker file at path: {version}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
+//   devices                             this account's devices (M021 d4): {devices: [peer ids], main, self,
+//                                       signed_out} — the first is the main device
+//   remove_device {peer_id}             on the main device: take another device off the account
+//   make_main {peer_id}                 on the main device: hand the main role to another device
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
@@ -41,11 +54,17 @@
 //   crash                               the process dies now (force-quit, OOM kill)
 //
 // Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
+//
+// --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
+// --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
 
+#include "lib/people/DevicePeerId.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
+#include "lib/messaging/TextSpans.h"
+#include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/PeerRequestAuth.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
@@ -62,16 +81,18 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
-#include "foundation/crypto/LinkDeviceCodec.h"
+#include "lib/ai/StructuredTextParser.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "foundation/crypto/PskSessionRestart.h"
-#include "lib/people/LinkDeviceCoordinator.h"
+#include "feature/conversations/AccountLockerWorkflow.h"
+#include "lib/people/ContactClock.h"
+#include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include <SDL3/SDL_hints.h>
@@ -81,7 +102,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <map>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -156,6 +180,8 @@ public:
       Emit(event);
     };
     presenter_.BindCallbacks(std::move(callbacks));
+    // The preview line reads an AI reply as prose, as the app's does.
+    chats_.BindCallbacks({.prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); }});
     chats_.BindFacade(facade_.get());
   }
 
@@ -167,6 +193,20 @@ public:
     Hub().SetOnMessagingReady([this]() {
       // The stack is (re)built: bind as ChatController::WireMessagingBindings does.
       facade_->SetOnMessagesChanged([this]() { AppRuntime::PostUI([this]() { Settle(); }); });
+      // A background message notice, decided as ChatController does (muted chats: mentions only, G015).
+      facade_->SetOnBackgroundUnread([this](std::string, std::string, std::string thread_id, bool mentions_us) {
+        const std::optional<ThreadLocalPrefs> prefs = chats_.PrefsOf(thread_id);
+        const int64_t now_ms = util::NowUnixMs();
+        const bool muted = prefs && ThreadIsMuted(prefs->muted_until, now_ms);
+        Object event;
+        event.set("event", "notice");
+        event.set("kind", "message");
+        event.set("thread", thread_id);
+        event.set("mentions_us", mentions_us);
+        event.set("alerts", NoticeAlerts(muted, prefs && prefs->mute_mentions, mentions_us,
+                                         mention_alert_ms_[thread_id], now_ms));
+        Emit(event);
+      });
       Object event;
       event.set("event", "ready");
       Emit(event);
@@ -181,6 +221,50 @@ public:
     // The GUI refreshes the call surface on these (ChatController's messages-changed,
     // Application's call wake → CallController::OnCallWake): so does the probe.
     Hub().SetOnCallWake([this]() { presenter_.OnCallWake(); });
+  }
+
+  void SendMentions(const int64_t id, const Object& request) {
+    const std::string thread = request.getString("thread").value_or("");
+    const std::string text = request.getString("text").value_or("");
+    std::vector<TextSpan> spans;
+    size_t from = 0;
+    const auto mark = [&](const std::string& token, TextSpan span) {
+      const size_t at = text.find(token, from);
+      if (at == std::string::npos) {
+        return;
+      }
+      size_t end = text.find(' ', at);
+      end = end == std::string::npos ? text.size() : end;
+      span.start = static_cast<uint32_t>(at);
+      span.end = static_cast<uint32_t>(end);
+      spans.push_back(std::move(span));
+      from = end;
+    };
+    if (const Array* mentions = request.getArray("mentions")) {
+      for (const Value& value : mentions->elements) {
+        if (const auto account = asString(value)) {
+          mark("@", TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Mention), .account_id = *account});
+        }
+      }
+    }
+    if (request.getIf<bool>("everyone").value_or(false)) {
+      from = 0;
+      mark("@everyone", TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Everyone)});
+    }
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<ThreadMessage>>(
+        WorkerLane::Normal,
+        [this, thread, text, spans = std::move(spans)]() mutable {
+          return facade_->SendGroupText(thread, text, std::move(spans));
+        },
+        [id](Roe<ThreadMessage> sent) {
+          if (!sent) {
+            ReplyError(id, sent.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("message_id", sent->id);
+          Emit(out);
+        });
   }
 
   /** CallController::BindToMessaging. */
@@ -274,7 +358,7 @@ public:
       out.set("messaging_ready", Hub().IsMessagingReady());
       out.set("mesh_ready", Hub().IsMeshReady());
       if (auto identity = Hub().Identity().Get()) {
-        out.set("peer_id", PeerRequestAuth::DevicePeerId(identity->public_key_b64).valueOr(""));
+        out.set("peer_id", DevicePeerIdFromKey(identity->public_key_b64).valueOr(""));
       }
       Emit(out);
     } else if (cmd == "locator") {
@@ -348,6 +432,34 @@ public:
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal, [this, nickname]() { return facade_->RegisterIdentity(nickname); },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "devices") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<OwnDeviceList>>(
+          WorkerLane::Normal, [this]() { return facade_->OwnDevices(); },
+          [id](Roe<OwnDeviceList> list) {
+            if (!list) {
+              ReplyError(id, list.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            std::vector<Value> devices;
+            for (const AccountCardDevice& device : list->devices) {
+              devices.emplace_back(device.peer_id);
+            }
+            out.set("main", list->devices.empty() ? std::string() : list->devices.front().peer_id);
+            out.set("devices", ArrayValue(std::move(devices)));
+            out.set("self", list->self_peer_id);
+            out.set("signed_out", list->signed_out);
+            Emit(out);
+          });
+    } else if (cmd == "remove_device" || cmd == "make_main") {
+      const std::string peer_id = request->getString("peer_id").value_or("");
+      const bool remove = cmd == "remove_device";
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal,
+          [this, peer_id, remove]() {
+            return remove ? facade_->RemoveOwnDevice(peer_id) : facade_->MakeMainDevice(peer_id);
+          },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "link_export") {
       AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
           WorkerLane::Normal, [this]() { return facade_->ExportLinkDevice(); },
@@ -358,6 +470,132 @@ public:
             }
             Object out = Reply(id, true);
             out.set("bundle", *bundle);
+            Emit(out);
+          });
+    } else if (cmd == "recovery_phrase") {
+      const std::string pin = request->getString("pin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::optional<SecretText>>>(
+          WorkerLane::Normal, [this, pin]() { return facade_->RecoveryPhrase(pin); },
+          [id](Roe<std::optional<SecretText>> phrase) {
+            if (!phrase) {
+              ReplyError(id, phrase.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            // The test probe hands the phrase to its driver (lab: restore on another device).
+            out.set("phrase", phrase->has_value() ? (*phrase)->Reveal() : std::string());
+            Emit(out);
+          });
+    } else if (cmd == "contacts") {
+      auto listed = Hub().Contacts().List();
+      if (!listed) {
+        ReplyError(id, listed.error().message);
+        return;
+      }
+      std::vector<Value> rows;
+      for (const Contact& contact : *listed) {
+        Object row;
+        row.set("account", ContactClockAccount(contact));
+        row.set("remark", contact.local.display_name);
+        rows.push_back(ObjectValue(std::move(row)));
+      }
+      Object out = Reply(id, true);
+      out.set("contacts", ArrayValue(std::move(rows)));
+      Emit(out);
+    } else if (cmd == "rename_contact" || cmd == "remove_contact") {
+      auto found = Hub().Contacts().FindByIdentity(request->getString("account").value_or(""),
+                                                   mesh::ContactIdKind::Account);
+      if (!found || !*found) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      if (cmd == "remove_contact") {
+        auto removed = Hub().Contacts().Remove((*found)->id);
+        removed ? Emit(Reply(id, true)) : ReplyError(id, removed.error().message);
+        return;
+      }
+      Contact contact = **found;
+      contact.local.display_name = request->getString("remark").value_or("");
+      SyncContactMirrors(contact);
+      auto saved = Hub().Contacts().Upsert(contact);
+      saved ? Emit(Reply(id, true)) : ReplyError(id, saved.error().message);
+    } else if (cmd == "locker_publish") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<uint64_t>>(
+          WorkerLane::Normal,
+          [this]() {
+            AccountLockerWorkflow* locker = Hub().AccountLocker();
+            return locker ? locker->Publish() : Roe<uint64_t>(Error("messaging not ready"));
+          },
+          [id](Roe<uint64_t> version) {
+            if (!version) {
+              ReplyError(id, version.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.setJsonUInt("version", *version);
+            Emit(out);
+          });
+    } else if (cmd == "locker_export") {
+      const std::string path = request->getString("path").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+          WorkerLane::Normal, [this]() { return facade_->ExportAccountCopy(); },
+          [id, path](Roe<std::string> file) {
+            if (!file) {
+              ReplyError(id, file.error().message);
+              return;
+            }
+            auto record = LockerRecordFromFileJson(*file);
+            std::ofstream out_file(path, std::ios::binary | std::ios::trunc);
+            out_file << *file;
+            if (!record || !out_file) {
+              ReplyError(id, "the saved copy was not written");
+              return;
+            }
+            Object out = Reply(id, true);
+            out.setJsonUInt("version", record->version);
+            Emit(out);
+          });
+    } else if (cmd == "locker_fetch") {
+      const std::string phrase = request->getString("phrase").value_or("");
+      using Fetched = std::optional<AccountLockerWorkflow::Fetched>;
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<Fetched>>(
+          WorkerLane::Normal,
+          [this, phrase]() -> Roe<Fetched> {
+            auto seed = DecodeRecoveryPhrase(phrase);
+            if (!seed) {
+              return seed.error();
+            }
+            AccountLockerWorkflow* locker = Hub().AccountLocker();
+            return locker ? locker->Fetch(*seed) : Roe<Fetched>(Error("messaging not ready"));
+          },
+          [id](Roe<Fetched> state) {
+            if (!state) {
+              ReplyError(id, state.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("found", state->has_value());
+            if (*state) {
+              out.setJsonUInt("version", (*state)->version);
+              const AccountLockerState& s = (*state)->state;
+              out.set("relay_user_id", s.relay_user_id);
+              out.set("nickname", s.nickname);
+              std::vector<Value> contacts;
+              for (const Contact& contact : s.contacts) {
+                for (const mesh::ContactId& cid : contact.remote.ids) {
+                  if (cid.kind == mesh::ContactIdKind::Account) {
+                    contacts.emplace_back(cid.value);
+                  }
+                }
+              }
+              out.set("contacts", ArrayValue(std::move(contacts)));
+              std::vector<Value> groups;
+              for (const AccountStateGroup& group : s.extras.groups) {
+                groups.emplace_back(group.group_id);
+              }
+              out.set("groups", ArrayValue(std::move(groups)));
+              out.set("card_floors", static_cast<int64_t>(s.extras.card_floors.size()));
+            }
             Emit(out);
           });
     } else if (cmd == "link_import") {
@@ -432,6 +670,15 @@ public:
         if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
           out.set("owner", *owner);
         }
+        // G013: a restored group's member check (active / checking / removed) and the roster epoch.
+        if (GroupRosterStore* rosters = Hub().GroupRosterOrNull()) {
+          if (auto metadata = rosters->LoadMetadata(request->getString("group_id").value_or(""));
+              metadata && *metadata) {
+            out.set("sync_state", GroupSyncStateToString((*metadata)->sync_state));
+            out.setJsonUInt("roster_epoch", (*metadata)->roster_epoch);
+            out.set("statement", !(*metadata)->roster_statement_json.empty());
+          }
+        }
         Emit(out);
       }
     } else if (cmd == "remove_member") {
@@ -463,8 +710,11 @@ public:
       // The chat on screen: what tapping it in the chats list does (ChatPresenter).
       chats_.SelectThread(request->getString("thread").value_or("")) ? Emit(Reply(id, true))
                                                                       : ReplyError(id, "could not open the chat");
+    } else if (cmd == "send_mentions") {
+      SendMentions(id, *request);
     } else if (cmd == "pin" || cmd == "unpin" || cmd == "mute" || cmd == "unmute" || cmd == "archive" ||
-               cmd == "unarchive" || cmd == "mark_unread" || cmd == "mark_read") {
+               cmd == "unarchive" || cmd == "mark_unread" || cmd == "mark_read" || cmd == "mute_mentions" ||
+               cmd == "allow_mentions") {
       // A chat row's menu (ChatMenus::SessionActions → ChatPresenter).
       const std::string thread = request->getString("thread").value_or("");
       if (cmd == "pin" || cmd == "unpin") {
@@ -473,6 +723,8 @@ public:
         chats_.Mute(thread, SessionMuteChoice::Always);
       } else if (cmd == "unmute") {
         chats_.Unmute(thread);
+      } else if (cmd == "mute_mentions" || cmd == "allow_mentions") {
+        chats_.SetMuteMentions(thread, cmd == "mute_mentions");
       } else if (cmd == "archive" || cmd == "unarchive") {
         chats_.SetArchived(thread, cmd == "archive");
       } else if (cmd == "mark_unread") {
@@ -583,7 +835,7 @@ public:
       out.set("unreachable", ArrayValue(std::move(unreachable)));
       Emit(out);
     } else if (cmd == "close_chat") {
-      // Close a chat the way its plan says (an owner names a `successor`, or dismisses with none).
+      // Close a chat the way its plan says (an owner names a `successor`, or dissolves with none).
       const std::string thread = request->getString("thread").value_or("");
       const std::string successor = request->getString("successor").value_or("");
       const CloseChatPlan plan = chats_.PlanClose(thread);
@@ -600,8 +852,12 @@ public:
         done = chats_.LeaveGroupAndClose(thread, plan.group_id);
         break;
       case CloseChatPlan::Kind::LeaveAsOwner:
-        done = successor.empty() ? chats_.DismissGroupAndClose(thread, plan.group_id)
+        // No successor: the owner dissolves the group (the chat stays, read-only).
+        done = successor.empty() ? chats_.DissolveGroup(plan.group_id)
                                  : chats_.HandOverAndClose(thread, plan.group_id, successor);
+        break;
+      case CloseChatPlan::Kind::Dissolve:
+        done = chats_.DissolveGroup(plan.group_id);
         break;
       }
       done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
@@ -651,41 +907,6 @@ public:
         return;
       }
       Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
-      Emit(Reply(id, true));
-    } else if (cmd == "backup_sessions") {
-      // The link bundle the local account backup seals (LocalAccountBackup::Write).
-      if (!Hub().IsMessagingReady() || Secrets().Vault() == nullptr || Hub().PskStore() == nullptr) {
-        ReplyError(id, "messaging not ready");
-        return;
-      }
-      auto bundle = LinkDeviceCoordinator::ExportJson(Hub().Identity(), *Secrets().Vault(), *Hub().PskStore(),
-                                                      util::NowUnixMs(), 60 * 60 * 1000);
-      if (!bundle) {
-        ReplyError(id, bundle.error().message);
-        return;
-      }
-      Object out = Reply(id, true);
-      out.set("bundle", *bundle);
-      Emit(out);
-    } else if (cmd == "restore_sessions") {
-      // The sessions half of LocalAccountBackup::Restore (the account itself is still here).
-      if (!Hub().IsMessagingReady() || Hub().PskStore() == nullptr) {
-        ReplyError(id, "messaging not ready");
-        return;
-      }
-      auto bundle = LinkDeviceCodec::Parse(request->getString("bundle").value_or(""));
-      if (!bundle) {
-        ReplyError(id, bundle.error().message);
-        return;
-      }
-      if (auto applied = LinkDeviceCoordinator::ApplyPublicPsks(*Hub().PskStore(), bundle->public_psks); !applied) {
-        ReplyError(id, applied.error().message);
-        return;
-      }
-      if (auto marked = MarkPublicSessionsForRestart(*Hub().PskStore()); !marked) {
-        ReplyError(id, marked.error().message);
-        return;
-      }
       Emit(Reply(id, true));
     } else if (cmd == "quit") {
       Emit(Reply(id, true));
@@ -756,26 +977,29 @@ private:
             ReplyError(id, "not in the directory: " + account);
             return;
           }
+          // The row's payload names the account only; the dispatcher looks it up again for the keys.
           Object action;
           action.set("type", "start_conversation");
-          action.set("directory_hit", ObjectValue(DirectoryHitToJson(*found)));
-          if (auto opened = Hub().Actions().Dispatch(DumpJson(action)); !opened) {
-            ReplyError(id, "start_conversation: " + opened.error().message);
-            return;
-          }
-          auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account);
-          if (!contact || !*contact) {
-            ReplyError(id, "contact missing after start_conversation");
-            return;
-          }
-          auto thread = facade_->FindOrCreateDirectThread((*contact)->id, ThreadChannel::E2ePublic);
-          if (!thread) {
-            ReplyError(id, thread.error().message);
-            return;
-          }
-          Object out = Reply(id, true);
-          out.set("thread", thread->id);
-          Emit(out);
+          action.set("account_id", account);
+          Hub().Actions().DispatchAsync(DumpJson(action), [this, id, account](Roe<std::optional<std::string>> opened) {
+            if (!opened) {
+              ReplyError(id, "start_conversation: " + opened.error().message);
+              return;
+            }
+            auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account);
+            if (!contact || !*contact) {
+              ReplyError(id, "contact missing after start_conversation");
+              return;
+            }
+            auto thread = facade_->FindOrCreateDirectThread((*contact)->id, ThreadChannel::E2ePublic);
+            if (!thread) {
+              ReplyError(id, thread.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("thread", thread->id);
+            Emit(out);
+          });
         });
   }
 
@@ -813,6 +1037,7 @@ private:
         row.set("preview", shown.preview);
         row.set("unread", static_cast<int64_t>(shown.unread_count));
         row.set("unread_dot", shown.unread_dot);
+        row.set("mentioned", shown.mentioned);
         row.set("pinned", shown.pinned);
         row.set("muted", shown.muted);
         row.set("active", shown.active);
@@ -1061,6 +1286,8 @@ private:
   CallPresenter presenter_;
   /** The chats list, as ChatController shows it. */
   ChatPresenter chats_;
+  /** Per chat, its last mention alert while muted (NoticeAlerts' rate limit). */
+  std::map<std::string, int64_t> mention_alert_ms_;
   std::string last_kind_ = "none";
   std::string last_line_;
   std::string last_error_;
@@ -1076,15 +1303,22 @@ private:
 int main(int argc, char** argv) {
   std::string pin;
   std::string log_file;
+  std::string restore_phrase_file;
+  std::string restore_saved_copy;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--log-file") == 0 && i + 1 < argc) {
       log_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--restore-phrase-file") == 0 && i + 1 < argc) {
+      restore_phrase_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--restore-saved-copy") == 0 && i + 1 < argc) {
+      restore_saved_copy = argv[++i];
     }
   }
   if (pin.empty()) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE]\n");
+    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
+                         "[--restore-saved-copy FILE]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
@@ -1102,7 +1336,7 @@ int main(int argc, char** argv) {
     pbr::LogFile::Install(log_file);
   }
 
-  pbr::AppRuntimeConfig runtime;
+  pbr::AppRuntimeConfig runtime = pbr::ProductRuntimeConfig();
   pbr::AppRuntime::Initialize(runtime);
   pbr::AppRuntime::InitializeUI();
 
@@ -1112,6 +1346,16 @@ int main(int argc, char** argv) {
   options.argc = argc;
   options.argv = argv;
   options.pin = pin;
+  if (!restore_phrase_file.empty()) {
+    std::ifstream phrase_in(restore_phrase_file);
+    std::string phrase;
+    std::getline(phrase_in, phrase);
+    options.restore_recovery_phrase = std::move(phrase);
+  }
+  if (!restore_saved_copy.empty()) {
+    std::ifstream copy_in(restore_saved_copy, std::ios::binary);
+    options.restore_saved_copies.emplace_back(std::istreambuf_iterator<char>(copy_in), std::istreambuf_iterator<char>());
+  }
   auto booted = pbr::Bootstrap::Run(options, probe->Hub(), probe->Secrets());
   if (!booted) {
     pbr::Object out;

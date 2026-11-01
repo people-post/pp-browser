@@ -53,9 +53,9 @@ struct PskSessionRecord {
    */
   std::optional<int64_t> auto_key_peer_heard_ms;
   /**
-   * This device's numbering in the pair was lost (the session came back from an account backup, or
-   * through a chat reset): the next send starts the pair's next epoch at seq 1 rather than rewinding
-   * in this one (D014, #378).
+   * This device's numbering in the pair was lost (the session was kept through *Reset chats*, which
+   * deletes the threads): the next send starts the pair's next epoch at seq 1 rather than rewinding in
+   * this one (D014, #378).
    */
   bool restart_pending = false;
 };

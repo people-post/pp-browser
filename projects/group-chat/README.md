@@ -14,6 +14,8 @@ Multi-party E2E group chat with owner-signed membership, invite/block controls, 
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Membership protocol, roles, invite policy, fork semantics, wire schema |
 | [DECISIONS.md](DECISIONS.md) | ADRs (G001+) |
+| [PHASES.md](PHASES.md) | Ordering and checkboxes |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | What landed, what is next |
 
 ## Dependencies
 
@@ -25,11 +27,4 @@ Multi-party E2E group chat with owner-signed membership, invite/block controls, 
 
 ## Phases
 
-| Phase | Scope |
-|-------|--------|
-| C0 | `e2e_public` auto-key send/compose enablement |
-| C1 | `route.kind=group`, N-ciphertext send/receive |
-| C2 | Membership events (invite/accept/remove/leave/fork) |
-| C3 | Roster storage, group-scoped sync |
-| C4 | UI — create group, roster, invite cards, block settings |
-| C5 | Fork-with-members (fresh start v1) |
+Base C0–C5, signed roster R (G010–G013), size limit L (G014), mentions M (G015): [PHASES.md](PHASES.md); status in [CURRENT_STATE.md](CURRENT_STATE.md).

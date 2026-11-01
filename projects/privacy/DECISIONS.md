@@ -21,6 +21,7 @@
 ## P004 — Nodes are public by role
 
 **Date:** 2026-09-30
+**Status:** Amended by [P011](#p011--a-nodes-uptime-is-not-public-by-role): "public" covers a node's addresses and services, not when it is up.
 **Decision:** In the Node role (pp-node, desktop Node) the audience is `everyone`.
 **Rationale:** A Node serves relaying, DHT and directory to anyone; its address is published on purpose. Operators who need privacy do not run a Node.
 
@@ -47,3 +48,27 @@
 **Date:** 2026-09-30
 **Decision:** `mesh.trusted_relays_only` (off by default; Me → Network) limits every relay role — rendezvous parking, circuit dialing, punch introducers, call media hops — to the configured org seeds and Friendly contacts' nodes. Directory volunteers and DHT-discovered nodes are left out, and the bootstrap set drops the directory nodes merged into it.
 **Rationale:** A relay operator sees both ends' addresses and who talks to whom. The org already sees routing metadata (T2), and a Friendly contact is someone the user chose to trust; a volunteer node is neither. Off by default because the narrower set can make connections slower or fail when the org seeds are loaded or unreachable.
+
+## P009 — Diagnostics leave the device as shareable lines only
+
+**Date:** 2026-10-30
+**Decision:** What a user sends to support (Me → Security → Send diagnostics, PR #393) is made only of lines that cannot carry free text: the `Diag` and `Metrics` channels write `ShareableLine`s (`event=… k=v`, values limited to literals, numbers, a fixed-list `Pick`, keyed-hash `Ref`s and error codes) to `diag.log` / `metrics.log`, and the send reads those two files and the crash record — never the developer log. A self-check over the bundle stays as the last gate. Contract: [DIAGNOSTICS.md](../../docs/contracts/DIAGNOSTICS.md).
+**Rationale:** #393 first sent the developer log through a channel allow-list and a pattern scrubber. The scrubber recognises the shape of an id, not its meaning: a contact's name, message text, a search query or recovery-phrase words pass it, and the allow-list is per channel, so any later `<< name` in an allowed module would be sent — with nothing at the log statement telling its author or reviewer. Making the safe line the only one the code can write moves that check to the compiler, and what leaves the device becomes one header and one event table to review. The cost is that a send starts with fewer details; events are added deliberately, one at a time. `Metrics` already went to a future collector under the same "no ids, no content" rule, so it moved onto the same builder (a `reason` text and a free `tool` name it carried were dropped or limited to a list).
+
+## P010 — Secrets cannot be logged
+
+**Date:** 2026-10-30
+**Decision:** The PIN, the recovery phrase, private keys and the recovery seed (base64, in `LocalIdentity` and the link-device bundle) and API keys are held as `SecretText` (`common/Secret.h`): no `operator<<` and no conversion to a string, so logging one does not compile; `Reveal()` is the only way to the text, at the code that uses it (KDF, cipher, codec, HTTP header). Text converts into a `SecretText` implicitly, so the type is cheap to take where a secret enters. The held text is wiped when the value goes. Binary keys (`ByteVector`: the DEK, ML-DSA / KEM secret keys) stay as they are: nothing streams a byte vector by accident. `DataKeyVault` / `PinKeyDeriver` keep their `std::string_view` PIN: they are the KDF the PIN is revealed to.
+**Rationale:** The same reasoning as P009 for the other direction: the developer log never leaves the device, but it sits in a file, and a phone's logs get copied, shared in a support chat or read by other tools. A secret that cannot be streamed needs no reviewer to notice `<< pin`. Converting found no existing log of a secret.
+
+## P011 — A node's uptime is not public by role
+
+**Date:** 2026-10-31
+**Amends:** P004.
+**Decision:** The pp-node liveness heartbeat to the directory (PR #428) is the operator's choice: `mesh.mesh_heartbeat` / `PP_NODE_MESH_HEARTBEAT`, off by default, meant for org-run seeds. Whatever a heartbeat tells the directory stays out of anything public or durable:
+- `GET /v1/mesh/nodes` lists a node's `state` (`active` / `draining` / `retiring`) but no exact `last_seen_at`, and a heartbeat no longer rewrites `endpoints[].updated_at` (that field says when the addresses changed);
+- the stale cut-off (`MESH_STALE_FILTER_ENABLED`) applies only to nodes that send heartbeats — a node that does not is listed until its registration expires, so no healthy node drops out for not reporting to one server;
+- www logs the heartbeat path without IP, user agent or request id; the server keeps only the latest heartbeat, no history.
+
+**Rationale:** P004 publishes what a node offers (addresses, services) so anyone can use it. A 5-minute heartbeat adds more: a timeline of when each node is up — readable by anyone polling the listing — and the node's real egress address in the directory's logs, which differs from its advertised addresses when it advertises through a relay. It also makes one server the authority on which nodes are alive, against the mesh's direction (N029: the HTTP directory is an interim phone book). The heartbeat stays for the org's own seeds, where a dead node lingering in the list (registrations last 90 days) costs clients dials. The longer-term answer — liveness that travels with signed records and is observed by the mesh, not reported to the directory — is [N031](../p2p-mesh/DECISIONS.md#n031--node-liveness-short-lived-signed-records-observed-by-the-mesh).
+

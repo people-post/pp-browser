@@ -21,7 +21,8 @@
 #include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/CallsLoop.h"
-#include "foundation/runtime/RuntimeOwnerExecutor.h"
+#include "common/runtime/RuntimeOwnerExecutor.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "common/chat/SystemControl.h"
@@ -227,7 +228,7 @@ private:
 
   /** The calls owner's executor: every call object gets it from here (THREADING.md § Owner runners). */
   /** The calls owner: the media-sessions owner thread (UI without one); hooks publish the UI state. */
-  RuntimeOwnerExecutor executor_{OwnerThreadId::MediaSessions};
+  RuntimeOwnerExecutor executor_{kMediaSessionsOwner};
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
@@ -240,6 +241,15 @@ private:
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
+  /** The device's last reported attachment (owner), for the connect lines of the Diag channel. */
+  MobilityAttachment last_attachment_;
+  bool attachment_known_ = false;
+  /** H013: the relays the answerer of `call_id` advertised in its CallAccept (calls owner). */
+  struct PeerParkedRelays {
+    std::string call_id;
+    std::vector<std::string> relays;
+  };
+  PeerParkedRelays peer_parked_;
   CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
   /** Names the current session manager: its events carry it (a rebuilt one drops the old ones). */
   uint64_t sessions_generation_ = 0;

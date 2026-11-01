@@ -41,7 +41,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux, Androi
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL (curl's TLS), zlib, Asio, googletest. JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (pinned tag; `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL (curl's TLS), zlib, Asio, googletest. JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (pinned tag; `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout); Amp links from [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) (pinned tag; `-DPP_CPP_AMP_SOURCE_DIR=…` — a `../pp-cpp-amp` beside the repo is not picked up); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling for development, the pinned tag for packaged builds).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
@@ -266,7 +266,7 @@ Build a debug APK with the Gradle project under [`android/`](../android/). The n
 
 ### Prerequisites
 
-- Android SDK (API 35) and NDK r26+
+- Android SDK (API 35) and NDK r28 (`28.0.13004108`; same pin as CI / `android/app/build.gradle`)
 - JDK 17+
 - Optional: Android emulator (API 34+, x86_64 image recommended on Linux hosts)
 

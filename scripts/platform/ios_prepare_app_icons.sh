@@ -20,13 +20,18 @@ if [[ ! -d "$APP_DIR" || ! -f "$PLIST" ]]; then
   exit 1
 fi
 
-if ! python3 -c 'from PIL import Image' 2>/dev/null; then
-  pip3 install --user pillow >/dev/null
-fi
-
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/pp-ios-icons.XXXXXX")"
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
+
+# Pillow for icon resize. Homebrew Python is PEP 668 managed — never pip --user.
+PYTHON=python3
+if ! "$PYTHON" -c 'from PIL import Image' 2>/dev/null; then
+  VENV="${WORK}/.venv"
+  python3 -m venv "$VENV"
+  "${VENV}/bin/pip" install -q pillow
+  PYTHON="${VENV}/bin/python"
+fi
 
 ASSET_ROOT="${WORK}/Assets.xcassets"
 ICON_SET="${ASSET_ROOT}/AppIcon.appiconset"
@@ -53,7 +58,7 @@ EOF
 # Flatten onto white + drop alpha (ASC rejects marketing icons with alpha).
 write_rgb_png() {
   local px="$1" out="$2"
-  python3 - "$MASTER" "$px" "$out" <<'PY'
+  "$PYTHON" - "$MASTER" "$px" "$out" <<'PY'
 from PIL import Image
 import sys
 master, px, out = sys.argv[1], int(sys.argv[2]), sys.argv[3]

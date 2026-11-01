@@ -22,6 +22,8 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
   // Set by a terminal stream event; the outcome returned by Stream() confirms it.
   std::optional<BriefAiEvent> done;
   std::optional<BriefAiEvent> error;
+  std::string capability;
+  std::string reason;
 
   const auto on_event = [&](const BriefAiEvent& event) {
     switch (event.type) {
@@ -42,6 +44,8 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
       done = event;
       break;
     case BriefAiEvent::Type::Handoff:
+      capability = event.capability;
+      reason = event.reason;
       break;
     case BriefAiEvent::Type::Error:
       error = event;
@@ -61,11 +65,11 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
   case BriefAiOutcome::Done: {
     const BriefAiEvent empty;
     const BriefAiEvent& event = done ? *done : empty;
-    Call(sinks.on_done, event.response.empty() ? text : event.response, event.finish, event.sources);
+    Call(sinks.on_done, event.response.empty() ? text : event.response, event.finish, event.sources, event.role);
     return;
   }
   case BriefAiOutcome::Handoff:
-    Call(sinks.on_handoff);
+    Call(sinks.on_handoff, capability, reason);
     return;
   case BriefAiOutcome::Error:
     if (error) {

@@ -51,6 +51,69 @@ TEST(BlobQuotaTest, FreeOldestRelayBlobSlotDeletesOldestRemoteOnly) {
   EXPECT_EQ(blob.DeletedBlobIds().front(), "delete-me");
 }
 
+RelayBlobRecord MakeTiered(const std::string& blob_id, const std::string& created_at, const BlobTier tier,
+                           const BlobPurpose purpose = BlobPurpose::File,
+                           const BlobStatus status = BlobStatus::Retained) {
+  RelayBlobRecord record = MakeBlob(blob_id, created_at, purpose);
+  record.tier = tier;
+  record.status = status;
+  return record;
+}
+
+TEST(BlobQuotaTest, TierComesFromTheQuotaTextOfTheError) {
+  EXPECT_EQ(BlobQuotaTierOf(AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429: Small file quota exceeded")),
+            BlobTier::Small);
+  EXPECT_EQ(BlobQuotaTierOf(AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429: Large file storage quota exceeded")),
+            BlobTier::Large);
+  EXPECT_FALSE(BlobQuotaTierOf(AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429")).has_value());
+}
+
+TEST(BlobQuotaTest, OldestIsChosenInTheFullTierOnlyAndNeverAnIconOrAnUploadInFlight) {
+  MockBlobClient blob;
+  BlobListResult listed;
+  listed.blobs = {MakeTiered("old-small", "2026-01-01T00:00:00.000Z", BlobTier::Small),
+                  MakeTiered("old-large", "2026-02-01T00:00:00.000Z", BlobTier::Large),
+                  MakeTiered("old-large-icon", "2026-01-15T00:00:00.000Z", BlobTier::Large, BlobPurpose::Icon),
+                  MakeTiered("older-large-pending", "2026-01-02T00:00:00.000Z", BlobTier::Large, BlobPurpose::File,
+                             BlobStatus::Pending),
+                  MakeTiered("new-large", "2026-03-01T00:00:00.000Z", BlobTier::Large)};
+  listed.usage.small_count = 100;
+  blob.SetListResult(listed);
+
+  auto large = PlanOldestRelayBlobDeletion(blob, "relay:u", "", BlobTier::Large);
+  ASSERT_TRUE(static_cast<bool>(large));
+  EXPECT_EQ(large->blob_to_delete.blob_id, "old-large") << "the oldest of the large tier, not of all";
+  EXPECT_EQ(large->full_tier, BlobTier::Large);
+
+  auto small = PlanOldestRelayBlobDeletion(blob, "relay:u", "", BlobTier::Small);
+  ASSERT_TRUE(static_cast<bool>(small));
+  EXPECT_EQ(small->blob_to_delete.blob_id, "old-small");
+  EXPECT_EQ(small->full_tier, BlobTier::Small);
+}
+
+TEST(BlobQuotaTest, NothingToDeleteInTheFullTierIsAnErrorNotAWrongDeletion) {
+  MockBlobClient blob;
+  BlobListResult listed;
+  listed.blobs = {MakeTiered("only-small", "2026-01-01T00:00:00.000Z", BlobTier::Small),
+                  MakeTiered("icon", "2026-01-01T00:00:00.000Z", BlobTier::Large, BlobPurpose::Icon)};
+  blob.SetListResult(listed);
+  auto plan = PlanOldestRelayBlobDeletion(blob, "relay:u", "", BlobTier::Large);
+  ASSERT_FALSE(static_cast<bool>(plan));
+  EXPECT_EQ(plan.error().code, static_cast<int32_t>(Err::Blob::NothingToDelete));
+  EXPECT_TRUE(blob.DeletedBlobIds().empty());
+}
+
+TEST(BlobQuotaTest, DeleteRelayBlobDeletesExactlyTheIdGiven) {
+  MockBlobClient blob;
+  BlobListResult listed;
+  listed.blobs = {MakeTiered("confirmed", "2026-03-01T00:00:00.000Z", BlobTier::Small),
+                  MakeTiered("older-now", "2026-01-01T00:00:00.000Z", BlobTier::Small)};
+  blob.SetListResult(listed);
+  ASSERT_TRUE(static_cast<bool>(DeleteRelayBlob(blob, "relay:u", "confirmed")));
+  ASSERT_EQ(blob.DeletedBlobIds().size(), 1u);
+  EXPECT_EQ(blob.DeletedBlobIds().front(), "confirmed");
+}
+
 TEST(BlobQuotaTest, EmptyRelayUserIdRejected) {
   MockBlobClient blob;
   auto plan = PlanOldestRelayBlobDeletion(blob, "");

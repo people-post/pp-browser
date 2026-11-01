@@ -9,6 +9,7 @@ pp_browser_add_feature_library(pp_gui
     CallController.cpp
     chat/AgentTurnController.cpp
     chat/ChatMenus.cpp
+    chat/ChatMentionPicker.cpp
     chat/ChatPeerSheet.cpp
     chat/ChatController.cpp
     chat/ChatDataModel.cpp
@@ -16,7 +17,12 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatTranscriptScroller.cpp
     chat/ChatActionLabel.cpp
     chat/DeliveryNoticeText.cpp
+    chat/MessageTimeLabel.cpp
+    chat/OutgoingAttachmentPrep.cpp
     chat/TranscriptRml.cpp
+    chat/VoiceBubble.cpp
+    chat/VoiceComposer.cpp
+    chat/VoicePlayback.cpp
     chat/ChatWidgetHost.cpp
     chat/ChatWidgetStateBuilder.cpp
     chat/WorkingSetController.cpp
@@ -25,6 +31,8 @@ pp_browser_add_feature_library(pp_gui
     contacts/ContactsController.cpp
     contacts/PeoplePickerChromeSync.cpp
     contacts/PeoplePickerController.cpp
+    scan/ElementScanPreview.cpp
+    scan/QrScanController.cpp
     ChatChromeSync.cpp
     EmojiPickerController.cpp
     FlowCoordinator.cpp
@@ -33,9 +41,11 @@ pp_browser_add_feature_library(pp_gui
     ProfileSettingsSection.cpp
     SecuritySettingsSection.cpp
     SettingsCasLibrary.cpp
+    SettingsOwnDevices.cpp
     SettingsController.cpp
     SettingsProfileActions.cpp
     SettingsSecurityActions.cpp
+    DiagnosticsFeedback.cpp
     shell/DataModelHost.cpp
     shell/DeferredStartup.cpp
     shell/DocumentLoader.cpp

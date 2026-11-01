@@ -1,10 +1,13 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/data/Config.h"
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/UserPreferences.h"
 
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -23,7 +26,14 @@ struct BootstrapOptions {
   char** argv = nullptr;
   std::string profile_override;
   /** Profile unlock PIN; falls back to PP_BROWSER_PIN. */
-  std::string pin;
+  SecretText pin;
+  /**
+   * Tests/automation: before unlocking with `pin`, restore the account from this recovery phrase (multi-device M023)
+   * — what "Restore with recovery phrase" does on a fresh install.
+   */
+  SecretText restore_recovery_phrase;
+  /** With it: saved account copies (exported locker files' text) to restore from as well as the relay's. */
+  std::vector<std::string> restore_saved_copies;
 };
 
 } // namespace pbr

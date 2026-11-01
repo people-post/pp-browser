@@ -86,6 +86,9 @@ ContextBuildResult ThreadContextPolicy::Build(const std::vector<ThreadMessage>& 
   std::vector<std::string> lines;
   for (auto it = messages.rbegin(); it != messages.rend() && static_cast<int>(lines.size()) < budget_.max_turn_pairs * 2;
        ++it) {
+    if (IsLocalActionMessage(*it)) {
+      continue; // on-device app action: may carry contact remarks, never model context
+    }
     const std::string line = FormatThreadLine(*it);
     if (char_budget - static_cast<int>(line.size()) < 0) {
       break;

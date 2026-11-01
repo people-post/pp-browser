@@ -3,11 +3,13 @@
 #include "lib/ai/ArticleFeedBlocks.h"
 #include "lib/ai/LocalizedLabels.h"
 #include "lib/ai/ToolResultFormatter.h"
-#include "lib/people/PeopleDiscoveryContactAdapt.h"
+#include "feature/ai/PeopleDiscoveryContactAdapt.h"
 #include "lib/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
+
+#include <unordered_map>
 
 namespace pbr {
 
@@ -126,6 +128,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
         on_activity(call.name, "error");
       }
       result.ok = false;
+      result.blocked = true;
       result.error = "Tool '" + call.name + "' is blocked by your tool permission settings.";
       return result;
     }
@@ -152,6 +155,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     raw_results.push_back(*tool_result);
     result.tools_executed.push_back(call.name);
   }
+  result.raw_results = raw_results;
 
   if (executed_calls.empty()) {
     return result;
@@ -179,20 +183,27 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     }
 
     PeopleDiscoveryBuildOptions people_options;
-    // The page: a "show more" payload re-runs search_people with the next offset.
-    for (const PlannedToolCall& call : executed_calls) {
-      if (call.name == "search_people") {
-        people_options.query = call.arguments.getString("query").value_or("");
-        people_options.offset = static_cast<size_t>(call.arguments.getNonNegInt("offset").value_or(0));
-        break;
-      }
-    }
     // Silent local lookup so directory rows can show "In contacts" and prefer Message.
     if (!hits.empty() && contacts.empty() && FindTool(tools, "list_contacts")) {
       auto local = tools.Execute("list_contacts", Object{});
       if (local) {
         std::vector<mesh::DirectoryHit> ignored_hits;
         ParsePeopleToolJson(*local, ignored_hits, contacts);
+      }
+    }
+    if (!contacts.empty() && options.local_contacts) {
+      std::unordered_map<std::string, LocalPlanContact> local;
+      for (LocalPlanContact& c : options.local_contacts()) {
+        local.emplace(c.id, std::move(c));
+      }
+      for (Contact& contact : contacts) {
+        if (const auto it = local.find(contact.id); it != local.end()) {
+          contact.local.display_name = it->second.remark; // the row shows ContactEffectiveTitle: remark first
+          if (!it->second.nickname.empty()) {
+            contact.remote.nickname = it->second.nickname;
+          }
+          SyncContactMirrors(contact);
+        }
       }
     }
     for (const Contact& contact : contacts) {

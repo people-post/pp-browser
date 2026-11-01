@@ -199,7 +199,7 @@ std::string NormalizePolicyToken(std::string value) {
   for (char ch : value) {
     if (std::isalnum(static_cast<unsigned char>(ch))) {
       out.push_back(ch);
-    } else if (ch == '-' || ch == ' ' || ch == '/') {
+    } else if (ch == '-' || ch == '_' || ch == ' ' || ch == '/') {
       if (!out.empty() && out.back() != '_') {
         out.push_back('_');
       }
@@ -827,6 +827,24 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          }
          Object ok;
          ok.set("tool_permissions_remembered", static_cast<int64_t>(0));
+         return DumpJson(OkJson(std::move(ok)));
+       }));
+
+  // Domain "support": the permission card asks every time (ToolPermissionPolicy::AllowAlwaysEligible).
+  tools.push_back(MakeTool(
+      ToolDefinition{"open_support", "Open the PP Support chat (customer service) so the user can talk to PP Support. "
+                                     "Use only when the user asks for customer service or PP Support.",
+                     MustSchema(R"json({"type":"object","properties":{}})json")},
+      Meta("support", "write", true),
+      [ports](const Object&) -> Roe<std::string> {
+         if (!ports.open_support_chat) {
+           return Error("PP Support unavailable");
+         }
+         if (auto opened = ports.open_support_chat(); !opened) {
+           return opened.error();
+         }
+         Object ok;
+         ok.set("opened", true);
          return DumpJson(OkJson(std::move(ok)));
        }));
 

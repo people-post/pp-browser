@@ -27,6 +27,10 @@
 #include <dlfcn.h>
 #include <execinfo.h>
 #define PP_BROWSER_HAS_EXECINFO_BACKTRACE 1
+#elif defined(__ANDROID__)
+// Android: unwind with the C++ ABI unwinder and name each frame with dladdr.
+#include <dlfcn.h>
+#include <unwind.h>
 #endif
 #else
 #ifndef WIN32_LEAN_AND_MEAN
@@ -133,17 +137,8 @@ void WriteSignalDump(int signo) {
     WriteCString(fd, g_image_base);
     WriteCString(fd, "\n");
   }
-  void* frames[64];
-  const int nframes = ::backtrace(frames, 64);
-  WriteCString(fd, "backtrace_frames=");
-  std::snprintf(num, sizeof(num), "%d\n", nframes);
-  WriteCString(fd, num);
-  // Print raw addresses only — backtrace_symbols() is not async-signal-safe.
-  for (int i = 0; i < nframes; ++i) {
-    std::snprintf(num, sizeof(num), "%p\n", frames[i]);
-    WriteCString(fd, num);
-  }
 #endif
+  CrashDump::WriteNativeBacktrace(fd);
 
   WriteCString(fd, "--- breadcrumbs ---\n");
   char crumbs[kBreadcrumbDumpBytes];
@@ -212,6 +207,76 @@ void OnTerminate() {
 }
 
 } // namespace
+
+#if defined(__ANDROID__)
+namespace {
+
+constexpr int kMaxNativeFrames = 64;
+
+struct UnwindState {
+  uintptr_t pcs[kMaxNativeFrames];
+  int count;
+};
+
+_Unwind_Reason_Code CollectFrame(_Unwind_Context* ctx, void* arg) {
+  auto* state = static_cast<UnwindState*>(arg);
+  if (state->count >= kMaxNativeFrames) {
+    return _URC_END_OF_STACK;
+  }
+  const uintptr_t pc = _Unwind_GetIP(ctx);
+  if (pc != 0) {
+    state->pcs[state->count++] = pc;
+  }
+  return _URC_NO_REASON;
+}
+
+} // namespace
+#endif
+
+void CrashDump::WriteNativeBacktrace(int fd) {
+#if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
+  char num[32];
+  void* frames[64];
+  const int nframes = ::backtrace(frames, 64);
+  WriteCString(fd, "backtrace_frames=");
+  std::snprintf(num, sizeof(num), "%d\n", nframes);
+  WriteCString(fd, num);
+  // Print raw addresses only — backtrace_symbols() is not async-signal-safe.
+  for (int i = 0; i < nframes; ++i) {
+    std::snprintf(num, sizeof(num), "%p\n", frames[i]);
+    WriteCString(fd, num);
+  }
+#elif defined(__ANDROID__)
+  // _Unwind_Backtrace and dladdr are not strictly async-signal-safe; a crash dump that
+  // occasionally fails is better than none (the handler _Exits right after).
+  UnwindState state{};
+  _Unwind_Backtrace(CollectFrame, &state);
+  char line[160];
+  WriteCString(fd, "backtrace_frames=");
+  std::snprintf(line, sizeof(line), "%d\n", state.count);
+  WriteCString(fd, line);
+  // Offline: llvm-symbolizer --obj=<unstripped libmain.so> <off> (or ndk-stack).
+  for (int i = 0; i < state.count; ++i) {
+    Dl_info info{};
+    const bool known = ::dladdr(reinterpret_cast<void*>(state.pcs[i]), &info) != 0;
+    const auto base = known ? reinterpret_cast<uintptr_t>(info.dli_fbase) : uintptr_t{0};
+    std::snprintf(line, sizeof(line), "frame %d pc=0x%lx base=0x%lx off=0x%lx module=", i,
+                  static_cast<unsigned long>(state.pcs[i]), static_cast<unsigned long>(base),
+                  static_cast<unsigned long>(known ? state.pcs[i] - base : state.pcs[i]));
+    WriteCString(fd, line);
+    WriteCString(fd, known && info.dli_fname != nullptr ? info.dli_fname : "?");
+    WriteCString(fd, " sym=");
+    WriteCString(fd, known && info.dli_sname != nullptr ? info.dli_sname : "?");
+    WriteCString(fd, "\n");
+  }
+#else
+  (void)fd;
+#endif
+}
+
+const char* CrashDump::OsLabel() {
+  return CrashOsLabel();
+}
 
 std::string CrashDump::PendingPath(const std::string& data_dir) {
   return (std::filesystem::path(data_dir) / "diagnostics" / "crash_pending.txt").string();

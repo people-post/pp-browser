@@ -82,6 +82,9 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
     hub.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
   };
   ports.is_contact_reachable = [&hub](const Contact& contact) { return hub.IsContactReachable(contact); };
+  ports.refresh_contact_card = [&hub](const Contact& contact, std::function<void(bool)> done) {
+    hub.ContactCards().RefreshIfMissing(contact, std::move(done));
+  };
   return ports;
 }
 

@@ -226,6 +226,54 @@ TEST(SqliteThreadStoreTest, MessageBodyIsEncryptedOnDisk) {
   sqlite3_close(db);
 }
 
+TEST(SqliteThreadStoreTest, OneUnreadableRowDoesNotBlankThePage) {
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_sqlite_bad_row_test";
+  std::filesystem::remove_all(data_dir);
+  Thread thread;
+  thread.id = "thread-bad-row";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Bad row";
+  SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+  ASSERT_TRUE(store.UpsertThread(thread));
+  for (const char* id : {"m1", "m2", "m3"}) {
+    ThreadMessage message;
+    message.id = id;
+    message.thread_id = thread.id;
+    message.sender_contact_id = kLocalSelfContactId;
+    message.text = std::string("text ") + id;
+    message.timestamp = 1;
+    ASSERT_TRUE(store.AppendMessage(message));
+  }
+  store.Flush();
+
+  // m2's sealed body is damaged (as an old or interrupted write might leave it).
+  sqlite3* db = nullptr;
+  ASSERT_EQ(sqlite3_open_v2((data_dir / "threads" / thread.id / "thread.db").string().c_str(), &db,
+                            SQLITE_OPEN_READWRITE, nullptr),
+            SQLITE_OK);
+  ASSERT_EQ(sqlite3_exec(db, "UPDATE messages SET content_enc = x'0102030405' WHERE id = 'm2';", nullptr, nullptr, nullptr),
+            SQLITE_OK);
+  sqlite3_close(db);
+
+  auto page = store.GetMessagesPage(thread.id, std::nullopt, 50);
+  ASSERT_TRUE(page);
+  ASSERT_EQ(page->size(), 2u) << "the rest of the page reads";
+  EXPECT_EQ(page->front().id, "m1");
+  EXPECT_EQ(page->back().id, "m3");
+
+  // The row is not deleted: it is still there to be looked at.
+  ASSERT_EQ(sqlite3_open_v2((data_dir / "threads" / thread.id / "thread.db").string().c_str(), &db,
+                            SQLITE_OPEN_READONLY, nullptr),
+            SQLITE_OK);
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM messages;", -1, &stmt, nullptr), SQLITE_OK);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+  EXPECT_EQ(sqlite3_column_int(stmt, 0), 3);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+}
+
 TEST(SqliteThreadStoreTest, ListThreadsPreviewRoundTripEncrypted) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_sqlite_preview_enc_test";

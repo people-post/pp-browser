@@ -1,20 +1,22 @@
 pp_browser_add_feature_library(pp_feature_conversations
   SOURCES
     ChatPresenter.cpp
+    GroupEventText.cpp
+    GroupMentions.cpp
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     ContactCardExchange.cpp
+    GroupInviteBatch.cpp
     GroupMembershipWorkflow.cpp
+    AccountLockerWorkflow.cpp
     InboxController.cpp
     MessageRouter.cpp
-    MessagingTools.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
     ConversationsFacade.cpp
     PeopleSearch.cpp
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
-    MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
     MeshConnectivityWiring.cpp
     PushDeviceCoordinator.cpp
@@ -24,7 +26,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_domain_peers
     pp_domain_attachments
     pp_domain_delivery
-    pp_domain_node
     pp_foundation_crypto
     pp_lib_media
     pp_lib_messaging

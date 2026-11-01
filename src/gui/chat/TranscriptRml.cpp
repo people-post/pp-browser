@@ -2,6 +2,11 @@
 
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
+#include "gui/chat/MessageTimeLabel.h"
+#include "feature/conversations/GroupEventText.h"
+#include "gui/chat/VoiceBubble.h"
+#include "lib/media/VoiceFile.h"
+#include "common/Utilities.h"
 #include "common/ValueJson.h"
 
 #include "lib/ai/StructuredTextParser.h"
@@ -12,6 +17,7 @@
 #include "lib/messaging/PlainTextLinks.h"
 #include "lib/messaging/PskRotateCodec.h"
 #include "lib/messaging/QuoteReply.h"
+#include "lib/messaging/TextSpans.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -20,7 +26,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <sstream>
+#include <unordered_map>
 
 #include "common/PbrCompat.h"
 
@@ -184,6 +192,20 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
     return html;
   }
+  if (control_type && *control_type == GroupMembershipControlType::GroupDissolved) {
+    // G016: "{owner} dissolved this group" (the owner is the sender), "You dissolved…" on the owner's own device.
+    if (message.sender_contact_id == kLocalSelfContactId) {
+      return SystemLineRml(Tr("chat.group.dissolved_by_you"));
+    }
+    std::string name = facts.sender_label ? facts.sender_label(message.sender_contact_id) : std::string();
+    return SystemLineRml(name.empty() ? Tr("chat.group.dissolved_line_unnamed")
+                                      : Tr("chat.group.dissolved_line", {{"name", name}}));
+  }
+  if (control_type) {
+    if (auto event = GroupEventText(message, facts.member_name, facts.local_account)) {
+      return SystemLineRml(*event);
+    }
+  }
   if (auto failure = ReceiveFailureLine(message)) {
     return SystemLineRml(*failure);
   }
@@ -248,7 +270,17 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
 
   std::string html = "<div class=\"chat-card chat-attachment-card\">";
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
-  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty()) {
+  // A voice message (audio/ogg named voice-<ms>.ogg, at most 1 MB declared) is a bubble; any other audio is a file row.
+  // Only the declared values decide here: the file itself is not looked at until the person taps play.
+  const VoiceBubbleView voice =
+      ready && facts.voice_supported
+          ? DecideVoiceBubble(fields->mime, fields->filename, fields->byte_length, facts.voice_max_seconds)
+          : VoiceBubbleView{};
+  if (voice.bubble) {
+    return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
+                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+  }
+  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";
@@ -267,7 +299,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
             JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
     html += "</div>";
-  } else if (ready && !local_path.empty()) {
+  } else if (ready && (!local_path.empty() || view.on_demand)) {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields->byte_length > 0) {
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
@@ -281,8 +313,14 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
               "</p>";
     }
-    if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
-      html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
+    if (state == AttachmentFetchWorkflow::DownloadState::TooLarge) {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.too_large_receive") + "</p>";
+    } else if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
+      html += "<p class=\"text muted\">" +
+              (view.download_percent >= 0
+                   ? Tr("chat.attachment.downloading_percent", {{"percent", std::to_string(view.download_percent)}})
+                   : Tr("chat.attachment.downloading")) +
+              "</p>";
     } else if (state == AttachmentFetchWorkflow::DownloadState::Pending) {
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +
               JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.download") + "</button>";
@@ -301,21 +339,55 @@ std::string UnsupportedRml() {
          "message.</p></div>";
 }
 
-// Escaped text with its https links tappable. The click carries the message id and the link's index;
-// the handler finds the URL again in the stored text (PlainTextLinks.h), so none sits in the markup.
-// `text` must be the message text or a prefix of it, so the indexes agree.
-std::string LinkedTextRml(const std::string& text, const std::string& id_arg) {
+/** One tappable or highlighted piece of a message's text: a link, or a mention the roster allows. */
+struct TextMark {
+  size_t begin = 0;
+  size_t end = 0;
+  std::string rml_open;
+  /** What it shows: a link's display form; a mention, exactly the bytes it covers. */
+  std::string shown;
+};
+
+// Escaped text with its https links tappable and its eligible mentions highlighted. A link's click carries
+// the message id and the link's index; the handler finds the URL again in the stored text (PlainTextLinks.h),
+// so none sits in the markup. A mention's click carries its index among `mentions` (EligibleMentionRuns), so
+// the handler finds the account again the same way. `text` must be the message text or a prefix of it, so the
+// indexes agree. Ranges are UTF-8 bytes; a mention that crosses a link is not highlighted (the link wins).
+std::string LinkedTextRml(const std::string& text, const std::string& id_arg,
+                          const std::vector<MentionRun>& mentions = {}) {
   const std::vector<PlainTextLink> links = FindPlainTextLinks(text);
-  if (links.empty() || id_arg.empty()) {
+  if ((links.empty() && mentions.empty()) || id_arg.empty()) {
     return StructuredTextParser::EscapeText(text);
   }
+  std::vector<TextMark> marks;
+  for (size_t i = 0; i < links.size(); ++i) {
+    marks.push_back({links[i].begin, links[i].end,
+                     "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " +
+                         std::to_string(i) + ")\">",
+                     links[i].display});
+  }
+  for (size_t i = 0; i < mentions.size(); ++i) {
+    const MentionRun& run = mentions[i];
+    const bool crosses_link = std::any_of(links.begin(), links.end(), [&run](const PlainTextLink& link) {
+      return run.begin < link.end && link.begin < run.end;
+    });
+    if (crosses_link || run.end > text.size()) {
+      continue;
+    }
+    marks.push_back({run.begin, run.end,
+                     run.kind == TextSpanKind::Mention
+                         ? "<span class=\"chat-mention\" data-event-click=\"open_mention('" + id_arg + "', " +
+                               std::to_string(i) + ")\">"
+                         : std::string("<span class=\"chat-mention chat-mention--everyone\">"),
+                     text.substr(run.begin, run.end - run.begin)});
+  }
+  std::sort(marks.begin(), marks.end(), [](const TextMark& a, const TextMark& b) { return a.begin < b.begin; });
   std::string out;
   size_t pos = 0;
-  for (size_t i = 0; i < links.size(); ++i) {
-    out += StructuredTextParser::EscapeText(text.substr(pos, links[i].begin - pos));
-    out += "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " + std::to_string(i) +
-           ")\">" + StructuredTextParser::EscapeText(links[i].display) + "</span>";
-    pos = links[i].end;
+  for (const TextMark& mark : marks) {
+    out += StructuredTextParser::EscapeText(text.substr(pos, mark.begin - pos));
+    out += mark.rml_open + StructuredTextParser::EscapeText(mark.shown) + "</span>";
+    pos = mark.end;
   }
   out += StructuredTextParser::EscapeText(text.substr(pos));
   return out;
@@ -328,8 +400,32 @@ std::string OneLine(std::string text) {
   return text;
 }
 
+/** A group text's mentions the roster allows now (G015); none in a direct chat, where they are plain text. */
+std::vector<MentionRun> MentionRunsOf(const ThreadMessage& message, const std::optional<MentionRoster>& roster) {
+  if (!roster || message.content_type != ChatContentType::Text || message.payload_json.empty()) {
+    return {};
+  }
+  const std::string sender =
+      message.sender_contact_id == kLocalSelfContactId ? roster->local_account : message.sender_contact_id;
+  return EligibleMentionRuns(message.text, MentionTextLimit(message.text),
+                             text_spans::FromPayloadJson(message.payload_json), *roster, sender);
+}
+
+/** A peer's text that mentions this account, `@everyone` included (only the owner's is eligible): its row is tinted. */
+bool MentionsLocalAccount(const ThreadMessage& message, const std::vector<MentionRun>& runs,
+                          const std::optional<MentionRoster>& roster) {
+  if (!roster || message.sender_contact_id == kLocalSelfContactId) {
+    return false;
+  }
+  return std::any_of(runs.begin(), runs.end(), [&roster](const MentionRun& run) {
+    return run.kind == TextSpanKind::Everyone || run.account_id == roster->local_account;
+  });
+}
+
+// `mentions_me`: set when the text mentions this account (the row is then tinted).
 std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
-                       const std::optional<CallSummaryRow>& call_row) {
+                       const std::optional<CallSummaryRow>& call_row, const std::optional<MentionRoster>& mentions,
+                       bool& mentions_me) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -383,13 +479,16 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
   }
   // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
+  // Mentions mark the reply's own words only (MentionTextLimit), so their byte offsets hold in either branch.
+  const std::vector<MentionRun> mention_runs = MentionRunsOf(message, mentions);
+  mentions_me = MentionsLocalAccount(message, mention_runs, mentions);
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
     text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
                "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
-               paragraph + LinkedTextRml(parts->reply, id_arg) + "</p>";
+               paragraph + LinkedTextRml(parts->reply, id_arg, mention_runs) + "</p>";
   } else {
-    text_rml = paragraph + LinkedTextRml(message.text, id_arg) + "</p>";
+    text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
   std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
@@ -440,7 +539,20 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
 } // namespace
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
-                                                const TranscriptFacts& facts) {
+                                                const TranscriptFacts& facts_in,
+                                                const std::optional<MentionRoster>& mentions) {
+  // A name is looked up (cards, contacts: SQLite) once per account in this build, however many lines name it.
+  TranscriptFacts facts = facts_in;
+  if (facts_in.member_name) {
+    auto names = std::make_shared<std::unordered_map<std::string, std::string>>();
+    facts.member_name = [lookup = facts_in.member_name, names](const std::string& account_id) {
+      auto it = names->find(account_id);
+      if (it == names->end()) {
+        it = names->emplace(account_id, lookup(account_id)).first;
+      }
+      return it->second;
+    };
+  }
   std::vector<MessageDisplayRow> rows;
   rows.reserve(entries.size());
   for (const TranscriptRow& entry : entries) {
@@ -451,7 +563,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     const ThreadMessage& message = entry.message;
     // A call summary: decoded once, its side is the starter's (a group's is written locally).
     const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
-    std::string content = MessageRml(entry, facts, call_row);
+    bool mentions_me = false;
+    std::string content = MessageRml(entry, facts, call_row, mentions, mentions_me);
     if (content.empty()) {
       continue;
     }
@@ -476,10 +589,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.content_rml = content.c_str();
     row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
                              : RowClass(message.sender_contact_id).c_str();
-    // Local is expected for AI/system-local rows — skip it to keep meta quiet.
-    if (!entry.control && message.transport && *message.transport != MessageTransport::Local) {
-      row.transport_badge =
-          Tr(*message.transport == MessageTransport::Direct ? "chat.transport.direct" : "chat.transport.relay").c_str();
+    row.mentions_me = mentions_me;
+    if (!entry.control) {
+      row.time_label = MessageTimeLabel(message.timestamp, util::NowUnixMs()).c_str();
     }
     row.has_content = true;
     rows.push_back(std::move(row));

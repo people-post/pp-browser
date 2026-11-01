@@ -4,7 +4,7 @@
 #include "lib/media/CameraCaptureOrientation.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallStack.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <stdexcept>
 #include "common/PbrCompat.h"

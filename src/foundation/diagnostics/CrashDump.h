@@ -10,6 +10,9 @@ namespace pbr {
  */
 class CrashDump {
 public:
+  /** "android" / "windows" / "ios" / "macos" / "linux" — the same label the dump carries. */
+  static const char* OsLabel();
+
   /** Resolve dump path under the process data directory. */
   static std::string PendingPath(const std::string& data_dir);
 
@@ -33,6 +36,14 @@ public:
    * Overwrites any existing pending file.
    */
   static void WritePending(const std::string& data_dir, const std::string& reason);
+
+  /**
+   * Write `backtrace_frames=<n>` plus one line per frame of the calling thread to `fd`, using
+   * only stack buffers and write(). For the crash path and tests. Android lines read
+   * `frame <i> pc= base= off= module= sym=` (feed `off` to llvm-symbolizer with the unstripped
+   * .so); macOS / glibc print raw addresses; other platforms write nothing.
+   */
+  static void WriteNativeBacktrace(int fd);
 };
 
 } // namespace pbr

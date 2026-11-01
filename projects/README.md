@@ -46,6 +46,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | Project | Intent |
 |---------|--------|
 | [ai-centric-interface](ai-centric-interface/) | Intent taxonomy, agency, planner/tools |
+| [qr-scanning](qr-scanning/) | In-app friend QR scanning and reusable scan entry |
 | [chat-storage-and-memory](chat-storage-and-memory/) | SQLite threads, relay/history, memory/compaction |
 | [platform-safety-limits](platform-safety-limits/) | Non-chat limits (LLM HTTP, profile JSON, MCP, parsers) |
 | [e2e-message-crypto](e2e-message-crypto/) | Message AEAD / key UX residuals (contracts promoted) |
@@ -55,6 +56,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [p2p-mesh](p2p-mesh/) | Mesh deepen, relay scope, name directory / pre-chain |
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
 | [call-path-resilience](call-path-resilience/) | Calls survive link / network changes; mobility-aware path policy |
+| [capability-repos](capability-repos/) | Capability boundaries in the tree (gated); one capabilities repo when a second app picks them |
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [social-posts](social-posts/) | Public posts: signed hash-chained author logs, claimed → witnessed → anchored time |
 | [media-client-layers](media-client-layers/) | Neutral reach / relay-attach / pipeline / device layers; broadcast as a sibling feature of calls |
@@ -64,7 +66,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [multi-device-account](multi-device-account/) | Account ID, shared DEK, link-device |
 | [adp](adp/) | ADP L1 + AMP stack (mesh underlay) |
 | [feature-layer-reorg](feature-layer-reorg/) | `app → feature → domain → …` cleanup |
-| [group-chat](group-chat/) | Group threads (design / follow-on) |
+| [group-chat](group-chat/) | Group threads: signed roster, member check, mentions (G015) |
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
 | [privacy](privacy/) | What peers, relays, servers and logs learn about a user, and the controls that bound it (first: who gets our IP) |

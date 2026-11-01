@@ -60,6 +60,7 @@ selection {
 
 .btn-primary,
 .prompt-send-btn,
+.prompt-stop-btn,
 .sidebar-new-chat,
 .contacts-find-btn,
 .chat-suggestion-primary {
@@ -70,6 +71,7 @@ selection {
 .btn-primary:hover,
 .btn-primary:focus,
 .prompt-send-btn:hover,
+.prompt-stop-btn:hover,
 .sidebar-new-chat:hover,
 .contacts-find-btn:hover,
 .chat-suggestion-primary:hover {
@@ -78,10 +80,34 @@ selection {
 
 .btn-primary svg,
 .prompt-send-btn svg,
+.prompt-stop-btn svg,
 .sidebar-new-chat svg,
 .contacts-find-btn svg,
 .contacts-action-secure svg {
   image-color: #ffffff;
+}
+
+.prompt-voice-toggle-btn svg {
+  image-color: #6b7280;
+}
+
+.prompt-voice-toggle-btn:hover svg {
+  image-color: #374151;
+}
+
+.prompt-voice-bar {
+  background-color: #f3f4f6;
+  color: #1a1a1a;
+}
+
+.prompt-voice-bar:hover {
+  background-color: #e5e7eb;
+}
+
+.prompt-voice-bar--active,
+.prompt-voice-bar--active:hover {
+  background-color: #ef4444;
+  color: #ffffff;
 }
 
 .prompt-emoji-btn svg {
@@ -97,6 +123,14 @@ selection {
 }
 
 .prompt-attach-btn:hover svg {
+  image-color: #374151;
+}
+
+.prompt-capture-btn svg {
+  image-color: #6b7280;
+}
+
+.prompt-capture-btn:hover svg {
   image-color: #374151;
 }
 
@@ -247,7 +281,7 @@ select selectbox option:hover {
   color: #333333;
 }
 
-.prompt-composer {
+.prompt-composer-pill {
   background-color: #ffffff;
   border: 1dp #e5e7eb;
   box-shadow: 0 2dp 8dp #00000014;
@@ -255,6 +289,29 @@ select selectbox option:hover {
 
 .chat-link {
   color: #4f46e5;
+}
+
+.chat-mention {
+  color: #3730a3;
+  background-color: #e0e7ff;
+}
+
+/* In our own (blue) bubble the text stays white; only the chip shows. */
+.bubble-user .chat-mention {
+  color: #ffffff;
+  background-color: #ffffff40;
+}
+
+/* A peer's message that mentions this account: the whole row is tinted, with a bar on its left. */
+.message-row-mentions-me {
+  background-color: #fdf3e1;
+  border-left: 3dp #d97706;
+}
+
+/* On the tinted row the text sits on the tint: no bubble of its own. */
+.message-row-mentions-me .bubble-assistant {
+  background-color: transparent;
+  border-width: 0;
 }
 
 .chat-inline-link {
@@ -749,7 +806,7 @@ select selectbox option:hover {
   border-top: 1dp #e5e7eb;
 }
 
-.shell-composer-mount.surface-chrome .prompt-composer {
+.shell-composer-mount.surface-chrome .prompt-composer-pill {
   background-color: #ffffff;
   border: 1dp #e5e7eb;
   box-shadow: none;
@@ -882,6 +939,15 @@ select selectbox option:hover {
 }
 
 .shell-call-camera--on svg {
+  image-color: #1a1a1a;
+}
+
+.shell-call-flip {
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-call-flip svg {
   image-color: #1a1a1a;
 }
 
@@ -1113,6 +1179,10 @@ select selectbox option:hover {
   background-color: #f3f4f6;
 }
 
+.sidebar-session-mention {
+  color: #4a6cf7;
+}
+
 .sidebar-unread-dot {
   background-color: #3b82f6;
 }
@@ -1194,6 +1264,11 @@ select selectbox option:hover {
 
 .settings-danger-zone {
   border-top: 1dp #e5e7eb;
+}
+
+.settings-device-badge {
+  background-color: #eef2ff;
+  color: #4338ca;
 }
 
 .me-profile-card {
@@ -1366,7 +1441,7 @@ select selectbox option:hover {
   border-radius: 0 6dp 6dp 0;
 }
 
-.prompt-composer--e2e {
+.prompt-composer--e2e .prompt-composer-pill {
   border-color: #99f6e4;
 }
 

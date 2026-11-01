@@ -7,6 +7,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
+#include "gui/scan/ScanPorts.h"
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
@@ -42,6 +43,7 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
+  void BindScanPorts(ScanPorts ports);
 
   struct ContactListRow {
     ui::String id;
@@ -78,8 +80,10 @@ public:
     ui::String subtitle;
     ui::String display_name;
     ui::String nickname;
-    /** Placeholder of the remark field: the directory nickname, else the generic "Name". */
+    /** Placeholder of the remark field. */
     ui::String name_placeholder;
+    /** "Their nickname: X" under the remark field; empty when the contact has no nickname. */
+    ui::String their_nickname;
     ui::String relay_id;
     ui::String peer_id;
     ui::String multiaddrs_text;
@@ -118,6 +122,8 @@ public:
    */
   void OfferInvite(const std::string& link);
   void OnFindSomeone();
+  /** Contacts → Scan QR code. Successful friend scans still ask before saving. */
+  void OnScanQr();
 
 private:
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -141,6 +147,8 @@ private:
   void SyncFromStore();
   void LoadSelectedDetail(const std::string& contact_id);
   void OpenContactDetailPane();
+  /** The selected contact cannot be messaged yet: ask for its account's card again (#409). */
+  void MaybeRefreshContactCard(const std::string& contact_id);
   bool CloseContactDetailPane();
   void OnBackToList();
   void OnStartChat();
@@ -150,6 +158,8 @@ private:
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
   void AddContactFromHit(const mesh::DirectoryHit& hit);
+  std::optional<Contact> FindContactByAccount(const std::string& account_id) const;
+  void ShowAlreadyContact(const Contact& contact);
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
   /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
@@ -186,8 +196,14 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   ContactsSurfaceNotifyPorts surface_notify_;
+  ScanPorts scan_ports_;
 
   static ContactsController* installed_instance_;
 };
+
+/** Detail form for a contact (title, remark, their nickname, ...). Exposed for tests. */
+ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports);
+/** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
+Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 
 } // namespace pbr

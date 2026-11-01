@@ -2,6 +2,9 @@
 
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/GroupRosterSync.h"
+#include "lib/messaging/GroupRosterSyncFamily.h"
+#include "lib/people/AccountStateCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -11,7 +14,9 @@
 
 #include "common/Module.h"
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -24,6 +29,8 @@ namespace pbr {
 
 class GroupMembershipWorkflow : public Module {
 public:
+  ~GroupMembershipWorkflow();
+
   GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                          GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
                          AccountKeyResolver& account_keys);
@@ -46,6 +53,27 @@ public:
   Roe<void> LeaveGroup(const std::string& group_id);
   /** Owner leave with successor: fan-out owner_transferred (leave_previous) then clear local. */
   Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
+  /**
+   * G016: the owner ends the group for everyone. Signs the dissolve, ends the group here (roster emptied, chat kept
+   * read-only with one line), then sends `group_dissolved` to each member — best-effort through the outbox, so a
+   * member we cannot reach does not hold the dissolve back. A solo owner has nothing to send. Idempotent.
+   */
+  Roe<void> DissolveGroup(const std::string& group_id);
+  /** G016: the owner ended this group (its chat stays, read-only). */
+  bool IsDissolved(const std::string& group_id) const;
+  /**
+   * G016: send what a dissolve still has to send — each member's `group_dissolved`, each invitee's refusal — through
+   * the outbox, forgetting a row once its copy is there; a row that fails is tried again later (30 s, 2 min, 10 min)
+   * and at every start. Called when messaging comes up.
+   */
+  void ResumePendingGroupSends(size_t attempt = 0);
+  /**
+   * G016: a group ended here without the owner's DM (an answer to our member check, or our own other device): its
+   * chat gets the line and the one notice, and invite cards for it are closed.
+   */
+  void OnGroupDissolvedElsewhere(const GroupDissolvedEnd& end);
+  /** G016: the account locker says another device of ours saw this group dissolved — end it here too, if we are in it. */
+  void EndDissolvedFromLocker(const AccountStateGroup& group);
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
                         const std::vector<std::string>& member_contact_ids);
   /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
@@ -63,6 +91,9 @@ public:
    * After a validated invite accept on the owner device: append local system line and fan out
    * owner-signed member_joined DMs (peer-facing membership commit).
    */
+  /** G014: an accept came when the group was full — tell the invitee (`group_invite_refused`, reason group_full). */
+  Roe<void> RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
+                         const std::string& invitee_identity, const std::string& reason = kInviteRefusedGroupFull);
   Roe<void> PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
                                 uint64_t roster_epoch);
 
@@ -71,11 +102,34 @@ public:
   bool IsMemberUnreachable(const std::string& group_id, const std::string& member_identity) const;
   std::vector<std::string> ListUnreachable(const std::string& group_id) const;
   bool IsOwnerUnreachable(const std::string& group_id) const;
+  /** Invites this device sent for the group that are still waiting (not expired), latest per invitee. */
+  std::vector<PendingGroupInvite> ListInvitedWaiting(const std::string& group_id) const;
 
   /** Insert at most one unresolved owner-unreachable advisory on the group thread. */
   Roe<void> EnsureOwnerUnreachableAdvisory(const std::string& group_id);
   Roe<void> ResolveOwnerUnreachableAdvisory(const std::string& group_id);
   Roe<Thread> OpenOwnerDirectMessage(const std::string& owner_identity);
+
+  /**
+   * G012: sign the group's roster as its owner and hold it — with `handed`, the transfer that made us
+   * owner, added to the owner chain. Errors when we do not own the group.
+   */
+  Roe<GroupRosterStatement> SignRoster(const std::string& group_id,
+                                       const std::optional<GroupOwnerTransfer>& handed = std::nullopt);
+  /** G012: sign the roster and send it to the members (after a member left, or once we took the group over). */
+  Roe<void> SignAndSendRoster(const std::string& group_id,
+                              const std::optional<GroupOwnerTransfer>& handed = std::nullopt);
+  /** G013: answer a member's roster check; as the owner, with a statement signed now. */
+  Roe<void> AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request, const std::string& asker);
+  /** G013: check the group's members — ask the owner and every member we know; no sends until answered. */
+  Roe<void> StartRosterCheck(const std::string& group_id);
+  /** Groups as the account locker keeps them (multi-device M023 §4). */
+  Roe<std::vector<AccountStateGroup>> StateGroups() const;
+  /**
+   * A group from the account locker: metadata, roster, the statement held and its chat (no messages),
+   * checking its members (G013). The caller then starts the check once messaging is up.
+   */
+  Roe<void> RestoreGroup(const AccountStateGroup& group);
 
 private:
   Roe<std::string> ResolveRelayIdentity(const std::string& contact_id) const;
@@ -91,9 +145,30 @@ private:
   Roe<void> SendMembershipDirectMessage(const std::string& peer_identity, GroupMembershipControlType control_type,
                                         const std::string& detail_json, const std::string& display,
                                         const std::optional<std::string>& stored_detail_json = std::nullopt);
+  /** G013: a roster request / reply, on the control lane. */
+  Roe<void> SendRosterControl(const std::string& peer_identity, GroupMembershipControlType control_type,
+                              const std::string& detail_json, const std::string& display,
+                              const std::string& local_identity);
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  struct RosterParts {
+    std::vector<GroupRosterStatementMember> rows;
+    std::vector<GroupOwnerTransfer> chain;
+  };
+  /** The members as statement rows and the owner chain (the held one, plus the transfer that made us owner). */
+  RosterParts RosterPartsOf(const GroupMetadata& metadata, const std::vector<GroupRosterMember>& members,
+                            const std::optional<GroupOwnerTransfer>& handed = std::nullopt) const;
+  /** Our account signing key (base64), or why there is none. */
+  Roe<std::string> SigningKey() const;
+  /** G016: the dissolve statement, signed by us as owner at `epoch`, over `members` as stated. */
+  Roe<GroupRosterStatement> SignDissolved(const GroupMetadata& metadata, const std::vector<GroupRosterMember>& members,
+                                          uint64_t epoch);
+  /** G016: the group's chat gets its one "dissolved" line, and the thread list its preview. */
+  void AppendDissolvedLine(const std::string& group_id, const std::string& owner_identity,
+                           const std::string& sender_identity);
+  /** `detail_json` with the roster we now sign as owner added (G012); unchanged if it cannot be signed. */
+  std::string WithSignedRoster(const std::string& group_id, const std::string& detail_json);
   Roe<void> FanOutMembershipEvent(const std::string& group_id, GroupMembershipControlType control_type,
                                   const std::string& detail_json, const std::string& display,
                                   const std::string& skip_identity,
@@ -109,6 +184,9 @@ private:
 
   mutable std::mutex unreachable_mutex_;
   std::set<std::pair<std::string, std::string>> unreachable_;
+
+  /** False once destroyed: the retry one-shots of ResumePendingGroupSends check it before touching `this`. */
+  std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
 };
 
 } // namespace pbr

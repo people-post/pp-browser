@@ -49,6 +49,7 @@ public:
   Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string& thread_id,
                                                                   int64_t after_display_order) const override;
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override;
+  Roe<ThreadMessage> UpsertMessage(const ThreadMessage& message) override;
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
   Roe<bool> DeleteMessageContent(const std::string& thread_id, const std::string& message_id) override;
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
@@ -87,6 +88,7 @@ public:
   std::string ProfileDbPath() const;
 
 private:
+  Roe<ThreadMessage> AppendMessageImpl(const ThreadMessage& message, bool upsert);
   Roe<ThreadMessage> ReadMessageRow(const std::string& thread_id, sqlite3_stmt* stmt) const;
   Roe<ByteVector> EncryptMessageContent(const std::string& thread_id, const ThreadMessage& message) const;
   Roe<std::optional<ByteVector>> EncryptPreviewBlob(const std::string& thread_id,

@@ -55,6 +55,9 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   }
   // An account copy: our card rides it, for a peer that knows none of our devices yet (M021).
   envelope.body.e2e.sender_card = params.sender_card;
+  if (params.sender_card) {
+    envelope.body.e2e.sender_card_at = params.sender_card->getIf<int64_t>("issued_at");
+  }
   envelope = WithSingleRelayCopy(std::move(envelope), std::move(copy));
   envelope.order_key = params.order_key;
   // Per sending device: an account's devices share its `relay:` id, and the relay keeps one row per sender,

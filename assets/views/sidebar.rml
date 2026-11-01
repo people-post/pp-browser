@@ -7,7 +7,7 @@
       </button>
     </div>
   </div>
-  <div class="sidebar-sessions">
+  <div id="sidebar-sessions" class="sidebar-sessions" data-event-scroll="sessions_scroll()">
     <div class="sidebar-archived-entry row" data-if="archived_count > 0" data-event-click="toggle_archived()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived"></svg>
       <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived"></svg>
@@ -43,6 +43,7 @@
           <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
         </div>
         <div class="sidebar-session-line">
+          <span class="sidebar-session-mention" data-if="session.mentioned">{{i18n:sidebar.mentioned}}</span>
           <p class="sidebar-session-preview">{{session.preview}}</p>
           <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
           <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
@@ -50,5 +51,6 @@
       </div>
     </div>
     <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
+    <p class="text muted sidebar-sessions-more" data-if="sessions_more" data-event-click="sessions_load_more()">{{i18n:sidebar.loading_more}}</p>
   </div>
 </div>

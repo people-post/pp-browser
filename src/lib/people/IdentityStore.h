@@ -8,6 +8,7 @@
 #include "common/directory/IdentityTypes.h"
 
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -38,6 +39,11 @@ public:
   void ClearDek() override;
 
   Roe<LocalIdentity> LoadOrCreate();
+  /**
+   * The recovery seed this account's keys derive from (M023 §2; its phrase: EncodeRecoveryPhrase). None for an
+   * account minted before M023 or a pp-node.
+   */
+  Roe<std::optional<ByteVector>> RecoverySeed() const;
   Roe<LocalIdentity> Get() const;
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;

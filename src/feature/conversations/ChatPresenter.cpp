@@ -1,20 +1,25 @@
 #include "feature/conversations/ChatPresenter.h"
 
 #include "feature/conversations/ConversationsFacade.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "feature/conversations/GroupEventText.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "lib/messaging/ChatPayloadValidator.h"
+#include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/ReactionTypes.h"
 #include "common/EmojiKey.h"
 #include "feature/conversations/SessionListText.h"
 #include "foundation/platform/ILocalNotifier.h"
-#include "lib/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
+#include <set>
 #include <utility>
 
 namespace pbr {
@@ -29,6 +34,52 @@ std::string ChatSessionKindName(const Thread& thread) {
     return thread.channel == ThreadChannel::E2e ? "private" : "public";
   }
   return "public";
+}
+
+GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
+                                   const bool unreachable, const std::string& card_nickname) {
+  GroupMemberRow row;
+  row.identity = member.member_identity;
+  row.is_owner = member.role == MemberRole::Owner;
+  row.unreachable = unreachable;
+  if (contact) {
+    row.contact_id = contact->id;
+    row.title = FormatContactTitle(*contact);
+  }
+  if (row.title.empty()) {
+    row.title = card_nickname;
+  }
+  if (row.title.empty()) {
+    row.title = ShortRelayId(member.member_identity);
+  }
+  return row;
+}
+
+std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
+                                              const std::unordered_set<std::string>& roster_identities,
+                                              const std::optional<Contact>& contact, const int64_t now_ms,
+                                              const std::string& card_nickname) {
+  if (roster_identities.count(invite.invitee_identity) > 0) {
+    return std::nullopt;
+  }
+  GroupRosterMember as_member;
+  as_member.member_identity = invite.invitee_identity;
+  GroupMemberRow row = BuildGroupMemberRow(as_member, contact, false, card_nickname);
+  row.invited = true;
+  row.invited_stale = now_ms - invite.created_at > kInviteStaleAfterMs;
+  return row;
+}
+
+void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
+  std::stable_sort(rows.begin(), rows.end(), [](const GroupMemberRow& a, const GroupMemberRow& b) {
+    if (a.unreachable != b.unreachable) {
+      return a.unreachable;
+    }
+    if (a.is_owner != b.is_owner) {
+      return a.is_owner;
+    }
+    return a.title < b.title;
+  });
 }
 
 bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,
@@ -69,6 +120,8 @@ const char* CloseChatPlanKindName(const CloseChatPlan::Kind kind) {
     return "dismiss";
   case CloseChatPlan::Kind::LeaveAsOwner:
     return "leave_as_owner";
+  case CloseChatPlan::Kind::Dissolve:
+    return "dissolve";
   }
   return "?";
 }
@@ -183,6 +236,11 @@ void ChatPresenter::Refresh() {
   }
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
+  const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
+  std::string local_account;
+  if (auto identity = facade_->GetIdentity()) {
+    local_account = identity->account_id;
+  }
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
     if (thread_prefs.archived != next.showing_archived) {
@@ -193,10 +251,12 @@ void ChatPresenter::Refresh() {
     row.title = facade_->ResolveThreadLabel(thread).title;
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
-    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(thread.preview));
+    const std::string text = GroupEventPreviewOr(thread, local_account);
+    row.preview = SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text);
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
+    row.mentioned = mentioned.count(thread.id) > 0;
     row.pinned = thread_prefs.pinned_at != 0;
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);
@@ -214,9 +274,16 @@ void ChatPresenter::Changed() {
 }
 
 bool ChatPresenter::SelectThread(const std::string& thread_id) {
-  if (!facade_ || !facade_->OpenThread(thread_id)) {
+  opened_at_mention_.reset();
+  if (!facade_) {
     return false;
   }
+  // Read before opening: opening reads the chat, which drops its mention marker.
+  std::optional<std::string> mention = facade_->OldestMention(thread_id);
+  if (!facade_->OpenThread(thread_id)) {
+    return false;
+  }
+  opened_at_mention_ = std::move(mention);
   // Opening a chat reads it: a dot set by "Mark as unread" goes with the unread count.
   if (std::optional<ThreadLocalPrefs> prefs = PrefsOf(thread_id); prefs && prefs->marked_unread) {
     prefs->marked_unread = false;
@@ -239,7 +306,27 @@ void ChatPresenter::ToggleArchived() {
   Refresh();
 }
 
+std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+  // A group whose latest row is a membership line previews the same words as its transcript shows (the stored
+  // preview is the English text). Only a preview that is such a text costs a read of the latest message.
+  if (thread.kind != ThreadKind::Group || !IsStoredGroupEventText(thread.preview)) {
+    return thread.preview;
+  }
+  auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+  if (!page || page->empty()) {
+    return thread.preview;
+  }
+  ConversationsFacade* facade = facade_;
+  const auto line = GroupEventText(
+      page->back(), [facade](const std::string& account) { return facade->MemberPublicNameOf(account); },
+      local_account);
+  return line ? *line : thread.preview;
+}
+
 void ChatPresenter::SetPinned(const std::string& thread_id, const bool pinned) {
+  if (pinned && facade_) {
+    facade_->KeepThreadListed(thread_id);
+  }
   UpdatePrefs(thread_id, [pinned](ThreadLocalPrefs& prefs) { prefs.pinned_at = pinned ? util::NowUnixMs() : 0; });
 }
 
@@ -249,7 +336,26 @@ void ChatPresenter::Mute(const std::string& thread_id, const SessionMuteChoice c
 }
 
 void ChatPresenter::Unmute(const std::string& thread_id) {
-  UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.muted_until = 0; });
+  UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) {
+    prefs.muted_until = 0;
+    prefs.mute_mentions = false;  // a mute's own setting: the next mute starts with mentions alerting
+  });
+}
+
+void ChatPresenter::SetMuteMentions(const std::string& thread_id, const bool mute) {
+  UpdatePrefs(thread_id, [mute](ThreadLocalPrefs& prefs) { prefs.mute_mentions = mute; });
+}
+
+void ChatPresenter::AskBeforeSharingAi(const std::string& thread_id) {
+  if (!facade_ || !facade_->ClearSharedAiConfirmed(thread_id)) {
+    if (callbacks_.prefs_failed) {
+      callbacks_.prefs_failed();
+    }
+    Changed();
+    return;
+  }
+  ForgetCachedPrefs();  // the facade wrote the stored row, not the cache
+  Refresh();
 }
 
 void ChatPresenter::SetArchived(const std::string& thread_id, const bool archived) {
@@ -310,8 +416,8 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
 
 ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   ChatGroupSheet sheet;
-  if (!facade_) {
-    return sheet;
+  if (!facade_ || facade_->IsGroupDissolved(group_id)) {
+    return sheet;  // an ended group has no owner to act and no one to remove (G016)
   }
   std::string local_identity;
   if (auto identity = facade_->GetIdentity()) {
@@ -456,6 +562,117 @@ Roe<void> ChatPresenter::SendToChat(const std::string& text) {
   return facade_->RouteMessage(thread_id, text, std::nullopt);
 }
 
+namespace {
+
+/** The group a chat is, if it is one. */
+std::optional<std::string> GroupIdOf(ConversationsFacade* facade, const std::string& thread_id) {
+  auto thread = facade ? facade->GetThread(thread_id) : Roe<std::optional<Thread>>(std::optional<Thread>{});
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return std::nullopt;
+  }
+  return *(*thread)->group_id;
+}
+
+/** The roster a group chat's mentions are judged against now; none for a chat that is not a group. */
+std::optional<MentionRoster> RosterOfGroupThread(ConversationsFacade* facade, const std::string& thread_id) {
+  const std::optional<std::string> group_id = GroupIdOf(facade, thread_id);
+  if (!group_id) {
+    return std::nullopt;
+  }
+  MentionRoster roster;
+  if (auto members = facade->ListGroupRoster(*group_id)) {
+    for (const GroupRosterMember& member : *members) {
+      roster.members.insert(member.member_identity);
+    }
+  }
+  if (auto owner = facade->OwnerIdentity(*group_id)) {
+    roster.owner = *owner;
+  }
+  if (auto identity = facade->GetIdentity()) {
+    roster.local_account = identity->account_id;
+  }
+  return roster;
+}
+
+} // namespace
+
+bool ChatPresenter::SendsWithMentions(const std::string& thread_id, const std::string& text,
+                                      const std::vector<TextSpan>& spans) {
+  return KeepsMentionSpans(text, spans) && GroupIdOf(facade_, thread_id);
+}
+
+bool ChatPresenter::KeepsMentionSpans(const std::string& text, const std::vector<TextSpan>& spans) {
+  return !spans.empty() && !ParseAtAiPrefix(text).is_ai_invoke;
+}
+
+Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const std::string& text,
+                                          std::vector<TextSpan> spans) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  auto sent = facade_->SendGroupText(thread_id, text, std::move(spans));
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
+}
+
+std::optional<MentionRoster> ChatPresenter::MentionRosterOf(const std::string& thread_id) const {
+  return RosterOfGroupThread(facade_, thread_id);
+}
+
+std::vector<TextSpan> ChatPresenter::SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const {
+  if (spans.empty()) {
+    return spans;
+  }
+  const std::optional<MentionRoster> roster = MentionRosterOf(thread_id);
+  return roster ? KeepMentionsOnRoster(std::move(spans), *roster) : std::vector<TextSpan>{};
+}
+
+std::vector<MentionCandidate> ChatPresenter::ReadMentionCandidates(ConversationsFacade* facade,
+                                                                   const std::string& thread_id) {
+  const std::optional<std::string> group_id = GroupIdOf(facade, thread_id);
+  if (!group_id) {
+    return {};
+  }
+  auto members = facade->ListGroupRoster(*group_id);
+  const std::optional<MentionRoster> roster = RosterOfGroupThread(facade, thread_id);
+  if (!members || !roster || roster->local_account.empty()) {
+    return {};
+  }
+  const auto public_name = [facade](const std::string& account_id) { return facade->MemberPublicNameOf(account_id); };
+  // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
+  const bool local_is_owner = roster->owner == roster->local_account;
+  return AllMentionCandidates(*members, roster->local_account, local_is_owner, public_name,
+                              Tr("chat.mention.everyone_word"));
+}
+
+std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  const std::optional<MentionRoster> roster = thread_id.empty() ? std::nullopt : MentionRosterOf(thread_id);
+  if (!roster) {
+    return std::nullopt;
+  }
+  auto message = facade_->GetMessage(thread_id, message_id);
+  if (!message || !*message) {
+    return std::nullopt;
+  }
+  const ThreadMessage& shown = **message;
+  const std::string sender =
+      shown.sender_contact_id == kLocalSelfContactId ? roster->local_account : shown.sender_contact_id;
+  const std::vector<MentionRun> runs = EligibleMentionRuns(
+      shown.text, MentionTextLimit(shown.text), text_spans::FromPayloadJson(shown.payload_json), *roster, sender);
+  if (run_index >= runs.size() || runs[run_index].kind != TextSpanKind::Mention ||
+      runs[run_index].account_id == roster->local_account) {
+    return std::nullopt;
+  }
+  auto contact = facade_->FindContactByIdentity(runs[run_index].account_id, mesh::ContactIdKind::Account);
+  if (!contact || !*contact) {
+    return std::nullopt;
+  }
+  return (*contact)->id;
+}
+
 CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
   CloseChatPlan plan;
   auto thread = facade_ ? facade_->GetThread(thread_id) : Roe<std::optional<Thread>>(std::optional<Thread>{});
@@ -470,6 +687,9 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
     return plan;
   }
   plan.group_id = *(*thread)->group_id;
+  if (facade_->IsGroupDissolved(plan.group_id)) {
+    return plan;  // G016: the chat of a group that ended is deleted like any chat; nobody is left to tell
+  }
   std::string me;
   if (auto identity = facade_->GetIdentity()) {
     me = identity->account_id;
@@ -492,8 +712,8 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
     }
   }
   if (is_owner) {
-    // Solo, or only unreachable peers: no transfer into a ghost roster.
-    plan.kind = plan.successors.empty() ? CloseChatPlan::Kind::Dismiss : CloseChatPlan::Kind::LeaveAsOwner;
+    // Solo, or only unreachable peers: no transfer into a ghost roster — the group ends instead (G016).
+    plan.kind = plan.successors.empty() ? CloseChatPlan::Kind::Dissolve : CloseChatPlan::Kind::LeaveAsOwner;
     return plan;
   }
   bool owner_on_roster = false;
@@ -540,6 +760,17 @@ Roe<void> ChatPresenter::DismissGroupAndClose(const std::string& thread_id, cons
   return CloseThread(thread_id);
 }
 
+Roe<void> ChatPresenter::DissolveGroup(const std::string& group_id) {
+  if (!facade_) {
+    return Error("Messaging not ready");
+  }
+  if (auto dissolved = facade_->DissolveGroup(group_id); !dissolved) {
+    return dissolved.error();
+  }
+  Refresh();
+  return {};
+}
+
 Roe<void> ChatPresenter::HandOverAndClose(const std::string& thread_id, const std::string& group_id,
                                           const std::string& successor) {
   if (!facade_) {
@@ -550,6 +781,8 @@ Roe<void> ChatPresenter::HandOverAndClose(const std::string& thread_id, const st
   }
   return CloseThread(thread_id);
 }
+
+void ChatPresenter::ForgetCachedPrefs() { prefs_.reset(); }
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
   if (prefs_) {

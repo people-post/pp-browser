@@ -3,12 +3,15 @@
 // tmp/pp-picks/<uuid>/<name>; the consumer releases its copy when done (ReleasePickedFile), and leftovers
 // of an earlier run (a crash, a kill) are cleared when the first pick of this run starts.
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/NativeFileDialogIosShared.h"
 
 #import <PhotosUI/PhotosUI.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <SDL3/SDL.h>
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,13 +23,60 @@
 }
 @end
 
-namespace {
+/** The export picker's delegate: its own, since the pick delegate deletes what it was handed (here: the saved file). */
+@interface PPExportDelegate : NSObject <UIDocumentPickerDelegate> {
+@public
+  std::function<void(bool)> done;
+  NSURL* temp; // retained; removed when the export ends
+}
+@end
 
-PPPickDelegate* g_active = nil; // pickers hold their delegate weakly: kept alive here until the pick ends
+// The one-picker guard, PickRoot and the presenting controller are shared with CameraCapture_Ios.mm
+// (NativeFileDialogIosShared.h).
+namespace pbr::ios_pick {
+
+namespace {
+id g_active = nil; // pickers hold their delegate weakly: kept alive by their owner until the pick ends
+} // namespace
 
 NSString* PickRoot() { return [NSTemporaryDirectory() stringByAppendingPathComponent:@"pp-picks"]; }
 
 void ClearPickRoot() { [[NSFileManager defaultManager] removeItemAtPath:PickRoot() error:nil]; }
+
+void ClearLeftoversOnce() {
+  static bool cleared_leftovers = false; // only earlier runs: this run's copies may still be in use
+  if (!cleared_leftovers) {
+    ClearPickRoot();
+    cleared_leftovers = true;
+  }
+}
+
+id ActivePicker() { return g_active; }
+
+void SetActivePicker(id owner) { g_active = owner; }
+
+/** The controller to present from, or nil when UIKit would refuse (none, or mid-transition). */
+UIViewController* PresentingController(SDL_Window* window) {
+  if (window == nullptr) {
+    return nil;
+  }
+  UIWindow* uiwindow = static_cast<UIWindow*>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr));
+  UIViewController* host = uiwindow.rootViewController;
+  while (host != nil && host.presentedViewController != nil) {
+    host = host.presentedViewController;
+  }
+  if (host == nil || host.isBeingPresented || host.isBeingDismissed || host.transitionCoordinator != nil) {
+    return nil;
+  }
+  return host;
+}
+
+} // namespace pbr::ios_pick
+
+using namespace pbr::ios_pick;
+
+namespace {
 
 /** Copy `source` to tmp/pp-picks/<uuid>/<name>; empty on failure. */
 std::string CopyIntoPickRoot(NSURL* source, NSString* name) {
@@ -46,50 +96,46 @@ std::string CopyIntoPickRoot(NSURL* source, NSString* name) {
   return std::string(dest.fileSystemRepresentation);
 }
 
+/** A HEIC / HEIF photo (what the library gives when asked for the current representation) as a JPEG next to it. */
+std::string ConvertHeicToJpeg(const std::string& path) {
+  NSString* file = [NSString stringWithUTF8String:path.c_str()];
+  NSString* ext = file.pathExtension.lowercaseString;
+  if (![ext isEqualToString:@"heic"] && ![ext isEqualToString:@"heif"]) {
+    return path;
+  }
+  UIImage* image = [UIImage imageWithContentsOfFile:file];
+  NSData* jpeg = image != nil ? UIImageJPEGRepresentation(image, 0.92) : nil;
+  NSString* dest = [[file stringByDeletingPathExtension] stringByAppendingPathExtension:@"jpg"];
+  if (jpeg == nil || ![jpeg writeToFile:dest atomically:YES]) {
+    return path; // left as the HEIC: the consumer shows it as a file
+  }
+  [[NSFileManager defaultManager] removeItemAtPath:file error:nil];
+  return std::string(dest.fileSystemRepresentation);
+}
+
 void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   pbr::NativeFileDialogCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
-  if (g_active == delegate) {
-    [g_active release];
-    g_active = nil;
+  if (ActivePicker() == delegate) {
+    SetActivePicker(nil);
+    [delegate release];
   }
   if (callback) {
     callback(std::move(paths));
   }
 }
 
-/** The controller to present from, or nil when UIKit would refuse (none, or mid-transition). */
-UIViewController* PresentingController(SDL_Window* window) {
-  if (window == nullptr) {
-    return nil;
-  }
-  UIWindow* uiwindow = static_cast<UIWindow*>(
-      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr));
-  UIViewController* host = uiwindow.rootViewController;
-  while (host != nil && host.presentedViewController != nil) {
-    host = host.presentedViewController;
-  }
-  if (host == nil || host.isBeingPresented || host.isBeingDismissed || host.transitionCoordinator != nil) {
-    return nil;
-  }
-  return host;
-}
-
 /** Start a pick: nil (and the callback answered "nothing picked") when another pick is up or UIKit is busy. */
 PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback callback, UIViewController** host) {
-  *host = g_active == nil ? PresentingController(window) : nil;
+  *host = ActivePicker() == nil ? PresentingController(window) : nil;
   if (*host == nil) {
     callback({});
     return nil;
   }
-  static bool cleared_leftovers = false; // only earlier runs: this run's copies may still be in use
-  if (!cleared_leftovers) {
-    ClearPickRoot();
-    cleared_leftovers = true;
-  }
+  ClearLeftoversOnce();
   PPPickDelegate* delegate = [[PPPickDelegate alloc] init]; // released in Finish
   delegate->callback = std::move(callback);
-  g_active = delegate;
+  SetActivePicker(delegate);
   return delegate;
 }
 
@@ -107,7 +153,9 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
   // Ask for the JPEG / PNG the "compatible" mode offers: SDL_image cannot decode the HEIC originals here
   // (2026-10-20 device: photos failed as "not an image"). Any image only as a last resort.
   NSString* type = UTTypeImage.identifier;
-  if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
+  if ([provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
+    type = UTTypeMovie.identifier; // a video from the library picker: its file as it is (.mov, HEVC)
+  } else if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
     type = UTTypeJPEG.identifier;
   } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
     type = UTTypePNG.identifier;
@@ -121,6 +169,7 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
                                     if (url != nil) {
                                       std::string copied = CopyIntoPickRoot(url, name);
                                       if (!copied.empty()) {
+                                        copied = ConvertHeicToJpeg(copied);
                                         paths.push_back(std::move(copied));
                                       }
                                     }
@@ -149,6 +198,41 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
 
 @end
 
+namespace {
+
+PPExportDelegate* g_export = nil; // like g_active: the picker holds its delegate weakly
+
+void FinishExport(PPExportDelegate* delegate, const bool saved) {
+  std::function<void(bool)> done = std::move(delegate->done);
+  delegate->done = nullptr;
+  if (delegate->temp != nil) {
+    [[NSFileManager defaultManager] removeItemAtURL:delegate->temp error:nil];
+    [delegate->temp release];
+    delegate->temp = nil;
+  }
+  if (g_export == delegate) {
+    [g_export release];
+    g_export = nil;
+  }
+  if (done) {
+    done(saved);
+  }
+}
+
+} // namespace
+
+@implementation PPExportDelegate
+
+- (void)documentPicker:(UIDocumentPickerViewController*)controller didPickDocumentsAtURLs:(NSArray<NSURL*>*)urls {
+  FinishExport(self, urls.count > 0);
+}
+
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController*)controller {
+  FinishExport(self, false);
+}
+
+@end
+
 namespace pbr {
 
 void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
@@ -166,6 +250,29 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
     config.filter = [PHPickerFilter imagesFilter];
     config.selectionLimit = 1;
     config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCompatible;
+    PHPickerViewController* picker = [[[PHPickerViewController alloc] initWithConfiguration:config] autorelease];
+    picker.delegate = delegate;
+    [host presentViewController:picker animated:YES completion:nil];
+  }
+}
+
+void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+  if (!callback) {
+    return;
+  }
+  @autoreleasepool {
+    UIViewController* host = nil;
+    PPPickDelegate* delegate = BeginPick(window, std::move(callback), &host);
+    if (delegate == nil) {
+      return;
+    }
+    PHPickerConfiguration* config = [[[PHPickerConfiguration alloc] init] autorelease];
+    config.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter],
+                                                                    [PHPickerFilter videosFilter] ]];
+    config.selectionLimit = 1;
+    // Current: a video arrives as the library has it (HEVC .mov is not transcoded to H.264, which on a long clip
+    // takes minutes); a HEIC photo then arrives as HEIC and ConvertHeicToJpeg makes the JPEG.
+    config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
     PHPickerViewController* picker = [[[PHPickerViewController alloc] initWithConfiguration:config] autorelease];
     picker.delegate = delegate;
     [host presentViewController:picker animated:YES completion:nil];
@@ -216,6 +323,59 @@ void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback ca
   }
   // Only what SDL_image decodes here: HEIC files are left out (the photo library converts; a file cannot).
   PresentDocumentPicker(window, std::move(callback), @[ UTTypeJPEG, UTTypePNG, UTTypeGIF, UTTypeWebP ]);
+}
+
+void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::string bytes,
+                std::function<void(bool saved)> done) {
+  if (!done) {
+    return;
+  }
+  @autoreleasepool {
+    UIViewController* host = (g_export == nil && ActivePicker() == nil) ? PresentingController(window) : nil;
+    if (host == nil) {
+      done(false);
+      return;
+    }
+    // The picker exports a file that exists: write it under tmp first (removed when the export ends).
+    NSString* dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"pp-exports"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString* name = [NSString stringWithUTF8String:suggested_name.c_str()];
+    NSURL* temp = [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:name.lastPathComponent]];
+    NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+    if (name.length == 0 || ![data writeToURL:temp options:NSDataWritingAtomic error:nil]) {
+      done(false);
+      return;
+    }
+    PPExportDelegate* delegate = [[PPExportDelegate alloc] init]; // released in FinishExport
+    delegate->done = std::move(done);
+    delegate->temp = [temp retain];
+    g_export = delegate;
+    UIDocumentPickerViewController* picker =
+        [[[UIDocumentPickerViewController alloc] initForExportingURLs:@[ temp ] asCopy:YES] autorelease];
+    picker.delegate = delegate;
+    [host presentViewController:picker animated:YES completion:nil];
+  }
+}
+
+std::optional<ImportedPick> ImportPickedFile(const std::string& picked, const std::string& /*scratch_dir*/,
+                                             bool /*force_copy*/) {
+  // iOS picks are already private files (tmp/pp-picks); there are no content:// URIs.
+  ImportedPick pick;
+  pick.path = picked;
+  pick.name = [[NSString stringWithUTF8String:picked.c_str()] lastPathComponent].UTF8String;
+  return pick;
+}
+
+void RemoveImportedPick(const ImportedPick& /*pick*/) {}
+
+std::optional<std::string> ReadPickedFile(const std::string& path, const size_t max_bytes) {
+  @autoreleasepool {
+    NSData* data = [NSData dataWithContentsOfFile:[NSString stringWithUTF8String:path.c_str()]];
+    if (data == nil || data.length > max_bytes) {
+      return std::nullopt;
+    }
+    return std::string(static_cast<const char*>(data.bytes), data.length);
+  }
 }
 
 } // namespace pbr

@@ -61,6 +61,15 @@ ui::Vector2i MenuPositionBelowRightAligned(ui::Element* element, float menu_min_
   return position;
 }
 
+ui::Vector2i MenuPositionAboveEvent(ui::Event& ev, const float gap_px) {
+  ui::Element* element = EventAnchorElement(ev);
+  if (!element) {
+    return {0, 0};
+  }
+  const ui::Vector2f offset = element->GetAbsoluteOffset(ui::BoxArea::Border);
+  return {static_cast<int>(offset.x), static_cast<int>(offset.y - gap_px)};
+}
+
 ui::Vector2i MenuPositionBelowEvent(ui::Event& ev, float gap_px) {
   return MenuPositionBelow(EventAnchorElement(ev), gap_px);
 }
@@ -387,7 +396,9 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
     left = kViewportMarginPx;
   }
 
-  if (top + size.y > static_cast<float>(dims.y) - kViewportMarginPx) {
+  if (float_above_ && static_cast<float>(preferred.y) - size.y >= kViewportMarginPx) {
+    top = static_cast<float>(preferred.y) - size.y;
+  } else if (top + size.y > static_cast<float>(dims.y) - kViewportMarginPx) {
     // Prefer flipping above the preferred anchor when there is room.
     const float flipped = static_cast<float>(preferred.y) - size.y;
     if (flipped >= kViewportMarginPx) {
@@ -649,18 +660,31 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   RenderMenu(request, active_actions_, menu_editor_ ? Presentation::Bar : Presentation::Float);
 }
 
-void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
+void ContextMenuHost::ShowActionsAbove(ui::Vector2i position, std::vector<ContextMenuAction> actions,
+                                       std::function<void()> on_dismissed) {
+  next_show_above_ = true;
+  ShowActions(position, std::move(actions), std::move(on_dismissed));
+}
+
+void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions,
+                                  std::function<void()> on_dismissed) {
+  const bool above = std::exchange(next_show_above_, false);
   if (dismiss_pending_) {
     // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
     // event, which is why its teardown was deferred. Tearing it down here instead would leave the
     // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
-    pending_show_ = PendingShow{position, std::move(actions)};
+    pending_show_ = PendingShow{position, std::move(actions), above, std::move(on_dismissed)};
     return;
   }
-  Dismiss();
+  Dismiss();  // a menu still open went away without a choice: its notice runs in there
+  float_above_ = above;
   if (!context_ || actions.empty()) {
+    if (on_dismissed) {
+      on_dismissed();  // nothing was shown, so nothing can be chosen
+    }
     return;
   }
+  on_dismissed_ = std::move(on_dismissed);
 
   menu_context_ = context_;
   menu_target_ = nullptr;
@@ -694,6 +718,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
 
 void ContextMenuHost::Dismiss() {
   dismiss_pending_ = false;
+  const std::function<void()> dismissed = std::exchange(on_dismissed_, nullptr);
   const bool restore_focus = restore_focus_on_dismiss_;
   restore_focus_on_dismiss_ = false;
   ui::Element* restore = restore_focus ? focus_restore_ : nullptr;
@@ -704,6 +729,7 @@ void ContextMenuHost::Dismiss() {
   layer_ = nullptr;
   panel_ = nullptr;
   presentation_ = Presentation::Float;
+  float_above_ = false;
   if (layer) {
     layer->RemoveEventListener(ui::EventId::Mousedown, this, true);
     layer->RemoveEventListener(ui::EventId::Click, this, true);
@@ -719,6 +745,9 @@ void ContextMenuHost::Dismiss() {
   copy_snapshot_.clear();
   if (restore) {
     restore->Focus();
+  }
+  if (dismissed) {
+    dismissed();
   }
 }
 
@@ -738,7 +767,8 @@ void ContextMenuHost::Update() {
   if (pending_show_) {
     PendingShow show = std::move(*pending_show_);
     pending_show_.reset();
-    ShowActions(show.position, std::move(show.actions));
+    next_show_above_ = show.above;
+    ShowActions(show.position, std::move(show.actions), std::move(show.on_dismissed));
   }
   // Not from inside the menu's own click: the old layer had to be gone first.
   if (const auto again = std::exchange(reopen_request_, std::nullopt)) {
@@ -787,6 +817,7 @@ void ContextMenuHost::HandleMenuAction(int index) {
   ui::Context* action_context = menu_context_ ? menu_context_ : context_;
   // Copy run callback before deferred dismiss clears active_actions_.
   const std::function<void()> run = action.run;
+  on_dismissed_ = nullptr;  // chosen, not dismissed
   RequestDismiss();
 
   if (run) {

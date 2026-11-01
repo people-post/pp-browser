@@ -1,5 +1,8 @@
 #pragma once
 
+#include "lib/messaging/HttpRelayClient.h"
+#include "common/Secret.h"
+
 #include "common/chat/SystemControl.h"
 
 #include "foundation/data/Config.h"
@@ -7,6 +10,9 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/AccountStateCodec.h"
+#include "lib/net/HttpLockerClient.h"
+#include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/ProfileIdentityView.h"
@@ -15,15 +21,16 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
-#include "domain/peers/PeerDisplaySources.h"
-#include "lib/messaging/PeerKemKeyStore.h"
+#include "feature/conversations/PeerDisplaySources.h"
+#include "lib/people/PeerKemKeyStore.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
 #include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/ThreadMentionsStore.h"
 #include "lib/messaging/ThreadLocalPrefsStore.h"
 #include "lib/pricing/PaymentPromiseInbound.h"
 #include "lib/pricing/InitiationBillingStore.h"
@@ -33,7 +40,11 @@
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "mesh/types/AddressDisclosure.h"
+#include "domain/attachments/LargeTransferLane.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
+#include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
@@ -51,6 +62,7 @@
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
+#include "feature/conversations/HubMeshOwner.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
@@ -82,7 +94,8 @@ class SqlitePskSessionStore;
  * Ownership planes:
  * - **ConversationsCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
  *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
- * - **MeshHost (`mesh_`):** shared with headless `pp-node` — Amp stack + L4 + reachability.
+ * - **MeshHost (`mesh_`):** borrowed from its owner (`HubMeshOwner`: feature/product's ProductMesh,
+ *   which builds it for the profile's role) between start and stop — Amp stack + L4 + reachability.
  * - **Participants (`HubParticipant`):** features riding messaging and the mesh (calls, live
  *   broadcast), owned and wired at the feature level (feature/product/ProductStack). The hub drives
  *   their lifecycle and lends them its stores, messaging and neutral mesh objects; it never names
@@ -191,6 +204,8 @@ public:
   InboxController& Inbox();
   /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
   ThreadLocalPrefsStore& ThreadPrefs();
+  /** Unread mentions of this account per thread (G015); null until the stores open. */
+  ThreadMentionsStore* ThreadMentions();
   MeshDeliveryOrchestrator& MeshMessaging();
   /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
   std::optional<std::string> OwnAccountCardJson();
@@ -263,13 +278,32 @@ public:
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
-  /** Refresh the local account backup on a worker (registration, nickname, contacts). Best effort. */
-  void WriteLocalBackupAsync();
+  /**
+   * Fresh install, before unlocking: the account back from its recovery phrase (multi-device M023 §8) — its locker
+   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), imported as a link bundle
+   * the phrase reconstructs (a fresh DEK under `pin`), the contacts put back; groups, card floors and the announce
+   * to contacts follow once messaging is up, as for any restore. `saved_copies`: exported locker files' text — the
+   * newest valid copy among them and the provider's is used (M023 §6 amendment).
+   */
+  Roe<void> RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
+                                      const std::vector<std::string>& saved_copies = {});
+  /** The account's devices as this device knows them (M021 d4); the first is the master. */
+  Roe<OwnDeviceList> OwnDevices();
+  /** On the master: take another device off the account (revoke) and tell siblings and contacts. */
+  Roe<void> RemoveOwnDevice(const std::string& peer_id);
+  /** On the master: hand the role to another device of the account and tell siblings and contacts. */
+  Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** The master gave out a transfer code valid until `until_ms`: a device joining with it is kept (OwnCards). */
+  void ExpectDeviceJoin(int64_t until_ms);
+  /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
+  AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
-  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
-  Roe<void> FreeOldestRelayBlobSlot();
+  /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
+  /** Delete the relay blob the person confirmed (by id). */
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
@@ -280,8 +314,33 @@ public:
    */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  /** Read a file and send it as it is (no picture shrink: that is the picker's job, see OutgoingAttachment). */
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
+  /**
+   * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
+   * and the send pace (AttachmentLimits::send_max_per_minute).
+   */
+  void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  /**
+   * Send again an attachment whose send failed (also after the app was killed): the same staged ciphertext and
+   * key, from the stage it stopped at. When nothing is left to send from, the error says to pick the file again.
+   */
+  void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                             std::function<void(Roe<ThreadMessage>)> on_done,
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  /** Attachments of this thread whose send did not finish and whose staged ciphertext is still there. */
+  std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** Drop a staged attachment (the person gave up on it). */
+  void DiscardOutgoingAttachment(const std::string& record_id);
+  /** At start: staged sends older than a day and half-finished downloads go. */
+  void CleanStaleAttachmentFiles();
+  /** Every size / pace / warning number for attachments; one source so a member tier can replace it later. */
+  AttachmentLimits CurrentAttachmentLimits() const;
+  /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
+  void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   AttachmentFetchWorkflow& Attachments();
   /** Our uploaded relay copy of an attachment message, if any; best effort. */
   void DeleteUploadedCopy(const ThreadMessage& message);
@@ -336,13 +395,20 @@ public:
    * Shared Amp mesh composition root. Mesh UX (status chrome, reachability, relay load) should
    * read through here. Null before the stack is up; callers must degrade gracefully.
    */
-  mesh::MeshHost* Mesh() { return mesh_.get(); }
-  const mesh::MeshHost* Mesh() const { return mesh_.get(); }
+  mesh::MeshHost* Mesh() { return mesh_; }
+  const mesh::MeshHost* Mesh() const { return mesh_; }
+  /**
+   * Who builds the mesh for the profile's role and frees it (ProductStack's ProductMesh); set before
+   * Initialize, outlives the hub's Shutdown. None: no mesh, relay messaging only.
+   */
+  void SetMeshOwner(HubMeshOwner* owner) { mesh_owner_ = owner; }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
   void BindAgentInbound(AgentInboundPorts ports);
   PeerSigningKeyStore& SigningKeys();
+  /** The nickname on the account card kept for `account_id` (a group roster carries members' cards); empty if none. */
+  std::string KeptCardNickname(const std::string& account_id);
 
   /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is MeshHost MeshPump. */
   void TickMesh();
@@ -362,8 +428,16 @@ public:
   bool IsContactReachable(const Contact& contact) const;
 
 private:
+  /** The router with its stored "don't ask again" port bound to the thread prefs. */
+  std::unique_ptr<MessageRouter> MakeRouter();
   /** Bind the billing and payment-promise families (after the signing-key resolver exists). */
   void BindPricingFamilies();
+  /** G013: the member check's request / reply on the control lane (bound once the workflow exists). */
+  void BindGroupRosterSyncFamily();
+  /** M021 §9: answers other accounts' devices asking for a copy they never got. */
+  void BindCopyAskFamily();
+  /** M021 d6: answers another account's ask for our newer card. */
+  void BindCardAskFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const AppConfig& config);
@@ -398,8 +472,8 @@ private:
   std::vector<mesh::MeshDirectoryNode> DirectoryNodes() const;
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
-  void ConfigureAmpDhtProtocol();
-  void ConfigureAmpDirectoryProtocol();
+  /** The DHT and directory for the role (the mesh owner's), against the seeds and directory nodes as now. */
+  void ConfigureMeshQueries();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const mesh::PeerRoutingRecord& record);
   /** The messaging objects (orchestrator, groups, actions) over the open stores; participants told. */
   void BuildMessagingObjects();
@@ -454,6 +528,8 @@ private:
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
+  /** Unread mentions of this account (G015 marker). */
+  std::unique_ptr<ThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
@@ -469,6 +545,30 @@ private:
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
+  AttachmentSendLimiter attachment_send_limiter_;
+  /** Server-space warnings: once per level and run, and at most one list call a day. */
+  BlobSpaceMonitor blob_space_monitor_;
+  std::mutex blob_space_mutex_;
+  std::function<void(int percent)> on_blob_space_warning_;
+  void CheckBlobSpace(bool after_quota_error);
+  struct AttachmentSendJob {
+    std::string thread_id;
+    ThreadKind kind = ThreadKind::Direct;
+    std::shared_ptr<OutgoingAttachmentStore> store;
+    std::string record_id;
+    std::shared_ptr<const ByteVector> plaintext;
+    ByteVector dek;
+    int64_t started_ms = 0;
+    uint64_t bytes = 0;
+  };
+  Roe<Thread> AttachmentTargetThread(const std::string& thread_id);
+  void ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress);
+  std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
+      std::function<bool(uint64_t done, uint64_t total)> progress);
+  void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
+                            const std::function<void(Roe<ThreadMessage>)>& finish);
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;
@@ -476,6 +576,9 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
+  /** The relay as account-locker provider (M023), next to the blob client on the registration base URL. */
+  std::unique_ptr<HttpLockerClient> http_locker_;
+  std::unique_ptr<AccountLockerWorkflow> account_locker_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
@@ -500,14 +603,14 @@ private:
   mutable std::mutex participants_mu_;
   std::vector<HubParticipant*> participants_;
 
-  // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
-  std::unique_ptr<mesh::MeshHost> mesh_;
+  // --- The mesh (borrowed from its owner between start and stop) + app mesh glue ----
+  HubMeshOwner* mesh_owner_ = nullptr;
+  mesh::MeshHost* mesh_ = nullptr;
   std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<NetworkMonitor> network_monitor_;
   /** Last seed-observed public address (k6 churn). UI thread. */
   std::string last_observed_addr_;
   std::string mesh_last_error_;
-  bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
@@ -525,6 +628,37 @@ private:
   uint64_t stay_reachable_timer_ = 0;
   std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
+  /** What a restore brought back, until messaging is up to apply it. */
+  struct PendingRestore {
+    std::vector<AccountStateGroup> groups;
+    std::vector<AccountCardFloor> card_floors;
+    /** Tell the contacts this device's card (the restored phone is a new device of the account). */
+    bool announce = false;
+  };
+  std::mutex restored_mutex_;
+  PendingRestore restored_;
+  /** What a restore brought back beyond the account: applied now, or once messaging is up. */
+  void QueueRestoredState(AccountStateExtras extras);
+  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
+  void PublishAccountLockerSoon();
+  static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
+  /** How often the locker is synced while running (another device's contact edits arrive this way). */
+  static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;
+  uint64_t locker_sync_timer_id_ = 0;
+  std::atomic<bool> locker_publish_queued_{false};
+  /** Before anything is received: no card older than the newest the locker knew speaks for its account. */
+  void ApplyRestoredCardFloors();
+  /** Recreate the groups a restore brought back, then check the members of every group still checking. */
+  void ResumeGroupRosterChecks();
+  /**
+   * After a restore: each contact hears this device's card on the control lane, so its next message opens a
+   * session with this device (carrying its own card) instead of going to the account's earlier device.
+   */
+  void AnnounceRestoredDevice();
+  /** Our newest card to every contact (the control lane's device_list notice): after a restore, a revoke. */
+  void AnnounceOwnDevicesToContacts();
+  /** After the list changed here: sync the account locker (it brings the contacts), then announce to them. */
+  void SyncLockerThenAnnounceOwnDevices();
   uint64_t hub_policy_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;
@@ -533,6 +667,12 @@ private:
   bool mobile_ephemeral_stop_inflight_ = false;
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
+  /**
+   * Where large attachment transfers run (see LargeTransferLane): one upload thread and one download thread,
+   * one job at a time each. Declared last so it is destroyed first, and stopped + joined in Shutdown() and the
+   * destructor before anything a job uses goes away.
+   */
+  LargeTransferLane transfer_lane_;
 };
 
 /** Preferred name for the app messaging assembler (holds MeshHost; calls and broadcast participate). */

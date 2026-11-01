@@ -8,7 +8,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 #include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/conversations/ConversationsHub.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <utility>

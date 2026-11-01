@@ -9,6 +9,7 @@ add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
   NodeEnvOverlay.cpp
+  NodeHeartbeat.cpp
   NodeMeshPublish.cpp
   NodeMetrics.cpp
   StatusHttpProtocol.cpp
@@ -55,7 +56,11 @@ if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
     tests/status_http_protocol_test.cpp
     tests/node_env_overlay_test.cpp
+    tests/node_heartbeat_test.cpp
+    tests/status_http_server_test.cpp
+    NodeHeartbeat.cpp
     StatusHttpProtocol.cpp
+    StatusHttpServer.cpp
     NodeEnvOverlay.cpp
   )
   target_include_directories(pp_browser_pp_node_test PRIVATE
@@ -65,6 +70,8 @@ if(PP_BROWSER_BUILD_TESTS)
     GTest::gtest
     GTest::gtest_main
     pp_pbr_common
+    Asio::asio
+    Threads::Threads
   )
   pp_browser_apply_warnings(pp_browser_pp_node_test)
   include(PpBrowserTesting)

@@ -2,7 +2,7 @@
 
 #include "lib/people/MeshHopPolicy.h"
 #include "foundation/data/MeshRole.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <algorithm>
 #include <memory>

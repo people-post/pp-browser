@@ -8,8 +8,9 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
                                                const std::vector<CallParticipant>& participants,
                                                const std::string& local_identity, const LiveCallEndReason reason,
                                                const int64_t now_ms) {
-  if (reason == LiveCallEndReason::Merged) {
-    return std::nullopt;  // gave way to the call both sides are now in: that one is the history
+  if (reason == LiveCallEndReason::Merged || reason == LiveCallEndReason::AnsweredElsewhere) {
+    // Gave way to the call both sides are now in, or another of our devices has the call: that one is the history.
+    return std::nullopt;
   }
   const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
   const bool started = session.initiator_identity == local_identity;
@@ -50,9 +51,40 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
   }
   if (answered_at) {
     summary.duration_ms = std::max<int64_t>(0, session.ended_at.value_or(now_ms) - *answered_at);
+    if (group) {
+      summary.talk_started_at = answered_at;
+    }
   }
   plan.local_only = group || reason == LiveCallEndReason::Shutdown;
   return plan;
+}
+
+std::string GroupCallSummaryMessageId(const std::string& call_id) {
+  return "call-summary:" + call_id;
+}
+
+std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSummaryDetail>& existing,
+                                                   const CallSummaryDetail& next, const SummaryWrite mode) {
+  if (!existing) {
+    return next;
+  }
+  if (mode == SummaryWrite::Final) {
+    return std::nullopt;  // it was written when this device left (a restart cleanup would also wipe its talk time)
+  }
+  if (!existing->duration_ms) {
+    return next;  // nothing said about talk time yet (missed, declined): the later write knows more
+  }
+  if (!next.duration_ms || !next.talk_started_at) {
+    return std::nullopt;  // this stay had no talk time: the record stands
+  }
+  // From the first join to the last leave. Worked out from the times, so writing a stay twice changes nothing.
+  const int64_t next_end = *next.talk_started_at + *next.duration_ms;
+  const int64_t start = std::min(existing->talk_started_at.value_or(*next.talk_started_at), *next.talk_started_at);
+  const int64_t end = std::max(existing->talk_started_at.value_or(start) + *existing->duration_ms, next_end);
+  CallSummaryDetail merged = next;
+  merged.talk_started_at = start;
+  merged.duration_ms = end - start;
+  return merged;
 }
 
 } // namespace pbr

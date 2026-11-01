@@ -51,6 +51,11 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 
 Resizing between compact and expanded migrates Me between sheet and tab when appropriate (`SettingsController::SyncLayoutMode`). Tab switch still clears an open account sheet via `ClearTabContext()`.
 
+**Scan QR code** is a direct action beside Me: the compact Home header shows the scan icon
+next to the profile button, and the expanded rail shows Scan immediately above the Me tab.
+It opens a transient scan surface without switching tabs; [SCANNING.md](SCANNING.md) owns
+the decoded-contact behavior.
+
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
 ### Resizable / collapsible panes (expanded only)
@@ -173,6 +178,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 |----------|--------|
 | `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, `contacts`, or `me` on expanded); clears tab context. On compact, `me` still opens the account sheet if invoked. |
 | `open_account_sheet()` | Open Me / settings bottom sheet (compact Home profile button) |
+| `open_scan_qr()` | Open the transient scanner from the Home header or expanded rail |
 | `close_account_sheet()` | Dismiss account bottom sheet |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |

@@ -91,11 +91,22 @@ An account card is valid when its key card is valid, `card_signature_b64` verifi
 receiver's clock. Version 1 cards (PeerIds only) are refused.
 
 **Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname and
-device list; an older card changes nothing. Until only a master device issues cards (M021 d4) every
-linked device holds the account key, so two may issue at once: a device that learns a card of its own
-account listing fewer devices than it knows re-issues with both, and takes the newest card's nickname as
-the account's. A newly linked device gets the linking device's card in the link bundle and signs itself
-in. Revoking a device is a newer list without it, from d4.
+device list; an older card changes nothing. A restored install keeps no cards but knows each account's newest
+issue time from the account locker (`card_floors`, [ACCOUNT_LOCKER](ACCOUNT_LOCKER.md#state-json))
+and refuses older cards. A device takes the newest card's nickname as the account's.
+
+**Main device (master, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) d4):** the first device on the list. Only it changes the list: takes a device off
+(revoke: a newer list without it) or hands the role on (another device first). Any listed device re-issues the
+card to bring its own entry or the nickname up to date, the list otherwise as it is. Only the main device gives
+out a transfer code; the new device gets its card in the link bundle and appends itself at the end, once
+(`card_intent` join). While a code is out (15 min), the main device keeps a device that only an older card of
+the account lists — a join that reached it after it issued another card. When the main device takes in the card a
+new device appended itself to, it sends that card to its contacts (the `device_list` notice), so their next
+message reaches the new device too. A device restored from the recovery
+phrase starts a fresh list holding only itself (`card_intent` fresh), newer than any it or the account's card
+floor knew. A device the newest list leaves out is **signed out**: it issues no card, sends nothing, and stops
+syncing the account locker; Me → Security says so. The rule is followed by the account's own devices — each
+still holds the account key, so a stolen device could sign itself back in (M021 limit 4).
 
 **Size:** a key card is about 13 KB as JSON (two 3309-byte signatures and two public keys in base64);
 each device adds about 4 KB to an account card. Too large for a QR code, which is why invites carry a
@@ -120,20 +131,24 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
   added at once under the locator's nickname; the card is fetched from the listed devices (each reached
   through the mesh if no link is up), then the directory. With neither answering the contact stays and
   the user is told they can write once a device is reachable; keys are then resolved as below.
-- **QR code:** *Me → Profile → QR code* shows the locator as a QR code (`lib/ui/QrSvg`, vendored
-  qrcodegen; dark on white whatever the theme).
+- **QR code:** *Me → Profile → QR code* shows the locator as a QR code on Mac, iOS and Android
+  (`lib/ui/QrSvg`, vendored qrcodegen; dark on white whatever the theme).
 - **Link:** the locator is itself a URI, and the app registers its scheme `pp-browser-contact-v1` (iOS /
   macOS `CFBundleURLTypes`, an Android `VIEW` intent filter; a desktop launcher passes it as an argument).
   So a phone's camera scanning the QR code, or a tap on the line in another app, opens the app with it
   (`IncomingLink`): once unlocked it asks *Add {name} to your contacts?* and then adds them as a pasted
-  invite. A link never adds anyone unasked. Scanning inside the app is not needed for this and not built.
+  invite. A link never adds anyone unasked.
+- **In-app scan:** *Scan QR code* beside Me reads the same locator and offers the same explicit
+  confirmation before adding. The scanning surface returns decoded text through caller-owned ports;
+  it does not execute arbitrary QR contents. See [SCANNING.md](../ui/SCANNING.md).
 
 ## Where cards travel
 
 | Carrier | What | When |
 |---------|------|------|
 | Relay directory | key card fields (+ endpoints) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
-| Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) or is an account copy (the control lane, a first contact): whoever reads it can check the sending device; a new device's first message to anyone brings its account's newer list |
+| Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)) or is an account copy (the control lane, a first contact): whoever reads it can check the sending device; a new device's first message to anyone brings its account's newer list; a restored device sends it to every contact (`device_list` notice) |
+| Envelope hint | how new the sender's list is, `body.e2e.sender_card_at` | on every envelope (M021 d6): a receiver holding an older card asks the sending device for the newer one (`card_ask` → a `device_list` notice), so a device taken out stops getting copies from peers the main device's announcement did not reach (a group member who is not a contact) |
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |

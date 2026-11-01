@@ -126,7 +126,7 @@ Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIG
 
 **Private direct:** same shape with `"channel": "e2e"` and one account copy.
 
-**Devices (v2, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) / [M022](../../projects/multi-device-account/DECISIONS.md#m022--one-relay-record-per-account-carries-every-devices-copy-an-account-writes-to-itself)):** every envelope names the device that sent it (`sender_device`, its PeerId) and is signed once by that device's key, as the sender's account card lists it ([ACCOUNT_CARD](ACCOUNT_CARD.md)). It is **one record per recipient account** carrying a **copy per recipient device** in `body.e2e.copies`: each a message in that device pair's `e2e_public` session, numbered there (`session_epoch`, `sender_seq`). A copy with no `recipient_device` is the **account copy**, in the account-level session, read by every device of the account (a first contact before the sender knows the recipient's devices, the control lane, a private `e2e` chat). A device reads its own copy, else the account copy; a record with copies for its siblings only is not its own (a copy missing for it). A device the sender has a live link to gets its copy in an envelope of its own over that link; the others share the relay record. Each send also goes as one record to the sender's own account, with copies for its other devices (M022; the relay allows sender = recipient).
+**Devices (v2, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) / [M022](../../projects/multi-device-account/DECISIONS.md#m022--one-relay-record-per-account-carries-every-devices-copy-an-account-writes-to-itself)):** every envelope names the device that sent it (`sender_device`, its PeerId) and is signed once by that device's key, as the sender's account card lists it ([ACCOUNT_CARD](ACCOUNT_CARD.md)). It is **one record per recipient account** carrying a **copy per recipient device** in `body.e2e.copies`: each a message in that device pair's `e2e_public` session, numbered there (`session_epoch`, `sender_seq`). A copy with no `recipient_device` is the **account copy**, in the account-level session, read by every device of the account (a first contact before the sender knows the recipient's devices, the control lane, a private `e2e` chat). A device reads its own copy, else the account copy; a record with copies for its siblings only is not its own (a copy missing for it). A device the sender has a live link to gets its copy in an envelope of its own over that link; the others share the relay record. The account's own devices hear from each other through records to their own account (the relay allows sender = recipient): control-lane notices — `device_list` (the sender's card; a nudge to sync the account locker) and `sent_copy` (below).
 
 ### Ed25519 canonical signing (E014)
 
@@ -138,7 +138,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `sender_device`, and every copy: `recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash (sign v3 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
 | Copy hash | BLAKE2b-256 over exactly what that device decrypts: `0x02` ‖ LenBytes(payload) — no `0x01` public path |
-| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), relay metadata, unknown keys |
+| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), `body.e2e.sender_card_at` (a hint), relay metadata, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
@@ -184,6 +184,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | `copies[].key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation opening the copy's session: to that device's KEM key, or the account KEM for an account copy (M021). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. Signed. Omit on **`e2e` (private)** and when the recipient device already has the session (except `psk_rotate`). |
 | `copies[].payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
 | `sender_card` | object | no | Only when a copy carries a `key_init_b64`: the sender's account card ([ACCOUNT_CARD](ACCOUNT_CARD.md)) — the device list the receiver verifies the sending device with and answers. Must name `sender_contact_id`. |
+| `sender_card_at` | integer (i64) | no | The `issued_at` of the sender's newest account card, on every envelope (M021 d6). A receiver whose kept card is older asks the sending device for it (`card_ask`, below). Not signed — a false value costs one ask; the card proves itself |
 
 **Group (D095, E022):** `route.kind=group` with `group_id` and the same `copies[]` — one record per member account, a copy per member device (or the member's account copy while we know none of its devices). Each copy is numbered in its pair (G010/G011): `session_epoch` is the device pair's `e2e_public` session epoch — the copy is keyed by that session — and `sender_seq` the sender's own count for the group in that pair; receivers tell senders apart per (thread, sending device, epoch). `direct` / `control` envelopes carry no `group_id`. See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
@@ -212,6 +213,7 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `contact_card` | `3` |
 | `crypto_tx` | `4` |
 | `attachment` | `5` |
+| `text_spans` | `6` |
 
 **Rules:** unknown `content_type` after successful decrypt → **soft-skip** placeholder (R018 / [COMPATIBILITY.md](COMPATIBILITY.md)); reject malformed tails for known types. Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
 
@@ -232,7 +234,29 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `control_type` | **LenUtf8** |
 | `detail` | **LenUtf8** (empty = zero length) |
 
-**Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`. Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
+**Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `group_invite_refused`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`, `group_dissolved` and `group_dissolved_sibling` (G016, below), and the roster sync controls `group_roster_statement`, `group_roster_request`, `group_roster_reply` (below). Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
+
+**Owner-signed roster (group-chat G012, G013).** `member_joined` and `member_removed` from the owner carry `roster_statement` in `detail`; `owner_transferred` carries `owner_transfer`. Both are additive (an app before them ignores the field; a receiver without them just holds no statement).
+
+- `roster_statement`: `{ group_id, roster_epoch, members[{ identity, role, joined_at }], owner, owner_public_key, owner_chain[]?, owner_signature }`. `members` sorted by identity, exactly one `role: owner`, who is `owner`. `owner_signature` is ML-DSA-65 by the owner's **account** key (`owner_public_key`, base64; `AccountIdFromMlDsaPublicKey(owner_public_key)` must equal `owner`) over: the tag `pp-browser:group-roster-statement-v1`, `group_id`, `roster_epoch` (u64 BE), `owner`, the member count (u64 BE), then per member `identity`, `role`, `joined_at` (u64 BE) — every string a u32 BE length then its bytes.
+- `owner_transfer` / each `owner_chain[]` entry: `{ from, from_public_key, to, roster_epoch, signature }`, signed by `from`'s account key over the tag `pp-browser:group-owner-transfer-v1`, `group_id`, `from`, `to`, `roster_epoch` (same encoding). A statement's chain lists every transfer since the group began, oldest first, each starting where the last ended, epochs rising to at most the statement's, the last ending at `owner`. A device that knows owner X accepts a statement signed by its owner when that owner is X or the chain moves the group away from X; among valid statements one signed by an owner a chain shows had already handed the group on at that epoch loses, then the highest `roster_epoch` wins.
+- `group_roster_statement` (owner → members) `detail`: `{ group_id, roster_statement }` — sent when no roster event carries the new roster (after a `member_left`, and by a new owner once a transfer reaches it).
+- `group_roster_request` (a member checking its roster, e.g. after a restore → the owner and the members it knows) `detail`: `{ group_id, request_id, roster_epoch }`.
+- `group_roster_reply` (→ the asker) `detail`: `{ group_id, request_id, roster_statement?, removed }`. The owner answers with a statement signed now; a member with the one it holds, and `removed: true` when its roster no longer has the asker (not while it is checking its own).
+
+**Group dissolved (G016).** `group_dissolved` (owner → each member, a stored DM) `detail`: `{ group_id, roster_statement }` where `roster_statement` is the form above with `"dissolved": true` (omitted otherwise) and `roster_epoch` one past the owner's last. A dissolved statement is signed under its own tag `pp-browser:group-dissolved-v1` in place of `pp-browser:group-roster-statement-v1` (everything else as above), so a roster statement cannot be turned into one nor the reverse; it is never held as a roster (`KeepStatement` refuses it). A receiver acts only when it is in the group, the sender is the statement's owner, and the statement verifies for the owner it knows (or one the chain hands the group to): it empties the roster, drops the send target, voids pending invites to the group and marks it dissolved (`group_metadata.sync_state` `dissolved`); the chat stays, read-only, with one line. The owner must also be the one we know or one the chain hands the group to, the statement not older than our roster epoch, and its owner not handed on by then — judged against the transfers we hold and the statement's own (a former owner and a stale chain are rejected; A to B to A is accepted again). Not in the group, already dissolved, or not holding the group: ignored.
+
+A dissolved group **answers a `group_roster_request` with the dissolve** in `group_roster_reply.roster_statement` (the owner signs it again), and a requester that gets one applies it by the same rule, so a restored member leaves "checking" and keeps the chat. The owner's **other devices** are told on the control lane (`group_dissolved_sibling`, same `detail`, from our own account only) and end the group the same way. An invitee whose invite is still out gets `group_invite_refused` with `reason: "group_dissolved"` (also for an accept that arrives later); one that had already accepted ends its group, and the invite's card closes. The DM carrying it is kept out of direct-chat transcripts, previews, unread counts and notices (the group's chat gets the one notice). An app before G016 does not know the type: it stores a plain system line in its direct chat with the owner (the `display` text, "The group owner dissolved this group") and the group goes on for it — its sends are dropped by every app that dissolved.
+
+**Sent-message copies (`control_type` `sent_copy`, M021 d3):** what one of an account's devices sends in a public direct chat or a group also goes, as a control-lane notice to the account itself (one account copy sealed to the account KEM, signed by the sending device, with its card), to the account's other devices. `detail` JSON: `{ to_account | to_group, message_id, timestamp, row_b64 }` — the sent message's ChatPayload row (base64) and where it went. A sibling files it as a message it sent (`local:self`, no numbering), in the chat with `to_account` (opened if needed) or the group's chat if it holds the group, once per `message_id`; not news (no unread count or notice). Its sender skips it; one from another account is never read as one. Reactions and deletes (annotations) are copied too and applied as a peer's are: a delete for everyone made on one device deletes the message on the others (also when it comes first). Not copied: private `e2e` chats (M014), controls.
+
+**Missing-copy ask (`control_type` `copy_ask`, M021 §9):** a device that finds a chat record from another account with copies for its siblings but none for itself waits 20 s (its copy may come over a link) and, if the message still has not arrived, asks the sending device: a control-lane account copy to the sender's account (carrying the asker's card) with `detail` `{ message_id, group_id?, to_device, from_device }`. Only `to_device` answers, for a message it sent (not a sibling's copy), to a device the asker's card lists (and, in a group, a member): one copy sealed in their device pair, sent as any copy is. Once per message on each side.
+
+**Newer card ask (`control_type` `card_ask`, M021 d6):** a receiver whose kept card of an account is older than an envelope's `sender_card_at` asks that envelope's sending device for the card: a control-lane account copy to the account, `detail` `{ to_device }` — through the relay, as a direct link may be refused by the sender's privacy gate. The device named answers with the `device_list` notice (an account copy: its card rides it). Once per account per list.
+
+**Group size (G014):** at most 50 active members (pending invites do not count). The owner refuses to create or invite past it; an accept that comes when the group is full adds no one, and the owner sends the invitee `group_invite_refused` (a DM) `detail`: `{ group_id, invite_nonce, reason: "group_full" }` (`"group_dissolved"` after G016, below). The invitee, for an invite of its own from that sender, drops the group it made on accept (removed: read-only, with a line saying why).
+
+`group_roster_request` and `group_roster_reply` ride the **control lane** (`route.kind` `control`: an account copy with the sender's `sender_card`, never stored, applied once while fresh): the asker may be a device restored from its backup, which keeps none of the account cards it had, and a device copy carries no card. One that arrives in the chat stream is dropped. `group_roster_statement` is a stored DM, kept out of transcripts, previews and unread counts.
 
 **Public device-lock `control_type=psk_rotate` (E027 / D101)** — `e2e_public` only. `detail` is JSON:
 
@@ -245,6 +269,34 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `key_init_hash` | string | BLAKE2b-256 of raw `key_init` bytes, lowercase hex |
 
 AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b64`.
+
+**`content_type = text_spans`** (text with marked ranges — today a group message's mentions; group-chat [G015](../../projects/group-chat/DECISIONS.md)). A message with no span is still sent as `text` (`0`). Integers are big-endian; **LenUtf8** / **LenBytes** as in the encoding table above:
+
+| Field | Encoding | Notes |
+|-------|----------|-------|
+| `sub_version` | `u8` = **`1`** | |
+| `count` | `u8` | spans, at most **64** |
+| span × `count` | `kind` `u8`, `start` `u32`, `end` `u32`, `body` **LenBytes** | `[start, end)` is a **UTF-8 byte** range of `text`; `body` is the kind's own fields |
+
+Full layout: `payload_version(1) | 6 | LenUtf8 text | sub_version(1) | u8 count | count × { u8 kind, u32 start, u32 end, LenBytes body }`.
+
+| `kind` | Name | `body` | Range covers |
+|--------|------|--------|--------------|
+| `1` | mention | `account_id` **LenUtf8**, nothing after | `@` + the member's public nickname as the sender's app inserted it |
+| `2` | everyone | empty (length 0) | the inserted `@everyone` text, in the sender's UI language — display only, the kind carries the meaning |
+
+A kind the receiver does not know is kept (its body as received) and not acted on: the text shows as normal. New kinds (a link, a reply quote, formatting) need no new content type and no "update to view" on older builds.
+
+**Receive checks, two levels:**
+
+1. **Structure** (reject the whole message, like any known type): a length past the end, bytes left after the last span (`ExactEnd`), unknown `sub_version`, `count` above 64, more than **50** mention spans (the group size limit, G014), two mention spans for one `account_id`, more than one everyone span, a known kind whose body is not exactly its fields.
+2. **Ranges** (drop only the offending span; the text is shown as normal and one log line is written without account id or text): a range outside `text`, `start >= end`, overlapping another span, an end not on a UTF-8 character boundary, or a mention / everyone range whose text does not start with `@`.
+
+**Eligibility is not checked at decode.** Spans that pass both levels are stored as they came. Mentions count only in a **group** thread (in a direct chat the text shows plain). Whether `account_id` is a member, and whether an everyone span came from the group's **owner** (the owner the signed roster names, G012 — a former owner whose handover we hold cannot use it), is checked against the local roster when the message is **displayed** and when the **notification** is decided; one that fails counts as not there. Notifying, the mention marker and mute: [G015](../../projects/group-chat/DECISIONS.md).
+
+**Local form:** a decoded `text_spans` is stored as `ChatContentType::Text`; `payload_json` is `{ "text", "spans": [{ "k", "s", "e", "id"?, "body"? }] }` — `id` for a mention, `body` (base64) for a kind this build does not know. Re-encoding a stored message for the same chat (history answer, resend) writes the spans back as received, unknown kinds included (`6` when any, else `0`). A copy into another chat (a future forward or quote) drops mention and everyone spans: those members are not that chat's.
+
+Example (logical): `text = "Hi @Li Wei, all set"`, one mention of `acc-li` over `@Li Wei` (bytes 3–10) → `01 06 | LenUtf8 text | 01 | 01 | 01, 00000003, 0000000a, LenBytes(LenUtf8 "acc-li")`. An app before `text_spans` shows an "update to view" placeholder (R018); all devices of a group are expected on one build (unreleased, no backward compatibility).
 
 **`content_type = contact_card`** (someone's contact, shared in a chat — [ACCOUNT_CARD.md](ACCOUNT_CARD.md)):
 
@@ -271,13 +323,15 @@ Top-level `text` is the display glyph for `reaction` (may be empty for `reaction
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob |
-| `mime` | **LenUtf8** — logical type (e.g. `image/png`) |
+| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob; **empty** when the file was pushed peer-direct only (no server copy; the receiver uses the pushed ciphertext or fetches from the sender) |
+| `mime` | **LenUtf8** — logical type, chosen from the file extension: `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf`, `text/plain`, `video/mp4`, `video/webm`, `video/quicktime` (.mov), `audio/mpeg` (.mp3), `audio/mp4` (.m4a), `audio/wav`, `audio/ogg`; any other extension is `application/octet-stream`. Table only, nothing is transcoded; receivers must also accept mimes they do not know. |
 | `filename` | **LenUtf8** — original filename |
 | `byte_length` | `u64` BE — plaintext size |
 | `content_hash` | **LenBytes** — BLAKE2b-256 of plaintext (32 bytes) |
 | `content_key` | **LenBytes** — 32-byte AEAD key for file ciphertext |
 | `blob_nonce` | **LenBytes** — 24-byte XChaCha20-Poly1305 nonce |
+
+**Voice messages** are ordinary attachments, with no field of their own: `mime` = `audio/ogg`, `filename` = `voice-<duration in ms>.ogg`, content a mono 48 kHz Opus stream in a standard Ogg container (about 24 kbps; at most the voice limit, 120 s by default, so well under 1 MB). The name is a display convention only: a receiver draws a play bubble when `mime` is `audio/ogg`, the name is exactly `voice-<digits>.ogg` and the declared `byte_length` is at most 1 000 000; the length it shows comes from the name, clamped to its voice limit. Anything else (any other name, a larger file) is a plain file row. The receiver does not read the file before the person taps play; it then parses the Ogg as untrusted input (limits on pages, packet size and length) and shows "cannot play" when it fails. A client that does not know the convention shows the file row.
 
 Top-level `text` is display fallback (usually `filename`). File bytes are AEAD-encrypted separately and uploaded as `application/octet-stream` (R006). See [relay blob DESIGN](../../projects/relay-blob-upload/DESIGN.md).
 

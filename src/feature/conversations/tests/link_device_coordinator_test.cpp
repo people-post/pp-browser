@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -37,8 +38,6 @@ protected:
   }
 
   void TearDown() override {
-    new_psks_.reset();
-    new_threads_.reset();
     old_psks_.reset();
     old_threads_.reset();
     std::filesystem::remove_all(old_dir_);
@@ -49,11 +48,9 @@ protected:
   std::filesystem::path new_dir_;
   std::unique_ptr<SqliteThreadStore> old_threads_;
   std::unique_ptr<SqlitePskSessionStore> old_psks_;
-  std::unique_ptr<SqliteThreadStore> new_threads_;
-  std::unique_ptr<SqlitePskSessionStore> new_psks_;
 };
 
-TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivateAndDevicePairSessionsAndImportAppliesPublic) {
+TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessions) {
   const ByteVector shared = MakeDek();
   old_threads_ = std::make_unique<SqliteThreadStore>(old_dir_.string());
   ASSERT_TRUE(old_threads_->ListThreads());
@@ -71,15 +68,12 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivateAndDevicePairSessionsAndImpo
   auto saved = old_identity.Update(seeded);
   ASSERT_TRUE(saved);
 
+  // The old device's account-level public session with Bob: its own, never copied (M021).
   DirectChatTarget public_target;
   public_target.peer_identity_kind = "account";
   public_target.peer_identity_value = "account:bob";
   public_target.channel = ThreadChannel::E2ePublic;
-  DirectChatTarget private_target = public_target;
-  private_target.channel = ThreadChannel::E2e;
   ASSERT_TRUE(old_threads_->FindOrCreateDirectThread(public_target, "contact-bob", "Bob"));
-  ASSERT_TRUE(old_threads_->FindOrCreateDirectThread(private_target, "contact-bob", "Bob"));
-
   auto public_psk = old_psks_->GenerateMasterPsk();
   ASSERT_TRUE(public_psk);
   PskSessionRecord public_row;
@@ -88,35 +82,16 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivateAndDevicePairSessionsAndImpo
   public_row.key.channel = CryptoChannel::E2ePublic;
   public_row.session_epoch = 3;
   public_row.master_psk_b64 = Base64Encode(*public_psk);
-  public_row.psk_verified_at = 99;
   ASSERT_TRUE(old_psks_->Save(public_row));
-
-  auto private_psk = old_psks_->GenerateMasterPsk();
-  ASSERT_TRUE(private_psk);
-  PskSessionRecord private_row;
-  private_row.key.peer_identity_kind = "account";
-  private_row.key.peer_identity_value = "account:bob";
-  private_row.key.channel = CryptoChannel::E2e;
-  private_row.session_epoch = 1;
-  private_row.master_psk_b64 = Base64Encode(*private_psk);
-  ASSERT_TRUE(old_psks_->Save(private_row));
-
-  // A session with one of Bob's devices is the old device's own (M021): it stays there.
-  PskSessionRecord device_row = public_row;
-  device_row.key.peer_device = "QmBobPhone";
-  ASSERT_TRUE(old_psks_->Save(device_row));
 
   DataKeyVault old_vault(DataKeyVault::VaultPathForProfile(old_dir_.string()), "old");
   ASSERT_TRUE(old_vault.CreateWithDek("old-pin", shared));
   constexpr int64_t kNow = 1'700'000'000'000;
-  auto json = LinkDeviceCoordinator::ExportJson(old_identity, old_vault, *old_psks_, kNow);
+  const std::string card = R"({"card_version":4})";
+  EXPECT_FALSE(LinkDeviceCoordinator::ExportJson(old_identity, old_vault, "", kNow)) << "no card, no link";
+  auto json = LinkDeviceCoordinator::ExportJson(old_identity, old_vault, card, kNow);
   ASSERT_TRUE(json) << json.error().message;
-
-  auto collected = LinkDeviceCoordinator::CollectPublicPsks(*old_psks_);
-  ASSERT_TRUE(collected);
-  ASSERT_EQ(collected->size(), 1u);
-  EXPECT_EQ(collected->front().key.channel, CryptoChannel::E2ePublic);
-  EXPECT_EQ(collected->front().session_epoch, 3u);
+  EXPECT_EQ(json->find(*public_row.master_psk_b64), std::string::npos) << "the session stays on the old device";
 
   ByteVector local_dek(kDataEncryptionKeySize, 0x44);
   IdentityStore new_identity(new_dir_.string(), "new");
@@ -127,36 +102,15 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivateAndDevicePairSessionsAndImpo
   DataKeyVault new_vault(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
   ASSERT_TRUE(new_vault.CreateWithDek("device-pin", local_dek));
 
-  new_threads_ = std::make_unique<SqliteThreadStore>(new_dir_.string());
-  ASSERT_TRUE(new_threads_->ListThreads());
-  new_psks_ = std::make_unique<SqlitePskSessionStore>(new_threads_->ProfileDbPath(), "new");
-  ASSERT_TRUE(new_psks_->SetDek(shared));
-
-  auto imported =
-      LinkDeviceCoordinator::Import(new_identity, new_vault, *new_psks_, nullptr, *json, "device-pin", kNow + 1000);
+  auto imported = LinkDeviceCoordinator::Import(new_identity, new_vault, nullptr, *json, "device-pin", kNow + 1000);
   ASSERT_TRUE(imported) << imported.error().message;
   EXPECT_EQ(imported->identity.account_id, saved->account_id);
   EXPECT_EQ(imported->identity.peer_id, new_peer);
   EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
   EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
   EXPECT_NE(imported->identity.kem_public_key_b64, new_id->kem_public_key_b64);
-  ASSERT_EQ(imported->public_psks.size(), 1u);
-
-  ChatTargetKey public_key;
-  public_key.peer_identity_kind = "account";
-  public_key.peer_identity_value = "account:bob";
-  public_key.channel = CryptoChannel::E2ePublic;
-  auto loaded_public = new_psks_->Load(public_key);
-  ASSERT_TRUE(loaded_public);
-  ASSERT_TRUE(loaded_public->has_value());
-  EXPECT_EQ(*loaded_public->value().master_psk_b64, Base64Encode(*public_psk));
-  EXPECT_EQ(loaded_public->value().session_epoch, 3u);
-
-  ChatTargetKey private_key = public_key;
-  private_key.channel = CryptoChannel::E2e;
-  auto loaded_private = new_psks_->Load(private_key);
-  ASSERT_TRUE(loaded_private);
-  EXPECT_FALSE(loaded_private->has_value());
+  EXPECT_EQ(imported->account_card_json, std::optional<std::string>(card)) << "the new device signs itself in";
+  EXPECT_EQ(*new_vault.Dek(), shared) << "the shared DEK, wrapped under this device's PIN";
 }
 
 } // namespace

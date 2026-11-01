@@ -27,6 +27,18 @@ inline constexpr size_t kMaxPostEntryBytes = 8 * 1024;  // canonical bytes, sign
 inline constexpr size_t kMaxPostTextBytes = 4 * 1024;
 inline constexpr size_t kMaxPostMedia = 4;
 inline constexpr uint64_t kMaxPostMediaObjectBytes = 16ull * 1024 * 1024;
+inline constexpr size_t kMaxPostAltBytes = 1024;
+inline constexpr size_t kMaxPostPlaceholderBytes = 32;
+inline constexpr size_t kMaxPostFacets = 32;
+inline constexpr size_t kMaxPostMentions = 16;
+inline constexpr size_t kMaxPostLinkUrlBytes = 512;
+inline constexpr size_t kMaxPostHashtagBytes = 64;
+inline constexpr size_t kMaxPostContentWarningBytes = 256;
+inline constexpr size_t kMaxPostLabels = 4;
+inline constexpr size_t kMaxPostLabelBytes = 32;
+inline constexpr size_t kMaxPostLanguages = 3;
+inline constexpr size_t kMaxPostLanguageBytes = 35;
+inline constexpr size_t kMaxPostExtensions = 16;
 inline constexpr size_t kMaxPostHeadLanes = 64;
 inline constexpr size_t kMaxPostHeadTargets = 8;
 inline constexpr size_t kMaxPostTargetUrlBytes = 256;
@@ -66,6 +78,17 @@ struct PostRef {
   bool operator==(const PostRef&) const = default;
 };
 
+/**
+ * Additive data at the end of every entry (S027): signed and hashed with the rest, skipped by readers that do
+ * not know the tag. A reader that ignores an extension must still show the entry correctly.
+ */
+struct PostExtension {
+  uint16_t tag = 0;
+  ByteVector value;
+
+  bool operator==(const PostExtension&) const = default;
+};
+
 /** An entry as it sits in a lane; `body` is the kind's encoding (PostBodies.h). */
 struct PostEntry {
   std::string author;
@@ -75,6 +98,7 @@ struct PostEntry {
   int64_t claimed_at = 0;
   uint8_t kind = 0;
   ByteVector body;
+  std::vector<PostExtension> extensions;  // tags strictly increasing
 
   bool operator==(const PostEntry&) const = default;
 };

@@ -28,7 +28,10 @@ private:
 class ViewCatalogTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    root_ = std::filesystem::temp_directory_path() / "pp-browser-view-catalog-test";
+    // One directory per test: ctest -j runs these tests in parallel processes.
+    root_ = std::filesystem::temp_directory_path() /
+            (std::string("pp-browser-view-catalog-test-") +
+             ::testing::UnitTest::GetInstance()->current_test_info()->name());
     std::error_code ec;
     std::filesystem::remove_all(root_, ec);
     std::filesystem::create_directories(root_ / "views", ec);

@@ -57,7 +57,7 @@ public:
   Roe<void> Unpublish(const ByteVector& public_content_id);
 
 private:
-  Roe<void> WriteBlockFile(const std::string& path, const ByteVector& bytes) const;
+  Roe<void> WriteBlockFile(const std::string& path, const ByteVector& bytes, std::string_view prefix = {}) const;
   Roe<ByteVector> ReadBlockFile(const std::string& path) const;
 
   std::string profile_dir_;

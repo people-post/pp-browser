@@ -3,7 +3,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/people/ContactIdentity.h"
-#include "lib/people/PeerBriefRoute.h"
+#include "lib/messaging/PeerBriefRoute.h"
 
 namespace pbr {
 

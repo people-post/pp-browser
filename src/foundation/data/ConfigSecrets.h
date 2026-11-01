@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/data/Config.h"
 #include "common/Error.h"
 
@@ -10,7 +12,7 @@ namespace pbr {
 
 /** The API key a user typed into Settings (cloud / custom model). Kept out of config.json (PB-034); stored under the profile DEK. */
 struct ConfigSecrets {
-  std::string llm_api_key;
+  SecretText llm_api_key;
   bool Empty() const { return llm_api_key.empty(); }
   bool operator==(const ConfigSecrets& other) const { return llm_api_key == other.llm_api_key; }
 };

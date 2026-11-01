@@ -1,11 +1,12 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/net/OrgBackendClients.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
@@ -42,6 +43,7 @@ public:
   void SetLocalPeerIdForTest(std::string peer_id) { local_peer_id_override_ = std::move(peer_id); }
   void SetProfileDataDir(std::string profile_data_dir) override;
   void SetProfileId(std::string profile_id) override;
+  void SetPushGate(std::function<bool(const std::string& sender, uint64_t ciphertext_bytes)> gate) override;
   void Start();
   void Stop();
 

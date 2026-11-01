@@ -9,11 +9,13 @@
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
+#include "lib/calls/CallScreen.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "gui/CallStatusHint.h"
 #include "lib/ui/ShellTypes.h"
@@ -135,6 +137,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_retry = in_call.show_retry,
       .in_call_show_speaker = in_call.show_speaker,
       .in_call_show_camera = in_call.show_camera,
+      .in_call_show_flip = in_call.show_flip,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
       .in_call_mode = in_call.mode,
@@ -270,9 +273,9 @@ const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
   return vitals_;
 }
 
-void CallController::EmitMetrics(const std::vector<std::string>& lines) {
-  for (const std::string& line : lines) {
-    MetricsLog().info << line;
+void CallController::EmitMetrics(const std::vector<ShareableLine>& lines) {
+  for (const ShareableLine& line : lines) {
+    line.Emit();
   }
 }
 
@@ -464,11 +467,13 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
   if (connected_at_ms <= 0) {
     return {};
   }
-  const int64_t sec = std::max<int64_t>(0, (util::NowUnixMs() - connected_at_ms) / 1000);
-  const int64_t mins = sec / 60;
-  const int64_t secs = sec % 60;
+  return FormatMinSec((util::NowUnixMs() - connected_at_ms) / 1000);
+}
+
+std::string CallController::FormatMinSec(const int64_t seconds) {
+  const int64_t sec = std::max<int64_t>(0, seconds);
   char buf[32];
-  std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(mins), static_cast<long long>(secs));
+  std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(sec / 60), static_cast<long long>(sec % 60));
   return buf;
 }
 
@@ -742,6 +747,12 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
     in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
     break;
+  case Status::WaitingForOthers: {
+    // V053: everyone else left; counts down to leaving by itself.
+    const std::string left = FormatMinSec((screen.alone_until_ms - util::NowUnixMs() + 999) / 1000);
+    in_call.subtitle = Tr("call.status.waiting_for_others", {{"time", left}}).c_str();
+    break;
+  }
   case Status::Disconnected:
     in_call.subtitle = Tr("call.status.disconnected").c_str();
     break;
@@ -767,7 +778,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     in_call.subtitle = screen.raw_state.c_str();
     break;
   }
-  if (in_call.show_roster && joined_count > 0 && screen.media_connected && screen.status != Status::Activity) {
+  if (in_call.show_roster && ShowsParticipantCount(screen)) {
     in_call.subtitle = Tr("call.participants_elapsed",
                           {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
                            .c_str();
@@ -872,6 +883,10 @@ void CallController::ToggleCamera() {
   presenter_.ToggleCamera();
 }
 
+void CallController::FlipCamera() {
+  presenter_.FlipCamera();
+}
+
 void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
@@ -929,6 +944,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       });
     }
   }
+  in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;

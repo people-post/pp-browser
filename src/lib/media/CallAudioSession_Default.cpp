@@ -8,6 +8,10 @@ void Deactivate() {}
 
 void CancelPendingDeactivate() {}
 
+void ActivateForVoicePlayback() {}
+void ActivateForVoiceRecording() {}
+void ReleaseVoice() {}
+
 bool SupportsSpeakerToggle() {
   return false;
 }

@@ -1,13 +1,15 @@
 #include "feature/conversations/InboxController.h"
 #include "domain/attachments/AttachmentContent.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/ImageMetadata.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatPayloadCodec.h"
-#include "lib/people/DirectChatTargetFromContact.h"
+#include "lib/messaging/DirectChatTargetFromContact.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 
@@ -32,7 +34,26 @@ void InboxController::SetGroupMembership(GroupMembershipWorkflow* groups) {
 }
 
 Roe<std::vector<Thread>> InboxController::ListThreads() {
-  return store_.ListThreads();
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return threads;
+  }
+  // A direct chat made only by a group's membership events (they travel as direct messages) is not a chat the
+  // user has: it stays out until something readable is in it, or they open it (the store's `listed` flag, which
+  // once set stays — a cleared or renamed chat is never dropped).
+  threads->erase(std::remove_if(threads->begin(), threads->end(),
+                                [](const Thread& thread) { return thread.kind == ThreadKind::Direct && !thread.listed; }),
+                 threads->end());
+  return threads;
+}
+
+void InboxController::KeepListed(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (thread && *thread && !(*thread)->listed) {
+    Thread listed = **thread;
+    listed.listed = true;
+    (void)store_.UpsertThread(listed);
+  }
 }
 
 Roe<Thread> InboxController::GetActiveThread() const {
@@ -59,7 +80,11 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   }
 
   active_thread_id_ = thread_id;
+  KeepListed(thread_id);  // a chat the user opened is theirs, even before anything is said in it
   MarkThreadRead(thread_id);
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);  // read: "You were mentioned" goes with the unread count
+  }
   if (on_thread_changed_) {
     on_thread_changed_();
   }
@@ -111,6 +136,9 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   auto deleted = store_.DeleteThread(thread_id);
   if (!deleted || !*deleted) {
     return Error("Failed to delete thread");
+  }
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);
   }
   if (attachment_downloads_) {
     attachment_downloads_->ForgetThread(thread_id);
@@ -167,6 +195,9 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
 
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
   const std::string& message_id = original.id;
+  if (mentions_) {
+    (void)mentions_->DropMessage(thread_id, message_id);  // a deleted mention leaves no marker (G015)
+  }
   if (attachment_downloads_ && (original.content_type == ChatContentType::Attachment || original.ai_image_json)) {
     // The rest of the thread, so bytes another message here still shows are kept. Reading it decrypts the
     // transcript: off the UI thread.
@@ -191,9 +222,12 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   if (!page) {
     return;
   }
+  const auto holder = store_.GetThread(thread_id);
+  const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation) {
+    if (message.content_type != ChatContentType::Annotation &&
+        !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
       newest = &message;
     }
   }
@@ -236,6 +270,9 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
 
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
     return cleared.error();
+  }
+  if (mentions_) {
+    (void)mentions_->DropThread(thread_id);  // the messages that mentioned us are gone: so is "You were mentioned"
   }
   if (attachment_downloads_ && before) {
     attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
@@ -362,8 +399,8 @@ void InboxController::MarkThreadRead(const std::string& thread_id) {
   (void)store_.UpsertThread(updated);
 }
 
-void InboxController::IncrementUnread(const std::string& thread_id, const int delta) {
-  if (delta <= 0 || thread_id.empty() || thread_id == active_thread_id_) {
+void InboxController::IncrementUnread(const std::string& thread_id, const int delta, const bool even_if_active) {
+  if (delta <= 0 || thread_id.empty() || (thread_id == active_thread_id_ && !even_if_active)) {
     return;
   }
   auto thread = store_.GetThread(thread_id);
@@ -536,7 +573,12 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
   std::optional<int64_t> before;
   for (;;) {
     auto page = store_.GetMessagesPage(thread_id, before, kDefaultMessagesPageSize);
-    if (!page || page->empty()) {
+    if (!page) {
+      // One unreadable row fails the whole page: say so, or the chat just reads empty.
+      log().warning << "Transcript not read thread_id=" << thread_id << ": " << page.error().message;
+      break;
+    }
+    if (page->empty()) {
       break;
     }
     const int64_t page_oldest = page->front().display_order;
@@ -571,7 +613,26 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
                    messages.end());
   }
 
-  return AssembleTranscript(messages, controls_);
+  ThreadKind kind = ThreadKind::Direct;
+  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+    kind = (*thread)->kind;
+  }
+  const bool direct_thread = kind == ThreadKind::Direct;
+  std::vector<TranscriptRow> rows = AssembleTranscript(messages, controls_, kind);
+  // A run of a group's events on top of a direct chat's history would leave the page blank: go back for older
+  // pages until something shows or the history ends (bounded). A caller that asked for a window gets exactly it.
+  constexpr int kMaxExtraPages = 20;
+  for (int extra = 0; direct_thread && rows.empty() && !oldest_inclusive.has_value() && !messages.empty() &&
+                      extra < kMaxExtraPages;
+       ++extra) {
+    auto older = store_.GetMessagesPage(thread_id, messages.front().display_order, kDefaultMessagesPageSize);
+    if (!older || older->empty()) {
+      break;
+    }
+    messages.insert(messages.begin(), older->begin(), older->end());
+    rows = AssembleTranscript(messages, controls_, kind);
+  }
+  return rows;
 }
 
 TranscriptFacts InboxController::Facts() const {
@@ -598,7 +659,11 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (!fields) {
     return view;
   }
-  if (AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length)) {
+  const uint64_t max_receive_bytes =
+      attachment_downloads_ ? attachment_downloads_->Limits().max_receive_bytes : DefaultAttachmentLimits().max_receive_bytes;
+  // Rendering never decrypts a large file: its plaintext view is made by an explicit Open (on a worker).
+  view.on_demand = fields->byte_length > kMaxDirectAttachmentBytes;
+  if (!view.on_demand && AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length, max_receive_bytes)) {
     if (attachment_downloads_) {
       if (auto local = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
                                                                  fields->filename)) {
@@ -609,12 +674,25 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
                                             fields->filename);
     }
   } else if (!profile_data_dir_.empty()) {
-    // Large private video: keep plaintext off disk until explicit open.
+    // Large file: plaintext stays off disk until an explicit Open; a view made by an earlier Open is used.
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }
+  if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
+    // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
+    const auto cached = inline_image_ok_.find(view.local_path);
+    if (cached != inline_image_ok_.end()) {
+      view.inline_image_ok = cached->second;
+    } else {
+      const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
+                                                        : DefaultAttachmentLimits().max_image_pixels;
+      view.inline_image_ok = ImageWithinPixelCap(view.local_path, max_pixels);
+      inline_image_ok_[view.local_path] = view.inline_image_ok;
+    }
+  }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
+    view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
   } else if (!view.local_path.empty() ||
              (!profile_data_dir_.empty() && AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;

@@ -31,6 +31,13 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
       }
       return messaging->SendControl(peer_identity, control, key_init_b64, urgent);
     };
+    deps.delivery.notify_own_devices = [&hub](const ThreadMessage& control) -> Roe<void> {
+      auto* messaging = hub.MeshMessagingOrNull();
+      if (!messaging) {
+        return Error("Messaging not ready");
+      }
+      return messaging->NotifyOwnDevices(control);
+    };
     deps.delivery.send_to_thread = [&hub](const std::string& thread_id, const std::string& text,
                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {
       auto* messaging = hub.MeshMessagingOrNull();
@@ -75,7 +82,16 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
         return std::nullopt;
       }
       auto roster = rosters->ListMembers(group_id);
-      if (!roster || roster->empty()) {
+      if (!roster) {
+        return std::nullopt;
+      }
+      if (roster->empty()) {
+        // A group the owner dissolved (G016) has no members: nobody is in it, and a call of it ends. Any other empty
+        // roster is a group we do not hold, which says nothing.
+        auto metadata = rosters->LoadMetadata(group_id);
+        if (metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved) {
+          return std::set<std::string>{};
+        }
         return std::nullopt;
       }
       std::set<std::string> members;
@@ -144,6 +160,18 @@ bool CallsParticipant::ThreadInActiveCall(const Thread& thread) {
     joined = std::move(*parts);
   }
   return ThreadMatchesActiveCall(thread, **active, joined);
+}
+
+bool CallsParticipant::AnyCallLive() {
+  auto* calls = stack_.Calls();
+  if (!calls) {
+    return false;
+  }
+  if (auto active = calls->ActiveLocalCall(); active && *active) {
+    return true;
+  }
+  const auto invite = calls->PeekTopPendingInvite(); // read only: no ring is started or cleared by asking
+  return invite && *invite;
 }
 
 Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std::string& call_id) {

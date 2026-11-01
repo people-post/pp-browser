@@ -70,6 +70,8 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
                                                      ReplayWindow& replay_window) {
   IngestClassifierResult result;
   result.sync_state = input.sync_state;
+  // The window is memory, the sync state is persisted: start the window where the thread is.
+  replay_window.CatchUpTo(input.sync_state.contiguous_peer_seq);
 
   if (input.has_message_id) {
     result.decision = IngestDecision::BenignDuplicate;
@@ -172,8 +174,16 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
   if (input.sender_seq == input.sync_state.contiguous_peer_seq + 1) {
     result.decision = IngestDecision::AcceptContiguous;
     result.persist_message = true;
-    ApplyPersistedMessage(result.sync_state, input.sender_seq);
     replay_window.Accept(input.sender_seq);
+    ApplyPersistedMessage(result.sync_state, input.sender_seq);
+    // A fill closes the gap up to whatever already arrived after it.
+    if (replay_window.LastContiguous() > result.sync_state.contiguous_peer_seq) {
+      ApplyContiguousAdvance(result.sync_state, replay_window.LastContiguous());
+      if (result.sync_state.phase == PeerSyncPhase::Gap &&
+          result.sync_state.contiguous_peer_seq >= result.sync_state.loaded_max_seq) {
+        result.sync_state.phase = PeerSyncPhase::Ok;
+      }
+    }
     return result;
   }
 

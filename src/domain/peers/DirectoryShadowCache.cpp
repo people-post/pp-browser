@@ -1,7 +1,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 
 #include "lib/people/ContactIdentity.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -110,8 +110,8 @@ void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
           if (!result) {
             // Until now a failed lookup left no trace: the chat kept showing a bare id and nothing said why.
             logging::getLogger("DirectoryShadow").warning
-                << "directory lookup failed (" << (by_account ? "account" : "relay user") << "): "
-                << result.error().message;
+                << "directory lookup failed (" << (by_account ? "account" : "relay user") << " " << identity
+                << "): " << result.error().message;
           }
           if (result) {
             mesh::DirectoryHit hit = *result;

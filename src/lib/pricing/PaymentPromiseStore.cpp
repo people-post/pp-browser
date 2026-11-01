@@ -1,4 +1,6 @@
 #include "lib/pricing/PaymentPromiseStore.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "common/AtomicFileWrite.h"
 #include "lib/pricing/PaymentPromiseCodec.h"
@@ -51,9 +53,9 @@ Roe<void> PaymentPromiseStore::Load() {
   if (!in) {
     return Error("Failed to open payment_promises.json");
   }
-  std::ostringstream buffer;
-  buffer << in.rdbuf();
-  auto root = TryParseObject(buffer.str());
+  // An oversized file reads as unparseable (PB-063).
+  const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  const auto root = text ? TryParseObject(*text) : std::nullopt;
   if (!root) {
     return Error("Invalid payment_promises.json");
   }

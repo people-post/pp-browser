@@ -1,4 +1,4 @@
-// Cross-implementation vectors (projects/social-posts): entries and a head signed by this library, which
+// Cross-implementation vectors (projects/social-posts): entries, a head, a media presign and reports signed by this library, which
 // other implementations (the app-posts relay) must parse, hash and verify alike. The committed file is
 // checked here; PP_WRITE_POST_VECTORS=<path> writes a fresh one (signatures are randomized, keys are not).
 
@@ -55,10 +55,11 @@ Object BuildVectors() {
   PostHash prev{};
   PostRef first{};
   uint64_t seq = 0;
-  auto add = [&](uint8_t kind, const ByteVector& body, const char* note) {
+  auto add = [&](uint8_t kind, const ByteVector& body, const char* note, std::vector<PostExtension> extensions = {}) {
     ++seq;
     const PostEntry entry{.author = account, .lane = lane, .seq = seq, .prev = prev,
-                          .claimed_at = kT0 + static_cast<int64_t>(seq) * 1000, .kind = kind, .body = body};
+                          .claimed_at = kT0 + static_cast<int64_t>(seq) * 1000, .kind = kind, .body = body,
+                          .extensions = std::move(extensions)};
     const SignedPostEntry signed_entry = SignPostEntry(entry, signer).value();
     const PostHash hash = PostEntryHash(signed_entry.canonical);
     if (seq == 1) {
@@ -74,9 +75,22 @@ Object BuildVectors() {
     entries.push_back(ObjectValue(std::move(row)));
     prev = hash;
   };
-  add(1, EncodePostBody({.text = "hello from the vectors — 你好",
-                         .media = {{.content_id = HashOfText("media"), .mime = "image/png", .size = 1234}}}),
-      "post with text and one image");
+  // "hello @Vector #你好 https://pp.example": a mention, a hashtag and a link (byte spans, S026).
+  const std::string text = "hello @Vector #\xE4\xBD\xA0\xE5\xA5\xBD https://pp.example";
+  add(1, EncodePostBody({.text = text,
+                         .media = {{.content_id = HashOfText("media"), .mime = "image/png", .size = 1234,
+                                    .alt = "a test image", .width = 640, .height = 480,
+                                    .placeholder = ByteVector{0x1f, 0x2e, 0x3d}}},
+                         .facets = {{.start = 6, .end = 13, .type = 1, .value = account},
+                                    {.start = 14, .end = 21, .type = 3, .value = "\xE4\xBD\xA0\xE5\xA5\xBD"},
+                                    {.start = 22, .end = 40, .type = 2, .value = "https://pp.example"}},
+                         .content_warning = "test content",
+                         .labels = {"graphic"},
+                         .languages = {"en", "zh-Hans"}}),
+      "post with text, one image, facets, a content warning, a label and languages");
+  add(1, EncodePostBody({.text = "a reply quoting the first", .reply = PostReply{.root = first, .parent = first},
+                         .quote = first}),
+      "a reply (thread root and parent) that also quotes");
   add(4, EncodeReactBody({.target = first, .reaction = "like"}), "a like of the first post");
   add(2, EncodeEditBody({.target = first, .replacement = {.text = "hello again"}}), "an edit of the first post");
   add(5, EncodeTargetBody({.target = first}), "a repost");
@@ -85,6 +99,8 @@ Object BuildVectors() {
       "a profile offering a service");
   add(8, EncodeDisavowBody({.targets = {first}}), "a disavowal");
   add(99, ByteVector{0xde, 0xad}, "an unknown kind: valid, kept as a stub");
+  add(1, EncodePostBody({.text = "with extensions"}), "a post with two extensions a reader skips",
+      {{.tag = 1, .value = ByteVector{0x01, 0x02}}, {.tag = 513, .value = {}}});
   add(3, EncodeTargetBody({.target = first}), "a delete of the first post");
   add(7, EncodeLaneCloseBody({.lane = lane, .last_seq = seq + 1}), "the lane closes");
 
@@ -109,9 +125,27 @@ Object BuildVectors() {
   media.set("sign_bytes_hex", BytesToHex(media_bytes));
   media.set("signature_b64", Base64Encode(signer(media_bytes).value()));
 
+  // Reports (S025): an entry report and a media report, both signed by the vector account.
+  std::vector<Value> reports;
+  auto add_report = [&](const char* subject, const ByteVector& bytes, const std::string& reason, const std::string& note) {
+    Object report;
+    report.set("subject", std::string(subject));
+    report.set("reason", reason);
+    report.set("note", note);
+    report.set("issued_at", kT0 + 300'000);
+    report.set("sign_bytes_hex", BytesToHex(bytes));
+    report.set("signature_b64", Base64Encode(signer(bytes).value()));
+    reports.push_back(ObjectValue(std::move(report)));
+  };
+  add_report("entry", PostEntryReportSignBytes(account, first, "spam", "test report", kT0 + 300'000), "spam",
+             "test report");
+  add_report("media", PostMediaReportSignBytes(account, media_id, "illegal", "", kT0 + 300'000), "illegal", "");
+
   Object root;
   root.set("format", std::string("pp-browser post vectors v1"));
   root.set("media_presign", ObjectValue(std::move(media)));
+  root.set("first_entry_hash_hex", Hex(first.entry_hash));
+  root.set("reports", ArrayValue(std::move(reports)));
   root.set("account_id", account);
   root.set("key_card", ObjectValue(std::move(key_card)));
   root.set("lane_hex", BytesToHex(ByteVector(lane.begin(), lane.end())));
@@ -141,7 +175,7 @@ TEST(PostVectorsTest, TheCommittedVectorsVerify) {
 
   const Array* entries = root->getArray("entries");
   ASSERT_NE(entries, nullptr);
-  ASSERT_EQ(entries->elements.size(), 9u);
+  ASSERT_EQ(entries->elements.size(), 11u);
   PostEntry prev;
   PostHash prev_hash{};
   for (const Value& item : entries->elements) {
@@ -187,6 +221,28 @@ TEST(PostVectorsTest, TheCommittedVectorsVerify) {
       media->getIf<int64_t>("issued_at").value_or(0));
   EXPECT_EQ(BytesToHex(media_bytes), media->getString("sign_bytes_hex").value_or(""));
   EXPECT_TRUE(MlDsa::Verify(key, media_bytes, Base64Decode(media->getString("signature_b64").value_or("")).value()).value());
+
+  const Array* reports = root->getArray("reports");
+  ASSERT_NE(reports, nullptr);
+  ASSERT_EQ(reports->elements.size(), 2u);
+  const ByteVector first_hash = HexToBytes(root->getString("first_entry_hash_hex").value_or("")).value();
+  PostRef first{.author = account, .lane = {}, .seq = 1, .entry_hash = {}};
+  const ByteVector lane = HexToBytes(root->getString("lane_hex").value_or("")).value();
+  std::copy(lane.begin(), lane.end(), first.lane.begin());
+  std::copy(first_hash.begin(), first_hash.end(), first.entry_hash.begin());
+  const PostHash media_id = HashOfText("media");
+  for (const Value& item : reports->elements) {
+    const Object* report = asObject(item);
+    ASSERT_NE(report, nullptr);
+    const std::string reason = report->getString("reason").value_or("");
+    const std::string note = report->getString("note").value_or("");
+    const int64_t issued_at = report->getIf<int64_t>("issued_at").value_or(0);
+    const ByteVector bytes = report->getString("subject").value_or("") == "entry"
+                                 ? PostEntryReportSignBytes(account, first, reason, note, issued_at)
+                                 : PostMediaReportSignBytes(account, media_id, reason, note, issued_at);
+    EXPECT_EQ(BytesToHex(bytes), report->getString("sign_bytes_hex").value_or(""));
+    EXPECT_TRUE(MlDsa::Verify(key, bytes, Base64Decode(report->getString("signature_b64").value_or("")).value()).value());
+  }
 }
 
 } // namespace

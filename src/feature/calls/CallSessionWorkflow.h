@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -10,8 +11,8 @@
 #include "feature/calls/CallInitiationBilling.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
-#include "foundation/runtime/OwnerSteps.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerSteps.h"
 #include "feature/calls/LiveCallMedia.h"
 
 #include <functional>
@@ -49,7 +50,8 @@ public:
      * The call's history line: a summary into its thread (the starter's side writes it); `local_only`
      * keeps it on this device (the app is going down: no sends).
      */
-    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only)>
+    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only,
+                            SummaryWrite write)>
         send_summary;
     /**
      * This device's thread for an inbound call: the group's (`group_id`), else the DM with `inviter`.
@@ -106,6 +108,10 @@ public:
         note_caps_for_identity;
     /** The peer's caps for this call (invite / accept) — mobility feeds the call's path policy. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> note_call_peer_caps;
+    /** H013: the relays we are parked on now — our CallAccept advertises them. */
+    std::function<std::vector<std::string>()> parked_relays;
+    /** H013: the relays the call's answerer advertised in its CallAccept (the caller tries them first). */
+    std::function<void(const std::string& call_id, const std::vector<std::string>& relays)> note_call_peer_parked_relays;
     std::function<void(const std::string& identity)> prefetch_reach;
     /** Kick mesh circuit park (composition projects MeshConnectivity rendezvous ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
@@ -186,6 +192,10 @@ public:
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   /** No sweep, no writes (UI reads): expired invites are skipped instead. */
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
+  /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
+  int64_t AloneUntilMs(const std::string& call_id) const;
+  /** This device is Joined in the call (not left it). */
+  bool StillInCall(const std::string& call_id) const;
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each
@@ -214,6 +224,8 @@ public:
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** M021 d5: another of our devices took (or declined) this call — stop it ringing here, no history. */
+  Roe<void> StopRingingAnsweredElsewhere(const std::string& call_id, const std::string& local_identity);
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
   Roe<void> HandleInboundJoinRequest(const std::string& detail_json, const std::string& sender_identity,
                                      const std::string& local_identity);
@@ -229,6 +241,8 @@ private:
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
   /** Whether `identity` is in the group now (true when membership is not checked). */
   bool InGroup(const std::string& group_id, const std::string& identity) const;
+  /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
+  bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /**
    * V053: who is no longer in the group is no longer in its call — they are taken as gone (the
    * key rotates without them); this device, if it is the one, leaves. Only who this device saw in
@@ -265,7 +279,7 @@ private:
                       const std::string& local_identity);
   /** "Call started" in the origin thread's history. */
   /** The starter's summary of a call that just ended (no-op on an invitee's side). */
-  void SendSummary(const CallSession& session, LiveCallEndReason reason);
+  void SendSummary(const CallSession& session, LiveCallEndReason reason, SummaryWrite write = SummaryWrite::Final);
   /** Invite every invitee (control thread warmed first), then prefetch their reach. */
   Roe<void> InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);
@@ -360,6 +374,8 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** The last sweep: a long gap means the app slept, and the alone waits start over. */
+  int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */
   struct MediaKeyResend {
     uint32_t epoch = 0;

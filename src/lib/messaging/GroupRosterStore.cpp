@@ -5,6 +5,7 @@
 #include "common/Utilities.h"
 
 #include <sqlite3.h>
+#include <algorithm>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -36,7 +37,11 @@ CREATE TABLE IF NOT EXISTS group_metadata (
   title TEXT NOT NULL DEFAULT '',
   roster_epoch INTEGER NOT NULL DEFAULT 1,
   policy_json TEXT NOT NULL DEFAULT '{}',
-  title_version INTEGER NOT NULL DEFAULT 0
+  title_version INTEGER NOT NULL DEFAULT 0,
+  roster_statement_json TEXT NOT NULL DEFAULT '',
+  sync_state TEXT NOT NULL DEFAULT 'active',
+  sync_request_id TEXT NOT NULL DEFAULT '',
+  sync_requested_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS group_rosters (
@@ -46,6 +51,16 @@ CREATE TABLE IF NOT EXISTS group_rosters (
   role TEXT NOT NULL DEFAULT 'member',
   joined_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (group_id, member_identity)
+);
+
+-- G016: what a dissolve (or the refusals to its invitees) still has to send; kept until each copy reached the outbox.
+CREATE TABLE IF NOT EXISTS group_pending_sends (
+  group_id TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  control_type TEXT NOT NULL,
+  detail_json TEXT NOT NULL,
+  display TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (group_id, recipient, control_type)
 );
 
 CREATE TABLE IF NOT EXISTS pending_group_invites (
@@ -115,7 +130,24 @@ Roe<void> GroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
                      nullptr, nullptr, nullptr);
   (void)sqlite3_exec(profile_db, "ALTER TABLE group_metadata ADD COLUMN title_version INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
+  // G012 / G013: the owner-signed roster we hold, and a restored group's member check.
+  for (const char* column : {"roster_statement_json TEXT NOT NULL DEFAULT ''", "sync_state TEXT NOT NULL DEFAULT 'active'",
+                             "sync_request_id TEXT NOT NULL DEFAULT ''",
+                             "sync_requested_at INTEGER NOT NULL DEFAULT 0"}) {
+    const std::string sql = std::string("ALTER TABLE group_metadata ADD COLUMN ") + column + ";";
+    (void)sqlite3_exec(profile_db, sql.c_str(), nullptr, nullptr, nullptr);
+  }
   return {};
+}
+
+void GroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
+  on_changed_ = std::move(on_changed);
+}
+
+void GroupRosterStore::NotifyChanged(const std::string& group_id) const {
+  if (on_changed_) {
+    on_changed_(group_id);
+  }
 }
 
 std::unique_lock<std::recursive_mutex> GroupRosterStore::LockForUpdate() {
@@ -142,10 +174,13 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO group_metadata (group_id, owner_identity, title, roster_epoch, policy_json, title_version) "
-      "VALUES (?, ?, ?, ?, ?, ?) "
+      "INSERT INTO group_metadata (group_id, owner_identity, title, roster_epoch, policy_json, title_version, "
+      "roster_statement_json, sync_state, sync_request_id, sync_requested_at) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(group_id) DO UPDATE SET owner_identity=excluded.owner_identity, title=excluded.title, "
-      "roster_epoch=excluded.roster_epoch, policy_json=excluded.policy_json, title_version=excluded.title_version;";
+      "roster_epoch=excluded.roster_epoch, policy_json=excluded.policy_json, title_version=excluded.title_version, "
+      "roster_statement_json=excluded.roster_statement_json, sync_state=excluded.sync_state, "
+      "sync_request_id=excluded.sync_request_id, sync_requested_at=excluded.sync_requested_at;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare group metadata upsert");
@@ -157,6 +192,11 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(metadata.roster_epoch));
   sqlite3_bind_text(stmt, 5, policy_json.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 6, static_cast<sqlite3_int64>(metadata.title_version));
+  sqlite3_bind_text(stmt, 7, metadata.roster_statement_json.c_str(), -1, SQLITE_TRANSIENT);
+  const std::string sync_state = GroupSyncStateToString(metadata.sync_state);
+  sqlite3_bind_text(stmt, 8, sync_state.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 9, metadata.sync_request_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 10, static_cast<sqlite3_int64>(metadata.sync_requested_at));
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
@@ -164,6 +204,7 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   }
   sqlite3_finalize(stmt);
   sqlite3_close(db);
+  NotifyChanged(metadata.group_id);
   return {};
 }
 
@@ -174,7 +215,8 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
   }
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db, "SELECT owner_identity, title, roster_epoch, policy_json, title_version FROM group_metadata WHERE "
+  if (sqlite3_prepare_v2(db, "SELECT owner_identity, title, roster_epoch, policy_json, title_version, roster_statement_json, "
+                             "sync_state, sync_request_id, sync_requested_at FROM group_metadata WHERE "
                              "group_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
@@ -195,6 +237,14 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
       }
     }
     metadata.title_version = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    const auto text = [stmt](int column) {
+      const unsigned char* value = sqlite3_column_text(stmt, column);
+      return value ? std::string(reinterpret_cast<const char*>(value)) : std::string();
+    };
+    metadata.roster_statement_json = text(5);
+    metadata.sync_state = GroupSyncStateFromString(text(6));
+    metadata.sync_request_id = text(7);
+    metadata.sync_requested_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 8));
     if (auto epoch = GetGroupSessionEpoch(group_id)) {
       metadata.session_epoch = *epoch;
     }
@@ -203,6 +253,28 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   return result;
+}
+
+Roe<std::vector<std::string>> GroupRosterStore::ListGroupIds() const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "SELECT group_id FROM group_metadata ORDER BY group_id;", -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare group list");
+  }
+  std::vector<std::string> ids;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (const unsigned char* id = sqlite3_column_text(stmt, 0)) {
+      ids.emplace_back(reinterpret_cast<const char*>(id));
+    }
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return ids;
 }
 
 Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const GroupRosterMember& member) const {
@@ -232,6 +304,7 @@ Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const Grou
   }
   sqlite3_finalize(stmt);
   sqlite3_close(db);
+  NotifyChanged(group_id);
   return {};
 }
 
@@ -252,6 +325,7 @@ Roe<void> GroupRosterStore::RemoveMember(const std::string& group_id, const std:
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   sqlite3_close(db);
+  NotifyChanged(group_id);
   return {};
 }
 
@@ -407,6 +481,267 @@ Roe<void> GroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, 
   return {};
 }
 
+Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ListOutboundPendingInvites(const std::string& group_id,
+                                                                                  const int64_t now_ms) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT invite_nonce, group_title, inviter_identity, invitee_identity, roster_epoch, "
+                         "expires_at, created_at FROM pending_group_invites WHERE group_id = ? AND outbound = 1 "
+                         "AND status = 'pending' AND (expires_at IS NULL OR expires_at > ?) "
+                         "ORDER BY created_at DESC;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare outbound invite list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 2, now_ms);
+  std::vector<PendingGroupInvite> invites;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PendingGroupInvite invite;
+    invite.group_id = group_id;
+    invite.invite_nonce = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_text(stmt, 1)) {
+      invite.group_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    invite.inviter_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    invite.roster_epoch = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    invite.status = InviteStatus::Pending;
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+      invite.expires_at = sqlite3_column_int64(stmt, 5);
+    }
+    invite.created_at = sqlite3_column_int64(stmt, 6);
+    invite.outbound = true;
+    const bool seen = std::any_of(invites.begin(), invites.end(), [&](const PendingGroupInvite& other) {
+      return other.invitee_identity == invite.invitee_identity;
+    });
+    if (!seen) {
+      invites.push_back(std::move(invite));
+    }
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return invites;
+}
+
+Roe<void> GroupRosterStore::ExpireOutboundInvitesTo(const std::string& group_id,
+                                                   const std::string& invitee_identity) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "UPDATE pending_group_invites SET status = 'expired' WHERE group_id = ? AND "
+                         "invitee_identity = ? AND outbound = 1 AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare invite expire");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return {};
+}
+
+namespace {
+
+/** The group's pending invites (either direction), voided on `db`. */
+Roe<std::vector<PendingGroupInvite>> VoidPendingInvites(sqlite3* db, const std::string& group_id) {
+  std::vector<PendingGroupInvite> voided;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT invite_nonce, group_title, inviter_identity, invitee_identity, roster_epoch, "
+                         "outbound FROM pending_group_invites WHERE group_id = ? AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare invite list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PendingGroupInvite invite;
+    invite.group_id = group_id;
+    invite.invite_nonce = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_text(stmt, 1)) {
+      invite.group_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    invite.inviter_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    invite.roster_epoch = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    invite.outbound = sqlite3_column_int(stmt, 5) != 0;
+    voided.push_back(std::move(invite));
+  }
+  sqlite3_finalize(stmt);
+  if (sqlite3_prepare_v2(db, "UPDATE pending_group_invites SET status = 'expired' WHERE group_id = ? AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare invite expire");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  const int rc = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  if (rc != SQLITE_DONE) {
+    return Error("Failed to expire invites");
+  }
+  return voided;
+}
+
+/** Runs `sql` with its text and integer parameters bound in order; false on any failure. */
+bool RunBound(sqlite3* db, const char* sql, const std::vector<std::string>& texts, const std::vector<int64_t>& ints = {},
+              const bool ints_first = false) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  int index = 1;
+  const auto bind_ints = [&]() {
+    for (const int64_t value : ints) {
+      sqlite3_bind_int64(stmt, index++, value);
+    }
+  };
+  if (ints_first) {
+    bind_ints();
+  }
+  for (const std::string& text : texts) {
+    sqlite3_bind_text(stmt, index++, text.c_str(), -1, SQLITE_TRANSIENT);
+  }
+  if (!ints_first) {
+    bind_ints();
+  }
+  const int rc = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  return rc == SQLITE_DONE;
+}
+
+} // namespace
+
+Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ExpirePendingInvitesOf(const std::string& group_id) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  auto voided = VoidPendingInvites(db, group_id);
+  sqlite3_close(db);
+  return voided;
+}
+
+Roe<std::optional<std::vector<PendingGroupInvite>>> GroupRosterStore::EndGroup(const std::string& group_id,
+                                                                               const GroupEnding& ending) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  const auto fail = [&db](const std::string& what) -> Roe<std::optional<std::vector<PendingGroupInvite>>> {
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    return Error("Failed to end the group: " + what);
+  };
+  if (sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to begin the group ending");
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "SELECT sync_state FROM group_metadata WHERE group_id = ?;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    return fail("state lookup");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  bool open = false;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const unsigned char* state = sqlite3_column_text(stmt, 0);
+    open = !state || GroupSyncStateFromString(reinterpret_cast<const char*>(state)) != GroupSyncState::Dissolved;
+  }
+  sqlite3_finalize(stmt);
+  if (!open) {
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    return std::optional<std::vector<PendingGroupInvite>>{};
+  }
+  auto voided = VoidPendingInvites(db, group_id);
+  if (!voided) {
+    return fail(voided.error().message);
+  }
+  if (!RunBound(db, "DELETE FROM group_rosters WHERE group_id = ?;", {group_id}) ||
+      !RunBound(db, "DELETE FROM group_targets WHERE group_id = ?;", {group_id})) {
+    return fail("roster");
+  }
+  if (!RunBound(db,
+                "UPDATE group_metadata SET roster_epoch = MAX(roster_epoch, ?), owner_identity = ?, "
+                "sync_state = 'dissolved', sync_request_id = '', sync_requested_at = 0, roster_statement_json = ? "
+                "WHERE group_id = ?;",
+                {ending.owner_identity, ending.statement_json, group_id}, {static_cast<int64_t>(ending.roster_epoch)},
+                /*ints_first=*/true)) {
+    return fail("metadata");
+  }
+  for (const PendingGroupSend& send : ending.sends) {
+    if (!RunBound(db,
+                  "INSERT OR REPLACE INTO group_pending_sends (group_id, recipient, control_type, detail_json, display) "
+                  "VALUES (?, ?, ?, ?, ?);",
+                  {group_id, send.recipient, send.control_type, send.detail_json, send.display})) {
+      return fail("pending send");
+    }
+  }
+  if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+    return fail("commit");
+  }
+  sqlite3_close(db);
+  NotifyChanged(group_id);
+  return std::optional<std::vector<PendingGroupInvite>>(std::move(*voided));
+}
+
+Roe<std::vector<PendingGroupSend>> GroupRosterStore::ListPendingSends(const std::string& group_id) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  const std::string sql = std::string("SELECT group_id, recipient, control_type, detail_json, display FROM "
+                                      "group_pending_sends") +
+                          (group_id.empty() ? "" : " WHERE group_id = ?") + " ORDER BY group_id, recipient;";
+  if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare pending sends list");
+  }
+  if (!group_id.empty()) {
+    sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  }
+  const auto text = [stmt](int column) {
+    const unsigned char* value = sqlite3_column_text(stmt, column);
+    return value ? std::string(reinterpret_cast<const char*>(value)) : std::string();
+  };
+  std::vector<PendingGroupSend> sends;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    sends.push_back({text(0), text(1), text(2), text(3), text(4)});
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return sends;
+}
+
+Roe<void> GroupRosterStore::DeletePendingSend(const PendingGroupSend& send) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  const bool done = RunBound(db, "DELETE FROM group_pending_sends WHERE group_id = ? AND recipient = ? AND control_type = ?;",
+                             {send.group_id, send.recipient, send.control_type});
+  sqlite3_close(db);
+  if (!done) {
+    return Error("Failed to delete a pending send");
+  }
+  return {};
+}
+
 Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
@@ -415,7 +750,7 @@ Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) c
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
-                         "SELECT COUNT(*) FROM pending_group_invites WHERE status = 'pending' AND created_at >= ?;",
+                         "SELECT COUNT(*) FROM pending_group_invites WHERE status = 'pending' AND outbound = 0 AND created_at >= ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare invite count");

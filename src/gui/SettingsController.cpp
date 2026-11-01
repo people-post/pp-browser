@@ -10,7 +10,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
@@ -262,6 +262,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_avatar_tone = bindings_.profile_avatar_tone;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
+  ui_state_.show_notification_preview = bindings_.show_notification_preview.c_str();
   ui_state_.stay_connected = bindings_.stay_connected.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
@@ -277,6 +278,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
+  ui_state_.security_has_recovery_phrase = bindings_.security_has_recovery_phrase;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
   ui_state_.call_invite_policy = bindings_.call_invite_policy.c_str();
@@ -349,6 +351,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_avatar_tone = ui_state_.profile_avatar_tone;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
+  bindings_.show_notification_preview = ui_state_.show_notification_preview.c_str();
   bindings_.stay_connected = ui_state_.stay_connected.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
@@ -373,6 +376,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.pin_protection_not_setup = ui_state_.pin_protection_not_setup;
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
+  bindings_.security_has_recovery_phrase = ui_state_.security_has_recovery_phrase;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
   bindings_.call_invite_policy = ui_state_.call_invite_policy.c_str();
@@ -396,6 +400,9 @@ void SettingsController::PushUiStateToBindings() {
 void SettingsController::SyncBindingsFromSession() {
   if (selected_id_ == "storage") {
     cas_library_.Refresh();
+  }
+  if (selected_id_ == "security") {
+    own_devices_.Refresh();
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -529,6 +536,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_avatar_tone", &controller.bindings_.profile_avatar_tone);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
+    ctor.Bind("show_notification_preview", &controller.bindings_.show_notification_preview);
     ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
@@ -555,6 +563,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("pin_protection_not_setup", &controller.bindings_.pin_protection_not_setup);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
+    ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("call_invite_policy_label", &controller.bindings_.call_invite_policy_label);
@@ -566,6 +575,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
+    own_devices_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
@@ -582,6 +592,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
     ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
+    ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
@@ -670,6 +681,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_avatar_tone");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
+  host.Dirty("settings", "show_notification_preview");
   host.Dirty("settings", "stay_connected");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
@@ -694,6 +706,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "pin_protection_not_setup");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "security_can_export_link");
+  host.Dirty("settings", "security_has_recovery_phrase");
+  host.Dirty("settings", "recovery_phrase");
+  host.Dirty("settings", "recovery_phrase_pin");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -1109,6 +1124,9 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
+  if (section_id == "security") {
+    security_actions_.RefreshDiagnostics();
+  }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   const bool sheet = chrome.account_sheet_open || in_account_sheet_;
   if (sheet) {
@@ -1586,7 +1604,7 @@ void SettingsController::OnOpenSupportChat() {
     ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  if (auto opened = commands_.open_support_chat(); !opened) {
+  if (auto opened = commands_.open_support_chat({}); !opened) {
     ReportFailure(opened.error());
   }
 }
@@ -1802,6 +1820,14 @@ void SettingsController::ToggleTrustedRelays() {
 void SettingsController::ToggleShowNotifications() {
   bindings_.show_notifications =
       bindings_.show_notifications == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("profile", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleShowNotificationPreview() {
+  bindings_.show_notification_preview =
+      bindings_.show_notification_preview == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();

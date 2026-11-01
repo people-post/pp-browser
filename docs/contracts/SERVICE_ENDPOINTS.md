@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-Relay, directory, and registration share a common resolution pattern. All client creation goes through [`CreateOrgBackendClients`](../../src/base/net/OrgBackendClientFactory.cpp) so future libp2p transports can plug in without changing messaging or agent code.
+Relay, directory, and registration share a common resolution pattern. Code calls the ports (`IRelayClient` — messaging's, `lib/messaging/RelayClients.h`; `IDirectoryClient`; `IRegistrationClient`), never an implementation, so other transports can plug in without changing messaging or agent code. The app builds the HTTP clients (`ConversationsHub`); [`CreateOrgBackendClients`](../../src/lib/net/OrgBackendClientFactory.cpp) builds net's own (directory, registration, blobs, client compat) the same way.
 
 ## Resolution order
 
@@ -11,7 +11,7 @@ For each of `relay`, `directory`, and `registration`:
 | Priority | Condition | Implementation |
 |----------|-----------|----------------|
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
-| 2 | otherwise | Client not created (`CreateOrgBackendClients` leaves unset); production defaults always fill Brief URLs |
+| 2 | otherwise | Client not created (left unset); production defaults always fill Brief URLs |
 
 Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.global/api/relay`. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
@@ -113,9 +113,44 @@ Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlob
 | `POST /v1/blobs/list` | Inventory + usage (quota UX) |
 | `POST /v1/profile/icon` | Attach hosted blob / external https, or clear |
 
-Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **400** `{ "error": "Blob upload is not configured" }` when the gateway has no upload bucket → client shows "uploads not enabled" (`Err::Blob::UploadNotConfigured`; exact text match). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
+Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h (and ≤ 20 pending uploads); retained GC ~90d (skip current profile icon). The tier follows `byte_length` (the ciphertext), so a client that stays at 4 MB per file only ever fills the small tier. The large tier has **no overage billing today**: a presign that would pass `large_included_bytes` is refused with **429** `Large file storage quota exceeded` (`usage.overage_bytes` is always 0). A blob is released only by `POST /v1/blobs/delete` (also "delete for everyone" in the client, `DeleteUploadedCopy`) or by the 90-day GC; "delete for me", clearing history and deleting a thread do not touch the server copy.
+
+Failure statuses and the client's typed error (`CheckBlobResponse` → `ClassifyBlobFailure`, `Err::Blob`; the log detail is `HTTP <status>: <error text>`). The server's text, not only the status, picks the code where one status has several causes:
+
+| Status (server `error` text) | Produced by | `Err::Blob` | Client does |
+|---|---|---|---|
+| 503 `Blob upload is not configured` (an older gateway: 400, same text) | every `/v1/blobs/*` route without an upload bucket | `UploadNotConfigured` | failure line "server hasn't enabled uploads" |
+| 403 `Blob not owned by caller`, `Relay user not registered`, `Relay registration expired`; also a 403 from the storage PUT (expired or mismatched signed URL) | retain / delete, request auth, S3 | `UploadRejected` | failure line, retry later |
+| 404 `Blob not found` | retain / delete (e.g. the pending upload expired) | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
+| 400 `File exceeds size limit` (also 413 if a proxy sends it; the relay itself never answers 413) | presign above `largeMaxBytes` | `TooLarge` | not retried |
+| 429 `Small file quota exceeded` / `Large file storage quota exceeded` (these two exact texts only) | presign | `QuotaExceeded` | `BlobQuotaRecoveryFlow`: confirm, delete the oldest non-icon relay blob of the tier named in the 429 text (small / large; the blob id shown in the confirm is the one deleted), upload again; the confirm says people who have not downloaded it yet will not get it |
+| any other 429: `Rate limit exceeded` (120 per user per minute), `Too many pending uploads`, an empty or proxy / WAF body | every blobs route / presign | `RateLimited` | "sending too fast", no delete offered |
+| other 5xx | gateway / relay failure | `Unavailable` | failure line, retry |
+| anything else (400 `Unsupported content type`, 401 signature errors, …) | | `Generic` | failure line |
+
+Chat attachments are always presigned as `application/octet-stream`, so `Unsupported content type` cannot come from them. Space warnings read `usage` from `POST /v1/blobs/list` after a successful server upload (at most once a day, and after every 429 quota answer): percent of `large_included_bytes` for the large tier, and of the client's `small_max_objects` (default 100) for the small tier, because the list answer carries no small-tier limit (ask the relay to add one). The client tells the person once at 80 % and once at 90 %.
+
+**Transfer of the ciphertext (client).** The upload `PUT` to the presigned `upload_url` is streamed from a file (`HttpClient::PutFile`, `IBlobClient::PutUploadFile`): no whole-body string, progress reported as bytes go out, no total time limit, but a 15 s connect timeout and a speed floor (under 2 KB/s over 30 s aborts). The download `GET` of the CDN `public_url` goes to a temp file (`HttpClient::GetToFile`) with a hard cap of the declared plaintext size plus the 16-byte AEAD tag: a larger `Content-Length` is refused before any byte is read, a body that grows past the cap is aborted and the temp file deleted, and a non-2xx answer writes nothing. `kMaxHttpClientBodyBytes` (8 MiB) still bounds every buffered request.
 
 Chat attachment **file bytes** prefer peer-direct `/pp/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
+
+## HTTP account lockers (multi-device M023)
+
+Same base path as the blobs. Client: `HttpLockerClient` / `ILockerClient`; sealed and checked by `lib/people/AccountLocker` ([M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §4–5). The relay is one locker provider among several: it cannot read a snapshot, and keeps only the newest version.
+
+| HTTP | Purpose |
+|------|---------|
+| `POST /v1/lockers/put` | `{ relay_user_id, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** when the stored version is the same or newer (also when two writers race); **403** `Locker quota reached` past 4 lockers per relay user; body ≤ 2 MiB |
+| `GET /v1/lockers/:locker_id` | `200 { locker: {…} }` or **404**. By id alone — a restoring device is not registered yet; rate-limited per IP |
+
+Two signatures on a write:
+
+| Half | Signed by | Bytes |
+|------|-----------|-------|
+| Relay (quota) | the relay user's account key | `pp-browser:relay-locker-put-v1` ‖ 0 ‖ u8 1 ‖ LenUtf8 `relay_user_id` ‖ LenUtf8 `locker_id` ‖ u64 `version` ‖ i64 `timestamp` |
+| Locker (owner) | the locker ML-DSA-65 key; `locker_id` = lowercase hex of BLAKE2b-256(its public key) | `pp-browser:account-locker-v1` ‖ 0 ‖ u8 1 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(sealed) |
+
+The snapshot (`sealed`, the owner signature, rollback protection) and the state inside it: [ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md). Golden vectors for both sign-byte layouts are shared between `account_locker_test` / `http_locker_client_test` and www `__tests__/AccountLocker.test.ts`. The relay learns which registered user writes which locker (the write is authenticated for its quota); reads carry no identity.
 
 ## Client compatibility discovery
 
@@ -205,7 +240,7 @@ Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failur
 
 ## Native agent tools
 
-[`MessagingTools`](../../src/feature/conversations/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `ConversationsHub` → `Http*Client` directly (not via MCP).
+[`MessagingTools`](../../src/feature/product/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `ConversationsHub` → `Http*Client` directly (not via MCP).
 
 ## MCP client buckets
 

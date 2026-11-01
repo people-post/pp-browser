@@ -10,7 +10,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -53,10 +55,21 @@ public:
    * once, on a worker or I/O thread.
    */
   void AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done);
+  /**
+   * A contact whose account's card is still unknown (an add whose devices were out of reach, #409): asks
+   * for it again the same way — its devices, then the directory — at most once per kRefetchAfterMs per
+   * account. `done(true)` once a card is kept; nothing is asked (and `done(false)`) when one already is.
+   */
+  void RefreshIfMissing(const Contact& contact, std::function<void(bool kept)> done);
+  static constexpr int64_t kRefetchAfterMs = 30 * 1000;
 
 private:
   void FetchFromDevices(std::vector<std::string> devices, const std::string& account_id,
                         std::function<void(bool kept)> done);
+  /** The account's card from `devices`, else the directory: `done(kept)` once, off the I/O thread. */
+  void FetchCard(const std::string& account_id, std::vector<std::string> devices, std::function<void(bool kept)> done);
+  std::mutex refetch_mutex_;
+  std::unordered_map<std::string, int64_t> last_refetch_ms_;
   CardFetcher fetch_card_;
   std::function<void(std::function<void()>)> post_blocking_;
   ContactsStore& contacts_;

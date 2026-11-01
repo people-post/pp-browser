@@ -16,16 +16,49 @@ struct PostMedia {
   PostHash content_id{};
   std::string mime;
   uint64_t size = 0;
+  std::string alt;          // for screen readers; empty = none
+  uint32_t width = 0;       // pixels; 0 = unknown
+  uint32_t height = 0;
+  uint32_t duration_ms = 0; // 0 = a still image
+  ByteVector placeholder;   // ThumbHash shown while the media loads; empty = none
 
   bool operator==(const PostMedia&) const = default;
 };
 
-/** kind post (and the replacement in an edit). */
+enum class PostFacetType : uint8_t {
+  Mention = 1,  // value: an account id
+  Link = 2,     // value: an https URL
+  Hashtag = 3,  // value: the tag without "#"
+};
+
+/** A byte span [start, end) of the text and what it means; a reader shows an unknown type as plain text. */
+struct PostFacet {
+  uint64_t start = 0;
+  uint64_t end = 0;
+  uint8_t type = 0;
+  std::string value;
+
+  bool operator==(const PostFacet&) const = default;
+};
+
+/** The thread's top post and the post replied to (the same ref for a reply to a top-level post). */
+struct PostReply {
+  PostRef root;
+  PostRef parent;
+
+  bool operator==(const PostReply&) const = default;
+};
+
+/** kind post (and the replacement in an edit): projects/social-posts/DESIGN.md § Post body (S026). */
 struct PostBody {
   std::string text;
   std::vector<PostMedia> media;
-  std::optional<PostRef> reply_to;
+  std::vector<PostFacet> facets;  // sorted by start, not overlapping
+  std::optional<PostReply> reply;
   std::optional<PostRef> quote;
+  std::string content_warning;    // empty = none
+  std::vector<std::string> labels;     // author self-labels: "sexual", "nudity", "graphic"
+  std::vector<std::string> languages;  // BCP 47 tags
 
   bool operator==(const PostBody&) const = default;
 };
@@ -101,7 +134,8 @@ Roe<DisavowBody> DecodeDisavowBody(const ByteVector& bytes);
 
 /**
  * The body decodes for its kind and is within the protocol limits; refs are well formed; edit / delete /
- * disavow name `author`'s own entries. An unknown kind passes (it is kept as a stub, not read).
+ * disavow name `author`'s own entries; a post's facets are sorted, apart and on UTF-8 boundaries of its text.
+ * An unknown kind passes (it is kept as a stub, not read).
  */
 Roe<void> CheckPostBody(uint8_t kind, const ByteVector& body, const std::string& author);
 

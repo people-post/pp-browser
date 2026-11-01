@@ -482,6 +482,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("bootstrap_peers", makeArray(std::move(peers)));
   object.set("advertise_multiaddrs", makeArray(std::move(advertise)));
   object.set("mesh_publish", config.mesh_publish);
+  object.set("mesh_heartbeat", config.mesh_heartbeat);
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
@@ -519,6 +520,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto mesh_publish = object.getIf<bool>("mesh_publish")) {
     config.mesh_publish = *mesh_publish;
+  }
+  if (auto mesh_heartbeat = object.getIf<bool>("mesh_heartbeat")) {
+    config.mesh_heartbeat = *mesh_heartbeat;
   }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;
@@ -739,6 +743,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("pin_is_default", prefs.pin_is_default);
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
+  object.set("show_notification_preview", prefs.show_notification_preview);
   object.set("stay_connected", prefs.stay_connected);
   object.set("call_diagnostics", prefs.call_diagnostics);
   object.set("crash_reports_enabled", prefs.crash_reports_enabled);
@@ -787,6 +792,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   } else {
     prefs.show_notifications = true;
   }
+  prefs.show_notification_preview = object.getIf<bool>("show_notification_preview").value_or(true);
   if (auto call_diagnostics = object.getIf<bool>("call_diagnostics")) {
     prefs.call_diagnostics = *call_diagnostics;
   } else {

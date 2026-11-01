@@ -4,7 +4,6 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
-#include "lib/broadcast/BroadcastJoinTicket.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
@@ -21,7 +20,7 @@
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"
@@ -132,6 +131,12 @@ public:
   /** The remote's caps for a call — from invite / accept, then `call_caps_update` (K005). */
   using CallPeerCapsSink = std::function<void(const std::string& call_id, const CallPeerCaps& caps)>;
   void SetCallPeerCapsSink(CallPeerCapsSink sink);
+  /** H013: the relays this node is parked on now (a callee advertises them in its CallAccept). */
+  using ParkedRelaysProvider = std::function<std::vector<std::string>()>;
+  void SetParkedRelaysProvider(ParkedRelaysProvider provider);
+  /** H013: the relays the call's answerer said it is parked on (its CallAccept). */
+  using CallPeerParkedRelaysSink = std::function<void(const std::string& call_id, const std::vector<std::string>& relays)>;
+  void SetCallPeerParkedRelaysSink(CallPeerParkedRelaysSink sink);
   /** Local mesh PeerId (base58) for invite/accept — PeerId→relay without contacts. */
   using LocalMeshPeerIdFn = std::function<std::string()>;
   void SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback);
@@ -239,6 +244,7 @@ public:
   std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const { return workflow_.PeekTopPendingInvite(); }
+  int64_t AloneUntilMs(const std::string& call_id) const { return workflow_.AloneUntilMs(call_id); }
 
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
@@ -389,7 +395,16 @@ private:
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
+  /** H013: our 1:1 caller stopped trying to reach us; the answerer stops waiting. */
+  Roe<void> HandleInboundConnectGiveUp(const std::string& detail_json, const std::string& sender_identity);
+  /** H013: we placed this 1:1 call and our connect gave up — tell the peer. */
+  void SendConnectGiveUp(const std::string& call_id, const std::string& peer_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** M021 d5: a sibling's notice (our own account only) that it took / declined a call ringing here too. */
+  Roe<void> HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
+                                    const std::string& local_identity);
+  /** M021 d5: this device took / declined an incoming call — tell our other devices, so theirs stop ringing. */
+  void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
 
 
   ContactsStore& contacts_;
@@ -431,6 +446,8 @@ private:
   mesh::InboundAudience inbound_call_audience_ = mesh::InboundAudience::Everyone;
   LocalPeerCapsFn local_peer_caps_;
   CallPeerCapsSink call_peer_caps_sink_;
+  ParkedRelaysProvider parked_relays_;
+  CallPeerParkedRelaysSink call_peer_parked_relays_sink_;
   LocalMeshPeerIdFn local_mesh_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   /** PeerId → advertised media_relay (V030). Unknown = fail closed. */

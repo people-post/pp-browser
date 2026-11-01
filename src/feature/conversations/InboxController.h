@@ -3,17 +3,19 @@
 #include "common/chat/SystemControl.h"
 
 #include "common/Module.h"
+#include "lib/messaging/ThreadMentionsStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/messaging/TranscriptAssembly.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -28,6 +30,26 @@ struct TranscriptAttachmentView {
   std::string local_path;
   /** A video's poster frame (empty: none). */
   std::string poster_path;
+  /**
+   * False for a picture that must not be decoded for display: its header is unreadable or declares more pixels
+   * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
+   */
+  bool inline_image_ok = true;
+  /**
+   * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
+   * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
+   */
+  bool on_demand = false;
+  /** Percent of a download in progress (0..100), -1 when not downloading or not yet known. */
+  int download_percent = -1;
+};
+
+/** What a voice message's bubble shows while it plays (all zero when it is not the one playing). */
+struct VoiceBubbleState {
+  bool playing = false;
+  bool paused = false;
+  int64_t position_ms = 0;
+  int64_t duration_ms = 0;
 };
 
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
@@ -36,6 +58,17 @@ struct TranscriptFacts {
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
+  /** A group member's public name (card nickname, then directory nickname, then short id; never a local remark). */
+  std::function<std::string(const std::string& account_id)> member_name;
+  /** This account's id: a group line about it reads "you". */
+  std::string local_account;
+  /**
+   * Voice messages: drawn as a play / pause bubble when this build can play them (false on Linux: a file row),
+   * with the length clamped to `voice_max_seconds` and the progress `voice_state` gives. The GUI sets these.
+   */
+  bool voice_supported = false;
+  int voice_max_seconds = 120;
+  std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -50,7 +83,10 @@ public:
   /** The system-control families features bind: how their messages show (hidden, worded). Not owned. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
 
+  /** The chats the user has (a direct chat made only by a group's events is left out until it is theirs). */
   Roe<std::vector<Thread>> ListThreads();
+  /** The user did something with this chat (opened, pinned it): it is listed from now on. */
+  void KeepListed(const std::string& thread_id);
   Roe<Thread> GetActiveThread() const;
   const std::string& ActiveThreadId() const { return active_thread_id_; }
 
@@ -84,7 +120,8 @@ public:
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
-  void IncrementUnread(const std::string& thread_id, int delta = 1);
+  /** `even_if_active`: count it although it is the active thread (the user left its page, e.g. back to the list). */
+  void IncrementUnread(const std::string& thread_id, int delta = 1, bool even_if_active = false);
   void OnInboundMessagePersisted(const std::string& thread_id,
                                  const std::optional<std::string>& preview = std::nullopt);
   int SumUnread() const;
@@ -115,6 +152,8 @@ public:
 
   void SetProfileDataDir(std::string profile_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
+  /** The unread-mention marker (G015): a thread's rows go when it is opened or deleted, a message's when it is. */
+  void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
 
 private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
@@ -129,7 +168,10 @@ private:
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
+  /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
+  mutable std::unordered_map<std::string, bool> inline_image_ok_;
   std::string active_thread_id_;
+  ThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;
 };
 

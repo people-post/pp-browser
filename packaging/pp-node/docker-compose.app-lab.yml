@@ -58,19 +58,6 @@ services:
   messenger:
     build:
       context: ${PP_WEB2_ROOT:-../../../../web2}/messenger
-      # messenger's package.json pins no pnpm, so its own Dockerfile gets corepack's latest pnpm, which
-      # rejects `--quiet`. Pin the one www uses.
-      dockerfile_inline: |
-        FROM node:lts-alpine
-        ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
-        RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
-        WORKDIR /app
-        COPY app/package.json app/pnpm-lock.yaml app/pnpm-workspace.yaml ./
-        RUN pnpm install --frozen-lockfile --ignore-scripts
-        COPY app/src ./src
-        COPY app/tsconfig.json ./
-        RUN pnpm run build
-        CMD ["node", "obj/index.js"]
     environment:
       BRF_MESSENGER_HOST: "::"
       BRF_MESSENGER_PORT: 9098

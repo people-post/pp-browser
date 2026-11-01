@@ -1,3 +1,4 @@
+#include "lib/people/DevicePeerId.h"
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -10,7 +11,7 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/messaging/PeerRequestAuth.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -43,7 +44,7 @@ public:
       throw std::runtime_error("identity load failed");
     }
     requester_account = requester.Get()->account_id;
-    requester_peer = *PeerRequestAuth::DevicePeerId(requester.Get()->public_key_b64);
+    requester_peer = *DevicePeerIdFromKey(requester.Get()->public_key_b64);
     PeerSigningKeyRecord key;
     key.signing_public_key_b64 = requester.Get()->account_signing_public_key_b64;
     key.source = "test";
@@ -211,6 +212,35 @@ TEST(ChatBlobResponderTest, ServePushAcceptsHashBeforeAttachmentMessageArrives) 
   EXPECT_EQ(*loaded, ciphertext);
 
   harness.SeedAttachmentMessage(fields);
+}
+
+TEST(ChatBlobResponderTest, ServePushAsksTheGateAndAKeptPushIsOnlyWhatTheGateAdmits) {
+  ChatBlobResponderHarness harness("push-gate");
+  const auto fields = harness.MakeAttachmentFields();
+  const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
+
+  std::string seen_sender;
+  uint64_t seen_bytes = 0;
+  bool admit = false;
+  const ChatBlobPushGate gate = [&](const std::string& sender, const uint64_t bytes) {
+    seen_sender = sender;
+    seen_bytes = bytes;
+    return admit;
+  };
+
+  auto refused = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                              harness.profile_data_dir, ciphertext, harness.OnItsLink(), gate);
+  ASSERT_FALSE(static_cast<bool>(refused)) << "over the receiver's limits: refused, the sender uses the server";
+  EXPECT_EQ(seen_sender, "relay:peer");
+  EXPECT_EQ(seen_bytes, ciphertext.size());
+  EXPECT_FALSE(AttachmentPendingCiphertextExists(harness.profile_data_dir, harness.thread.id, fields.content_hash))
+      << "a refused push leaves nothing on disk";
+
+  admit = true;
+  auto kept = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                           harness.profile_data_dir, ciphertext, harness.OnItsLink(), gate);
+  ASSERT_TRUE(static_cast<bool>(kept)) << kept.error().message;
+  EXPECT_TRUE(AttachmentPendingCiphertextExists(harness.profile_data_dir, harness.thread.id, fields.content_hash));
 }
 
 TEST(ChatBlobResponderTest, ServePushRejectsPastPerThreadPendingCap) {

@@ -53,6 +53,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/WIRE_SCHEMAS.md](contracts/WIRE_SCHEMAS.md) | Relay envelope, ChatPayload, history wire | `envelope_version`, `payload_version`, protocol ids |
 | [contracts/MESSAGE_ENCRYPTION.md](contracts/MESSAGE_ENCRYPTION.md) | E2E AEAD, AAD, signing | `aad_version`, crypto blob version |
 | [contracts/ACCOUNT_CARD.md](contracts/ACCOUNT_CARD.md) | Account cards: keys and devices that prove themselves; locator; card exchange over Amp | `card_version`, `pp-browser-contact-v1:`, `/pp/account-card/1.0.0` |
+| [contracts/ACCOUNT_LOCKER.md](contracts/ACCOUNT_LOCKER.md) | Account locker: recovery-seed keys, sealed snapshot, state JSON, sync between devices, restore | `pp-browser:account-locker-v1`, `account_locker.json` |
 | [contracts/AT_REST_ENCRYPTION.md](contracts/AT_REST_ENCRYPTION.md) | PIN vault, DEK, `identity.enc` | vault file version |
 | [contracts/DATA_LAYOUT.md](contracts/DATA_LAYOUT.md) | Paths, profile tree, JSON schema versions | on-disk layout |
 | [contracts/COMPATIBILITY.md](contracts/COMPATIBILITY.md) | Dirty folders; newer peer/API; wipe vs migrate | policy |
@@ -66,6 +67,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/CODED_FAILURE.md](contracts/CODED_FAILURE.md) | Per-module `CodedFailure` escalation; adapter vs wrap; rollout | in-process `Err` ints (not wire) |
 | [contracts/AMP-LINK-ERRORS.md](contracts/AMP-LINK-ERRORS.md) | Stable `PeerLinkManager` / `IChatPeerLinks` link `Err` table | link/port codes only |
 | [contracts/MEDIA_CHANNELS.md](contracts/MEDIA_CHANNELS.md) | Media frame `channel_id`: track kind + video level; relay QoS type; level negotiation | layout (one byte: kind / level) |
+| [contracts/DIAGNOSTICS.md](contracts/DIAGNOSTICS.md) | What Send diagnostics sends: shareable lines (`Diag`, `Metrics`), the crash record, the upload request | `schema_version` 1; event names / keys |
 | [contracts/NODE_METRICS.md](contracts/NODE_METRICS.md) | pp-node `/metrics` (Prometheus text): series names, types, labels | series names (stable) |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
@@ -81,6 +83,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | [ui/WINDOW_SHELL.md](ui/WINDOW_SHELL.md) | Shell layout |
 | [ui/shell_layout_review.html](ui/shell_layout_review.html) | Static HTML mock — expanded vs compact pages (team UI review) |
 | [ui/WORKING_SET_PANEL.md](ui/WORKING_SET_PANEL.md) | Auxiliary pane |
+| [ui/SCANNING.md](ui/SCANNING.md) | In-app QR scan, friend confirmation and extension ports |
 | [ui/RML_PROFILE.md](ui/RML_PROFILE.md) / [ui/RCSS_PROFILE.md](ui/RCSS_PROFILE.md) | AI-safe RML/RCSS (agent conventions) |
 | [ui/CHAT_TEMPLATES.md](ui/CHAT_TEMPLATES.md), [ui/INPUT.md](ui/INPUT.md), [ui/AGENT_CONVERSATION.md](ui/AGENT_CONVERSATION.md) | Chat UX / agent conversation |
 

@@ -4,6 +4,7 @@
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallSessionStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -37,7 +38,8 @@ public:
    * The call's summary into `thread_id`'s chat stream (both sides, all their devices read it); kept
    * here only when it cannot be sent (an unverified private key, no route) or `local_only`.
    */
-  Roe<void> SendSummary(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only = false);
+  Roe<void> SendSummary(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only = false,
+                        SummaryWrite write = SummaryWrite::Final);
   /** Best-effort to every joined participant but `skip_identity`. */
   Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                            const std::string& display, const std::string& skip_identity);

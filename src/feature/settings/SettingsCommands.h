@@ -1,5 +1,8 @@
 #pragma once
 
+#include "common/Secret.h"
+
+#include "foundation/diagnostics/DiagnosticsUploadResult.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "foundation/data/SessionStore.h"
@@ -32,8 +35,8 @@ struct SettingsCommands {
   std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
   std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
   std::function<Roe<void>()> clear_profile_icon;
-  std::function<Roe<BlobQuotaRecoveryPlan>()> plan_relay_quota_recovery;
-  std::function<Roe<void>()> free_oldest_relay_blob_slot;
+  std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
+  std::function<Roe<void>(const std::string& blob_id)> delete_relay_blob;
   std::function<void()> drain_pending_attachment_media;
   std::function<Roe<void>()> clear_downloaded_attachments;
   /** CAS library (P3): filter all|private|public|cache. */
@@ -77,14 +80,30 @@ struct SettingsCommands {
 
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
-  std::function<Roe<void>(const std::string& current_pin, const std::string& new_pin)> change_pin;
-  /** Copy a time-limited link-device payload (account keys + shared DEK + public PSKs). */
+  std::function<Roe<void>(const SecretText& current_pin, const SecretText& new_pin)> change_pin;
+  /** Copy a time-limited link-device payload (account keys, shared DEK, account card; no sessions — M021). */
   std::function<Roe<std::string>()> export_link_device;
+  /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
+  std::function<Roe<std::optional<SecretText>>(const SecretText& pin)> recovery_phrase;
+  /** Whether the account has a recovery phrase (vault unlocked). */
+  std::function<bool()> has_recovery_phrase;
+  /** The account's state as a saved copy's text (an exported locker file, M023 §6 amendment). */
+  std::function<Roe<std::string>()> export_account_copy;
+  /** The account's devices (M021 d4): the main device first; whether this one is signed out. */
+  std::function<Roe<OwnDevicesView>()> own_devices;
+  /** On the main device: take another device off the account (it stops working until linked again). */
+  std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
+  /** On the main device: make another device the main one (this one can then no longer add or remove devices). */
+  std::function<Roe<void>(const std::string& peer_id)> make_main_device;
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
-  /** Ensure PP Support contact + open Direct e2e_public chat. */
-  std::function<Roe<void>()> open_support_chat;
+  /** Ensure PP Support contact + open Direct e2e_public chat; `prefilled_text` (may be empty) goes in the composer, unsent. */
+  std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
+  /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
+  std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
+  /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
+  std::function<std::string()> last_diagnostics_id;
 };
 
 } // namespace pbr

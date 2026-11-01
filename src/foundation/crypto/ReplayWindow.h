@@ -15,6 +15,11 @@ public:
 
   bool Accept(uint64_t seq);
   uint64_t LastContiguous() const { return last_contiguous_; }
+  /**
+   * Everything up to `seq` is already in (the persisted state says so): the window moves there. A
+   * window lives in memory; after a restart it starts at 0 while the thread's state does not (PB-064).
+   */
+  void CatchUpTo(uint64_t seq);
 
 private:
   size_t window_size_;

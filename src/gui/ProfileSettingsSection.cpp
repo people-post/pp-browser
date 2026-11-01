@@ -91,6 +91,7 @@ SettingsFlushMode ProfileSettingsSection::FlushMode() const {
 void ProfileSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.auto_renew_registration = bootstrap.profile_prefs.auto_renew_registration ? "auto" : "off";
   state.show_notifications = bootstrap.profile_prefs.show_notifications ? "on" : "off";
+  state.show_notification_preview = bootstrap.profile_prefs.show_notification_preview ? "on" : "off";
   state.stay_connected = bootstrap.profile_prefs.stay_connected ? "on" : "off";
   if (!commands_ || !commands_->load_profile_identity) {
     return;
@@ -105,6 +106,9 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   }
   const bool show_notifications = state.show_notifications != "off";
   if (show_notifications != bootstrap.profile_prefs.show_notifications) {
+    return false;
+  }
+  if ((state.show_notification_preview != "off") != bootstrap.profile_prefs.show_notification_preview) {
     return false;
   }
   if ((state.stay_connected == "on") != bootstrap.profile_prefs.stay_connected) {
@@ -131,6 +135,10 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
   }
   if (show_notifications != prefs.show_notifications) {
     prefs.show_notifications = show_notifications;
+    prefs_dirty = true;
+  }
+  if (const bool show_preview = state.show_notification_preview != "off"; show_preview != prefs.show_notification_preview) {
+    prefs.show_notification_preview = show_preview;
     prefs_dirty = true;
   }
   if (const bool stay_connected = state.stay_connected == "on"; stay_connected != prefs.stay_connected) {

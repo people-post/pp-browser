@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -69,6 +70,7 @@ const std::vector<std::pair<std::string, std::string>> kZhPositives = {
     {"打开中继", "set_mesh_capabilities"},
     {"重新检测一下网络", "probe_reachability"},
     {"重置 AI 的权限", "reset_tool_permissions"},
+    {"我要找客服", "open_support"},
 };
 
 const std::vector<std::string> kZhNegatives = {
@@ -146,6 +148,8 @@ const std::vector<std::pair<std::string, std::string>> kEnPositives = {
     {"What languages are available?", "list_locales"},
     {"Switch to dark mode", "set_appearance"},
     {"Turn on dark mode please", "set_appearance"},
+    {"follow the system", "set_appearance"},
+    {"match the system", "set_appearance"},
     {"Change the language to Chinese", "set_language"},
     {"Switch the interface to English", "set_language"},
     {"Turn off notifications", "set_notifications"},
@@ -166,6 +170,7 @@ const std::vector<std::pair<std::string, std::string>> kEnPositives = {
     {"Check network connectivity again", "probe_reachability"},
     {"Reset AI permissions", "reset_tool_permissions"},
     {"Reset the tool permissions", "reset_tool_permissions"},
+    {"Contact support", "open_support"},
 };
 
 const std::vector<std::string> kEnNegatives = {
@@ -208,8 +213,17 @@ std::string Describe(const std::string& message) { return "message: " + message.
 
 } // namespace
 
+// The metrics name a tool by kAppActionToolWords; a tool missing there would read `other`.
+TEST(AppActionClassifierTest, EveryTableToolHasAMetricsWord) {
+  for (const AppActionWords& words : AppActionTable()) {
+    EXPECT_EQ(AppActionToolWord(words.tool).view(), words.tool);
+  }
+  EXPECT_EQ(AppActionToolWord("some_mcp_tool").view(), "other");
+  EXPECT_EQ(AppActionToolWord("").view(), "none");
+}
+
 TEST(AppActionClassifierTest, EveryToolHasAChineseAndAnEnglishPositive) {
-  ASSERT_EQ(AllTools().size(), 27u);
+  ASSERT_EQ(AllTools().size(), 28u);
   for (const auto& cases : {kZhPositives, kEnPositives}) {
     std::vector<std::string> covered;
     for (const auto& c : cases) {
@@ -245,6 +259,35 @@ TEST(AppActionClassifierTest, EnglishNegatives) {
   }
 }
 
+TEST(AppActionClassifierTest, ABareEnglishFindNameAsksTheDirectory) {
+  for (const char* message : {"find Ken", "Find Ken Lee", "look for Ken", "please find Ken", "can you find Ken"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  for (const char* message : {"find ken"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  for (const char* message : {"find cheap flights", "find pizza places", "find Tokyo weather", "search for restaurants",
+                              "find news about Iran", "find out", "find something to eat", "find the best pizza place",
+                              "Find people who survived the Titanic"}) {
+    EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("search_people")) << Describe(message);
+  }
+  // Without the tool declared the rule is off.
+  EXPECT_EQ(ClassifyAppAction("find Ken", {"get_preferences"}), std::nullopt);
+}
+
+TEST(AppActionClassifierTest, OverviewQuestions) {
+  for (const char* q : {"你能做什么？", "你会做什么", "你能干什么?", "你会什么", "你能帮我做什么", "你有什么功能。", "能做什么", " 你能做什么 ",
+                        "What can you do?", "what do you do", "What can you help with?", "What are you able to do?",
+                        "what can you help me with", "你能做什么呢", "那你都能做什么呀？", "请问你会干什么吗", "你好，你能帮我干什么",
+                        "你可以做什么啊", "你有哪些功能", "会做什么", "Hi, what can you do for me?", "hey what else can you do",
+                        "so what all can you do", "What things can you do?", "hello what do you do"}) {
+    EXPECT_TRUE(IsAppOverviewQuestion(q)) << q;
+  }
+  for (const char* q : {"what can you do about the weather", "你能做什么菜", "今天有什么新闻", "", "can you do it", "你能做什么菜呢", "你好吗"}) {
+    EXPECT_FALSE(IsAppOverviewQuestion(q)) << q;
+  }
+}
+
 TEST(AppActionClassifierTest, EnglishPositivesAreDeclaredToolsOnly) {
   for (const auto& [message, expected] : kEnPositives) {
     EXPECT_EQ(ClassifyAppAction(message, {expected}), expected) << Describe(message);
@@ -257,6 +300,18 @@ TEST(AppActionClassifierTest, OnlyDeclaredToolsCount) {
   EXPECT_EQ(ClassifyAppAction("加张三为好友", {}), std::nullopt);
   EXPECT_EQ(ClassifyAppAction("加张三为好友", {"unknown_cap", "add_contact"}), "add_contact");
   EXPECT_EQ(ClassifyAppAction("Add Tom as a friend", {"unknown_cap", "add_contact"}), "add_contact");
+}
+
+TEST(AppActionClassifierTest, AddFriendRequestsReachSearchWhenAdditionRequiresSelectingAResult) {
+  const std::vector<std::string> tools = {"search_people", "list_contacts"};
+  for (const std::string message : {
+           "帮我加小明为好友", "帮我添加昵称小明为好友", "加 account:abc_DEF-123 为好友",
+           "Add Tom as a friend", "Please add relay:abc123 as a contact"}) {
+    EXPECT_EQ(ClassifyAppAction(message, tools), "search_people") << message;
+  }
+  EXPECT_EQ(ClassifyAppAction("帮我搜索昵称小明", tools), "search_people");
+  EXPECT_EQ(ClassifyAppAction("通讯录里有没有张三", tools), "list_contacts");
+  EXPECT_EQ(ClassifyAppAction("加张三为好友", {"list_contacts"}), std::nullopt);
 }
 
 TEST(AppActionClassifierTest, TooLongMessagesAreNotJudged) {
@@ -278,4 +333,187 @@ TEST(AppActionClassifierTest, EnglishWhitespaceAndCaseAreNormalised) {
 TEST(AppActionClassifierTest, PhraseHitsBeatVerbObjectHitsInDeclaredOrder) {
   // Both tools hit "open the chat with Tom": open_conversation by phrase, list_conversations by neither.
   EXPECT_EQ(ClassifyAppAction("Open the chat with Tom", {"list_conversations", "open_conversation"}), "open_conversation");
+}
+
+namespace {
+
+std::vector<std::string> SpanTexts(const std::string& text, const AppActionMatch& match) {
+  std::vector<std::string> out;
+  for (const AppActionSpan& s : match.matched_spans) {
+    out.push_back(text.substr(s.begin, s.end - s.begin));
+  }
+  return out;
+}
+
+} // namespace
+
+TEST(AppActionClassifierTest, MatchReturnsTheToolAndWhereTheWordsHit) {
+  // A phrase hit is one span.
+  const std::string phrase = "搜索用户 ken";
+  const auto a = ClassifyAppActionMatch(phrase, AllTools());
+  ASSERT_TRUE(a.has_value());
+  EXPECT_EQ(a->tool, "search_people");
+  EXPECT_EQ(SpanTexts(phrase, *a), (std::vector<std::string>{"搜索用户"}));
+
+  // The matcher drops whitespace; the span still maps back onto the original bytes, space included.
+  const std::string verb_object = "关掉 DHT";
+  const auto b = ClassifyAppActionMatch(verb_object, AllTools());
+  ASSERT_TRUE(b.has_value());
+  EXPECT_EQ(b->tool, "set_mesh_capabilities");
+  EXPECT_EQ(SpanTexts(verb_object, *b), (std::vector<std::string>{"关掉 DHT"}));
+
+  // A verb + object hit is two spans, in order.
+  const std::string two = "帮我关掉通知";
+  const auto b2 = ClassifyAppActionMatch(two, AllTools());
+  ASSERT_TRUE(b2.has_value());
+  ASSERT_EQ(b2->matched_spans.size(), 1u) << "phrase 关掉通知";
+  EXPECT_EQ(SpanTexts(two, *b2), (std::vector<std::string>{"关掉通知"}));
+
+  const std::string en = "Find user bob";
+  const auto c = ClassifyAppActionMatch(en, AllTools());
+  ASSERT_TRUE(c.has_value());
+  EXPECT_EQ(SpanTexts(en, *c), (std::vector<std::string>{"Find", "user"}));
+
+  const std::string en_phrase = "Please turn off notifications now";
+  const auto d = ClassifyAppActionMatch(en_phrase, AllTools());
+  ASSERT_TRUE(d.has_value());
+  EXPECT_EQ(SpanTexts(en_phrase, *d), (std::vector<std::string>{"turn off notifications"}));
+
+  // A curly apostrophe is part of the word and does not shift the offsets after it.
+  const std::string curly = "Don\xE2\x80\x99t panic. Show my contacts";
+  const auto e = ClassifyAppActionMatch(curly, AllTools());
+  ASSERT_TRUE(e.has_value());
+  ASSERT_EQ(e->matched_spans.size(), 1u);
+  EXPECT_EQ(curly.substr(e->matched_spans[0].begin, e->matched_spans[0].end - e->matched_spans[0].begin), "Show my contacts");
+}
+
+TEST(AppActionClassifierTest, AddContactMappedToSearchKeepsTheAddWordsSpans) {
+  std::vector<std::string> tools = AllTools();
+  tools.erase(std::remove(tools.begin(), tools.end(), "add_contact"), tools.end());
+  const std::string text = "加张三为好友";
+  const auto m = ClassifyAppActionMatch(text, tools);
+  ASSERT_TRUE(m.has_value());
+  EXPECT_EQ(m->tool, "search_people");
+  EXPECT_EQ(SpanTexts(text, *m), (std::vector<std::string>{"为好友"}));
+}
+
+TEST(AppActionClassifierTest, MatchAgreesWithClassifyAppActionAndStaysInsideTheText) {
+  const auto check = [](const std::string& text) {
+    const auto tool = ClassifyAppAction(text, AllTools());
+    const auto match = ClassifyAppActionMatch(text, AllTools());
+    ASSERT_EQ(tool.has_value(), match.has_value()) << text;
+    if (!match) {
+      return;
+    }
+    EXPECT_EQ(*tool, match->tool) << text;
+    EXPECT_FALSE(match->matched_spans.empty()) << text;
+    for (const AppActionSpan& s : match->matched_spans) {
+      EXPECT_LT(s.begin, s.end) << text;
+      EXPECT_LE(s.end, text.size()) << text;
+    }
+  };
+  for (const auto& [text, tool] : kZhPositives) {
+    check(text);
+  }
+  for (const auto& [text, tool] : kEnPositives) {
+    check(text);
+  }
+  for (const std::string& text : kZhNegatives) {
+    check(text);
+  }
+}
+
+TEST(AppActionClassifierTest, ContainsAppActionHitIgnoresTheRequestForm) {
+  EXPECT_TRUE(ContainsAppActionHit("Bob 打开通知"));
+  EXPECT_TRUE(ContainsAppActionHit("Bob turn off notifications"));
+  EXPECT_FALSE(ContainsAppActionHit("Tony the Great"));
+  EXPECT_FALSE(ContainsAppActionHit("小成"));
+  EXPECT_FALSE(ContainsAppActionHit(""));
+}
+
+// Device check 2026-10-28: the everyday phrasings that went to brief_AI instead of the device.
+TEST(AppActionClassifierTest, EverydayPhrasings) {
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"搜索用户 ken", "search_people"},
+      {"找一下 Alice", "search_people"},
+      {"搜一下 Alice", "search_people"},
+      {"look up Ken", "search_people"},
+      {"看一下我的设置", "get_preferences"},
+      {"我的设置", "get_preferences"},
+      {"帮我看一下设置", "get_preferences"},
+      {"看一下设置", "get_preferences"},
+      {"my settings", "get_preferences"},
+      {"我的网络状态", "get_reachability"},
+      {"看看网络状态", "get_reachability"},
+      {"网络状态", "get_reachability"},
+      {"network status", "get_reachability"},
+      {"我的安全状态", "get_security_status"},
+      {"深色模式", "set_appearance"},
+      {"浅色模式", "set_appearance"},
+      {"夜间模式", "set_appearance"},
+      {"跟随系统", "set_appearance"},
+      {"切换到深色模式", "set_appearance"},
+      {"换到浅色模式", "set_appearance"},
+      {"改到夜间模式", "set_appearance"},
+      {"dark mode", "set_appearance"},
+      {"切换到中文", "set_language"},
+      {"switch to English", "set_language"},
+  };
+  for (const auto& [text, tool] : cases) {
+    const auto match = ClassifyAppActionMatch(text, AllTools());
+    ASSERT_TRUE(match.has_value()) << text;
+    EXPECT_EQ(match->tool, tool) << text;
+  }
+  for (const char* text : {"今天天气怎么样", "帮我写首诗", "我的朋友很多", "设置一个闹钟", "找", "find", "look up the capital of France",
+                           "dark mode is overrated in my opinion"}) {
+    EXPECT_FALSE(ClassifyAppActionMatch(text, AllTools()).has_value()) << text;
+  }
+}
+
+// Simulator run 2026-10-28: a bare setting name is a hit (the planner asks on or off); a sentence that merely
+// contains the word is not.
+TEST(AppActionClassifierTest, BareBooleanSettingNames) {
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"通知呢", "set_notifications"},
+      {"通知", "set_notifications"},
+      {"通知？", "set_notifications"},
+      {"Notifications?", "set_notifications"},
+      {"notifications", "set_notifications"},
+      {"节点呢", "set_node_enabled"},
+      {"透明度呢", "set_reduce_transparency"},
+      {"毛玻璃", "set_reduce_transparency"},
+      {"自动续期呢", "set_auto_renew_registration"},
+      {"通话诊断吗", "set_call_diagnostics"},
+      {"call diagnostics?", "set_call_diagnostics"},
+      {"node mode", "set_node_enabled"},
+      {"blur?", "set_reduce_transparency"},
+  };
+  for (const auto& [text, tool] : cases) {
+    const auto match = ClassifyAppActionMatch(text, AllTools());
+    ASSERT_TRUE(match.has_value()) << text;
+    EXPECT_EQ(match->tool, tool) << text;
+    ASSERT_FALSE(match->matched_spans.empty()) << text;
+    EXPECT_LT(match->matched_spans[0].begin, match->matched_spans[0].end) << text;
+    EXPECT_LE(match->matched_spans[0].end, text.size()) << text;
+  }
+  for (const char* text : {"通知我一下", "通知他明天开会", "notification sounds are annoying", "blur the background", "节点在哪"}) {
+    EXPECT_FALSE(ClassifyAppActionMatch(text, AllTools()).has_value()) << text;
+  }
+}
+
+// Customer service: only sentences that ask for support themselves, or name PP's, open the PP Support offer. Support
+// of another site, and PP in any other sense, stay with brief_AI.
+TEST(AppActionClassifierTest, OpenSupportOnlyForAnAskForCustomerService) {
+  for (const char* message : {"我要找客服", "转人工", "联系 PP 客服", "找 PP 支持", "帮我转人工", "我想联系客服", "转人工客服",
+                              "接通 PP 客服", "我要人工客服", "contact support", "Customer service", "Contact PP support",
+                              "I want to talk to customer service", "Can you contact customer support?",
+                              "talk to a human please"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::optional<std::string>("open_support")) << Describe(message);
+  }
+  for (const char* message : {"PP塑料是什么", "这个网站的客服电话是多少", "帮我联系淘宝客服", "我在淘宝要找客服", "怎么联系客服",
+                              "PP 支持视频通话吗", "PP 支持哪些语言", "电话怎么转人工", "淘宝的人工客服怎么找",
+                              "What is good customer service?", "Customer service at Amazon is slow today",
+                              "Does PP support video calls?", "How was the support for the bill?"}) {
+    EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("open_support")) << Describe(message);
+  }
 }

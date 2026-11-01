@@ -1,5 +1,6 @@
 #include "domain/attachments/AmpChatBlobTransport.h"
 
+#include "lib/people/DevicePeerId.h"
 #include "lib/messaging/PeerRequestAuth.h"
 
 #include "mesh/l4/shared/InboundReply.h"
@@ -104,7 +105,7 @@ Roe<ChatBlobRequest> SignedForSend(ChatBlobRequest request, IdentityStore& ident
   if (!local) {
     return local.error();
   }
-  auto peer_id = peer_override.empty() ? PeerRequestAuth::DevicePeerId(local->public_key_b64) : Roe<std::string>(peer_override);
+  auto peer_id = peer_override.empty() ? DevicePeerIdFromKey(local->public_key_b64) : Roe<std::string>(peer_override);
   if (!peer_id) {
     return peer_id.error();
   }
@@ -131,6 +132,12 @@ struct AmpChatBlobTransport::Impl {
   std::string profile_id;
   ByteVector dek;
   mutable std::mutex dek_mutex;
+  mutable std::mutex gate_mutex;
+  ChatBlobPushGate push_gate;
+  ChatBlobPushGate CopyPushGate() const {
+    std::lock_guard lock(gate_mutex);
+    return push_gate;
+  }
   mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
@@ -240,7 +247,8 @@ struct AmpChatBlobTransport::Impl {
                       }
                       const ChatBlobRequester requester{remote_peer_id, &signing_keys, util::NowUnixMs()};
                       auto pushed = ChatBlobResponder::ServePush(store, request, local_identity->relay_user_id,
-                                                                 profile_data_dir, ciphertext, requester);
+                                                                 profile_data_dir, ciphertext, requester,
+                                                                 CopyPushGate());
                       if (!pushed) {
                         logging::getLogger("AmpChatBlobTransport").info << "chat-blob push refused: " << pushed.error().message;
                       }
@@ -272,6 +280,11 @@ AmpChatBlobTransport::~AmpChatBlobTransport() {
 
 void AmpChatBlobTransport::SetProfileDataDir(std::string profile_data_dir) {
   impl_->profile_data_dir = std::move(profile_data_dir);
+}
+
+void AmpChatBlobTransport::SetPushGate(std::function<bool(const std::string&, uint64_t)> gate) {
+  std::lock_guard lock(impl_->gate_mutex);
+  impl_->push_gate = std::move(gate);
 }
 
 void AmpChatBlobTransport::SetProfileId(std::string profile_id) {

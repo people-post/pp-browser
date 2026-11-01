@@ -1,7 +1,5 @@
 #include "common/chat/AttachmentDownloadPolicy.h"
 
-#include "common/chat/MessagingLimits.h"
-
 namespace pbr {
 
 std::string AttachmentDownloadPolicyToString(const AttachmentDownloadPolicy policy) {
@@ -27,7 +25,7 @@ AttachmentDownloadPolicy AttachmentDownloadPolicyFromString(const std::string& v
 }
 
 bool ShouldAutoEnqueueAttachment(const AttachmentDownloadPolicy policy, const uint64_t byte_length,
-                                 const bool backlog_drain) {
+                                 const bool backlog_drain, const uint64_t smart_max_bytes) {
   if (backlog_drain) {
     return true;
   }
@@ -38,7 +36,7 @@ bool ShouldAutoEnqueueAttachment(const AttachmentDownloadPolicy policy, const ui
     return false;
   case AttachmentDownloadPolicy::Smart:
   default:
-    return byte_length <= kMaxChatAttachmentPlaintextBytes;
+    return byte_length <= smart_max_bytes;
   }
 }
 

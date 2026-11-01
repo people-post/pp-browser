@@ -113,6 +113,15 @@ Roe<void> ContactsStore::EnsureLoaded() const {
       if (version < kSchemaVersion) {
         needs_rewrite = true;
       }
+      if (version < 2) {
+        // v2: the remark is only what the user wrote. Older builds copied the nickname into it on add.
+        for (Contact& contact : contacts_) {
+          if (!contact.local.display_name.empty() && contact.local.display_name == contact.remote.nickname) {
+            contact.local.display_name.clear();
+            SyncContactMirrors(contact);
+          }
+        }
+      }
     }
   }
 
@@ -304,8 +313,6 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const mesh::DirectoryH
 
   Contact contact;
   contact.id = util::GenerateUuid();
-  const std::string seed = hit.display_name.empty() ? hit.nickname : hit.display_name;
-  contact.local.display_name = seed;
   contact.local.trust = TrustLevel::Unknown;
   contact.remote.nickname = hit.nickname;
   contact.remote.ids = hit.ids;

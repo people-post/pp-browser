@@ -15,13 +15,14 @@
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "foundation/runtime/OwnerOutbox.h"
-#include "foundation/runtime/OwnerSteps.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerSteps.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -164,6 +165,8 @@ public:
     std::string active_call_id;
     int reattach_attempts = 0;
     bool reattach_in_flight = false;
+    /** A steady-pace retry is scheduled (the quick attempts are spent). */
+    bool slow_retry_pending = false;
   };
 
   /**
@@ -251,10 +254,19 @@ public:
                                       std::function<void(Roe<void>)> on_done);
 
   static constexpr int kMaxGuestSfuReattachAttempts = 3;
+  /** Past the quick attempts a guest keeps trying at this pace while the call is on the hop: a phone
+   *  out of coverage comes back without its network moving. */
+  static constexpr std::chrono::milliseconds kGuestSfuSlowRetry{3000};
 
 private:
   struct HopPick;
   struct HopAttach;
+
+  /** The call whose hop transport a guest should re-attach now, if any. */
+  std::optional<std::string> GuestReattachCallId() const;
+  void StartGuestReattachAttempt(const std::string& call_id);
+  void OnGuestReattachRetry(const hop_migrate_event::GuestReattachRetry& retry);
+  void ScheduleSlowGuestReattach(const std::string& call_id);
 
   /** The live attach's key ring (calls owner), so a rotation reaches its frames. */
   std::shared_ptr<class SfuKeyRing> live_keys_;
@@ -309,6 +321,7 @@ private:
   uint64_t StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, bool guest);
   std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
   void OnRelayAttached(const hop_migrate_event::RelayAttached& answer);
+  void ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait);
   void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);
   // Guest reattach after a lost relay transport (engine stays live).

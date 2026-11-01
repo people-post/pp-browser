@@ -67,7 +67,20 @@ ADR-style log. Newest first within each ID series. Prefix **I** (interface / int
 
 ---
 
-## Open questions
+## I006 — Find/add friend requests show selectable directory results
+
+**Date:** 2026-10-27
+
+**Status:** Accepted — behavior documented in [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md)
+
+**Decision:** Per the user's explicit workflow, an ID/nickname request to find or add a friend
+searches the directory and displays real people results. Contact creation occurs when the user
+selects Add contact on a result. The native AI catalog exposes search, not `add_contact`.
+This narrows the v1b delivery scope; raw mesh PeerId mutation and the broader intent taxonomy remain deferred.
+
+**Rationale:** The user chooses the correct person, including when several people share a nickname.
+
+## Open questions (remaining)
 
 | ID | Question | Notes |
 |----|----------|-------|

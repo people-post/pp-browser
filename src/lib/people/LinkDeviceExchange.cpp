@@ -8,22 +8,8 @@
 
 namespace pbr {
 
-namespace {
-
-Roe<void> DropPrivatePsks(std::vector<LinkDevicePublicPsk>& rows) {
-  for (const LinkDevicePublicPsk& row : rows) {
-    if (row.key.channel != CryptoChannel::E2ePublic) {
-      return Error("Link export must not include private e2e PSKs");
-    }
-  }
-  return {};
-}
-
-} // namespace
-
 Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identity, const ByteVector& dek,
-                                                    std::vector<LinkDevicePublicPsk> public_psks, const int64_t now_ms,
-                                                    const int64_t ttl_ms) {
+                                                    const int64_t now_ms, const int64_t ttl_ms) {
   if (identity.account_id.empty() || identity.account_signing_private_key_b64.empty() ||
       identity.account_signing_public_key_b64.empty()) {
     return Error("Local account identity unavailable");
@@ -37,9 +23,6 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   if (now_ms <= 0 || ttl_ms <= 0) {
     return Error("Invalid link-device lifetime");
   }
-  if (auto filtered = DropPrivatePsks(public_psks); !filtered) {
-    return filtered.error();
-  }
   if (identity.kem_public_key_b64.empty() || identity.kem_private_key_b64.empty()) {
     return Error("Local account KEM unavailable");
   }
@@ -47,15 +30,17 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   LinkDeviceBundleV1 bundle;
   bundle.account_id = identity.account_id;
   bundle.account_ml_dsa_pk_b64 = identity.account_signing_public_key_b64;
-  bundle.account_ml_dsa_sk_b64 = identity.account_signing_private_key_b64;
+  bundle.account_ml_dsa_sk_b64 = identity.account_signing_private_key_b64.Reveal();
   bundle.account_kem_pk_b64 = identity.kem_public_key_b64;
-  bundle.account_kem_sk_b64 = identity.kem_private_key_b64;
+  bundle.account_kem_sk_b64 = identity.kem_private_key_b64.Reveal();
   bundle.dek_b64 = Base64Encode(dek);
   bundle.relay_user_id = identity.relay_user_id;
   bundle.nickname = identity.nickname;
+  if (!identity.recovery_seed_b64.empty()) {
+    bundle.recovery_seed_b64 = identity.recovery_seed_b64.Reveal();  // M023: the new device shows the same phrase
+  }
   bundle.created_at_ms = now_ms;
   bundle.expires_at_ms = now_ms + ttl_ms;
-  bundle.public_psks = std::move(public_psks);
   if (auto valid = LinkDeviceCodec::Validate(bundle, now_ms); !valid) {
     return valid.error();
   }
@@ -63,9 +48,12 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
 }
 
 Roe<std::string> LinkDeviceExchange::ExportJson(const LocalIdentity& identity, const ByteVector& dek,
-                                                std::vector<LinkDevicePublicPsk> public_psks, const int64_t now_ms,
-                                                const int64_t ttl_ms, std::optional<std::string> account_card_json) {
-  auto bundle = Capture(identity, dek, std::move(public_psks), now_ms, ttl_ms);
+                                                std::string account_card_json, const int64_t now_ms,
+                                                const int64_t ttl_ms) {
+  if (account_card_json.empty()) {
+    return Error("No account card to link a device with");
+  }
+  auto bundle = Capture(identity, dek, now_ms, ttl_ms);
   if (!bundle) {
     return bundle.error();
   }
@@ -74,7 +62,7 @@ Roe<std::string> LinkDeviceExchange::ExportJson(const LocalIdentity& identity, c
 }
 
 Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, DataKeyVault& vault,
-                                                       const std::string& bundle_json, const std::string_view pin,
+                                                       const std::string& bundle_json, const SecretText& pin,
                                                        const int64_t now_ms) {
   auto parsed = LinkDeviceCodec::Parse(bundle_json);
   if (!parsed) {
@@ -84,7 +72,7 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
     return valid.error();
   }
 
-  auto dek = Base64Decode(parsed->dek_b64);
+  auto dek = Base64Decode(parsed->dek_b64.Reveal());
   if (!dek) {
     return dek.error();
   }
@@ -97,10 +85,10 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
       return existing.error();
     }
     loaded = *existing;
-    if (auto wrapped = vault.ReplaceWithDek(pin, *dek); !wrapped) {
+    if (auto wrapped = vault.ReplaceWithDek(pin.Reveal(), *dek); !wrapped) {
       return wrapped.error();
     }
-  } else if (auto wrapped = vault.CreateWithDek(pin, *dek); !wrapped) {
+  } else if (auto wrapped = vault.CreateWithDek(pin.Reveal(), *dek); !wrapped) {
     return wrapped.error();
   }
   if (had_vault) {
@@ -121,11 +109,14 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   LocalIdentity next = *loaded;
   const std::string device_peer = next.peer_id;
   const std::string device_pk = next.public_key_b64;
-  const std::string device_sk = next.private_key_b64;
+  const std::string device_sk = next.private_key_b64.Reveal();
 
   next.account_id = parsed->account_id;
   next.account_signing_public_key_b64 = parsed->account_ml_dsa_pk_b64;
   next.account_signing_private_key_b64 = parsed->account_ml_dsa_sk_b64;
+  // The account's recovery seed when it has one (checked against these keys on Validate); none otherwise — the
+  // seed this install minted for itself names another account.
+  next.recovery_seed_b64 = parsed->recovery_seed_b64.value_or(std::string());
   next.kem_public_key_b64 = parsed->account_kem_pk_b64;
   next.kem_private_key_b64 = parsed->account_kem_sk_b64;
   next.relay_user_id = parsed->relay_user_id;
@@ -133,6 +124,9 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
     next.nickname = parsed->nickname;
   }
   next.registered = true;
+  // M021 d4: a link bundle carries the master's card — this device joins that list; a bundle without one is a
+  // restore from the recovery phrase — this device starts a fresh list as the master.
+  next.card_intent = parsed->account_card_json.value_or("").empty() ? kCardIntentFresh : kCardIntentJoin;
   next.peer_id = device_peer;
   next.public_key_b64 = device_pk;
   next.private_key_b64 = device_sk;
@@ -144,7 +138,6 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
 
   LinkDeviceImportResult result;
   result.identity = *saved;
-  result.public_psks = std::move(parsed->public_psks);
   result.account_card_json = std::move(parsed->account_card_json);
   return result;
 }

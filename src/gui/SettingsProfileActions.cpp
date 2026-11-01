@@ -4,7 +4,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "gui/AccountInvite.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "gui/UserFeedback.h"
@@ -151,7 +152,7 @@ void SettingsProfileActions::PickIcon() {
 }
 
 void SettingsProfileActions::UploadIcon(const std::string& path) {
-  if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
+  if (!commands_.plan_relay_quota_recovery || !commands_.delete_relay_blob) {
     host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
     return;
   }
@@ -164,8 +165,8 @@ void SettingsProfileActions::UploadIcon(const std::string& path) {
         ReleasePickedFile(path);
         AfterIconChange(result, Tr("settings.profile.photo_updated"));
       },
-      [this]() { return commands_.plan_relay_quota_recovery(); },
-      [this]() { return commands_.free_oldest_relay_blob_slot(); });
+      [this](const Error& quota_error) { return commands_.plan_relay_quota_recovery(quota_error); },
+      [this](const std::string& blob_id) { return commands_.delete_relay_blob(blob_id); });
 }
 
 void SettingsProfileActions::ClearIcon() {

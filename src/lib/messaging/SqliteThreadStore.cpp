@@ -6,6 +6,7 @@
 #include "lib/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
@@ -313,13 +314,29 @@ Roe<int64_t> SqliteThreadStore::NextDisplayOrder(sqlite3* thread_db) const {
 Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage& message,
                                                             const bool increment_unread) const {
   std::lock_guard lock(db_.profile_mutex());
+  // A membership event in a direct chat is not something to read there: it neither moves the chat up the list
+  // nor becomes its preview (the last message the user can see stays).
+  if (GroupMembershipCodec::IsHiddenInDirectThread(message)) {
+    sqlite3_stmt* kind_stmt = nullptr;
+    bool direct = false;
+    if (sqlite3_prepare_v2(db_.profile_db(), "SELECT kind FROM threads WHERE id = ?;", -1, &kind_stmt, nullptr) ==
+        SQLITE_OK) {
+      sqlite3_bind_text(kind_stmt, 1, message.thread_id.c_str(), -1, SQLITE_TRANSIENT);
+      direct = sqlite3_step(kind_stmt) == SQLITE_ROW &&
+               ThreadKindFromString(SqlText(kind_stmt, 0)) == ThreadKind::Direct;
+    }
+    sqlite3_finalize(kind_stmt);
+    if (direct) {
+      return {};
+    }
+  }
   auto preview_enc = EncryptPreviewBlob(message.thread_id, message.text);
   if (!preview_enc) {
     return preview_enc.error();
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "UPDATE threads SET updated_at = ?, preview_enc = ?, unread_count = unread_count + ? WHERE id = ?;";
+      "UPDATE threads SET updated_at = ?, preview_enc = ?, unread_count = unread_count + ?, listed = 1 WHERE id = ?;";
   if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error(std::string("Failed to prepare catalog update: ") + sqlite3_errmsg(db_.profile_db()));
   }
@@ -350,7 +367,7 @@ Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db_.profile_db(),
                          "SELECT id, kind, channel, title, participant_contact_ids, updated_at, unread_count, "
-                         "preview_enc, peer_identity_kind, peer_identity_value, group_id, local_title FROM threads "
+                         "preview_enc, peer_identity_kind, peer_identity_value, group_id, local_title, listed FROM threads "
                          "ORDER BY updated_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to list threads");
@@ -401,6 +418,7 @@ Roe<Thread> SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
     thread.group_id = std::move(*group_id);
   }
   thread.local_title = SqlText(stmt, 11);
+  thread.listed = sqlite3_column_int(stmt, 12) != 0;
   thread.encrypted = thread.kind == ThreadKind::Group || ThreadChannelIsE2e(thread.channel);
   return thread;
 }
@@ -437,14 +455,14 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   const std::string channel_text = ThreadChannelToString(thread.channel);
   const char* sql =
       "INSERT INTO threads (id, kind, channel, title, local_title, participant_contact_ids, preview_enc, updated_at, "
-      "unread_count, peer_identity_kind, peer_identity_value, group_id) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "unread_count, peer_identity_kind, peer_identity_value, group_id, listed) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, channel=excluded.channel, title=excluded.title, "
       "local_title=excluded.local_title, "
       "participant_contact_ids=excluded.participant_contact_ids, preview_enc=excluded.preview_enc, "
       "updated_at=excluded.updated_at, unread_count=excluded.unread_count, "
       "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value, "
-      "group_id=excluded.group_id;";
+      "group_id=excluded.group_id, listed=MAX(threads.listed, excluded.listed);";
   if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to upsert thread");
   }
@@ -473,6 +491,7 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   } else {
     sqlite3_bind_null(stmt, 12);
   }
+  sqlite3_bind_int(stmt, 13, thread.listed ? 1 : 0);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to upsert thread row");
@@ -498,12 +517,18 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::QueryMessages(const std::stri
   }
   sqlite3_bind_int64(stmt, bind_index, static_cast<int64_t>(limit));
 
+  if (auto dek = db_.RequireDek(); !dek) {
+    sqlite3_finalize(stmt);
+    return dek.error();  // a locked store reads nothing: that is an error, not a row to skip
+  }
   std::vector<ThreadMessage> messages;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     auto message = ReadMessageRow(thread_id, stmt);
     if (!message) {
-      sqlite3_finalize(stmt);
-      return message.error();
+      // One unreadable row must not blank the chat: the rest of the page still reads. The row stays.
+      log().warning << "Message not read, skipped thread_id=" << thread_id << " message_id=" << SqlText(stmt, 0)
+                    << ": " << message.error().message;
+      continue;
     }
     message->thread_id = thread_id;
     messages.push_back(std::move(*message));
@@ -737,6 +762,14 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAft
 }
 
 Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message) {
+  return AppendMessageImpl(message, false);
+}
+
+Roe<ThreadMessage> SqliteThreadStore::UpsertMessage(const ThreadMessage& message) {
+  return AppendMessageImpl(message, true);
+}
+
+Roe<ThreadMessage> SqliteThreadStore::AppendMessageImpl(const ThreadMessage& message, const bool upsert) {
   if (message.text.size() > kMaxComposeTextBytes) {
     return Error("Message text exceeds compose limit");
   }
@@ -762,13 +795,37 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
     return content_enc.error();
   }
 
+  // An upsert over a row that exists rewrites it in place: the thread's preview and order stay as they are.
+  bool existed = false;
+  if (upsert) {
+    sqlite3_stmt* probe = nullptr;
+    if (sqlite3_prepare_v2(*thread_db, "SELECT 1 FROM messages WHERE id = ?;", -1, &probe, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(probe, 1, stored.id.c_str(), -1, SQLITE_TRANSIENT);
+      existed = sqlite3_step(probe) == SQLITE_ROW;
+    }
+    sqlite3_finalize(probe);
+  }
+
   sqlite3_stmt* stmt = nullptr;
-  const char* sql =
-      "INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, control_type, "
-      "timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, target_message_id, generation, "
-      "seq_owner_contact_id, ai_invoke_mode, sender_device) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
-  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  // Upsert: one statement, so two writers of the same id cannot both insert (the row keeps its place;
+  // a tombstone stays final).
+  const std::string sql =
+      std::string("INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, "
+                  "control_type, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, "
+                  "target_message_id, generation, seq_owner_contact_id, ai_invoke_mode, sender_device) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)") +
+      (upsert ? " ON CONFLICT(id) DO UPDATE SET sender_contact_id = excluded.sender_contact_id, "
+                "content_enc = excluded.content_enc, content_type = excluded.content_type, "
+                "control_type = excluded.control_type, timestamp = excluded.timestamp, "
+                "relay_visible = excluded.relay_visible, delivery = excluded.delivery, "
+                "transport = excluded.transport, sender_seq = excluded.sender_seq, "
+                "session_epoch = excluded.session_epoch, target_message_id = excluded.target_message_id, "
+                "generation = excluded.generation, seq_owner_contact_id = excluded.seq_owner_contact_id, "
+                "ai_invoke_mode = excluded.ai_invoke_mode, sender_device = excluded.sender_device "
+                "WHERE messages.content_type != 'deleted'"
+              : "") +
+      ";";
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
   if (auto bound = BindMessageInsert(stmt, message.thread_id, stored, *content_enc); !bound) {
@@ -780,6 +837,9 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
     return Error("Failed to append message");
   }
   sqlite3_finalize(stmt);
+  if (existed) {
+    return stored;
+  }
 
   // Catalog is UX-only; never fail call-control / E2E sends on a busy/missing catalog row
   // (Samsung↔moto dogfood: FanOut roster / CallMediaKey aborted with catalog errors).
@@ -1208,6 +1268,7 @@ Roe<Thread> SqliteThreadStore::FindOrCreateDirectThread(const DirectChatTarget& 
   thread.title = title;
   thread.encrypted = ThreadChannelIsE2e(target.channel);
   thread.updated_at = util::NowUnixMs();
+  thread.listed = false;  // listed once something readable is in it, or the user opens it
 
   auto saved = UpsertThread(thread);
   if (!saved) {

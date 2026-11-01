@@ -57,6 +57,12 @@ struct RelayE2eBody {
    * signature.
    */
   std::optional<Object> sender_card;
+  /**
+   * The `issued_at` of the sender's newest account card (M021 d6), on every envelope: a receiver whose kept
+   * card is older fetches the newer one from the sending device (a device taken out stops getting copies sooner).
+   * Not signed — a false value costs one card fetch; the card proves itself.
+   */
+  std::optional<int64_t> sender_card_at;
   /** The copy this device reads (SelectRelayCopy): its payload and key_init. Not on the wire. */
   std::string payload_b64;
   std::optional<std::string> key_init_b64;

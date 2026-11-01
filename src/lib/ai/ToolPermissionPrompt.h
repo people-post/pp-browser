@@ -1,15 +1,19 @@
 #pragma once
 
+#include "lib/ai/ParkedApproval.h"
 #include "lib/ai/TurnPlan.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
-struct ParkedApproval;
-
-/** "name(key=value, …)" for each call, comma-separated: what the user is asked to approve (PB-015). */
+/**
+ * What the user is asked to approve, in plain words (chat.permission.tool.<tool>, values from ai.option.*): one
+ * phrase per call, joined with the locale's list separator. The raw tool name and argument names never appear;
+ * a tool without copy reads chat.permission.tool.generic (PB-015).
+ */
 std::string DescribeToolCalls(const std::vector<PlannedToolCall>& tools);
 
 /**
@@ -23,5 +27,12 @@ std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
 
 std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& offered_tools);
 std::string BuildToolPermissionStaleBlocks(const std::string& reason_code);
+
+/**
+ * The stored card (blocks JSON built by BuildToolPermissionChoiceBlocks) after it ended. Stale: the whole card
+ * becomes the "no longer active" notice. Allowed / denied: the paragraph stays, the choice block is replaced by
+ * one result line. nullopt when `blocks_json` is not a blocks document.
+ */
+std::optional<std::string> RewriteToolPermissionCardBlocks(const std::string& blocks_json, ApprovalOutcome outcome);
 
 } // namespace pbr

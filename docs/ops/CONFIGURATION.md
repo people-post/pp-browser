@@ -38,6 +38,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
+| `PP_NODE_MESH_HEARTBEAT` | `libp2p.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
 | `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. sandbox `https://www-en.qa.peoplepost.org/api/relay`) |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
@@ -46,6 +47,14 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_LOG_LEVEL` | log level | Or `--log-level`: `debug` \| `info` (default) \| `warning` \| `error`; `--debug` = `debug`. A server's log: unlike the desktop app's quiet default, startup, listen address, ledger role and shutdown show at `info` |
 | `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
 | `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/develop/docs/architecture/PLATFORM_INTEGRATION.md)) |
+
+**Mesh heartbeat (opt-in):** with `mesh_publish` **and** `mesh_heartbeat` on (`PP_NODE_MESH_HEARTBEAT=1`; off by default — it tells the directory when this node is up and from which address, so it is meant for org-run seeds: privacy P011) and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405; JSON `Content-Type` required, requests with an `Origin` header or a non-loopback `Host` get 403):
+
+```
+curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' http://127.0.0.1:18518/control/state
+```
+
+States only advance `active` → `draining` → `retiring`; `draining` → `active` is allowed, `retiring` is final (409). Contract: [MESH_DIRECTORY.md](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat).
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
@@ -162,8 +171,13 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
-      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"
+      "/ip4/34.233.23.235/udp/443/adp/1.0.0/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
+      "/ip4/50.18.237.202/udp/443/adp/1.0.0/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
+      "/ip4/54.217.120.211/udp/443/adp/1.0.0/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",
+      "/ip4/35.158.70.252/udp/443/adp/1.0.0/p2p/Qmc1TDTb6K4ymGNKMBHG6c45kxu7qA7TtCXdDfZxupStTj",
+      "/ip4/57.181.254.92/udp/443/adp/1.0.0/p2p/QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1",
+      "/ip4/15.164.114.146/udp/443/adp/1.0.0/p2p/QmWpQr3JEyeEVbePLmvRe1onbuM4dwhPG1P5Lo8Su3r97y",
+      "/ip4/3.1.86.213/udp/443/adp/1.0.0/p2p/QmW9utyUR2S9N8Avite7aiS4LCcb2w6fJcd3PzyM2ozL5j"
     ]
   }
 }
@@ -240,7 +254,7 @@ Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../a
 
 ## Log file
 
-Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` … `pp-browser.5.log`. Files are owner-only (`0600`) and stay local — crash-report upload does not include them. Code: `foundation/diagnostics/LogFile.*`.
+Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` … `pp-browser.5.log`. Files are owner-only (`0600`) and never leave the device — neither crash reports nor Send diagnostics read them. Code: `foundation/diagnostics/LogFile.*`.
 
 | Flag | Effect |
 |------|--------|
@@ -249,7 +263,12 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
-Operational metrics (`common/Metrics.h`: `event=… k=v` lines with timings, rates and device load, never account ids, PeerIds or addresses) go to their own file next to it, `{data_dir}/logs/metrics.log`, rotated the same way. They are written at any log level; with `--debug` they also appear in the main log. A collector should read only this file.
+Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, no free text or raw ids) to files of their own next to it, rotated the same way and written at any log level (with `--debug` they also appear in the main log):
+
+- `{data_dir}/logs/metrics.log` — operational metrics (`common/Metrics.h`): timings, rates and device load.
+- `{data_dir}/logs/diag.log` — troubleshooting events (`common/Diag.h`).
+
+These two files and the pending crash record are all that Me → Security → Send diagnostics sends: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 
 The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `--sandbox` or `XDG_DATA_HOME`.
 
@@ -262,6 +281,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_CONFIG` | Explicit config file path |
 | `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
+| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<brief origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |

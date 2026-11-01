@@ -4,6 +4,8 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
+#include <algorithm>
+
 namespace pbr {
 namespace {
 
@@ -18,6 +20,22 @@ std::vector<std::string> ReadStringArray(const Object& json, const char* key) {
       if (!value->empty()) {
         out.push_back(*value);
       }
+    }
+  }
+  return out;
+}
+
+/** H013: a parked-relay list as the wire carries it — PeerId-sized, distinct, at most the cap. */
+std::vector<std::string> ParkedRelaysForWire(const std::vector<std::string>& relays) {
+  constexpr size_t kMaxPeerIdBytes = 128;
+  std::vector<std::string> out;
+  for (const std::string& relay : relays) {
+    if (out.size() >= kCallMaxAdvertisedCircuitRelays) {
+      break;
+    }
+    if (!relay.empty() && relay.size() <= kMaxPeerIdBytes &&
+        std::find(out.begin(), out.end(), relay) == out.end()) {
+      out.push_back(relay);
     }
   }
   return out;
@@ -212,6 +230,7 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
   }
   WriteStringArray(json, "reachable_hops", detail.hop_report.reachable_hops);
   WriteStringArray(json, "unreachable_hops", detail.hop_report.unreachable_hops);
+  WriteStringArray(json, "circuit_parked", ParkedRelaysForWire(detail.circuit_parked));
   return DumpJson(json);
 }
 
@@ -237,6 +256,7 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.hop_report.planned_hop_ok = json->getIf<bool>("planned_hop_ok");
   detail.hop_report.reachable_hops = ReadStringArray(*json, "reachable_hops");
   detail.hop_report.unreachable_hops = ReadStringArray(*json, "unreachable_hops");
+  detail.circuit_parked = ParkedRelaysForWire(ReadStringArray(*json, "circuit_parked"));
   return detail;
 }
 
@@ -379,6 +399,9 @@ Roe<std::string> CallControlCodec::EncodeSummary(const CallSummaryDetail& detail
   if (detail.duration_ms) {
     json.set("duration_ms", *detail.duration_ms);
   }
+  if (detail.talk_started_at) {
+    json.set("talk_started_at", *detail.talk_started_at);
+  }
   if (detail.group) {
     json.set("group", true);
   }
@@ -399,6 +422,7 @@ Roe<CallSummaryDetail> CallControlCodec::DecodeSummary(const std::string& detail
   detail.media_mode = CallMediaModeFromString(json->getString("media_mode").value_or("voice"));
   detail.outcome = CallOutcomeFromString(json->getString("outcome").value_or("failed"));
   detail.duration_ms = json->getIf<int64_t>("duration_ms");
+  detail.talk_started_at = json->getIf<int64_t>("talk_started_at");
   detail.group = json->getIf<bool>("group").value_or(false);
   detail.started = json->getIf<bool>("started").value_or(false);
   return detail;
@@ -563,6 +587,25 @@ Roe<CallVideoRefreshDetail> CallControlCodec::DecodeVideoRefresh(const std::stri
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeConnectGiveUp(const CallConnectGiveUpDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("identity", detail.identity);
+  return DumpJson(json);
+}
+
+Roe<CallConnectGiveUpDetail> CallControlCodec::DecodeConnectGiveUp(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  if (!json || !call_id || call_id->empty()) {
+    return Error("Invalid call_connect_give_up detail");
+  }
+  CallConnectGiveUpDetail detail;
+  detail.call_id = *call_id;
+  detail.identity = json->getString("identity").value_or("");
+  return detail;
+}
+
 Roe<std::string> CallControlCodec::EncodeCircuitR1(const CallCircuitR1Detail& detail) {
   Object json;
   json.set("call_id", detail.call_id);
@@ -640,9 +683,10 @@ Roe<CallPunchDetail> CallControlCodec::DecodePunch(const std::string& detail_jso
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,
-                                                        const std::string& sender_contact_id) {
+                                                        const std::string& sender_contact_id,
+                                                        const std::string& message_id) {
   ThreadMessage message;
-  message.id = util::GenerateUuid();
+  message.id = message_id.empty() ? util::GenerateUuid() : message_id;
   message.thread_id = thread_id;
   message.sender_contact_id = sender_contact_id;
   message.content_type = ChatContentType::System;
@@ -674,6 +718,25 @@ std::optional<CallControlType> CallControlCodec::ControlTypeFromMessage(const Th
 
 bool CallControlCodec::IsCallControlMessage(const ThreadMessage& message) {
   return ControlTypeFromMessage(message).has_value();
+}
+
+Roe<std::string> CallControlCodec::EncodeAnsweredElsewhere(const std::string& call_id, const bool accepted) {
+  if (call_id.empty()) {
+    return Error("call_answered_elsewhere: no call");
+  }
+  Object json;
+  json.set("call_id", call_id);
+  json.set("accepted", accepted);
+  return DumpJson(json);
+}
+
+Roe<std::pair<std::string, bool>> CallControlCodec::DecodeAnsweredElsewhere(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  const std::string call_id = json ? json->getString("call_id").value_or("") : std::string();
+  if (call_id.empty()) {
+    return Error("call_answered_elsewhere: malformed");
+  }
+  return std::make_pair(call_id, json->getIf<bool>("accepted").value_or(true));
 }
 
 bool CallControlCodec::TravelsOnLane(const CallControlType type) {

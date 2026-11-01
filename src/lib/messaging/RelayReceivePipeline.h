@@ -1,17 +1,20 @@
 #pragma once
 
+#include "lib/messaging/SentCopy.h"
+
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
-#include "lib/messaging/AccountCard.h"
+#include "lib/people/AccountCard.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/DeliveryNotice.h"
 #include "lib/messaging/E2eIngestClassifier.h"
 #include "lib/messaging/PublicPskLockCoordinator.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/GroupRosterSyncCodec.h"
 #include "common/thread/IThreadStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/chat/SystemControl.h"
 #include "common/Module.h"
@@ -20,6 +23,8 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -44,12 +49,58 @@ struct RelayReceiveOutcome {
    */
   bool suppress_inbox_chrome = false;
   /**
+   * An event in a group that is about this account (it was removed; its accept met a full group): the GROUP thread
+   * counts it unread and notifies, though the direct message that carried it stays quiet. Other people's joins,
+   * leaves and renames are not.
+   */
+  enum class AboutUs { None, Removed, GroupFull };
+  AboutUs about_us = AboutUs::None;
+  std::string about_us_group_thread_id;
+  /** A message another of our devices sent, filed here (M021 d3): no inbox chrome, but its attachment is fetched. */
+  bool sibling_copy = false;
+  /**
+   * A chat record from another account with copies for our other devices but none for this one (M021 §9): the
+   * sending device may not know this device yet — or sent our copy over a link. The caller waits, then asks.
+   */
+  struct MissingCopy {
+    std::string sender_account;
+    std::string sender_device;
+    std::string message_id;
+    std::string group_id;
+  };
+  std::optional<MissingCopy> missing_copy;
+  /**
    * When set, the local user (owner) should publish owner-signed member_joined after ingest.
    * Filled on successful group_invite_accept apply.
    */
   std::optional<std::string> publish_member_joined_group_id;
+  /** G014: an accept came when the group was full — the owner tells the invitee (`group_invite_refused`). */
+  std::optional<std::string> refuse_invite_group_id;
+  std::string refuse_invite_nonce;
+  std::string refuse_invite_member;
+  /** Why (`group_full`, or `group_dissolved` for an accept that came after the owner ended the group, G016). */
+  std::string refuse_invite_reason;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
+  /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
+  std::optional<std::string> resign_roster_group_id;
+  /** G012: we are this group's new owner; sign its roster with the transfer we were handed. */
+  std::optional<std::string> took_ownership_group_id;
+  std::optional<GroupOwnerTransfer> took_ownership_transfer;
+  /**
+   * A notice from another device of our own account verified (its card taken): the account's shared state may have
+   * changed there — the locker is worth a sync (M023 §7).
+   */
+  bool from_sibling = false;
+  /**
+   * G016: a `group_dissolved` ended a group we are in just now. The group's chat (this thread) gets the one
+   * notice — unread count, preview, an OS notice if away — and the DM that carried it none (`suppress_inbox_chrome`).
+   */
+  std::optional<std::string> dissolved_group_thread_id;
+  /** G016: invites to the dissolved group, now void: (inviter, nonce) — the invite cards in the DMs to close. */
+  std::vector<std::pair<std::string, std::string>> voided_invite_cards;
+  /** G013: a group message arrived while our check went unanswered — ask again (its sender is online). */
+  std::optional<std::string> restart_roster_check_group_id;
   /**
    * When an envelope from a known peer could not be read / applied: why (the GUI words it), with an
    * optional thread to attach a local system line. `receive_failure_detail` is for logs.
@@ -116,6 +167,21 @@ public:
    */
   void SetOnSenderCard(std::function<void(const AccountCard&)> callback) { on_sender_card_ = std::move(callback); }
   /**
+   * A verified envelope whose sender says its account card is newer (`sender_card_at`) than the one it was
+   * checked with (M021 d6): `(account, sending device, issued_at)` — the caller fetches the newer card.
+   */
+  void SetOnSenderCardVersion(
+      std::function<void(const std::string& account, const std::string& device, int64_t issued_at)> callback) {
+    on_sender_card_version_ = std::move(callback);
+  }
+  /**
+   * The issue time a carried card of an account must reach to speak for it (PeerCardStore::Floor): a restored
+   * device keeps no cards, only how new the ones it had were. None: 0.
+   */
+  void SetAccountCardFloor(std::function<int64_t(const std::string& account_id)> floor) {
+    account_card_floor_ = std::move(floor);
+  }
+  /**
    * Another member as the group owner's roster (member_joined) gives them: their card — keep it if it
    * proves itself (docs/contracts/ACCOUNT_CARD.md) — and their relay route.
    */
@@ -138,6 +204,8 @@ private:
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const AccountCard&)> on_sender_card_;
+  std::function<void(const std::string&, const std::string&, int64_t)> on_sender_card_version_;
+  std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
@@ -147,6 +215,17 @@ private:
    * that sends it on the lane while fresh and not seen before. Never stored.
    */
   RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
+  /**
+   * A sibling's control notice (M022: our own account writes to itself), signature already checked: a sent-message
+   * copy (M021 d3) is opened and filed as a message we sent; anything else is only its card (the device list).
+   */
+  void ApplySiblingNotice(const RelayEnvelope& envelope, const std::string& local_account_id,
+                          const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome);
+  /** File a sibling's sent message in its chat (public direct, or group), once per message id. */
+  void FileSentCopy(const SentCopy& copy, const RelayEnvelope& envelope, RelayReceiveOutcome& outcome);
+  /** G014 invitee side: the owner refused our accept (the group was full) — drop the group we made on accept. */
+  Roe<void> ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
+                               const std::string& local_account, RelayReceiveOutcome* outcome) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */
@@ -196,6 +275,17 @@ private:
                                RelayReceiveOutcome& outcome) const;
   /** A quiet control message bumps no unread count, preview or notice. */
   void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
+  /** G012: keep the owner-signed roster a roster event carries, when it verifies and is newer. */
+  void KeepCarriedStatement(const ThreadMessage& message) const;
+  /**
+   * G012: a group_roster_statement from the owner. (The member check's request and reply ride the control
+   * lane: MakeGroupRosterSyncFamily.)
+   */
+  Roe<void> ApplyRosterStatement(const ThreadMessage& message, const std::string& actor_identity,
+                                 const std::string& local_account, RelayReceiveOutcome* outcome) const;
+  /** G016: the owner ended a group we are in — empty its roster, mark it dissolved, keep its chat with one line. */
+  Roe<void> ApplyGroupDissolved(const ThreadMessage& message, const std::string& actor_identity,
+                                const std::string& local_account, RelayReceiveOutcome* outcome) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                  const ThreadMessage& message);

@@ -1,7 +1,13 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "foundation/crypto/CryptoTypes.h"
+#include "lib/messaging/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
+#include "domain/attachments/OutgoingAttachmentStore.h"
+#include "lib/messaging/AttachmentLimits.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/messaging/SendRelayOptions.h"
@@ -13,24 +19,25 @@
 #include "lib/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "lib/people/ProfileIdentityView.h"
-#include "lib/ui/ChatWidgetTypes.h"
 #include "lib/pricing/PaymentPromiseLifecycle.h"
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "feature/conversations/GroupInviteBatch.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/peers/PeerDisplaySources.h"
+#include "feature/conversations/PeerDisplaySources.h"
 #include "lib/messaging/PskSessionCoordinator.h"
 #include "mesh/reachability/Reachability.h"
 
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -62,23 +69,41 @@ public:
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   Roe<void> SyncPushDevices();
   Roe<std::string> ExportLinkDevice();
-  Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
-  /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
-  Roe<std::optional<std::string>> LocalBackupNickname();
-  Roe<void> RestoreLocalBackup(const std::string& pin);
-  /** Rewrite the local account backup on a worker (e.g. after a PIN change). Best effort. */
-  void WriteLocalBackupAsync();
-  Roe<void> DeleteLocalBackup();
+  /**
+   * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the
+   * account has no recovery seed (minted before M023). A wrong PIN is a Pin-category error.
+   */
+  Roe<std::optional<SecretText>> RecoveryPhrase(const SecretText& pin);
+  /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
+  bool HasRecoveryPhrase();
+  Roe<void> ImportLinkDevice(const std::string& bundle_json, const SecretText& pin);
+  /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
+  Roe<void> RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
+                                      const std::vector<std::string>& saved_copies = {});
+  /** The account's state sealed as an exported locker file's text (M023 §6 amendment; the user keeps it). */
+  Roe<std::string> ExportAccountCopy();
+  /** The account's devices (M021 d4): the newest list, its first the main device; whether this one is signed out. */
+  Roe<OwnDeviceList> OwnDevices();
+  /** On the main device: take another device off the account. */
+  Roe<void> RemoveOwnDevice(const std::string& peer_id);
+  /** On the main device: make another device the main one. */
+  Roe<void> MakeMainDevice(const std::string& peer_id);
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------
   const std::string& ActiveThreadId();
   Roe<Thread> GetActiveThread();
+  /** One more unread in `thread_id` (an AI answer that arrived while its page was not shown). */
+  void IncrementUnread(const std::string& thread_id);
   Roe<std::vector<Thread>> ListThreads();
+  void KeepThreadListed(const std::string& thread_id);
   /** True when an active local call is for this thread (origin / peer / group). */
   bool ThreadHasActiveCall(const std::string& thread_id);
   /** Calls answer ThreadHasActiveCall (feature-level wiring sets it; none: never). */
   void SetActiveCallQuery(std::function<bool(const Thread& thread)> query);
+  /** A call is ringing here or this device is in one (any thread). False when no calls are wired. */
+  bool AnyCallLive();
+  void SetAnyCallQuery(std::function<bool()> query);
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
@@ -123,6 +148,16 @@ public:
   // --- P2P ------------------------------------------------------------------
   void MaybeTailSync(const std::string& thread_id);
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  /**
+   * A group text with marked ranges (mentions, `@everyone` — G015): spans checked (structure, ranges; a bad range
+   * is dropped, the text stays) and sent in the ChatPayload (type 6); the row keeps them in `payload_json`.
+   */
+  Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
+  /** The chats with an unread message that mentions us (G015 marker); empty when unknown. */
+  std::set<std::string> ThreadsWithMentions();
+  /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
+  std::optional<std::string> OldestMention(const std::string& thread_id);
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */
@@ -141,7 +176,8 @@ public:
                                    const std::string& emoji);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
-  void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback);
+  /** title, body, thread id, and whether the message mentions us (G015: alerts even in a muted group). */
+  void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback);
   void SyncInboxFromWake(bool force);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);
@@ -173,19 +209,34 @@ public:
 
   // --- Groups ---------------------------------------------------------------
   Roe<void> DismissLocalGroup(const std::string& group_id);
+  /** G016: the owner ends the group for everyone; its chat stays here, read-only. */
+  Roe<void> DissolveGroup(const std::string& group_id);
+  bool IsGroupDissolved(const std::string& group_id);
   Roe<bool> IsLocalOwner(const std::string& group_id);
   Roe<std::vector<GroupRosterMember>> ListGroupRoster(const std::string& group_id);
   bool IsMemberUnreachable(const std::string& group_id, const std::string& member_identity);
   Roe<void> LeaveGroup(const std::string& group_id);
   Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
   Roe<std::string> OwnerIdentity(const std::string& group_id);
+  /** The nickname on the account card kept for `account_id` (a member's own, public); empty if none. */
+  std::string KeptCardNickname(const std::string& account_id);
   bool IsOwnerUnreachable(const std::string& group_id);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
+  /**
+   * Owner: send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
+   * members. Resolves the invitee, seals and writes on the calling thread: the UI thread uses InviteMembersAsync.
+   */
+  Roe<void> InviteMember(const std::string& group_id, const std::string& contact_id);
+  /** UI thread: one InviteMember per contact on a worker (a failure does not stop the rest); `done` runs on the UI thread. */
+  void InviteMembersAsync(const std::string& group_id, std::vector<std::string> contact_ids,
+                          std::function<void(GroupInviteBatchResult)> done);
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();
+  /** A group member's public name — what a mention inserts and a group line shows (GroupMentions.h). */
+  std::string MemberPublicNameOf(const std::string& account_id);
   Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, mesh::ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
   std::optional<mesh::DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
@@ -194,6 +245,9 @@ public:
 
   // --- Actions --------------------------------------------------------------
   Roe<std::optional<std::string>> DispatchAction(const std::string& payload_json);
+  /** UI thread: Add / Message on a directory row look the person up first (HTTP), so `done` may run later. */
+  void DispatchActionAsync(const std::string& payload_json,
+                           std::function<void(Roe<std::optional<std::string>>)> done);
   void SetOnActionMessage(std::function<void(const std::string& message)> callback);
 
   // --- Router ---------------------------------------------------------------
@@ -230,7 +284,12 @@ public:
                                                        const std::string& body_text);
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
+  /** "Don't ask again" before sharing with the AI: kept for the chat across restarts. */
   void MarkSharedAiConfirmed(const std::string& thread_id);
+  /** Undoes it: the next "@ai+" / "@ai++" in this chat asks again. */
+  Roe<void> ClearSharedAiConfirmed(const std::string& thread_id);
+  Roe<void> RouteConfirmedSharedAi(const std::string& thread_id, const std::string& text);
+  bool NeedsSharedAiConfirmFor(const std::string& thread_id, const std::string& text) const;
 
   // --- Settings / profile helpers (former Application hub peeks) -------------
   ProfileIdentityView LoadProfileIdentityView();
@@ -238,16 +297,36 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
-  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
-  Roe<void> FreeOldestRelayBlobSlot();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
+  /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
+  void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
+                           std::function<void(Roe<ThreadMessage>)> on_done,
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
+                             std::function<void(Roe<ThreadMessage>)> on_done,
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+  std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  void DiscardOutgoingAttachment(const std::string& record_id);
+  void CleanStaleAttachmentFiles();
+  /** The one source of every attachment size / pace / warning number (today the defaults). */
+  AttachmentLimits CurrentAttachmentLimits() const;
+  /** The server space is filling up: called on the UI thread with the percent used (said once per 80 / 90). */
+  void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  struct AttachmentInfo {
+    std::string mime;
+    uint64_t byte_length = 0;
+  };
+  /** Declared type and size of an attachment message (none: not an attachment). */
+  std::optional<AttachmentInfo> AttachmentInfoForMessage(const std::string& thread_id, const std::string& message_id);
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
                                                            const std::string& message_id);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
@@ -289,6 +368,7 @@ public:
 private:
   ConversationsHub& hub_;
   std::function<bool(const Thread& thread)> active_call_query_;
+  std::function<bool()> any_call_query_;
 };
 
 } // namespace pbr

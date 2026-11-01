@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/RelayClients.h"
 #include "common/Module.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/chat/RelayEnvelope.h"
@@ -55,7 +56,8 @@ struct DeliveryOutcome {
 
 /**
  * Gets envelopes to peers: Amp first when the peer is reachable that way (DirectSendTriesAmpFirst:
- * the critical lane prefers a known relay route), else — or after a direct failure — the Brief relay;
+ * the critical lane prefers a known relay route, and also sends over a live link at once —
+ * ControlAlsoGoesDirect), else — or after a direct failure — the Brief relay;
  * a relay failure is queued and retried (OutboxRetryAgain; control-lane sends only while fresh,
  * OutboxSendStillWanted). Sends run on the worker pool, never on the caller's thread.
  *

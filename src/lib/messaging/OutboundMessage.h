@@ -115,6 +115,13 @@ RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSe
  */
 bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool critical_lane);
 
+/**
+ * #431 (a): call control to a peer with a live link goes over it as well as by the relay — at once,
+ * not after a relay failure. The relay is kept (it reaches every device and survives a link that is
+ * about to drop); the receiver's control lane takes the first copy and drops the other.
+ */
+bool ControlAlsoGoesDirect(bool peer_connected, bool has_relay_route, bool critical_lane);
+
 // --- A group send -------------------------------------------------------------------------------------
 
 /**
@@ -138,7 +145,11 @@ inline constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
  */
 bool OutboxSendStillWanted(bool control_lane, int64_t age_ms, bool thread_paused);
 
-/** After another failed relay attempt (`attempts` so far): queue it again, or give up (failed). */
-bool OutboxRetryAgain(int attempts);
+/**
+ * After another failed relay attempt (`attempts` so far, the last ending in `failure`): queue it again, or
+ * give up (failed) — at once when the relay refused the request itself (#391: a rejected notice was sent
+ * again on every poll).
+ */
+bool OutboxRetryAgain(int attempts, const Error& failure);
 
 } // namespace pbr

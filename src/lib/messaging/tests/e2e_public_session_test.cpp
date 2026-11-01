@@ -14,14 +14,13 @@
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/OutboundMessage.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PskSessionRestart.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/Utilities.h"
 
@@ -94,7 +93,7 @@ struct Side {
           auto found = cards.find(account_id);
           return found == cards.end() ? std::nullopt : std::optional<AccountCard>(found->second);
         },
-        *psk, keys.Keys(), *roster);
+        *psk, test::ReceiveKeysOf(keys), *roster);
     pipeline->SetSystemControls(&controls);
     pipeline->SetControlLaneSeen(seen.get());
     chat_seq.clear();  // a reinstall numbers its messages from 1 again
@@ -209,7 +208,7 @@ struct Side {
     if (session->key_init_b64) {
       envelope.body.e2e.key_init_b64 = *session->key_init_b64;
     }
-    keys.SignEnvelope(envelope);
+    test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
 
@@ -235,7 +234,7 @@ struct Side {
       RelayEnvelope envelope =
           BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "relay:" + peer_account,
                               {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
-      keys.SignEnvelope(envelope);
+      test::SignEnvelopeAs(keys, envelope);
       out[device.peer_id] = envelope;
     }
     return out;
@@ -250,22 +249,28 @@ struct Side {
       first = envelope;
     }
     first.body.e2e.copies = copies;
-    keys.SignEnvelope(first);
+    test::SignEnvelopeAs(keys, first);
     return first;
   }
 
   /** This device's PeerId. */
   const std::string& Device() const { return keys.device.peer_id; }
 
-  /** Restored from an account backup: a fresh profile with the public sessions back, marked to restart. */
-  void RestoreFromBackup() {
+  /**
+   * Through *Reset chats* (Application::ResetChatData): a fresh chat store with the public sessions kept,
+   * each marked to restart.
+   */
+  void ResetChats() {
     auto sessions = psk->List();
     ASSERT_TRUE(sessions);
-    OpenProfile("profile-restored-" + util::GenerateUuid());
-    for (const PskSessionRecord& record : *sessions) {
+    OpenProfile("profile-reset-" + util::GenerateUuid());
+    for (PskSessionRecord& record : *sessions) {
+      if (record.key.channel != CryptoChannel::E2ePublic || !record.master_psk_b64) {
+        continue;
+      }
+      record.restart_pending = true;
       ASSERT_TRUE(psk->Save(record));
     }
-    ASSERT_TRUE(MarkPublicSessionsForRestart(*psk));
   }
 
   /** What a send does first in a pair marked to restart (MeshDeliveryOrchestrator::StartNextEpochIfRestored). */
@@ -360,7 +365,7 @@ struct Side {
                            .payload_b64 = encrypted->copies[i]->payload_b64};
       RelayEnvelope envelope = BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, recipient, {copy},
                                                         NextRelayOrderKey());
-      keys.SignEnvelope(envelope);
+      test::SignEnvelopeAs(keys, envelope);
       out[per_device ? target.target_key.peer_device : recipient] = envelope;
     }
     return out;
@@ -452,7 +457,7 @@ TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
   // Alice's own card, but the envelope signed by Mallory's device: a device her card does not list.
   alice.carry_keys = true;
   RelayEnvelope resigned = alice.Signal(bob);
-  mallory.SignEnvelope(resigned);
+  test::SignEnvelopeAs(mallory, resigned);
   EXPECT_FALSE(bob.Receive(resigned));
 
   // Mallory's card presented as Alice's: its signing key does not hash to her Account ID.
@@ -460,9 +465,36 @@ TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
   AccountCard as_alice = mallory.DeviceCard();
   as_alice.keys.account_id = alice.account;
   claimed.body.e2e.sender_card = AccountCardToJson(as_alice);
-  mallory.SignEnvelope(claimed);
+  test::SignEnvelopeAs(mallory, claimed);
   EXPECT_FALSE(bob.Receive(claimed));
   EXPECT_EQ(kept, 0);
+}
+
+TEST(E2ePublicSessionCardTest, ACarriedCardOlderThanTheRestoredFloorProvesNothing) {
+  EnsureSodiumInit();
+  Side alice("alice-floor", 0x10);
+  Side bob("bob-floor", 0x40);  // restored: no card of Alice's kept, only how new her newest one was
+  alice.Know(bob);
+  alice.carry_keys = true;
+  bob.carry_keys = true;
+  int kept = 0;
+  bob.pipeline->SetOnSenderCard([&](const AccountCard&) { ++kept; });
+  int64_t floor = 0;
+  bob.pipeline->SetAccountCardFloor([&](const std::string& account_id) {
+    return account_id == alice.account ? floor : 0;
+  });
+
+  RelayEnvelope opening = alice.Signal(bob);
+  ASSERT_TRUE(opening.body.e2e.sender_card);
+  const int64_t issued_at = AccountCardFromJson(*opening.body.e2e.sender_card).value().issued_at;
+  // Bob had seen a newer card of hers before the restore (one without a device she took out since).
+  floor = issued_at + 1;
+  EXPECT_FALSE(bob.Receive(opening)) << "an older card does not speak for her";
+  EXPECT_EQ(kept, 0);
+
+  floor = issued_at;  // the newest card Bob knew is the one she carries
+  EXPECT_TRUE(bob.Receive(alice.Signal(bob)));
+  EXPECT_EQ(kept, 1);
 }
 
 TEST_F(E2ePublicSessionTest, OneSideOpensAndBothDirectionsWork) {
@@ -494,17 +526,17 @@ TEST_F(E2ePublicSessionTest, ASideThatStartsOverIsHeardAgain) {
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
 }
 
-// #378: a device restored from the account backup has its sessions back but not its numbering. Rewinding in
-// the same epoch is dropped by design (D046 first-seen); it starts the pair's next epoch instead (D014).
-TEST_F(E2ePublicSessionTest, ARestoredDeviceStartsTheNextEpochAndEveryMessageArrives) {
+// #378: a device that reset its chats keeps its public sessions but not its numbering. Rewinding in the same
+// epoch is dropped by design (D046 first-seen); it starts the pair's next epoch instead (D014).
+TEST_F(E2ePublicSessionTest, AfterAChatResetTheDeviceStartsTheNextEpochAndEveryMessageArrives) {
   for (int i = 0; i < 3; ++i) {
     ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
   }
-  alice_->RestoreFromBackup();
+  alice_->ResetChats();
   alice_->RestartIfPending(*bob_);
   for (int i = 0; i < 3; ++i) {
     EXPECT_TRUE(bob_->Keep(alice_->Chat(*bob_, "after " + std::to_string(i))))
-        << "message " << i << " from the restored device";
+        << "message " << i << " after the reset";
   }
   auto threads = bob_->store->ListThreads();
   ASSERT_TRUE(threads);
@@ -520,7 +552,7 @@ TEST_F(E2ePublicSessionTest, RewindingInTheSameEpochIsStillDropped) {
   for (int i = 0; i < 2; ++i) {
     ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
   }
-  alice_->RestoreFromBackup();  // no restart: a device that rewinds where Bob holds its messages
+  alice_->ResetChats();  // no restart: a device that rewinds where Bob holds its messages
   EXPECT_FALSE(bob_->Keep(alice_->Chat(*bob_, "rewound"))) << "first-seen keeps seq 1 (D046)";
 }
 
@@ -593,9 +625,9 @@ TEST(GroupPairwiseKeyTest, AGroupCopyIsAPairMessageNumberedInThePair) {
   EXPECT_EQ(bob.PairEpoch(alice), 1u);
   EXPECT_TRUE(bob.Keep(alice.Chat(bob, "a 1:1 message")));
 
-  // Bob restores from his backup (the pair sessions back, marked to restart; his counts gone): his first
-  // group copy to alice restarts their pair at epoch 2 from seq 1 — not taken for one alice already holds.
-  bob.RestoreFromBackup();
+  // Bob resets his chats (the pair sessions kept, marked to restart; his counts gone): his first group copy
+  // to alice restarts their pair at epoch 2 from seq 1 — not taken for one alice already holds.
+  bob.ResetChats();
   bob.JoinGroup(group, everyone);
   bob.group_seq.clear();
   auto restored = bob.GroupChat(group, everyone, "bob is back");
@@ -609,6 +641,68 @@ TEST(GroupPairwiseKeyTest, AGroupCopyIsAPairMessageNumberedInThePair) {
   EXPECT_EQ(back.at(bob.account).session_epoch, 2u);
   EXPECT_TRUE(bob.Keep(back.at(bob.account)));
   EXPECT_TRUE(alice.Keep(bob.Chat(alice, "and in our 1:1 chat")));
+}
+
+// Re-inviting a member who lost the group: accepting rebuilds the group on their side. Their group messages must
+// reach the owner and a third member, and again after a second re-invite. (The invite and accept themselves are
+// GroupMembershipWorkflow's; this is the receiving end of what the rebuilt group sends.)
+class ReInvitedMemberTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    EnsureSodiumInit();
+    alice_ = std::make_unique<Side>("alice-r", 0x10);
+    bob_ = std::make_unique<Side>("bob-r", 0x40);
+    carol_ = std::make_unique<Side>("carol-r", 0x70);
+    everyone_ = {alice_.get(), bob_.get(), carol_.get()};
+    for (const Side* a : everyone_) {
+      for (const Side* b : everyone_) {
+        if (a != b) {
+          const_cast<Side*>(a)->Know(*b);
+        }
+      }
+    }
+    for (const Side* s : everyone_) {
+      const_cast<Side*>(s)->JoinGroup(group_, everyone_);
+    }
+    // The pairs have lived a while: everyone has sent, so each pair holds a session.
+    for (int i = 0; i < 2; ++i) {
+      auto from_alice = alice_->GroupChat(group_, everyone_, "alice " + std::to_string(i));
+      EXPECT_TRUE(bob_->Keep(from_alice.at(bob_->account)));
+      EXPECT_TRUE(carol_->Keep(from_alice.at(carol_->account)));
+      auto from_bob = bob_->GroupChat(group_, everyone_, "bob " + std::to_string(i));
+      EXPECT_TRUE(alice_->Keep(from_bob.at(alice_->account)));
+      EXPECT_TRUE(carol_->Keep(from_bob.at(carol_->account)));
+    }
+  }
+
+  /** Bob, back in the group, sends twice; the owner and the third member must keep both, and bob hears the owner. */
+  void ExpectBobIsHeard(const int round) {
+    auto sent = bob_->GroupChat(group_, everyone_, "bob is back " + std::to_string(round));
+    EXPECT_TRUE(alice_->Keep(sent.at(alice_->account))) << "the owner hears the re-invited member, round " << round;
+    EXPECT_TRUE(carol_->Keep(sent.at(carol_->account))) << "the third member hears them, round " << round;
+    auto again = bob_->GroupChat(group_, everyone_, "and again " + std::to_string(round));
+    EXPECT_TRUE(alice_->Keep(again.at(alice_->account))) << "the next one too, round " << round;
+    EXPECT_TRUE(carol_->Keep(again.at(carol_->account)));
+    auto reply = alice_->GroupChat(group_, everyone_, "welcome back " + std::to_string(round));
+    EXPECT_TRUE(bob_->Keep(reply.at(bob_->account))) << "the member hears the owner, round " << round;
+  }
+
+  const std::string group_ = "group:reinvite";
+  std::unique_ptr<Side> alice_;
+  std::unique_ptr<Side> bob_;
+  std::unique_ptr<Side> carol_;
+  std::vector<const Side*> everyone_;
+};
+
+// Cleared chats: the group and its roster are gone on bob's side, his pair sessions and counts are not.
+TEST_F(ReInvitedMemberTest, AMemberWhoClearedTheGroupIsHeardAfterEveryReInvite) {
+  for (int round = 1; round <= 2; ++round) {
+    for (const Side* member : everyone_) {
+      ASSERT_TRUE(bob_->roster->RemoveMember(group_, member->account));
+    }
+    bob_->JoinGroup(group_, everyone_);
+    ExpectBobIsHeard(round);
+  }
 }
 
 } // namespace

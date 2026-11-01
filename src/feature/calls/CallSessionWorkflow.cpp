@@ -1,12 +1,13 @@
 #include "feature/calls/CallSessionWorkflow.h"
 
+#include "feature/calls/CallConnectDiag.h"
 #include "lib/calls/CallSessionQueries.h"
 #include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallListenAddrsLogic.h"
 #include "lib/calls/CallMediaPlannerSelectLogic.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/PeerCapsLogic.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 
@@ -218,6 +219,12 @@ Roe<Thread> CallSessionWorkflow::CheckCanStartCall(const std::string& origin_thr
   }
   if ((*thread)->kind != ThreadKind::Direct && (*thread)->kind != ThreadKind::Group) {
     return Error("Calls require a direct or group thread");
+  }
+  // A group call needs us in the group: one that was dissolved (G016) or that we left has no members to call. A
+  // roster this device does not hold yet says nothing and does not refuse.
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id &&
+      KnownOutOfGroup(*(*thread)->group_id, local_identity)) {
+    return Error("You are no longer in this group");
   }
   // P001: block outbound dial when initiation offer > 0 and payment rails unavailable.
   if (auto payable = billing_.CheckCanPlace(invitee_identities, local_identity); !payable) {
@@ -514,6 +521,9 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << accept.error().message;
     return accept.error();
   }
+  if (CallDiagBudget::Shared().Allow(call_id, CallDiagEvent::Signal)) {
+    CallSignalLine("accept_out", call_id, accept->listen_multiaddrs, util::NowUnixMs() - row.created_at, false).Emit();
+  }
   if (auto joined = CommitLocalJoin(row, local_identity); !joined) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << joined.error().message;
     return joined.error();
@@ -605,6 +615,10 @@ Roe<CallAcceptDetail> CallSessionWorkflow::SendCallAccept(const std::string& cal
   }
   if (host_.hop.hop_report_for_accept) {
     accept.hop_report = host_.hop.hop_report_for_accept(call_id);
+  }
+  // H013: where we are parked, so the caller's circuit tries those relays first.
+  if (host_.reach.parked_relays) {
+    accept.circuit_parked = host_.reach.parked_relays();
   }
   auto detail = CallControlCodec::EncodeAccept(accept);
   if (!detail) {
@@ -903,7 +917,8 @@ void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identi
   }
 }
 
-void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
+void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason,
+                                      const SummaryWrite write) {
   if (!session.origin_thread_id || !host_.wire.send_summary) {
     return;
   }
@@ -917,7 +932,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
   if (!plan) {
     return;
   }
-  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only); !sent) {
+  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only, write); !sent) {
     log().warning << "call summary not written call_id=" << session.call_id << " err=" << sent.error().message;
   }
 }
@@ -931,11 +946,22 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
   if (auto saved = sessions_.UpsertSession(session); !saved) {
     return saved.error();
   }
-  SendSummary(session, reason);
+  SendSummary(session, reason, StillInCall(session.call_id) ? SummaryWrite::EndWhileIn : SummaryWrite::Final);
   if (host_.wire.notify_ring_changed) {
     host_.wire.notify_ring_changed();
   }
   return {};
+}
+
+bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
+  auto local = host_.wire.local_relay_identity();
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!local || !participants) {
+    return false;
+  }
+  return std::any_of(participants->begin(), participants->end(), [&](const CallParticipant& p) {
+    return p.identity == *local && p.state == CallParticipantState::Joined;
+  });
 }
 
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
@@ -976,6 +1002,12 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   self.left_at = now;
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     return saved.error();
+  }
+
+  if ((*session)->origin_group_id) {
+    // A group's call goes on for the others: this device's history line is written now, not when (if ever)
+    // it ends. A restart cleanup (Orphaned) never rewrites a line that exists.
+    SendSummary(**session, reason, reason == LiveCallEndReason::Orphaned ? SummaryWrite::Final : SummaryWrite::Leave);
   }
 
   CallLeaveDetail leave;
@@ -1158,7 +1190,7 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
   if (ShouldIgnoreInvite(*invite, sender_identity, local_identity, relay_created_at_ms, relay_server_time_ms)) {
     return Answer{};
   }
-  const std::string inviter = invite->inviter_identity.empty() ? sender_identity : invite->inviter_identity;
+  const std::string& inviter = sender_identity;  // ShouldIgnoreInvite: the inviter is the sender
   const std::optional<CallSession> crossed = CrossedCall(*invite, inviter, local_identity);
   if (crossed && crossed->call_id < invite->call_id) {
     log().info << "Calling each other: our call_id=" << crossed->call_id << " wins over call_id=" << invite->call_id
@@ -1175,6 +1207,9 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
                                   sender_identity, "CallInvite");
   SeedInviteRoster(*invite, inviter, *session, local_identity);
   NoteInviterReach(*invite, inviter);
+  if (CallDiagBudget::Shared().Allow(invite->call_id, CallDiagEvent::Signal)) {
+    CallSignalLine("invite_in", invite->call_id, invite->listen_multiaddrs, 0, false).Emit();
+  }
   std::vector<std::string> peers{inviter};
   for (const CallRosterEntry& entry : invite->participants) {
     if (entry.identity != local_identity) {
@@ -1239,11 +1274,26 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
                                              const std::string& local_identity,
                                              const std::optional<int64_t> relay_created_at_ms,
                                              const std::optional<int64_t> relay_server_time_ms) {
+  // PB-054: an invite names its sender as the inviter (every client writes its own identity). One
+  // naming someone else would ring as that caller, send our accept to them, and make them the
+  // call's initiator — whom SenderIsInCall then trusts.
+  if (!invite.inviter_identity.empty() && invite.inviter_identity != sender_identity) {
+    log().warning << "CallInvite ignored: inviter " << invite.inviter_identity << " is not the sender "
+                  << sender_identity << " call_id=" << invite.call_id;
+    return true;
+  }
   // Already joined this call — ignore redelivered / duplicate invites (would demote to Ringing
   // and flicker ring chrome over the in-call banner).
   if (auto existing = sessions_.FindParticipant(invite.call_id, local_identity);
       existing && existing->has_value() && (*existing)->state == CallParticipantState::Joined) {
     log().info << "CallInvite ignored; already joined call_id=" << invite.call_id;
+    return true;
+  }
+  // A group call from someone the roster this device holds does not list (removed, or the group was dissolved and
+  // nobody is in it, G016) does not ring. A roster not held yet says nothing and is no reason to stay silent.
+  if (invite.origin_group_id && !invite.origin_group_id->empty() &&
+      KnownOutOfGroup(*invite.origin_group_id, sender_identity)) {
+    log().info << "CallInvite ignored; sender not in the group call_id=" << invite.call_id;
     return true;
   }
   // B24: a replayed invite for a call this device already ended must not re-arm the ring
@@ -1433,6 +1483,11 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept,
     host_.wire.notify_ring_changed();
     return {};
   }
+  if (session->has_value() && CallDiagBudget::Shared().Allow(accept.call_id, CallDiagEvent::Signal)) {
+    CallSignalLine("accept_in", accept.call_id, accept.listen_multiaddrs, util::NowUnixMs() - (*session)->created_at,
+                   implicit)
+        .Emit();
+  }
   live_calls_.AddPeer(accept.call_id, identity);
   alone_since_ms_.erase(accept.call_id);
   // Someone answered the call we placed. (Another invitee accepting while we still ring is not us joining.)
@@ -1443,6 +1498,10 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept,
   // Accepts on every poll; registering those overwrote the DialBook with stale endpoints.
   if (host_.reach.register_peer_listen && !accept.listen_multiaddrs.empty()) {
     host_.reach.register_peer_listen(identity, accept.listen_multiaddrs);
+  }
+  // H013: before media starts — the reach reads them (an implicit accept carries none).
+  if (host_.reach.note_call_peer_parked_relays && !implicit) {
+    host_.reach.note_call_peer_parked_relays(accept.call_id, accept.circuit_parked);
   }
   if (session->has_value()) {
     StartMediaAfterRemoteAccept(accept, identity, local_identity, implicit);
@@ -1715,6 +1774,21 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
   return {};
 }
 
+Roe<void> CallSessionWorkflow::StopRingingAnsweredElsewhere(const std::string& call_id,
+                                                           const std::string& local_identity) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return {};
+  }
+  const LiveCall* live = live_calls_.Find(call_id);
+  if (!live || live->State() != LiveCallState::Ringing) {
+    return {};  // not ringing here (taken here too, or already over): nothing to stop
+  }
+  (void)sessions_.UpdateInviteStatus(call_id, local_identity, "expired");
+  log().info << "call answered on another of our devices: ringing stopped call_id=" << call_id;
+  return EndCallLocal(**session, std::nullopt, LiveCallEndReason::AnsweredElsewhere);
+}
+
 Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json,
                                                  const std::string& local_identity) {
   auto ended = CallControlCodec::DecodeEnded(detail_json);
@@ -1861,6 +1935,14 @@ bool CallSessionWorkflow::InGroup(const std::string& group_id, const std::string
   return members && members->count(identity) > 0;
 }
 
+bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std::string& identity) const {
+  if (!host_.wire.group_members) {
+    return false;
+  }
+  auto members = host_.wire.group_members(group_id);
+  return members.has_value() && members->count(identity) == 0;  // an unknown roster (nullopt) refuses nobody
+}
+
 void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity, const int64_t now) {
   constexpr int64_t kCheckEveryMs = 1000;
   if (!host_.wire.group_members || now - group_members_checked_ms_ < kCheckEveryMs) {
@@ -1919,6 +2001,11 @@ void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity,
   group_members_seen_ = std::move(seen);
 }
 
+int64_t CallSessionWorkflow::AloneUntilMs(const std::string& call_id) const {
+  auto it = alone_since_ms_.find(call_id);
+  return it == alone_since_ms_.end() ? 0 : it->second + CallSessionLogic::kAloneInGroupCallMs;
+}
+
 void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_identity, const int64_t now) {
   DropWhoLeftTheGroup(local_identity, now);
   ResendRotatedMediaKeys(local_identity, now);
@@ -1946,7 +2033,14 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     it = join_requested_until_ms_.erase(it);
     host_.wire.notify_ring_changed();
   }
+  const bool slept = last_alone_sweep_ms_ > 0 && now - last_alone_sweep_ms_ > CallSessionLogic::kAppSleptGapMs;
+  last_alone_sweep_ms_ = now;
   for (auto it = alone_since_ms_.begin(); it != alone_since_ms_.end();) {
+    // Asleep (backgrounded): the wait starts over. (Someone ringing is not waited on: an offer nobody
+    // answers stays Invited with no end, and the wait is longer than a ring anyway.)
+    if (slept) {
+      it->second = now;
+    }
     if (now - it->second < CallSessionLogic::kAloneInGroupCallMs) {
       ++it;
       continue;
@@ -1954,7 +2048,8 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     const std::string call_id = it->first;
     it = alone_since_ms_.erase(it);
     if (call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
-      log().info << "Alone in group call for 5 min — leaving call_id=" << call_id;
+      log().info << "Alone in group call for " << CallSessionLogic::kAloneInGroupCallMs / 1000
+                 << " s — leaving call_id=" << call_id;
       (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
     }
   }

@@ -77,6 +77,7 @@ public:
   void RetryConnect();
   void ToggleMute();
   void ToggleCamera();
+  void FlipCamera();
   void ToggleSpeaker();
 
   /** V031 mode controls — remount call chrome mount only. */
@@ -100,7 +101,7 @@ private:
   void ClearRing();
   /** Device vitals, re-read at most every 2 s. */
   const DeviceVitals& Vitals(int64_t now_ms);
-  void EmitMetrics(const std::vector<std::string>& lines);
+  void EmitMetrics(const std::vector<ShareableLine>& lines);
   void ClearInCall();
   /** Hide in-call bar without clearing active_call_id_ (conflict ring). */
   void HideInCallChrome();
@@ -120,6 +121,7 @@ private:
                                            bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
+  static std::string FormatMinSec(int64_t seconds);
 
   CallUiBackend* Backend();
 

@@ -23,7 +23,8 @@ class PeerTransports;
 /**
  * The control lane: identified system messages to a peer (call signaling and the like) — E2E under
  * the pair's e2e_public session (opened on first use), not sequenced into a thread, never stored.
- * Sent on the critical lane, the relay first when a route is known (retried while fresh), else Amp.
+ * Sent on the critical lane, the relay first when a route is known (retried while fresh), else Amp;
+ * over a live link to the peer as well, at once (#431).
  * Any thread; the order keys are unique and rising per sender.
  */
 class ControlLane : public Module {

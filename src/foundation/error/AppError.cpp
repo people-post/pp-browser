@@ -85,6 +85,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     case Err::Network::TlsFailed:
       return Tr("errors.network.tls");
     case Err::Network::HttpError:
+    case Err::Network::HttpRejected:
       return Tr("errors.network.http");
     case Err::Network::Unreachable:
     case Err::Network::Generic:
@@ -133,6 +134,18 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
       return Tr("errors.blob.quota_nothing_to_delete");
     case Err::Blob::UploadNotConfigured:
       return Tr("errors.blob.not_configured");
+    case Err::Blob::UploadNotConfiguredNoDirect:
+      return Tr("errors.blob.not_configured_no_direct");
+    case Err::Blob::UploadRejected:
+      return Tr("errors.blob.upload_rejected");
+    case Err::Blob::Expired:
+      return Tr("errors.blob.expired");
+    case Err::Blob::TooLarge:
+      return Tr("errors.blob.too_large");
+    case Err::Blob::Unavailable:
+      return Tr("errors.blob.unavailable");
+    case Err::Blob::RateLimited:
+      return Tr("errors.blob.rate_limited");
     case Err::Blob::Generic:
     default:
       return Tr("errors.blob.failed");

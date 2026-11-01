@@ -1,4 +1,6 @@
 #include "lib/net/ClientCompat.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "foundation/runtime/AppVersion.h"
 #include "common/ValueJson.h"
@@ -216,9 +218,9 @@ Roe<ClientCompatCacheEntry> LoadClientCompatCache(const std::string& profile_dat
   if (!in) {
     return Error("client_compat cache missing");
   }
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  auto root = TryParseObject(ss.str());
+  // An oversized file reads as unparseable (PB-063).
+  const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  const auto root = text ? TryParseObject(*text) : std::nullopt;
   if (!root) {
     return Error("Invalid client_compat cache");
   }

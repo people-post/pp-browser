@@ -5,12 +5,18 @@
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="fonts_ready">{{i18n:app.tagline}}</p>
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="!fonts_ready">…</p>
     </div>
-    <button class="shell-profile-btn" type="button" data-model="window"
-            data-if="layout_mode == 'compact' && !account_sheet_open"
-            data-event-click="open_account_sheet()">
-      <svg src="../icons/me.svg" width="18" height="18" crop-to-content="true"></svg>
-      <span class="badge-dot badge-dot--profile" data-if="nav_me_attention"></span>
-    </button>
+    <div class="home-header-actions row" data-model="window"
+         data-if="layout_mode == 'compact' && !account_sheet_open">
+      <button class="shell-profile-btn" type="button" title="{{i18n:scan.title}}"
+              data-event-click="open_scan_qr()">
+        <svg src="../icons/qr-scan.svg" width="18" height="18" crop-to-content="true"></svg>
+      </button>
+      <button class="shell-profile-btn" type="button" title="{{i18n:nav.me}}"
+              data-event-click="open_account_sheet()">
+        <svg src="../icons/me.svg" width="18" height="18" crop-to-content="true"></svg>
+        <span class="badge-dot badge-dot--profile" data-if="nav_me_attention"></span>
+      </button>
+    </div>
   </div>
   <div class="home-landing">
     <div class="home-landing-inner stack">

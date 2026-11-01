@@ -1,6 +1,6 @@
 #include "foundation/runtime/AppLifecycle.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <atomic>

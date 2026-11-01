@@ -1,5 +1,5 @@
 #include "app/node/NodeBootstrap.h"
-#include "domain/node/AppRuntimeMeshExecutors.h"
+#include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/node/NodeEnvOverlay.h"
 
@@ -11,7 +11,8 @@
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/SchemaVersion.h"
 #include "domain/node/NodeMeshServices.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "common/Logger.h"
 
 #include <cstdlib>
@@ -54,7 +55,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return manifest.error();
   }
 
-  auto pin = PinResolver::Require(options.pin);
+  auto pin = PinResolver::Require(options.pin.Reveal());
   if (!pin) {
     return pin.error();
   }
@@ -90,7 +91,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return loaded.error();
   }
 
-  AppRuntimeConfig runtime;
+  AppRuntimeConfig runtime = ProductRuntimeConfig();
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
 

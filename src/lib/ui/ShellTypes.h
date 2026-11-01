@@ -148,14 +148,14 @@ struct PinGateState {
   bool active = false;
   /** No vault yet: I'm new vs I already have an account. */
   bool identity_fork_mode = false;
-  /** Fork extra: "Restore my account: <nickname>" when a local backup exists; empty hides it. */
-  ui::String restore_label;
   bool chooser_mode = false;
   bool create_mode = false;
   /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
   bool link_paste_mode = false;
-  /** Restore: enter the PIN the account used (one field, with Back). */
-  bool restore_pin_mode = false;
+  /** The paste page asks for a recovery phrase (multi-device M023) instead of a transfer code. */
+  bool phrase_flow = false;
+  /** On the phrase page: the saved copy picked to restore from as well (its file name; empty: none). */
+  ui::String saved_copy_name;
   /** Plain unlock (vault exists): shows the "Forgot PIN?" link; `forgot_open` expands its explanation. */
   bool unlock_mode = false;
   bool forgot_open = false;
@@ -254,6 +254,8 @@ struct CallInProgressState {
   bool show_speaker = false;
   /** Hide Camera when video disallowed, encoder missing, or hop A↑ too small for video_lo. */
   bool show_camera = true;
+  /** Phones with the camera on: switch front / rear camera. */
+  bool show_flip = false;
   /** Session policy from initiator (V035). */
   bool video_allowed = false;
   /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
@@ -378,7 +380,6 @@ struct ShellState {
   ui::String statusbar_label;
   bool statusbar_label_warn = false;
   bool statusbar_label_error = false;
-  ui::String statusbar_activity;
   /** Accessible names for icon-only slots (data-attr-title). */
   ui::String statusbar_brief_title;
   ui::String statusbar_direct_title;

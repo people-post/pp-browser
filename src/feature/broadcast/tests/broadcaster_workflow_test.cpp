@@ -1,7 +1,8 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
-#include "foundation/runtime/OwnerOutbox.h"
-#include "foundation/runtime/tests/queue_owner_executor.h"
+#include "common/runtime/OwnerOutbox.h"
+#include "common/runtime/QueueOwnerExecutor.h"
+#include "common/PbrCompat.h"
 
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/VideoCodecUnavailable.h"
@@ -102,7 +103,7 @@ protected:
   std::vector<std::string> cleared_;
   std::vector<BroadcastTipDraft> tips_;
   std::deque<std::function<void()>> ui_;
-  test::QueueOwnerExecutor owner_{ui_};
+  pp::QueueOwnerExecutor owner_{ui_};
   OwnerTasks tasks_{owner_};
   /** What this "device" can produce (B009); tests rebuild the workflow to change it. */
   mesh::MediaRelayVideoOffer video_offer_{{mesh::kDefaultVideoLevel}, 1};

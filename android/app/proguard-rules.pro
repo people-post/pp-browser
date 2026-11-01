@@ -11,6 +11,13 @@
     public boolean isActiveNetworkWifi();
     public void startNetworkMonitor();
     public void stopNetworkMonitor();
+    public static void startCameraCapture(int, int, long);
+    public static java.lang.String captureScratchDir();
+}
+
+# Native CameraCapture_Android.cpp delivers the camera result through this JNI entry point.
+-keepclassmembers class dev.pp_browser.app.PpCameraCapture {
+    public static native void nativeCameraCaptureResult(int, java.lang.String);
 }
 
 # Native NetworkMonitor calls back through this JNI entry point.

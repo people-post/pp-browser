@@ -1,5 +1,6 @@
 #include "feature/conversations/ChatSyncWorkflow.h"
 
+#include "lib/messaging/RelayClients.h"
 #include "feature/conversations/InboxController.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "lib/messaging/ChatSyncLogic.h"
@@ -10,13 +11,13 @@
 #include "common/chat/MessagingLimits.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/ContactsStore.h"
-#include "lib/people/PeerBriefRoute.h"
+#include "lib/messaging/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>
 #include <future>
 #include <thread>
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include "common/Error.h"
 
 #include <string>
@@ -8,7 +10,7 @@
 namespace pbr {
 
 struct BriefGuestLlmMintResult {
-  std::string llm_api_key;
+  SecretText llm_api_key;
   std::string expires_at;
 };
 

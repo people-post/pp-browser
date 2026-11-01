@@ -69,4 +69,29 @@ Roe<ByteVector> AttachmentContentCipher::Decrypt(const ByteVector& content_key, 
   return plaintext;
 }
 
+Roe<ByteVector> AttachmentContentCipher::Decrypt(const ByteVector& content_key, const ByteVector& nonce,
+                                                 ByteVector&& ciphertext, const ByteVector& content_hash) {
+  if (content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment content hash size");
+  }
+  if (content_key.size() != kSessionKeySize) {
+    return Error("Invalid attachment content key size");
+  }
+  EncryptedBlob blob;
+  blob.nonce = nonce;
+  blob.ciphertext = std::move(ciphertext);
+  auto plaintext = MessageCipher::Decrypt(content_key, blob, content_hash);
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  auto hash = AttachmentContentHash(plaintext.value());
+  if (!hash) {
+    return hash.error();
+  }
+  if (hash.value() != content_hash) {
+    return Error("Attachment content hash mismatch");
+  }
+  return plaintext;
+}
+
 } // namespace pbr

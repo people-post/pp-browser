@@ -48,6 +48,12 @@ struct Thread {
   int unread_count = 0;
   std::string preview;
   bool encrypted = false;
+  /**
+   * Shown in the chat list. A direct chat made only by a group's membership events (they travel as direct messages)
+   * is not listed until something readable is in it or the user opens it; once listed it stays. Every other
+   * thread, and every thread from before this existed, is listed.
+   */
+  bool listed = true;
 };
 
 struct ThreadMessage {
@@ -88,5 +94,16 @@ struct ThreadMessage {
   std::optional<uint64_t> sender_seq;
   std::optional<uint32_t> session_epoch;
 };
+
+/**
+ * `ThreadMessage::generation` of a message that belongs to an on-device app action (the user's command, the
+ * question asked back, the template answer, the list to pick from). Shown in the chat, but never part of the
+ * history or context sent to a model: it may carry contact remarks (DEV/PLAN-local-app-actions.md).
+ */
+inline constexpr const char* kLocalActionGeneration = "local_action";
+
+inline bool IsLocalActionMessage(const ThreadMessage& message) {
+  return message.generation && *message.generation == kLocalActionGeneration;
+}
 
 } // namespace pbr

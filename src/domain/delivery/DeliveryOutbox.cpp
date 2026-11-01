@@ -1,6 +1,7 @@
 #include "domain/delivery/DeliveryOutbox.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "lib/messaging/OutboundMessage.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
@@ -57,11 +58,14 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         return;
       }
       if (auto sent = relay->Send(request.envelope); !sent) {
+        const bool again = OutboxRetryAgain(1, sent.error());
         log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
-                      << " err=" << sent.error().message << " (queued for retry)";
-        Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
-                        .thread_id = request.thread_id, .attempt_count = 1, .amp_peer_key = request.amp_peer_key,
-                        .group_member = request.group_member, .copy_device = request.copy_device});
+                      << " err=" << sent.error().message << (again ? " (queued for retry)" : " (refused: not retried)");
+        if (again) {
+          Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
+                          .thread_id = request.thread_id, .attempt_count = 1, .amp_peer_key = request.amp_peer_key,
+                          .group_member = request.group_member, .copy_device = request.copy_device});
+        }
         outcome.failure = SendFailureFromRelay(sent.error());
         outcome.detail = sent.error().message;
         Report(std::move(outcome));
@@ -75,6 +79,21 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
     const bool reachable =
         chat && !request.amp_peer_key.empty() && chat->IsPeerReachable(request.amp_peer_key);
+    const bool connected = chat && !request.amp_peer_key.empty() && chat->IsPeerConnected(request.amp_peer_key);
+    if (ControlAlsoGoesDirect(connected, request.relay_route.has_value(), request.critical_lane)) {
+      // #431 (a): a live link carries it in milliseconds where the inbox can take tens of seconds; the
+      // relay copy still goes (the outcome is its), and the receiver applies whichever lands first.
+      chat->SendEnvelopeAsync(request.amp_peer_key, request.envelope,
+                              [this, message_id = request.message_id, peer = request.amp_peer_key](DirectSendRoe direct) {
+                                if (!direct) {
+                                  log().info << "control direct copy failed message_id=" << message_id
+                                             << " peer=" << peer << " err=" << direct.error().message
+                                             << " (the relay copy stands)";
+                                }
+                              });
+      finish_relay(std::nullopt);
+      return;
+    }
     // Call signaling: Amp's open + ack per message races media setup — the relay first when a
     // route is known; Amp remains for Amp-only peers.
     if (!DirectSendTriesAmpFirst(reachable, request.relay_route.has_value(), request.critical_lane)) {
@@ -158,7 +177,7 @@ void DeliveryOutbox::Retry() {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
                                  .transport = MessageTransport::Relay, .relay_after_direct = tried_direct,
                                  .group_member = item.group_member, .copy_device = item.copy_device});
-        } else if (OutboxRetryAgain(item.attempt_count)) {
+        } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
         } else {

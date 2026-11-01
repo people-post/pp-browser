@@ -65,6 +65,7 @@ void PinGateController::ShowError(const std::string& message) {
 void PinGateController::Dismiss() {
   pin_state_ = {};
   link_flow_ = false;
+  phrase_flow_ = false;
   pending_link_default_pin_ = false;
   pending_link_pin_.clear();
   ApplyPinGate();
@@ -78,6 +79,7 @@ void PinGateController::ShowIdentityFork() {
     return;
   }
   link_flow_ = false;
+  phrase_flow_ = false;
   pending_link_default_pin_ = false;
   pending_link_pin_.clear();
   pin_state_ = {};
@@ -91,23 +93,12 @@ void PinGateController::ShowIdentityFork() {
   }
 }
 
-void PinGateController::ShowIdentityRestore(const std::string& nickname) {
-  ShowIdentityFork();
-  if (!pin_state_.active) {
-    return;
-  }
-  pin_state_.restore_label = Tr("pin.identity_restore", {{"name", nickname}}).c_str();
-  ApplyPinGate();
-  if (shell_pin_gate_.dirty_pin_gate) {
-    shell_pin_gate_.dirty_pin_gate();
-  }
-}
-
 void PinGateController::ShowChooser() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
   link_flow_ = false;
+  phrase_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.chooser_mode = true;
@@ -128,7 +119,7 @@ void PinGateController::ShowLinkChooser() {
   pin_state_.active = true;
   pin_state_.chooser_mode = true;
   pin_state_.title = Tr("pin.link_chooser_title").c_str();
-  pin_state_.message = Tr("pin.link_chooser_message").c_str();
+  pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_chooser_message") : Tr("pin.link_chooser_message")).c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -140,6 +131,7 @@ void PinGateController::ShowUnlock() {
     return;
   }
   link_flow_ = false;
+  phrase_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.create_mode = false;
@@ -179,10 +171,13 @@ void PinGateController::ShowLinkPaste() {
   pin_state_.chooser_mode = false;
   pin_state_.create_mode = false;
   pin_state_.link_paste_mode = true;
+  pin_state_.phrase_flow = phrase_flow_;
   pin_state_.error = "";
   pin_state_.link_payload = "";
-  pin_state_.title = Tr("pin.link_paste_title").c_str();
-  pin_state_.message = Tr("pin.link_paste_message").c_str();
+  pin_state_.saved_copy_name = "";
+  saved_copy_.clear();
+  pin_state_.title = (phrase_flow_ ? Tr("pin.phrase_paste_title") : Tr("pin.link_paste_title")).c_str();
+  pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_paste_message") : Tr("pin.link_paste_message")).c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -203,19 +198,34 @@ void PinGateController::OnIdentityLink() {
   ShowLinkChooser();
 }
 
-void PinGateController::OnIdentityRestore() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode || pin_state_.restore_label.empty()) {
+void PinGateController::OnIdentityPhrase() {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
     return;
   }
-  if (!shell_pin_gate_.apply_pin_gate || !gate_complete_.complete_restore_backup) {
+  phrase_flow_ = true;
+  ShowLinkChooser();
+}
+
+void PinGateController::OnUseSavedCopy() {
+  if (!pin_state_.active || !pin_state_.link_paste_mode || !phrase_flow_ || !gate_complete_.pick_saved_copy) {
     return;
   }
-  link_flow_ = false;
-  pin_state_.error = "";
-  ApplyPinGate();
-  DirtyPinFields();
-  // Accounts on the default PIN come back without a question; otherwise the gate calls ShowRestorePin.
-  gate_complete_.complete_restore_backup(std::string(kDefaultProfilePin), /*set_default_pin=*/true);
+  PullBoundPinFields();  // keep the words typed so far
+  gate_complete_.pick_saved_copy([this](std::string name, std::optional<std::string> text) {
+    if (name.empty() || !pin_state_.active || !pin_state_.link_paste_mode || !phrase_flow_) {
+      return;
+    }
+    PullBoundPinFields();
+    if (!text) {
+      pin_state_.error = Tr("pin.phrase_saved_copy_unreadable").c_str();
+    } else {
+      pin_state_.error = "";
+      saved_copy_ = std::move(*text);
+      pin_state_.saved_copy_name = name.c_str();
+    }
+    ApplyPinGate();
+    DirtyPinFields();
+  });
 }
 
 void PinGateController::OnForgotToggle() {
@@ -226,25 +236,6 @@ void PinGateController::OnForgotToggle() {
   pin_state_.forgot_open = !pin_state_.forgot_open;
   ApplyPinGate();
   DirtyPinFields();
-}
-
-void PinGateController::ShowRestorePin(const bool wrong_pin) {
-  if (!shell_pin_gate_.apply_pin_gate) {
-    return;
-  }
-  link_flow_ = false;
-  pin_state_ = {};
-  pin_state_.active = true;
-  pin_state_.restore_pin_mode = true;
-  pin_state_.title = Tr("pin.restore_pin_title").c_str();
-  pin_state_.message = Tr("pin.restore_pin_message").c_str();
-  if (wrong_pin) {
-    pin_state_.error = Tr("pin.restore_pin_wrong").c_str();
-  }
-  ApplyPinGate();
-  if (shell_pin_gate_.remount_pin_gate) {
-    shell_pin_gate_.remount_pin_gate();
-  }
 }
 
 void PinGateController::OnSetPin() {
@@ -291,12 +282,9 @@ void PinGateController::OnSubmit() {
   }
 
   if (pin_state_.link_paste_mode) {
-    if (!gate_complete_.complete_link_device) {
-      return;
-    }
     const std::string payload = pin_state_.link_payload.c_str();
     if (payload.empty()) {
-      pin_state_.error = Tr("pin.link_paste_empty").c_str();
+      pin_state_.error = (phrase_flow_ ? Tr("pin.phrase_paste_empty") : Tr("pin.link_paste_empty")).c_str();
       ApplyPinGate();
       DirtyPinFields();
       return;
@@ -304,7 +292,19 @@ void PinGateController::OnSubmit() {
     pin_state_.error = "";
     ApplyPinGate();
     DirtyPinFields();
-    gate_complete_.complete_link_device(pending_link_pin_, payload, pending_link_default_pin_);
+    if (phrase_flow_) {
+      if (gate_complete_.complete_phrase_restore) {
+        std::vector<std::string> saved_copies;
+        if (!saved_copy_.empty()) {
+          saved_copies.push_back(saved_copy_);
+        }
+        gate_complete_.complete_phrase_restore(pending_link_pin_, payload, pending_link_default_pin_, saved_copies);
+      }
+      return;
+    }
+    if (gate_complete_.complete_link_device) {
+      gate_complete_.complete_link_device(pending_link_pin_, payload, pending_link_default_pin_);
+    }
     return;
   }
 
@@ -315,17 +315,6 @@ void PinGateController::OnSubmit() {
     DirtyPinFields();
     return;
   }
-  if (pin_state_.restore_pin_mode) {
-    if (!gate_complete_.complete_restore_backup) {
-      return;
-    }
-    pin_state_.error = "";
-    ApplyPinGate();
-    DirtyPinFields();
-    gate_complete_.complete_restore_backup(pin, /*set_default_pin=*/false);
-    return;
-  }
-
   if (!gate_complete_.complete_with_pin) {
     return;
   }
@@ -362,7 +351,7 @@ void PinGateController::OnCancel() {
     return;
   }
   const bool cancellable = pin_state_.create_mode || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
-                           pin_state_.link_paste_mode || pin_state_.restore_pin_mode;
+                           pin_state_.link_paste_mode;
   if (!cancellable || !gate_complete_.cancel) {
     return;
   }

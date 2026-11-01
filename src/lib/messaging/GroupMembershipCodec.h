@@ -21,10 +21,15 @@ public:
 
   static Roe<std::string> EncodeInviteResponse(const std::string& invite_nonce, const std::string& group_id);
   static Roe<std::pair<std::string, std::string>> DecodeInviteResponse(const std::string& detail_json);
+  /** `group_invite_refused` (G014): `{ group_id, invite_nonce, reason }`. */
+  static Roe<std::string> EncodeInviteRefused(const std::string& invite_nonce, const std::string& group_id,
+                                              const std::string& reason);
   struct InviteResponsePayload {
     std::string invite_nonce;
     std::string group_id;
     GroupMembershipControlType control_type = GroupMembershipControlType::GroupInviteAccept;
+    /** A refusal's reason (`group_full`); empty for an accept or decline. */
+    std::string reason;
   };
   static Roe<InviteResponsePayload> DecodeInviteResponseFromMessage(const ThreadMessage& message);
 
@@ -98,6 +103,11 @@ public:
   static Roe<GroupRenamedPayload> DecodeGroupRenamed(const std::string& detail_json);
   static Roe<GroupRenamedPayload> DecodeGroupRenamedFromMessage(const ThreadMessage& message);
   static Roe<std::string> EncodeGroupForked(const GroupForkPayload& payload);
+  /**
+   * The group's own "dissolved" line (G016): `{ group_id, owner }`, no signature. The wire form is the owner-signed
+   * roster (`group_roster_sync_codec::EncodeStatement`); this is what the group's chat keeps.
+   */
+  static Roe<std::string> EncodeGroupDissolved(const std::string& group_id, const std::string& owner_identity);
 
   static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, GroupMembershipControlType type,
                                                const std::string& display_text, const std::string& detail_json,
@@ -116,6 +126,12 @@ public:
   static bool IsOwnerUnreachableResolved(const ThreadMessage& message);
 
   static std::optional<GroupMembershipControlType> ControlTypeFromMessage(const ThreadMessage& message);
+  /**
+   * A membership event stored in a direct thread: it travels there (the signed roster and the cards ride on it)
+   * but it is not something to read in that chat — the group thread has its own line. Every control type
+   * except the invitation itself, which is the one card the invitee answers in the direct chat.
+   */
+  static bool IsHiddenInDirectThread(const ThreadMessage& message);
   static Roe<GroupInvitePayload> DecodeInviteFromMessage(const ThreadMessage& message);
 
   static Roe<GroupPolicy> DecodeGroupPolicy(const std::string& policy_json);

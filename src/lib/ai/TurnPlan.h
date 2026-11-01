@@ -41,6 +41,11 @@ struct TurnPlan {
   RenderMode render_mode = RenderMode::Blocks;
   std::string synthesis_hints;
   std::string user_request;
+  /**
+   * Planned on the device from the wordlist (LocalActionPlanner) or a direct action: the result is rendered from
+   * templates, never by a model, and the turn stays out of the history sent to any model.
+   */
+  bool local = false;
 };
 
 const char* TurnPlanSourceName(TurnPlanSource source);

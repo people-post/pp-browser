@@ -52,6 +52,12 @@ Check boxes when work is **merged and verified**. Design (d0) should be solid be
 
 ## Phase v1b — Operate×People (PeerId)
 
+**Scope amended 2026-10-27:** user-ID/nickname requests to find or add a friend search first and
+show selectable results. Clicking Add contact saves the selected person. Raw mesh PeerId mutation
+is deferred. Implementation/validation status is in [CURRENT_STATE.md](CURRENT_STATE.md);
+the scoped delivery plan is [PEOPLE_SEARCH_PLAN.md](PEOPLE_SEARCH_PLAN.md).
+The checklist below records the original PeerId proposal, not the acceptance criteria for this delivery.
+
 **Goal:** NL add-by-PeerId works end-to-end.
 
 - [ ] Extend `add_contact` tool (and/or ContactsStore helper) to accept `peer_id` (+ optional `display_name`) without requiring `directory_hit`

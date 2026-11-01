@@ -1,11 +1,11 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 
+#include "common/Diag.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/StartupTiming.h"
 
-#include <memory>
 #include <stdexcept>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -16,7 +16,7 @@ ProfileUnlockGate::ProfileUnlockGate() {
   redirectLogger("ProfileUnlockGate");
 }
 
-Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsEngine& secrets, const std::string& pin,
+Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsEngine& secrets, const SecretText& pin,
                                        const std::function<Roe<void>()>& ensure_messaging_ready) {
   {
     StartupPhase phase("ProfileUnlockGate::VaultUnlock");
@@ -45,7 +45,7 @@ ProfileSecretsEngine& ProfileUnlockGate::Secrets() {
   return *secrets_;
 }
 
-Roe<void> ProfileUnlockGate::UnlockAndReady(const std::string& pin) {
+Roe<void> ProfileUnlockGate::UnlockAndReady(const SecretText& pin) {
   return UnlockProfileSecretsAndReady(Secrets(), pin, ports_.ensure_messaging_ready);
 }
 
@@ -68,6 +68,7 @@ void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
 }
 
 void ProfileUnlockGate::Finish(const bool unlocked) {
+  DiagLine("unlock.done").Add("unlocked", unlocked).Emit();
   SetUnlockInProgress(false);
   if (ports_.ui.dismiss) {
     ports_.ui.dismiss();
@@ -77,6 +78,7 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
 
 void ProfileUnlockGate::ReportError(const std::string& message) {
   log().warning << "Unlock failed: " << message;
+  DiagLine("unlock.failed").Add("wrong_pin", false).Add("silent", !showing_).Emit();
   SetUnlockInProgress(false);
   if (!showing_) {
     // Silent unlock failed with no modal yet — open unlock so the user can retry.
@@ -91,10 +93,12 @@ void ProfileUnlockGate::ReportError(const Error& error) {
   // The vault's text ("Incorrect PIN or corrupt vault") is English; the log keeps it, the screen
   // gets our wording. A silent unlock (no PIN typed) opens the unlock screen without that line.
   if (!IsWrongPinError(error)) {
+    DiagLine("unlock.error").Fail("error", error).Emit();
     ReportError(error.message);
     return;
   }
   log().warning << "Unlock failed: " << error.message;
+  DiagLine("unlock.failed").Add("wrong_pin", true).Add("silent", !showing_).Emit();
   SetUnlockInProgress(false);
   const bool silent = !showing_;
   if (silent) {
@@ -126,26 +130,6 @@ void ProfileUnlockGate::RequestShowIdentityFork(std::function<void(bool)> done) 
   }
 }
 
-void ProfileUnlockGate::RequestShowFreshInstallEntry() {
-  std::optional<std::string> nickname;
-  if (ports_.local_backup_nickname) {
-    if (auto peeked = ports_.local_backup_nickname(); peeked) {
-      nickname = *peeked;
-    } else {
-      log().warning << "Local account backup unreadable, offering a new account: " << peeked.error().message;
-    }
-  }
-  if (nickname && ports_.ui.show_identity_restore) {
-    if (showing_) {
-      return;
-    }
-    showing_ = true;
-    ports_.ui.show_identity_restore(*nickname);
-    return;
-  }
-  RequestShowIdentityFork(nullptr);
-}
-
 void ProfileUnlockGate::RequestShowChooser(std::function<void(bool)> done) {
   if (done) {
     pending_.push_back(std::move(done));
@@ -172,7 +156,7 @@ void ProfileUnlockGate::RequestShowUnlock(std::function<void(bool)> done) {
   }
 }
 
-void ProfileUnlockGate::RunUnlockAndReadyAsync(std::string pin, const bool set_default_pin,
+void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_default_pin,
                                                const bool clear_default_pin) {
   if (unlock_in_progress_) {
     return;
@@ -303,10 +287,9 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
         on_done(work());
       }
     } else {
-      // No vault yet (fresh install): go straight to "I'm new / I already have an account" (plus
-      // "Restore my account" when a local backup exists), so PIN creation and the first-run wizard
-      // follow the first frame instead of an empty home screen.
-      RequestShowFreshInstallEntry();
+      // No vault yet (fresh install): go straight to "I'm new / I already have an account", so PIN
+      // creation and the first-run wizard follow the first frame instead of an empty home screen.
+      RequestShowIdentityFork(nullptr);
     }
     return;
   }
@@ -332,7 +315,7 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   RequestShowUnlock(nullptr);
 }
 
-void ProfileUnlockGate::CompleteWithPin(const std::string& pin, const bool create_mode) {
+void ProfileUnlockGate::CompleteWithPin(const SecretText& pin, const bool create_mode) {
   RunUnlockAndReadyAsync(pin, /*set_default_pin=*/false, /*clear_default_pin=*/create_mode);
 }
 
@@ -341,79 +324,49 @@ void ProfileUnlockGate::CompleteWithDefaultPin() {
                          /*clear_default_pin=*/false);
 }
 
-void ProfileUnlockGate::CompleteRestoreBackup(const std::string& pin, const bool set_default_pin) {
-  if (unlock_in_progress_) {
-    return;
-  }
-  if (!ports_.restore_local_backup) {
-    ReportError("Account restore is not available");
-    return;
-  }
-  SetUnlockInProgress(true);
-  StartupMark("local_backup_restore_begin");
-
-  auto wrong_pin = std::make_shared<bool>(false);
-  auto work = [this, pin, wrong_pin]() -> Roe<void> {
-    if (auto restored = ports_.restore_local_backup(pin); !restored) {
-      *wrong_pin = AppError::CategoryOf(restored.error()) == ErrorCategory::Pin;
-      return restored.error();
-    }
-    return UnlockAndReady(pin);
-  };
-  auto on_done = [this, set_default_pin, wrong_pin](Roe<void> result) {
-    if (!result && *wrong_pin && ports_.ui.show_restore_pin) {
-      // Not the default PIN: ask for the account's PIN; a typed PIN that is wrong keeps the page up.
-      StartupMark("local_backup_restore_pin");
-      SetUnlockInProgress(false);
-      ports_.ui.show_restore_pin(/*wrong_pin=*/!set_default_pin);
-      return;
-    }
-    if (!result) {
-      StartupMark("local_backup_restore_fail");
-      ReportError(result.error());
-      return;
-    }
-    if (ports_.set_pin_is_default) {
-      ports_.set_pin_is_default(set_default_pin);
-    }
-    StartupMark("local_backup_restore_ok");
-    if (set_default_pin && ports_.ui.on_default_provisioned) {
-      ports_.ui.on_default_provisioned();
-    }
-    if (ports_.ui.on_link_imported) {
-      ports_.ui.on_link_imported(); // a restored account needs no wizard either
-    }
-    Finish(true);
-  };
-
-  if (ports_.run_heavy) {
-    ports_.run_heavy(std::move(work), std::move(on_done));
-    return;
-  }
-  on_done(work());
-}
-
-void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::string& bundle_json,
+void ProfileUnlockGate::CompleteLinkDevice(const SecretText& pin, const std::string& bundle_json,
                                            const bool set_default_pin) {
-  if (unlock_in_progress_) {
-    return;
-  }
   if (!ports_.import_link_device) {
     ReportError("Link import is not available");
     return;
   }
-  SetUnlockInProgress(true);
-  StartupMark("link_device_import_begin");
+  CompleteAccountImport(
+      pin, set_default_pin, [this, pin, bundle_json]() { return ports_.import_link_device(pin, bundle_json); },
+      "link_device_import");
+}
 
-  auto work = [this, pin, bundle_json]() -> Roe<void> {
-    if (auto imported = ports_.import_link_device(pin, bundle_json); !imported) {
+void ProfileUnlockGate::CompletePhraseRestore(const SecretText& pin, const SecretText& phrase,
+                                              const bool set_default_pin, std::vector<std::string> saved_copies) {
+  if (!ports_.restore_recovery_phrase) {
+    ReportError("Restore from a recovery phrase is not available");
+    return;
+  }
+  CompleteAccountImport(
+      pin, set_default_pin,
+      [this, pin, phrase, saved_copies = std::move(saved_copies)]() {
+        return ports_.restore_recovery_phrase(pin, phrase, saved_copies);
+      },
+      "phrase_restore");
+}
+
+void ProfileUnlockGate::CompleteAccountImport(const SecretText& pin, const bool set_default_pin,
+                                              std::function<Roe<void>()> import, const char* mark) {
+  if (unlock_in_progress_) {
+    return;
+  }
+  SetUnlockInProgress(true);
+  const std::string mark_name = mark;
+  StartupMark((mark_name + "_begin").c_str());
+
+  auto work = [this, pin, import = std::move(import)]() -> Roe<void> {
+    if (auto imported = import(); !imported) {
       return imported.error();
     }
     return UnlockAndReady(pin);
   };
-  auto on_done = [this, set_default_pin](Roe<void> result) {
+  auto on_done = [this, set_default_pin, mark_name](Roe<void> result) {
     if (!result) {
-      StartupMark("link_device_import_fail");
+      StartupMark((mark_name + "_fail").c_str());
       ReportError(result.error());
       return;
     }
@@ -423,7 +376,7 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
     if (!set_default_pin && ports_.set_pin_is_default) {
       ports_.set_pin_is_default(false);
     }
-    StartupMark("link_device_import_ok");
+    StartupMark((mark_name + "_ok").c_str());
     if (set_default_pin && ports_.ui.on_default_provisioned) {
       ports_.ui.on_default_provisioned();
     }
@@ -445,7 +398,7 @@ void ProfileUnlockGate::Cancel() {
     // No account yet: PP is not usable without one, so "back" on the PIN / paste page returns to
     // the identity fork instead of dropping the user on an empty home screen (Kenneth 2026-10-13).
     showing_ = false;
-    RequestShowFreshInstallEntry();
+    RequestShowIdentityFork(nullptr);
     return;
   }
   Finish(false);

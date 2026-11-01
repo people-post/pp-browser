@@ -20,6 +20,8 @@ import argparse
 import json
 import os
 import queue
+import random
+import re
 import shutil
 import subprocess
 import sys
@@ -65,15 +67,20 @@ class User:
         self.surface = {"kind": "none"}
         self.history = []  # every event, for the failure report
         self.account = ""
+        self.peer_id = ""  # this device's, as last seen ready (a restore after a crash compares against it)
         self.lock = threading.Condition()
         self.runs = 0
 
     # --- process --------------------------------------------------------------------------------
 
-    def start(self):
+    def start(self, restore_phrase_file=None, saved_copy_file=None):
         self.runs += 1
         log = os.path.join(self.dir, "probe-%d.log" % self.runs)
         argv = ["--config", self.config, "--pin", PIN, "--log-file", log]
+        if restore_phrase_file:
+            argv += ["--restore-phrase-file", restore_phrase_file]
+        if saved_copy_file:
+            argv += ["--restore-saved-copy", saved_copy_file]
         if self.container:
             # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
             script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
@@ -144,17 +151,41 @@ class User:
         self.start()
         self.wait_ready()
 
-    def restore_account(self):
-        """A reinstall restored from the account backup: the same account, contacts and public sessions,
-        but no chats — threads and message numbering start over, so each pair starts its next epoch with
-        the first send (D014, issue #378)."""
-        bundle = self.cmd("backup_sessions")["bundle"]
+    def uninstall(self):
+        """The app and its data dir gone (all but the lab's config and the logs of earlier runs)."""
         self.quit()
-        shutil.rmtree(os.path.join(self.dir, "profiles", "default", "threads"), ignore_errors=True)
+        for entry in os.listdir(self.dir):
+            if entry == "config.json" or re.match(r"probe-\d+\.log$", entry):
+                continue
+            path = os.path.join(self.dir, entry)
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                os.remove(path)
+
+    def restore_from_phrase(self, phrase, saved_copy=None):
+        """Every device is gone; a fresh install restores the account from its recovery phrase (multi-device
+        M023): a new device of the same account, its state from the locker — and from `saved_copy` (an exported
+        locker file's text) when given. The app may already be dead (a crashed or lost phone)."""
+        before = self.cmd("whoami") if self.alive() else {"account": self.account, "peer_id": self.peer_id}
+        self.uninstall()
+        phrase_file = os.path.join(self.dir, "restore-phrase.txt")
+        with open(phrase_file, "w") as f:
+            f.write(phrase + "\n")
+        copy_file = None
+        if saved_copy is not None:
+            copy_file = os.path.join(self.dir, "saved-copy.json")
+            with open(copy_file, "w") as f:
+                f.write(saved_copy)
         self.surface = {"kind": "none"}
-        self.start()
-        self.wait_ready()
-        self.cmd("restore_sessions", bundle=bundle)
+        self.start(restore_phrase_file=phrase_file, saved_copy_file=copy_file)
+        os.remove(phrase_file)
+        if copy_file:
+            os.remove(copy_file)
+        who = self.wait_ready()
+        if who.get("account") != before.get("account") or who.get("peer_id") == before.get("peer_id"):
+            raise ProbeError("%s: restored as %s device %s (was %s device %s)" % (
+                self.name, who.get("account"), who.get("peer_id"), before.get("account"), before.get("peer_id")))
 
     def log_text(self):
         """Everything this user's app has logged, every run."""
@@ -227,6 +258,7 @@ class User:
             who = self.cmd("whoami")
             if who.get("messaging_ready"):
                 self.account = who.get("account") or self.account
+                self.peer_id = who.get("peer_id") or self.peer_id
                 return who
             time.sleep(0.25)
         raise ProbeError("%s: messaging never ready" % self.name)
@@ -357,10 +389,12 @@ class Lab:
             raise ProbeError("%s: no account after register" % u.name)
         return u
 
-    def linked_device(self, of, name):
+    def linked_device(self, of, name, bundle=None):
         """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
-        Security → Copy link payload), then starts on it — the same account, a device of its own."""
-        bundle = of.cmd("link_export")["bundle"]
+        Security → Copy link payload), then starts on it — the same account, a device of its own. `bundle`: one
+        exported earlier (`of` may be gone by now)."""
+        if bundle is None:
+            bundle = of.cmd("link_export")["bundle"]
         u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
         self.users.append(u)
         u.start()
@@ -453,6 +487,16 @@ def summaries_settle(u, thread, want, timeout=20):
         time.sleep(0.5)
 
 
+def chats_with_settle(u, peer, want=1, timeout=20):
+    """`u`'s chats with `peer`, once there are `want` (the call's record lands with the inbox that carries it)."""
+    deadline = time.time() + timeout
+    while True:
+        got = [t for t in u.cmd("threads")["threads"] if t["peer"] == peer]
+        if len(got) >= want or time.time() > deadline:
+            return got
+        time.sleep(0.5)
+
+
 # --- scenarios ------------------------------------------------------------------------------------
 
 def scenario_first_contact(lab):
@@ -477,7 +521,7 @@ def scenario_first_contact(lab):
     got = summaries_settle(a, a_thread, 1)
     if len(got) != 1 or got[0].get("outcome") != "completed":
         raise ProbeError("alice's history: %s" % got)
-    b_threads = [t for t in b.cmd("threads")["threads"] if t["peer"] == a.account]
+    b_threads = chats_with_settle(b, a.account)
     if len(b_threads) != 1:
         raise ProbeError("bob has %d chats with alice" % len(b_threads))
     got = summaries_settle(b, b_threads[0]["id"], 1)
@@ -843,7 +887,7 @@ def scenario_push_wakes_background_callee(lab):
     return {"ring_after_push_s": round(rang, 2)}
 
 
-# The app's background wake window (MessagingLimits.h kBackgroundWakeWindowMs).
+# The app's background wake window (BackgroundSyncScheduler.h kBackgroundWakeWindowMs).
 BACKGROUND_WAKE_WINDOW_S = 20
 # After a call ends in the background the app keeps working this long (AppLifecycle kCallEndGraceMs).
 CALL_END_GRACE_S = 5
@@ -991,10 +1035,14 @@ def net(u, script):
     """Run `script` as root in the user's container (its network namespace is the app's)."""
     if not u.container:
         raise ProbeError("%s: network changes need --nat (a container per user)" % u.name)
-    r = subprocess.run(["docker", "exec", "--user", "0", u.container, "sh", "-c", script],
+    return root_in(u.container, script, u.name)
+
+
+def root_in(container, script, who):
+    r = subprocess.run(["docker", "exec", "--user", "0", container, "sh", "-c", script],
                        capture_output=True, text=True)
     if r.returncode != 0:
-        raise ProbeError("%s: %s: %s" % (u.name, script, r.stderr.strip()))
+        raise ProbeError("%s: %s: %s" % (who, script, r.stderr.strip()))
     return r.stdout.strip()
 
 
@@ -1007,6 +1055,16 @@ def net_drop(u, seconds, during=None):
         during()
     time.sleep(seconds / 2)
     net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
+
+
+def net_drop_together(users, seconds):
+    """Several users' links go down at the same moment (each behind its own NAT) and come back together."""
+    gws = [(u, net(u, "ip route show default | awk '{print $3; exit}'")) for u in users]
+    for u, _ in gws:
+        net(u, "ip link set eth0 down")
+    time.sleep(seconds)
+    for u, gw in gws:
+        net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
 
 
 def not_connected_while_down(u):
@@ -1030,6 +1088,103 @@ def change_address(u):
     net(u, "ip addr del %s dev eth0 && ip addr add %s/%s dev eth0 && ip route replace default via %s src %s"
         % (old, new, prefix, gw, new))
     return new
+
+
+# A phone's link (--nat): delay and jitter (ms) and loss (%, `loss_corr` % burstiness) each way,
+# upload / download in kbit/s, `limit` packets queued (netem's default 1000 holds seconds at a phone's rate).
+# On the road a cell link is lossy and jittery and its upload thin. A weak one is a phone at the edge of
+# coverage: slow and lossy in bursts, about a second of queue — not reordering (cells rarely reorder; wide
+# netem jitter does) and not 6 % independent loss each way, which no call app survives.
+PHONE_ROAD = {"delay": 60, "jitter": 40, "loss": 3, "up": 600, "down": 2000}
+PHONE_WEAK = {"delay": 150, "jitter": 20, "loss": 2, "loss_corr": 25, "up": 256, "down": 1000, "limit": 200}
+
+
+def gw_net(u, script):
+    """Run `script` as root on the user's NAT gateway (user-x's is gw-x)."""
+    if not u.container:
+        raise ProbeError("%s: network changes need --nat (a container per user)" % u.name)
+    return root_in(u.container.replace("user-", "gw-", 1), script, u.name + "'s gateway")
+
+
+def gw_inner_dev(u):
+    return gw_net(u, "ip -o -4 addr show | awk '/ 10\\.119\\./{print $2; exit}'")
+
+
+def phone_link(u, profile):
+    """The user's link behaves like a phone's: netem on its upload (its eth0) and on its download
+    (its gateway's side of the NAT, which carries only this user)."""
+    jitter = " %dms distribution normal" % profile["jitter"] if profile.get("jitter") else ""
+    netem = "netem limit %d delay %dms%s loss %s%% %s%%" % (
+        profile.get("limit", 1000), profile["delay"], jitter, profile["loss"], profile.get("loss_corr", 0))
+    net(u, "tc qdisc replace dev eth0 root %s rate %dkbit" % (netem, profile["up"]))
+    gw_net(u, "tc qdisc replace dev %s root %s rate %dkbit" % (gw_inner_dev(u), netem, profile["down"]))
+
+
+def clear_link(u):
+    net(u, "tc qdisc del dev eth0 root 2>/dev/null; true")
+    gw_net(u, "tc qdisc del dev %s root 2>/dev/null; true" % gw_inner_dev(u))
+
+
+def handover(u, outage=1.5):
+    """A phone changes cell (or Wi-Fi to cellular): its link is gone for `outage` s and comes back on
+    a new address, so its NAT maps it anew."""
+    gw = net(u, "ip route show default | awk '{print $3; exit}'")
+    net(u, "ip link set eth0 down")
+    time.sleep(outage)
+    net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
+    change_address(u)
+
+
+class Road:
+    """Phones on the road (--nat), as a context: `users`' links behave like `profile`, and with
+    `handover_s=(lo, hi)` each one hands over every lo..hi s on its own random schedule. `park()`
+    stops the handovers (the links stay as they are); leaving clears the links. The schedule's seed
+    is printed — PP_APP_LAB_ROAD_SEED replays it."""
+
+    def __init__(self, users, profile, handover_s=None):
+        self.users, self.profile, self.handover_s = list(users), profile, handover_s
+        self.seed = int(os.environ.get("PP_APP_LAB_ROAD_SEED") or random.randrange(1 << 30))
+        self.handovers = {u.name: 0 for u in self.users}
+        self._stop = threading.Event()
+        self._threads = []
+        self._errors = []
+
+    def __enter__(self):
+        print("road seed=%d (%s)" % (self.seed, ", ".join(u.name for u in self.users)), flush=True)
+        for u in self.users:
+            clear_link(u)
+            phone_link(u, self.profile)
+        if self.handover_s:
+            for i, u in enumerate(self.users):
+                t = threading.Thread(target=self._drive, args=(u, random.Random(self.seed + i)), daemon=True)
+                t.start()
+                self._threads.append(t)
+        return self
+
+    def _drive(self, u, rng):
+        lo, hi = self.handover_s
+        while not self._stop.wait(rng.uniform(lo, hi)):
+            try:
+                handover(u)
+                self.handovers[u.name] += 1
+            except ProbeError as e:
+                self._errors.append(str(e))
+                return
+
+    def park(self):
+        self._stop.set()
+        for t in self._threads:
+            t.join()
+        if self._errors:
+            raise ProbeError("road: " + "; ".join(self._errors))
+
+    def __exit__(self, *exc):
+        try:
+            self.park()
+        finally:
+            for u in self.users:
+                clear_link(u)
+        return False
 
 
 def still_in_call(users, call_id, timeout):
@@ -1137,8 +1292,23 @@ def scenario_seed_dies_in_use(lab):
 # onto the planned hop (media_relay). Hostless: whoever placed it may leave and the rest go on.
 
 
-def open_group(lab, n=3, title="lab group"):
-    """n people; the first creates a group with the others, who accept its invites."""
+def add_contacts(users, links):
+    """Who has added whom: "bob>dave" — Bob added Dave, Dave never added Bob; "bob=carol" — both
+    added each other. Adding is the app's Add contact by a directory search (`open_chat`)."""
+    by_name = {u.name.rsplit("-", 1)[0]: u for u in users}  # the lab suffixes each name
+    for link in links:
+        sep = "=" if "=" in link else ">"
+        adder, _, added = link.partition(sep)
+        if adder not in by_name or added not in by_name:
+            raise ValueError("contact link %r: want 'a>b' or 'a=b' between users of the scenario" % link)
+        for x, y in ([(adder, added), (added, adder)] if sep == "=" else [(adder, added)]):
+            by_name[x].cmd("open_chat", account=by_name[y].account)
+
+
+def open_group(lab, n=3, title="lab group", contacts=()):
+    """n people; the first creates a group with the others, who accept its invites. The owner and
+    each member have added each other (an invite comes from a contact); members have added nobody
+    else unless `contacts` says so (see `add_contacts`) — linked before the group, as friends are."""
     names = ["alice", "bob", "carol", "dave", "erin"][:n]
     users = [lab.user(name) for name in names]
     for u in users:
@@ -1147,6 +1317,7 @@ def open_group(lab, n=3, title="lab group"):
     for m in members:
         owner.cmd("open_chat", account=m.account)
         m.cmd("open_chat", account=owner.account)
+    add_contacts(users, contacts)
     created = owner.cmd("create_group", title=title, accounts=[m.account for m in members])
     group_id = created["group_id"]
     threads = {owner.name: created["thread"]}
@@ -1367,6 +1538,9 @@ def scenario_devices_hand_over_their_cards(lab):
     b.cmd("accept_voice")
     for u in (a, b):
         u.wait_surface("in_call", 40, call_id=call_id)
+    # The call screen reads In call while its media still connects; behind NATs the call's link (a circuit
+    # carrier) comes up after that. Its media flowing both ways is the live link the message must take.
+    assert_media_flows(a, b)
     wait_for(lambda: a_peer in b.cmd("kept_card", account=a.account)["devices"], 40,
              "bob: alice's device, from her card")
     wait_for(lambda: b_peer in a.cmd("kept_card", account=b.account)["devices"], 40,
@@ -1488,15 +1662,17 @@ def lab_group_id(owner, threads):
 
 
 def scenario_restored_device_is_heard(lab):
-    """Bob reinstalls and restores his account from the backup (#378): his chat with Alice starts empty
-    and his numbering is gone, while Alice still holds their old chat. His first send starts their next
-    epoch, so every message he sends after the restore reaches her — none taken for one she already
-    has — and her answer reaches him."""
+    """Bob loses his phone and restores his account from his recovery phrase (multi-device M023): a new device
+    with no chats, no sessions and no numbering, while Alice still holds their old chat and session. Every
+    message he sends after the restore reaches her — none taken for one she already has (#378) — and her
+    answer reaches him."""
     a, a_thread, b, b_thread = open_pair(lab)
     for i in range(3):
         sent = b.cmd("send", thread=b_thread, text="before %d" % i)["message_id"]
         wait_for(lambda: transcript_row(a, a_thread, sent), 20, "alice: bob's message %d" % i)
-    b.restore_account()
+    phrase = b.cmd("recovery_phrase", pin=PIN)["phrase"]
+    b.cmd("locker_publish", timeout=60)
+    b.restore_from_phrase(phrase)
     b.wait_mesh()
     b_thread = b.cmd("open_chat", account=a.account)["thread"]
     after = [b.cmd("send", thread=b_thread, text="after %d" % i)["message_id"] for i in range(3)]
@@ -1504,6 +1680,166 @@ def scenario_restored_device_is_heard(lab):
         wait_for(lambda: transcript_row(a, a_thread, sent), 30, "alice: bob's message %d after the restore" % i)
     reply = a.cmd("send", thread=a_thread, text="welcome back")["message_id"]
     wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer after the restore")
+
+
+def scenario_restored_device_hears_first(lab):
+    """Bob's phone is gone; he restores his account on a new one from his recovery phrase and has not written
+    yet when Alice does. The restored phone is a new device Alice never heard of: it tells its contacts its
+    card, so her message goes to it, opening a session that brings her card (the restore kept none) — not to
+    the lost phone."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    hello = a.cmd("send", thread=a_thread, text="before")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, hello), 20, "bob: alice's message before the restore")
+    phrase = b.cmd("recovery_phrase", pin=PIN)["phrase"]
+    b.cmd("locker_publish", timeout=60)
+    b.restore_from_phrase(phrase)
+    b.wait_mesh()
+    wait_for(lambda: "device list sent to 1 of 1" in b.log_text(), 30, "bob: his new device told to alice")
+    sent = a.cmd("send", thread=a_thread, text="are you there?")["message_id"]
+
+    def heard():
+        for t in b.cmd("threads")["threads"]:
+            if transcript_row(b, t["id"], sent):
+                return True
+        return None
+    wait_for(heard, 30, "bob: alice's message on his restored phone")
+
+
+def scenario_recovery_phrase_needs_the_pin(lab):
+    """Me → Security → Show recovery phrase (multi-device M023): the PIN must open the vault again — a wrong one
+    shows nothing — and the 24 words are the same each time; a device linked to the account shows the same
+    phrase (the seed travels with the account keys)."""
+    a = lab.user("alice")
+    wrong = a.cmd("recovery_phrase", pin=PIN + "0", check=False)
+    if wrong.get("ok"):
+        raise ProbeError("alice: a wrong PIN showed the recovery phrase")
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    if len(phrase.split()) != 24:
+        raise ProbeError("alice: recovery phrase %r is not 24 words" % phrase)
+    if a.cmd("recovery_phrase", pin=PIN)["phrase"] != phrase:
+        raise ProbeError("alice: the recovery phrase changed")
+    laptop = lab.linked_device(a, "alice-laptop")
+    if laptop.cmd("recovery_phrase", pin=PIN)["phrase"] != phrase:
+        raise ProbeError("alice's laptop: another recovery phrase than her phone's")
+
+
+def scenario_account_locker_round_trip(lab):
+    """Alice's account state sealed into her locker at the relay (multi-device M023 s3): anyone holding only her
+    recovery phrase — here Bob's app, as a restoring device would — finds the locker, checks it is hers and opens
+    her contacts, her group and her card floors; a phrase that never published finds nothing; a sync with nothing
+    new writes nothing, and an edit stores a newer version."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = lab_group_id(a, threads)
+    first = a.cmd("locker_publish", timeout=60)["version"]
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    found = b.cmd("locker_fetch", phrase=phrase, timeout=60)
+    if not found.get("found"):
+        raise ProbeError("bob: no locker for alice's phrase")
+    if sorted(found["contacts"]) != sorted([b.account, c.account]):
+        raise ProbeError("alice's locker: contacts %s (want bob and carol)" % found["contacts"])
+    if group_id not in found["groups"]:
+        raise ProbeError("alice's locker: groups %s lack %s" % (found["groups"], group_id))
+    if found["card_floors"] < 2:
+        raise ProbeError("alice's locker: %d card floors (want her contacts')" % found["card_floors"])
+    # The BIP-0039 test phrase (seed 7f…): a valid phrase no account in the lab uses.
+    unused = ("legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful "
+              "legal winner thank year wave sausage worth title")
+    if b.cmd("locker_fetch", phrase=unused, timeout=60).get("found"):
+        raise ProbeError("bob: a locker for a phrase that never published")
+    # Bob's own app publishes his locker by itself (registered, with a seed), and finding Alice's did not stop it.
+    wait_for(lambda: b.cmd("locker_fetch", phrase=b.cmd("recovery_phrase", pin=PIN)["phrase"],
+                           timeout=60).get("found") or None, 30, "bob: his own locker, published by itself")
+    unchanged = a.cmd("locker_publish", timeout=60)["version"]
+    if unchanged != first:
+        raise ProbeError("alice: nothing changed, yet locker version %d after %d" % (unchanged, first))
+    a.cmd("rename_contact", account=b.account, remark="Bob from the hike")
+    second = a.cmd("locker_publish", timeout=60)["version"]
+    if second <= first:
+        raise ProbeError("alice: locker version %d after %d" % (second, first))
+
+
+def scenario_restore_from_phrase(lab):
+    """Alice loses every device and reinstalls from her recovery phrase alone (multi-device M023): the same account
+    on a new device; her group comes back from her locker, checks its members and is active; Bob's next group
+    message reaches her new device and hers reaches him; the restored app republishes the locker by itself."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = lab_group_id(a, threads)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    roster = checked_roster(a, group_id, "active")
+    if sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
+        raise ProbeError("alice: restored roster %s" % roster["members"])
+    a_thread = group_thread_of(a, group_id)
+    if not a_thread:
+        raise ProbeError("alice: no group chat after the restore")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="welcome back")
+    wait_for(lambda: said_in(a, a_thread, "welcome back"), 40, "alice: bob's message on her restored device")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("compose_send", text="back from my phrase")
+    wait_for(lambda: said_in(b, threads[b.name], "back from my phrase"), 40, "bob: alice's message")
+    wait_for(lambda: a.log_text().count("Account locker published") >= 2, 30, "alice: the locker republished")
+
+
+def scenario_restore_from_a_saved_copy(lab):
+    """Alice keeps a saved copy of her account (an exported locker file, M023 §6 amendment): she names Bob, saves
+    a copy, and her phone dies before her locker caught up. Restored from her phrase and the file, the newer copy —
+    the file — wins: Bob keeps his name; and they still talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    a.cmd("rename_contact", account=b.account, remark="Bob (in the saved copy)")
+    copy_path = os.path.join(a.dir, "exported-copy.json")
+    saved = a.cmd("locker_export", path=copy_path)
+    a.crash()  # before the locker's own sync (5 s after the rename)
+    with open(copy_path) as f:
+        copy_text = f.read()
+    a.restore_from_phrase(phrase, saved_copy=copy_text)
+    if "locker version %d," % saved["version"] not in a.log_text():
+        raise ProbeError("alice: the restore did not use the saved copy (version %d)" % saved["version"])
+    row = next((c for c in a.cmd("contacts")["contacts"] if c["account"] == b.account), None)
+    if row is None or row["remark"] != "Bob (in the saved copy)":
+        raise ProbeError("alice: Bob after the restore %s" % row)
+    a.wait_mesh()
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    a.cmd("send", thread=a_thread, text="back from my saved copy")
+    wait_for(lambda: said_in(b, b_thread, "back from my saved copy"), 40, "bob: alice's message")
+
+
+def scenario_linked_devices_share_contact_edits(lab):
+    """Alice's phone and her newly linked laptop share one address book through her locker (multi-device M023
+    §7): the laptop's first sync brings the phone's contacts (the link carries none); a remark set on the laptop
+    reaches the phone by itself (the laptop's write nudges it); Bob removed on the laptop is removed on the phone too
+    (the removal carries, not undone by the phone's older copy)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    a.cmd("locker_publish", timeout=60)
+    laptop = lab.linked_device(a, "alice-laptop")
+
+    def remark_on(u, account):
+        row = next((c for c in u.cmd("contacts")["contacts"] if c["account"] == account), None)
+        return None if row is None else row["remark"]
+
+    laptop.cmd("locker_publish", timeout=60)
+    if remark_on(laptop, b.account) is None:
+        raise ProbeError("alice's laptop: no Bob after its first sync (%s)" % laptop.cmd("contacts")["contacts"])
+    laptop.cmd("rename_contact", account=b.account, remark="Bob (named on the laptop)")
+    laptop.cmd("locker_publish", timeout=60)
+    # No sync asked on the phone: the laptop's write nudges it (a notice through Alice's own mailbox).
+    wait_for(lambda: remark_on(a, b.account) == "Bob (named on the laptop)", 40,
+             "alice's phone: the laptop's remark for Bob, by itself")
+    laptop.cmd("remove_contact", account=b.account)
+    laptop.cmd("locker_publish", timeout=60)
+    a.cmd("locker_publish", timeout=60)
+    if remark_on(a, b.account) is not None:
+        raise ProbeError("alice's phone: Bob still a contact after the laptop removed him")
+    a.cmd("locker_publish", timeout=60)
+    laptop.cmd("locker_publish", timeout=60)
+    if remark_on(laptop, b.account) is not None:
+        raise ProbeError("alice's laptop: Bob came back from the phone's copy")
 
 
 def scenario_linked_devices_both_send(lab):
@@ -1529,6 +1865,250 @@ def scenario_linked_devices_both_send(lab):
         sent.append(("laptop %d" % i, laptop.cmd("send", thread=l_thread, text="laptop %d" % i)["message_id"]))
     for what, m in sent:
         wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: %s" % what)
+
+
+def assert_signed_out(u, thread):
+    """`u` is signed out of its account (M021 d4): its list says so, and it can no longer send."""
+    wait_for(lambda: u.cmd("devices").get("signed_out") or None, 40, "%s: signed out" % u.name)
+    sent = u.cmd("send", thread=thread, text="from a signed-out device", check=False)
+    if sent.get("ok") or "signed out" not in str(sent.get("error")):
+        raise ProbeError("%s: a signed-out device sent (%s)" % (u.name, sent))
+
+
+def scenario_main_device_signs_a_device_out(lab):
+    """Alice's phone is her main device (M021 d4); her laptop, linked to it, joins at the end of the list and
+    cannot give out a transfer code. The phone hands the main role to the laptop, which then takes the phone off
+    the account: the phone is signed out and can no longer send; Bob learns the shorter list, and he and the
+    laptop keep talking."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    phone_id = a.cmd("whoami")["peer_id"]
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: a.cmd("devices")["devices"] == [phone_id, laptop_id] or None, 40,
+             "phone: the laptop at the end of the list")
+    if laptop.cmd("devices")["main"] != phone_id:
+        raise ProbeError("laptop: main device %s, not the phone" % laptop.cmd("devices"))
+    if laptop.cmd("link_export", check=False).get("ok"):
+        raise ProbeError("laptop: gave out a transfer code though it is not the main device")
+    a.cmd("make_main", peer_id=laptop_id)
+    wait_for(lambda: laptop.cmd("devices")["main"] == laptop_id or None, 40, "laptop: the main device")
+    laptop.cmd("remove_device", peer_id=phone_id)
+    assert_signed_out(a, a_thread)
+    wait_for(lambda: phone_id not in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: Alice's list without the phone")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    m = laptop.cmd("send", thread=l_thread, text="the laptop is the main device now")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: the laptop's message")
+    r = b.cmd("send", thread=b_thread, text="noted")["message_id"]
+    wait_for(lambda: transcript_row(laptop, l_thread, r), 30, "laptop: bob's answer")
+
+
+def scenario_restore_signs_out_the_other_devices(lab):
+    """Alice's laptop is linked to her phone; she restores her account from its recovery phrase on the phone (a new
+    device, M023): it starts a fresh list holding only itself, as the main device (M021 d4); the laptop hears of it
+    through the shared mailbox and is signed out. Bob and the restored phone talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    a.cmd("locker_publish", timeout=60)
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    restored_id = a.cmd("whoami")["peer_id"]
+    wait_for(lambda: a.cmd("devices")["devices"] == [restored_id] or None, 40, "restored phone: a fresh list")
+    assert_signed_out(laptop, l_thread)
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    m = a.cmd("send", thread=a_thread, text="back, and the only device")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, m), 40, "bob: the restored phone's message")
+    r = b.cmd("send", thread=b_thread, text="welcome back")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, r), 40, "restored phone: bob's answer")
+
+
+def scenario_linked_device_introduces_itself(lab):
+    """A newly linked device tells its contacts it exists (M021 d3): Alice links a laptop; before the laptop writes
+    to anyone, Bob holds Alice's list with it, and his next message reaches the laptop as well as the phone."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: Alice's list with the laptop")
+    m = b.cmd("send", thread=b_thread, text="hello, new laptop")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, m), 30, "phone: bob's message")
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 30, "laptop: a chat with bob")
+    wait_for(lambda: transcript_row(laptop, l_thread, m), 30, "laptop: bob's message")
+
+
+def scenario_linked_devices_see_what_each_sent(lab):
+    """What one of Alice's devices sends shows on her others (M021 d3), as hers: the phone writes to Bob and the
+    laptop shows it in its chat with Bob; the laptop writes back and the phone shows that. Bob reads each once.
+    Her reaction on the phone shows on the laptop, and her delete for everyone on the laptop deletes it on the
+    phone too."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    from_phone = a.cmd("send", thread=a_thread, text="sent on the phone")["message_id"]
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 40, "laptop: a chat with bob")
+    row = wait_for(lambda: transcript_row(laptop, l_thread, from_phone), 40, "laptop: the phone's message")
+    if row["from"] != "local:self" or row["text"] != "sent on the phone":
+        raise ProbeError("laptop: the phone's message as %s" % row)
+    from_laptop = laptop.cmd("send", thread=l_thread, text="sent on the laptop")["message_id"]
+    row = wait_for(lambda: transcript_row(a, a_thread, from_laptop), 40, "phone: the laptop's message")
+    if row["from"] != "local:self":
+        raise ProbeError("phone: the laptop's message as %s" % row)
+    for m in (from_phone, from_laptop):
+        wait_for(lambda m=m: transcript_row(b, b_thread, m), 30, "bob: alice's message")
+    ids = [r["id"] for r in b.cmd("transcript", thread=b_thread)["rows"]]
+    if ids.count(from_phone) != 1 or ids.count(from_laptop) != 1:
+        raise ProbeError("bob: alice's messages not once each (%s)" % ids)
+    from_bob = b.cmd("send", thread=b_thread, text="react to this")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, from_bob), 40, "phone: bob's message")
+    wait_for(lambda: transcript_row(laptop, l_thread, from_bob), 40, "laptop: bob's message")
+    a.cmd("show_chat", thread=a_thread)
+    a.cmd("react", message=from_bob, emoji="👍")
+    wait_for(lambda: reactions_of(laptop, l_thread, from_bob).get("👍") == 1 or None, 40,
+             "laptop: the phone's reaction")
+    laptop.cmd("show_chat", thread=l_thread)
+    laptop.cmd("delete_for_everyone", message=from_phone)
+    wait_for(lambda: (transcript_row(a, a_thread, from_phone) or {"type": "deleted"})["type"] == "deleted", 40,
+             "phone: its message deleted for everyone from the laptop")
+    wait_for(lambda: (transcript_row(b, b_thread, from_phone) or {"type": "deleted"})["type"] == "deleted", 40,
+             "bob: the message deleted")
+
+
+def next_message_notice(u, thread, seen, timeout=40):
+    """The next background message notice for `thread` after the first `seen` of them: {mentions_us, alerts}."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with u.lock:
+            notices = [m for _, m in u.history
+                       if m.get("event") == "notice" and m.get("kind") == "message" and m.get("thread") == thread]
+        if len(notices) > seen:
+            return notices[seen]
+        time.sleep(0.2)
+    raise ProbeError("%s: no notice for message %d in %s" % (u.name, seen + 1, thread))
+
+
+def scenario_muted_group_alerts_on_a_mention(lab):
+    """Mentions in a muted group (group-chat G015): Carol mutes the group and puts the app away. Bob's plain
+    message is silent; Bob mentioning her alerts and marks the chat "You were mentioned" until she opens it;
+    Bob's `@everyone` does not reach her (only the owner's does); once she mutes its mentions too, even Alice's
+    mention is silent — noticed, with the group open while she is away, but not alerting."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    c_thread = threads[c.name]
+    c.cmd("mute", thread=c_thread)
+    c.cmd("show_chat", thread=c.cmd("open_chat", account=a.account)["thread"])  # the group is not the open chat
+    c.cmd("minimize")  # out of sight, still connected (a phone in the background stops its network)
+    steps = [
+        (b, "plain news", [], False, (False, False)),
+        (b, "@%s look" % c.name, [c.account], False, (True, True)),
+        (b, "@everyone hey", [], True, (False, False)),
+    ]
+    seen = 0
+    for sender, text, mentions, everyone, (mentions_us, alerts) in steps:
+        sender.cmd("send_mentions", thread=threads[sender.name], text=text, mentions=mentions, everyone=everyone)
+        notice = next_message_notice(c, c_thread, seen)
+        seen += 1
+        if notice.get("mentions_us") != mentions_us or notice.get("alerts") != alerts:
+            raise ProbeError("carol: %r from %s gave %s" % (text, sender.name, notice))
+        row = next(t for t in c.cmd("threads")["threads"] if t["id"] == c_thread)
+        if row.get("mentioned") != (seen >= 2):
+            raise ProbeError("carol: the group's mention marker after %r: %s" % (text, row))
+    c.cmd("show_chat", thread=c_thread)  # read: the marker goes
+    if next(t for t in c.cmd("threads")["threads"] if t["id"] == c_thread).get("mentioned"):
+        raise ProbeError("carol: still marked mentioned after opening the group")
+    c.cmd("minimize")  # the group stays open: away, it still notifies
+    c.cmd("mute_mentions", thread=c_thread)
+    a.cmd("send_mentions", thread=threads[a.name], text="@%s now" % c.name, mentions=[c.account])
+    notice = next_message_notice(c, c_thread, seen)
+    if not notice.get("mentions_us") or notice.get("alerts"):
+        raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
+
+
+def scenario_a_device_asks_for_a_copy_it_missed(lab):
+    """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
+    before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
+    only. The laptop sees it in her mailbox, asks Bob's device for its own (its card going with the ask), and
+    Bob's device seals it one: the message shows on the laptop."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    hello = a.cmd("send", thread=a_thread, text="hi bob")["message_id"]  # her card (the phone alone) reaches Bob
+    wait_for(lambda: transcript_row(b, b_thread, hello), 30, "bob: alice's hello")
+    if len(b.cmd("kept_card", account=a.account)["devices"]) != 1:
+        raise ProbeError("bob: alice's card does not list her phone alone")
+    bundle = a.cmd("link_export")["bundle"]
+    a.quit()
+    laptop = lab.linked_device(a, "alice-laptop", bundle=bundle)
+    laptop.wait_mesh()
+    m = b.cmd("send", thread=b_thread, text="for every one of alice's devices")["message_id"]
+    l_thread = wait_for(lambda: thread_with(laptop, b.account), 90, "laptop: a chat with bob")
+    row = wait_for(lambda: transcript_row(laptop, l_thread, m), 90, "laptop: bob's message, asked for")
+    if row["text"] != "for every one of alice's devices":
+        raise ProbeError("laptop: bob's message as %s" % row)
+    if "copy asked for message_id=%s" % m not in laptop.log_text():
+        raise ProbeError("laptop: the message came without an ask — nothing was missing")
+
+
+def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
+    """A call rings every device of the account (M021 d5): Bob calls Alice; her phone and her laptop both ring.
+    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    a.wait_surface("ringing", 40, call_id=call_id)
+    laptop.wait_surface("ringing", 40, call_id=call_id)
+    a.cmd("accept_voice")
+    laptop.wait_surface("none", 15)
+    b.wait_surface("in_call", 40, call_id=call_id)
+    a.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(b, a, timeout=40)
+    if "ringing stopped call_id=%s" % call_id not in laptop.log_text():
+        raise ProbeError("laptop: stopped ringing, but not because the phone answered")
+    b.cmd("leave")
+    assert_idle(a, b, laptop, timeout=40)
+
+
+def scenario_a_newer_device_list_follows_the_messages(lab):
+    """Every envelope says how new its sender's device list is (M021 d6): Carol shares a group with Bob but is
+    not his contact, so what his main device announces never reaches her. Bob links a laptop: his next group
+    message brings Carol his newer list (with the laptop: his first copy to her opens their pair, carrying his
+    card). He takes the laptop off: his next message only says his list is newer, Carol asks his device for it
+    through the relay (his privacy gate refuses her a direct link), and she stops writing to the laptop."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    # Bob and Carol talk first: Bob learns Carol's devices from her message, and his answer opens their device
+    # pair — so his later copies to her carry no card, only how new his list is.
+    c.cmd("show_chat", thread=threads[c.name])
+    c.cmd("compose_send", text="hello from carol")
+    wait_for(lambda: said_in(b, threads[b.name], "hello from carol"), 40, "bob: carol's first message")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="hello group")
+    wait_for(lambda: said_in(c, threads[c.name], "hello group"), 40, "carol: bob's first message")
+    laptop = lab.linked_device(b, "bob-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in b.cmd("devices")["devices"] or None, 40, "bob: the laptop on his list")
+    if laptop_id in c.cmd("kept_card", account=b.account)["devices"]:
+        raise ProbeError("carol: knew bob's laptop before any message said so")
+    b.cmd("show_chat", thread=threads[b.name])
+    b.cmd("compose_send", text="now on two devices")
+    wait_for(lambda: laptop_id in c.cmd("kept_card", account=b.account)["devices"] or None, 60,
+             "carol: bob's list with the laptop, from his message")
+    b.cmd("remove_device", peer_id=laptop_id)
+    b.cmd("compose_send", text="back to one")
+    wait_for(lambda: laptop_id not in c.cmd("kept_card", account=b.account)["devices"] or None, 60,
+             "carol: bob's list without the laptop, from his message")
+    if "newer card asked of %s" % b.account not in c.log_text():
+        raise ProbeError("carol: bob's shorter list did not come from what his message said")
 
 
 def scenario_chat_quote_reply(lab):
@@ -1577,6 +2157,54 @@ def assert_hears(u, speakers, timeout=30):
         if time.time() > deadline:
             raise ProbeError("%s: hears %d of %d (streams %s, surface %s)" % (u.name, len(growing), speakers, now, s))
         first = now
+
+
+def stream_id(account):
+    """The media_relay stream an account publishes on in a call (PublisherStreamIdForIdentity)."""
+    h = 2166136261
+    for c in account.encode():
+        h = ((h ^ c) * 16777619) & 0xFFFFFFFF
+    return h or 1
+
+
+def assert_everyone_in_call(users, call_id, timeout=40):
+    """Each of `users` is in `call_id`, sees all of them in it and hears every other one (that one's
+    stream keeps receiving). Watches everyone at once and stops early — once all hear and see each
+    other, or once someone is out of the call — then names who misses whom."""
+    want = {u.name: {o.name: stream_id(o.account) for o in users if o is not u} for u in users}
+    heard = {u.name: set() for u in users}
+    last = {u.name: live_streams(u) for u in users}
+    deadline = time.time() + timeout
+    while True:
+        time.sleep(1.0)
+        states = {u.name: u.state() for u in users}
+        for u in users:
+            now = {row["stream_id"]: row["rx_frames"] for row in states[u.name].get("streams", [])}
+            heard[u.name] |= {n for n, sid in want[u.name].items() if now.get(sid, 0) > last[u.name].get(sid, 0)}
+            last[u.name] = now
+        out = [u for u in users if states[u.name].get("call_id") != call_id]
+        done = all(len(heard[n]) == len(w) for n, w in want.items()) and all(
+            len(st.get("participants", [])) == len(users) for st in states.values())
+        if done or out or time.time() > deadline:
+            break
+    misses = ["%s: not in the call (%s)" % (u.name, states[u.name]) for u in out]
+    for u in users:
+        missed = [n for n in want[u.name] if n not in heard[u.name]]
+        if missed and u not in out:
+            misses.append("%s hears %s, not %s" % (u.name, ", ".join(sorted(heard[u.name])) or "nobody",
+                                                   ", ".join(missed)))
+        seen = states[u.name].get("participants", [])
+        if len(seen) != len(users) and u not in out:
+            misses.append("%s sees %d of %d in the call (not %s)" % (
+                u.name, len(seen), len(users), ", ".join(o.name for o in users if o.account not in seen) or "?"))
+    if misses:
+        raise ProbeError("; ".join(misses))
+
+
+def leave_all(users):
+    for u in users:
+        u.cmd("leave", check=False)
+    assert_idle(*users)
 
 
 def group_call(caller, thread, answerers, timeout=40, **call_args):
@@ -1879,6 +2507,253 @@ def scenario_group_calling_at_once(lab):
     return {"two_calls_placed": ids[0] != ids[1]}
 
 
+# Group calls across who has added whom: members' contact links are a dimension of their own
+# (TEST_STRATEGY.md, "Group calls and contacts"). The other group_* scenarios have no links.
+def scenario_group_call_one_way_contact(lab):
+    """Four in a call where one member pair is linked, one way (dogfood: a phone heard two of three,
+    the others saw three of four): Bob added Dave, Dave never added Bob, Carol has neither. Alice
+    (everyone's contact) calls: everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4, contacts=("bob>dave",))
+    a, b, c, d = users
+    call_id = group_call(a, threads[a.name], [b, c, d])
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+def scenario_group_call_placed_by_stranger(lab):
+    """Dave, whom no other member has added (Bob and Carol added each other), calls the group of
+    four: his ring and his call reach members who do not know him."""
+    users, threads = open_group(lab, 4, contacts=("bob=carol",))
+    a, b, c, d = users
+    call_id = group_call(d, threads[d.name], [a, b, c])
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+def scenario_group_one_way_joins_late(lab):
+    """The other way round, joining late: Dave added Bob, Bob never added Dave. Bob calls the group
+    of four; Dave declines, then joins from the group's call button."""
+    users, threads = open_group(lab, 4, contacts=("dave>bob",))
+    a, b, c, d = users
+    call_id = b.cmd("call", thread=threads[b.name])["call_id"]
+    for u in (a, c, d):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    d.cmd("decline")
+    for u in (a, c):
+        u.cmd("accept_voice")
+    assert_everyone_in_call([a, b, c], call_id)
+    d.wait_surface("none", 20)
+    join(d, threads[d.name], call_id)
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+def scenario_group_one_way_network_drops(lab):
+    """Three in a call where Bob added Carol and Carol never added Bob; Carol's network drops for 6 s
+    and comes back (a phone on the road reattaches to the hop): everyone hears and sees everyone
+    again, in the same call."""
+    users, threads = open_group(lab, 3, contacts=("bob>carol",))
+    a, b, c = users
+    call_id = group_call(a, threads[a.name], [b, c])
+    assert_everyone_in_call(users, call_id)
+    net_drop(c, 6, during=not_connected_while_down(c))
+    still_in_call(users, call_id, 60)
+    assert_everyone_in_call(users, call_id)
+    leave_all(users)
+
+
+
+def scenario_group_two_join_through_drops(lab):
+    """Two people connect through retries at once (dogfood: the one who heard two of three and the
+    one they could not hear both retried to get connected): Bob added Carol, Carol never added Bob.
+    Alice calls; Bob and Carol answer and both their links drop twice while they connect. Once the
+    network holds, everyone hears and sees everyone."""
+    users, threads = open_group(lab, 3, contacts=("bob>carol",))
+    a, b, c = users
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    for u in (b, c):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    for u in (b, c):
+        u.cmd("accept_voice")
+    net_drop_together((b, c), 6)
+    time.sleep(3)
+    net_drop_together((b, c), 6)
+    for u in users:
+        u.wait_surface("in_call", 90, call_id=call_id)
+    assert_everyone_in_call(users, call_id, timeout=60)
+    leave_all(users)
+
+
+
+def scenario_group_fourth_answers_late(lab):
+    """Real people answer at different times: Bob and Dave answer at once (the third join moves the
+    call onto the hop), Carol 10 s later. Her accept reaches Alice after the hop was announced: she
+    must still be told the hop, and everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+    for u in (b, c, d):
+        u.wait_surface("ringing", 40, call_id=call_id)
+    for u in (b, d):
+        u.cmd("accept_voice")
+    assert_everyone_in_call([a, b, d], call_id)
+    time.sleep(10)
+    c.cmd("accept_voice")
+    c.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call(users, call_id, timeout=60)
+    leave_all(users)
+
+
+def group_thread_of(u, group_id):
+    """`u`'s chat for the group, or None."""
+    for t in u.cmd("threads")["threads"]:
+        if t.get("group_id") == group_id:
+            return t["id"]
+    return None
+
+
+def said_in(u, thread, text):
+    return next((r for r in u.cmd("transcript", thread=thread)["rows"] if r.get("text") == text), None)
+
+
+def checked_roster(u, group_id, state, timeout=60):
+    """`u`'s roster of the group once its member check ended in `state` (group-chat G013)."""
+    def settled():
+        roster = u.cmd("group_roster", group_id=group_id)
+        return roster if roster.get("sync_state") == state else None
+    return wait_for(settled, timeout, "%s: group check ends %s" % (u.name, state))
+
+
+def remove_and_wait(owner, owner_thread, group_id, member, watchers):
+    owner.cmd("remove_member", thread=owner_thread, account=member.account)
+    for u in watchers:
+        wait_for(lambda u=u: member.account not in u.cmd("group_roster", group_id=group_id)["members"] or None, 40,
+                 "%s: %s out" % (u.name, member.name))
+
+
+def scenario_group_restore_checks_members(lab):
+    """Carol's locker knows Alice (owner), Bob, Carol and Dave; then her phone is lost. Alice removes Dave;
+    Carol restores from her recovery phrase: her group comes back checking its members, takes the owner's
+    newer roster (no Dave — her stale one would have kept writing to him), and her next message reaches
+    Alice and Bob."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+    phrase = c.cmd("recovery_phrase", pin=PIN)["phrase"]
+    c.cmd("locker_publish", timeout=60)
+    c.crash()  # the phone is lost: her locker stays as it was
+    remove_and_wait(a, threads[a.name], group_id, d, (b,))
+    c.restore_from_phrase(phrase)
+    c.wait_mesh()
+    roster = checked_roster(c, group_id, "active")
+    if d.account in roster["members"] or sorted(roster["members"]) != sorted(u.account for u in (a, b, c)):
+        raise ProbeError("carol: restored roster %s (Dave was removed after her locker)" % roster["members"])
+    thread = group_thread_of(c, group_id)
+    if not thread:
+        raise ProbeError("carol: no group chat after the restore")
+    c.cmd("show_chat", thread=thread)
+    c.cmd("compose_send", text="back from a reinstall")
+    for u in (a, b):
+        wait_for(lambda u=u: said_in(u, threads[u.name], "back from a reinstall"), 40, "%s: Carol's message" % u.name)
+
+
+def scenario_group_removed_member_restores(lab):
+    """Dave's locker still has him in the group: his phone was lost before Alice removed him. When he restores
+    from his recovery phrase, his group's member check ends removed: read-only, nothing sent. His locker then
+    keeps the group as left (M023 s4), so restoring once more does not bring it back."""
+    users, threads = open_group(lab, 3)
+    a, b, d = users
+    group_id = lab_group_id(a, threads)
+    phrase = d.cmd("recovery_phrase", pin=PIN)["phrase"]
+    d.cmd("locker_publish", timeout=60)
+    d.crash()  # the phone is lost: his locker stays as it was
+    remove_and_wait(a, threads[a.name], group_id, d, (b,))
+    d.restore_from_phrase(phrase)
+    d.wait_mesh()
+    checked_roster(d, group_id, "removed")
+    d.cmd("locker_publish", timeout=60)
+    d.restore_from_phrase(phrase)
+    d.wait_mesh()
+    roster = d.cmd("group_roster", group_id=group_id)
+    if roster.get("sync_state") or roster.get("members"):
+        raise ProbeError("dave: a group he was removed from came back from his locker (%s)" % roster)
+
+
+def scenario_group_restored_owner_takes_newer_roster(lab):
+    """The owner checks too: Alice removes Dave and her phone dies before her locker caught up (it publishes a
+    few seconds after a change), so her locker still has Dave. Restored from her recovery phrase, she asks her
+    members; their newer statement — her own signature — wins over her locker, so Dave stays out, and her next
+    message reaches Bob and Carol."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    time.sleep(6)  # a publish batched from the group's setup has run: the next one is the removal's own
+    a.cmd("locker_publish", timeout=60)
+    mark = len(a.log_text())
+    remove_and_wait(a, threads[a.name], group_id, d, (b, c))
+    a.crash()  # once Bob and Carol hold the removal, and before her locker publishes it
+    if "Account locker published" in a.log_text()[mark:]:
+        raise ProbeError("alice: her locker caught the removal before her phone died; nothing stale to restore")
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    roster = checked_roster(a, group_id, "active")
+    if d.account in roster["members"]:
+        raise ProbeError("alice: her restored roster put Dave back (%s)" % roster["members"])
+    thread = group_thread_of(a, group_id)
+    a.cmd("show_chat", thread=thread)
+    a.cmd("compose_send", text="the owner is back")
+    for u in (b, c):
+        wait_for(lambda u=u: said_in(u, threads[u.name], "the owner is back"), 40, "%s: Alice's message" % u.name)
+
+
+# Phone networks (--nat, a NAT per user). Dogfood: four in a call, a phone on the highway heard two
+# of three, the others saw three of four; that phone and the one it could not hear both retried to
+# get connected, and had not added each other both ways.
+def scenario_group_call_on_the_road(lab):
+    """The dogfood call: Carol (a phone on the highway) and Bob (also on the road) hand over every
+    10-25 s on lossy, jittery links; Bob added Carol, Carol never added Bob. Alice (owner) calls;
+    everyone answers while the phones hand over, and the call goes on for 90 s. Then the handovers
+    stop (the links stay lossy): everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4, contacts=("bob>carol",))
+    a, b, c, d = users
+    with Road((b, c), PHONE_ROAD, handover_s=(10, 25)) as road:
+        call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+        for u in (b, c, d):
+            u.wait_surface("ringing", 60, call_id=call_id)
+        for u in (b, c, d):
+            u.cmd("accept_voice")
+        for u in users:
+            u.wait_surface("in_call", 120, call_id=call_id)
+        time.sleep(90)
+        road.park()
+        for u in users:
+            u.wait_surface("in_call", 60, call_id=call_id)
+        assert_everyone_in_call(users, call_id, timeout=60)
+        handovers = dict(road.handovers)
+    leave_all(users)
+    return {"road_seed": road.seed, "handovers": handovers}
+
+
+def scenario_group_call_weak_upload(lab):
+    """Carol's phone is at the edge of coverage for the whole call of four (PHONE_WEAK: 256 kbit/s up,
+    150 ms, 2 % loss in bursts): she joins and subscribes on it, and her accept reaches the others late.
+    Everyone hears and sees everyone."""
+    users, threads = open_group(lab, 4, contacts=("bob>carol",))
+    a, b, c, d = users
+    with Road((c,), PHONE_WEAK):
+        call_id = a.cmd("call", thread=threads[a.name])["call_id"]
+        for u in (b, c, d):
+            u.wait_surface("ringing", 60, call_id=call_id)
+        for u in (b, c, d):
+            u.cmd("accept_voice")
+        for u in users:
+            u.wait_surface("in_call", 90, call_id=call_id)
+        time.sleep(20)
+        assert_everyone_in_call(users, call_id, timeout=60)
+    leave_all(users)
+
+
 SCENARIOS = [
     ("first_contact", scenario_first_contact),
     ("chat_list_settings", scenario_chat_list_settings),
@@ -1891,6 +2766,20 @@ SCENARIOS = [
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
+    ("restored_device_hears_first", scenario_restored_device_hears_first),
+    ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
+    ("account_locker_round_trip", scenario_account_locker_round_trip),
+    ("restore_from_phrase", scenario_restore_from_phrase),
+    ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
+    ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
+    ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
+    ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
+    ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
+    ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
+    ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
+    ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
+    ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
+    ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),
@@ -1928,6 +2817,17 @@ SCENARIOS = [
     ("group_member_removed", scenario_group_member_removed),
     ("group_owner_hands_over", scenario_group_owner_hands_over),
     ("group_calling_at_once", scenario_group_calling_at_once),
+    ("group_call_one_way_contact", scenario_group_call_one_way_contact),
+    ("group_fourth_answers_late", scenario_group_fourth_answers_late),
+    ("group_restore_checks_members", scenario_group_restore_checks_members),
+    ("group_removed_member_restores", scenario_group_removed_member_restores),
+    ("group_restored_owner_takes_newer_roster", scenario_group_restored_owner_takes_newer_roster),
+    ("group_call_placed_by_stranger", scenario_group_call_placed_by_stranger),
+    ("group_one_way_joins_late", scenario_group_one_way_joins_late),
+    ("group_one_way_network_drops", scenario_group_one_way_network_drops),
+    ("group_two_join_through_drops", scenario_group_two_join_through_drops),
+    ("group_call_on_the_road", scenario_group_call_on_the_road),
+    ("group_call_weak_upload", scenario_group_call_weak_upload),
 ]
 
 # Scenarios run only when named (--only).
@@ -1938,6 +2838,8 @@ OPT_IN = set()
 NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
+             "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
+             "group_call_weak_upload",
              "bystander_is_no_relay"}
 
 
@@ -1953,7 +2855,8 @@ def main():
     ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
     ap.add_argument("--nat", action="store_true",
                     help="each user in its own container behind its own NAT (docker-compose.app-lab-nat.yml)")
-    ap.add_argument("--nat-containers", default="pp-app-lab-user-a-1,pp-app-lab-user-b-1,pp-app-lab-user-c-1")
+    ap.add_argument("--nat-containers",
+                    default="pp-app-lab-user-a-1,pp-app-lab-user-b-1,pp-app-lab-user-c-1,pp-app-lab-user-d-1")
     ap.add_argument("--nat-relay", default="http://198.51.100.20:9097/api/relay",
                     help="the relay as users behind the NATs reach it")
     ap.add_argument("--nat-share", default=os.environ.get("PP_APP_LAB_NAT_SHARE", "/tmp/pp-app-lab-nat"),

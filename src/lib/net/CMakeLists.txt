@@ -5,6 +5,7 @@ pp_browser_add_lib_library(pp_lib_net
     BriefGuestLlmClient.cpp
     ClientCompat.cpp
     HttpBlobClient.cpp
+    HttpLockerClient.cpp
     HttpClient.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
@@ -13,12 +14,15 @@ pp_browser_add_lib_library(pp_lib_net
     RegistrationSignPayload.cpp
     OrgBackendClientFactory.cpp
     OrgBackendClientsImpl.cpp
+    ProfileIconClient.cpp
+    ProfileIconFetch.cpp
     SwitchableDirectoryClient.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto
     pp_foundation_platform_core
+    pp_lib_people
     CURL::libcurl)
 
 # Post-DNS SSRF guard socket (OS backend next to HttpClient; see docs/architecture/PLATFORM_CODE.md).

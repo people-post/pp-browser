@@ -4,7 +4,7 @@
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/calls/CallTypes.h"
 #include "feature/calls/CallMediaInboundReply.h"
-#include "foundation/runtime/OwnerSteps.h"
+#include "common/runtime/OwnerSteps.h"
 
 #include <cstdint>
 #include <memory>
@@ -76,8 +76,16 @@ struct ReleaseDirectAfterAttach {
   CallSfuAttachDetail fanout;
   bool self_hop = false;
 };
-/** The guest's re-attach backoff ended: try again. */
-struct GuestReattachRetry {};
+/** #431 (b): look again whether the others are heard on the hop, and drop the 1:1 leg when they are. */
+struct ReleaseDirectWhenHopHeard {
+  std::string call_id;
+  int64_t attached_ms = 0;
+  int64_t deadline_ms = 0;
+};
+/** The guest's re-attach backoff ended: try again (`slow`: the steady pace past the quick attempts). */
+struct GuestReattachRetry {
+  bool slow = false;
+};
 /** A stored step's turn (a deferred step, or the circuit reach answered for a picked hop). */
 struct Continue {
   uint64_t id = 0;
@@ -94,6 +102,7 @@ struct RelayAttached {
 
 using HopMigrateEvent =
     std::variant<hop_migrate_event::RefanOutPickedHop, hop_migrate_event::ReleaseDirectAfterAttach,
+                 hop_migrate_event::ReleaseDirectWhenHopHeard,
                  hop_migrate_event::GuestReattachRetry, hop_migrate_event::Continue, hop_migrate_event::RelayAttached>;
 
 /** V050 hop planning's own events. */

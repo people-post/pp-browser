@@ -33,7 +33,34 @@ enum class GroupMembershipControlType {
   GroupForked,
   /** Local-only advisory card; never sent on the wire. */
   GroupOwnerUnreachable,
+  /** Owner → members: its newly signed roster, when no roster event carries it (after a leave or a transfer, G012). */
+  GroupRosterStatement,
+  /** A member checking its roster (after a restore, G013) → the owner and the members it knows. */
+  GroupRosterRequest,
+  /** A member → the one checking: the latest owner-signed roster it holds, and whether the asker is still on it. */
+  GroupRosterReply,
+  /** Owner → invitee: its accept came when the group was full (G014); the invitee was not added. */
+  GroupInviteRefused,
+  /** Owner → members: the owner ended the group for everyone (G016); carries the owner-signed roster with `dissolved`. */
+  GroupDissolved,
+  /** Owner's device → the owner's other devices (control lane, M021): the same dissolve, so they end the group too. */
+  GroupDissolvedSibling,
 };
+
+/** G014: a group has at most this many active members (the owner included; pending invites do not count). */
+inline constexpr size_t kMaxGroupMembers = 50;
+/** The error an accept gets when the group is full (G014): the owner then sends `group_invite_refused`. */
+inline constexpr const char kGroupFullError[] = "This group is full (50 members)";
+/** `group_invite_refused` reason. */
+inline constexpr const char kInviteRefusedGroupFull[] = "group_full";
+/** `group_invite_refused` reason (G016): the group was dissolved before the invite could be accepted. */
+inline constexpr const char kInviteRefusedGroupDissolved[] = "group_dissolved";
+
+/**
+ * G013: a restored group checks its members before it sends again. `Dissolved` (G016): the owner ended the
+ * group; its roster is empty and its chat stays read-only. Terminal, like `Removed`.
+ */
+enum class GroupSyncState : uint8_t { Active = 0, Checking = 1, Removed = 2, Dissolved = 3 };
 
 enum GroupPermission : uint32_t {
   kPermSend = 1u << 0,
@@ -66,7 +93,20 @@ struct GroupMetadata {
   uint32_t session_epoch = 1;
   /** Bumped by the owner on each rename; a rename applies only when newer (renames keep roster_epoch). */
   uint64_t title_version = 0;
+  /** The latest owner-signed roster statement we hold (G012), JSON; empty when none yet. */
+  std::string roster_statement_json;
+  GroupSyncState sync_state = GroupSyncState::Active;
+  /** The open roster check (G013): its request id and when it went out (ms); empty / 0 when none. */
+  std::string sync_request_id;
+  int64_t sync_requested_at = 0;
 };
+
+/** A group invite not accepted within a day is void (the inviter stamps expires_at; the invitee's gate drops it). */
+inline constexpr int64_t kGroupInviteTtlMs = 24LL * 60 * 60 * 1000;
+/** The owner still applies an accept this long after expiry: it may have waited for an owner who was offline. */
+inline constexpr int64_t kGroupInviteAcceptGraceMs = 24LL * 60 * 60 * 1000;
+/** Accepting an invite past its expiry; also the localization key of what the user sees. */
+inline constexpr const char kGroupInviteExpiredError[] = "chat.group.invite_expired";
 
 struct GroupInvitePayload {
   std::string group_id;
@@ -111,6 +151,10 @@ std::string GroupInvitePolicyToString(GroupInvitePolicy policy);
 GroupInvitePolicy GroupInvitePolicyFromString(const std::string& value);
 std::string GroupMembershipControlTypeToWire(GroupMembershipControlType type);
 std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(const std::string& value);
+/** The roster sync controls (G012/G013): kept out of transcripts and unread counts. */
+bool IsGroupRosterSyncControl(GroupMembershipControlType type);
+std::string GroupSyncStateToString(GroupSyncState state);
+GroupSyncState GroupSyncStateFromString(const std::string& value);
 uint32_t DefaultPermissionsForRole(MemberRole role);
 bool RoleHasPermission(MemberRole role, GroupPermission permission);
 

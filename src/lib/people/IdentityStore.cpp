@@ -6,6 +6,7 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/IdentitySeedDeriver.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RecoverySeed.h"
 #include "common/AtomicFileWrite.h"
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/error/AppError.h"
@@ -28,7 +29,7 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag,
   const bool have_both = !identity.kem_public_key_b64.empty() && !identity.kem_private_key_b64.empty();
   if (have_both) {
     auto pk = Base64Decode(identity.kem_public_key_b64);
-    auto sk = Base64Decode(identity.kem_private_key_b64);
+    auto sk = Base64Decode(identity.kem_private_key_b64.Reveal());
     if (pk && sk && pk->size() == kHybridKemPublicKeyBytes && sk->size() == kHybridKemPrivateKeyBytes) {
       return {};
     }
@@ -50,7 +51,7 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag,
 /** This device's own KEM key pair (M021): minted once, kept on the device. */
 Roe<void> EnsureDeviceKemKeys(LocalIdentity& identity, bool& dirty_flag, const ByteVector* seeded_coins = nullptr) {
   auto pk = Base64Decode(identity.device_kem_public_key_b64);
-  auto sk = Base64Decode(identity.device_kem_private_key_b64);
+  auto sk = Base64Decode(identity.device_kem_private_key_b64.Reveal());
   if (pk && sk && pk->size() == kHybridKemPublicKeyBytes && sk->size() == kHybridKemPrivateKeyBytes) {
     return {};
   }
@@ -71,7 +72,7 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag,
       !identity.account_signing_public_key_b64.empty() && !identity.account_signing_private_key_b64.empty();
   if (have_both) {
     auto pk = Base64Decode(identity.account_signing_public_key_b64);
-    auto sk = Base64Decode(identity.account_signing_private_key_b64);
+    auto sk = Base64Decode(identity.account_signing_private_key_b64.Reveal());
     if (pk && sk && pk->size() == kMlDsa65PublicKeyBytes && sk->size() == kMlDsa65SecretKeyBytes) {
       auto account_id = AccountIdFromMlDsaPublicKey(*pk);
       if (!account_id) {
@@ -195,6 +196,12 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("device_kem_private_key_b64")) {
     identity.device_kem_private_key_b64 = *v;
   }
+  if (auto v = root.getString("card_intent")) {
+    identity.card_intent = *v;
+  }
+  if (auto v = root.getString("recovery_seed_b64")) {
+    identity.recovery_seed_b64 = *v;
+  }
   if (auto v = root.getIf<int64_t>("initiation_floor")) {
     identity.initiation_floor = *v;
   }
@@ -208,18 +215,24 @@ Object IdentityToJson(const LocalIdentity& identity) {
   Object root;
   root.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
   root.set("public_key_b64", identity.public_key_b64);
-  root.set("private_key_b64", identity.private_key_b64);
+  root.set("private_key_b64", identity.private_key_b64.Reveal());
   root.set("account_signing_public_key_b64", identity.account_signing_public_key_b64);
-  root.set("account_signing_private_key_b64", identity.account_signing_private_key_b64);
+  root.set("account_signing_private_key_b64", identity.account_signing_private_key_b64.Reveal());
   root.set("account_id", identity.account_id);
   root.set("kem_public_key_b64", identity.kem_public_key_b64);
-  root.set("kem_private_key_b64", identity.kem_private_key_b64);
+  root.set("kem_private_key_b64", identity.kem_private_key_b64.Reveal());
   root.set("device_kem_public_key_b64", identity.device_kem_public_key_b64);
-  root.set("device_kem_private_key_b64", identity.device_kem_private_key_b64);
+  root.set("device_kem_private_key_b64", identity.device_kem_private_key_b64.Reveal());
+  if (!identity.recovery_seed_b64.empty()) {
+    root.set("recovery_seed_b64", identity.recovery_seed_b64.Reveal());
+  }
+  if (!identity.card_intent.empty()) {
+    root.set("card_intent", identity.card_intent);
+  }
   root.set("nickname", identity.nickname);
   root.set("relay_user_id", identity.relay_user_id);
-  root.set("brief_llm_api_key", identity.brief_llm_api_key);
-  root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key);
+  root.set("brief_llm_api_key", identity.brief_llm_api_key.Reveal());
+  root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key.Reveal());
   root.set("registered", identity.registered);
   root.set("registration_expires_at", identity.registration_expires_at);
   root.set("initiation_floor", identity.initiation_floor);
@@ -339,8 +352,22 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }
-    const ByteVector* kem_coins = derived ? &derived->account_ml_kem_coins : nullptr;
-    const ByteVector* account_seed = derived ? &derived->account_ml_dsa_seed : nullptr;
+    // A new account's keys derive from a recovery seed (M023 §2), kept so its phrase can be shown; a pp-node's
+    // derive from its own identity seed.
+    std::optional<RecoveryKeys> recovery;
+    if (!derived) {
+      const ByteVector seed = GenerateRecoverySeed();
+      auto keys_from_seed = DeriveRecoveryKeys(seed);
+      if (!keys_from_seed) {
+        return keys_from_seed.error();
+      }
+      recovery = std::move(*keys_from_seed);
+      identity_.recovery_seed_b64 = Base64Encode(seed);
+    }
+    const ByteVector* kem_coins =
+        derived ? &derived->account_ml_kem_coins : &recovery->account_ml_kem_coins;
+    const ByteVector* account_seed =
+        derived ? &derived->account_ml_dsa_seed : &recovery->account_ml_dsa_seed;
     if (auto kem = EnsureHybridKemKeys(identity_, dirty_, kem_coins); !kem) {
       return kem.error();
     }
@@ -414,7 +441,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   }
 
   identity_ = IdentityFromJson(*root);
-  auto private_key = Base64Decode(identity_.private_key_b64);
+  auto private_key = Base64Decode(identity_.private_key_b64.Reveal());
   if (!private_key) {
     return private_key.error();
   }
@@ -490,6 +517,22 @@ Roe<LocalIdentity> IdentityStore::LoadOrCreate() {
   return identity_;
 }
 
+Roe<std::optional<ByteVector>> IdentityStore::RecoverySeed() const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  if (identity_.recovery_seed_b64.empty()) {
+    return std::optional<ByteVector>{};
+  }
+  auto seed = Base64Decode(identity_.recovery_seed_b64.Reveal());
+  if (!seed) {
+    return seed.error();
+  }
+  return std::optional<ByteVector>(std::move(*seed));
+}
+
 Roe<LocalIdentity> IdentityStore::Get() const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
@@ -524,7 +567,7 @@ Roe<std::string> IdentityStore::SignPayload(const std::string& canonical_json) c
     return load.error();
   }
   const ByteVector message(canonical_json.begin(), canonical_json.end());
-  auto secret = Base64Decode(identity_.account_signing_private_key_b64);
+  auto secret = Base64Decode(identity_.account_signing_private_key_b64.Reveal());
   if (!secret) {
     return secret.error();
   }
@@ -545,7 +588,7 @@ Roe<std::string> IdentityStore::SignAccountBytes(const AccountSignBytes& sign_by
   if (!load) {
     return load.error();
   }
-  auto secret = Base64Decode(identity_.account_signing_private_key_b64);
+  auto secret = Base64Decode(identity_.account_signing_private_key_b64.Reveal());
   if (!secret) {
     return secret.error();
   }
@@ -609,7 +652,7 @@ Roe<ByteVector> IdentityStore::GetOrCreateHybridKemPrivateKey() const {
   if (!load) {
     return load.error();
   }
-  auto decoded = Base64Decode(identity_.kem_private_key_b64);
+  auto decoded = Base64Decode(identity_.kem_private_key_b64.Reveal());
   if (!decoded) {
     return decoded.error();
   }
@@ -637,7 +680,7 @@ Roe<ByteVector> IdentityStore::GetDeviceKemPrivateKey() const {
   if (!load) {
     return load.error();
   }
-  auto decoded = Base64Decode(identity_.device_kem_private_key_b64);
+  auto decoded = Base64Decode(identity_.device_kem_private_key_b64.Reveal());
   if (!decoded) {
     return decoded.error();
   }

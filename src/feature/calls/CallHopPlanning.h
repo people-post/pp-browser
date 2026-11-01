@@ -6,7 +6,7 @@
 #include "lib/calls/CallTypes.h"
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "foundation/runtime/OwnerOutbox.h"
+#include "common/runtime/OwnerOutbox.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include <map>

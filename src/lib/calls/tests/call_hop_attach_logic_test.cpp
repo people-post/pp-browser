@@ -97,3 +97,32 @@ TEST(CallHopAttachLogicTest, HopHintOwnerSkipsFailedHopEvenIfPreferred) {
   EXPECT_EQ(d.action, HopHintOwnerAction::RePick);
   EXPECT_EQ(d.preferred_hop_peer_id, "y");
 }
+
+// AttachWaitExpired (45 s) with nobody ever connected: PollPendingSfuAttach gets TimeoutLeave and the
+// topology controller hangs up (host_.leave_call), so the call does end for the user.
+TEST(CallHopAttachLogicTest, WaitExpiredWithNobodyConnectedLeavesTheCall) {
+  SfuAttachWaitPollInput group;
+  group.wait_active = true;
+  group.now_ms = kSfuAttachWaitDefaultMs + 1;
+  group.deadline_ms = kSfuAttachWaitDefaultMs;
+  group.joined_count = 3;
+  group.media_active_mesh_for_call = false;
+  EXPECT_EQ(PollSfuAttachWait(group), SfuAttachWaitPollResult::TimeoutLeave);
+  SfuAttachWaitPollInput pair = group;
+  pair.joined_count = 2;  // 1:1 whose mesh never came up
+  EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::TimeoutLeave);
+  pair.media_active_mesh_for_call = true;  // a 1:1 still connecting is not cut off
+  EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::ClearAsP2p);
+}
+
+// #431 (b): the 1:1 leg stays across the move to the hop until the others are heard there.
+TEST(CallHopAttachLogicTest, TheDirectLegStaysUntilEveryoneIsHeardOnTheHop) {
+  const int64_t attached = 1000;
+  const int64_t deadline = attached + kKeepDirectUntilHopHeardMs;
+  EXPECT_FALSE(ReleaseDirectAfterHopAttachNow(true, {}, attached, 1500, deadline)) << "nobody heard yet";
+  EXPECT_FALSE(ReleaseDirectAfterHopAttachNow(true, {900, 1200}, attached, 1500, deadline))
+      << "one stream only heard before the move (its 1:1 frames)";
+  EXPECT_TRUE(ReleaseDirectAfterHopAttachNow(true, {1100, 1200}, attached, 1500, deadline)) << "both on the hop";
+  EXPECT_TRUE(ReleaseDirectAfterHopAttachNow(true, {}, attached, deadline, deadline)) << "the wait is bounded";
+  EXPECT_TRUE(ReleaseDirectAfterHopAttachNow(false, {}, attached, 1500, deadline)) << "off the hop: as before";
+}

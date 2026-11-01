@@ -132,6 +132,85 @@ TEST_F(PostEntryTest, EditsDeletesAndDisavowalsAreOfOnesOwnEntries) {
   EXPECT_TRUE(with(PostKind::Repost, EncodeTargetBody({.target = others})));
 }
 
+TEST_F(PostEntryTest, ThePostBodyCarriesWhatReadersNeedWithinLimits) {
+  // S026: what a reader needs before the media arrives and for its filters, each field bounded.
+  const PostRef ref{.author = mallory_.account_id, .lane = PostLane{4}, .seq = 3, .entry_hash = PostHash{5}};
+  const PostBody full{.text = "hi @mallory see https://x.example #\xE4\xB8\xAD\xE6\x96\x87",
+                      .media = {{.content_id = PostHash{1}, .mime = "video/mp4", .size = 10, .alt = "a clip",
+                                 .width = 1920, .height = 1080, .duration_ms = 4000,
+                                 .placeholder = ByteVector(kMaxPostPlaceholderBytes, 7)}},
+                      .facets = {{.start = 3, .end = 11, .type = 1, .value = mallory_.account_id},
+                                 {.start = 16, .end = 33, .type = 2, .value = "https://x.example"},
+                                 {.start = 34, .end = 41, .type = 3, .value = "\xE4\xB8\xAD\xE6\x96\x87"}},
+                      .reply = PostReply{.root = ref, .parent = ref},
+                      .content_warning = std::string(kMaxPostContentWarningBytes, 'w'),
+                      .labels = {"sexual", "nudity", "graphic", "made-up-1"},
+                      .languages = {"en", "zh-Hans", "fr"}};
+  auto ok = Verify(First(full));
+  ASSERT_TRUE(ok) << ok.error().message;
+
+  auto fails = [&](auto change, const char* why) {
+    PostBody body = full;
+    change(body);
+    EXPECT_FALSE(Verify(First(body))) << why;
+  };
+  fails([](PostBody& b) { b.media[0].alt = std::string(kMaxPostAltBytes + 1, 'a'); }, "alt text too long");
+  fails([](PostBody& b) { b.media[0].placeholder.push_back(0); }, "placeholder too long");
+  fails([](PostBody& b) { b.facets[1].start = 10; }, "facets overlap");
+  fails([](PostBody& b) { std::swap(b.facets[0], b.facets[1]); }, "facets out of order");
+  fails([](PostBody& b) { b.facets[2].end = 40; }, "a facet ends inside a UTF-8 sequence");
+  fails([](PostBody& b) { b.facets[2].end = b.text.size() + 1; }, "a facet past the text");
+  fails([](PostBody& b) { b.facets[0].end = b.facets[0].start; }, "an empty facet");
+  fails([](PostBody& b) { b.facets[1].value = "http://x.example"; }, "links are https");
+  fails([](PostBody& b) { b.facets[2].value = "#tag"; }, "a hashtag without its #");
+  fails([](PostBody& b) { b.facets[0].value.clear(); }, "a mention names an account");
+  fails([](PostBody& b) { b.content_warning.push_back('w'); }, "content warning too long");
+  fails([](PostBody& b) { b.labels.push_back("spoiler"); }, "too many labels");
+  fails([](PostBody& b) { b.labels[0] = "Sexual"; }, "labels are lowercase tokens");
+  fails([](PostBody& b) { b.languages.push_back("de"); }, "too many languages");
+  fails([](PostBody& b) { b.languages[0] = "en US"; }, "a language is a tag");
+  fails([](PostBody& b) { b.reply->root.seq = 0; }, "a malformed thread root");
+
+  PostBody unknown_facet = full;
+  unknown_facet.facets[1].type = 42;
+  EXPECT_TRUE(Verify(First(unknown_facet))) << "an unknown facet type is shown as plain text";
+
+  PostBody many_mentions{.text = std::string(kMaxPostMentions + 1, 'm')};
+  for (uint64_t i = 0; i <= kMaxPostMentions; ++i) {
+    many_mentions.facets.push_back({.start = i, .end = i + 1, .type = 1, .value = mallory_.account_id});
+  }
+  EXPECT_FALSE(Verify(First(many_mentions))) << "too many mentions";
+  many_mentions.facets.pop_back();
+  EXPECT_TRUE(Verify(First(many_mentions)));
+}
+
+TEST_F(PostEntryTest, ExtensionsAreSignedSkippableAndInOrder) {
+  // S027: additive fields land at the end of any entry, inside what is hashed and signed.
+  PostEntry plain = First({.text = "hello"});
+  PostEntry extended = plain;
+  extended.extensions = {{.tag = 7, .value = ByteVector{1}}, {.tag = 300, .value = {}}};
+  const SignedPostEntry signed_entry = Sign(extended);
+  auto verified = VerifyPostEntry(signed_entry, alice_.public_key, kNow);
+  ASSERT_TRUE(verified) << verified.error().message;
+  EXPECT_EQ(verified.value(), extended) << "tags this version does not know are kept, not refused";
+  EXPECT_NE(PostEntryHash(signed_entry.canonical), PostEntryHash(PostEntryCanonicalBytes(plain)))
+      << "an extension is part of the entry's identity";
+
+  PostEntry unordered = plain;
+  unordered.extensions = {{.tag = 9}, {.tag = 9}};
+  EXPECT_FALSE(SignPostEntry(unordered, alice_.Signer())) << "a tag at most once";
+  EXPECT_FALSE(ParsePostEntry(PostEntryCanonicalBytes(unordered))) << "and no reader takes a second form";
+  unordered.extensions = {{.tag = 9}, {.tag = 8}};
+  EXPECT_FALSE(ParsePostEntry(PostEntryCanonicalBytes(unordered)));
+
+  PostEntry crowded = plain;
+  for (uint16_t tag = 1; tag <= kMaxPostExtensions + 1; ++tag) {
+    crowded.extensions.push_back({.tag = tag});
+  }
+  EXPECT_FALSE(SignPostEntry(crowded, alice_.Signer()));
+  EXPECT_FALSE(ParsePostEntry(PostEntryCanonicalBytes(crowded)));
+}
+
 TEST_F(PostEntryTest, AnUnknownKindIsStillAValidEntry) {
   PostEntry entry = First({.text = "x"});
   entry.kind = 99;
@@ -168,10 +247,16 @@ TEST_F(PostEntryTest, ALaneChainsAndAForkIsCaught) {
 
 TEST(PostBodiesTest, EveryKindRoundTrips) {
   const PostRef ref{.author = "account:a", .lane = PostLane{4}, .seq = 3, .entry_hash = PostHash{5}};
-  const PostBody post{.text = "hi",
-                      .media = {{.content_id = PostHash{1}, .mime = "image/png", .size = 42}},
-                      .reply_to = ref,
-                      .quote = std::nullopt};
+  const PostBody post{.text = "hi @a #tag",
+                      .media = {{.content_id = PostHash{1}, .mime = "image/png", .size = 42, .alt = "a cat",
+                                 .width = 640, .height = 480, .placeholder = ByteVector{1, 2, 3}}},
+                      .facets = {{.start = 3, .end = 5, .type = 1, .value = "account:a"},
+                                 {.start = 6, .end = 10, .type = 3, .value = "tag"}},
+                      .reply = PostReply{.root = ref, .parent = ref},
+                      .quote = ref,
+                      .content_warning = "spoilers",
+                      .labels = {"graphic"},
+                      .languages = {"en", "zh-Hans"}};
   EXPECT_EQ(DecodePostBody(EncodePostBody(post)).value(), post);
   const EditBody edit{.target = ref, .replacement = post};
   EXPECT_EQ(DecodeEditBody(EncodeEditBody(edit)).value(), edit);

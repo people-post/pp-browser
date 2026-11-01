@@ -3,6 +3,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -67,7 +68,21 @@ public:
                                    const std::string& blob_id, const std::string& kind) = 0;
   virtual Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,
                               const std::string& body) = 0;
+  /**
+   * PUT the bytes of a file, read from disk as they go out (a large attachment is never held whole in memory
+   * for this). `progress(done, total)` is called as bytes are sent; false cancels. The default reads the file
+   * and calls PutUpload (test doubles).
+   */
+  virtual Roe<void> PutUploadFile(const std::string& upload_url, const std::string& content_type,
+                                  const std::string& path,
+                                  const std::function<bool(uint64_t done, uint64_t total)>& progress);
 };
+
+/** presign → PUT (from a file, with progress) → retain. */
+Roe<BlobPresignResult> UploadRelayBlobFile(IBlobClient& blob, const std::string& relay_user_id,
+                                           const std::string& content_type, BlobPurpose purpose,
+                                           const std::string& path, uint64_t byte_length,
+                                           const std::function<bool(uint64_t done, uint64_t total)>& progress);
 
 /** presign → PUT → retain; returns public URL metadata. */
 Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& relay_user_id,

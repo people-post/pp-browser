@@ -30,12 +30,10 @@ inline PeopleDiscoveryLabels LocalizedPeopleDiscoveryLabels() {
   l.refine_label = TrOrDefault("people.result.refine_label", d.refine_label);
   l.refine_message = TrOrDefault("people.result.refine_message", d.refine_message);
   l.found_one = TrOrDefault("people.result.found_one", d.found_one);
-  l.found_many_paged = TrOrDefault("people.result.found_many_paged", d.found_many_paged);
   l.show_more_label = TrOrDefault("people.result.show_more_label", d.show_more_label);
   l.show_more_message = TrOrDefault("people.result.show_more_message", d.show_more_message);
   l.found_many = TrOrDefault("people.result.found_many", d.found_many);
   l.results_title = TrOrDefault("people.result.results_title", d.results_title);
-  l.results_title_partial = TrOrDefault("people.result.results_title_partial", d.results_title_partial);
   l.local_one = TrOrDefault("people.result.local_one", d.local_one);
   l.local_many_partial = TrOrDefault("people.result.local_many_partial", d.local_many_partial);
   l.local_many = TrOrDefault("people.result.local_many", d.local_many);

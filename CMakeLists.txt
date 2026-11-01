@@ -23,6 +23,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   endif()
 endif()
 
+# macOS desktop: pin the minimum macOS before project() too. Unpinned, clang targets the build machine's own
+# version, so a newer CI runner (macos-15) would quietly raise what PP.app needs. 14.0 is what the macos-14
+# runners built for.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+  set(PP_BROWSER_MACOS_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version (CMAKE_OSX_DEPLOYMENT_TARGET)")
+  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${PP_BROWSER_MACOS_DEPLOYMENT_TARGET}" CACHE STRING
+      "Minimum macOS version for linked binaries" FORCE)
+  endif()
+endif()
+
 if(WIN32)
   # libp2p deps (Boost MASM, BoringSSL NASM) require these for Ninja + MSVC.
   # Generic ASM must also be declared here: vendored libpng does
@@ -74,6 +85,9 @@ if(MSVC)
   add_compile_definitions(NOMINMAX)
   # Target Windows 7+; avoids Boost/winapi defaulting _WIN32_WINNT at compile time.
   add_compile_definitions(_WIN32_WINNT=0x0601)
+  # Sources are UTF-8. Without this, MSVC on a non-English Windows (e.g. code page 936)
+  # reads them in the local code page: C4819, an error under warnings-as-errors.
+  add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>")
 endif()
 
 pp_browser_finalize_compiler_cache()

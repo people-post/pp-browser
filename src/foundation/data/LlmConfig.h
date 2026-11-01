@@ -1,11 +1,13 @@
 #pragma once
 
+#include "common/Secret.h"
+
 #include <string>
 
 namespace pbr {
 
 struct LlmConfig {
-  std::string api_key;
+  SecretText api_key;
   std::string base_url = "https://www.brief.global/api/llm/v1";
   std::string model = "xai";
   std::string preset = "brief";

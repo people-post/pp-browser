@@ -33,6 +33,7 @@
         <span class="text muted">{{i18n:contacts.display_name}}</span>
         <input class="field" type="text" data-value="selected.display_name"
                data-event-change="on_contact_field_changed()" data-attr-placeholder="selected.name_placeholder"/>
+        <span class="text muted settings-help" data-if="selected.their_nickname != ''">{{selected.their_nickname}}</span>
       </label>
       <div class="settings-toggle-row row" data-if="selected.trust_key != 'blocked'">
         <span class="settings-label settings-toggle-label">{{i18n:contacts.trust_toggle}}</span>

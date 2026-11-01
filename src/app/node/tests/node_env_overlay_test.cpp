@@ -60,6 +60,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EnvGuard g5c("PP_NODE_CAP_LEDGER_GATEWAY");
   EnvGuard g6("PP_NODE_ADVERTISE_MULTIADDRS");
   EnvGuard g7("PP_NODE_MESH_PUBLISH");
+  EnvGuard g7b("PP_NODE_MESH_HEARTBEAT");
   EnvGuard g8("PP_NODE_AMP_UDP_PORT");
   EnvGuard g9("PP_NODE_REGISTRATION_BASE_URL");
   EnvGuard g10("PP_NODE_DHT_K");
@@ -100,6 +101,19 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   ASSERT_EQ(config.mesh.advertise_multiaddrs.size(), 1u);
   EXPECT_EQ(config.mesh.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   EXPECT_TRUE(config.mesh.mesh_publish);
+  EXPECT_FALSE(config.mesh.mesh_heartbeat) << "publishing does not turn the heartbeat on (P011)";
   EXPECT_EQ(config.registration.base_url, "https://www-en.qa.peoplepost.org/api/relay");
   EXPECT_EQ(config.mesh.dht.k_bucket_size, 3);
+}
+
+// The heartbeat tells the directory when this node is up and from where: only an operator's explicit choice
+// turns it on (privacy P011).
+TEST(NodeEnvOverlayTest, TheHeartbeatIsTheOperatorsChoice) {
+  EnvGuard heartbeat("PP_NODE_MESH_HEARTBEAT");
+  pbr::AppConfig config;
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_FALSE(config.mesh.mesh_heartbeat);
+  SetEnv("PP_NODE_MESH_HEARTBEAT", "1");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_TRUE(config.mesh.mesh_heartbeat);
 }

@@ -38,12 +38,76 @@ TEST(DirectoryHitRankTest, EmptyQueryLeavesTheOrder) {
   EXPECT_EQ(hits[0].hit_id, "b");
 }
 
-TEST(DirectoryHitRankTest, ExactIdsAreRecognised) {
-  EXPECT_TRUE(LooksLikeExactPeopleId("account:UCCslXOiOn3yjtg21DqDyUM483pcePONquFsSUk_LKU"));
-  EXPECT_TRUE(LooksLikeExactPeopleId(" relay:abc "));
-  EXPECT_FALSE(LooksLikeExactPeopleId("ken"));
-  EXPECT_FALSE(LooksLikeExactPeopleId("my account: ken"));
+TEST(DirectoryHitRankTest, TiesBreakByAccountIdAscendingMissingLast) {
+  mesh::DirectoryHit a = Hit("a", "bob", "");
+  mesh::DirectoryHit b = Hit("b", "bob", "");
+  mesh::DirectoryHit c = Hit("c", "bob", "");
+  mesh::DirectoryHit d = Hit("d", "bob", "");
+  a.account_id = "account:zzz";
+  b.account_id = "account:aaa";
+  d.account_id = "account:mmm";
+  std::vector<mesh::DirectoryHit> hits = {a, c, b, d};
+  RankDirectoryHits(hits, "bob");
+  EXPECT_EQ(hits[0].hit_id, "b");
+  EXPECT_EQ(hits[1].hit_id, "d");
+  EXPECT_EQ(hits[2].hit_id, "a");
+  EXPECT_EQ(hits[3].hit_id, "c") << "no account id sorts last";
+}
+
+TEST(DirectoryHitRankTest, MatchRankStillBeatsAccountId) {
+  mesh::DirectoryHit a = Hit("a", "bobby", "");
+  mesh::DirectoryHit b = Hit("b", "bob", "");
+  a.account_id = "account:aaa";
+  b.account_id = "account:zzz";
+  std::vector<mesh::DirectoryHit> hits = {a, b};
+  RankDirectoryHits(hits, "bob");
+  EXPECT_EQ(hits[0].hit_id, "b");
+}
+
+TEST(NormalizeExactPeopleIdTest, PrefixedIdsAreKeptAndTrimmed) {
+  EXPECT_EQ(NormalizeExactPeopleId("  account:abc \n").value(), "account:abc");
+  EXPECT_EQ(NormalizeExactPeopleId("relay:u1").value(), "relay:u1");
+}
+
+TEST(NormalizeExactPeopleIdTest, BareTokenGetsAccountPrefix) {
+  const std::string token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
+  ASSERT_EQ(token.size(), 43u);
+  EXPECT_EQ(NormalizeExactPeopleId(" " + token + " ").value(), "account:" + token);
+}
+
+TEST(NormalizeExactPeopleIdTest, WrongLengthOrCharsRejected) {
+  const std::string token(43, 'a');
+  EXPECT_FALSE(NormalizeExactPeopleId(token.substr(1)).has_value());
+  EXPECT_FALSE(NormalizeExactPeopleId(token + "a").has_value());
+  EXPECT_FALSE(NormalizeExactPeopleId(std::string(42, 'a') + "+").has_value());
+  EXPECT_FALSE(NormalizeExactPeopleId(std::string(42, 'a') + "=").has_value());
+  EXPECT_FALSE(NormalizeExactPeopleId(std::string(21, 'a') + " " + std::string(21, 'a')).has_value());
+  EXPECT_FALSE(NormalizeExactPeopleId("ken-dev-1").has_value());
+  EXPECT_FALSE(NormalizeExactPeopleId("").has_value());
 }
 
 } // namespace
+} // namespace pbr
+
+namespace pbr {
+
+TEST(HitMatchesExactPeopleIdTest, OnlyTheHitCarryingTheTypedIdMatches) {
+  const std::string token = std::string(43, 'a');
+  mesh::DirectoryHit account_hit;
+  account_hit.account_id = "account:" + token;
+  mesh::DirectoryHit nickname_hit;  // found by name: a nickname of the same shape, a different account
+  nickname_hit.nickname = token;
+  nickname_hit.account_id = "account:" + std::string(43, 'b');
+  EXPECT_TRUE(HitMatchesExactPeopleId(account_hit, token));
+  EXPECT_TRUE(HitMatchesExactPeopleId(account_hit, " account:" + token));
+  EXPECT_FALSE(HitMatchesExactPeopleId(nickname_hit, token));
+  EXPECT_FALSE(HitMatchesExactPeopleId(account_hit, "ken-dev-1"));
+}
+
+TEST(HasExactIdPrefixTest, TypedPrefixOnly) {
+  EXPECT_TRUE(HasExactIdPrefix("  account:abc"));
+  EXPECT_TRUE(HasExactIdPrefix("relay:u1"));
+  EXPECT_FALSE(HasExactIdPrefix(std::string(43, 'a')));
+}
+
 } // namespace pbr

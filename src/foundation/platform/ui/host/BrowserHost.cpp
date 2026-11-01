@@ -1,6 +1,7 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "foundation/platform/ScreenKeyboard.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>

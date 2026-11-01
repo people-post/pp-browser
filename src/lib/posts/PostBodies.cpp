@@ -2,6 +2,7 @@
 
 #include "lib/posts/PostWire.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace pbr {
@@ -11,6 +12,24 @@ namespace {
 using post_wire::Reader;
 using post_wire::Writer;
 
+void WriteStrings(Writer& w, const std::vector<std::string>& values) {
+  w.U64(values.size());
+  for (const std::string& value : values) {
+    w.Utf8(value);
+  }
+}
+
+bool ReadStrings(Reader& r, std::vector<std::string>& values, const size_t max_count) {
+  const uint64_t count = r.U64();
+  if (r.failed() || count > max_count) {
+    return false;
+  }
+  for (uint64_t i = 0; i < count; ++i) {
+    values.push_back(r.Utf8());
+  }
+  return !r.failed();
+}
+
 void WritePost(Writer& w, const PostBody& body) {
   w.Utf8(body.text);
   w.U64(body.media.size());
@@ -18,19 +37,34 @@ void WritePost(Writer& w, const PostBody& body) {
     w.Hash(media.content_id);
     w.Utf8(media.mime);
     w.U64(media.size);
+    w.Utf8(media.alt);
+    w.U32(media.width);
+    w.U32(media.height);
+    w.U32(media.duration_ms);
+    w.Bytes(media.placeholder);
   }
-  w.Bool(body.reply_to.has_value());
-  if (body.reply_to) {
-    w.Ref(*body.reply_to);
+  w.U64(body.facets.size());
+  for (const PostFacet& facet : body.facets) {
+    w.U64(facet.start);
+    w.U64(facet.end);
+    w.U8(facet.type);
+    w.Utf8(facet.value);
+  }
+  w.Bool(body.reply.has_value());
+  if (body.reply) {
+    w.Ref(body.reply->root);
+    w.Ref(body.reply->parent);
   }
   w.Bool(body.quote.has_value());
   if (body.quote) {
     w.Ref(*body.quote);
   }
+  w.Utf8(body.content_warning);
+  WriteStrings(w, body.labels);
+  WriteStrings(w, body.languages);
 }
 
-bool ReadPost(Reader& r, PostBody& body) {
-  body.text = r.Utf8();
+bool ReadMedia(Reader& r, std::vector<PostMedia>& out) {
   const uint64_t count = r.U64();
   if (r.failed() || count > kMaxPostMedia) {
     return false;
@@ -40,15 +74,48 @@ bool ReadPost(Reader& r, PostBody& body) {
     media.content_id = r.Hash();
     media.mime = r.Utf8();
     media.size = r.U64();
-    body.media.push_back(std::move(media));
+    media.alt = r.Utf8();
+    media.width = r.U32();
+    media.height = r.U32();
+    media.duration_ms = r.U32();
+    media.placeholder = r.Bytes();
+    out.push_back(std::move(media));
+  }
+  return !r.failed();
+}
+
+bool ReadFacets(Reader& r, std::vector<PostFacet>& out) {
+  const uint64_t count = r.U64();
+  if (r.failed() || count > kMaxPostFacets) {
+    return false;
+  }
+  for (uint64_t i = 0; i < count; ++i) {
+    PostFacet facet;
+    facet.start = r.U64();
+    facet.end = r.U64();
+    facet.type = r.U8();
+    facet.value = r.Utf8();
+    out.push_back(std::move(facet));
+  }
+  return !r.failed();
+}
+
+bool ReadPost(Reader& r, PostBody& body) {
+  body.text = r.Utf8();
+  if (!ReadMedia(r, body.media) || !ReadFacets(r, body.facets)) {
+    return false;
   }
   if (r.Bool()) {
-    body.reply_to = r.Ref();
+    PostReply reply;
+    reply.root = r.Ref();
+    reply.parent = r.Ref();
+    body.reply = std::move(reply);
   }
   if (r.Bool()) {
     body.quote = r.Ref();
   }
-  return !r.failed();
+  body.content_warning = r.Utf8();
+  return ReadStrings(r, body.labels, kMaxPostLabels) && ReadStrings(r, body.languages, kMaxPostLanguages);
 }
 
 template <typename T, typename Read>
@@ -79,34 +146,119 @@ Roe<void> CheckOwnRef(const PostRef& ref, const std::string& author) {
   return {};
 }
 
+bool IsUtf8Within(const std::string& text, const size_t max_bytes) {
+  return text.size() <= max_bytes && IsWellFormedUtf8(text);
+}
+
+/** Not in the middle of a UTF-8 sequence: the end of the text or a byte that is not a continuation byte. */
+bool IsUtf8Boundary(const std::string& text, const uint64_t offset) {
+  return offset == text.size() || (offset < text.size() && (static_cast<unsigned char>(text[offset]) & 0xC0) != 0x80);
+}
+
+/** Every character is one of `a`–`z`, `0`–`9`, `-` (and `A`–`Z` when `upper`). */
+bool IsTagToken(const std::string& value, const size_t max_bytes, const bool upper) {
+  if (value.empty() || value.size() > max_bytes) {
+    return false;
+  }
+  return std::all_of(value.begin(), value.end(), [upper](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || (upper && c >= 'A' && c <= 'Z');
+  });
+}
+
+Roe<void> CheckMedia(const PostMedia& media) {
+  if (media.mime.empty() || !IsUtf8Within(media.mime, kMaxPostMimeBytes) || media.size == 0 ||
+      media.size > kMaxPostMediaObjectBytes) {
+    return Error("post: media too large or unnamed");
+  }
+  if (!IsUtf8Within(media.alt, kMaxPostAltBytes) || media.placeholder.size() > kMaxPostPlaceholderBytes) {
+    return Error("post: media alt text or placeholder too long");
+  }
+  return {};
+}
+
+Roe<void> CheckFacetValue(const PostFacet& facet) {
+  switch (facet.type) {
+  case static_cast<uint8_t>(PostFacetType::Mention):
+    return !facet.value.empty() && IsUtf8Within(facet.value, kMaxPostAuthorBytes) ? Roe<void>{}
+                                                                                  : Error("post: bad mention");
+  case static_cast<uint8_t>(PostFacetType::Link):
+    return IsUtf8Within(facet.value, kMaxPostLinkUrlBytes) && facet.value.rfind("https://", 0) == 0
+               ? Roe<void>{}
+               : Error("post: a link is not an https URL");
+  case static_cast<uint8_t>(PostFacetType::Hashtag):
+    return !facet.value.empty() && facet.value[0] != '#' && IsUtf8Within(facet.value, kMaxPostHashtagBytes)
+               ? Roe<void>{}
+               : Error("post: bad hashtag");
+  default:  // a type this version does not know: shown as plain text
+    return facet.type != 0 && IsUtf8Within(facet.value, kMaxPostLinkUrlBytes) ? Roe<void>{}
+                                                                              : Error("post: bad facet");
+  }
+}
+
+Roe<void> CheckFacets(const PostBody& body) {
+  uint64_t covered = 0;
+  size_t mentions = 0;
+  for (const PostFacet& facet : body.facets) {
+    if (facet.start < covered || facet.start >= facet.end || facet.end > body.text.size() ||
+        !IsUtf8Boundary(body.text, facet.start) || !IsUtf8Boundary(body.text, facet.end)) {
+      return Error("post: facets out of order, overlapping or off the text");
+    }
+    if (auto value = CheckFacetValue(facet); !value) {
+      return value;
+    }
+    mentions += facet.type == static_cast<uint8_t>(PostFacetType::Mention) ? 1 : 0;
+    covered = facet.end;
+  }
+  if (body.facets.size() > kMaxPostFacets || mentions > kMaxPostMentions) {
+    return Error("post: too many facets");
+  }
+  return {};
+}
+
+Roe<void> CheckFilterFields(const PostBody& body) {
+  if (!IsUtf8Within(body.content_warning, kMaxPostContentWarningBytes)) {
+    return Error("post: content warning too long or not UTF-8");
+  }
+  if (body.labels.size() > kMaxPostLabels ||
+      !std::all_of(body.labels.begin(), body.labels.end(),
+                   [](const std::string& label) { return IsTagToken(label, kMaxPostLabelBytes, false); })) {
+    return Error("post: bad labels");
+  }
+  if (body.languages.size() > kMaxPostLanguages ||
+      !std::all_of(body.languages.begin(), body.languages.end(),
+                   [](const std::string& tag) { return IsTagToken(tag, kMaxPostLanguageBytes, true); })) {
+    return Error("post: bad languages");
+  }
+  return {};
+}
+
 Roe<void> CheckPostFields(const PostBody& body) {
-  if (body.text.size() > kMaxPostTextBytes || !IsWellFormedUtf8(body.text)) {
+  if (!IsUtf8Within(body.text, kMaxPostTextBytes)) {
     return Error("post: text too long or not UTF-8");
   }
   if (body.media.size() > kMaxPostMedia) {
     return Error("post: too many media");
   }
   for (const PostMedia& media : body.media) {
-    if (media.mime.empty() || media.mime.size() > kMaxPostMimeBytes || !IsWellFormedUtf8(media.mime) ||
-        media.size == 0 ||
-        media.size > kMaxPostMediaObjectBytes) {
-      return Error("post: media too large or unnamed");
+    if (auto ok = CheckMedia(media); !ok) {
+      return ok;
     }
   }
   if (body.text.empty() && body.media.empty()) {
     return Error("post: empty");
   }
-  if (body.reply_to) {
-    if (auto ok = CheckRef(*body.reply_to); !ok) {
-      return ok;
+  if (auto ok = CheckFacets(body); !ok) {
+    return ok;
+  }
+  for (const PostRef* ref : {body.reply ? &body.reply->root : nullptr, body.reply ? &body.reply->parent : nullptr,
+                             body.quote ? &*body.quote : nullptr}) {
+    if (ref) {
+      if (auto ok = CheckRef(*ref); !ok) {
+        return ok;
+      }
     }
   }
-  if (body.quote) {
-    if (auto ok = CheckRef(*body.quote); !ok) {
-      return ok;
-    }
-  }
-  return {};
+  return CheckFilterFields(body);
 }
 
 } // namespace

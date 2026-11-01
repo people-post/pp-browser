@@ -1,6 +1,7 @@
 pp_browser_add_lib_library(pp_lib_messaging
   SOURCES
     AttachmentCache.cpp
+    AttachmentLimits.cpp
     AttachmentPlaintextMemoryCache.cpp
     AttachmentSuppressionStore.cpp
     ChatAttachmentPrepare.cpp
@@ -30,18 +31,23 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupE2ePayloadCodec.cpp
     GroupMembershipApply.cpp
     GroupMembershipCodec.cpp
+    GroupRosterStatement.cpp
+    GroupRosterSync.cpp
+    GroupRosterSyncCodec.cpp
+    GroupRosterSyncFamily.cpp
+    TextSpans.cpp
+    MentionAlert.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
     OutboundMessage.cpp
+    SentCopy.cpp
+    CopyAsk.cpp
+    CardAsk.cpp
+    ThreadMentionsStore.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
-    PeerKemKeyStore.cpp
-    AccountCard.cpp
-    PeerCardStore.cpp
-    AccountCardRequest.cpp
     ContactLocator.cpp
-    PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
     TranscriptAssembly.cpp
@@ -49,7 +55,15 @@ pp_browser_add_lib_library(pp_lib_messaging
     SqlitePskSessionStore.cpp
     SqliteThreadStore.cpp
     SyncStateCodec.cpp
+    DirectChatTargetFromContact.cpp
+    ModelFacingJson.cpp
+    PeerBriefRoute.cpp
+    PeerDisplayResolver.cpp
+    HttpRelayClient.cpp
+    RelayMessageSignPayload.cpp
   PUBLIC_LIBS
+    pp_lib_people
+    pp_lib_net
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto
@@ -59,5 +73,11 @@ pp_browser_add_lib_library(pp_lib_messaging
     SQLite::SQLite3)
 
 if(PP_BROWSER_BUILD_TESTS)
+  # Mock relay and peer-history clients: test binaries only, never linked into the app.
+  pp_browser_add_lib_library(pp_lib_messaging_testing
+    SOURCES
+      testing/MockRelayClients.cpp
+    PUBLIC_LIBS
+      pp_lib_messaging)
   add_subdirectory(tests)
 endif()

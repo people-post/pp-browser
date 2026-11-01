@@ -30,6 +30,21 @@ TEST(MeshRoleTest, NormalizeStripsRetiredBootstrapAndFillsDefaults) {
   EXPECT_EQ(config.bootstrap_peers[1], pbr::kDefaultMeshBootstrapPeers[1]);
 }
 
+// #416: a config.json that kept the two seeds destroyed in the 2026-10-30 fleet move drops them for
+// today's defaults instead of spending ~8 s on each dead door.
+TEST(MeshRoleTest, NormalizeDropsTheSeedsOfTheOldFleet) {
+  pbr::MeshConfig config;
+  config.bootstrap_peers = {
+      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
+      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"};
+  pbr::NormalizeMeshConfig(config);
+  ASSERT_EQ(config.bootstrap_peers.size(), pbr::kDefaultMeshBootstrapPeerCount);
+  for (const std::string& peer : config.bootstrap_peers) {
+    EXPECT_EQ(peer.find("54.198.185.139"), std::string::npos);
+    EXPECT_EQ(peer.find("44.218.209.223"), std::string::npos);
+  }
+}
+
 TEST(MeshRoleTest, ResolveEffectivePrefersDirectoryThenConfig) {
   pbr::MeshConfig config;
   config.bootstrap_peers = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWConfigSeed"};
@@ -76,6 +91,6 @@ TEST(MeshRoleTest, ResolveEffectiveFallsBackToHardcoded) {
 
 TEST(MeshRoleTest, PeerIdFromMultiaddr) {
   EXPECT_EQ(pbr::PeerIdFromMultiaddr(pbr::kDefaultMeshBootstrapPeer),
-            "QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj");
+            "QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv");
   EXPECT_TRUE(pbr::PeerIdFromMultiaddr("/ip4/1.2.3.4/udp/443/adp/1.0.0").empty());
 }

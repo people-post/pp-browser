@@ -15,7 +15,7 @@ using PostSigner = std::function<Roe<ByteVector>(const ByteVector& message)>;
 
 /**
  * Canonical bytes (domain "pp-browser:post-entry-v1" NUL, version 1, author, lane, seq, prev,
- * claimed_at, kind, body) — what is hashed and signed (projects/social-posts/DESIGN.md § Entry).
+ * claimed_at, kind, body, extensions) — what is hashed and signed (projects/social-posts/DESIGN.md § Entry).
  */
 ByteVector PostEntryCanonicalBytes(const PostEntry& entry);
 /** The entry the bytes encode (no signature or validity check); refuses anything past the entry limit. */
@@ -59,5 +59,15 @@ Roe<PostHead> VerifyPostHead(const SignedPostHead& signed_head, const ByteVector
  */
 ByteVector PostMediaPresignSignBytes(const std::string& account_id, const PostHash& content_id, uint64_t size,
                                      const std::string& mime, int64_t issued_at);
+
+/**
+ * What a reporter signs to report an entry or a media object to a relay (S025; domain "pp-browser:post-report-v1",
+ * version 1, reporter, subject kind 1 entry / 2 media, the subject, reason, note, issued_at). Anonymous reports
+ * carry no signature.
+ */
+ByteVector PostEntryReportSignBytes(const std::string& reporter, const PostRef& entry, const std::string& reason,
+                                    const std::string& note, int64_t issued_at);
+ByteVector PostMediaReportSignBytes(const std::string& reporter, const PostHash& content_id, const std::string& reason,
+                                    const std::string& note, int64_t issued_at);
 
 } // namespace pbr

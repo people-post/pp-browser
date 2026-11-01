@@ -119,6 +119,9 @@ Object BuildE2eBody(const RelayEnvelope& envelope) {
   if (envelope.body.e2e.sender_card) {
     e2e_body.set("sender_card", *envelope.body.e2e.sender_card);
   }
+  if (envelope.body.e2e.sender_card_at) {
+    e2e_body.set("sender_card_at", *envelope.body.e2e.sender_card_at);
+  }
   return e2e_body;
 }
 
@@ -484,6 +487,9 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (envelope.body.e2e.copies.size() == 1) {
     const RelayCopy only = envelope.body.e2e.copies.front();
     envelope = ViewRelayCopy(std::move(envelope), only);  // a single copy reads as itself
+  }
+  if (auto card_at = e2e->getIf<int64_t>("sender_card_at"); card_at && *card_at > 0) {
+    envelope.body.e2e.sender_card_at = *card_at;
   }
   if (const Object* sender_card = e2e->getObject("sender_card")) {
     if (!introduces) {

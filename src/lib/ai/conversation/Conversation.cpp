@@ -49,6 +49,17 @@ bool Conversation::CompleteTurn(const std::string& entry_id, const std::string& 
   return false;
 }
 
+bool Conversation::MarkLocalAction(const std::string& entry_id) {
+  std::lock_guard lock(mutex_);
+  for (TranscriptEntry& entry : entries_) {
+    if (entry.id == entry_id) {
+      entry.local_action = true;
+      return true;
+    }
+  }
+  return false;
+}
+
 bool Conversation::SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                                        std::vector<TranscriptChatAction> chat_actions) {
   std::lock_guard lock(mutex_);

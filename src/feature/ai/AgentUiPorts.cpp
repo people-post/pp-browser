@@ -37,6 +37,8 @@ AgentUiPorts MakeAgentUiPorts(AgentSession& agent) {
     agent.SubmitToThread(thread_id, text, std::nullopt, std::move(image));
   };
   ports.cancel = [&agent]() { agent.Cancel(); };
+  ports.forget_thread = [&agent](const std::string& thread_id) { agent.ForgetThread(thread_id); };
+  ports.is_busy = [&agent]() { return agent.IsBusy(); };
   ports.poll_events = [&agent](std::vector<AgentEvent>& out) { agent.PollEvents(out); };
   ports.wait_for_configure_idle = [&agent]() { agent.WaitForConfigureIdle(); };
   ports.has_conversation_entries = [&agent]() { return !agent.conversation().Entries().empty(); };

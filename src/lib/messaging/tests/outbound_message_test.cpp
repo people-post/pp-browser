@@ -1,10 +1,11 @@
 // What a send of ours writes and puts on the wire (OutboundMessage), checked against the receive
 // pipeline of the peer it goes to.
 #include "lib/messaging/OutboundMessage.h"
+#include "foundation/error/AppError.h"
 
 #include "lib/messaging/EnvelopeSigner.h"
 #include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/PeerSigningKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/SqlitePskSessionStore.h"
@@ -52,7 +53,7 @@ struct Device {
           auto found = cards.find(account);
           return found == cards.end() ? std::nullopt : std::optional<AccountCard>(found->second);
         },
-        *psk, keys.Keys(), *roster);
+        *psk, test::ReceiveKeysOf(keys), *roster);
   }
   ~Device() {
     pipeline.reset();
@@ -91,7 +92,7 @@ struct Device {
         BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id},
                             thread.channel, "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))},
                             NextRelayOrderKey());
-    keys.SignEnvelope(envelope);
+    test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
 
@@ -208,6 +209,12 @@ TEST(OutboundSendRulesTest, WhoMaySendAndHow) {
   EXPECT_FALSE(DirectSendTriesAmpFirst(true, true, true)) << "call control prefers a known relay route";
   EXPECT_TRUE(DirectSendTriesAmpFirst(true, false, true)) << "an Amp-only peer";
   EXPECT_FALSE(DirectSendTriesAmpFirst(false, false, false));
+
+  // #431 (a): call control also goes over a live link, at once; nothing else changes.
+  EXPECT_TRUE(ControlAlsoGoesDirect(true, true, true)) << "control, a live link, a relay route";
+  EXPECT_FALSE(ControlAlsoGoesDirect(false, true, true)) << "no live link: the relay alone, as before";
+  EXPECT_FALSE(ControlAlsoGoesDirect(true, false, true)) << "Amp-only peer: Amp alone, as before";
+  EXPECT_FALSE(ControlAlsoGoesDirect(true, true, false)) << "chat: Amp first, then the relay, as before";
 }
 
 TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
@@ -251,8 +258,12 @@ TEST(OutboxRetryTest, WhatIsStillWorthSending) {
   EXPECT_FALSE(OutboxSendStillWanted(true, kControlRetryWindowMs + 1, false)) << "signaling past its use";
   EXPECT_TRUE(OutboxSendStillWanted(false, kControlRetryWindowMs * 100, false)) << "a chat message waits";
   EXPECT_FALSE(OutboxSendStillWanted(false, 0, /*thread_paused=*/true));
-  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1));
-  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts)) << "then it fails";
+  const Error unreachable = AppError::Network(Err::Network::Unreachable, "relay down");
+  EXPECT_TRUE(OutboxRetryAgain(kMaxOutboxRetryAttempts - 1, unreachable));
+  EXPECT_FALSE(OutboxRetryAgain(kMaxOutboxRetryAttempts, unreachable)) << "then it fails";
+  EXPECT_TRUE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpError, "502"))) << "a server hiccup";
+  // #391: the relay refused the request itself (a 400): the same bytes would be refused again.
+  EXPECT_FALSE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpRejected, "400")));
 }
 
 } // namespace

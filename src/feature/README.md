@@ -11,7 +11,7 @@ Includes use `foundation/…` and `lib/…` (see [`docs/architecture/SRC_LAYOUT.
 
 **Rule:** dependencies flow downward only. Feature may use `foundation/`, `lib/`, and `common/`; it must not `#include` from `app/` or `gui/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
-Each top-level folder (and `ai/tools`, `ai/bindings`, plus band `conversations/calls/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app/`gui` code. Top-level `feature/chat`, `feature/ui`, and `feature/messaging` are **retired**.
+Each top-level folder (and `ai/tools`, plus band `conversations/calls/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app/`gui` code. Top-level `feature/chat`, `feature/ui`, and `feature/messaging` are **retired**.
 
 ---
 
@@ -54,7 +54,7 @@ Product UI: see [`src/gui/README.md`](../gui/README.md).
 | Domain | Modules | Typical question it answers |
 |--------|---------|----------------------------|
 | **Configuration** | settings | How do user edits merge into `AppConfig`? |
-| **Intelligence** | ai, ai/tools, ai/bindings | How does the agent plan turns and call tools? |
+| **Intelligence** | ai, ai/tools | How does the agent plan turns and call tools? |
 | **Call session** | calls | How do ring/accept/topology/media-bridge sessions run? |
 | **Conversations** | conversations | How do threads sync/relay? |
 | **Presentation** | `src/gui/` | Shell, contacts, chat screen, settings presenters |
@@ -65,7 +65,7 @@ Start points when exploring:
 - Conversations hub → `conversations/ConversationsHub.h`, `conversations/MeshDeliveryOrchestrator.h`
 - Call session → `calls/CallStack.h`
 - Window shell → `gui/shell/ShellHost.h`
-- Chat screen → `gui/chat/ChatController.h`, `feature/conversations/MessagingTools.h`
+- Chat screen → `gui/chat/ChatController.h`, `feature/product/MessagingTools.h`
 - Settings apply → `settings/SettingsLogic.h`, `settings/SettingsSectionHandler.h`
 
 Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"`. GUI includes use `gui/…` from `src/gui/` / `src/app/` only.
@@ -88,12 +88,12 @@ Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_libr
 
 ```
 settings
-ai/tools → ai/bindings → ai
+ai/tools → ai
 calls
 conversations → calls   (delivery / inbound ports; no reverse include)
 ```
 
-Feature modules use domain modules directly (`conversations → domain/registration, domain/node`; `calls → domain/call_media`).
+Feature modules use domain modules directly (`conversations → domain/registration`; `product → domain/node`, for the mesh it builds for the profile's role; `calls → domain/call_media`).
 
 Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Calls bind their control messages as a system-control family (`common/chat/SystemControl.h`, [P2P_MESSAGING § System-control families](../../docs/architecture/P2P_MESSAGING.md#system-control-families)): the receive path, delivery and the inbox route by the registry, not by call types.
 

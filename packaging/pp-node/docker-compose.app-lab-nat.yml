@@ -3,7 +3,8 @@
 #
 #   user-a ── nat_a (10.119.1.0/24, internal) ── gw-a ──┐
 #   user-b ── nat_b (10.119.2.0/24, internal) ── gw-b ──┼── lab (198.51.100.0/24): hop, relay (www)
-#   user-c ── nat_c (10.119.3.0/24, internal) ── gw-c ──┘
+#   user-c ── nat_c (10.119.3.0/24, internal) ── gw-c ──┤
+#   user-d ── nat_d (10.119.4.0/24, internal) ── gw-d ──┘
 #
 # The gateways MASQUERADE outbound and admit no unsolicited inbound (packaging/pp-node/
 # hard-gw-entrypoint.sh, symmetric NAT by default: PP_APP_LAB_NAT=cone for a port-preserving one).
@@ -73,6 +74,18 @@ services:
       nat_c:
         ipv4_address: 10.119.3.254
 
+  gw-d:
+    <<: *app-lab-gw
+    environment:
+      PP_HARD_GW_PRIV_CIDR: 10.119.4.0/24
+      PP_HARD_GW_PUB_CIDR: 198.51.100.0/24
+      PP_HARD_GW_NAT: ${PP_APP_LAB_NAT:-symmetric}
+    networks:
+      lab:
+        ipv4_address: 198.51.100.14
+      nat_d:
+        ipv4_address: 10.119.4.254
+
   user-a:
     <<: *app-lab-user
     networks:
@@ -97,6 +110,14 @@ services:
     command: ["sh", "-c", "ip route replace default via 10.119.3.254 && exec sleep infinity"]
     depends_on: [gw-c]
 
+  user-d:
+    <<: *app-lab-user
+    networks:
+      nat_d:
+        ipv4_address: 10.119.4.10
+    command: ["sh", "-c", "ip route replace default via 10.119.4.254 && exec sleep infinity"]
+    depends_on: [gw-d]
+
 networks:
   nat_a:
     internal: true
@@ -113,3 +134,8 @@ networks:
     ipam:
       config:
         - subnet: 10.119.3.0/24
+  nat_d:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.119.4.0/24

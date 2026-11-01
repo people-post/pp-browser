@@ -10,12 +10,14 @@
     </div>
 
     <div class="people-picker-list">
+      <button class="btn btn-secondary" type="button" data-if="show_add_members"
+              data-event-click="add_members()">{{i18n:people_picker.add_members}}</button>
       <div data-for="row : rows"
            class="people-picker-row"
            data-class-people-picker-row--selected="row.selected"
-           data-class-people-picker-row--locked="row.locked"
+           data-class-people-picker-row--locked="row.locked || row.disabled"
            data-event-click="toggle_contact(row.id)">
-        <div class="people-picker-check">
+        <div class="people-picker-check" data-if="show_checks">
           <p class="people-picker-check-mark" data-if="row.selected">✓</p>
         </div>
         <div class="people-picker-row-body">
@@ -27,6 +29,8 @@
 
       <p class="text muted" data-if="rows.size == 0 && search_query == ''">{{empty_hint}}</p>
       <p class="text muted" data-if="rows.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
+      <p class="text muted" data-if="full_hint != ''">{{full_hint}}</p>
+      <p class="text muted" data-if="invite_hint != ''">{{invite_hint}}</p>
     </div>
 
     <div class="people-picker-footer stack">
@@ -35,8 +39,11 @@
         <span>{{i18n:people_picker.allow_video}}</span>
       </label>
       <div class="row people-picker-footer-actions">
-      <button class="btn btn-secondary" type="button" data-event-click="cancel_picker()">{{i18n:common.cancel}}</button>
-      <button class="btn btn-primary" type="button" data-event-click="confirm_picker()"
+      <button class="btn btn-secondary" type="button" data-if="show_cta"
+              data-event-click="cancel_picker()">{{i18n:common.cancel}}</button>
+      <button class="btn btn-secondary" type="button" data-if="!show_cta"
+              data-event-click="cancel_picker()">{{i18n:common.close}}</button>
+      <button class="btn btn-primary" type="button" data-if="show_cta" data-event-click="confirm_picker()"
               data-attrif-disabled="!cta_enabled">
         <span>{{cta_label}}</span>
       </button>

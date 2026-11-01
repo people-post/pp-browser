@@ -76,7 +76,7 @@ CI refuses tags whose commit is not on `origin/main`.
 
 [`release.yml`](../.github/workflows/release.yml):
 
-- macOS (`macos-14`): `PP.app`, optional sign/notarize, `.dmg`
+- macOS (`macos-15`, built for macOS 14+ — `PP_BROWSER_MACOS_DEPLOYMENT_TARGET`): `PP.app`, optional sign/notarize, `.dmg`
 - Windows (`windows-2022`): NSIS `.exe`
 - Android (`ubuntu-24.04`): release APK
 
@@ -191,7 +191,7 @@ PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_lin
 
 | Item | Notes |
 |------|-------|
-| Intel macOS / universal binary | GHA `macos-14` is arm64 only |
+| Intel macOS / universal binary | GHA `macos-15` is arm64 only |
 | Linux `.deb` / AppImage (GUI) | Not targeted |
 | `pp-node` multi-arch (`linux/arm64`) | amd64 only for now |
 | L1 / L2 N-FANOUT / N-CAP in release CI | Local scripts done; CI optional — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md) |

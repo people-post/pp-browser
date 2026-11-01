@@ -4,11 +4,13 @@
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
 #include "feature/product/tests/call_stack_compose_support.h"
+#include "foundation/runtime/ProductOwners.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "lib/calls/CallSessionStore.h"
+#include "lib/calls/CallSummaryLogic.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -22,6 +24,7 @@
 #include <set>
 #include <shared_mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -261,6 +264,12 @@ protected:
       options.seed_dial_ok = true;
       options.relay = relays_[i].get();
       options.group_members = [this, i](const std::string& /*group_id*/) -> std::optional<std::set<std::string>> {
+        if (dissolved_) {
+          return std::set<std::string>{};  // a dissolved group (G016): a roster with nobody in it
+        }
+        if (unknown_roster_) {
+          return std::nullopt;  // a roster this device does not hold (G016 says nothing about such a group)
+        }
         if (!group_of_[i].empty()) {
           return group_of_[i];
         }
@@ -334,6 +343,8 @@ protected:
 
   /** Who side i sees in the group; empty: every side. */
   std::set<std::string> group_of_[kSides];
+  bool dissolved_ = false;
+  bool unknown_roster_ = false;
 
   static std::string MeshPeerIdOf(size_t i) { return std::string("12D3KooWGroupSide") + static_cast<char>('A' + i); }
 
@@ -1198,6 +1209,99 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id)) << "the call did not come back for everyone:" << Describe(call_id);
+  // B102 (#410): everyone shows the one who came back among the call's members — the ones who stayed too.
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        for (size_t i : members_) {
+          auto rows = sides_[i].ui->ListJoinedParticipants(call_id);
+          if (!rows || rows->size() != 3u) {
+            return false;
+          }
+        }
+        return true;
+      },
+      8000);
+  for (size_t i : members_) {
+    auto joined_rows = sides_[i].ui->ListJoinedParticipants(call_id);
+    ASSERT_TRUE(joined_rows) << "side " << i;
+    EXPECT_EQ(joined_rows->size(), 3u) << "side " << i;
+    EXPECT_TRUE(std::any_of(joined_rows->begin(), joined_rows->end(),
+                            [&](const CallParticipant& row) { return row.identity == sides_[kC].local_identity; }))
+        << "side " << i << " lost the one who rejoined";
+  }
+}
+
+// B103: a group chat gets the call's record when this device leaves — not only when the call ends.
+TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoiningRewritesIt) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  auto leave = [&](size_t side) {
+    sides_[side].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+    DrainUntil([&]() {
+      PumpWire();
+      return sides_[side].ui->Phase() == CallPhase::Idle && !relays_[side]->IsAttached();
+    });
+  };
+  leave(kC);
+  ASSERT_EQ(SummariesIn(kC).size(), 1u) << "C left first: its record is there while the call goes on";
+  EXPECT_TRUE(SummariesIn(kA).empty());
+  const int64_t first = SummariesIn(kC).front().duration_ms.value_or(0);
+  EXPECT_GT(first, 0);
+
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  ASSERT_TRUE(GroupLive(call_id)) << Describe(call_id);
+  DrainUntil([]() { return false; }, 300);  // some talk time in the second stay
+  leave(kC);
+  ASSERT_EQ(SummariesIn(kC).size(), 1u) << "leave, rejoin, leave: still one record";
+  const int64_t both = SummariesIn(kC).front().duration_ms.value_or(0);
+  EXPECT_GE(both, first + 300) << "the record runs from the first join to the last leave";
+
+  // The call then ends for everyone (CallEnded reaches C): its record is left as it was.
+  leave(kA);
+  leave(kB);
+  DrainUntil([&]() {
+    PumpWire();
+    return false;
+  }, 1500);
+  ASSERT_EQ(SummariesIn(kC).size(), 1u);
+  EXPECT_EQ(SummariesIn(kC).front().duration_ms.value_or(0), both);
+  EXPECT_EQ(SummariesIn(kA).size(), 1u);
+  EXPECT_EQ(SummariesIn(kB).size(), 1u);
+}
+
+// Two writers of the same record (the leave, the call's end, a restart cleanup) leave one row.
+TEST_F(CallGroupStackComposeTest, TwoWritesOfOneGroupRecordMakeOneRow) {
+  ThreadMessage record;
+  record.id = GroupCallSummaryMessageId("call:twice");
+  record.thread_id = "thread-group-call";
+  record.sender_contact_id = "me";
+  record.content_type = ChatContentType::System;
+  record.text = "Voice call";
+  record.timestamp = 1;
+  record.delivery = MessageDelivery::Local;
+  record.relay_visible = false;
+  auto& store = *sides_[kA].store;
+  const size_t before = store.GetMessages(record.thread_id)->size();
+  std::vector<std::thread> writers;
+  for (int i = 0; i < 4; ++i) {
+    writers.emplace_back([&store, record, i]() mutable {
+      record.text = "write " + std::to_string(i);
+      EXPECT_TRUE(store.UpsertMessage(record));
+    });
+  }
+  for (auto& writer : writers) {
+    writer.join();
+  }
+  EXPECT_EQ(store.GetMessages(record.thread_id)->size(), before + 1);
 }
 
 // V053: the owner removes C from the group mid-call. A and B learn of it; C's device has not (it
@@ -1270,6 +1374,91 @@ TEST_F(CallGroupStackComposeTest, TheOneRemovedLeavesTheCall) {
       10000);
   EXPECT_EQ(sides_[kC].ui->Phase(), CallPhase::Idle) << Describe(call_id);
   EXPECT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
+}
+
+// G016: the owner dissolves the group mid-call: every device sees a group with nobody in it and leaves the call.
+TEST_F(CallGroupStackComposeTest, ADissolvedGroupEndsItsLiveCall) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const int64_t seen_at = util::NowUnixMs();
+  DrainUntil([&]() {
+    for (StackSide& side : sides_) {
+      side.ui->SweepExpiredInvites();
+    }
+    PumpWire();
+    return util::NowUnixMs() - seen_at > 1200;
+  });
+  dissolved_ = true;
+  DrainUntil(
+      [&]() {
+        for (StackSide& side : sides_) {
+          side.ui->SweepExpiredInvites();
+        }
+        PumpWire();
+        return sides_[kA].ui->Phase() == CallPhase::Idle && sides_[kB].ui->Phase() == CallPhase::Idle &&
+               sides_[kC].ui->Phase() == CallPhase::Idle;
+      },
+      10000);
+  for (size_t i : {kA, kB, kC}) {
+    EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::Idle) << "side " << i << Describe(call_id);
+  }
+  EXPECT_EQ(sides_[kB].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
+}
+
+// G016, the other way: a roster this device does not hold yet (a member who just joined, a restored device still
+// checking) is not a dissolved group. The call is placed and the invite rings.
+TEST_F(CallGroupStackComposeTest, AnUnknownRosterStillPlacesAndRings) {
+  group_id_ = "group-1";
+  unknown_roster_ = true;
+  Thread thread;
+  thread.id = "thread-group-call";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = *group_id_;
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(sides_[kA].store->UpsertThread(thread));
+  auto started = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kB].ui->TopPendingInvite().value().has_value();
+  });
+  EXPECT_TRUE(sides_[kB].ui->TopPendingInvite().value().has_value()) << "B rang";
+}
+
+// G016: no call can be started in a dissolved group.
+TEST_F(CallGroupStackComposeTest, ADissolvedGroupCannotStartACall) {
+  group_id_ = "group-1";
+  dissolved_ = true;
+  Thread thread;
+  thread.id = "thread-group-call";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = *group_id_;
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(sides_[kA].store->UpsertThread(thread));
+  auto started = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  ASSERT_FALSE(started);
+  EXPECT_EQ(sides_[kA].ui->Phase(), CallPhase::Idle);
+  PumpWire();
+  EXPECT_FALSE(sides_[kB].ui->TopPendingInvite().value().has_value()) << "nothing rang";
+}
+
+// G016: a group call from someone the roster does not list does not ring (B no longer lists A: A was removed or the
+// group ended here); C, whose roster still lists A, is rung.
+TEST_F(CallGroupStackComposeTest, AGroupCallFromANonMemberDoesNotRing) {
+  group_id_ = "group-1";
+  group_of_[kB] = {sides_[kB].local_identity, sides_[kC].local_identity};
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  PumpWire();
+  auto b = sides_[kB].ui->TopPendingInvite();
+  ASSERT_TRUE(b);
+  EXPECT_FALSE(b->has_value()) << "B ignores an invite from outside its group";
+  auto c = sides_[kC].ui->TopPendingInvite();
+  ASSERT_TRUE(c);
+  EXPECT_TRUE(c->has_value()) << "C still rings";
 }
 
 // V053: A and B call the group at the same moment. Both keep the call with the lower id: the

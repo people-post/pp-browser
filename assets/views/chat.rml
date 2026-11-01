@@ -44,7 +44,7 @@
           </div>
           <p class="text-xs chat-peer-link">{{peer_link_status}}</p>
         </div>
-        <p class="text-xs muted chat-header-subtitle">{{thread_subtitle}}</p>
+        <p class="text-xs muted chat-header-subtitle" data-event-click="open_group_members()">{{thread_subtitle}}</p>
       </div>
     </div>
     <div class="chat-header-actions row">
@@ -96,8 +96,19 @@
   <div class="chat-messages-wrap">
   <div id="chat-messages" class="messages" data-mount-id="messages"
        data-event-scroll="messages_scroll()">
-    <div class="chat-empty stack" data-if="!has_turns && !loading">
-      <p class="text muted">{{i18n:chat.empty_body}}</p>
+    <div class="chat-empty stack" data-if="thread_is_ai || (!has_turns && !loading)">
+      <p class="text muted" data-if="!has_turns && !loading">{{i18n:chat.empty_body}}</p>
+      <!-- The example chips stay at the top of an AI thread so they can be scrolled back to and tapped again. -->
+      <div class="suggestion-row" data-if="thread_is_ai">
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:home.suggestion.capabilities_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.capabilities}}</button>
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:home.suggestion.headlines_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.headlines}}</button>
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.3_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:chat.example.3}}</button>
+        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.4_prompt}}')"
+                data-attrif-disabled="compose_disabled">{{i18n:chat.example.4}}</button>
+      </div>
     </div>
     <div data-if="use_messages_layout">
       <div data-for="row : messages" class="message-row"
@@ -105,9 +116,10 @@
            data-class-message-row-ai="row.row_class == 'message-row-ai'"
            data-class-message-row-peer="row.row_class == 'message-row-peer'"
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
+           data-class-message-row-mentions-me="row.mentions_me"
            data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
-          <span>{{row.sender_label}}</span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span>{{row.transport_badge}}</span></span>
+          <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>
         </p>
         <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
       </div>
@@ -122,7 +134,15 @@
         </div>
       </div>
     </div>
+    <!-- An AI question waiting for another chat's answer (B112): shown, not stored, until it is sent. -->
+    <div class="message-row message-row-user message-row-queued" data-if="has_queued">
+      <div class="bubble bubble-user bubble-queued">{{queued_text}}</div>
+      <p class="queued-note muted">
+        <span>{{i18n:chat.ai_queue.pending}}</span> · <span class="queued-cancel" data-event-click="cancel_queued()">{{i18n:chat.ai_queue.cancel}}</span>
+      </p>
+    </div>
     <p class="text muted thinking" data-if="loading && status == ''">{{i18n:chat.thinking}}</p>
+    <p class="text muted thinking" data-if="busy_elsewhere && thread_is_ai && !has_queued">{{i18n:chat.ai_busy_elsewhere}}</p>
     <p class="text muted thinking" data-if="loading && status != ''">{{status}}</p>
   </div>
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"

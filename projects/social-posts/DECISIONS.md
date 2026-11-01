@@ -208,7 +208,7 @@ card would need a card version older clients reject.
 
 ## S018 — Writes are authenticated by the author's own signatures
 
-**Status:** Proposed (2026-10-23)
+**Status:** Proposed (2026-10-23); amended by S029 (2026-10-30) — a relay keeps only the authors it serves and the copies they carry
 
 **Decision:** A relay accepts an entry or head because it verifies against the author's key (sent along as a
 key card when the relay does not know it); media uploads carry an account-signed presign request. Reads are
@@ -221,7 +221,7 @@ on the author either way.
 
 ## S019 — Relays keep forks and stubs, and apply deletes
 
-**Status:** Proposed (2026-10-23)
+**Status:** Proposed (2026-10-23); extended by S023 (2026-10-30) — withheld stubs
 
 **Decision:** Relays store both entries of a fork and flag the author; a `delete` entry turns its target
 into a stub (place and hash kept) and unpins media no kept entry names.
@@ -252,3 +252,127 @@ with pushes come after.
 
 **Rationale:** Fetch needs no registration and reveals nothing by name (S011, S012); pushes add a relay-side
 subscription model worth designing on its own.
+
+---
+
+## S022 — Reposts and quotes carry a copy beside them
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** A repost or quote names the exact version it means (the ref's `entry_hash`), and the reposter
+publishes that entry — with its author's key card and media — to the reposter's own targets beside the
+repost, not inside it. Readers get the post from the reposter's relay alone and verify it as the author's.
+The copy is for speed and availability, not permanence: honest clients and relays honor the author's
+`delete` when they learn of it, and the reposter's client forwards it to where it sent the copy. Edits do not
+follow a copy (it shows the reposted version, marked *edited later* when a newer one is known). Replies do
+not carry their parent; a repost of a repost names and carries the original.
+
+**Rationale:** The ref already pins a snapshot; what readers lacked was a source. Embedding would not fit the
+entry limit (an entry plus a 3.3 KB signature inside an 8 KiB entry) and would put the author's post inside
+the reposter's signed bytes, where neither a delete nor a takedown could drop it without breaking the
+reposter's chain. Carried copies are stored once per relay, keyed by hash, and readers never contact the
+original author's relays, so those relays do not learn who reads the reposter.
+
+---
+
+## S023 — A relay moderates what it holds; withheld is not deleted
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** A relay meets its legal obligations and its own terms for everything it holds. It may withhold
+an entry (by hash, which covers carried copies of it), a media object (by content id, in every post that names
+it) or an author (refused writes, `suspended`, and what it holds withheld). A withheld entry is served as a
+stub with reason `legal` or `terms`, so the chain still verifies; it binds that relay only, and readers fall
+back to the author's other targets as usual. A carried copy of withheld content is refused. Mute and block
+lists are the reader's, local and never published.
+
+**Rationale:** Posts on a relay are public plaintext: the relay sees all of it and answers for it. An author's
+delete and a relay's withholding mean different things to a reader, and one relay's obligations must not
+read as the author's act or bind other relays.
+
+---
+
+## S024 — Media is served after the relay's scan step
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** An uploaded media object is not served until the relay's scan step has passed it; until then
+reads answer `processing`. The step exists from the first relay release, even when it does nothing yet.
+
+**Rationale:** Uploads go straight to the blob store by presigned URL, so the relay never sees the bytes on
+the way in. Checking before serving is the only point where known-bad media can be stopped; reserving the
+step keeps adding a real scanner a relay-side change with no client change.
+
+---
+
+## S025 — Reports may be anonymous or signed, and are rate-limited
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** A relay takes reports on an entry or a media object. A report may be anonymous or signed by the
+reporter's account; signed reports may weigh more. Both are rate-limited.
+
+**Rationale:** Reading is anonymous (S011), so requiring an account to report would shut out the readers who
+see the content; signatures let a relay tell accountable reports from noise.
+
+---
+
+## S026 — The post body carries what readers need before media and for filters
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** `post` v1 (defined before anything was published) carries, per media item, alt text,
+width/height, duration and an optional placeholder; per post, facets (byte spans of the text marked as a
+mention, a link or a hashtag), a content warning and self-labels, up to three languages, and `reply_root`
+beside `reply_to`.
+
+**Rationale:** Signed bodies cannot gain fields later without a new kind or version, and nothing was published
+yet. The fields match where decentralized networks converged: alt text and aspect ratio (accessibility, stable
+layout), explicit spans for mentions and tags (no global handle namespace; hashtags in languages without word
+boundaries cannot be parsed reliably), labels readers' filters can act on, and a thread root so a reader need
+not walk up parents across relays.
+
+---
+
+## S027 — Every entry ends with an extension section
+
+**Status:** Accepted (2026-10-30)
+
+**Decision:** Every entry ends with a list of `{tag, bytes}` extensions, signed and hashed with the rest.
+Readers skip tags they do not know, and an extension may only add information: a reader that ignores it must
+still show the entry correctly. Anything that must not be ignored is a new kind or entry version.
+
+**Rationale:** Exact-consume decoding (D088) makes a body closed; the extension section is the one place
+additive fields can land without a version bump. Head statements need none: they are reissued, not history.
+
+---
+
+## S028 — `post` stays short; long form is a later `article` kind
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** No title, cover, file names or media roles in `post`. Long form comes later as its own kind
+(title, summary, cover and files in the entry; the text in the public CAS realm).
+
+**Rationale:** Networks that carry both keep them apart; a short post's first image is its cover and the mime
+type tells inline from attached. A new kind needs no format change today (unknown kinds are kept as stubs,
+S016), so it can wait; file names in public posts leak.
+
+---
+
+## S029 — Nothing is sent to another author's relays (v1)
+
+**Status:** Accepted (2026-10-30, product)
+
+**Decision:** A client publishes only to its own account's targets. A relay keeps entries of the authors it
+serves and the copies they carry (S022), and refuses others' entries (`not_served`). An author's notices
+(replies, mentions, quotes, reposts, likes) come from the logs they already fetch — the people they follow.
+Replies from anyone else appear only when a reader opens a thread and taps for more: the client then asks the
+root author's and the reader's own relays (a `replies` read over the entries each already holds, with threads
+in P3); nothing is fetched for them automatically. Reserved for reconsideration: relays accepting entries that
+name the authors they serve, a `refs` read (entries naming an account), an `accepts_notices` term in
+`post_relay`, and a price for stranger notices ([pricing](../pricing/) initiation floor).
+
+**Rationale:** Every send path into someone else's relay is a spam and harassment channel. Notices from
+follows need none, and the formats that a later notice path would index (`reply_root`, mention facets) are
+already signed into posts (S026), so opening it later is a relay policy, not a format change.

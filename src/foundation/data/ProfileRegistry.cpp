@@ -1,4 +1,6 @@
 #include "foundation/data/ProfileRegistry.h"
+#include "common/PlatformLimits.h"
+#include "common/BoundedRead.h"
 
 #include "common/AtomicFileWrite.h"
 #include "foundation/data/SchemaVersion.h"
@@ -17,6 +19,28 @@ std::string RegistryPath(const std::string& data_dir) {
 }
 
 } // namespace
+
+bool ProfileRegistry::IsValidProfileId(const std::string_view id) {
+  if (id.empty() || id.size() > 64 || id.front() == '.') {
+    return false;
+  }
+  for (const char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' ||
+                    c == '_' || c == '-';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Roe<void> ProfileRegistry::CheckActiveProfileId() const {
+  const std::string& active = session_override_.empty() ? active_profile_id_ : session_override_;
+  if (!IsValidProfileId(active)) {
+    return Error("invalid profile id (letters, digits, '.', '_', '-'; at most 64): " + active);
+  }
+  return {};
+}
 
 ProfileRegistry::ProfileRegistry()
     : ProfileRegistry("", "default", {}) {}
@@ -42,8 +66,11 @@ Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
     return Error("Failed to open profile registry: " + path);
   }
 
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  auto root = TryParseObject(text);
+  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  if (!text) {
+    return Error("Failed to read profile registry: " + text.error().message);
+  }
+  auto root = TryParseObject(*text);
   if (!root) {
     return Error("Failed to parse profile registry: " + path);
   }
@@ -53,8 +80,8 @@ Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
   }
 
   std::string active = "default";
-  if (auto active_profile_id = root->getString("active_profile_id")) {
-    active = *active_profile_id;
+  if (auto active_profile_id = root->getString("active_profile_id"); active_profile_id && IsValidProfileId(*active_profile_id)) {
+    active = *active_profile_id;  // one that is not an id falls back to the default profile
   }
 
   std::vector<ProfileEntry> profiles;
@@ -71,7 +98,7 @@ Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
       if (auto label = entry_object->getString("label")) {
         entry.label = *label;
       }
-      if (!entry.id.empty()) {
+      if (IsValidProfileId(entry.id)) {
         profiles.push_back(std::move(entry));
       }
     }
@@ -110,6 +137,9 @@ Roe<void> ProfileRegistry::EnsureActiveProfile() {
     return ensured.error();
   }
 
+  if (auto checked = CheckActiveProfileId(); !checked) {
+    return checked.error();
+  }
   const std::string& active = session_override_.empty() ? active_profile_id_ : session_override_;
 
   bool found = false;
@@ -147,6 +177,9 @@ Roe<void> ProfileRegistry::EnsureDefaultProfile() {
 
   if (active_profile_id_.empty()) {
     active_profile_id_ = "default";
+  }
+  if (auto checked = CheckActiveProfileId(); !checked) {
+    return checked.error();
   }
 
   const std::string profile_dir = ActiveProfileDataDir();

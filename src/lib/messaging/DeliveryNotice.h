@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/ShareableLine.h"
 #include "common/chat/IDirectMessageClient.h"
 
 #include <optional>
@@ -41,6 +42,9 @@ enum class SendFailure {
   RelayRejected,
 };
 
+/** `failure` as a word for a shareable line (common/Diag.h). */
+ShareWord SendFailureWord(SendFailure failure);
+
 /** A direct send's failure, by its code. */
 SendFailure SendFailureFromDirect(DirectSendErr code);
 
@@ -74,6 +78,8 @@ enum class ReceiveFailure {
 
 /** Stable names (stored in a local receive-failure line's payload). */
 const char* ReceiveFailureWire(ReceiveFailure reason);
+/** The same name as a word for a shareable line (common/Diag.h). */
+ShareWord ReceiveFailureWord(ReceiveFailure reason);
 std::optional<ReceiveFailure> ReceiveFailureFromWire(const std::string& wire);
 
 struct DeliveryNotice {

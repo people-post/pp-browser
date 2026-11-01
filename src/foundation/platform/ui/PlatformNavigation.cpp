@@ -11,6 +11,7 @@ namespace pbr {
 namespace {
 
 std::function<bool()> g_dismiss_handler;
+std::function<int()> g_escape_key_handler;
 
 bool TryDismiss() {
   return g_dismiss_handler && g_dismiss_handler();
@@ -22,9 +23,20 @@ void PlatformNavigation::SetDismissHandler(std::function<bool()> handler) {
   g_dismiss_handler = std::move(handler);
 }
 
+void PlatformNavigation::SetEscapeKeyHandler(std::function<int()> handler) {
+  g_escape_key_handler = std::move(handler);
+}
+
 bool PlatformNavigation::OnDismissKey() {
+  const int composer = g_escape_key_handler ? g_escape_key_handler() : 0;
+  if (composer == 1) {
+    return true;
+  }
   if (TryDismiss()) {
     return true;
+  }
+  if (composer == 2) {
+    return true; // Escape in the composer never quits the app (it used to, with the draft in it)
   }
   Backend::RequestExit();
   return true;

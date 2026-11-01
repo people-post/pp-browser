@@ -8,12 +8,9 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-[`CreateOrgBackendClients`](../../src/base/net/OrgBackendClientFactory.cpp) picks an implementation per endpoint:
+The conversations hub (`ConversationsHub`) builds the HTTP clients from the configured `base_url`s: the relay's message client is messaging's ([`lib/messaging/HttpRelayClient`](../../src/lib/messaging/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/messaging/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
-1. `base_url` set (platform default or config) → HTTP client (`HttpRelayClient`, etc.)
-2. else client left unset (should not happen after defaults / empty coalesce)
-
-Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
 **Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
@@ -26,7 +23,7 @@ Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always call
 | `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
 | `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
 
-CI constructs `MockRelayClient` in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
+CI constructs `MockRelayClient` (`lib/messaging/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
 
 ## Data model
 
@@ -80,14 +77,14 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
-      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"
+      "/ip4/34.233.23.235/udp/443/adp/1.0.0/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
+      "/ip4/50.18.237.202/udp/443/adp/1.0.0/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw"
     ]
   }
 }
 ```
 
-**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no Node hosting). Amp UDP accept remains on for Clients. Clients still dial the Brief seed from `bootstrap_peers`. See [p2p-mesh](../../projects/p2p-mesh/).
+**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no Node hosting). Amp UDP accept remains on for Clients. Clients still dial the Brief seeds from `bootstrap_peers` (the example shows two of the built-in seven, `kDefaultMeshBootstrapPeers` in `src/foundation/data/MeshRole.h`; the directory's `GET /v1/mesh/nodes` is preferred at run time). See [p2p-mesh](../../projects/p2p-mesh/).
 Platform defaults use the Brief URLs above. Empty `base_url` values coalesce to those defaults; production never falls back to in-process mocks (`Mock*Client` is test-only).
 
 ## Relay envelope (target — D056, D090)
@@ -209,7 +206,7 @@ reach.
 - **Contacts tab** header **`+`** opens a menu:
   - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / relay / peer / multiaddrs as meta text; **Sync from directory…** when a relay id is present, refreshes remote only)
   - Directory add merges by `relay_user` id (`AddFromDirectoryHit` updates remote, preserves local annotations)
-  - `contacts.json` shape: `{ schema_version: 1, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
+  - `contacts.json` shape: `{ schema_version: 2, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
   - **Find someone** — same as Sessions find flow
 - Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
 - **Peer link status** (direct threads) — chat header shows live link state (`Connecting…` / `Direct` / `Via relay` / backoff countdown). Soft banner + **Retry connection** on dial backoff; toast when a send falls back to relay after a direct attempt.
@@ -252,7 +249,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/lib/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |
 | `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
-| `src/feature/conversations/MessagingTools.*` | Agent tool definitions |
+| `src/feature/product/MessagingTools.*` | Agent tool definitions (messaging meets AI in the product composition) |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |

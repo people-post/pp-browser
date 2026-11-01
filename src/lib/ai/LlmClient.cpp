@@ -13,10 +13,21 @@
 
 #include <cctype>
 #include <limits>
+#include <mutex>
 
 namespace pbr {
 
 namespace {
+
+std::mutex& RequestObserverMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::function<void(const std::string&)>& RequestObserver() {
+  static std::function<void(const std::string&)> observer;
+  return observer;
+}
 
 std::string JsonStringOrDefault(const Object& json, const char* key, const std::string& default_value = {}) {
   return json.getString(key).value_or(default_value);
@@ -199,6 +210,11 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
   return AppError::Network(Err::Network::HttpError, detail);
 }
 
+void LlmClient::SetRequestObserverForTests(std::function<void(const std::string& body)> observer) {
+  std::lock_guard lock(RequestObserverMutex());
+  RequestObserver() = std::move(observer);
+}
+
 Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {
   ChatCompletionRequest request;
   request.messages = {
@@ -274,6 +290,12 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   const std::string payload = DumpJson(body);
+  {
+    std::lock_guard lock(RequestObserverMutex());
+    if (RequestObserver()) {
+      RequestObserver()(payload);
+    }
+  }
   if (payload.size() > kMaxLlmRequestBytes) {
     return AppError::Network(Err::Network::HttpError,
                              "LLM request body exceeds limit of " + std::to_string(kMaxLlmRequestBytes) +
@@ -292,7 +314,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   headers = curl_slist_append(headers, "Content-Type: application/json");
   std::string bearer_header;
   if (!config_.api_key.empty()) {
-    bearer_header = "Authorization: Bearer " + config_.api_key;
+    bearer_header = "Authorization: Bearer " + config_.api_key.Reveal();
     headers = curl_slist_append(headers, bearer_header.c_str());
   }
 

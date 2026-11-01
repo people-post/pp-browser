@@ -1,6 +1,8 @@
 #include "lib/calls/CallMediaSeat.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "foundation/runtime/ProductOwners.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -57,7 +59,7 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
 
   uint64_t epoch_before_release = 0;
   // Seat ops run on the calls owner (Release there stops inline).
-  AppRuntime::PostTo(OwnerThreadId::MediaSessions, [&]() {
+  AppRuntime::PostTo(kMediaSessionsOwner, [&]() {
     seat.Acquire("call:old");
     epoch_before_release = seat.Epoch();
     seat.Release("call:old");
