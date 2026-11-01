@@ -8,19 +8,20 @@
 
 namespace pbr {
 
-OrgBackendClients CreateOrgBackendClients(const AppConfig& config) {
+OrgBackendClients CreateOrgBackendClients(const ServiceEndpointConfig& relay, const DirectoryConfig& directory,
+                                          const ServiceEndpointConfig& registration) {
   OrgBackendClients clients;
 
   // The relay's message client is messaging's (lib/messaging/HttpRelayClient): the conversations hub builds it.
-  if (!config.relay.base_url.empty()) {
-    clients.client_compat = std::make_unique<HttpClientCompatClient>(config.relay.base_url);
+  if (!relay.base_url.empty()) {
+    clients.client_compat = std::make_unique<HttpClientCompatClient>(relay.base_url);
   } else {
     logging::getLogger("OrgBackendClientFactory").warning
         << "relay.base_url is empty; client compat client not created";
   }
 
   {
-    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(config.directory);
+    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(directory);
     std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends;
     backends.reserve(providers.size());
     for (const ServiceEndpointConfig& provider : providers) {
@@ -44,9 +45,9 @@ OrgBackendClients CreateOrgBackendClients(const AppConfig& config) {
     }
   }
 
-  if (!config.registration.base_url.empty()) {
-    clients.registration = std::make_unique<HttpRegistrationClient>(config.registration.base_url);
-    clients.blob = std::make_unique<HttpBlobClient>(config.registration.base_url);
+  if (!registration.base_url.empty()) {
+    clients.registration = std::make_unique<HttpRegistrationClient>(registration.base_url);
+    clients.blob = std::make_unique<HttpBlobClient>(registration.base_url);
   } else {
     logging::getLogger("OrgBackendClientFactory").warning
         << "registration.base_url is empty; registration client not created";

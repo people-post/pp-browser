@@ -22,7 +22,9 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
+#include "foundation/platform/OsSecureBlobStore.h"
+#include "lib/people/RetiredKeychainBackup.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
@@ -381,7 +383,7 @@ Roe<void> Application::ResetActiveProfile() {
   }
 
   AppPaths::EnsureDirs(profile_dir);
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
+  if (auto manifest = EnsureProfileManifest(profile_dir); !manifest) {
     return manifest.error();
   }
 
@@ -1605,6 +1607,12 @@ bool Application::MountPresenters(ui::Context* context) {
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   messaging.SetOnMessagingReady([this]() {
+    // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
+    AppRuntime::PostWorkerNormal([this]() {
+      if (auto removed = RemoveRetiredKeychainBackup(OsSecureBlobStore()); !removed) {
+        log().warning << "Retired Keychain backup not removed: " << removed.error().message;
+      }
+    });
     chat_->OnMessagingReady();
     contacts_->Refresh();
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {

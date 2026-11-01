@@ -7,7 +7,8 @@
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/l4/media_relay/MediaRelayTypes.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
-#include "foundation/data/MeshRole.h"
+#include "common/DialWorthyMultiaddrs.h"
+#include "foundation/identity/MultiaddrPeerId.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -178,11 +179,11 @@ void ApplyOrgSeedAdmission(mesh::MeshHost& mesh) {
   }
 }
 
-void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config) {
+void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config,
+                          const bool node_role) {
   if (!mesh.Amp()) {
     return;
   }
-  const bool node_role = ResolveMeshRole(config) == MeshRole::Node;
   RegisterSeedEndpoints(mesh, config.bootstrap_peers);
   ConfigureNodeAmpDht(mesh, identity, config, node_role, CollectNodeQueryPeerKeys(config.bootstrap_peers));
   ConfigureNodeAmpDirectory(mesh, node_role, CollectNodeQueryPeerKeys(config.bootstrap_peers));

@@ -1,5 +1,5 @@
 #include "foundation/data/ProfileRegistry.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
 
 #include <gtest/gtest.h>
 
@@ -30,7 +30,7 @@ TEST(ProfileRegistryTest, LoadsDefaultProfileAndManifest) {
   EXPECT_EQ(registry->ActiveProfileId(), "default");
   EXPECT_TRUE(std::filesystem::exists(registry->ActiveProfileDataDir()));
   {
-    const auto manifest = pbr::SchemaVersion::EnsureProfileManifest(registry->ActiveProfileDataDir());
+    const auto manifest = pbr::EnsureProfileManifest(registry->ActiveProfileDataDir());
     ASSERT_TRUE(static_cast<bool>(manifest));
     EXPECT_TRUE(std::filesystem::exists(
         std::filesystem::path(registry->ActiveProfileDataDir()) / "manifest.json"));

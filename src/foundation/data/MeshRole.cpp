@@ -40,17 +40,6 @@ void NormalizeMeshConfig(MeshConfig& config) {
   }
 }
 
-std::vector<std::string> DialWorthyMultiaddrs(std::vector<std::string> multiaddrs) {
-  const auto local_scope = [](const std::string& ma) {
-    const bool ip = ma.rfind("/ip6/", 0) == 0 || ma.find("/ip4/") != std::string::npos;
-    return ip && !mesh::MultiaddrHasPublicDialHost(ma);
-  };
-  if (!std::all_of(multiaddrs.begin(), multiaddrs.end(), local_scope)) {
-    std::erase_if(multiaddrs, local_scope);
-  }
-  return multiaddrs;
-}
-
 std::vector<std::string> ResolveEffectiveBootstrapPeers(const MeshConfig& config,
                                                         const std::vector<mesh::MeshDirectoryNode>& directory_nodes) {
   MeshConfig normalized = config;

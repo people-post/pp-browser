@@ -9,6 +9,7 @@
 
 namespace pbr {
 
+/** A JSON file's `schema_version`: refuse a newer one, migrate an older one forward. */
 class SchemaVersion {
 public:
   static constexpr int kCurrentSchemaVersion = 1;
@@ -16,7 +17,6 @@ public:
   static pp::Roe<void> Validate(const pp::common::Object& root,
                                 int expected_version,
                                 const std::string& label);
-  static pp::Roe<void> EnsureProfileManifest(const std::string& profile_data_dir);
 
   using Migrator =
       std::function<pp::Roe<void>(const std::string& path, pp::common::Object& root)>;

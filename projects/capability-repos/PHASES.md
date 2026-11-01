@@ -44,7 +44,9 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       stale links dropped (conversations → calls / media, calls → broadcast, delivery tests → node,
       content → data).
 - [ ] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
-      `foundation/platform`: the app passes values and ports in.
+      `foundation/platform`: the app passes values and ports in. People and node done (the config slices
+      `MeshConfig` and `ServiceEndpoints`, `SchemaVersion`, `DialWorthyMultiaddrs` and the secure-blob port into
+      `common/`; the OS store in `foundation/platform`, handed in by the app); net has `CurlSsl` left.
 - [ ] The hub's shell thins (CR018): mesh glue into `ProductMesh`, backend clients handed in.
 - [ ] `Tr()` out of capability code (calls and messaging): error codes, text in the app.
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):

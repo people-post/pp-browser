@@ -8,7 +8,7 @@
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/crypto/RecoverySeed.h"
 #include "common/AtomicFileWrite.h"
-#include "foundation/data/SchemaVersion.h"
+#include "common/SchemaVersion.h"
 #include "foundation/error/AppError.h"
 #include "crypto/PeerId.h"
 #include "common/PlatformLimits.h"

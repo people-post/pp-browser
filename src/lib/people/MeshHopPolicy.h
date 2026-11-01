@@ -1,7 +1,7 @@
 #pragma once
 
-#include "foundation/data/Config.h"
 #include "lib/people/ContactTypes.h"
+#include "mesh/types/MeshConfigTypes.h"
 #include "mesh/types/MeshHopDial.h"
 #include "mesh/types/MeshHopTypes.h"
 #include "mesh/types/RelayScope.h"

@@ -8,7 +8,6 @@
 #include "lib/messaging/DeleteForEveryone.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
-#include "lib/people/RetiredKeychainBackup.h"
 #include "lib/people/RecoveryBundle.h"
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/crypto/RecoveryPhrase.h"
@@ -1502,10 +1501,6 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
     AnnounceRestoredDevice();
-    // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
-    if (auto removed = RemoveRetiredKeychainBackup(); !removed) {
-      log().warning << "Retired Keychain backup not removed: " << removed.error().message;
-    }
   });
   return {};
 }

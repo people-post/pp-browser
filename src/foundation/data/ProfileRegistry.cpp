@@ -3,7 +3,7 @@
 #include "common/BoundedRead.h"
 
 #include "common/AtomicFileWrite.h"
-#include "foundation/data/SchemaVersion.h"
+#include "common/SchemaVersion.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>

@@ -2,6 +2,7 @@
 
 #include "foundation/data/Config.h"
 #include "foundation/identity/MultiaddrPeerId.h"
+#include "common/DialWorthyMultiaddrs.h"
 #include "common/MeshAlias.h"
 
 #include <cstddef>
@@ -53,13 +54,6 @@ MeshRole ResolveMeshRole(const MeshConfig& config);
 
 /** Strip retired seeds; fill empty bootstrap_peers with project defaults. */
 void NormalizeMeshConfig(MeshConfig& config);
-
-/**
- * The addresses worth publishing or dialling from off the node's own network: private-range and
- * local-scope IP addresses (a container's, a LAN's) are dropped when any other address is listed —
- * a dial that falls back to one only times out (#379). A list of nothing else is kept as it is.
- */
-std::vector<std::string> DialWorthyMultiaddrs(std::vector<std::string> multiaddrs);
 
 /**
  * Effective seed multiaddrs for dial/warm: directory ADP addrs first, then

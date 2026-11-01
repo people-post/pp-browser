@@ -1,4 +1,4 @@
-#include "lib/people/SecureBlobStore.h"
+#include "foundation/platform/OsSecureBlobStore.h"
 
 #include "foundation/platform/os/OsSecureBlob.h"
 
@@ -16,25 +16,10 @@ public:
   Roe<void> Delete(const std::string& name) override { return os::SecureBlobDelete(name); }
 };
 
-class NoStore final : public ISecureBlobStore {
-public:
-  bool Supported() const override { return false; }
-  Roe<void> Write(const std::string&, const std::vector<uint8_t>&) override { return {}; }
-  Roe<std::optional<std::vector<uint8_t>>> Read(const std::string&) override {
-    return std::optional<std::vector<uint8_t>>{};
-  }
-  Roe<void> Delete(const std::string&) override { return {}; }
-};
-
 } // namespace
 
 ISecureBlobStore& OsSecureBlobStore() {
   static OsStore store;
-  return store;
-}
-
-ISecureBlobStore& NoSecureBlobStore() {
-  static NoStore store;
   return store;
 }
 

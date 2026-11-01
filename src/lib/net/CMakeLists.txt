@@ -19,7 +19,6 @@ pp_browser_add_lib_library(pp_lib_net
     SwitchableDirectoryClient.cpp
   PUBLIC_LIBS
     pp_foundation_error
-    pp_foundation_data
     pp_foundation_crypto
     pp_foundation_platform_core
     pp_lib_people

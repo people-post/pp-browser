@@ -41,6 +41,11 @@
 - **P2 gated (CR014 – CR020 drafted):** the product's base (`foundation/data`, `platform`, `i18n`) is the gate group
   **product**, apps only; pp-node is the app **node_app**; the gate counts CMake links. Pricing DTOs moved to
   `lib/pricing` and five stale links dropped — 68 include / 14 link sites left.
+- **P2, people and node off the product's base:** the config slices they take as values (`MeshConfig`,
+  `ServiceEndpoints`) and the mechanisms parked there (`SchemaVersion`, `DialWorthyMultiaddrs`) into `common/`;
+  the profile manifest stays the product's (`ProfileManifest`); the secure-blob port into `common/` with the OS
+  store in `foundation/platform`, which the app hands to the retired-Keychain cleanup it now runs; pp-node
+  passes the org seed's role in; net's client factory takes endpoints — 60 include / 10 link sites left.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 

@@ -1,6 +1,5 @@
 #include "lib/people/RetiredKeychainBackup.h"
 
-#include "lib/people/SecureBlobStore.h"
 
 namespace pbr {
 
@@ -9,8 +8,7 @@ namespace {
 constexpr const char kRetiredBackupItemName[] = "account-backup";
 } // namespace
 
-Roe<void> RemoveRetiredKeychainBackup() {
-  ISecureBlobStore& keychain = OsSecureBlobStore();
+Roe<void> RemoveRetiredKeychainBackup(ISecureBlobStore& keychain) {
   if (!keychain.Supported()) {
     return {};
   }

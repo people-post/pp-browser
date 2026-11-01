@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/data/Config.h"
+#include "common/ServiceEndpoints.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/ClientCompat.h"
 #include "lib/net/OrgBackendClients.h"
@@ -18,6 +18,8 @@ struct OrgBackendClients {
   std::unique_ptr<IClientCompatClient> client_compat;
 };
 
-OrgBackendClients CreateOrgBackendClients(const AppConfig& config);
+/** Clients for the backend at these endpoints (the app's config: relay, directory, registration). */
+OrgBackendClients CreateOrgBackendClients(const ServiceEndpointConfig& relay, const DirectoryConfig& directory,
+                                          const ServiceEndpointConfig& registration);
 
 } // namespace pbr

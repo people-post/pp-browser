@@ -11,6 +11,8 @@ add_library(pp_pbr_common STATIC
   chat/SystemControl.cpp
   directory/DirectoryJson.cpp
   directory/KeyCard.cpp
+  SchemaVersion.cpp
+  ServiceEndpoints.cpp
   ui/WorkingSetCodec.cpp
   BoundedRead.cpp
   LengthPrefixedCodec.cpp

@@ -7,7 +7,7 @@ pp_browser_add_foundation_library(pp_foundation_data
     LlmPreset.cpp
     PlatformDefaults.cpp
     ProfileRegistry.cpp
-    SchemaVersion.cpp
+    ProfileManifest.cpp
     SessionStore.cpp
     UserPreferences.cpp
   PUBLIC_LIBS

@@ -15,7 +15,6 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   RecoveryBundle.cpp
   ContactClock.cpp
   RetiredKeychainBackup.cpp
-  SecureBlobStore.cpp
   MeshHopPolicy.cpp
   PeerAccountBook.cpp
   PeopleLookupFailure.cpp
@@ -32,10 +31,8 @@ pp_browser_add_lib_library(pp_lib_people
   SOURCES ${PP_DOMAIN_PEOPLE_SOURCES}
   PUBLIC_LIBS
     pp_foundation_error
-    pp_foundation_data
     pp_foundation_crypto
     pp_foundation_identity
-    pp_foundation_platform_core
     sodium)
 
 if(NOT PP_BROWSER_HEADLESS)

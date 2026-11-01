@@ -3,7 +3,7 @@
 #include "mesh/types/DirectoryTypes.h"
 #include "mesh/host/MeshHost.h"
 #include "lib/people/IdentityStore.h"
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 
 #include <functional>
 #include <string>
@@ -60,6 +60,6 @@ void ApplyOrgSeedAdmission(mesh::MeshHost& mesh);
  * Org seed (`pp-node`) after the Amp stack is up: dial endpoints for the bootstrap seeds, DHT and
  * directory against them, a static self row in the directory, and open admission.
  */
-void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config);
+void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role);
 
 } // namespace pbr

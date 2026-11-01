@@ -7,17 +7,16 @@
 #
 # P2 (CR015): the product's base — foundation/data (Config, MeshRole, UserPreferences, SessionStore, AppPaths),
 # foundation/platform (Platform, NetworkMonitor, os/*), foundation/i18n (Tr) — is the apps' to read; the
-# capabilities take values and ports. Starting point after the pricing DTOs left: 68 include / 14 link sites.
+# capabilities take values and ports. Starting point after the pricing DTOs left: 68 include / 14 link sites;
+# people and node then reached 0 (MeshConfig, ServiceEndpoints, SchemaVersion, DialWorthyMultiaddrs into common/;
+# the secure-blob port into common/, its OS store in foundation/platform).
 base -> product 3
-people -> product 5
-net -> product 2
-node -> product 2
+# lib/net HttpClient: the platform TLS trust for curl (CurlSsl), a mechanism to move into the base.
+net -> product 1
 messaging -> product 39
 calls -> product 16
 broadcast -> product 1
 link base -> product 2
-link people -> product 2
-link net -> product 2
-link node -> product 1
+link net -> product 1
 link messaging -> product 5
 link calls -> product 2

@@ -9,6 +9,14 @@
 namespace pbr {
 namespace {
 
+/** The endpoints a config names (relay, directory, registration). */
+struct Endpoints {
+  pbr::ServiceEndpointConfig relay;
+  pbr::DirectoryConfig directory;
+  pbr::ServiceEndpointConfig registration;
+};
+
+
 TEST(BlobClientTest, MockUploadRelayBlobBytesPresignPutRetain) {
   MockBlobClient blob;
   const std::string body = "encrypted-bytes";
@@ -22,9 +30,9 @@ TEST(BlobClientTest, MockUploadRelayBlobBytesPresignPutRetain) {
 }
 
 TEST(BlobClientTest, OrgBackendClientFactoryCreatesBlobClient) {
-  AppConfig config;
+  Endpoints config;
   config.registration.base_url = "https://registration.example";
-  auto clients = CreateOrgBackendClients(config);
+  auto clients = CreateOrgBackendClients(config.relay, config.directory, config.registration);
   ASSERT_TRUE(static_cast<bool>(clients.blob));
 }
 

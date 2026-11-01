@@ -1,4 +1,4 @@
-#include "foundation/data/SchemaVersion.h"
+#include "common/SchemaVersion.h"
 
 #include <gtest/gtest.h>
 

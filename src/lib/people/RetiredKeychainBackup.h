@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/SecureBlobStore.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -16,8 +17,8 @@ inline constexpr const char kRetiredKeychainBackupRemoveAt[] = "1.1.0";
 /**
  * at-rest A011: delete the account backup item earlier builds left in the iOS Keychain. Restore is unsupported,
  * so nothing reads it, and it held the account's secret keys under the PIN past an uninstall. Idempotent; a
- * no-op where the OS has no such store.
+ * no-op where `keychain` is unsupported. The app runs it once messaging is up, with the OS store.
  */
-Roe<void> RemoveRetiredKeychainBackup();
+Roe<void> RemoveRetiredKeychainBackup(ISecureBlobStore& keychain);
 
 } // namespace pbr
