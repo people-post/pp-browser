@@ -96,6 +96,21 @@ void ElementScanPreview::OnRender() {
   scan_line_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
 }
 
+// Pixel sizes derive from the dp ratio, so the cached finder geometry is stale after it changes.
+void ElementScanPreview::OnDpRatioChange() {
+  ui::Element::OnDpRatioChange();
+  frame_manager_ = nullptr;
+}
+
+// Drop the GPU resources before the render manager can go away, rather than at member destruction.
+void ElementScanPreview::Release() {
+  frame_.Release();
+  scan_line_.Release();
+  geometry_.Release();
+  frame_manager_ = nullptr;
+  ui::Element::Release();
+}
+
 void RegisterScanPreviewElement() {
   static ui::ElementInstancerGeneric<ElementScanPreview> instancer;
   ui::Factory::RegisterElementInstancer("scan-preview", &instancer);

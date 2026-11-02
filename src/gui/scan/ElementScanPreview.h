@@ -18,6 +18,8 @@ public:
 
 protected:
   void OnRender() override;
+  void OnDpRatioChange() override;
+  void Release() override;
 
 private:
   int width_ = 0;
