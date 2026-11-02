@@ -3382,6 +3382,10 @@ void ChatController::Shutdown() {
   }
   if (agent_.AgentReady()) {
     StartupPhase phase("Shutdown::AgentSession");
+    // Unhook first: a configure that starts after this must not reach the messaging hub that is going away.
+    if (agent_.Ports().set_tool_registration_hook) {
+      agent_.Ports().set_tool_registration_hook({});
+    }
     if (agent_.Ports().cancel_all) {
       agent_.Ports().cancel_all();
     }

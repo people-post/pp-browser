@@ -172,6 +172,8 @@ struct AgentSession::Impl : public Module {
   std::string pending_thread_id;
   AgentTurnMode turn_mode = AgentTurnMode::Conversation;
   AtAiMode assist_mode = AtAiMode::Local;
+  /** Set on the UI thread, read by ConfigureOnIO on a worker. */
+  std::mutex hook_mutex;
   ToolRegistrationHook tool_registration_hook;
   ToolPermissionsPrefs tool_permissions;
   ToolPermissionsSaveFn tool_permissions_saver;
@@ -395,27 +397,18 @@ void AgentSession::ParkForPermission(const std::shared_ptr<Impl>& state, TurnExe
 
 void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& state, std::string approval_id,
                                                 std::string decision, std::string decision_label) {
+  // ResumeToolPermission already took `busy` for this turn on the UI thread.
   ParkedApproval park;
   {
     std::lock_guard lock(state->park_mutex);
-    const ApprovalResumeError err =
-        ValidateParkedResume(state->parked_approval, approval_id, state->busy.load());
+    const ApprovalResumeError err = ValidateParkedResume(state->parked_approval, approval_id, /*busy=*/false);
     if (err != ApprovalResumeError::Ok) {
+      state->busy = false; // no turn started: nothing was announced, so nothing to end
       PushError(state, std::string("Permission prompt inactive: ") + ApprovalResumeErrorCode(err));
       return;
     }
     park = *state->parked_approval;
     state->parked_approval->state = ParkedApprovalState::Executing;
-  }
-
-  if (state->busy.exchange(true)) {
-    std::lock_guard lock(state->park_mutex);
-    if (state->parked_approval && state->parked_approval->id == approval_id) {
-      state->parked_approval->state = ParkedApprovalState::Pending;
-    }
-    PushError(state, std::string("Permission prompt inactive: ") +
-                         ApprovalResumeErrorCode(ApprovalResumeError::TurnBusy));
-    return;
   }
 
   state->cancelled = false;
@@ -1959,8 +1952,13 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     BuildToolRegistryFromConfig(state->tools, state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
                                 custom_prefixes);
-    if (state->tool_registration_hook) {
-      state->tool_registration_hook(state->tools);
+    ToolRegistrationHook hook;
+    {
+      std::lock_guard hook_lock(state->hook_mutex);
+      hook = state->tool_registration_hook;
+    }
+    if (hook) {
+      hook(state->tools);
     }
     state->configured = true;
     RefreshCompactionService(state);
@@ -2058,6 +2056,7 @@ void AgentSession::Configure(const AppConfig& config) {
 }
 
 void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
+  std::lock_guard lock(impl_->hook_mutex);
   impl_->tool_registration_hook = std::move(hook);
 }
 
@@ -2076,6 +2075,10 @@ void AgentSession::SetLocalContactsSource(LocalContactsFn source) {
 
 void AgentSession::SetLocalAskTtl(const std::chrono::milliseconds ttl) {
   impl_->local_ask_ttl = ttl;
+}
+
+bool AgentSession::IsLocalActionTool(const std::string& tool) {
+  return IsDirectActionTool(tool);
 }
 
 bool AgentSession::IsAppActionRequest(const std::string& text) const {
@@ -2142,6 +2145,11 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
     if (err != ApprovalResumeError::Ok) {
       return Error(ApprovalResumeErrorCode(err));
     }
+    // Busy from the tap on (not from when the worker runs), so the turn counts at once: a send in between is refused
+    // here and AgentSessions counts it towards the cap.
+    if (impl_->busy.exchange(true)) {
+      return Error(ApprovalResumeErrorCode(ApprovalResumeError::TurnBusy));
+    }
   }
 
   AppRuntime::PostWorkerNormal(
@@ -2165,6 +2173,17 @@ bool AgentSession::CanClose() const {
     if (impl_->configure_inflight > 0) {
       return false;
     }
+  }
+  {
+    // A question held for the configure (submit_when_ready). Not waited for: a configure holding it is in flight.
+    std::unique_lock work_lock(impl_->configure_work_mutex, std::try_to_lock);
+    if (!work_lock.owns_lock() || impl_->submit_when_ready) {
+      return false;
+    }
+  }
+  // Set by Submit* together with `busy` and cleared when the turn ends; checked in case a path leaves one behind.
+  if (impl_->pending_image || impl_->pending_direct_action) {
+    return false;
   }
   {
     std::lock_guard lock(impl_->park_mutex);
@@ -2311,7 +2330,7 @@ void AgentSession::Cancel() {
     impl_->stream_cancel->store(true);
   }
   impl_->busy = false;
-  impl_->tool_registration_hook = nullptr;
+  // The tool hook stays: a pause is not a teardown (ChatController::Shutdown unhooks it before the hub goes).
   // A permission card waiting in some thread is left alone: stopping a turn (or pausing the app) is not an answer to
   // it, and a parked request belongs to a turn that already ended. It goes stale with a new turn in its own thread.
 }
@@ -2322,8 +2341,20 @@ void AgentSession::WaitForConfigureIdle() {
 }
 
 void AgentSession::ForgetThread(const std::string& thread_id) {
-  std::lock_guard lock(impl_->shared->last_role_mutex);
-  impl_->shared->last_role_by_thread.erase(thread_id);
+  {
+    std::lock_guard lock(impl_->shared->last_role_mutex);
+    impl_->shared->last_role_by_thread.erase(thread_id);
+  }
+  if (impl_->busy.load()) {
+    return; // a running turn owns the follow-up state; it is dropped with the next turn there
+  }
+  // The thread's card and the question asked back in it went with its messages. No turn runs, so nothing else
+  // touches them now (Submit* run on this thread too).
+  CancelParkedApproval(impl_, ParkedApprovalState::Cancelled, thread_id);
+  if (impl_->pending_local_action && impl_->pending_local_action->thread_id == thread_id) {
+    impl_->pending_local_action.reset();
+    impl_->local_ask_expires_ms = 0;
+  }
 }
 
 void AgentSession::StartNewConversation() {

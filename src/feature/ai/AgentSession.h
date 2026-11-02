@@ -140,6 +140,8 @@ public:
    */
   SubmitOutcome SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
                                   Object args, bool in_peer_chat = false);
+  /** A tool SubmitLocalAction runs (its whitelist). */
+  static bool IsLocalActionTool(const std::string& tool);
   /**
    * Brief preset only: does `text` ask to operate the app (the wordlist hits a declared tool)? A shared "@ai+" /
    * "@ai++" with such a request is answered on the device and never relayed. Safe from the UI thread.
@@ -176,7 +178,10 @@ public:
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
   void StartNewConversation();
-  /** The thread was cleared or deleted: forget the brief_AI role that answered its last turn. Any thread. */
+  /**
+   * The thread was cleared or deleted: forget the brief_AI role that answered its last turn, and (no turn running)
+   * this session's permission card and question asked back in that thread. UI thread.
+   */
   void ForgetThread(const std::string& thread_id);
 
   bool IsConfigured() const;
