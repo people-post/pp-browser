@@ -170,6 +170,22 @@ void AgentTurnController::Tick() {
     }
   }
   RecoverMissedTurnEnd();
+  RetryQueueDrain();
+}
+
+void AgentTurnController::RetryQueueDrain() {
+  // DrainQueue runs when a turn ends. If the sessions refused the head (can_start) while the UI had nothing marked
+  // busy, no end may come for it; ask again, at most once a second.
+  constexpr auto kDrainRetry = std::chrono::seconds(1);
+  if (queue_.Empty() || busy_.busy) {
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (last_drain_retry_ && now - *last_drain_retry_ < kDrainRetry) {
+    return;
+  }
+  last_drain_retry_ = now;
+  DrainQueue();
 }
 
 void AgentTurnController::RecoverMissedTurnEnd() {
@@ -177,6 +193,9 @@ void AgentTurnController::RecoverMissedTurnEnd() {
   // would show "thinking" forever and every other AI send would queue for nothing. A safety net, logged.
   constexpr auto kBusyRecoveryDelay = std::chrono::seconds(2);
   const auto session_busy = [this] {
+    if (home_turn_) {
+      return !agent_ports_.is_busy || agent_ports_.is_busy(std::string());
+    }
     // Unknown thread: any running turn may be the one the UI waits for.
     if (busy_.thread_id.empty()) {
       return !agent_ports_.any_busy || agent_ports_.any_busy();
@@ -484,9 +503,10 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
   // ~1.5 MB is blocking work: off the UI thread, submit from the reply. If the store fails the question
   // still goes out and the bubble shows only the marker.
   ConversationsFacade* facade = host_.Facade();
-  AppRuntime::PostWorkerNormal([this, facade, thread_id, question, message_id, image = std::move(image)]() mutable {
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, text, question, message_id,
+                                image = std::move(image)]() mutable {
     auto stored = facade->StoreAiImage(thread_id, image.image.data, image.image.mime);
-    AppRuntime::PostUI([this, thread_id, question, message_id, image = std::move(image),
+    AppRuntime::PostUI([this, thread_id, text, question, message_id, image = std::move(image),
                         stored = std::move(stored)]() mutable {
       std::string ai_image_json;
       if (stored) {
@@ -497,24 +517,54 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
       } else {
         log().warning << "AI image not stored: " << AppError::Log(stored.error());
       }
-      RemoveSessionFile(image.file_path); // the composer's preview; the thread's view file takes over
-      if (!agent_ports_.submit_image_to_thread) {
-        return;
-      }
-      log().info << "Submitting an image question to the agent session";
-      const SubmitOutcome outcome =
-          agent_ports_.submit_image_to_thread(thread_id, question,
-                                              AgentImageTurn{.image = std::move(image.image),
-                                                             .message_id = message_id,
-                                                             .ai_image_json = std::move(ai_image_json)});
-      if (outcome != SubmitOutcome::Started) {
-        // Another turn took the slot while the image was stored (not expected with the UI's own busy state).
-        log().warning << "Image question not started (outcome " << static_cast<int>(outcome) << ")";
-        UserFeedback::Fail(Tr("chat.ai_queue.image_busy"));
-      }
+      SubmitStoredImageQuestion(thread_id, text, question, message_id, std::move(image), std::move(ai_image_json));
     });
   });
   return true;
+}
+
+void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text,
+                                                    const std::string& question, const std::string& message_id,
+                                                    PendingAiImage image, std::string ai_image_json) {
+  if (!agent_ports_.submit_image_to_thread) {
+    RemoveSessionFile(image.file_path);
+    return;
+  }
+  log().info << "Submitting an image question to the agent session";
+  // The bytes are copied (about 1.5 MB at most) so a question the session does not take can be given back whole.
+  const SubmitOutcome outcome =
+      agent_ports_.submit_image_to_thread(thread_id, question,
+                                          AgentImageTurn{.image = image.image,
+                                                         .message_id = message_id,
+                                                         .ai_image_json = std::move(ai_image_json)});
+  if (outcome == SubmitOutcome::Started) {
+    RemoveSessionFile(image.file_path); // the composer's preview; the thread's view file takes over
+    return;
+  }
+  // Another turn took the slot while the image was stored (the UI's own busy state normally prevents it): the
+  // picture and the question go back to that chat's composer, and "busy" there ends.
+  log().warning << "Image question not started (outcome " << static_cast<int>(outcome) << "): given back";
+  if (busy_.busy && busy_.thread_id == thread_id) {
+    MarkAgentIdle();
+  }
+  if (!text.empty()) {
+    host_.PutBackDraft(thread_id, text);
+  }
+  if (thread_id == host_.ActiveThreadId() && !pending_image_ && !chat_.image_preparing) {
+    pending_image_ = std::move(image);
+    chat_.image_chip = true;
+    chat_.image_thumb_ready = !pending_image_->file_path.empty();
+    chat_.image_thumb_src = pending_image_->file_path.c_str();
+    chat_.image_draft_name = pending_image_->name.c_str();
+    host_.SyncComposerInputState();
+    DirtyChatChrome();
+    DirtyChatHeader();
+  } else if (stashed_images_.count(thread_id) == 0) {
+    stashed_images_.emplace(thread_id, std::move(image)); // shown when that chat is opened again
+  } else {
+    RemoveSessionFile(image.file_path); // that chat already keeps a picture of its own
+  }
+  UserFeedback::Fail(Tr(outcome == SubmitOutcome::Full ? "chat.ai_queue.image_busy" : "chat.ai_queue.image_busy_here"));
 }
 
 void AgentTurnController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const {
@@ -613,7 +663,7 @@ void AgentTurnController::OnStopTurn() {
     return;
   }
   if (AgentReady() && agent_ports_.cancel) {
-    agent_ports_.cancel(busy_.thread_id);
+    agent_ports_.cancel(home_turn_ ? std::string() : busy_.thread_id);
   }
 }
 
@@ -627,7 +677,8 @@ void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const
     host_.PutBackDraft(thread_id, text);
     return;
   }
-  MarkAgentBusy(thread_id);
+  MarkAgentBusy(thread_id); // "thinking" shows in the chat it was typed in
+  home_turn_ = true;        // but it runs in the Home session: stop and recovery ask that one
 }
 
 void AgentTurnController::MarkAgentBusy(const std::string& thread_id) {
@@ -642,6 +693,7 @@ void AgentTurnController::MarkAgentBusy(const std::string& thread_id) {
 
 void AgentTurnController::MarkAgentIdle() {
   busy_ = {};
+  home_turn_ = false;
   RefreshBusyForActiveThread();
 }
 

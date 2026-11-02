@@ -6,7 +6,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <deque>
+#include <thread>
 #include <map>
 #include <string>
 #include <vector>
@@ -293,6 +295,110 @@ TEST_F(AgentTurnBusyTest, AHomeQuestionTheSessionDidNotTakeGoesBackToTheComposer
   controller_.SubmitHomeQuestion("A", "hello", std::nullopt);
   EXPECT_TRUE(controller_.Busy().BusyIn("A"));
   EXPECT_EQ(host_.put_back.size(), 1u);
+}
+
+TEST_F(AgentTurnBusyTest, AHomeTurnIsStoppedAndWatchedInTheHomeSession) {
+  // No messaging router: the question runs in the Home session while "thinking" shows in the open chat.
+  bool home_busy = true;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit = [](const std::string&, std::optional<std::string>) { return SubmitOutcome::Started; };
+  ports.cancel = [this](const std::string& thread_id) {
+    ++cancel_calls_;
+    cancelled_thread_ = thread_id;
+  };
+  ports.is_busy = [&home_busy](const std::string& thread_id) { return thread_id.empty() && home_busy; };
+  ports.any_busy = [&home_busy] { return home_busy; };
+  controller_.BindPorts(std::move(ports));
+  controller_.SetUseLlm(true);
+  Open("A");
+
+  controller_.SubmitHomeQuestion("A", "hello", std::nullopt);
+  EXPECT_TRUE(chat_.loading) << "thinking shows where it was asked";
+
+  // The session for "A" has no turn, the Home session has: the recovery must not end it.
+  controller_.Tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+  controller_.Tick();
+  EXPECT_TRUE(controller_.Busy().BusyIn("A"));
+
+  controller_.OnStopTurn();
+  EXPECT_EQ(cancel_calls_, 1);
+  EXPECT_EQ(cancelled_thread_, "") << "the stop reaches the Home session";
+
+  controller_.HandleAgentEvent(Loading(false));
+  EXPECT_FALSE(controller_.Busy().busy);
+  home_busy = false;
+}
+
+TEST_F(AgentTurnBusyTest, AnImageQuestionTheSessionDidNotTakeComesBack) {
+  SubmitOutcome answer = SubmitOutcome::Full;
+  int submits = 0;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_image_to_thread = [&](const std::string&, const std::string&, AgentImageTurn) {
+    ++submits;
+    return answer;
+  };
+  controller_.BindPorts(std::move(ports));
+  const auto image = [] {
+    AgentTurnController::PendingAiImage out;
+    out.image = BriefAiImage{.mime = "image/jpeg", .data = {1, 2, 3}};
+    out.name = "cat.jpg";
+    return out;
+  };
+
+  // Asked in the open chat: the picture is back in its composer, the text in its draft, "busy" there ends.
+  Open("A");
+  controller_.MarkAgentBusy("A");
+  controller_.SubmitStoredImageQuestion("A", "what is it", "what is it", "m1", image(), "");
+  EXPECT_EQ(submits, 1);
+  EXPECT_FALSE(controller_.Busy().busy);
+  EXPECT_TRUE(controller_.HasPendingImage());
+  EXPECT_TRUE(chat_.image_chip);
+  ASSERT_EQ(host_.put_back.size(), 1u);
+  EXPECT_EQ(host_.put_back.front(), (std::pair<std::string, std::string>{"A", "what is it"}));
+  controller_.DiscardPendingAiImage();
+
+  // Asked in "B", now showing "A": kept for "B" until it is opened again; A's "busy" is left alone.
+  answer = SubmitOutcome::BusyHere;
+  controller_.MarkAgentBusy("A");
+  controller_.SubmitStoredImageQuestion("B", "", "Describe this image.", "m2", image(), "");
+  EXPECT_TRUE(controller_.Busy().BusyIn("A"));
+  EXPECT_FALSE(controller_.HasPendingImage());
+  EXPECT_EQ(host_.put_back.size(), 1u) << "an empty question puts no text back";
+  controller_.RestorePendingImage("B");
+  EXPECT_TRUE(controller_.HasPendingImage());
+  controller_.DiscardPendingAiImage();
+
+  // Taken: nothing comes back.
+  answer = SubmitOutcome::Started;
+  controller_.SubmitStoredImageQuestion("A", "again", "again", "m3", image(), "");
+  EXPECT_FALSE(controller_.HasPendingImage());
+  EXPECT_EQ(host_.put_back.size(), 1u);
+}
+
+TEST_F(AgentTurnBusyTest, AQueueTheSessionsRefusedIsAskedAgainEverySecond) {
+  // Nothing marked busy and no turn end coming: the queue is offered again from Tick, at most once a second.
+  TurnStart answer = TurnStart::Full;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.can_start = [&answer](const std::string&) { return answer; };
+  controller_.BindPorts(std::move(ports));
+  controller_.MarkAgentBusy("A");
+  controller_.QueueSend(Queued("B"));
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_EQ(controller_.QueuedCount(), 1u);
+  controller_.Tick(); // asked again at once: still refused
+  EXPECT_TRUE(host_.handed_over.empty());
+
+  answer = TurnStart::Yes;
+  host_.outcomes = {QueuedSendOutcome::Started};
+  controller_.Tick();
+  EXPECT_TRUE(host_.handed_over.empty()) << "not before a second has passed";
+  std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+  controller_.Tick();
+  EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
 }
 
 TEST_F(AgentTurnBusyTest, TwoIdleEventsInARowHandOverOnlyOnce) {

@@ -576,6 +576,7 @@
     "chat.ai_queue.cancel": "Cancel",
     "chat.ai_queue.already": "This chat already has a question waiting.",
     "chat.ai_queue.image_busy": "The assistant is answering another chat. Send the picture when it has finished.",
+    "chat.ai_queue.image_busy_here": "The assistant is still answering in this chat. Send the picture when it has finished.",
     "chat.permission.busy_elsewhere": "The assistant is answering another chat. Tap again when it has finished.",
     "chat.permission.done.allow_once": "Allowed once",
     "chat.permission.done.allow_always": "Set to always allow",

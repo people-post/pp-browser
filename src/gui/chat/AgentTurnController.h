@@ -176,6 +176,14 @@ public:
   void Reset();
 
   // --- an image for the AI ---------------------------------------------------------------------
+  /** The prepared image waiting in the composer for its question. */
+  struct PendingAiImage {
+    BriefAiImage image;
+    std::string name;      // shown on the chip only; never logged
+    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
+    int width = 0;         // pixels of the prepared image
+    int height = 0;
+  };
   void OnAttachAiImage();
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
@@ -190,6 +198,12 @@ public:
   bool HasPendingImage() const { return pending_image_.has_value(); }
   /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
   bool SendImageQuestion(const std::string& text);
+  /**
+   * The image is stored (or failed to be): hand the question to the session. If it does not take it, the picture
+   * and `text` go back to `thread_id`'s composer and "busy" there ends. Public for tests.
+   */
+  void SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text, const std::string& question,
+                                 const std::string& message_id, PendingAiImage image, std::string ai_image_json);
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
 
   // --- the agent's forms and calendars ---------------------------------------------------------
@@ -235,15 +249,12 @@ private:
   /** When the UI was busy but the session not: after kBusyRecoveryDelay the UI stops waiting for an end it missed. */
   std::optional<std::chrono::steady_clock::time_point> busy_without_session_since_;
   void RecoverMissedTurnEnd();
+  /** The queue is not empty and nothing is marked busy: DrainQueue again, at most once a second. */
+  void RetryQueueDrain();
+  std::optional<std::chrono::steady_clock::time_point> last_drain_retry_;
+  /** The running turn was the Home composer's (SubmitHomeQuestion): stop and recovery ask the Home session. */
+  bool home_turn_ = false;
 
-  /** The prepared image waiting in the composer for its question. */
-  struct PendingAiImage {
-    BriefAiImage image;
-    std::string name;      // shown on the chip only; never logged
-    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
-    int width = 0;         // pixels of the prepared image
-    int height = 0;
-  };
   std::optional<PendingAiImage> pending_image_;
   std::map<std::string, PendingAiImage> stashed_images_; // per conversation, while another one is shown
   uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped

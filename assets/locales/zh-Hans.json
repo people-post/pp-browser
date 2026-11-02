@@ -576,6 +576,7 @@
     "chat.ai_queue.cancel": "取消",
     "chat.ai_queue.already": "这个对话已经有一个问题在排队。",
     "chat.ai_queue.image_busy": "AI 正在回答另一个对话，答完再发图片。",
+    "chat.ai_queue.image_busy_here": "AI 还在回答这个对话，答完再发图片。",
     "chat.permission.busy_elsewhere": "AI 正在回答另一个对话，答完再点。",
     "chat.permission.done.allow_once": "已允许一次",
     "chat.permission.done.allow_always": "已设为总是允许",
