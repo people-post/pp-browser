@@ -459,7 +459,8 @@ an include. Each capability also carried at-rest encryption (the profile DEK) in
   key bundle on top of them, in delivery.
 - Delivery's session idea is renamed for what it is: `ChatTargetKey` / `PskSessionRecord` / `IPskSessionStore`
   become `PeerSessionKey` / `PeerSessionRecord` / `IPeerSessionStore` (the key moves from `foundation/crypto` into
-  delivery). The table follows when its schema moves into storage: `chat_targets` → `peer_sessions`.
+  delivery). The SQL table keeps its name, `chat_targets`: a stored name, which a rename would only migrate (Hongwei,
+  2026-11-02; a rename shipped briefly in stage 2b and was undone before it left the branch).
 
 **Stages:**
 1. Delivery's ideas: the rename; the thin port with delivery's logic on top; a port for the control lane's seen
@@ -470,9 +471,8 @@ an include. Each capability also carried at-rest encryption (the profile DEK) in
    roster shares each group's send target with `InMemoryDeliveryStore`, as SQLite's roster and thread store share
    `group_targets`) and a contract test that runs every case on both. (b) `src/lib/storage` takes the SQLite side
    together — the profile database and its schema, the thread store, rosters, thread prefs, mentions, the
-   peer-session and control-lane stores (they share rows, so they move as one) — handed to the hub by the app;
-   `chat_targets` is renamed `peer_sessions` there. Messaging's SQLite tests go with them; its logic tests run in
-   memory.
+   peer-session and control-lane stores (they share rows, so they move as one) — handed to the hub by the app.
+   Messaging's SQLite tests go with them; its logic tests run in memory.
 3. Calls: `CallSessionStore` and `CallMediaKeyStore` become ports with in-memory implementations; the SQLite ones
    move to storage (calls drops its at-rest crypto includes).
 4. People and social: `PeerCardStore`, `PostStore` and `ObjectIndex` the same way.

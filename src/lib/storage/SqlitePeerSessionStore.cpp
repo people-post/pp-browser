@@ -271,7 +271,7 @@ Roe<std::optional<PeerSessionRecord>> SqlitePeerSessionStore::Load(const PeerSes
                    " FROM device_sessions WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? "
                    "AND peer_device = ? LIMIT 1;"
              : std::string("SELECT ") + kAccountSessionColumns +
-                   " FROM peer_sessions WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? "
+                   " FROM chat_targets WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? "
                    "LIMIT 1;";
   if (sqlite3_prepare_v2(*db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK load");
@@ -346,7 +346,7 @@ Roe<std::vector<PeerSessionRecord>> SqlitePeerSessionStore::List() const {
   }
   sqlite3_stmt* stmt = nullptr;
   const std::string sql = std::string("SELECT peer_identity_kind, peer_identity_value, channel, ") +
-                          kAccountSessionColumns + ", '' FROM peer_sessions UNION ALL " +
+                          kAccountSessionColumns + ", '' FROM chat_targets UNION ALL " +
                           "SELECT peer_identity_kind, peer_identity_value, channel, " + kDeviceSessionColumns +
                           ", peer_device FROM device_sessions;";
   if (sqlite3_prepare_v2(*db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -452,7 +452,7 @@ Roe<void> SqlitePeerSessionStore::Save(const PeerSessionRecord& record) {
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO peer_sessions (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
+      "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
       "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
       "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, "
       "auto_key_session_id, auto_key_init_pending, auto_key_peer_heard_ms, restart_pending) "

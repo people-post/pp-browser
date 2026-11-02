@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS outbox (
 CREATE INDEX IF NOT EXISTS idx_outbox_thread ON outbox(thread_id);
 CREATE INDEX IF NOT EXISTS idx_outbox_updated ON outbox(updated_at ASC);
 
-CREATE TABLE IF NOT EXISTS peer_sessions (
+CREATE TABLE IF NOT EXISTS chat_targets (
   peer_identity_kind TEXT NOT NULL,
   peer_identity_value TEXT NOT NULL,
   channel TEXT NOT NULL,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS peer_sessions (
   auto_key_peer_heard_ms INTEGER,
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_peer_sessions_local_thread ON peer_sessions(local_thread_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);
 )sql";
 
 inline constexpr const char* kSqliteThreadSchemaV2 = R"sql(

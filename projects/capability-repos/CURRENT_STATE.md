@@ -109,7 +109,7 @@
   runs every case on both.
 - **CR024 stage 2b:** `src/lib/storage` (the app) holds the profile database and every SQLite store of delivery and
   messaging; `ProductStack` hands `OpenSqliteProfileStores` to the hub (`ConversationsHub::SetStorage`, the ports in
-  `lib/messaging/ProfileStores.h`); `chat_targets` is `peer_sessions` (renamed in place on open). Delivery and
+  `lib/messaging/ProfileStores.h`); the tables keep their names (`chat_targets` included). Delivery and
   messaging hold no SQL; their tests run in memory — the in-memory thread store learned what messaging relies on
   (the catalog row an append moves, the outbox, seq ranges) and "delete for me" became the port's own. The SQLite
   behaviours (schema, restart, transactions, many connections) are storage's tests.
