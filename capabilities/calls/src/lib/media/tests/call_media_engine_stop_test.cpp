@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -103,7 +104,9 @@ TEST(CallMediaEngineStopTest, SlowTeardownDoesNotBlockGetters) {
   stopper.join();
 
   EXPECT_GT(polls, 10);
-  EXPECT_LT(worst_ms, 50) << "ConnectionState waited for the codec teardown";
+  // Relative bound (CI jitter): a getter that waited for the teardown would take ~kSlowStep.
+  EXPECT_LT(worst_ms, std::chrono::duration_cast<std::chrono::milliseconds>(kSlowStep).count() / 3)
+      << "ConnectionState waited for the codec teardown";
 }
 
 }  // namespace

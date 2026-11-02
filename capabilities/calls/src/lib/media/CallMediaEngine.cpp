@@ -577,6 +577,33 @@ struct CallMediaEngine::Impl {
     }
   }
 
+  /**
+   * OS audio session ownership. Stop() deactivates the session after dropping the engine lock (the
+   * call is slow); a Start that interleaves activates it again, and a stale Stop must not undo
+   * that. So activation bumps `session_gen` and Stop deactivates only if the generation is still
+   * the one it saw under the engine lock; both run under `session_mu` (never held with `mutex`
+   * taken after it, so no inversion).
+   */
+  std::mutex session_mu;
+  uint64_t session_gen = 0;
+
+  void ActivateAudioSession() {
+    std::lock_guard lock(session_mu);
+    ++session_gen;
+    CallAudioSession::ActivateForVoipCall();
+  }
+  uint64_t SessionGeneration() {
+    std::lock_guard lock(session_mu);
+    return session_gen;
+  }
+  /** Stop(): deactivate the session unless a Start activated it since `seen_gen`. */
+  void ReleaseAudioSessionIfUnchanged(const uint64_t seen_gen) {
+    std::lock_guard lock(session_mu);
+    if (session_gen == seen_gen) {
+      ReleaseAudioSession();
+    }
+  }
+
   /** Touches the OS audio session only, not Impl: Stop() runs it after dropping the lock. */
   static void ReleaseAudioSession() {
     CallAudioSession::Deactivate();
@@ -914,7 +941,7 @@ struct CallMediaEngine::Impl {
         return Error("call media stopped");
       }
       CallAudioSession::ApplyCaptureAudioHints();
-      CallAudioSession::ActivateForVoipCall();
+      ActivateAudioSession();
     }
     TryAcquireVoiceDuplex(want_spec, holder, mic, speaker);
     const auto ensure = [&](bool wanted, MediaDeviceKind kind, std::unique_ptr<AudioDeviceLease>& lease) {
@@ -938,7 +965,7 @@ struct CallMediaEngine::Impl {
     if (voip && !voice) {
       // SDL's coreaudio backend rewrites the AVAudioSession category/options with ModeDefault and
       // DefaultToSpeaker when it opens devices (B36). Re-apply our VoiceChat mode + earpiece route.
-      CallAudioSession::ActivateForVoipCall();
+      ActivateAudioSession();
     }
     if (speaker && !speaker->HasDevice()) {
       // Headless CI / no default device: still run silence TX (same as no-capture path).
@@ -1909,9 +1936,16 @@ void CallMediaEngine::Stop() {
   // parts run after it is released.
   std::unique_ptr<IVideoCodec> doomed_codec;
   timed_step("teardown_audio", [&] {
+    uint64_t session_seen = 0;
     {
       std::lock_guard lock(impl_->mutex);
-      doomed_codec = std::move(impl_->video_codec);
+      if (!impl_->video_thread.joinable()) {
+        doomed_codec = std::move(impl_->video_codec);
+      } else {
+        // Something restarted the video loop after the join: it owns the codec now.
+        log().warning << "media stop: video thread running again, codec left in place";
+      }
+      session_seen = impl_->SessionGeneration();
       impl_->TearDownAudioLocked(/*release_session=*/false);
       impl_->call_id.clear();
       impl_->spec = SessionSpec::Duplex();
@@ -1919,7 +1953,7 @@ void CallMediaEngine::Stop() {
       state_cb = impl_->on_state_changed;
     }
     doomed_codec.reset();
-    Impl::ReleaseAudioSession();
+    impl_->ReleaseAudioSessionIfUnchanged(session_seen);
   });
   log().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
   if (state_cb) {
