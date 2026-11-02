@@ -181,6 +181,8 @@ ShareWord MediaErrWord(const CallMediaErr code) {
     return "stream_closed";
   case CallMediaErr::Aborted:
     return "aborted";
+  case CallMediaErr::AlreadyOnLink:
+    return "already_on_link";
   case CallMediaErr::Generic:
     break;
   }

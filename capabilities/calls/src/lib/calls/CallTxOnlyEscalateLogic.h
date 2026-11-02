@@ -15,7 +15,7 @@ inline constexpr int64_t kCallTxOnlyEscalateGraceMs = 15000;
 inline constexpr uint64_t kCallTxOnlyEscalateMinTxFrames = 80;
 
 /**
- * Pure gates for CallMediaBridge::MaybeEscalateTxOnlyDirect (unit-testable).
+ * Pure gates for CallDirectPath::MaybeEscalateTxOnlyDirect (unit-testable).
  *
  * "No media" means no media **data**: `rx_audio_frames` counts frames received, whatever they carry.
  * A muted peer, or one whose mic never opened, still sends frames of silence — that is a working

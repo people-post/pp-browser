@@ -113,6 +113,8 @@ public:
   std::optional<std::string> SolePeer() const;
   int64_t AdmittedAtMs() const { return admitted_at_ms_; }
   const LiveCallMediaProgress& MediaProgress() const { return progress_; }
+  /** What the call's media is busy with, for the in-call chrome ("Switching media path…"); empty: nothing. */
+  const std::string& Activity() const { return activity_; }
   /**
    * What the call shows as (V037 State): Ringing / Accepting as its call state; a placed call nobody
    * answered yet is OutboundCalling; once in the call its media decides — ConnectFailed, InCall (live
@@ -132,6 +134,7 @@ private:
   std::vector<std::string> peers_;
   int64_t admitted_at_ms_ = 0;
   LiveCallMediaProgress progress_;
+  std::string activity_;
 };
 
 /**
@@ -209,6 +212,8 @@ public:
   void NoteDirectHandedToHop(const std::string& call_id);
   /** No media path: the call stays open, failed (Retry / the peer's reconnect resumes it). */
   void NoteMediaFailed(const std::string& call_id);
+  /** The call's media activity line (empty clears it). */
+  void NoteActivity(const std::string& call_id, std::string text);
 
   /** This side placed the call. */
   LiveCall& AdmitPlaced(const std::string& call_id, const std::vector<std::string>& peers);

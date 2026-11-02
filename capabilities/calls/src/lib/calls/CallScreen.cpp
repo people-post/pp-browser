@@ -115,7 +115,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   using Status = CallScreen::Status;
   InCallStatus out;
   const bool recovering = s.recovery != CallRecovery::None;
-  out.show_retry = s.p2p_connect_failed && !recovering && !s.on_hop;
+  out.show_retry = s.direct_connect_failed && !recovering && !s.on_hop;
   // Connected when the call's media is live (InCall + DirectLive|HopLive): the call's own state, not
   // the seat's (a reattach keeps the seat bound while nothing flows).
   out.media_connected = s.media_chrome_live;
@@ -137,14 +137,14 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   if (path_moving) {
     out.show_retry = false;
   }
-  if (s.was_connected && !out.media_connected && ((s.p2p_connect_failed && !path_moving) || failed)) {
+  if (s.was_connected && !out.media_connected && ((s.direct_connect_failed && !path_moving) || failed)) {
     // Was live, then lost its path for good: no retry hint, the screen closes by itself (B89).
     out.status = Status::Disconnected;
     out.show_retry = false;
     out.show_invite = false;
-  } else if (s.p2p_connect_failed && !path_moving) {
+  } else if (s.direct_connect_failed && !path_moving) {
     out.status = Status::CouldntConnect;
-    out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::P2pConnect;
+    out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::DirectConnect;
     out.show_invite = false;
   } else if (activity) {
     out.status = Status::Activity;

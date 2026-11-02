@@ -7,7 +7,7 @@
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "common/runtime/OwnerOutbox.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 
 #include <map>
 #include <optional>
@@ -42,7 +42,7 @@ public:
 
   CallHopPlanning(const ICallSessionReader& sessions, const CallHopRanking& ranking);
 
-  void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
+  void SetMediaRelayDeps(const CallHopMediaRelayDeps* deps) { deps_ = deps; }
   /** Where planning reports its probe answers (its parent binds it). */
   void SetOutbox(OwnerOutbox<PlanningEvent> outbox) { outbox_ = std::move(outbox); }
   /** An answer it reported, back from the calls owner's queue. */
@@ -83,7 +83,7 @@ private:
 
   const ICallSessionReader& sessions_;
   const CallHopRanking& ranking_;
-  const CallTopologyMediaRelayDeps* deps_ = nullptr;
+  const CallHopMediaRelayDeps* deps_ = nullptr;
   /** Invitee: hop PeerId → quote ok (nullopt while in flight), per call. */
   std::unordered_map<std::string, std::map<std::string, std::optional<bool>>> probes_;
   std::unordered_map<std::string, std::string> probe_planned_hop_;

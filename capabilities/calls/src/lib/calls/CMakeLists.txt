@@ -4,6 +4,7 @@ pp_browser_add_lib_library(pp_lib_calls
   SOURCES
     MediaKeyWrap.cpp
     CallControlCodec.cpp
+    CallControlGate.cpp
     CallControlFamily.cpp
     CallMediaErrorText.cpp
     CallDirectPathLogic.cpp

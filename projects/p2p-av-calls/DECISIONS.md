@@ -1167,7 +1167,7 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 ## V047 — CallHopMigrateWorkflow owns clusters (no friend)
 
 **Date:** 2026-09-17  
-**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Status:** Superseded by [V057](#v057--the-calls-media-is-the-paths-only-way-to-the-engine-parts-report-events) 6 (2026-11-02): the topology and the migrate workflow are one `CallHopPath` again — the split had cut one state in two and joined it through three port structs and a TopologyOps bundle.  
 **Decision:** Finish Topology ↔ SoftMigrate composition independence: **`CallHopMigrateWorkflow` owns** SoftMigrate/attach race clusters and takes **Host / Lifecycle / Seat ports + TopologyOps**. Drop **`friend class CallHopMigrateWorkflow`** and all private `topo_` field poke. Topology remains the Hop planner façade; it holds **references** into Workflow-owned clusters for local control paths and binds Ops/ports at construction / `Set*`.
 
 ### Rules
@@ -1360,3 +1360,23 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 4. **Facts the paths kept about the call move to `LiveCall`** (media attempted, failed but open).
 **Rationale:** The split service / per-call-state shape would keep two objects per path and a routing layer between them; per-call objects remove the current-call fields, the generation stamps and the call-id checks outright, and make the session the only thing that touches the engine.
 **Consequence:** cm3 runs as: the inbound doorway and the facts onto `LiveCall` (cm3a); the bridge per call (cm3b); the hop path per call with a small device-level hop service (cm3c); the session holds one path behind one interface and the session manager's call-id routing goes (cm3d).
+
+## V057 — The call's media is the paths' only way to the engine; parts report events
+
+**Date:** 2026-11-02
+**Status:** Accepted (Hongwei, 2026-11-02). Builds on [V055](#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device) and [V056](#v056--device-level-and-call-level-the-media-paths-are-per-call-objects). Work: [PHASES § cn](PHASES.md#cn--call-model-second-pass-v057).
+
+**Context:** After cm0–cm5 the paths are per call and the session manager is a router over `CallDevice`, but the paths still read the engine directly (about 87 uses, 66 of them "does the engine run my call?" from its session id and packet mode), so each path guesses who holds the media — the "current call" back through the engine; one guard built that way (`media_active_mesh_for_call`) can never be true. `CallDevice` still builds about 118 `std::function` ports and a 13-method host for the parts, some looping back into their owner; three per-call screen facts (the activity line, the media error, the failed accept) sit on the device; inbound control is split between the router and the workflow; the group path's state is shared by reference between topology and the migrate workflow; and the names still say bridge / topology / P2P.
+
+**Decision:**
+1. **One engine handle per call.** `CallMedia` owns a `CallEngine` for its call and lends it to its paths: whether the engine runs this call and on which path (set by `CallMedia::StartEngine`, cleared on stop), and the data plane (inbound packets, drops, pressure, targets, health). Paths never read the engine's session id and never start or stop it; another call's leftover media is the device's to stop (the seat, `LiveCallMedia`).
+2. **Parts report events.** Host and port callbacks that tell the owner something become events on the owner's queue (V055 2); what remains are queries and the capability edges.
+3. **Per-call screen facts on `LiveCall`:** the activity line ("Switching media path…"), which the snapshot reads from the shown call. The two error values (`last_error`: a failed accept, "That call has ended"; the media error) are not call facts but one-shot notices the screen shows once — they outlive the call they came from — and stay the device's.
+4. **Inbound call control is a table in the router:** each control type → who may send it → its handler (the workflow or the call's media). The sender gates are the edge's, the durable steps the workflow's.
+5. **Names say what they are:** `CallDirectPath` / `CallHopPath`; no `P2p` prefixes.
+6. **The group path is one object** (`CallHopPath`): the planner, the move to the hop, the attach and the guest reattach over one hop state it alone writes. Supersedes V047's split (the topology and the migrate workflow shared that state by reference and joined through three port structs and a TopologyOps bundle). Its hop media data plane — frames, keys, publisher streams, with their own state and threads — may become its own object (PHASES § cn6b).
+
+**Rationale:** The engine handle makes "who carries this call's media" one fact with one writer, which is what the per-call model promised; events finish V055's "calls down, events up"; the rest are the owners V055 named but the code had not reached.
+
+**Consequence:** Phased (PHASES § cn), one commit per step, compose tests and the call lab each time.
+

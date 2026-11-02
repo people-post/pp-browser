@@ -34,7 +34,7 @@ struct CallScreen {
     WaitingForOthers,
   };
   /** What the status line explains below itself. */
-  enum class Hint { None, P2pConnect, GroupMedia };
+  enum class Hint { None, DirectConnect, GroupMedia };
 
   struct Member {
     std::string identity;
@@ -155,9 +155,9 @@ bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample);
 /** What the in-call status decision reads. */
 struct InCallSignals {
   /** The 1:1 mesh path could not be set up (the call stack's "couldn't connect"). */
-  bool p2p_connect_failed = false;
-  bool p2p_missing_mic = false;
-  bool p2p_seed_unreachable = false;
+  bool direct_connect_failed = false;
+  bool direct_missing_mic = false;
+  bool direct_seed_unreachable = false;
   /** Why the hop path is being recovered (None: it is not). */
   CallRecovery recovery = CallRecovery::None;
   /** The call is on the group (hop) path — the call's path, not the engine's packet mode (1:1 uses it too). */

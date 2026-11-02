@@ -3,20 +3,21 @@
 pp_browser_add_feature_library(pp_feature_calls
   SOURCES
     CallConnectDiag.cpp
-    CallMediaBridge.cpp
+    CallDirectPath.cpp
     CallMediaConnectCoordinator.cpp
     CallMediaDoorway.cpp
     CallHopService.cpp
     CallMediaPlane.cpp
-    CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
     CallDevice.cpp
+    CallEngine.cpp
     CallSessionManager.cpp
     CallReads.cpp
     CallStack.cpp
     LocalNetworkReaction.cpp
     CallsLoop.cpp
-    CallTopologyController.cpp
+    CallHopMediaChannel.cpp
+    CallHopPath.cpp
     CallUiBackend.cpp
     LiveCallMedia.cpp
     CallMedia.cpp

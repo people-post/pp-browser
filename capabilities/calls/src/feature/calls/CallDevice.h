@@ -25,9 +25,9 @@
 #include "common/runtime/OwnerOutbox.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
-#include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaHost.h"
-#include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallDirectPath.h"
+#include "feature/calls/CallDirectPathQueries.h"
+#include "feature/calls/CallHopPath.h"
 #include "feature/calls/CallSessionWorkflow.h"
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/SharedPorts.h"
@@ -46,7 +46,7 @@
 
 namespace pbr {
 
-class CallMediaBridge;
+class CallDirectPath;
 
 /**
  * This device's calls, the parts (V056 device level; p2p-av-calls PHASES § cm4): it owns them and wires
@@ -57,10 +57,10 @@ class CallMediaBridge;
  * intents and inbound call control go through CallSessionManager, which uses these parts. Owned by
  * CallStack; calls owner only.
  */
-class CallDevice : public Module, private CallMediaHost {
+class CallDevice : public Module, private CallDirectPathQueries {
 public:
   using RingChangedFn = std::function<void()>;
-  using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
+  using MediaRelayDeps = CallHopPath::MediaRelayDeps;
 
   CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcript, IContactBook& contacts,
              const ILocalAccount& account, ICallSessionStore& sessions, const CallReads& reads,
@@ -84,7 +84,6 @@ public:
   const MediaEngine& Engine() const { return media_; }
   /** The media seat (owned here: the calls' media arbitrate it). */
   const CallMediaSeat& Seat() const { return seat_; }
-  CallMediaSeat& SeatForTest() { return seat_; }
   /** Harnesses that seed store rows directly admit the call the way the workflow would. */
   LiveCalls& LiveCallsForTest() { return live_calls_; }
 
@@ -107,8 +106,8 @@ public:
   void SetInitiationBillingStore(IInitiationBillingBook* store);
   /** Hub teardown: drop queued follow-ups (a roster fan-out) before the store and delivery go. */
   void DropFollowUps();
-  /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
-  CallMediaHost& AsMediaHost() { return *this; }
+  /** Expose the private CallDirectPathQueries base for the 1:1 path's construction (MSVC-safe). */
+  CallDirectPathQueries& AsDirectPathQueries() { return *this; }
 
   // --- The 1:1 path's device-level deps --------------------------------------------------------
   /**
@@ -125,8 +124,6 @@ public:
   void DropDirectPath();
   /** The 1:1 path's arming / progress ports over the calls' media progress. */
   CallDirectArmingPorts DirectArmingPorts();
-  /** `call_id`'s 1:1 path if built (tests). */
-  CallMediaBridge* DirectPathForTest(const std::string& call_id);
   /** Build calls' 1:1 paths with `make` (empty: the product's); drops the paths built so far (tests). */
   void SetDirectPathFactoryForTest(CallDirectPathFactory make);
 
@@ -164,8 +161,6 @@ public:
   void KickAnswererDirectMediaIfArmed(const std::string& call_id);
   /** A failed, open call: Retry (this side dials) or resume over the peer's reconnect. */
   void RestartMedia(const std::string& call_id, bool resume);
-  /** What the direct path reports when the peer's connection for a failed call reaches us. */
-  void PeerReconnectedForTest(const std::string& call_id) { RestartMedia(call_id, true); }
 
   // --- What the device shows (the stack publishes it) ------------------------------------------
   /** The call whose accept is in flight (clicked, or being accepted); empty if none. */
@@ -178,21 +173,20 @@ public:
   bool IsAwaitingSfuRecovery() const;
   /** Why the hop path is being recovered (the screen's status line). */
   CallRecovery Recovery() const;
-  bool IsP2pConnectFailed() const;
-  bool P2pConnectMissingMic() const;
-  bool P2pConnectSeedUnreachable() const;
+  bool IsDirectConnectFailed() const;
+  bool DirectConnectMissingMic() const;
+  bool DirectConnectSeedUnreachable() const;
   bool IsDirectConnectInFlight() const;
   std::optional<std::string> TakeLastMediaError();
   /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */
   std::optional<std::string> PeekLastMediaError() const { return last_media_error_; }
   /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
   void ClearLastMediaErrorIf(const std::string& seen);
-  /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
-  std::string PeekMediaActivity() const;
+  /** The shown call's media activity line is dismissed (it lives on the call, V057 3). */
   void ClearMediaActivity();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
-  /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
+  /** 1:1 reach path from CallDirectPath (direct|punched|circuit); empty if unknown. */
   std::string MediaPathKind() const;
   CallLinkCounters MediaLinkCounters() const;
   bool IsSfuAttached() const;
@@ -203,27 +197,22 @@ private:
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                                    const std::string& display, const std::string& skip_identity);
   void SetLastMediaError(std::string message);
-  void SetMediaActivity(std::string message);
   void TopologyNoteMediaAttempted(const std::string& call_id);
   void RequestInboxSync();
-  CallTopologyController::HostPorts MakeTopologyHostPorts();
+  CallHopPath::HostPorts MakeTopologyHostPorts();
+  /** What a call's group path reported (events up): move the call's state, or act for it. */
+  void OnHopReport(const HopReport& report);
 
-  // CallMediaHost
-  Roe<std::string> P2pLocalIdentity() const override;
-  Roe<void> P2pSendDirect(const std::string& peer_identity, CallControlType type, const std::string& detail_json,
-                          const std::string& display) override;
-  void P2pNotifyRingChanged() override;
-  void P2pSetLastMediaError(std::string message) override;
-  Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
+  // CallDirectPathQueries (the 1:1 path's questions)
+  const LiveCall* LiveCallOf(const std::string& call_id) const override { return live_calls_.Find(call_id); }
+  CallMedia* CallMediaOf(const std::string& call_id) override { return call_media_.Media(call_id); }
+  Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const override;
   Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override;
   Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
                                                              const std::string& peer_id) const override;
-  void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
-  void P2pRequestInboxSync() override;
-  const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
-  CallMedia* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
-  void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
-                           const std::string& peer_id) override;
+  // What the 1:1 path reported (DirectReport)
+  void ResendMediaKey(const std::string& call_id, const std::string& peer_identity);
+  void ApplyInboundHello(const std::string& call_id, const std::string& identity, const std::string& peer_id);
 
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
@@ -235,17 +224,20 @@ private:
   void OnAnswererKeyReady(const std::string& call_id, const std::string& peer_identity);
   void BindWorkflowHostPorts();
   CallSessionWorkflow::WirePorts MakeWorkflowWirePorts();
-  CallSessionWorkflow::HopPathPorts MakeWorkflowHopPorts();
+  /** What the session workflow reported (events up). */
+  void OnWorkflowReport(const WorkflowReport& report);
   CallSessionWorkflow::ReachPorts MakeWorkflowReachPorts();
   void BindReachSignalPorts();
   CallHopArmingPorts MakeHopArmingPorts();
-  CallTopologySeatPorts MakeTopologySeatPorts();
+  CallHopPathSeatPorts MakeTopologySeatPorts();
   CallDirectSeatPorts DirectSeatPorts();
   /** The device-level 1:1 deps (V056): each call's path is built from them. */
   std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial,
+                                                   std::shared_ptr<CallEngine> engine,
                                                    std::shared_ptr<std::atomic<bool>> hop_carries_media);
   /** Each call's group path is built from the device's hop service (V056). */
   std::unique_ptr<CallHopDriver> MakeHopPath(const std::string& call_id, uint64_t serial,
+                                             std::shared_ptr<CallEngine> engine,
                                              std::shared_ptr<std::atomic<bool>> hop_carries_media);
 
   /** What the screen reads of the active call's media paths. */
@@ -254,9 +246,9 @@ private:
   /** The seat released (or was taken over): stop that call's media. */
   void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
   void RunMediaRestart(const std::string& call_id, bool resume);
-  Roe<void> RetryP2pMedia(const std::string& call_id);
+  Roe<void> RetryDirectMedia(const std::string& call_id);
   /** A failed, open call: the peer's connection reached us — restart media keeping its stream. */
-  Roe<void> ResumeP2pMedia(const std::string& call_id);
+  Roe<void> ResumeDirectMedia(const std::string& call_id);
   void RetryAnswererKick(const std::string& call_id);
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
   void MaybeCatchUpAfterCall();
@@ -307,7 +299,6 @@ private:
   std::unique_ptr<CallMediaDoorway> doorway_;
   /** What each call's 1:1 path is built from (device level, V056); empty: none attached. */
   CallDirectPathDeps direct_deps_;
-  std::string media_activity_;
 };
 
 } // namespace pbr

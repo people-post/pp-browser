@@ -1,6 +1,7 @@
 #include "feature/calls/CallSessionManager.h"
 
 #include "lib/calls/CallSessionQueries.h"
+#include "lib/calls/CallControlGate.h"
 #include "feature/calls/CallControlClient.h"
 #include "lib/calls/CallListenAddrsLogic.h"
 #include "lib/calls/CallAnswererKickLogic.h"
@@ -427,6 +428,38 @@ bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
   return true;
 }
 
+bool CallSessionManager::SenderMaySend(const CallControlType type, const std::string& detail_json,
+                                       const std::string& sender_identity) const {
+  switch (WhoMaySend(type)) {
+    case CallControlSender::Anyone:
+      if (type == CallControlType::CallInvite && !AllowsInboundCall(sender_identity)) {
+        // Silent: a decline would tell the caller we exist and are online.
+        log().info << "call invite dropped (who can call me: " << mesh::InboundAudienceName(inbound_call_audience_)
+                   << ") from=" << sender_identity;
+        return false;
+      }
+      return true;
+    case CallControlSender::OwnAccount:
+      return true; // M021 d5: HandleAnsweredElsewhere takes it from our own account only
+    case CallControlSender::OfferedOrInCall:
+      if (SenderMayJoin(detail_json, sender_identity) || SenderIsInCall(detail_json, sender_identity)) {
+        return true;
+      }
+      break;
+    case CallControlSender::InCall:
+      if (SenderIsInCall(detail_json, sender_identity)) {
+        return true;
+      }
+      break;
+    case CallControlSender::Nobody:
+      log().debug << "call control not signaling here type=" << static_cast<int>(type) << " from=" << sender_identity;
+      return false;
+  }
+  log().info << "call control dropped (sender not in the call) type=" << static_cast<int>(type)
+             << " from=" << sender_identity;
+  return false;
+}
+
 Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms) {
@@ -444,73 +477,52 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   if (!local) {
     return local.error();
   }
-  // Everything but an invite (and the stream's summary) speaks about a call the sender is in: its
-  // initiator or a current participant. A peer who declined or left it, or never was in it, does not
-  // end it, change its roster or steer its media.
-  // M021 d5: from our own account only — before the in-call gate (our own account is not a peer of the call).
-  if (*type == CallControlType::CallAnsweredElsewhere) {
-    return HandleAnsweredElsewhere(*detail, sender_identity, *local);
-  }
-  // V053: who dropped out of a group call may ask to join it, and its end reaches them too.
-  const bool from_offered = (*type == CallControlType::CallJoinRequest || *type == CallControlType::CallEnded) &&
-                            SenderMayJoin(detail_json, sender_identity);
-  if (*type != CallControlType::CallInvite && *type != CallControlType::CallSummary && !from_offered &&
-      !SenderIsInCall(detail_json, sender_identity)) {
-    log().info << "call control dropped (sender not in the call) type=" << static_cast<int>(*type)
-               << " from=" << sender_identity;
+  // V057 4: who may send this type (CallControlGate); anyone else is dropped silently.
+  if (!SenderMaySend(*type, detail_json, sender_identity)) {
     return {};
   }
-
   switch (*type) {
-  case CallControlType::CallInvite:
-    if (!AllowsInboundCall(sender_identity)) {
-      // Silent: a decline would tell the caller we exist and are online.
-      log().info << "call invite dropped (who can call me: " << mesh::InboundAudienceName(inbound_call_audience_)
-                 << ") from=" << sender_identity;
-      return {};
-    }
-    return HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms,
-                               *local);
-  case CallControlType::CallAccept:
-    return HandleInboundAccept(detail_json, sender_identity, *local);
-  case CallControlType::CallJoinRequest:
-    return workflow_.HandleInboundJoinRequest(detail_json, sender_identity, *local);
-  case CallControlType::CallDecline:
-    return HandleInboundDecline(detail_json, sender_identity);
-  case CallControlType::CallLeave:
-    return HandleInboundLeave(detail_json, sender_identity, *local);
-  case CallControlType::CallRoster:
-    return HandleInboundRoster(detail_json);
-  case CallControlType::CallMediaKey:
-    return HandleInboundMediaKey(detail_json, sender_identity);
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-    log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;
-    return {};
-  case CallControlType::CallSfuAttach:
-    return HandleInboundSfuAttach(detail_json, sender_identity);
-  case CallControlType::CallSfuAttachFailed:
-    return HandleInboundSfuAttachFailed(detail_json, sender_identity);
-  case CallControlType::CallHopRefuse:
-    return HandleInboundHopRefuse(detail_json);
-  case CallControlType::CallVideoRefresh:
-    return HandleInboundVideoRefresh(detail_json, sender_identity);
-  case CallControlType::CallCircuitR1:
-    return reach_signals_.HandleInboundCircuitR1(detail_json);
-  case CallControlType::CallCapsUpdate:
-    return reach_signals_.HandleInboundCapsUpdate(detail_json);
-  case CallControlType::CallPunchOffer:
-    return reach_signals_.HandleInboundPunchOffer(detail_json, sender_identity);
-  case CallControlType::CallPunchAnswer:
-    return reach_signals_.HandleInboundPunchAnswer(detail_json);
-  case CallControlType::CallEnded:
-    return HandleInboundEnded(detail_json, *local);
-  case CallControlType::CallSummary:
-    return {};  // history in the chat stream, not signaling
-  case CallControlType::CallAnsweredElsewhere:
-    return {};  // handled above, from our own account only
-  case CallControlType::CallConnectGiveUp:
-    return HandleInboundConnectGiveUp(detail_json, sender_identity);
+    case CallControlType::CallInvite:
+      return HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms,
+                                 *local);
+    case CallControlType::CallAccept:
+      return HandleInboundAccept(detail_json, sender_identity, *local);
+    case CallControlType::CallJoinRequest:
+      return workflow_.HandleInboundJoinRequest(detail_json, sender_identity, *local);
+    case CallControlType::CallDecline:
+      return HandleInboundDecline(detail_json, sender_identity);
+    case CallControlType::CallLeave:
+      return HandleInboundLeave(detail_json, sender_identity, *local);
+    case CallControlType::CallRoster:
+      return HandleInboundRoster(detail_json);
+    case CallControlType::CallMediaKey:
+      return HandleInboundMediaKey(detail_json, sender_identity);
+    case CallControlType::CallSfuAttach:
+      return HandleInboundSfuAttach(detail_json, sender_identity);
+    case CallControlType::CallSfuAttachFailed:
+      return HandleInboundSfuAttachFailed(detail_json, sender_identity);
+    case CallControlType::CallHopRefuse:
+      return HandleInboundHopRefuse(detail_json);
+    case CallControlType::CallVideoRefresh:
+      return HandleInboundVideoRefresh(detail_json, sender_identity);
+    case CallControlType::CallCircuitR1:
+      return reach_signals_.HandleInboundCircuitR1(detail_json);
+    case CallControlType::CallCapsUpdate:
+      return reach_signals_.HandleInboundCapsUpdate(detail_json);
+    case CallControlType::CallPunchOffer:
+      return reach_signals_.HandleInboundPunchOffer(detail_json, sender_identity);
+    case CallControlType::CallPunchAnswer:
+      return reach_signals_.HandleInboundPunchAnswer(detail_json);
+    case CallControlType::CallEnded:
+      return HandleInboundEnded(detail_json, *local);
+    case CallControlType::CallAnsweredElsewhere:
+      return HandleAnsweredElsewhere(detail_json, sender_identity, *local);
+    case CallControlType::CallSdp:
+    case CallControlType::CallIce:
+    case CallControlType::CallSummary:
+      return {}; // the gate dropped them (not signaling here)
+    case CallControlType::CallConnectGiveUp:
+      return HandleInboundConnectGiveUp(detail_json, sender_identity);
   }
   return {};
 }

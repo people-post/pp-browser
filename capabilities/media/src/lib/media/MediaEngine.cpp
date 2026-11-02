@@ -1801,7 +1801,7 @@ struct MediaEngine::Impl {
       run();
       const int64_t ms = MsSince(from);
       if (ms > kSlowStopStepMs) {
-        EngineLog().warning << "media stop slow step=" << step << " ms=" << ms << " call=" << stopping_session;
+        EngineLog().warning << "media stop slow step=" << step << " ms=" << ms << " session=" << stopping_session;
       } else {
         EngineLog().info << "media stop step=" << step << " ms=" << ms;
       }
@@ -1830,7 +1830,7 @@ struct MediaEngine::Impl {
         session_id.clear();
       }
     });
-    EngineLog().info << "media stop done call=" << stopping_session << " ms=" << MsSince(stop_from);
+    EngineLog().info << "media stop done session=" << stopping_session << " ms=" << MsSince(stop_from);
   }
 
   /** The send callback a retired session dropped, released once no thread is inside it. */

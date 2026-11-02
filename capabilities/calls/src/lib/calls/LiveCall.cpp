@@ -307,6 +307,15 @@ void LiveCalls::NoteMediaAttempted(const std::string& call_id) {
   call->progress_.media_attempted = true;
 }
 
+void LiveCalls::NoteActivity(const std::string& call_id, std::string text) {
+  LiveCall* call = Find(call_id);
+  if (!call || call->activity_ == text) {
+    return;
+  }
+  call->activity_ = std::move(text);
+  Changed();
+}
+
 bool LiveCalls::MediaAttempted(const std::string& call_id) const {
   const LiveCall* call = Find(call_id);
   return call && call->progress_.media_attempted;

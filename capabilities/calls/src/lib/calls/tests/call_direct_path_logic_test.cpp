@@ -1,4 +1,4 @@
-// The 1:1 path's decisions (CallMediaBridge runs the outcomes).
+// The 1:1 path's decisions (CallDirectPath runs the outcomes).
 #include "lib/calls/CallDirectPathLogic.h"
 
 #include <gtest/gtest.h>

@@ -3,7 +3,7 @@
 #include "lib/calls/CallHopPlan.h"
 #include "lib/people/IContactBook.h"
 #include "lib/people/MeshHopPolicy.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 
 #include <string>
 #include <vector>
@@ -22,7 +22,7 @@ class CallHopRanking {
 public:
   explicit CallHopRanking(const IContactBook& contacts) : contacts_(contacts) {}
 
-  void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
+  void SetMediaRelayDeps(const CallHopMediaRelayDeps* deps) { deps_ = deps; }
 
   std::vector<mesh::MeshHopCandidate> Ranked() const;
   /** A hop we could move to now (or we host one). */
@@ -45,7 +45,7 @@ private:
   void FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked, bool published_ma_is_dialable) const;
 
   const IContactBook& contacts_;
-  const CallTopologyMediaRelayDeps* deps_ = nullptr;
+  const CallHopMediaRelayDeps* deps_ = nullptr;
 };
 
 } // namespace pbr

@@ -55,7 +55,24 @@ struct RosterAfterRemoteAccept {
 
 using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept>;
 
-/** The hop-migrate workflow's own events (V050 group hop flows). */
+/** What the session workflow tells the device (V057 2): events on the calls owner's queue. */
+namespace workflow_report {
+
+/** What the device shows about the calls may have changed (the ring / call chrome refreshes). */
+struct Changed {};
+/** A one-shot notice for the screen ("That call has ended"). */
+struct Notice {
+  std::string message;
+};
+/** A push woke us for a call: fetch the relay inbox now. */
+struct InboxSyncFromWake {};
+
+} // namespace workflow_report
+
+using WorkflowReport =
+    std::variant<workflow_report::Changed, workflow_report::Notice, workflow_report::InboxSyncFromWake>;
+
+/** The group path's move-to-hop / attach flows' events (V050 group hop flows). */
 namespace hop_migrate_event {
 
 /** 2 s after a picked hop's fan-out: send it once more if the call is still on that hop. */
@@ -118,7 +135,7 @@ struct ProbeAnswered {
 using PlanningEvent = std::variant<planning_event::ProbeAnswered>;
 
 /** The topology controller's own events. */
-namespace topology_event {
+namespace hop_path_event {
 
 /** The media relay client's transport died (from the relay's thread); `watch` names that relay watch. */
 struct RelayTransportLost {
@@ -147,13 +164,13 @@ struct Continue {
   uint64_t id = 0;
 };
 
-} // namespace topology_event
+} // namespace hop_path_event
 
-using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_event::AttachWaitDeadline,
-                                   topology_event::ReannouncePublisher, topology_event::RefuseGuest,
-                                   topology_event::Continue, HopMigrateEvent>;
+using HopPathEvent = std::variant<hop_path_event::RelayTransportLost, hop_path_event::AttachWaitDeadline,
+                                  hop_path_event::ReannouncePublisher, hop_path_event::RefuseGuest,
+                                  hop_path_event::Continue, HopMigrateEvent>;
 
-/** The 1:1 path's (CallMediaBridge) own events. */
+/** The 1:1 path's (CallDirectPath) own events. */
 /** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
 /** The device's doorway for inbound call media (V056). */
 namespace doorway_event {
@@ -334,18 +351,82 @@ struct MediaKeyReady {
   std::string peer_identity;
 };
 
+/** What the device shows about the call may have changed (the ring / call chrome refreshes). */
+struct Changed {
+  std::string call_id;
+};
+/** A media error for the screen to show once. */
+struct MediaError {
+  std::string call_id;
+  std::string message;
+};
+/** The offerer's connect retries: send the call's current media key to `peer_identity` again. */
+struct MediaKeyResendWanted {
+  std::string call_id;
+  std::string peer_identity;
+};
+/** The answerer waits for the key: fetch the relay inbox now. */
+struct InboxSyncWanted {
+  std::string call_id;
+};
+/**
+ * An inbound hello from `identity` (account) / `peer_id` (mesh) was accepted: B30, it may stand in for
+ * a CallAccept the relay has not delivered yet.
+ */
+struct InboundHello {
+  std::string call_id;
+  std::string identity;
+  std::string peer_id;
+};
+
 } // namespace direct_report
 
 using DirectReport =
     std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
                  direct_report::ConnectFailed, direct_report::GaveUpReaching, direct_report::PeerReconnected,
-                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady>;
+                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady,
+                 direct_report::Changed, direct_report::MediaError, direct_report::MediaKeyResendWanted,
+                 direct_report::InboxSyncWanted, direct_report::InboundHello>;
 
-/** What the group (hop) path reports to the calls it serves: its planner moved. */
-struct HopReport {
+/** What a call's group (hop) path tells the device (V057 2): events on the calls owner's queue. */
+namespace hop_report {
+
+/** The path's planner moved. */
+struct Progress {
   std::string call_id;
   CallHopPlannerPhase phase = CallHopPlannerPhase::Idle;
 };
+/** What the device shows about the call may have changed (the ring / call chrome refreshes). */
+struct Changed {
+  std::string call_id;
+};
+/** A media error for the screen to show once. */
+struct MediaError {
+  std::string call_id;
+  std::string message;
+};
+/** The call's media activity line ("Switching media path…"); empty clears it. */
+struct Activity {
+  std::string call_id;
+  std::string text;
+};
+/** The path started trying media for the call. */
+struct MediaAttempted {
+  std::string call_id;
+};
+/** A guest waits for CallSfuAttach: fetch the relay inbox now. */
+struct InboxSyncWanted {
+  std::string call_id;
+};
+/** The path cannot keep the call (no hop everyone reaches, an owner gone): leave it. */
+struct LeaveWanted {
+  std::string call_id;
+};
+
+} // namespace hop_report
+
+using HopReport = std::variant<hop_report::Progress, hop_report::Changed, hop_report::MediaError, hop_report::Activity,
+                               hop_report::MediaAttempted, hop_report::InboxSyncWanted, hop_report::LeaveWanted>;
 
 namespace session_event {
 
@@ -365,7 +446,7 @@ struct FromDirectPath {
 struct ForHopPath {
   std::string call_id;
   uint64_t serial = 0;
-  TopologyEvent event;
+  HopPathEvent event;
 };
 /** A report of the group path. */
 struct FromHopPath {
@@ -375,6 +456,10 @@ struct FromHopPath {
 struct ForHopService {
   PlanningEvent event;
 };
+/** What the session workflow reported. */
+struct FromWorkflow {
+  WorkflowReport report;
+};
 /** An event of the inbound doorway `generation` (one built since drops it). */
 struct ForDoorway {
   uint64_t generation = 0;
@@ -383,9 +468,9 @@ struct ForDoorway {
 
 } // namespace session_event
 
-using SessionEvent =
-    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
-                 session_event::ForHopPath, session_event::ForDirectPath, session_event::FromDirectPath,
-                 session_event::FromHopPath, session_event::ForDoorway, session_event::ForHopService>;
+using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
+                                  session_event::ForHopPath, session_event::ForDirectPath,
+                                  session_event::FromDirectPath, session_event::FromHopPath, session_event::ForDoorway,
+                                  session_event::ForHopService, session_event::FromWorkflow>;
 
 } // namespace pbr

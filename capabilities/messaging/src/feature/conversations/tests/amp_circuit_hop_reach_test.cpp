@@ -279,7 +279,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(recording_->IsConnected(harness_->peer_id_b));
 
-  // If EnsureAssociation were called, return dial-in-backoff (poison path CallMediaBridge used to hammer).
+  // If EnsureAssociation were called, return dial-in-backoff (poison path CallDirectPath used to hammer).
   class BackoffChatPeerLinks final : public mesh::IChatPeerLinks {
   public:
     explicit BackoffChatPeerLinks(RecordingChatPeerLinks& inner) : inner_(inner) {}

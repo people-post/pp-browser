@@ -4,7 +4,7 @@
 #include "foundation/diagnostics/DiagnosticsSelfCheck.h"
 #include "foundation/diagnostics/LogFile.h"
 
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"

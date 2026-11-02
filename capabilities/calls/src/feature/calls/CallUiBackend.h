@@ -117,9 +117,9 @@ public:
   CallRecovery Recovery() const { return State()->recovery; }
   /** A hop-path recovery is in progress (not None / HopLost). */
   bool IsAwaitingSfuRecovery() const { return RecoveryInFlight(Recovery()); }
-  bool IsP2pConnectFailed() const { return State()->p2p_connect_failed; }
-  bool P2pConnectMissingMic() const { return State()->p2p_connect_missing_mic; }
-  bool P2pConnectSeedUnreachable() const { return State()->p2p_connect_seed_unreachable; }
+  bool IsDirectConnectFailed() const { return State()->direct_connect_failed; }
+  bool DirectConnectMissingMic() const { return State()->direct_connect_missing_mic; }
+  bool DirectConnectSeedUnreachable() const { return State()->direct_connect_seed_unreachable; }
   std::string PeekMediaActivity() const { return State()->media_activity; }
   CallHopHealth HopHealth() const { return State()->hop_health; }
   int64_t AloneUntilMs() const { return State()->alone_until_ms; }

@@ -1,4 +1,4 @@
-// The group path's decisions as people join a call (CallTopologyController runs the outcomes).
+// The group path's decisions as people join a call (CallHopPath runs the outcomes).
 #include "lib/calls/CallHopJoinLogic.h"
 #include "lib/calls/CallHopPlannerLogic.h"
 

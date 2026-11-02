@@ -106,7 +106,7 @@ public:
     active = true;
     active_params = params;
     if (peer_inbound) {
-      // Simulate reverse-dial landing on the peer's CallMediaBridge inbound handler.
+      // Simulate reverse-dial landing on the peer's CallDirectPath inbound handler.
       peer_inbound(params);
     }
     if (callbacks.on_connected) {

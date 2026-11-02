@@ -28,6 +28,26 @@ TEST(LiveCallsTest, InviteAcceptLeave) {
   EXPECT_EQ(calls.Active(), nullptr);
 }
 
+// V057 3: what a call's media is busy with is that call's, not the device's: another call — or the
+// same id admitted again — starts without it.
+TEST(LiveCallsTest, TheActivityLineIsTheCalls) {
+  LiveCalls calls;
+  int changes = 0;
+  calls.SetOnChanged([&]() { ++changes; });
+  calls.AdmitPlaced("call:a", {"account:bob"});
+  calls.AdmitInvited("call:b", {"account:carol"});
+  const int before = changes;
+  calls.NoteActivity("call:a", "Switching media path");
+  EXPECT_EQ(calls.Find("call:a")->Activity(), "Switching media path");
+  EXPECT_TRUE(calls.Find("call:b")->Activity().empty());
+  EXPECT_EQ(changes, before + 1) << "the screen hears of it";
+  calls.NoteActivity("call:a", "Switching media path");
+  EXPECT_EQ(changes, before + 1) << "the same line again is no change";
+  calls.Close("call:a", LiveCallEndReason::LocalLeave);
+  calls.AdmitPlaced("call:a", {"account:bob"});
+  EXPECT_TRUE(calls.Find("call:a")->Activity().empty()) << "a re-admitted call starts without the old line";
+}
+
 TEST(LiveCallsTest, AFailedAcceptRingsAgain) {
   LiveCalls calls;
   calls.AdmitInvited("call:1", {"account:alice"});

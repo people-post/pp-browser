@@ -62,7 +62,7 @@ private:
 
 /** Every call's 1:1 path forwards to `target`. */
 inline CallDirectPathFactory ForwardTo(CallDirectDriver& target) {
-  return [&target](const std::string&, uint64_t, std::shared_ptr<std::atomic<bool>>) {
+  return [&target](const std::string&, uint64_t, std::shared_ptr<CallEngine>, std::shared_ptr<std::atomic<bool>>) {
     return std::make_unique<ForwardingDirectDriver>(target);
   };
 }
@@ -77,7 +77,7 @@ struct NullHopDriver : CallHopDriver {
   void BeginSfuAttachWait(const std::string&) override {}
   void OnMediaStopped(const std::string&) override {}
   void RefreshAdaptation(const std::string&, bool) override {}
-  void Handle(TopologyEvent&) override {}
+  void Handle(HopPathEvent&) override {}
   void OnMediaKeyInstalled(const std::string&) override {}
   void OnJoinedCountObserved(const std::string&, size_t) override {}
   void ClearSfuAttachWait() override {}
@@ -118,7 +118,7 @@ private:
 
 /** Every call's group path forwards to `target`. */
 inline CallHopPathFactory ForwardHopTo(CallHopDriver& target) {
-  return [&target](const std::string&, uint64_t, std::shared_ptr<std::atomic<bool>>) {
+  return [&target](const std::string&, uint64_t, std::shared_ptr<CallEngine>, std::shared_ptr<std::atomic<bool>>) {
     return std::make_unique<ForwardingHopDriver>(target);
   };
 }

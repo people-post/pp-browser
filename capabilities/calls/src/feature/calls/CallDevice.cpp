@@ -81,7 +81,7 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
                      const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
       billing_(account),
       reach_signals_(control_),
-      workflow_(threads, sessions, reads, key_exchange_, billing_, live_calls_, call_media_),
+      workflow_(threads, sessions, reads, hop_service_, key_exchange_, billing_, live_calls_, call_media_),
       peer_accounts_(contacts) {
   redirectLogger("CallDevice");
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
@@ -93,19 +93,19 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
     }
   });
   BindSeat();
-  call_media_.BindHopPathFactory(
-      [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
-        return MakeHopPath(call_id, serial, std::move(carries));
-      });
+  call_media_.BindHopPathFactory([this](const std::string& call_id, const uint64_t serial,
+                                        std::shared_ptr<CallEngine> engine,
+                                        std::shared_ptr<std::atomic<bool>> carries) {
+    return MakeHopPath(call_id, serial, std::move(engine), std::move(carries));
+  });
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
   BindWorkflowHostPorts();
   BindReachSignalPorts();
 }
 
-CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts() {
-  CallTopologyController::HostPorts ports;
+CallHopPath::HostPorts CallDevice::MakeTopologyHostPorts() {
+  CallHopPath::HostPorts ports;
   ports.local_relay_identity = [this]() { return LocalIdentity(); };
-  ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
   ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
@@ -113,13 +113,32 @@ CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts() {
   };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display) { return SendDirect(peer, type, detail, display); };
-  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
-  ports.set_last_media_error = [this](std::string message) { SetLastMediaError(std::move(message)); };
-  ports.set_media_activity = [this](std::string message) { SetMediaActivity(std::move(message)); };
-  ports.clear_media_activity = [this]() { ClearMediaActivity(); };
-  ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
-  ports.request_inbox_sync = [this]() { RequestInboxSync(); };
   return ports;
+}
+
+void CallDevice::OnHopReport(const HopReport& report) {
+  std::visit(
+      [this](const auto& r) {
+        using R = std::decay_t<decltype(r)>;
+        if constexpr (std::is_same_v<R, hop_report::Progress>) {
+          live_calls_.ReportHopProgress(r.call_id, r.phase);
+        } else if constexpr (std::is_same_v<R, hop_report::Changed>) {
+          NotifyRingChanged();
+        } else if constexpr (std::is_same_v<R, hop_report::MediaError>) {
+          SetLastMediaError(r.message);
+        } else if constexpr (std::is_same_v<R, hop_report::Activity>) {
+          live_calls_.NoteActivity(r.call_id, r.text);
+        } else if constexpr (std::is_same_v<R, hop_report::MediaAttempted>) {
+          TopologyNoteMediaAttempted(r.call_id);
+        } else if constexpr (std::is_same_v<R, hop_report::InboxSyncWanted>) {
+          RequestInboxSync();
+        } else if constexpr (std::is_same_v<R, hop_report::LeaveWanted>) {
+          (void)TopologyLeaveCall(r.call_id);
+        } else {
+          static_assert(!sizeof(R), "take every HopReport");
+        }
+      },
+      report);
 }
 
 void CallDevice::BindWorkflowHostPorts() {
@@ -128,7 +147,6 @@ void CallDevice::BindWorkflowHostPorts() {
   ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
     ScheduleStartDirectMedia(call_id, peer, offerer);
   };
-  ports.hop = MakeWorkflowHopPorts();
   ports.reach = MakeWorkflowReachPorts();
   workflow_.SetHostPorts(std::move(ports));
 }
@@ -136,7 +154,6 @@ void CallDevice::BindWorkflowHostPorts() {
 CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   CallSessionWorkflow::WirePorts ports;
   ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
-  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display) { return control_.SendDirect(peer, type, detail, display); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
@@ -168,60 +185,27 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.group_members = delivery_.group_members;
-  ports.clear_media_activity = [this]() { ClearMediaActivity(); };
-  ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
-  ports.sync_inbox_from_wake = [this]() {
-    if (delivery_.sync_inbox_from_wake) {
-      delivery_.sync_inbox_from_wake(true);
-    }
-  };
   return ports;
 }
 
-CallSessionWorkflow::HopPathPorts CallDevice::MakeWorkflowHopPorts() {
-  CallSessionWorkflow::HopPathPorts ports;
-  ports.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
-    if (CallMedia* call = call_media_.Media(call_id)) {
-      call->OnJoinedCountObserved(n);
-    }
-  };
-  ports.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
-    return hop_service_.Planning().Plan(invitees, local);
-  };
-  ports.probe_invite_hops = [this](const std::string& call_id) { hop_service_.Planning().ProbeInvite(call_id); };
-  ports.hop_report_for_accept = [this](const std::string& call_id) {
-    return hop_service_.Planning().ReportForAccept(call_id);
-  };
-  ports.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
-                                        const CallHopReport& report) {
-    hop_service_.Planning().NoteAcceptReport(call_id, identity, report);
-  };
-  ports.clear_sfu_attach_wait = [this](const std::string& call_id) {
-    if (CallMedia* call = call_media_.Find(call_id)) {
-      call->ClearSfuAttachWait();
-    }
-  };
-  ports.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
-                                       const std::string& sender) -> Roe<void> {
-    CallMedia* call = call_media_.Media(call_id);
-    return call ? call->OnInboundSfuAttach(d, sender) : Roe<void>(Error("no live call for the attach"));
-  };
-  ports.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
-    if (CallMedia* call = call_media_.Find(d.call_id)) {
-      call->OnInboundSfuAttachFailed(d);
-    }
-  };
-  ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) {
-    if (CallMedia* call = call_media_.Find(d.call_id)) {
-      call->OnInboundHopRefuse(d);
-    }
-  };
-  ports.is_on_sfu_for_call = [this](const std::string& call_id) {
-    CallMedia* call = call_media_.Find(call_id);
-    return call && call->IsOnHop();
-  };
-  ports.has_media_relay_hop_candidates = [this]() { return hop_service_.Ranking().HasCandidates(); };
-  return ports;
+void CallDevice::OnWorkflowReport(const WorkflowReport& report) {
+  std::visit(
+      [this](const auto& r) {
+        using R = std::decay_t<decltype(r)>;
+        if constexpr (std::is_same_v<R, workflow_report::Changed>) {
+          NotifyRingChanged();
+        } else if constexpr (std::is_same_v<R, workflow_report::Notice>) {
+          last_error_ = r.message;
+          NotifyCallStateChanged();
+        } else if constexpr (std::is_same_v<R, workflow_report::InboxSyncFromWake>) {
+          if (delivery_.sync_inbox_from_wake) {
+            delivery_.sync_inbox_from_wake(true);
+          }
+        } else {
+          static_assert(!sizeof(R), "take every WorkflowReport");
+        }
+      },
+      report);
 }
 
 CallSessionWorkflow::ReachPorts CallDevice::MakeWorkflowReachPorts() {
@@ -298,7 +282,7 @@ void CallDevice::BindReachSignalPorts() {
     return **peer;
   };
   ports.local_identity = [this]() -> std::string {
-    auto local = P2pLocalIdentity();
+    auto local = LocalIdentity();
     return local ? *local : std::string{};
   };
   ports.local_caps = [this]() -> std::optional<CallPeerCaps> {
@@ -367,7 +351,7 @@ void CallDevice::RestartMedia(const std::string& call_id_arg, const bool resume)
 
 void CallDevice::RunMediaRestart(const std::string& call_id, const bool resume) {
   const char* what = resume ? "PeerReconnected" : "RetryClicked";
-  const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
+  const Roe<void> restarted = resume ? ResumeDirectMedia(call_id) : RetryDirectMedia(call_id);
   if (!restarted) {
     log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
     // Back to Failed only while the call is still open and not live again (a duplicate restart
@@ -396,6 +380,8 @@ void CallDevice::RetryAnswererKick(const std::string& call_id) {
 void CallDevice::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
+  workflow_.SetReports(outbox_.For<WorkflowReport>(
+      [](WorkflowReport report) { return SessionEvent{session_event::FromWorkflow{std::move(report)}}; }));
   hop_service_.SetOutbox(outbox_.For<PlanningEvent>(
       [](PlanningEvent event) { return SessionEvent{session_event::ForHopService{std::move(event)}}; }));
 }
@@ -429,7 +415,9 @@ void CallDevice::Handle(SessionEvent& event) {
             doorway_->Handle(e.event);
           }
         } else if constexpr (std::is_same_v<E, session_event::FromHopPath>) {
-          live_calls_.ReportHopProgress(e.report.call_id, e.report.phase);
+          OnHopReport(e.report);
+        } else if constexpr (std::is_same_v<E, session_event::FromWorkflow>) {
+          OnWorkflowReport(e.report);
         } else {
           static_assert(!sizeof(E), "route every SessionEvent");
         }
@@ -459,6 +447,16 @@ void CallDevice::OnDirectReport(const DirectReport& report) {
           live_calls_.NoteMediaDeferred(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
           OnAnswererKeyReady(r.call_id, r.peer_identity);
+        } else if constexpr (std::is_same_v<R, direct_report::Changed>) {
+          NotifyRingChanged();
+        } else if constexpr (std::is_same_v<R, direct_report::MediaError>) {
+          SetLastMediaError(r.message);
+        } else if constexpr (std::is_same_v<R, direct_report::MediaKeyResendWanted>) {
+          ResendMediaKey(r.call_id, r.peer_identity);
+        } else if constexpr (std::is_same_v<R, direct_report::InboxSyncWanted>) {
+          RequestInboxSync();
+        } else if constexpr (std::is_same_v<R, direct_report::InboundHello>) {
+          ApplyInboundHello(r.call_id, r.identity, r.peer_id);
         } else {
           static_assert(!sizeof(R), "take every DirectReport");
         }
@@ -546,19 +544,21 @@ void CallDevice::AttachDirectPath(CallDirectPathDeps deps) {
     call_media_.ForEachDirectPath([&deps](CallDirectDriver& path) { path.AttachReach(deps); });
   }
   direct_deps_ = std::move(deps);
-  call_media_.BindDirectPathFactory(
-      [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
-        return MakeDirectPath(call_id, serial, std::move(carries));
-      });
+  call_media_.BindDirectPathFactory([this](const std::string& call_id, const uint64_t serial,
+                                           std::shared_ptr<CallEngine> engine,
+                                           std::shared_ptr<std::atomic<bool>> carries) {
+    return MakeDirectPath(call_id, serial, std::move(engine), std::move(carries));
+  });
 }
 
 std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& call_id, const uint64_t serial,
+                                                             std::shared_ptr<CallEngine> engine,
                                                              std::shared_ptr<std::atomic<bool>> hop_carries_media) {
   if (!direct_deps_.IsUsable()) {
     return nullptr;
   }
-  auto path = std::make_unique<CallMediaBridge>(call_id, AsMediaHost(), sessions_, media_keys_, media_,
-                                                *direct_deps_.transport, direct_deps_.Reach());
+  auto path = std::make_unique<CallDirectPath>(call_id, AsDirectPathQueries(), sessions_, media_keys_,
+                                               std::move(engine), *direct_deps_.transport, direct_deps_.Reach());
   path->SetOutbox(outbox_.For<DirectPathEvent>([call_id, serial](DirectPathEvent event) {
     return SessionEvent{session_event::ForDirectPath{call_id, serial, std::move(event)}};
   }));
@@ -573,10 +573,11 @@ std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& 
 }
 
 std::unique_ptr<CallHopDriver> CallDevice::MakeHopPath(const std::string& call_id, const uint64_t serial,
+                                                       std::shared_ptr<CallEngine> engine,
                                                        std::shared_ptr<std::atomic<bool>> hop_carries_media) {
-  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, workflow_, contacts_, media_, hop_service_);
+  auto path = std::make_unique<CallHopPath>(call_id, sessions_, workflow_, contacts_, std::move(engine), hop_service_);
   path->SetCarriesMediaFlag(std::move(hop_carries_media));
-  path->SetOutbox(outbox_.For<TopologyEvent>([call_id, serial](TopologyEvent event) {
+  path->SetOutbox(outbox_.For<HopPathEvent>([call_id, serial](HopPathEvent event) {
     return SessionEvent{session_event::ForHopPath{call_id, serial, std::move(event)}};
   }));
   path->SetReports(outbox_.For<HopReport>(
@@ -595,20 +596,16 @@ CallMedia::View CallDevice::ActivePathsView() const {
   return call ? call->PathsView() : CallMedia::View{};
 }
 
-CallMediaBridge* CallDevice::DirectPathForTest(const std::string& call_id) {
-  CallMedia* call = call_media_.Find(call_id);
-  return call ? dynamic_cast<CallMediaBridge*>(call->DirectIfBuilt()) : nullptr;
-}
-
 void CallDevice::SetDirectPathFactoryForTest(CallDirectPathFactory make) {
   call_media_.DropDirectPaths();
   if (make) {
     call_media_.BindDirectPathFactory(std::move(make));
   } else if (direct_deps_.IsUsable()) {
-    call_media_.BindDirectPathFactory(
-        [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
-          return MakeDirectPath(call_id, serial, std::move(carries));
-        });
+    call_media_.BindDirectPathFactory([this](const std::string& call_id, const uint64_t serial,
+                                             std::shared_ptr<CallEngine> engine,
+                                             std::shared_ptr<std::atomic<bool>> carries) {
+      return MakeDirectPath(call_id, serial, std::move(engine), std::move(carries));
+    });
   } else {
     call_media_.BindDirectPathFactory({});
   }
@@ -692,8 +689,8 @@ CallDirectSeatPorts CallDevice::DirectSeatPorts() {
   return ports;
 }
 
-CallTopologySeatPorts CallDevice::MakeTopologySeatPorts() {
-  CallTopologySeatPorts ports;
+CallHopPathSeatPorts CallDevice::MakeTopologySeatPorts() {
+  CallHopPathSeatPorts ports;
   CallMediaSeat* seat = &seat_;
   ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
   ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
@@ -884,19 +881,19 @@ CallRecovery CallDevice::Recovery() const {
   return ActivePathsView().recovery;
 }
 
-bool CallDevice::IsP2pConnectFailed() const {
+bool CallDevice::IsDirectConnectFailed() const {
   return ActivePathsView().direct.connect_failed;
 }
 
-bool CallDevice::P2pConnectMissingMic() const {
+bool CallDevice::DirectConnectMissingMic() const {
   return ActivePathsView().direct.missing_mic;
 }
 
-bool CallDevice::P2pConnectSeedUnreachable() const {
+bool CallDevice::DirectConnectSeedUnreachable() const {
   return ActivePathsView().direct.seed_unreachable;
 }
 
-Roe<void> CallDevice::RetryP2pMedia(const std::string& call_id) {
+Roe<void> CallDevice::RetryDirectMedia(const std::string& call_id) {
   CallMedia* call_media = call_media_.Media(call_id);
   if (call_media && live_calls_.MediaAttempted(call_id)) {
     return call_media->Retry();
@@ -904,7 +901,7 @@ Roe<void> CallDevice::RetryP2pMedia(const std::string& call_id) {
   return Error("Call media retry unavailable");
 }
 
-Roe<void> CallDevice::ResumeP2pMedia(const std::string& call_id) {
+Roe<void> CallDevice::ResumeDirectMedia(const std::string& call_id) {
   CallMedia* call_media = call_media_.Media(call_id);
   return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }
@@ -955,16 +952,10 @@ void CallDevice::SetLastMediaError(std::string message) {
   last_media_error_ = std::move(message);
 }
 
-void CallDevice::SetMediaActivity(std::string message) {
-  media_activity_ = std::move(message);
-}
-
-std::string CallDevice::PeekMediaActivity() const {
-  return media_activity_;
-}
-
 void CallDevice::ClearMediaActivity() {
-  media_activity_.clear();
+  if (const LiveCall* shown = live_calls_.Shown()) {
+    live_calls_.NoteActivity(shown->Id(), {});
+  }
 }
 
 void CallDevice::TopologyNoteMediaAttempted(const std::string& call_id) {
@@ -977,24 +968,7 @@ void CallDevice::RequestInboxSync() {
   }
 }
 
-Roe<std::string> CallDevice::P2pLocalIdentity() const {
-  return LocalIdentity();
-}
-
-Roe<void> CallDevice::P2pSendDirect(const std::string& peer_identity, CallControlType type,
-                                    const std::string& detail_json, const std::string& display) {
-  return SendDirect(peer_identity, type, detail_json, display);
-}
-
-void CallDevice::P2pNotifyRingChanged() {
-  NotifyRingChanged();
-}
-
-void CallDevice::P2pSetLastMediaError(std::string message) {
-  SetLastMediaError(std::move(message));
-}
-
-Roe<std::optional<std::string>> CallDevice::P2pPeerIdentityForCall(const std::string& call_id) const {
+Roe<std::optional<std::string>> CallDevice::PeerIdentityForCall(const std::string& call_id) const {
   return reads_.PeerIdentityForCall(call_id);
 }
 
@@ -1018,7 +992,7 @@ Roe<std::optional<std::string>> CallDevice::RelayIdentityForMeshPeerId(const std
   return peer_accounts_.AccountForPeerId(peer_id, participants);
 }
 
-void CallDevice::P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) {
+void CallDevice::ResendMediaKey(const std::string& call_id, const std::string& peer_identity) {
   if (call_id.empty() || peer_identity.empty()) {
     return;
   }
@@ -1029,8 +1003,8 @@ void CallDevice::P2pResendMediaKey(const std::string& call_id, const std::string
   (void)key_exchange_.SendCurrent(call_id, peer_identity);
 }
 
-void CallDevice::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
-                                     const std::string& peer_id) {
+void CallDevice::ApplyInboundHello(const std::string& call_id, const std::string& identity,
+                                   const std::string& peer_id) {
   auto local = control_.LocalRelayIdentity();
   if (!local) {
     return;
@@ -1038,10 +1012,6 @@ void CallDevice::P2pNoteInboundHello(const std::string& call_id, const std::stri
   if (auto applied = workflow_.ApplyImplicitAccept(call_id, identity, peer_id, *local); !applied) {
     log().warning << "implicit accept failed call_id=" << call_id << " err=" << applied.error().message;
   }
-}
-
-void CallDevice::P2pRequestInboxSync() {
-  RequestInboxSync();
 }
 
 } // namespace pbr

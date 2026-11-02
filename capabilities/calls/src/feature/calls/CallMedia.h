@@ -3,6 +3,7 @@
 #include "lib/media/MediaEngine.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallHopDriver.h"
+#include "feature/calls/CallEngine.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaSeat.h"
 
@@ -18,13 +19,16 @@
 namespace pbr {
 
 /**
- * Builds one call's 1:1 / group path (V056); `serial` names that path in its events, `hop_carries_media`
- * is the call's flag the hop path writes and the 1:1 path reads on I/O.
+ * Builds one call's 1:1 / group path (V056); `serial` names that path in its events, `engine` is the
+ * call's handle on the media engine (V057: the path's only way to it), `hop_carries_media` is the
+ * call's flag the hop path writes and the 1:1 path reads on I/O.
  */
 using CallDirectPathFactory = std::function<std::unique_ptr<CallDirectDriver>(
-    const std::string& call_id, uint64_t serial, std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
+    const std::string& call_id, uint64_t serial, std::shared_ptr<CallEngine> engine,
+    std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
 using CallHopPathFactory = std::function<std::unique_ptr<CallHopDriver>(
-    const std::string& call_id, uint64_t serial, std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
+    const std::string& call_id, uint64_t serial, std::shared_ptr<CallEngine> engine,
+    std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
 
 /** What every call's media drives: the one engine, the seat, and how its paths are made. */
 struct CallMediaResources {
@@ -41,7 +45,7 @@ struct CallMediaResources {
 
 /**
  * One call's media (V056, call level): this call's use of the one media engine and the seat, and
- * the call's paths — it builds and owns its 1:1 path (CallMediaBridge) and its group path (hop
+ * the call's paths — it builds and owns its 1:1 path (CallDirectPath) and its group path (hop
  * topology + migrate), both naming this call. Owned by LiveCallMedia for one admission of the call.
  * The session manager and the device reach a path only through this object; the paths start and stop the engine
  * through it. Direct → Hop is a hand-off: both paths live until the hop is heard. Calls owner only.
@@ -131,7 +135,7 @@ public:
   void StopMedia();
   /** A path's own event: run if `serial` is still that path. */
   void HandleDirectEvent(uint64_t serial, DirectPathEvent& event);
-  void HandleHopEvent(uint64_t serial, TopologyEvent& event);
+  void HandleHopEvent(uint64_t serial, HopPathEvent& event);
   /** A report from 1:1 path `serial` is still this call's current path's. */
   bool IsDirectPath(uint64_t serial) const { return serial != 0 && serial == direct_serial_; }
 
@@ -170,10 +174,12 @@ public:
   Roe<void> ResumeFromInbound();
 
 private:
-  MediaEngine& Engine() const { return *resources_.engine; }
+  MediaEngine& Engine() const { return engine_->Engine(); }
 
   std::string call_id_;
   CallMediaResources& resources_;
+  /** This call's handle on the engine, lent to its paths (V057). */
+  std::shared_ptr<CallEngine> engine_;
   /** The hop carries this call's media: the hop path writes it, the 1:1 path reads it on I/O. */
   std::shared_ptr<std::atomic<bool>> hop_carries_media_ = std::make_shared<std::atomic<bool>>(false);
   /** Destroyed hop first (it releases the call's media hop), then the 1:1 path. */

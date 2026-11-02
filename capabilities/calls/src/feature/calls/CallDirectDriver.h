@@ -28,7 +28,7 @@ struct CallDirectPathStatus {
 };
 
 /**
- * One call's 1:1 direct media path (V056: built for that call by its media session; CallMediaBridge
+ * One call's 1:1 direct media path (V056: built for that call by its media session; CallDirectPath
  * implements it). The session decides; the path runs. Calls owner.
  */
 class CallDirectDriver {

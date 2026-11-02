@@ -3,7 +3,7 @@
 #include "feature/calls/CallHopPlanning.h"
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "lib/calls/ICallSessionReader.h"
 #include "lib/people/IContactBook.h"
 #include "common/runtime/OwnerOutbox.h"
@@ -25,8 +25,8 @@ public:
   CallHopService& operator=(const CallHopService&) = delete;
 
   /** The mesh's relay client and hop discovery (rebound on mesh start / stop; hop paths re-read it). */
-  void SetMediaRelayDeps(CallTopologyMediaRelayDeps deps) { relay_deps_ = std::move(deps); }
-  const CallTopologyMediaRelayDeps& RelayDeps() const { return relay_deps_; }
+  void SetMediaRelayDeps(CallHopMediaRelayDeps deps) { relay_deps_ = std::move(deps); }
+  const CallHopMediaRelayDeps& RelayDeps() const { return relay_deps_; }
 
   CallHopRanking& Ranking() { return ranking_; }
   const CallHopRanking& Ranking() const { return ranking_; }
@@ -37,7 +37,7 @@ public:
   void Handle(PlanningEvent& event) { planning_.Handle(event); }
 
 private:
-  CallTopologyMediaRelayDeps relay_deps_;
+  CallHopMediaRelayDeps relay_deps_;
   CallHopRanking ranking_;
   CallHopPlanning planning_;
 };
