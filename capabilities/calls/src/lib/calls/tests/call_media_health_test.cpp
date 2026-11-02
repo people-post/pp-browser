@@ -9,7 +9,6 @@ CallMediaHealthInput BaseHealthyInput(int64_t now_ms = 10'000) {
   CallMediaHealthInput in;
   in.now_ms = now_ms;
   in.engine.active = true;
-  in.engine.connected = true;
   in.engine.rx_audio_frames = 100;
   in.engine.tx_audio_frames = 100;
   in.engine.last_rx_audio_ms = now_ms - 100;
@@ -237,7 +236,6 @@ TEST(CallMediaHealthTest, LinkHealthResendRateIsCappedAtEveryPacket) {
 TEST(CallMediaHealthTest, LinkHealthInformsButDoesNotGrade) {
   CallMediaHealthInput in;
   in.engine.active = true;
-  in.engine.connected = true;
   in.now_ms = 10000;
   in.engine.last_rx_audio_ms = 9900;
   in.engine.last_tx_audio_ms = 9900;

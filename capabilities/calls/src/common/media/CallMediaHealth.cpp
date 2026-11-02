@@ -57,14 +57,14 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   const bool tx_alive =
       !tx_expected || (in.engine.tx_audio_frames > 0 && tx_age < 1500);
 
-  if (in.reconnecting || (!in.engine.connected && in.engine.active)) {
+  if (in.reconnecting) {
     out.quality = CallPathQuality::Reconnecting;
     out.quality_bars = 1;
-  } else if (in.engine.active && in.engine.connected && !rx_alive && tx_alive) {
+  } else if (in.engine.active && !rx_alive && tx_alive) {
     out.quality = CallPathQuality::NoAudio;
     out.asymmetry = CallAudioAsymmetry::SendingOnly;
     out.quality_bars = 0;
-  } else if (in.engine.active && in.engine.connected && rx_alive && !tx_alive && tx_expected) {
+  } else if (in.engine.active && rx_alive && !tx_alive && tx_expected) {
     out.quality = CallPathQuality::Poor;
     out.asymmetry = CallAudioAsymmetry::ReceivingOnly;
     out.quality_bars = 1;

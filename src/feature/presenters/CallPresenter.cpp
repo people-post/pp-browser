@@ -300,7 +300,6 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   signals.media_chrome_live = backend.MediaChromeLive();
   signals.media_status = backend.MediaStatus();
   signals.media_active = backend.Media().IsActive();
-  signals.connection_state = backend.Media().ConnectionState();
   signals.activity = backend.PeekMediaActivity();
   const int64_t live_since_ms = backend.LiveSinceMs(call_id);
   signals.was_connected = live_since_ms > 0;
@@ -318,8 +317,6 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.hint_seed_unreachable = signals.p2p_seed_unreachable;
   if (decided.status == CallScreen::Status::Activity) {
     s.activity = signals.activity;
-  } else if (decided.status == CallScreen::Status::Raw) {
-    s.raw_state = signals.connection_state;
   }
   if (const int64_t alone_until = backend.AloneUntilMs(); s.group && alone_until > 0) {
     // V053: everyone else left; the line counts down to this device leaving by itself.

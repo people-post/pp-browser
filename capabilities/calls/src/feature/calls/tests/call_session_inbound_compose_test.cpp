@@ -1627,11 +1627,9 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
 // old rebind-in-place could call an empty port (bad_function_call) or destroy a running one (TSan).
 TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
   CallDirectMediaPorts ports;
-  std::atomic<int> polls{0};
   ports.media_path_kind = []() { return std::string("direct"); };
   ports.is_connect_failed = []() { return false; };
   ports.connect_missing_mic = []() { return false; };
-  ports.poll_connect_health = [&polls]() { polls.fetch_add(1); };
   ports.media_attempted = [](const std::string&) { return false; };
   std::atomic<bool> stop{false};
   std::thread swapper([&]() {
@@ -1645,7 +1643,6 @@ TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
     (void)csm_->IsP2pConnectFailed();
     (void)csm_->P2pConnectMissingMic();
     (void)csm_->MediaAttemptedThisProcess("call:swap");
-    csm_->PollP2pConnectHealth();
   }
   stop.store(true);
   swapper.join();

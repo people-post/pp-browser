@@ -706,7 +706,6 @@ CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
   ports.connect_seed_unreachable = [bridge]() {
     return bridge->IsMeshConnectFailed() && bridge->MeshConnectSeedUnreachable();
   };
-  ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
   ports.media_attempted = [bridge](const std::string& call_id) { return bridge->MediaAttempted(call_id); };
   ports.note_media_attempted = [bridge](const std::string& call_id) { bridge->NoteMediaAttempted(call_id); };
   ports.on_media_key_ready = [bridge](const std::string& call_id) { bridge->OnMediaKeyReady(call_id); };
@@ -1246,13 +1245,6 @@ bool CallSessionManager::P2pConnectMissingMic() const {
 bool CallSessionManager::P2pConnectSeedUnreachable() const {
   const auto direct_media = direct_media_.Get();
   return direct_media->connect_seed_unreachable && direct_media->connect_seed_unreachable();
-}
-
-void CallSessionManager::PollP2pConnectHealth() {
-  const auto direct_media = direct_media_.Get();
-  if (direct_media->poll_connect_health) {
-    direct_media->poll_connect_health();
-  }
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {

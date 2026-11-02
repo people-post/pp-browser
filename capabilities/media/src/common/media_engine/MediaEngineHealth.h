@@ -21,7 +21,6 @@ struct MediaStreamHealth {
 
 struct MediaEngineHealth {
   bool active = false;
-  bool connected = false;
   bool sfu_mode = false;
   bool muted = false;
   /** False when mic open failed / absent — silence may still be sent; not a TX fault. */

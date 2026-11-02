@@ -199,8 +199,6 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
  */
 struct MediaEngine::Shared {
   std::mutex mu;
-  /** Under `mu`; a retired session never calls it. */
-  StateChangedFn on_state_changed;
   /** Under `mu`; a session takes a copy when it starts. */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
@@ -218,11 +216,6 @@ struct MediaEngine::Shared {
   std::atomic<uint8_t> video_level{mesh::kDefaultVideoLevel};
   /** Set by SetVideoLevel: the level's profile sizes the encode and sets its bitrate (broadcast). */
   std::atomic<bool> video_level_profile{false};
-
-  StateChangedFn StateCallback() {
-    std::lock_guard lock(mu);
-    return on_state_changed;
-  }
 };
 
 /** Sessions that retired and still clean up (join their threads, release devices) on their own threads. */
@@ -469,24 +462,6 @@ struct MediaEngine::Impl {
     if (state == "failed" || state == "closed") {
       ClearRemoteVideoFrames();
     }
-  }
-
-  void EmitStateChanged(const std::string& state) {
-    if (retired.load(std::memory_order_acquire)) {
-      return; // the engine's callback belongs to the session after this one
-    }
-    if (StateChangedFn cb = shared->StateCallback()) {
-      cb(state);
-    }
-  }
-
-  /** External threads: apply under lock, then notify outside the lock. */
-  void SetState(const std::string& state) {
-    {
-      std::lock_guard lock(mutex);
-      ApplyStateLocked(state);
-    }
-    EmitStateChanged(state);
   }
 
   void PublishLocalPreview(const VideoFrameRgba& frame) {
@@ -1967,11 +1942,6 @@ bool MediaEngine::WaitForRetiredSessions(const std::chrono::milliseconds budget)
   return retirements_->cv.wait_for(lock, budget, [this]() { return retirements_->running == 0; });
 }
 
-void MediaEngine::SetOnStateChanged(StateChangedFn callback) {
-  std::lock_guard lock(shared_->mu);
-  shared_->on_state_changed = std::move(callback);
-}
-
 void MediaEngine::SetHardwareLimits(const HardwareLimits& limits) {
   {
     std::lock_guard lock(shared_->mu);
@@ -2068,7 +2038,6 @@ Roe<void> MediaEngine::Start(const std::string& call_id, const SessionSpec spec,
       impl->StartPlayoutLoop();
     }
   }
-  impl->EmitStateChanged("connected");
   return {};
 }
 
@@ -2177,7 +2146,6 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   // Started and not stopped — also while running without an audio device (RX muted, device still
   // opening); a stopped engine's counters are not the call's.
   h.engine_running = h.active;
-  h.connected = impl->connected.load(std::memory_order_relaxed);
   h.muted = impl->muted.load(std::memory_order_relaxed);
   h.path_pressure = impl->path_pressure.load(std::memory_order_relaxed);
   h.opus_target_bps = impl->adaptation_target_audio_bps.load(std::memory_order_relaxed);
@@ -2230,11 +2198,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
 void MediaEngine::Stop() {
   // The session's threads and devices are released on its own thread (FinishRetired): a stop never
   // waits on hardware, so the calls owner going on with the next invite cannot be held by it (#452).
-  if (Retire(ReplaceSession())) {
-    if (StateChangedFn cb = shared_->StateCallback()) {
-      cb("closed");
-    }
-  }
+  (void)Retire(ReplaceSession());
 }
 
 void MediaEngine::SetMuted(bool muted) {
@@ -2481,31 +2445,10 @@ bool MediaEngine::IsActive() const {
   return impl->active.load();
 }
 
-bool MediaEngine::IsConnected() const {
-  const std::shared_ptr<Impl> impl = Session();
-  return impl->connected.load();
-}
-
-void MediaEngine::SetConnectionState(const std::string& state) {
-  const std::shared_ptr<Impl> impl = Session();
-  impl->SetState(state);
-}
-
 std::string MediaEngine::ActiveCallId() const {
   const std::shared_ptr<Impl> impl = Session();
   Impl::TimedGetterLock lock(*impl, "ActiveCallId");
   return impl->call_id;
-}
-
-std::string MediaEngine::ConnectionState() const {
-  const std::shared_ptr<Impl> impl = Session();
-  Impl::TimedGetterLock lock(*impl, "ConnectionState");
-  return impl->connection_state;
-}
-
-int64_t MediaEngine::ConnectedAtMs() const {
-  const std::shared_ptr<Impl> impl = Session();
-  return impl->connected_at_ms.load(std::memory_order_relaxed);
 }
 
 int64_t MediaEngine::StartedAtMs() const {

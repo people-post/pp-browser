@@ -33,8 +33,6 @@ namespace pbr {
  */
 class MediaEngine : public Module, public IMediaView {
 public:
-  using StateChangedFn = std::function<void(const std::string& state)>;
-
   /**
    * How long hardware may take before the engine stops waiting for it (L016). The defaults suit a
    * product; tests shorten them. Set before Start.
@@ -51,7 +49,6 @@ public:
   explicit MediaEngine(MediaDeviceArbiter& devices);
   ~MediaEngine() override;
 
-  void SetOnStateChanged(StateChangedFn callback);
   void SetHardwareLimits(const HardwareLimits& limits);
 
   /**
@@ -213,12 +210,7 @@ public:
   std::vector<uint32_t> PendingVideoRefreshStreamsForTest() const;
 
   bool IsActive() const override;
-  bool IsConnected() const override;
-  /** Update chrome-facing SFU connection state (e.g. libp2p pending direct stream). */
-  void SetConnectionState(const std::string& state);
   std::string ActiveCallId() const override;
-  std::string ConnectionState() const override;
-  int64_t ConnectedAtMs() const;
   /** Wall time when StartSfu succeeded (0 if inactive). */
   int64_t StartedAtMs() const;
   /** False when mic open failed (silence sent); used for permission hints. */

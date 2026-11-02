@@ -49,7 +49,6 @@ public:
 
   // --- Intents (posted to the calls owner) -----------------------------------------------------
   void SweepExpiredInvites();
-  void PollP2pConnectHealth();
   void ClearMediaActivity();
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
   void ClearLastError();

@@ -566,14 +566,14 @@ events.
 | `LiveCall` owns | Not anywhere else |
 |-----------------|-------------------|
 | Call state (Calling / Ringing / Accepting / Joined / Ended) and end reason; the accepting sub-state | no separate accept-in-flight flag |
-| One media state: Deciding / Direct (Connecting, Live, TxOnly, Reconnecting) / Hop (Waiting, Attaching, Live, Migrating) / Failed (with its details: missing mic, seed unreachable) | the seat's media state, the planners' progress, the engine's connection state are inputs, not copies |
+| One media state: Deciding / Direct (Connecting, Live, TxOnly, Reconnecting) / Hop (Waiting, Attaching, Live, Migrating) / Failed (with its details: missing mic, seed unreachable) | the seat holds no media state; the planners' progress comes in as their reports; the engine holds no call connection state |
 | `live_since_ms`: when the call first went live, kept through failures, reconnects and path changes | the call timer and "was connected" read it, not the engine's per-path time |
 | The recovery reason (`CallRecovery`: Migrating / WaitingForHop / Reattaching / HopLost) | one reason, not a flag per cause |
 | The path (Direct / Hop) | one value |
 
 - **Planners** (direct, hop) keep their own phase tables (`Decide*PlannerPhase`) and send events into `LiveCall`; they never set the call's media state beside their own phase.
 - **The seat** (`CallMediaSeat`) is the exclusive lock only: holder, epoch, attach ticket.
-- **The engine** reports its connection state as an event.
+- **The engine** holds no call connection state: whether media flows on the call's path is the path's fact (its stream committed, or the hop attached), reported to `LiveCall`; the screen reads the call (`IMediaView` has no connection state).
 - **The screen** reads one published snapshot (`CallUiState`). `DecideInCallStatus` is pure over it. The presenter keeps only UI latches (ring shown, a click the owner has not taken yet).
 
 A 1:1 stream that ends because the call moves onto a hop not attached yet is `Hop: Waiting` — nothing

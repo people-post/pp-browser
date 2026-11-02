@@ -27,7 +27,8 @@ struct DirectHealthInput {
   bool hop_in_flight = false;
   /** A connect attempt is dialing (worker thread): never time it out from here. */
   bool connect_in_flight = false;
-  bool engine_connected = false;
+  /** Media flows on the call's path: the direct stream committed connected, or the hop carries it. */
+  bool media_connected = false;
   /** The direct stream is up (MediaReady). */
   bool direct_ready = false;
   bool has_call = false;
@@ -43,7 +44,7 @@ enum class DirectHealthAction {
   None,
   /** Connected and the stream is up: clear a stale failure, check for TX-only. */
   Healthy,
-  /** The stream is up but the engine still says connecting: commit connected. */
+  /** The stream is up but not committed connected yet: commit it. */
   HealConnected,
   /** No stream within the connect budget: the call fails (stays open). */
   TimedOut,
@@ -57,7 +58,8 @@ struct BundleFailureInput {
   /** The failed carrier is the engine's call. */
   bool engine_call = false;
   bool engine_running = false;
-  bool engine_connected = false;
+  /** Media flows on the call's path (as in DirectHealthInput). */
+  bool media_connected = false;
   /** Another carrier already brought the direct stream up. */
   bool direct_ready = false;
   /** The hop carries the media now (SoftMigrate swapped the send). */

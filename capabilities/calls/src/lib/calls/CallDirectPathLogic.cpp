@@ -10,14 +10,14 @@ DirectHealthAction DecideDirectHealth(const DirectHealthInput& in) {
   if (in.already_failed || !in.engine_running || in.hop_in_flight || in.connect_in_flight) {
     return DirectHealthAction::None;
   }
-  if (in.direct_ready && in.engine_connected) {
+  if (in.direct_ready && in.media_connected) {
     return DirectHealthAction::Healthy;
   }
   if (!in.has_call) {
     return DirectHealthAction::None;
   }
   if (in.direct_ready) {
-    return DirectHealthAction::HealConnected;  // StartSfu's "connecting" left the engine behind
+    return DirectHealthAction::HealConnected; // the stream came up before it was committed
   }
   if (ShouldArmHopPlanner(in.n_joined) || in.started_at_ms <= 0) {
     return DirectHealthAction::None;  // a group call's media is the hop's to judge
@@ -26,16 +26,16 @@ DirectHealthAction DecideDirectHealth(const DirectHealthInput& in) {
 }
 
 BundleFailureAction DecideBundleFailure(const BundleFailureInput& in) {
-  if (!in.engine_call || (in.direct_ready && in.engine_connected)) {
+  if (!in.engine_call || (in.direct_ready && in.media_connected)) {
     return BundleFailureAction::Ignore;
   }
   // SoftMigrate swaps the send to the hop but leaves the 1:1 stream until it is released: its
   // teardown must not fail a call the hop carries.
-  if (in.hop_attached && in.engine_connected) {
+  if (in.hop_attached && in.media_connected) {
     return BundleFailureAction::CarriedByHop;
   }
   // PreferLocal releases the 1:1 stream while capture stays up and the attach may still lag.
-  if (in.hop_pending || (in.soft_close && in.engine_running && in.engine_connected)) {
+  if (in.hop_pending || (in.soft_close && in.engine_running && in.media_connected)) {
     return BundleFailureAction::AwaitHop;
   }
   return BundleFailureAction::Fail;

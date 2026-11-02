@@ -277,8 +277,7 @@ private:
   void EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer);
   void SetDirectPlannerPhase(CallDirectPlannerPhase next, CallDirectPlannerEvent ev,
                              const std::string& call_id);
-  CallDirectPlannerApplyContext BuildDirectPlannerContext(const std::string& call_id,
-                                                          const std::string& peer_identity) const;
+  CallDirectPlannerApplyContext BuildDirectPlannerContext(const std::string& call_id, const std::string& peer_identity);
   /** Arm health / TX-only / connect-timeout timer (pm3). */
   void ArmDirectHealthTimer();
   void CancelDirectHealthTimer();
@@ -321,6 +320,8 @@ private:
   CallMediaCoordinator* CallMediaFor(const std::string& call_id);
   /** The group path carries `call_id`'s media now (its coordinator says so). */
   bool HopAttachedFor(const std::string& call_id);
+  /** Media flows on the call's path: this path's stream committed connected, or the hop carries it. */
+  bool MediaConnected(const std::string& call_id);
   /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
   void StopEngineFor(const std::string& call_id, const char* why);
   /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */

@@ -78,10 +78,6 @@ void CallUiBackend::SweepExpiredInvites() {
   OnOwner([](CallSessionManager& calls) { calls.SweepExpiredInvites(); });
 }
 
-void CallUiBackend::PollP2pConnectHealth() {
-  OnOwner([](CallSessionManager& calls) { calls.PollP2pConnectHealth(); });
-}
-
 void CallUiBackend::ClearMediaActivity() {
   OnOwner([](CallSessionManager& calls) { calls.ClearMediaActivity(); });
 }
@@ -215,13 +211,6 @@ CallUiBackend::Surface CallUiBackend::Settle() {
       }
       surface.active.reset();
       return surface;
-    }
-    // Direct connect failed: the state callback may not have marked it yet (ordering). Never leave
-    // on `failed` here: that erased the session before the user could retry.
-    if (Media().IsActive() && Media().ActiveCallId() == call.call_id &&
-        Media().ConnectionState() == "failed" && !IsAwaitingSfuRecovery() && !Media().IsSfuMode() &&
-        !IsP2pConnectFailed()) {
-      PollP2pConnectHealth();
     }
     surface.kind = Surface::Kind::InCall;
     return surface;

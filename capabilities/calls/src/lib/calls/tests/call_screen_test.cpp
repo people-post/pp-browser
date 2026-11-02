@@ -117,21 +117,14 @@ TEST(CallScreenTest, AFailedPathCouldNotConnectWithoutAHint) {
   EXPECT_TRUE(out.show_invite);
 }
 
-TEST(CallScreenTest, TheEngineStateWhenNothingElseSays) {
+// The line reads the call's state only, never the engine's: media running on a call that is not live
+// yet is Connecting.
+TEST(CallScreenTest, MediaRunningOnACallNotLiveYetReadsConnecting) {
   InCallSignals s;
   s.media_active = true;
-  s.media_status = CallMediaStatus::DirectLive;  // not connecting, not live (chrome) yet
-  s.connection_state = "connecting";
+  s.media_status = CallMediaStatus::DirectLive; // not connecting, not live (chrome) yet
   EXPECT_EQ(Decide(s).status, Status::Connecting);
-  s.connection_state = "disconnected";
-  EXPECT_EQ(Decide(s).status, Status::Reconnecting);
-  s.connection_state = "failed";
-  EXPECT_EQ(Decide(s).status, Status::CouldntConnect);
-  s.connection_state = "closed";
-  EXPECT_EQ(Decide(s).status, Status::Connecting);
-  s.connection_state = "checking";
-  EXPECT_EQ(Decide(s).status, Status::Raw);
-  s.recovery = CallRecovery::Reattaching;  // the group path is being recovered: before the engine state
+  s.recovery = CallRecovery::Reattaching; // the group path is being recovered
   EXPECT_EQ(Decide(s).status, Status::Reconnecting);
   s.recovery = CallRecovery::HopLost;  // attempts made, none in flight: still nothing flows
   EXPECT_EQ(Decide(s).status, Status::Reconnecting);

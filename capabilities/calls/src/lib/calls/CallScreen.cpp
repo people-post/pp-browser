@@ -40,8 +40,6 @@ const char* CallScreenStatusName(const CallScreen::Status status) {
     return "disconnected";
   case CallScreen::Status::Activity:
     return "activity";
-  case CallScreen::Status::Raw:
-    return "raw";
   case CallScreen::Status::WaitingForOthers:
     return "waiting_for_others";
   }
@@ -180,16 +178,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   } else if (recovering) {
     out.status = Status::Reconnecting;
   } else {
-    const std::string& state = s.connection_state;
-    if (state == "connecting" || state.empty() || state == "new" || state == "closed") {
-      out.status = Status::Connecting;
-    } else if (state == "disconnected") {
-      out.status = Status::Reconnecting;
-    } else if (state == "failed") {
-      out.status = Status::CouldntConnect;
-    } else {
-      out.status = Status::Raw;
-    }
+    out.status = Status::Connecting; // media runs, the call is not live yet
   }
   return out;
 }

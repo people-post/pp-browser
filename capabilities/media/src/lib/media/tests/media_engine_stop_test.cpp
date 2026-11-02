@@ -95,7 +95,7 @@ TEST(MediaEngineStopTest, SlowTeardownHoldsNeitherStopNorGetters) {
   int polls = 0;
   do {
     const auto from = std::chrono::steady_clock::now();
-    (void)engine.ConnectionState();
+    (void)engine.ActiveCallId(); // a getter that takes the session lock
     const auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count();
     worst_ms = std::max<int64_t>(worst_ms, ms);

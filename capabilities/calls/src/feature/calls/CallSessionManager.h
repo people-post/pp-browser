@@ -58,7 +58,6 @@ struct CallDirectMediaPorts {
   std::function<bool()> is_connect_failed;
   std::function<bool()> connect_missing_mic;
   std::function<bool()> connect_seed_unreachable;
-  std::function<void()> poll_connect_health;
   std::function<bool(const std::string& call_id)> media_attempted;
   std::function<void(const std::string& call_id)> note_media_attempted;
   std::function<void(const std::string& call_id)> on_media_key_ready;
@@ -256,8 +255,6 @@ public:
   Roe<void> RetryP2pMedia(const std::string& call_id);
   /** A failed, open call: the peer's connection reached us — restart media keeping its stream. */
   Roe<void> ResumeP2pMedia(const std::string& call_id);
-  /** Chrome heal when media already reports failed (not a UI-tick poll). */
-  void PollP2pConnectHealth();
 
   std::optional<std::string> TakeLastMediaError();
   /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */

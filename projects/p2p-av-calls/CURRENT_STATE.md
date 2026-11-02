@@ -186,10 +186,11 @@ shown, a click the owner has not taken yet). Pure deciders stay pure (`Decide*Pl
 **Landed in cm2 (V055):** the accept flag is `LiveCallState::Accepting`; the seat is the lock only
 (its media state and path, write-only, are gone — cm2a); the paths report as events (`DirectReport`,
 `HopReport`) instead of `report_progress` / `on_*` ports, and the owner arms and starts the deferred
-answerer itself (cm2b).
+answerer itself (cm2b); the engine holds no call connection state — the bridge uses its own facts
+(stream committed, hop attached), the screen and the health bars read the call, and the dead "failed" /
+"disconnected" / raw-state branches are gone (cm2c).
 
-**Next, in order:** feed the engine's connection state in as an event (the screen stops reading the
-engine); one path value.
+**Next:** one path value.
 
 End state: [CALLS.md § Call state: one owner](../../docs/architecture/CALLS.md#call-state-one-owner).
 
