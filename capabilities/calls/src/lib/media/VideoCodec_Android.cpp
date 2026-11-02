@@ -39,6 +39,11 @@ constexpr int kInputStarvedStallFrames = 30;
 constexpr int kMaxDrainedOutputs = 32;
 /** Device API level from which the decoder is asked for low-latency output (MediaFormat "low-latency"). */
 constexpr int kLowLatencyApiLevel = 30;
+/**
+ * Off until proven on devices: a vivo's calls owner hung in the decoder's teardown on the first video
+ * call with low-latency on (B128, #452). The code and its fallback stay; flip to try it again.
+ */
+constexpr bool kTryLowLatencyDecoder = false;
 /** At most one "input buffer unavailable" warning this often. */
 constexpr int64_t kInputDropWarnEveryMs = 2000;
 /** A Decode slower than this (codec configure not counted) is logged — it runs under the media lock. */
@@ -706,7 +711,7 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   };
   ConfigureAttempt attempts[3];
   int attempt_count = 0;
-  if (android_get_device_api_level() >= kLowLatencyApiLevel) {
+  if (kTryLowLatencyDecoder && android_get_device_api_level() >= kLowLatencyApiLevel) {
     attempts[attempt_count++] = {true, true};
   }
   attempts[attempt_count++] = {true, false};
