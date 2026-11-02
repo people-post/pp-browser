@@ -14,6 +14,7 @@
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <optional>
 
@@ -228,25 +229,26 @@ size_t FileWriteCallback(void* contents, size_t size, size_t nmemb, FileSink* si
   return total;
 }
 
+/** A stream, not a FILE*: `seekg` takes a 64-bit `std::streamoff` on every platform (`fseek` takes `long`). */
 struct FileSource {
-  std::FILE* file = nullptr;
+  std::ifstream file;
   /** Bytes still to send: a range upload stops at its end, not the file's. */
   uint64_t remaining = 0;
 };
 
 size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* source) {
   const uint64_t want = std::min<uint64_t>(static_cast<uint64_t>(size) * nitems, source->remaining);
-  const size_t got = std::fread(buffer, 1, static_cast<size_t>(want), source->file);
+  source->file.read(buffer, static_cast<std::streamsize>(want));
+  const auto got = static_cast<size_t>(source->file.gcount());
   source->remaining -= got;
   return got;
 }
 
-/** PUT `source.remaining` bytes from `source.file` (positioned at the start); closes the file. */
-Roe<HttpResponse> PutFromFile(const std::string& url, FileSource source,
+/** PUT `source.remaining` bytes from `source.file` (positioned at the start). */
+Roe<HttpResponse> PutFromFile(const std::string& url, FileSource& source,
                               const std::map<std::string, std::string>& headers, const HttpProgress& progress) {
   CURL* curl = curl_easy_init();
   if (!curl) {
-    std::fclose(source.file);
     return AppError::Internal("Failed to init curl");
   }
   ApplyCurlSslDefaults(curl);
@@ -279,7 +281,6 @@ Roe<HttpResponse> PutFromFile(const std::string& url, FileSource source,
     curl_slist_free_all(header_list);
   }
   curl_easy_cleanup(curl);
-  std::fclose(source.file);
 
   if (state.aborted) {
     return AppError::Network(Err::Network::HttpError, "HTTP upload cancelled");
@@ -314,7 +315,7 @@ Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string&
   if (size_ec) {
     return AppError::Internal("Upload file is not readable");
   }
-  FileSource source{.file = std::fopen(path.c_str(), "rb"), .remaining = static_cast<uint64_t>(file_size)};
+  FileSource source{.file = std::ifstream(path, std::ios::binary), .remaining = static_cast<uint64_t>(file_size)};
   if (!source.file) {
     return AppError::Internal("Upload file is not readable");
   }
@@ -329,13 +330,8 @@ Roe<HttpResponse> HttpClient::PutFileRange(const std::string& url, const std::st
   if (size_ec || offset > static_cast<uint64_t>(file_size) || length > static_cast<uint64_t>(file_size) - offset) {
     return AppError::Internal("Upload file does not hold the part");
   }
-  FileSource source{.file = std::fopen(path.c_str(), "rb"), .remaining = length};
-  if (!source.file) {
-    return AppError::Internal("Upload file is not readable");
-  }
-  if (offset > static_cast<uint64_t>(std::numeric_limits<long>::max()) ||
-      std::fseek(source.file, static_cast<long>(offset), SEEK_SET) != 0) {
-    std::fclose(source.file);
+  FileSource source{.file = std::ifstream(path, std::ios::binary), .remaining = length};
+  if (!source.file || !source.file.seekg(static_cast<std::streamoff>(offset))) {
     return AppError::Internal("Upload file is not readable");
   }
   return PutFromFile(url, source, {{"Content-Type", content_type}}, progress);
