@@ -531,12 +531,15 @@ public:
   Roe<void> ConfigureDecoder() override;
 
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420& frame, bool force_keyframe) override;
-  Roe<VideoFrameRgba> Decode(const uint8_t* annex_b, size_t size) override;
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t* annex_b, size_t size) override {
+    return OneFrameDecodeResult(DecodeFrame(annex_b, size));
+  }
 
   void ResetEncoder() override;
   void ResetDecoder() override;
 
 private:
+  Roe<VideoFrameRgba> DecodeFrame(const uint8_t* annex_b, size_t size);
   bool RenegotiateDecoderOutputType();
 
   bool com_initialized_ = false;
@@ -924,7 +927,7 @@ Roe<EncodedAccessUnit> MediaFoundationVideoCodec::Encode(const VideoFrameI420& f
   return unit;
 }
 
-Roe<VideoFrameRgba> MediaFoundationVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
+Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_b, size_t size) {
   if (!decoder_) {
     return Error("H264 decoder not configured");
   }

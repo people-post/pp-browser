@@ -21,7 +21,7 @@ public:
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override {
     return Error("H264 encoder unavailable: " + reason_);
   }
-  Roe<VideoFrameRgba> Decode(const uint8_t*, size_t) override {
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override {
     return Error("H264 decoder unavailable: " + reason_);
   }
 

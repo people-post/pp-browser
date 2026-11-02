@@ -1,3 +1,4 @@
+#include "lib/media/DecodeStallPolicy.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/VideoCodecOs.h"
 #include "lib/media/VideoCodecUnavailable.h"
@@ -5,14 +6,17 @@
 
 #if defined(__ANDROID__)
 
+#include <android/api-level.h>
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaFormat.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <vector>
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 
 // V017: Android H264 encode/decode via MediaCodec (NDK).
@@ -23,7 +27,14 @@ namespace {
 constexpr int64_t kMinBitrateBps = 200000;
 constexpr int64_t kMaxBitrateBps = 4000000;
 constexpr auto kCodecTimeoutUs = 20000LL;
-constexpr auto kDecodeTimeoutUs = 50000LL;
+/** Wait for a decoder input buffer (under the media lock — B125: was 50 ms, plus up to 600 ms for output). */
+constexpr auto kDecodeInputTimeoutUs = 10000LL;
+/** Output buffers taken per Decode at most (they are released as they come; only the last is shown). */
+constexpr int kMaxDrainedOutputs = 32;
+/** Device API level from which the decoder is asked for low-latency output (MediaFormat "low-latency"). */
+constexpr int kLowLatencyApiLevel = 30;
+/** At most one "input buffer unavailable" warning this often. */
+constexpr int64_t kInputDropWarnEveryMs = 2000;
 constexpr int kColorFormatYv12 = 19;       // COLOR_FormatYUV420Planar
 constexpr int kColorFormatNv12 = 21;       // COLOR_FormatYUV420SemiPlanar
 
@@ -33,6 +44,17 @@ int32_t EstimateBitrateBps(int width, int height, int fps) {
   const double clamped =
       std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
   return static_cast<int32_t>(clamped);
+}
+
+logging::Logger& DecoderLog() {
+  static logging::Logger logger = logging::getLogger("CallMediaEngine.AndroidDecoder");
+  return logger;
+}
+
+int64_t SteadyMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
 }
 
 struct AnnexBNal {
@@ -389,13 +411,19 @@ public:
   Roe<void> ConfigureDecoder() override;
 
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420& frame, bool force_keyframe) override;
-  Roe<VideoFrameRgba> Decode(const uint8_t* annex_b, size_t size) override;
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t* annex_b, size_t size) override;
 
   void ResetEncoder() override;
   void ResetDecoder() override;
 
 private:
   Roe<void> EnsureDecoderConfigured(const uint8_t* sps, size_t sps_size, const uint8_t* pps, size_t pps_size);
+  Roe<std::optional<VideoFrameRgba>> DecodeAccessUnit(const uint8_t* annex_b, size_t size);
+  /** Takes every ready output buffer without waiting; keeps the newest in held_output_, releases the rest. */
+  void DrainOutputs();
+  void ReleaseHeldOutput();
+  /** Converts held_output_ to RGBA and releases it. */
+  Roe<VideoFrameRgba> ConvertHeldOutput();
 
   AMediaCodec* encoder_ = nullptr;
   int enc_width_ = 0;
@@ -411,6 +439,14 @@ private:
   std::vector<uint8_t> cached_pps_;
   int64_t dec_frame_index_ = 0;
   int dec_color_format_ = kColorFormatNv12;
+  /** Newest output buffer taken by DrainOutputs and not yet converted (index < 0: none). */
+  ssize_t held_output_index_ = -1;
+  AMediaCodecBufferInfo held_output_info_{};
+  /** A frame was dropped (no input buffer): later frames are dropped too until an IDR (no smearing). */
+  bool discard_until_idr_ = false;
+  DecodeStallPolicy stall_;
+  int input_drops_ = 0;
+  int64_t last_input_drop_warn_ms_ = 0;
 };
 
 Roe<void> AndroidVideoCodec::ConfigureEncoder(int width, int height, int fps) {
@@ -597,7 +633,7 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   std::vector<uint8_t> csd1;
   AppendStartCodeAndNal(csd1, pps, pps_size);
 
-  auto make_format = [&](bool with_color) {
+  auto make_format = [&](bool with_color, bool low_latency) {
     AMediaFormat* format = AMediaFormat_new();
     AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/avc");
     AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, width);
@@ -608,26 +644,45 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
       // Prefer NV12 byte-buffer output so we can convert without Flexible/Image APIs.
       AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, kColorFormatNv12);
     }
+    if (low_latency) {
+      // AMEDIAFORMAT_KEY_LOW_LATENCY (API 30); the string key so the API-24 build compiles.
+      AMediaFormat_setInt32(format, "low-latency", 1);
+    }
     return format;
   };
-
-  AMediaFormat* format = make_format(true);
-  if (AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) != AMEDIA_OK) {
-    // Some devices reject an explicit color format; retry without it.
-    AMediaFormat_delete(format);
-    // MediaCodec may have reset the component after configure failure; recreate.
-    AMediaCodec_delete(decoder_);
-    decoder_ = AMediaCodec_createDecoderByType("video/avc");
-    if (!decoder_) {
-      return Error("AMediaCodec_createDecoderByType failed on retry");
-    }
-    format = make_format(false);
-    if (AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) != AMEDIA_OK) {
-      AMediaFormat_delete(format);
-      return fail_decoder("AMediaCodec_configure decoder failed");
-    }
+  // Most capable first: low-latency output (API 30+, B125), then without it (some decoders reject
+  // the key), then without the explicit color format (some devices reject that). MediaCodec may
+  // have reset the component after a configure failure, so each retry starts from a new instance.
+  struct ConfigureAttempt {
+    bool with_color;
+    bool low_latency;
+  };
+  ConfigureAttempt attempts[3];
+  int attempt_count = 0;
+  if (android_get_device_api_level() >= kLowLatencyApiLevel) {
+    attempts[attempt_count++] = {true, true};
   }
-  AMediaFormat_delete(format);
+  attempts[attempt_count++] = {true, false};
+  attempts[attempt_count++] = {false, false};
+  bool configured = false;
+  for (int i = 0; i < attempt_count && !configured; ++i) {
+    if (i > 0) {
+      if (attempts[i - 1].low_latency) {
+        DecoderLog().warning << "decoder rejected low-latency; configuring without it";
+      }
+      AMediaCodec_delete(decoder_);
+      decoder_ = AMediaCodec_createDecoderByType("video/avc");
+      if (!decoder_) {
+        return Error("AMediaCodec_createDecoderByType failed on retry");
+      }
+    }
+    AMediaFormat* format = make_format(attempts[i].with_color, attempts[i].low_latency);
+    configured = AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) == AMEDIA_OK;
+    AMediaFormat_delete(format);
+  }
+  if (!configured) {
+    return fail_decoder("AMediaCodec_configure decoder failed");
+  }
   if (AMediaCodec_start(decoder_) != AMEDIA_OK) {
     return fail_decoder("AMediaCodec_start decoder failed");
   }
@@ -636,10 +691,20 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   cached_pps_.assign(pps, pps + pps_size);
   dec_frame_index_ = 0;
   dec_color_format_ = kColorFormatNv12;
+  stall_.Restart(SteadyMs());
   return {};
 }
 
-Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
+Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
+  auto result = DecodeAccessUnit(annex_b, size);
+  if (!result) {
+    // The engine asks for a keyframe on every decode error: frames until it lands are not counted.
+    stall_.NoteKeyframeRequested(SteadyMs());
+  }
+  return result;
+}
+
+Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uint8_t* annex_b, size_t size) {
   if (!decoder_configured_) {
     return Error("H264 decoder not configured");
   }
@@ -654,6 +719,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
 
   std::vector<uint8_t> slice_annex_b;
   bool has_slice = false;
+  bool has_idr = false;
   bool sps_updated = false;
   bool pps_updated = false;
 
@@ -677,6 +743,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
     // VCL slices only (ignore AUD/SEI/filler). Matches Linux decoder.
     if (nal.type == 1 || nal.type == 5) {
       has_slice = true;
+      has_idr = has_idr || nal.type == 5;
       AppendStartCodeAndNal(slice_annex_b, nal.data, nal.size);
     }
   }
@@ -705,14 +772,38 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
   if (!has_slice || slice_annex_b.empty()) {
     return Error("access unit contained no slice data");
   }
+  if (discard_until_idr_) {
+    if (!has_idr) {
+      // A frame was lost: frames that reference it would smear. The keyframe is already asked for.
+      return std::optional<VideoFrameRgba>();
+    }
+    discard_until_idr_ = false;
+  }
 
-  ssize_t buf_index = AMediaCodec_dequeueInputBuffer(decoder_, kDecodeTimeoutUs);
+  // B125: this runs under the engine's media lock, so never wait long. No input buffer → take the
+  // ready outputs (that frees input buffers) and try once more; still none → drop this frame and
+  // everything up to the next IDR, and fail so the engine asks for one now.
+  ssize_t buf_index = AMediaCodec_dequeueInputBuffer(decoder_, kDecodeInputTimeoutUs);
   if (buf_index < 0) {
+    DrainOutputs();
+    buf_index = AMediaCodec_dequeueInputBuffer(decoder_, kDecodeInputTimeoutUs);
+  }
+  if (buf_index < 0) {
+    ReleaseHeldOutput();
+    discard_until_idr_ = true;
+    ++input_drops_;
+    const int64_t now = SteadyMs();
+    if (now - last_input_drop_warn_ms_ >= kInputDropWarnEveryMs) {
+      last_input_drop_warn_ms_ = now;
+      DecoderLog().warning << "decoder input buffer unavailable: frame dropped, dropping until the next IDR"
+                           << " drops=" << input_drops_;
+    }
     return Error("decoder input buffer unavailable");
   }
   size_t buf_size = 0;
   uint8_t* buf = AMediaCodec_getInputBuffer(decoder_, static_cast<size_t>(buf_index), &buf_size);
   if (!buf || buf_size < slice_annex_b.size()) {
+    ReleaseHeldOutput();
     return Error("decoder input buffer too small");
   }
   std::memcpy(buf, slice_annex_b.data(), slice_annex_b.size());
@@ -720,14 +811,55 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
   ++dec_frame_index_;
   if (AMediaCodec_queueInputBuffer(decoder_, static_cast<size_t>(buf_index), 0, slice_annex_b.size(),
                                     pts_us, 0) != AMEDIA_OK) {
+    ReleaseHeldOutput();
     return Error("decoder queueInputBuffer failed");
   }
+  stall_.NoteFrameQueued(SteadyMs());
 
-  AMediaCodecBufferInfo info{};
-  const ssize_t out_index = DequeueOutputBuffer(decoder_, &info, 12, kDecodeTimeoutUs);
-  if (out_index < 0) {
-    return Error("decoder produced no output");
+  DrainOutputs();
+  if (held_output_index_ < 0) {
+    // Nothing ready yet: a decoder filling its pipeline is not an error — unless it stays silent.
+    if (stall_.Stalled(SteadyMs())) {
+      return Error(std::string(kDecoderStalledError));
+    }
+    return std::optional<VideoFrameRgba>();
   }
+  stall_.NoteOutput(SteadyMs());
+  auto frame = ConvertHeldOutput();
+  if (!frame) {
+    return frame.error();
+  }
+  return std::optional<VideoFrameRgba>(std::move(*frame));
+}
+
+void AndroidVideoCodec::DrainOutputs() {
+  for (int taken = 0; taken < kMaxDrainedOutputs; ++taken) {
+    AMediaCodecBufferInfo info{};
+    const ssize_t index = AMediaCodec_dequeueOutputBuffer(decoder_, &info, 0);
+    if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED || index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
+      // The new format is read when the frame is converted; buffers-changed is not sent on NDK 21+.
+      continue;
+    }
+    if (index < 0) {
+      return;  // TRY_AGAIN_LATER (nothing ready) or an error
+    }
+    // An older frame still held is stale next to this one: release it unconverted.
+    ReleaseHeldOutput();
+    held_output_index_ = index;
+    held_output_info_ = info;
+  }
+}
+
+void AndroidVideoCodec::ReleaseHeldOutput() {
+  if (held_output_index_ >= 0) {
+    AMediaCodec_releaseOutputBuffer(decoder_, static_cast<size_t>(held_output_index_), false);
+    held_output_index_ = -1;
+  }
+}
+
+Roe<VideoFrameRgba> AndroidVideoCodec::ConvertHeldOutput() {
+  const size_t out_index = static_cast<size_t>(held_output_index_);
+  const AMediaCodecBufferInfo info = held_output_info_;
 
   int width = 0;
   int height = 0;
@@ -765,7 +897,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
 
   VideoFrameRgba result;
   size_t out_size = 0;
-  uint8_t* out_buf = AMediaCodec_getOutputBuffer(decoder_, static_cast<size_t>(out_index), &out_size);
+  uint8_t* out_buf = AMediaCodec_getOutputBuffer(decoder_, out_index, &out_size);
   bool converted = false;
   if (out_buf && info.size > 0 && width > 0 && height > 0) {
     const uint8_t* base = out_buf + info.offset;
@@ -786,7 +918,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
       converted = Nv12ToRgba(y, uv, width, height, stride, stride, result);
     }
   }
-  AMediaCodec_releaseOutputBuffer(decoder_, static_cast<size_t>(out_index), false);
+  ReleaseHeldOutput();
   if (!converted) {
     return Error("failed to convert decoded frame to RGBA");
   }
@@ -809,6 +941,7 @@ void AndroidVideoCodec::ResetEncoder() {
 
 void AndroidVideoCodec::ResetDecoder() {
   if (decoder_) {
+    ReleaseHeldOutput();
     AMediaCodec_stop(decoder_);
     AMediaCodec_delete(decoder_);
     decoder_ = nullptr;
@@ -818,6 +951,9 @@ void AndroidVideoCodec::ResetDecoder() {
   decoder_configured_ = false;
   dec_frame_index_ = 0;
   dec_color_format_ = kColorFormatNv12;
+  // The next picture must be an IDR (B125: after a rebuild, or a call's first frames).
+  discard_until_idr_ = true;
+  stall_.Restart(SteadyMs());
 }
 
 } // namespace

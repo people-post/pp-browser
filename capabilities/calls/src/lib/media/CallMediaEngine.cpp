@@ -8,6 +8,7 @@
 #include "lib/media/CallRingtone.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/CaptureStarvePolicy.h"
+#include "lib/media/DecodeStallPolicy.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -182,6 +183,8 @@ struct CallMediaEngine::Impl {
   /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
+  std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
   int video_decode_fail_logs = 0;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
   /**
@@ -1303,9 +1306,40 @@ struct CallMediaEngine::Impl {
                       << decoded.error().message << " call=" << call_id;
       }
       NoteVideoRefreshNeeded(stream_id);
+      if (decoded.error().message == kDecoderStalledError) {
+        ResetStalledDecoder(stream_id, *decoder);
+      }
       return;
     }
-    PublishRemoteFrame(stream_id, std::move(*decoded));
+    if (!decoded->has_value()) {
+      // No frame to show yet (decoder filling its pipeline / waiting for an IDR): not an error.
+      return;
+    }
+    {
+      std::lock_guard lock(mutex);
+      decoder_resets[stream_id].NoteFrame();
+    }
+    PublishRemoteFrame(stream_id, std::move(**decoded));
+  }
+
+  /**
+   * B125: a decoder that stays stalled is rebuilt — two stalls in a row, at most twice per call, ten
+   * seconds apart (it runs under the media lock). The next packet configures it again; it shows
+   * nothing until an IDR, which the stall has already asked for.
+   */
+  void ResetStalledDecoder(uint32_t stream_id, IVideoCodec& decoder) {
+    std::lock_guard lock(mutex);
+    DecoderResetBudget& budget = decoder_resets[stream_id];
+    if (!budget.NoteStall(util::NowUnixMs())) {
+      return;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    decoder.ResetDecoder();
+    const auto took_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets="
+                        << budget.Resets() << (budget.Exhausted() ? " (no more rebuilds this call)" : "")
+                        << " took_ms=" << took_ms << " call=" << call_id;
   }
 
 };
@@ -1609,6 +1643,7 @@ void CallMediaEngine::Stop() {
     // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
     // the cap of kMaxRemoteVideoDecoders counted every peer ever seen.
     impl_->remote_decoders.clear();
+    impl_->decoder_resets.clear();
     impl_->video_decode_fail_logs = 0;
   }
   abandoned_send = nullptr;
@@ -1846,6 +1881,11 @@ std::vector<uint32_t> CallMediaEngine::TakePendingVideoRefreshStreamIds() {
                             impl_->pending_video_refresh_streams.end());
   impl_->pending_video_refresh_streams.clear();
   return out;
+}
+
+std::vector<uint32_t> CallMediaEngine::PendingVideoRefreshStreamsForTest() const {
+  std::lock_guard lock(impl_->video_refresh_mu);
+  return {impl_->pending_video_refresh_streams.begin(), impl_->pending_video_refresh_streams.end()};
 }
 
 bool CallMediaEngine::IsActive() const {
