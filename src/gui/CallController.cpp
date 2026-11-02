@@ -949,6 +949,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       });
     }
   }
+  // Whatever VideoAllowedForCall said (false, error), a sending camera can always be turned off.
+  if (!in_call.show_camera) {
+    in_call.show_camera = ShowsCameraButton(media.VideoEncoderAvailable(), /*path_allows_video=*/false, in_call.camera_on);
+  }
   in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
 
   bool peer_camera_on = false;

@@ -376,6 +376,8 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
   if (!auto_camera_pending_ || auto_camera_call_id_ != active_call_id_ || !s.media_connected) {
     return;
   }
+  // Deliberately the path rule (not ShowsCameraButton, which keeps the button for a camera that is on):
+  // never auto-turn the camera on under path pressure.
   const bool camera_offerable = backend.Media().VideoEncoderAvailable() && backend.Media().CameraPathAllowsVideo();
   auto awaiting_answer = backend.AwaitingExplicitAnswerForCall(active_call_id_);
   // In a 1:1 call the peer's video arriving also answers "video or voice?" (a slow relay delivered
