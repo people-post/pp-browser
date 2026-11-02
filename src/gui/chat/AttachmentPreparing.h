@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <string>
 
 namespace pbr {
 
@@ -40,5 +41,14 @@ private:
   bool busy_ = false;
   Clock::time_point deadline_{};
 };
+
+/**
+ * The upload chip (and the input it locks) belong to the chat the attachment is sent in, like a draft: shown only
+ * while that chat is the open one. `in_flight`: preparing, uploading, or a failed send waiting for Retry.
+ */
+inline bool AttachmentChipHere(const bool in_flight, const std::string& attachment_thread,
+                               const std::string& active_thread) {
+  return in_flight && attachment_thread == active_thread;
+}
 
 } // namespace pbr

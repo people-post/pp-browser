@@ -208,6 +208,8 @@ private:
   void EndAttachmentPreparing();
   /** Mirror preparing_ into the chat fields (the one place chat_.attachment_preparing is written). */
   void SyncAttachmentPreparing();
+  /** chat_.attachment_here: an attachment is in flight (or failed) in the chat that is open now. */
+  void RefreshAttachmentHere();
   /**
    * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
    * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
@@ -280,6 +282,8 @@ private:
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
   std::string pending_chip_thread_;
+  /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */
+  std::string attachment_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;

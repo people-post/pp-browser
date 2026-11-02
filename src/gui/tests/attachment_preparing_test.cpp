@@ -46,5 +46,11 @@ TEST(AttachmentPreparing, ItExpiresWhenNoExitEverReports) {
   EXPECT_FALSE(preparing.Expire(start + seconds(62))) << "reported once";
 }
 
+TEST(AttachmentPreparing, TheChipBelongsToTheChatTheFileIsSentIn) {
+  EXPECT_TRUE(AttachmentChipHere(true, "A", "A"));
+  EXPECT_FALSE(AttachmentChipHere(true, "A", "B")) << "another chat: no chip, input stays typeable";
+  EXPECT_FALSE(AttachmentChipHere(false, "A", "A")) << "nothing in flight";
+}
+
 } // namespace
 } // namespace pbr

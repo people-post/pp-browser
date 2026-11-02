@@ -1,3 +1,4 @@
+#include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -73,10 +74,27 @@ protected:
     ui::SetRenderInterface(nullptr);
   }
   void Apply() {
-    for (const char* key : {"show_voice", "voice_mode", "draft", "loading", "voice_recording", "voice_click_mode",
-                            "show_attach_button", "show_capture", "attachment_uploading", "attachment_failed",
-                            "attachment_draft_name", "attachment_status", "image_chip", "image_thumb_ready",
-                            "image_preparing", "voice_blocked", "voice_countdown", "voice_cancel_zone", "voice_timer", "voice_hint"}) {
+    for (const char* key : {"show_voice",
+                            "voice_mode",
+                            "draft",
+                            "loading",
+                            "voice_recording",
+                            "voice_click_mode",
+                            "show_attach_button",
+                            "show_capture",
+                            "attachment_uploading",
+                            "attachment_failed",
+                            "attachment_here",
+                            "attachment_draft_name",
+                            "attachment_status",
+                            "image_chip",
+                            "image_thumb_ready",
+                            "image_preparing",
+                            "voice_blocked",
+                            "voice_countdown",
+                            "voice_cancel_zone",
+                            "voice_timer",
+                            "voice_hint"}) {
       DataModelHost::Instance().Dirty("chat", key);
     }
     context->Update();
@@ -226,6 +244,7 @@ TEST_F(ComposerVoiceMarkupTest, AFailedAttachmentShowsRetryAndCancelInTheStatusR
   state.show_voice = true;
   state.show_attach_button = true;
   state.attachment_failed = true;
+  state.attachment_here = true;
   state.attachment_draft_name = "clip.mp4";
   state.attachment_status = "Not sent";
   Apply();
@@ -238,6 +257,7 @@ TEST_F(ComposerVoiceMarkupTest, AFailedAttachmentShowsRetryAndCancelInTheStatusR
 
 TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithoutRetry) {
   state.attachment_uploading = true;
+  state.attachment_here = true;
   state.attachment_draft_name = "clip.mp4";
   Apply();
   EXPECT_EQ(Shown("prompt-composer-status"), 1);
@@ -247,6 +267,7 @@ TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithoutRetry) {
 
 TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   state.attachment_uploading = true;
+  state.attachment_here = true;
   state.attachment_draft_name = "clip.mp4";
   state.attachment_status = "Uploading";
   Apply();
@@ -261,6 +282,7 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   EXPECT_EQ(names[0]->GetInnerRML(), "clip.mp4");
   // The recording row's timer and hint are text too.
   state.attachment_uploading = false;
+  state.attachment_here = false;
   state.show_voice = true;
   state.voice_mode = true;
   state.voice_recording = true;
@@ -271,6 +293,22 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   document->GetElementsByClassName(timer, "prompt-voice-timer");
   ASSERT_GE(timer.size(), 1u);
   EXPECT_EQ(timer[0]->GetInnerRML(), "0:07");
+}
+
+// An upload in chat A: its chip shows there only; switching to chat B hides it, back to A shows it again.
+TEST_F(ComposerVoiceMarkupTest, TheUploadChipFollowsTheChatItBelongsTo) {
+  state.attachment_uploading = true;
+  state.attachment_draft_name = "clip.mp4";
+  const std::string uploading_in = "A";
+  for (const auto& [open_chat, chip_expected] : {std::pair<std::string, int>{"A", 1}, {"B", 0}, {"A", 1}}) {
+    state.attachment_here = AttachmentChipHere(true, uploading_in, open_chat);
+    state.composer_input_disabled = state.attachment_here;
+    Apply();
+    DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
+    context->Update();
+    EXPECT_EQ(Shown("prompt-attachment-chip"), chip_expected) << "open chat " << open_chat;
+    EXPECT_EQ(state.composer_input_disabled, chip_expected == 1) << "input follows the chip in " << open_chat;
+  }
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheAiPictureThumbnailSitsInTheStatusRow) {

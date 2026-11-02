@@ -54,6 +54,8 @@ struct ChatScreenState {
   bool voice_finishing = false;
   /** A picked / captured file is being copied before the upload starts (iOS): the chip says "Sending…". */
   bool attachment_preparing = false;
+  /** The chip's condition: an attachment is preparing / uploading / failed in the chat open now (not in another one). */
+  bool attachment_here = false;
   /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
   bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */

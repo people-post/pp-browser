@@ -11,8 +11,8 @@
   <!-- Status row above the input, only when something needs saying: an attachment uploading / failed (Retry, Cancel),
        the AI picture, the AI answer's stop key. -->
   <div class="prompt-composer-status"
-       data-if="!voice_recording && (attachment_uploading || attachment_preparing || attachment_failed || image_chip || loading)">
-    <div class="prompt-attachment-chip" data-if="attachment_uploading || attachment_preparing || attachment_failed">
+       data-if="!voice_recording && (attachment_here || image_chip || loading)">
+    <div class="prompt-attachment-chip" data-if="attachment_here">
       <span class="prompt-attachment-chip-name">{{attachment_draft_name}}</span>
       <span class="prompt-attachment-chip-status">{{attachment_status}}</span>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"

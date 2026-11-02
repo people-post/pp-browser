@@ -1220,6 +1220,7 @@ void ChatController::SyncAttachmentPreparing() {
   }
   chat_.attachment_preparing = preparing_.Busy();
   if (chat_.attachment_preparing) {
+    attachment_thread_ = ActiveThreadId();
     chat_.attachment_failed = false;
     chat_.attachment_draft_name = "";
     chat_.attachment_status = Tr("chat.attachment.sending").c_str();
@@ -1231,9 +1232,21 @@ void ChatController::SyncAttachmentPreparing() {
   DirtyChatHeader();
 }
 
+void ChatController::RefreshAttachmentHere() {
+  const bool here =
+      AttachmentChipHere(chat_.attachment_uploading || chat_.attachment_preparing || chat_.attachment_failed,
+                         attachment_thread_, ActiveThreadId());
+  if (chat_.attachment_here != here) {
+    chat_.attachment_here = here;
+    DataModelHost::Instance().Dirty("chat", "attachment_here");
+  }
+}
+
 void ChatController::SyncComposerInputState() {
-  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading || chat_.attachment_preparing ||
-                                  chat_.image_preparing || chat_.voice_recording;
+  RefreshAttachmentHere();
+  // The chip and the locked input belong to the chat the file is being sent in; the other chats stay typeable.
+  chat_.composer_input_disabled =
+      chat_.compose_disabled || chat_.attachment_here || chat_.image_preparing || chat_.voice_recording;
   // Whether a voice message can be sent depends on the same upload state: a toggle that went away while a file
   // was being sent must come back when the upload ends, not at the next chrome update.
   if (voice_) {
@@ -1435,6 +1448,7 @@ void ChatController::ShowFailedAttachment(const std::string& record_id, const st
   failed_record_id_ = record_id;
   chat_.attachment_failed = true;
   chat_.attachment_uploading = false;
+  attachment_thread_ = ActiveThreadId(); // every caller shows the open chat's pending file
   chat_.attachment_draft_name = name.c_str();
   chat_.attachment_status = Tr("chat.attachment.send_failed").c_str();
   SyncComposerInputState();
@@ -1529,6 +1543,7 @@ void ChatController::OnRetryAttachmentSend() {
   }
   chat_.attachment_failed = false;
   chat_.attachment_uploading = true;
+  attachment_thread_ = thread_id;
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
   DirtyChatChrome();
@@ -1582,6 +1597,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
 
   chat_.attachment_uploading = true;
   chat_.attachment_failed = false;
+  attachment_thread_ = thread_id;
   failed_record_id_.clear();
   const std::string shown_name = DisplayNameFromPickedPath(path);  // a content:// URI is not a name
   chat_.attachment_draft_name =
@@ -1779,6 +1795,7 @@ void ChatController::UpdatePeerLinkChrome() {
 }
 
 void ChatController::ResetChatPanelState() {
+  attachment_thread_.clear();
   chat_.attachment_uploading = false;
   chat_.attachment_failed = false;
   chat_.attachment_status = "";
@@ -1807,6 +1824,9 @@ void ChatController::SyncDisplayFromThread() {
   const auto sync_started = std::chrono::steady_clock::now();
   const std::string thread_id = ActiveThreadId();
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
+  if (thread_changed) {
+    SyncComposerInputState(); // the upload chip and the locked input stay with the chat they belong to
+  }
   // The attachment backfill reads the whole thread, so it does not run on every sync. New messages are
   // queued where they are received or sent; the backfill also re-queues failed downloads, which is why
   // it still runs now and then while the thread stays open (AttachmentBackfillPolicy.h).
