@@ -1,0 +1,18 @@
+# pp-browser's C++ style, derived from the code (2026-11-02). Format new and touched code with it (clang-format 14+);
+# never sweep the tree — existing files keep their hand-wrapping until someone edits them.
+BasedOnStyle: Google
+ColumnLimit: 120
+IndentWidth: 2
+AccessModifierOffset: -2
+NamespaceIndentation: None
+FixNamespaceComments: true
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+IncludeBlocks: Preserve
+SortIncludes: Never
+SpacesBeforeTrailingComments: 1
+ReflowComments: false
