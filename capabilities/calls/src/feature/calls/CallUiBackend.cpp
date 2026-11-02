@@ -224,74 +224,71 @@ CallUiBackend::Surface CallUiBackend::Settle() {
 // --- durable state -------------------------------------------------------------------------------
 
 Roe<std::optional<PendingCallInvite>> CallUiBackend::TopPendingInvite() {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeekTopPendingInvite();
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->TopPendingInvite();
   }
   return UnavailableError();
 }
 
 std::optional<std::string> CallUiBackend::JoinableCallInThread(const std::string& thread_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->JoinableCallInThread(thread_id);
-  }
-  return std::nullopt;
+  const CallReads* reads = stack_.Reads();
+  auto call = reads ? reads->JoinableCallInThread(thread_id) : std::nullopt;
+  return call ? std::optional<std::string>(call->call_id) : std::nullopt;
 }
 
 Roe<std::optional<CallSession>> CallUiBackend::ActiveLocalCall() {
-  if (auto* calls = stack_.Calls()) {
-    return calls->ActiveLocalCall();
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->ActiveLocalCall();
   }
   return UnavailableError();
 }
 
 Roe<std::optional<std::string>> CallUiBackend::PeerIdentityForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeerIdentityForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->PeerIdentityForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeerVideoEnabledForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->PeerVideoEnabledForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<std::optional<bool>> CallUiBackend::VideoAllowedForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->VideoAllowedForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->VideoAllowedForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<bool> CallUiBackend::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->AwaitingExplicitAnswerForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->AwaitingExplicitAnswerForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->ListJoinedParticipants(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->JoinedParticipants(call_id);
   }
   return UnavailableError();
 }
 
 int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->InitiationOfferMinorForPeer(peer_identity);
-  }
-  return 0;
+  const CallReads* reads = stack_.Reads();
+  return reads ? reads->InitiationOfferMinorForPeer(peer_identity) : 0;
 }
 
 IMediaView& CallUiBackend::Media() {
-  auto* calls = stack_.Calls();
-  if (!calls) {
+  MediaEngine* engine = stack_.Engine();
+  if (!engine) {
     throw std::runtime_error("CallUiBackend::Media unavailable");
   }
-  return calls->Media();
+  return *engine;
 }
 
 } // namespace pbr

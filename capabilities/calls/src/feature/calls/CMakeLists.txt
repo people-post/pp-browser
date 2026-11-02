@@ -11,6 +11,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
     CallSessionManager.cpp
+    CallReads.cpp
     CallStack.cpp
     LocalNetworkReaction.cpp
     CallsLoop.cpp

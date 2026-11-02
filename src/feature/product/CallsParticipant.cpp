@@ -23,6 +23,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.transcript = &hub.Store();
   deps.contacts = &hub.Contacts();
   deps.account = &hub.Identity();
+  deps.initiation_billing = hub.InitiationBilling();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
                                         const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {
@@ -142,7 +143,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
 } // namespace
 
 bool CallsParticipant::ThreadInActiveCall(const Thread& thread) {
-  auto* calls = stack_.Calls();
+  const CallReads* calls = stack_.Reads();
   if (!calls) {
     return false;
   }
@@ -151,30 +152,30 @@ bool CallsParticipant::ThreadInActiveCall(const Thread& thread) {
     return false;
   }
   std::vector<CallParticipant> joined;
-  if (auto parts = calls->ListJoinedParticipants((*active)->call_id); parts) {
+  if (auto parts = calls->JoinedParticipants((*active)->call_id); parts) {
     joined = std::move(*parts);
   }
   return ThreadMatchesActiveCall(thread, **active, joined);
 }
 
 bool CallsParticipant::AnyCallLive() {
-  auto* calls = stack_.Calls();
+  const CallReads* calls = stack_.Reads();
   if (!calls) {
     return false;
   }
   if (auto active = calls->ActiveLocalCall(); active && *active) {
     return true;
   }
-  const auto invite = calls->PeekTopPendingInvite(); // read only: no ring is started or cleared by asking
+  const auto invite = calls->TopPendingInvite(); // read only: no ring is started or cleared by asking
   return invite && *invite;
 }
 
 Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std::string& call_id) {
-  auto* calls = stack_.Calls();
+  const CallReads* calls = stack_.Reads();
   if (!calls) {
     return Error("calls unavailable");
   }
-  if (auto participants = calls->ListJoinedParticipants(call_id)) {
+  if (auto participants = calls->JoinedParticipants(call_id)) {
     return *participants;
   }
   return Error("call participants unavailable");
@@ -194,9 +195,6 @@ std::vector<IDekConsumer*> CallsParticipant::DekConsumers() {
 
 void CallsParticipant::OnMessagingBuilt(ConversationsHub& hub) {
   stack_.BuildSessions(MakeCallStackDeps(hub, mesh_));
-  stack_.RunOnOwner([billing = hub.InitiationBilling()](CallSessionManager& calls) {
-    calls.SetInitiationBillingStore(billing);
-  });
 }
 
 void CallsParticipant::OnPolicyPrefs(const HubPolicyPrefs& prefs) {

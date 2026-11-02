@@ -28,10 +28,11 @@ class CallStack;
  * - **intents** post to the owner; ones with a result deliver it on UI through `on_done`;
  * - **owner state** (phase, status, flags, seat, hop health, …) reads the snapshot the owner
  *   publishes after each step (`CallStack::UiState`);
- * - **durable state** (invites, sessions, participants) reads the stores directly (read-only);
+ * - **durable state** (invites, sessions, participants) reads the stores through the stack's CallReads
+ *   (read-only) — never the session manager;
  * - `Media()` is the engine as the screen sees it (`IMediaView`: levels, video, health, device-local
  *   knobs), which synchronizes itself — never session control.
- * Queries go through stack.Calls() per call so stack rebuilds stay transparent. Application owns
+ * Reads go through stack.Reads() per call so stack rebuilds stay transparent. Application owns
  * the instance (bound to ConversationsHub::CallStackRef()); CallController binds via
  * CallFunctionalPorts. UI thread.
  */

@@ -13,6 +13,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "feature/calls/LiveCallMedia.h"
+#include "feature/calls/CallReads.h"
 #include "feature/calls/ICallSessionNotes.h"
 
 #include <functional>
@@ -138,8 +139,9 @@ public:
     bool IsBound() const { return wire.IsBound(); }
   };
 
-  CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions, CallMediaKeyExchange& key_exchange,
-                      CallInitiationBilling& billing, LiveCalls& live_calls, LiveCallMedia& call_media);
+  CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions, const CallReads& reads,
+                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls,
+                      LiveCallMedia& call_media);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
@@ -162,8 +164,6 @@ public:
    * within kJoinRequestTimeoutMs: the call is over.
    */
   Roe<CallSession> JoinCall(const std::string& call_id);
-  /** V053: the group call this device may join from `thread_id` (a group's thread), if any. */
-  std::optional<CallSession> JoinableCallInThread(const std::string& thread_id) const;
   /**
    * Accept a pending invite: checks → CallAccept + Joined + media arm. The circuit park is asked for,
    * not waited on. A failed accept leaves the call ringing.
@@ -203,10 +203,8 @@ public:
   void ClearPendingAnswererKick();
   bool PeekPendingAnswererKick(const std::string& call_id, std::string* peer_out) const;
 
-  Roe<std::optional<CallSession>> ActiveLocalCall() const;
+  /** The newest invite still to answer, after sweeping the expired ones. */
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
-  /** No sweep, no writes (UI reads): expired invites are skipped instead. */
-  Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
   /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
   int64_t AloneUntilMs(const std::string& call_id) const;
   /** This device is Joined in the call (not left it). */
@@ -255,7 +253,6 @@ private:
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
   /** Whether `identity` is in the group now (true when membership is not checked). */
-  bool InGroup(const std::string& group_id, const std::string& identity) const;
   /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
   bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /**
@@ -366,6 +363,8 @@ private:
   void SendRosterAfterRemoteAccept(const workflow_event::RosterAfterRemoteAccept& after);
   const IThreadCatalog& threads_;
   ICallSessionStore& sessions_;
+  /** The calls' durable reads (the stack's): what this device is in, what it may join. */
+  const CallReads& reads_;
   /** The call's media keys between the peers (owned by CallSessionManager). */
   CallMediaKeyExchange& key_exchange_;
   /** P001 initiation pricing on invite / accept (owned by CallSessionManager). */

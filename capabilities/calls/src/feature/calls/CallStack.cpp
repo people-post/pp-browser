@@ -139,7 +139,7 @@ void CallStack::AfterMobilityEvent(const bool local_class_changed) {
     return;
   }
   // Our class flipped mid-call: tell the peer (caps_update) and re-plan the live call.
-  if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
+  if (auto active = reads_->ActiveLocalCall(); active && active->has_value()) {
     call_sessions_->ReachSignals().AnnounceCapsUpdate();
     NotifyPathPolicyChangedOnOwner((*active)->call_id);
   }
@@ -379,9 +379,12 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
     return;
   }
   deps_ = deps;
+  reads_ = std::make_unique<CallReads>(*call_session_store_, *deps_.account, *deps_.threads,
+                                       deps_.delivery.group_members, deps_.initiation_billing);
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.threads, *deps_.transcript, *deps_.contacts,
-                                                        *deps_.account, *call_session_store_, *call_media_keys_,
-                                                        deps_.delivery, *call_media_engine_);
+                                                        *deps_.account, *call_session_store_, *reads_,
+                                                        *call_media_keys_, deps_.delivery, *call_media_engine_);
+  call_sessions_->SetInitiationBillingStore(deps_.initiation_billing);
   BindSessionOutbox();
   BindCallControlInbound();
   // No manager tracks the calls left open in the store (a previous run, or one reset since).
@@ -558,13 +561,12 @@ bool CallStack::HasActiveLocalCall() {
   if (UiState()->want_ephemeral_listen) {
     return true;
   }
-  if (!call_sessions_) {
+  const CallReads* reads = Reads();
+  if (!reads) {
     return false;
   }
-  if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
-    return true;
-  }
-  return false;
+  auto active = reads->ActiveLocalCall();
+  return active && active->has_value();
 }
 
 bool CallStack::WantEphemeralListen() const {
@@ -613,7 +615,7 @@ void CallStack::AbortCallMediaForShutdownOnOwner() {
   // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
   // leave Connecting instead of sitting on a half-open stream after we detach.
   if (call_sessions_) {
-    if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
+    if (auto active = reads_->ActiveLocalCall(); active && active->has_value()) {
       log().info << "AbortCallMediaForShutdown LeaveCall call_id=" << (*active)->call_id;
       (void)call_sessions_->LeaveCall((*active)->call_id, LiveCallEndReason::Shutdown);
     }
@@ -722,6 +724,7 @@ void CallStack::ResetSessionsOnOwner() {
     deps_.system_controls->Unbind("call");
   }
   call_sessions_.reset();
+  reads_.reset();
   ++sessions_generation_;       // its events still queued go nowhere
   chrome_self_.Invalidate();    // refreshes queued for the dropped sessions (a later bind posts fresh ones)
   OnCallStateChangedOnOwner();  // nothing is shown any more
@@ -763,6 +766,7 @@ void CallStack::ReleaseOnOwner() {
     media_plane_->Clear();
   }
   call_sessions_.reset();
+  reads_.reset();
   call_media_engine_.reset();
   at_rest_.clear();
   call_media_keys_.reset();

@@ -254,7 +254,8 @@ protected:
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
     delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
 
-    csm_ = std::make_unique<CallSessionManager>(*store_, *store_, *contacts_, *identity_, *sessions_, *keys_,
+    reads_ = std::make_unique<CallReads>(*sessions_, *identity_, *store_, delivery.group_members, nullptr);
+    csm_ = std::make_unique<CallSessionManager>(*store_, *store_, *contacts_, *identity_, *sessions_, *reads_, *keys_,
                                                 std::move(delivery), *media_);
     csm_->SetOutbox(csm_events_.Get());  // the fixture plays the stack
     // The manager owns the 1:1 path, as in the product: attach it on the fake transport.
@@ -286,6 +287,7 @@ protected:
     // (Windows CI SEGFAULT in InboundAcceptAsOffererSchedulesDirectMedia).
     AppRuntime::Shutdown();
     csm_.reset();
+    reads_.reset();
     transport_.reset();
     dial_.reset();
     media_.reset();
@@ -358,7 +360,7 @@ protected:
     ASSERT_TRUE(session && session->has_value());
     EXPECT_EQ((*session)->state, CallSessionState::Ended);
     DrainUntil([&]() {
-      auto after = csm_->ActiveLocalCall();
+      auto after = reads_->ActiveLocalCall();
       return after && !after->has_value();
     });
   }
@@ -406,6 +408,7 @@ protected:
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   /** The manager's 1:1 path (owned by csm_). */
+  std::unique_ptr<CallReads> reads_;
   std::unique_ptr<CallSessionManager> csm_;
   CallsLoopbackOutbox<SessionEvent> csm_events_{[this](SessionEvent& event) {
     if (csm_) {
@@ -431,7 +434,7 @@ TEST_F(CallSessionInboundComposeTest, InboundInviteCreatesPendingAndRingingSessi
 
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); })) << "inbound invite";
 
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending && pending->has_value());
   EXPECT_EQ((*pending)->call_id, call_id);
   EXPECT_EQ((*pending)->inviter_identity, "account:peer");
@@ -455,7 +458,7 @@ TEST_F(CallSessionInboundComposeTest, AnInviteNamingSomeoneElseAsTheCallerDoesNo
 
   (void)OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:mallory"); });
 
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   EXPECT_FALSE(pending && pending->has_value()) << "no ring for a forged caller";
   auto session = sessions_->LoadSession(call_id);
   EXPECT_FALSE(session && session->has_value());
@@ -470,7 +473,7 @@ TEST_F(CallSessionInboundComposeTest, StaleInviteDroppedByRelayAge) {
   const int64_t relay_now = created + kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs + 1;
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer", created, relay_now); }));
 
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
 }
@@ -482,7 +485,7 @@ TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->DeclineInvite(call_id); })) << "decline";
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
   EXPECT_GE(sent_control_messages_, 1);
@@ -580,7 +583,7 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
   EXPECT_NE(csm_->Live().Phase(), CallPhase::Ringing) << csm_->LastError();
   EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
 
-  auto active = csm_->ActiveLocalCall();
+  auto active = reads_->ActiveLocalCall();
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, call_id);
 
@@ -604,10 +607,10 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
   EXPECT_EQ((*session)->state, CallSessionState::Ended);
 
   DrainUntil([&]() {
-    auto after = csm_->ActiveLocalCall();
+    auto after = reads_->ActiveLocalCall();
     return after && !after->has_value();
   });
-  auto after = csm_->ActiveLocalCall();
+  auto after = reads_->ActiveLocalCall();
   ASSERT_TRUE(after);
   EXPECT_FALSE(after->has_value());
 }
@@ -620,7 +623,7 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveKCycleTeardown) {
 
   RunAnswererInviteAcceptLeave("call:cycle-2");
   ASSERT_EQ(csm_->Live().Phase(), CallPhase::Idle);
-  auto after = csm_->ActiveLocalCall();
+  auto after = reads_->ActiveLocalCall();
   ASSERT_TRUE(after);
   EXPECT_FALSE(after->has_value());
 }
@@ -632,7 +635,7 @@ TEST_F(CallSessionInboundComposeTest, WireSkewStaleInviteDropped) {
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
 }
@@ -920,7 +923,7 @@ TEST_F(CallSessionInboundComposeTest, CallerNarrowsOnVoiceOnlyAccept) {
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 
-  auto video_allowed = csm_->VideoAllowedForCall(call_id);
+  auto video_allowed = reads_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(video_allowed && video_allowed->has_value());
   EXPECT_FALSE(**video_allowed);
 }
@@ -983,7 +986,7 @@ TEST_F(CallSessionInboundComposeTest, CallerIgnoresMissingFieldAndNeverRewidens)
                                                           *narrow_detail, "account:peer");
   ASSERT_TRUE(narrow_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*narrow_msg, "account:peer"); }));
-  auto after_narrow = csm_->VideoAllowedForCall(call_id);
+  auto after_narrow = reads_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(after_narrow && after_narrow->has_value());
   ASSERT_FALSE(**after_narrow);
 
@@ -996,7 +999,7 @@ TEST_F(CallSessionInboundComposeTest, CallerIgnoresMissingFieldAndNeverRewidens)
                                                           *replay_detail, "account:peer");
   ASSERT_TRUE(replay_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*replay_msg, "account:peer"); }));
-  auto after_replay = csm_->VideoAllowedForCall(call_id);
+  auto after_replay = reads_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(after_replay && after_replay->has_value());
   EXPECT_FALSE(**after_replay) << "a replayed Accept without video_allowed must not re-widen the call";
 
@@ -1011,7 +1014,7 @@ TEST_F(CallSessionInboundComposeTest, CallerIgnoresMissingFieldAndNeverRewidens)
                                                         *plain_detail, "account:peer");
   ASSERT_TRUE(plain_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*plain_msg, "account:peer"); }));
-  auto fresh_video_allowed = csm_->VideoAllowedForCall(call_id2);
+  auto fresh_video_allowed = reads_->VideoAllowedForCall(call_id2);
   ASSERT_TRUE(fresh_video_allowed && fresh_video_allowed->has_value());
   EXPECT_TRUE(**fresh_video_allowed);
 }
@@ -1061,7 +1064,7 @@ TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer1"); }));
 
-  auto video_allowed = csm_->VideoAllowedForCall(call_id);
+  auto video_allowed = reads_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(video_allowed && video_allowed->has_value());
   EXPECT_TRUE(**video_allowed) << "voice-only Accept from one of >=2 invitees must not narrow the whole call";
 }
@@ -1097,10 +1100,10 @@ TEST_F(CallSessionInboundComposeTest, VoiceAnswerNarrowingFollowsTheCallOrigin) 
     ASSERT_TRUE(msg);
     ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   }
-  auto group_allowed = csm_->VideoAllowedForCall(group_call);
+  auto group_allowed = reads_->VideoAllowedForCall(group_call);
   ASSERT_TRUE(group_allowed && group_allowed->has_value());
   EXPECT_TRUE(**group_allowed) << "a group-thread call is never narrowed call-wide";
-  auto direct_allowed = csm_->VideoAllowedForCall(direct_call);
+  auto direct_allowed = reads_->VideoAllowedForCall(direct_call);
   ASSERT_TRUE(direct_allowed && direct_allowed->has_value());
   EXPECT_FALSE(**direct_allowed) << "a direct call narrows even with a guest already invited";
 }
@@ -1227,12 +1230,12 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_a); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_a); });
   DrainUntil([&]() {
-    auto active = csm_->ActiveLocalCall();
+    auto active = reads_->ActiveLocalCall();
     // Wait for AcceptInvite UI completion — reduces SQLITE_BUSY vs concurrent invite B upsert.
     return active && active->has_value() && (*active)->call_id == call_a &&
            csm_->Live().Phase() != CallPhase::Accepting;
   });
-  ASSERT_TRUE(csm_->ActiveLocalCall()->has_value());
+  ASSERT_TRUE(reads_->ActiveLocalCall()->has_value());
 
   auto msg_b = MakeInviteMessage(call_b);
   ASSERT_TRUE(msg_b);
@@ -1244,7 +1247,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_b); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_b); });
   DrainUntil([&]() {
-    auto active = csm_->ActiveLocalCall();
+    auto active = reads_->ActiveLocalCall();
     return active && active->has_value() && (*active)->call_id == call_b;
   });
 
@@ -1254,7 +1257,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   auto b = sessions_->LoadSession(call_b);
   ASSERT_TRUE(b && b->has_value());
   EXPECT_NE((*b)->state, CallSessionState::Ended);
-  auto active = csm_->ActiveLocalCall();
+  auto active = reads_->ActiveLocalCall();
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, call_b);
   // Ending A must not RemoteEnded-clobber Accepting/Joined B.
@@ -1301,7 +1304,7 @@ TEST_F(CallSessionInboundComposeTest, AbandonOrphanedCallsAfterRestartClearsJoin
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  auto top = csm_->TopPendingInvite();
+  auto top = reads_->TopPendingInvite();
   ASSERT_TRUE(top);
   EXPECT_FALSE(top->has_value());
 }
@@ -1333,7 +1336,7 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesMarksMissed) {
 
   OnCallsOwner([&] { return csm_->SweepExpiredInvites(); });
 
-  auto top = csm_->TopPendingInvite();
+  auto top = reads_->TopPendingInvite();
   ASSERT_TRUE(top);
   EXPECT_FALSE(top->has_value());
   auto self = sessions_->FindParticipant(pending.call_id, local_identity_);
@@ -1427,7 +1430,7 @@ TEST_F(CallSessionInboundComposeTest, LegacySdpAndIceIgnored) {
   ASSERT_TRUE(ice);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*ice, "account:peer"); }));
 
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
 }
@@ -1442,12 +1445,12 @@ TEST_F(CallSessionInboundComposeTest, DeclineClickedClearsPendingViaLifecycle) {
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::DeclineClicked, call_id); });
   DrainUntil([&]() {
-    auto pending = csm_->TopPendingInvite();
+    auto pending = reads_->TopPendingInvite();
     return pending && !pending->has_value() && csm_->Live().Phase() == CallPhase::Idle;
   });
   EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
-  auto pending = csm_->TopPendingInvite();
+  auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
 }
@@ -1458,7 +1461,7 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineClearsOffererOutboundCalling
   SeedOffererRingingCall(call_id);
   OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
   ASSERT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
-  ASSERT_TRUE(csm_->ActiveLocalCall()->has_value());
+  ASSERT_TRUE(reads_->ActiveLocalCall()->has_value());
 
   CallDeclineDetail decline;
   decline.call_id = call_id;
@@ -1476,7 +1479,7 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineClearsOffererOutboundCalling
   EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle)
       << "inbound CallDecline must EndCallLocal → RemoteEnded";
   EXPECT_TRUE(ShownCallId().empty());
-  auto active = csm_->ActiveLocalCall();
+  auto active = reads_->ActiveLocalCall();
   ASSERT_TRUE(active);
   EXPECT_FALSE(active->has_value());
 }
@@ -1685,9 +1688,7 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnans
   ASSERT_TRUE(sessions_->UpsertSession(**session));
 
   OnCallsOwner([&] { return csm_->SweepExpiredInvites(); });
-  DrainUntil([&]() {
-    return csm_->Live().Phase() == CallPhase::Idle && !csm_->ActiveLocalCall()->has_value();
-  });
+  DrainUntil([&]() { return csm_->Live().Phase() == CallPhase::Idle && !reads_->ActiveLocalCall()->has_value(); });
   EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
@@ -1710,7 +1711,7 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesSkipsOutboundBeforeTtl)
 
   OnCallsOwner([&] { return csm_->SweepExpiredInvites(); });
   EXPECT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
-  EXPECT_TRUE(csm_->ActiveLocalCall()->has_value());
+  EXPECT_TRUE(reads_->ActiveLocalCall()->has_value());
 }
 
 TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
@@ -1731,10 +1732,10 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   ASSERT_TRUE(media_->IsActive());
   EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
 
-  auto peer = csm_->PeerIdentityForCall(call_id);
+  auto peer = reads_->PeerIdentityForCall(call_id);
   ASSERT_TRUE(peer && peer->has_value());
   EXPECT_EQ(**peer, "account:peer");
-  auto video_ok = csm_->VideoAllowedForCall(call_id);
+  auto video_ok = reads_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(video_ok && video_ok->has_value());
   EXPECT_TRUE(**video_ok);
 

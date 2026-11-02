@@ -65,10 +65,11 @@ void NoteCapsForIdentity(CallSessionManager& sessions, const IContactBook& conta
 
 CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTranscript& transcript,
                                        IContactBook& contacts, const ILocalAccount& account,
-                                       ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
-                                       CallDeliveryPorts delivery, MediaEngine& media)
+                                       ICallSessionStore& sessions, const CallReads& reads,
+                                       ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery, MediaEngine& media)
     : contacts_(contacts),
       sessions_(sessions),
+      reads_(reads),
       media_keys_(media_keys),
       delivery_(std::move(delivery)),
       media_(media),
@@ -82,7 +83,7 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
                      const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
       billing_(account),
       reach_signals_(control_),
-      workflow_(threads, sessions, key_exchange_, billing_, live_calls_, call_media_),
+      workflow_(threads, sessions, reads, key_exchange_, billing_, live_calls_, call_media_),
       peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
@@ -286,14 +287,14 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
 void CallSessionManager::BindReachSignalPorts() {
   CallReachSignals::CallPorts ports;
   ports.active_call_id = [this]() -> std::optional<std::string> {
-    auto active = ActiveLocalCall();
+    auto active = reads_.ActiveLocalCall();
     if (!active || !active->has_value()) {
       return std::nullopt;
     }
     return (*active)->call_id;
   };
   ports.call_peer = [this](const std::string& call_id) -> std::optional<std::string> {
-    auto peer = PeerIdentityForCall(call_id);
+    auto peer = reads_.PeerIdentityForCall(call_id);
     if (!peer || !peer->has_value()) {
       return std::nullopt;
     }
@@ -847,7 +848,7 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
   }
   std::string peer;
   if (!workflow_.PeekPendingAnswererKick(call_id, &peer)) {
-    auto resolved = PeerIdentityForCall(call_id);
+    auto resolved = reads_.PeerIdentityForCall(call_id);
     if (resolved && resolved->has_value()) {
       peer = **resolved;
     }
@@ -886,10 +887,6 @@ std::string CallSessionManager::MediaPathKind() const {
 
 bool CallSessionManager::IsSfuAttached() const {
   return ActivePathsView().hop_attached;
-}
-
-MediaEngine& CallSessionManager::Media() {
-  return media_;
 }
 
 Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
@@ -1012,7 +1009,7 @@ void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMulti
 void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay) {
   // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
   if (media_relay_caps_.Note(peer_id, media_relay)) {
-    if (auto active = ActiveLocalCall(); active && active->has_value()) {
+    if (auto active = reads_.ActiveLocalCall(); active && active->has_value()) {
       if (CallMedia* call = call_media_.Find((*active)->call_id)) {
         call->OnPeerMediaRelayCapLearned(peer_id);
       }
@@ -1100,12 +1097,6 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   return workflow_.InviteParticipant(call_id, invitee_identity);
 }
 
-
-int64_t CallSessionManager::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  return billing_.OfferFrom(peer_identity);
-}
-
-
 void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
   workflow_.SetPendingAcceptChargeDecision(decision);
 }
@@ -1192,77 +1183,11 @@ void CallSessionManager::MaybeCatchUpAfterCall() {
   if (!delivery_.catch_up_after_call) {
     return;
   }
-  auto active = ActiveLocalCall();
+  auto active = reads_.ActiveLocalCall();
   if (active && *active) {
     return;
   }
   delivery_.catch_up_after_call();
-}
-
-
-Roe<std::vector<PendingCallInvite>> CallSessionManager::ListPendingInvites() {
-  SweepExpiredInvites();
-  auto local = control_.LocalRelayIdentity();
-  if (!local) {
-    return local.error();
-  }
-  return sessions_.ListPendingInvitesForInvitee(*local);
-}
-
-std::optional<std::string> CallSessionManager::JoinableCallInThread(const std::string& thread_id) const {
-  auto call = workflow_.JoinableCallInThread(thread_id);
-  return call ? std::optional<std::string>(call->call_id) : std::nullopt;
-}
-
-Roe<std::optional<CallSession>> CallSessionManager::ActiveLocalCall() const {
-  return workflow_.ActiveLocalCall();
-}
-
-Roe<std::optional<PendingCallInvite>> CallSessionManager::TopPendingInvite() {
-  return workflow_.TopPendingInvite();
-}
-
-Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const std::string& call_id) const {
-  auto local = control_.LocalRelayIdentity();
-  if (!local) {
-    return local.error();
-  }
-  auto peer = call_queries::FirstRemoteParticipant(sessions_, call_id, *local);
-  if (!peer) {
-    return peer.error();
-  }
-  return *peer ? std::optional<std::string>{(*peer)->identity} : std::optional<std::string>{};
-}
-
-Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::string& call_id) const {
-  auto local = control_.LocalRelayIdentity();
-  if (!local) {
-    return local.error();
-  }
-  auto peer = call_queries::FirstRemoteParticipant(sessions_, call_id, *local);
-  if (!peer) {
-    return peer.error();
-  }
-  return *peer ? std::optional<bool>{(*peer)->media.video_enabled} : std::optional<bool>{};
-}
-
-Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::string& call_id) const {
-  auto session = sessions_.LoadSession(call_id);
-  if (!session) {
-    return session.error();
-  }
-  if (!session->has_value()) {
-    return std::optional<bool>{};
-  }
-  return std::optional<bool>{(*session)->video_allowed};
-}
-
-Roe<bool> CallSessionManager::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
-  return call_queries::AwaitingExplicitAnswer(sessions_, call_id);
-}
-
-Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(const std::string& call_id) const {
-  return call_queries::JoinedParticipants(sessions_, call_id);
 }
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const {
@@ -1619,7 +1544,7 @@ void CallSessionManager::P2pSetLastMediaError(std::string message) {
 }
 
 Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const std::string& call_id) const {
-  return PeerIdentityForCall(call_id);
+  return reads_.PeerIdentityForCall(call_id);
 }
 
 Roe<std::optional<std::string>> CallSessionManager::MeshPeerIdForAccount(const std::string& account) const {

@@ -5,6 +5,7 @@
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/ICallSessionStore.h"
+#include "feature/calls/CallReads.h"
 #include "lib/pricing/PricingTypes.h"
 #include "lib/pricing/IInitiationBillingBook.h"
 #include "common/thread/IThreadCatalog.h"
@@ -59,8 +60,8 @@ public:
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
 
   CallSessionManager(const IThreadCatalog& threads, IThreadTranscript& transcript, IContactBook& contacts,
-                     const ILocalAccount& account, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
-                     CallDeliveryPorts delivery, MediaEngine& media);
+                     const ILocalAccount& account, ICallSessionStore& sessions, const CallReads& reads,
+                     ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery, MediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
@@ -153,8 +154,6 @@ public:
   void SetDirectPathFactoryForTest(CallDirectPathFactory make);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(IInitiationBillingBook* store);
-  /** Offer amount stored for inviter when inbound invite carried pricing. */
-  int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
   /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
@@ -200,23 +199,7 @@ public:
 
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
 
-  Roe<std::vector<PendingCallInvite>> ListPendingInvites();
-  Roe<std::optional<CallSession>> ActiveLocalCall() const;
-  /** V053: the group call this device may join from `thread_id` — the call button reads Join. */
-  std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
-  Roe<std::optional<PendingCallInvite>> TopPendingInvite();
-  Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const { return workflow_.PeekTopPendingInvite(); }
   int64_t AloneUntilMs(const std::string& call_id) const { return workflow_.AloneUntilMs(call_id); }
-
-  Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
-  Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
-  Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
-  /**
-   * True while a remote we invited is joined only through an implicit accept (B30): its CallAccept —
-   * and with it a voice-only answer — has not arrived yet.
-   */
-  Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
-  Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
   /**
    * V037: Lifecycle AcceptSucceeded (UI) re-arms answerer ScheduleStart when Status already
@@ -252,7 +235,6 @@ public:
                                 std::optional<int64_t> relay_created_at_ms = std::nullopt,
                                 std::optional<int64_t> relay_server_time_ms = std::nullopt);
 
-  MediaEngine& Media();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
   /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
@@ -382,6 +364,8 @@ private:
   IContactBook& contacts_;
   /** Read-only here: the workflow writes the rows (V055). */
   const ICallSessionReader& sessions_;
+  /** The calls' durable reads (the stack's; the screen asks the same). */
+  const CallReads& reads_;
   ICallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
   MediaEngine& media_;

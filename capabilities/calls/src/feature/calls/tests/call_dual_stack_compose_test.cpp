@@ -508,7 +508,7 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   EXPECT_TRUE(offer_.stack->Engine()->IsActive());
   // The answer mode (e.g. voice-only) rides the real accept: until it lands the offerer holds its
   // auto camera (PR #230 review).
-  auto awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
+  auto awaiting = offer_.stack->Reads()->AwaitingExplicitAnswerForCall(call_id);
   ASSERT_TRUE(awaiting);
   EXPECT_TRUE(*awaiting) << "an implicit accept is not the answer yet";
 
@@ -521,7 +521,7 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   PumpWire();
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
   EXPECT_TRUE(offer_.stack->Engine()->IsActive());
-  awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
+  awaiting = offer_.stack->Reads()->AwaitingExplicitAnswerForCall(call_id);
   ASSERT_TRUE(awaiting);
   EXPECT_FALSE(*awaiting) << "the late CallAccept is the answer";
   FinishAnswerLeaveExpectBothIdle(call_id);
@@ -717,7 +717,7 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   EXPECT_EQ((*active_b)->call_id, call_b);
 
   // Prior call A must be ended on both sides.
-  auto offer_a = offer_.stack->Calls()->ActiveLocalCall();
+  auto offer_a = offer_.stack->Reads()->ActiveLocalCall();
   ASSERT_TRUE(offer_a);
   if (offer_a->has_value()) {
     EXPECT_NE((*offer_a)->call_id, call_a);

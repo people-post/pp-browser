@@ -18,6 +18,7 @@
 #include "lib/calls/CallMediaSeat.h"
 #include "lib/calls/CallPathMobility.h"
 #include "lib/calls/ICallMediaKeyStore.h"
+#include "feature/calls/CallReads.h"
 #include "feature/calls/CallSessionManager.h"
 #include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
@@ -57,6 +58,8 @@ struct CallStackDeps {
   IThreadTranscript* transcript = nullptr;
   IContactBook* contacts = nullptr;
   const ILocalAccount* account = nullptr;
+  /** P001 initiation pricing between peers (the hub's; may be null). */
+  IInitiationBillingBook* initiation_billing = nullptr;
   /** Delivery + dial registration; filled from MeshDeliveryOrchestrator without typing it here. */
   CallDeliveryPorts delivery;
   /** Where call control is bound as a system-control family (after the CSM is built; unbound with it). */
@@ -156,6 +159,11 @@ public:
    * hub's UI thread: those edges wait on the owner) and only for durable-store reads.
    */
   CallSessionManager* Calls();
+  /**
+   * The calls' durable state, read-only (any thread; null before BuildSessions): what the screen and
+   * the hub read — never the session manager.
+   */
+  const CallReads* Reads() const { return reads_.get(); }
   ICallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
   /** The call sessions (null before InitializeStores). */
   ICallSessionStore* Sessions() { return call_session_store_.get(); }
@@ -244,6 +252,8 @@ private:
   std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
   std::vector<IDekConsumer*> at_rest_;
   std::unique_ptr<MediaEngine> call_media_engine_;
+  /** Before call_sessions_, which reads through it. */
+  std::unique_ptr<CallReads> reads_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
