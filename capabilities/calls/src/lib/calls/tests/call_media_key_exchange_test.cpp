@@ -1,8 +1,9 @@
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 
 #include "lib/calls/CallControlCodec.h"
-#include "lib/calls/CallMediaKeyStore.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "common/Utilities.h"
 
@@ -28,9 +29,9 @@ protected:
     dir_ = std::filesystem::temp_directory_path() / ("pp_call_media_key_exchange_" + util::GenerateUuid());
     std::filesystem::create_directories(dir_);
     const std::string db = (dir_ / "profile.db").string();
-    keys_ = std::make_unique<CallMediaKeyStore>(db);
+    keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(Bytes(0xa0, kDataEncryptionKeySize)));
-    sessions_ = std::make_unique<CallSessionStore>(db);
+    sessions_ = std::make_unique<InMemoryCallSessionStore>();
     CallSession session;
     session.call_id = kCall;
     session.media_epoch = 1;
@@ -62,7 +63,7 @@ protected:
     detail.media_epoch = epoch;
     detail.media_key_id = "mk:" + std::to_string(epoch);
     detail.wrapped_key_b64 =
-        CallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)), kCall, epoch,
+        ICallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)), kCall, epoch,
                                      detail.media_key_id)
             .value();
     return CallControlCodec::EncodeMediaKey(detail).value();
@@ -72,8 +73,8 @@ protected:
 
   static constexpr const char* kCall = "call:rotate";
   std::filesystem::path dir_;
-  std::unique_ptr<CallMediaKeyStore> keys_;
-  std::unique_ptr<CallSessionStore> sessions_;
+  std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
+  std::unique_ptr<InMemoryCallSessionStore> sessions_;
   std::unique_ptr<CallMediaKeyExchange> exchange_;
   ByteVector session_key_ = Bytes(0x10);
   bool peer_session_ready_ = false;

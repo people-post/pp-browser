@@ -4,6 +4,8 @@
 pp_browser_add_lib_library(pp_lib_storage
   SOURCES
     ProfileStorage.cpp
+    SqliteCallMediaKeyStore.cpp
+    SqliteCallSessionStore.cpp
     SqliteControlLaneSeenStore.cpp
     SqliteGroupRosterStore.cpp
     SqlitePeerSessionStore.cpp
@@ -14,6 +16,7 @@ pp_browser_add_lib_library(pp_lib_storage
     SqliteThreadStore.cpp
   PUBLIC_LIBS
     pp_lib_messaging
+    pp_lib_calls
     pp_lib_delivery
     pp_foundation_crypto
     pp_foundation_error

@@ -1,3 +1,4 @@
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "lib/calls/CallMediaSeat.h"
@@ -7,8 +8,8 @@
 
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
-#include "lib/calls/CallSessionStore.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "lib/calls/SoftMigrateLogic.h"
@@ -324,8 +325,8 @@ protected:
     std::filesystem::create_directories(data_dir_);
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
-    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
+    sessions_ = std::make_unique<InMemoryCallSessionStore>();
+    keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     media_ = std::make_unique<CallMediaEngine>();
@@ -452,8 +453,8 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
-  std::unique_ptr<CallSessionStore> sessions_;
-  std::unique_ptr<CallMediaKeyStore> keys_;
+  std::unique_ptr<InMemoryCallSessionStore> sessions_;
+  std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeTopologyHost> host_;

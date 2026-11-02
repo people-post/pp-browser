@@ -2,8 +2,8 @@
 
 #include "common/MeshConfig.h"
 #include "lib/media/CallMediaEngine.h"
-#include "lib/calls/CallSessionStore.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "mesh/connectivity/MeshConnectivity.h"

@@ -354,15 +354,19 @@ void CallStack::BindMediaProducts() {
   PublishUiState();
 }
 
-Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const std::string& profile_id) {
+Roe<void> CallStack::InitializeStores(CallStores stores) {
   Roe<void> result;
-  executor_.RunAndWait([&]() { result = InitializeStoresOnOwner(profile_db_path, profile_id); });
+  executor_.RunAndWait([&]() { result = InitializeStoresOnOwner(std::move(stores)); });
   return result;
 }
 
-Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id) {
-  call_session_store_ = std::make_unique<CallSessionStore>(profile_db_path);
-  call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
+Roe<void> CallStack::InitializeStoresOnOwner(CallStores stores) {
+  if (!stores.sessions || !stores.media_keys) {
+    return Error("Call stores missing");
+  }
+  call_session_store_ = std::move(stores.sessions);
+  call_media_keys_ = std::move(stores.media_keys);
+  at_rest_ = std::move(stores.at_rest);
   call_media_engine_ = std::make_unique<CallMediaEngine>();
   if (!media_plane_) {
     media_plane_ = std::make_unique<CallMediaPlane>();
@@ -764,6 +768,7 @@ void CallStack::ReleaseOnOwner() {
   }
   call_sessions_.reset();
   call_media_engine_.reset();
+  at_rest_.clear();
   call_media_keys_.reset();
   call_session_store_.reset();
   PublishUiState();

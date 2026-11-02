@@ -1,4 +1,5 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "lib/storage/ProfileStorage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "lib/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
@@ -182,11 +183,17 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   mesh_media_relay_ = std::make_unique<mesh::MeshMediaRelay>(*mesh_connectivity_);
   hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   stack_ = std::make_unique<CallStack>();
-  if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
-    return stores.error();
+  auto call_stores = OpenSqliteCallStores(store_->ProfileDbPath(), "call-probe");
+  if (!call_stores) {
+    return call_stores.error();
   }
-  if (auto mk = stack_->MediaKeys()->SetDek(ProbeDek()); !mk) {
-    return mk.error();
+  for (IDekConsumer* at_rest : call_stores->at_rest) {
+    if (auto keyed = at_rest->SetDek(ProbeDek()); !keyed) {
+      return keyed.error();
+    }
+  }
+  if (auto stores = stack_->InitializeStores(std::move(*call_stores)); !stores) {
+    return stores.error();
   }
 
   ui_ = std::make_unique<CallUiBackend>(*stack_);

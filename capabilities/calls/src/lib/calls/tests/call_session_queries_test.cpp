@@ -1,8 +1,9 @@
 // What a call's stored session says (call_queries), a peer's roster applied to it, and the roster
 // helpers the session workflow uses.
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/CallSessionQueries.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -20,7 +21,7 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_queries_" + util::GenerateUuid());
     std::filesystem::create_directories(data_dir_);
-    calls_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
+    calls_ = std::make_unique<InMemoryCallSessionStore>();
     CallSession session;
     session.call_id = kCall;
     session.origin_thread_id = "thread-1";
@@ -54,7 +55,7 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<CallSessionStore> calls_;
+  std::unique_ptr<InMemoryCallSessionStore> calls_;
 };
 
 TEST_F(CallSessionQueriesTest, WhoIsInTheCall) {

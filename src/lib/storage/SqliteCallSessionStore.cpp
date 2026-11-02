@@ -1,4 +1,4 @@
-#include "lib/calls/CallSessionStore.h"
+#include "lib/storage/SqliteCallSessionStore.h"
 
 #include <sqlite3.h>
 #include "common/PbrCompat.h"
@@ -126,10 +126,10 @@ CallSession SessionFromStmt(sqlite3_stmt* stmt) {
 
 } // namespace
 
-CallSessionStore::CallSessionStore(std::string profile_db_path)
+SqliteCallSessionStore::SqliteCallSessionStore(std::string profile_db_path)
     : profile_db_path_(std::move(profile_db_path)) {}
 
-Roe<sqlite3*> CallSessionStore::OpenDb() const {
+Roe<sqlite3*> SqliteCallSessionStore::OpenDb() const {
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for call sessions");
@@ -148,7 +148,7 @@ Roe<sqlite3*> CallSessionStore::OpenDb() const {
   return db;
 }
 
-Roe<void> CallSessionStore::EnsureSchema(sqlite3* profile_db) {
+Roe<void> SqliteCallSessionStore::EnsureSchema(sqlite3* profile_db) {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kCallSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "call schema failed";
@@ -173,7 +173,7 @@ Roe<void> CallSessionStore::EnsureSchema(sqlite3* profile_db) {
   return {};
 }
 
-Roe<void> CallSessionStore::UpsertSession(const CallSession& session) const {
+Roe<void> SqliteCallSessionStore::UpsertSession(const CallSession& session) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -224,7 +224,7 @@ Roe<void> CallSessionStore::UpsertSession(const CallSession& session) const {
   return {};
 }
 
-Roe<std::optional<CallSession>> CallSessionStore::LoadSession(const std::string& call_id) const {
+Roe<std::optional<CallSession>> SqliteCallSessionStore::LoadSession(const std::string& call_id) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -248,7 +248,7 @@ Roe<std::optional<CallSession>> CallSessionStore::LoadSession(const std::string&
   return result;
 }
 
-Roe<std::vector<CallSession>> CallSessionStore::ListActiveSessions() const {
+Roe<std::vector<CallSession>> SqliteCallSessionStore::ListActiveSessions() const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -271,7 +271,7 @@ Roe<std::vector<CallSession>> CallSessionStore::ListActiveSessions() const {
   return rows;
 }
 
-Roe<std::vector<CallSession>> CallSessionStore::ListSessionsForGroup(const std::string& group_id,
+Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const std::string& group_id,
                                                                      const size_t limit) const {
   auto db = OpenDb();
   if (!db) {
@@ -298,7 +298,7 @@ Roe<std::vector<CallSession>> CallSessionStore::ListSessionsForGroup(const std::
   return rows;
 }
 
-Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant) const {
+Roe<void> SqliteCallSessionStore::UpsertParticipant(const CallParticipant& participant) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -343,7 +343,7 @@ Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant
   return {};
 }
 
-Roe<std::vector<CallParticipant>> CallSessionStore::ListParticipants(const std::string& call_id) const {
+Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const std::string& call_id) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -374,7 +374,7 @@ Roe<std::vector<CallParticipant>> CallSessionStore::ListParticipants(const std::
   return rows;
 }
 
-Roe<std::optional<CallParticipant>> CallSessionStore::FindParticipant(const std::string& call_id,
+Roe<std::optional<CallParticipant>> SqliteCallSessionStore::FindParticipant(const std::string& call_id,
                                                                       const std::string& identity) const {
   auto all = ListParticipants(call_id);
   if (!all) {
@@ -388,7 +388,7 @@ Roe<std::optional<CallParticipant>> CallSessionStore::FindParticipant(const std:
   return std::optional<CallParticipant>{};
 }
 
-Roe<size_t> CallSessionStore::CountJoined(const std::string& call_id) const {
+Roe<size_t> SqliteCallSessionStore::CountJoined(const std::string& call_id) const {
   auto all = ListParticipants(call_id);
   if (!all) {
     return all.error();
@@ -402,7 +402,7 @@ Roe<size_t> CallSessionStore::CountJoined(const std::string& call_id) const {
   return count;
 }
 
-Roe<void> CallSessionStore::UpsertPendingInvite(const PendingCallInvite& invite) const {
+Roe<void> SqliteCallSessionStore::UpsertPendingInvite(const PendingCallInvite& invite) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -447,7 +447,7 @@ Roe<void> CallSessionStore::UpsertPendingInvite(const PendingCallInvite& invite)
   return {};
 }
 
-Roe<std::optional<PendingCallInvite>> CallSessionStore::LoadPendingInvite(
+Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
     const std::string& call_id, const std::string& invitee_identity) const {
   auto db = OpenDb();
   if (!db) {
@@ -486,7 +486,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionStore::LoadPendingInvite(
   return result;
 }
 
-Roe<std::vector<PendingCallInvite>> CallSessionStore::ListPendingInvitesForInvitee(
+Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesForInvitee(
     const std::string& invitee_identity) const {
   auto db = OpenDb();
   if (!db) {
@@ -525,7 +525,7 @@ Roe<std::vector<PendingCallInvite>> CallSessionStore::ListPendingInvitesForInvit
   return rows;
 }
 
-Roe<void> CallSessionStore::UpdateInviteStatus(const std::string& call_id, const std::string& invitee_identity,
+Roe<void> SqliteCallSessionStore::UpdateInviteStatus(const std::string& call_id, const std::string& invitee_identity,
                                                const std::string& status) const {
   auto db = OpenDb();
   if (!db) {

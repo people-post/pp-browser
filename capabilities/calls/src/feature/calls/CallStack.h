@@ -3,7 +3,8 @@
 #include "mesh/types/AddressDisclosure.h"
 #include "common/MeshConfig.h"
 #include "lib/media/CallMediaEngine.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/CallStores.h"
 #include "lib/delivery/IPeerSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -16,7 +17,7 @@
 #include "feature/calls/CallMediaPlane.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "lib/calls/CallPathMobility.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
 #include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
@@ -95,8 +96,8 @@ public:
   CallStack();
   ~CallStack() override;
 
-  /** Phase A (profile init, no mesh): create call session store, media key store, media engine. */
-  Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
+  /** Phase A (profile init, no mesh): take the call stores (the app's storage opens them), create the media engine. */
+  Roe<void> InitializeStores(CallStores stores);
   /**
    * Phase A: build the CSM against `deps`, wire providers, bind call state + media plane. Once:
    * while sessions exist (until ResetSessions) a further call keeps them — rebuilding would end
@@ -154,7 +155,11 @@ public:
    * hub's UI thread: those edges wait on the owner) and only for durable-store reads.
    */
   CallSessionManager* Calls();
-  CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
+  ICallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
+  /** The call sessions (null before InitializeStores). */
+  ICallSessionStore* Sessions() { return call_session_store_.get(); }
+  /** The call stores encrypted at rest (the profile's data key goes to them). */
+  const std::vector<IDekConsumer*>& AtRestStores() const { return at_rest_; }
   CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
 
   /**
@@ -191,7 +196,7 @@ public:
 
 private:
   // Bodies of the hub-facing edges above; the public methods run them on the calls owner.
-  Roe<void> InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id);
+  Roe<void> InitializeStoresOnOwner(CallStores stores);
   void BuildSessionsOnOwner(const CallStackDeps& deps);
   void BindSessionOutbox();
   void BindCallControlInbound();
@@ -234,8 +239,9 @@ private:
   CallStackDeps deps_;
   /** Written by the owner of the settings (UI), read when the calls owner rebuilds its CSM. */
   std::atomic<mesh::InboundAudience> inbound_call_audience_{mesh::InboundAudience::Everyone};
-  std::unique_ptr<CallSessionStore> call_session_store_;
-  std::unique_ptr<CallMediaKeyStore> call_media_keys_;
+  std::unique_ptr<ICallSessionStore> call_session_store_;
+  std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
+  std::vector<IDekConsumer*> at_rest_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;

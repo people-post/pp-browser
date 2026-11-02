@@ -5,7 +5,7 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallSummaryLogic.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
@@ -27,7 +27,7 @@ namespace pbr {
  */
 class CallControlClient : public Module {
 public:
-  CallControlClient(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
+  CallControlClient(IThreadStore& store, IdentityStore& identity, ICallSessionStore& sessions,
                     IPeerSessionStore& psk_store, const CallDeliveryPorts& delivery);
 
   Roe<std::string> LocalRelayIdentity() const;
@@ -57,7 +57,7 @@ public:
 private:
   IThreadStore& store_;
   IdentityStore& identity_;
-  CallSessionStore& sessions_;
+  ICallSessionStore& sessions_;
   IPeerSessionStore& psk_store_;
   const CallDeliveryPorts& delivery_;
   /**

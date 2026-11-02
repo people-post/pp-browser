@@ -84,7 +84,7 @@ protected:
 TEST_F(MyStoreTest, Example) { /* ... */ }
 ```
 
-Per-operation SQLite helpers (e.g. `CallMediaKeyStore::OpenDb()`) close after each call; the usual failure is **`SqliteThreadStore` left alive** through cleanup.
+Per-operation SQLite helpers (e.g. `ICallMediaKeyStore::OpenDb()`) close after each call; the usual failure is **`SqliteThreadStore` left alive** through cleanup.
 
 ---
 
@@ -323,7 +323,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_leg_coordinator_test` (ex-`CallMediaDirectService`), `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (answerer + offerer ScheduleStart / KeyReady / ReleaseDirect / dial-backoff→circuit / **ConnectFailed stops media**), `call_session_inbound_compose_test` (CSM Invite→AcceptClicked→Leave Idle), `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→InCall), `call_dual_stack_compose_test` (Offer↔Answer Invite/Accept/InCall/Leave wire); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); thin smoke still Amp duplex (not product CSM wire) |
+| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_leg_coordinator_test` (ex-`CallMediaDirectService`), `ICallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (answerer + offerer ScheduleStart / KeyReady / ReleaseDirect / dial-backoff→circuit / **ConnectFailed stops media**), `call_session_inbound_compose_test` (CSM Invite→AcceptClicked→Leave Idle), `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→InCall), `call_dual_stack_compose_test` (Offer↔Answer Invite/Accept/InCall/Leave wire); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); thin smoke still Amp duplex (not product CSM wire) |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `AmpCircuitCallMediaComposeTest` / `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop`. **V038 D4 loopback gate.** |
 | B-GROUP-CALL | **Covered** (in-process + hard lab) | In-process: `call_group_stack_compose_test` (CallStack×3 + CallUiBackend, `BindTestMediaPath(…, relay)` fake hop). Triple-NAT: **B-HARD-GROUP-CALL-NAT** (`--suite hard-w5 --phase group`) — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Phase-13 |
 | B-TEARDOWN | **Partial** (improved) | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services; in-process `InviteAcceptLeaveKCycleTeardown` (CSM); `OfferAnswerKCycleTeardown` (dual CallStack Leave→Idle→re-Invite) |

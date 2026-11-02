@@ -6,10 +6,10 @@
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallHopPlannerLogic.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/SoftMigrateLogic.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
@@ -213,7 +213,7 @@ public:
     bool IsBound() const { return static_cast<bool>(apply); }
   };
 
-  CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
+  CallHopMigrateWorkflow(ICallSessionStore& sessions, CallMediaEngine& media);
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
@@ -224,7 +224,7 @@ public:
   void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
   void SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps);
-  void SetMediaKeyStore(CallMediaKeyStore* keys);
+  void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The call moved to a new media epoch (V003): the live hop attach seals with its key from now. */
   void InstallMediaKey(const std::string& call_id);
 
@@ -334,9 +334,9 @@ private:
   mesh::MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
   static std::function<Roe<void>(const mesh::MediaRelayQuote&)> RelayQuotePricingGate();
 
-  CallSessionStore& sessions_;
+  ICallSessionStore& sessions_;
   CallMediaEngine& media_;
-  CallMediaKeyStore* media_keys_ = nullptr;
+  ICallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;
   SharedPorts<CallHopMigrateArmingPorts> arming_;

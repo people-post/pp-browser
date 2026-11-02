@@ -18,7 +18,7 @@
 
 namespace pbr {
 
-CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
+CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, ICallSessionStore& sessions,
                                          CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing,
                                          LiveCalls& live_calls, LiveCallMedia& call_media)
     : store_(store), sessions_(sessions), key_exchange_(key_exchange), billing_(billing),

@@ -1,3 +1,4 @@
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
 #include "feature/calls/tests/calls_on_owner.h"
@@ -10,8 +11,8 @@
 
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
-#include "lib/calls/CallMediaKeyStore.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/thread/ThreadRecordTypes.h"
@@ -199,8 +200,8 @@ protected:
 
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
-    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
+    sessions_ = std::make_unique<InMemoryCallSessionStore>();
+    keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     identity_ = std::make_unique<IdentityStore>(data_dir_.string(), "csm-test");
@@ -395,8 +396,8 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
-  std::unique_ptr<CallSessionStore> sessions_;
-  std::unique_ptr<CallMediaKeyStore> keys_;
+  std::unique_ptr<InMemoryCallSessionStore> sessions_;
+  std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<MemoryPskStore> psk_;
@@ -1159,7 +1160,7 @@ TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {
   auto session_key = SessionKeyDeriver::Derive(master, CryptoChannel::E2ePublic, 1);
   ASSERT_TRUE(session_key) << session_key.error().message;
   const ByteVector media_key = TestMediaKey();
-  auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, media_key, call_id, 1, "mk:1");
+  auto wrapped = ICallMediaKeyStore::WrapKeyB64(*session_key, media_key, call_id, 1, "mk:1");
   ASSERT_TRUE(wrapped);
 
   CallMediaKeyDetail key_detail;

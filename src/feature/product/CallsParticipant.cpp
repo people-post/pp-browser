@@ -1,5 +1,6 @@
 #include "feature/product/CallsParticipant.h"
 
+#include "lib/storage/ProfileStorage.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
@@ -186,14 +187,15 @@ Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std
 }
 
 Roe<void> CallsParticipant::OnStoresOpened(ConversationsHub& hub) {
-  return stack_.InitializeStores(hub.ProfileDbPath(), hub.ProfileId());
+  auto stores = OpenSqliteCallStores(hub.ProfileDbPath(), hub.ProfileId());
+  if (!stores) {
+    return stores.error();
+  }
+  return stack_.InitializeStores(std::move(*stores));
 }
 
 std::vector<IDekConsumer*> CallsParticipant::DekConsumers() {
-  if (auto* keys = stack_.MediaKeys()) {
-    return {keys};
-  }
-  return {};
+  return stack_.AtRestStores();
 }
 
 void CallsParticipant::OnMessagingBuilt(ConversationsHub& hub) {

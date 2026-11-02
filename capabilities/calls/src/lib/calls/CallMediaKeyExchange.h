@@ -2,8 +2,8 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "lib/calls/CallMediaKeyStore.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "foundation/crypto/CryptoTypes.h"
 
 #include <cstdint>
@@ -37,7 +37,7 @@ public:
   };
   using KeyReadyFn = std::function<void(const std::string& call_id)>;
 
-  CallMediaKeyExchange(CallSessionStore& sessions, CallMediaKeyStore& keys, Transport transport);
+  CallMediaKeyExchange(ICallSessionStore& sessions, ICallMediaKeyStore& keys, Transport transport);
 
   /** Runs after a peer's key is stored (the 1:1 start may be waiting for it). */
   void SetOnKeyReady(KeyReadyFn fn) { on_key_ready_ = std::move(fn); }
@@ -70,8 +70,8 @@ public:
   Roe<void> HandleInbound(const std::string& detail_json, const std::string& sender_identity);
 
 private:
-  CallSessionStore& sessions_;
-  CallMediaKeyStore& keys_;
+  ICallSessionStore& sessions_;
+  ICallMediaKeyStore& keys_;
   Transport transport_;
   KeyReadyFn on_key_ready_;
   KeyReadyFn on_epoch_installed_;

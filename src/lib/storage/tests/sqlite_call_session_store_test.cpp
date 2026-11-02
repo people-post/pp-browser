@@ -1,4 +1,4 @@
-#include "lib/calls/CallSessionStore.h"
+#include "lib/storage/SqliteCallSessionStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -14,7 +14,7 @@ protected:
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_session_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
-    calls_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
+    calls_ = std::make_unique<SqliteCallSessionStore>((data_dir_ / "profile.db").string());
   }
 
   void TearDown() override {
@@ -23,7 +23,7 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<CallSessionStore> calls_;
+  std::unique_ptr<SqliteCallSessionStore> calls_;
 };
 
 TEST_F(CallSessionStoreTest, UpsertSessionAndParticipants) {

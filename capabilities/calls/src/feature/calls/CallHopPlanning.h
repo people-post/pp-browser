@@ -2,7 +2,7 @@
 
 #include "common/Module.h"
 #include "lib/calls/CallHopPlan.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallTypes.h"
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -35,7 +35,7 @@ public:
     RefuseJoiner,
   };
 
-  CallHopPlanning(CallSessionStore& sessions, const CallHopRanking& ranking);
+  CallHopPlanning(ICallSessionStore& sessions, const CallHopRanking& ranking);
 
   void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
   /** Where planning reports its probe answers (its parent binds it). */
@@ -76,7 +76,7 @@ private:
   void QuoteProbe(const std::string& call_id, const std::string& hop_peer_id, const std::string& hop_multiaddr);
   void OnProbeAnswered(const planning_event::ProbeAnswered& answer);
 
-  CallSessionStore& sessions_;
+  ICallSessionStore& sessions_;
   const CallHopRanking& ranking_;
   const CallTopologyMediaRelayDeps* deps_ = nullptr;
   /** Invitee: hop PeerId → quote ok (nullopt while in flight), per call. */

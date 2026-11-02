@@ -139,9 +139,10 @@ base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the
   `lib/delivery/testing/InMemoryDeliveryStore`). The app owns the database file, every schema and migration, at-rest
   encryption and the SQLite implementations, in one storage module, [`src/lib/storage`](../../src/lib/storage/)
   (the profile database, the thread store, rosters, prefs, mentions, peer sessions, the control lane's seen ids),
-  handed to the hub by `ProductStack` (`ConversationsHub::SetStorage`, `lib/messaging/ProfileStores.h`). Still
-  moving there: the SQLite stores in calls, people and social. An in-memory store and its SQLite one pass the same
-  contract test (`lib/storage/tests/messaging_store_contract_test`).
+  handed to the hub by `ProductStack` (`ConversationsHub::SetStorage`, `lib/messaging/ProfileStores.h`), and the call
+  stores to `CallStack` by `CallsParticipant` (`lib/calls/CallStores.h`). Still moving there: the SQLite stores in
+  people and social. An in-memory store and its SQLite one pass the same contract test
+  (`lib/storage/tests/*_contract_test`).
 
 ## What `src/common` provides
 

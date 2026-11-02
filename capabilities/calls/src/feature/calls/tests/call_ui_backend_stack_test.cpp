@@ -1,3 +1,4 @@
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -184,8 +185,7 @@ protected:
     listen_desires_ = 0;
 
     stack_ = std::make_unique<CallStack>();
-    ASSERT_TRUE(stack_->InitializeStores((data_dir_ / "profile.db").string(), "stack-test"));
-    ASSERT_TRUE(stack_->MediaKeys()->SetDek(TestDek()));
+    ASSERT_TRUE(stack_->InitializeStores(InMemoryCallStores()));
 
     ui_ = std::make_unique<CallUiBackend>(*stack_);
     EXPECT_FALSE(ui_->Available()) << "before BuildSessions";

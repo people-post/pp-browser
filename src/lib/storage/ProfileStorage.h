@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/calls/CallStores.h"
 #include "lib/messaging/ProfileStores.h"
 
 #include <string>
@@ -13,5 +14,8 @@ namespace pbr {
  * one. The app hands this to the hub (`ConversationsHub::SetStorage`).
  */
 Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, const std::string& profile_id);
+
+/** A profile's call stores on its database (CR024 stage 3), for the calls stack (`CallStack::InitializeStores`). */
+Roe<CallStores> OpenSqliteCallStores(const std::string& profile_db_path, const std::string& profile_id);
 
 } // namespace pbr

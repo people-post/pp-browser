@@ -14,7 +14,7 @@ pp_browser_add_lib_library(pp_lib_calls
     CallMediaBundleLogic.cpp
     CallMediaControlCodec.cpp
     CallMediaKeyExchange.cpp
-    CallMediaKeyStore.cpp
+    ICallMediaKeyStore.cpp
     CallMediaSeat.cpp
     CallMediaSessionLogic.cpp
     CallMobility.cpp
@@ -23,7 +23,6 @@ pp_browser_add_lib_library(pp_lib_calls
     CallScreen.cpp
     CallSessionLogic.cpp
     CallSessionQueries.cpp
-    CallSessionStore.cpp
     CallSummaryLogic.cpp
     CallTypes.cpp
     LiveCall.cpp
@@ -34,9 +33,14 @@ pp_browser_add_lib_library(pp_lib_calls
     pp_delivery_common
     pp_foundation_error
     pp_foundation_crypto
-    sodium
-    SQLite::SQLite3)
+    sodium)
 
 if(PP_BROWSER_BUILD_TESTS)
+  # Calls' stores in memory (sessions, media keys): test binaries only, never linked into the app.
+  pp_browser_add_lib_library(pp_lib_calls_testing
+    SOURCES
+      testing/InMemoryCallStores.cpp
+    PUBLIC_LIBS
+      pp_lib_calls)
   add_subdirectory(tests)
 endif()

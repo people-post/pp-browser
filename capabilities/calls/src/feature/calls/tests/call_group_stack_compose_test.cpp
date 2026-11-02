@@ -3,13 +3,14 @@
 // an in-process blind forwarder (subscribed streams only, never back to the sender); call-control
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "feature/calls/tests/call_stack_compose_support.h"
 #include "foundation/runtime/ProductOwners.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallSummaryLogic.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/calls/SoftMigrateLogic.h"
@@ -575,7 +576,7 @@ protected:
   }
 
   std::optional<CallPlannedHop> PlannedHopSeenBy(size_t i, const std::string& call_id) const {
-    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions();
     auto session = sessions.LoadSession(call_id);
     return session && session->has_value() ? (*session)->planned_hop : std::nullopt;
   }
@@ -600,7 +601,7 @@ protected:
 
   /** Hop owner (re-picks) as side `i` computes it from its own rows (V050: earliest joined). */
   std::string OwnerSeenBy(size_t i, const std::string& call_id) const {
-    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions();
     auto rows = sessions.ListParticipants(call_id);
     if (!rows) {
       return {};
@@ -656,7 +657,7 @@ TEST_F(CallGroupStackComposeTest, EveryInviteeSeesTheWholeInviteList) {
   const std::string call_id = StartGroupCall();
   ASSERT_FALSE(call_id.empty());
   for (size_t i : {kB, kC}) {
-    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());  // read-only view of the stack's rows
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions();  // read-only view of the stack's rows
     auto rows = sessions.ListParticipants(call_id);
     ASSERT_TRUE(rows) << rows.error().message;
     std::set<std::string> ids;
@@ -697,7 +698,7 @@ TEST_F(CallGroupStackComposeTest, SimultaneousAcceptsConvergeOnTheHop) {
 // keep its own reading and disagree with the others on the owner.
 TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
   auto stamp = [&](size_t viewer, size_t subject, const std::string& call_id) -> std::optional<int64_t> {
-    CallSessionStore sessions((sides_[viewer].data_dir / "profile.db").string());
+    ICallSessionStore& sessions = *sides_[viewer].stack->Sessions();
     auto row = sessions.FindParticipant(call_id, sides_[subject].local_identity);
     return row && row->has_value() ? (*row)->joined_at : std::nullopt;
   };
@@ -1326,7 +1327,7 @@ TEST_F(CallGroupStackComposeTest, RemovedFromTheGroupIsOutOfTheCall) {
     group_of_[i] = {sides_[kA].local_identity, sides_[kB].local_identity, sides_[kD].local_identity};
   }
   auto state_of_c = [&](size_t i) {
-    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions();
     auto row = sessions.FindParticipant(call_id, sides_[kC].local_identity);
     return row && row->has_value() ? (*row)->state : CallParticipantState::Invited;
   };
@@ -1482,7 +1483,7 @@ TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
   const std::string winner = std::min(a->call_id, b->call_id);
   const std::string loser = std::max(a->call_id, b->call_id);
   auto ringing = [&](size_t i, const std::string& call_id) {
-    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions();
     auto session = sessions.LoadSession(call_id);
     auto row = sessions.FindParticipant(call_id, sides_[i].local_identity);
     return session && session->has_value() && (*session)->state != CallSessionState::Ended && row &&
@@ -1494,7 +1495,7 @@ TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
            ringing(kC, winner) && !ringing(kC, loser);
   });
   for (size_t i : {kA, kB}) {
-    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions();
     auto me = sessions.FindParticipant(winner, sides_[i].local_identity);
     EXPECT_TRUE(me && me->has_value() && (*me)->state == CallParticipantState::Joined)
         << "side " << i << " is not in the winning call:" << Describe(winner);

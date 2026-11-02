@@ -85,7 +85,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsEngine`](../../src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
+[`ProfileSecretsEngine`](../../src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore`, `ICallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsEngine::RegisterDekConsumer` during init (typically from the feature that owns the store).

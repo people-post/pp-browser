@@ -38,7 +38,7 @@
 | Piece | Path |
 |-------|------|
 | Join ticket types + mint/verify/JSON | `BroadcastJoinTicket.*` |
-| Extract media key (memory only; no `CallMediaKeyStore`) | `ExtractBroadcastMediaKey` |
+| Extract media key (memory only; no `ICallMediaKeyStore`) | `ExtractBroadcastMediaKey` |
 | Tests | `broadcast_join_ticket_test.cpp` |
 | Recursive ladder discovery (spec) | [MEDIA_TREE.md § B007](MEDIA_TREE.md#recursive-ladder-discovery-b007), [DECISIONS B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect) |
 

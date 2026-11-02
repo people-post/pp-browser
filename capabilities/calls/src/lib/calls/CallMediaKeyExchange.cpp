@@ -7,7 +7,7 @@
 
 namespace pbr {
 
-CallMediaKeyExchange::CallMediaKeyExchange(CallSessionStore& sessions, CallMediaKeyStore& keys,
+CallMediaKeyExchange::CallMediaKeyExchange(ICallSessionStore& sessions, ICallMediaKeyStore& keys,
                                            Transport transport)
     : sessions_(sessions), keys_(keys), transport_(std::move(transport)) {
   redirectLogger("CallMediaKeyExchange");
@@ -69,7 +69,7 @@ std::string CallMediaKeyExchange::WrapForPeer(const std::string& call_id, const 
                   << " err=" << session_key.error().message;
     return {};
   }
-  auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, key.key, call_id, key.epoch, key.key_id);
+  auto wrapped = ICallMediaKeyStore::WrapKeyB64(*session_key, key.key, call_id, key.epoch, key.key_id);
   if (!wrapped) {
     log().warning << "Media key wrap failed call_id=" << call_id << " err=" << wrapped.error().message;
     return {};
@@ -109,7 +109,7 @@ bool CallMediaKeyExchange::TakeWrapped(const std::string& call_id, const uint32_
     log().warning << what << " media key missing peer session key from=" << sender_identity;
     return false;
   }
-  auto unwrapped = CallMediaKeyStore::UnwrapKeyB64(*session_key, wrapped_key_b64, call_id, epoch, key_id);
+  auto unwrapped = ICallMediaKeyStore::UnwrapKeyB64(*session_key, wrapped_key_b64, call_id, epoch, key_id);
   if (!unwrapped) {
     log().warning << what << " media key unwrap failed: " << unwrapped.error().message;
     return false;

@@ -5,13 +5,13 @@
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/pricing/PricingTypes.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "mesh/reach/PeerMediaRelayCaps.h"
@@ -89,7 +89,7 @@ public:
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
 
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
+                     ICallSessionStore& sessions, ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
                      IPeerSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
@@ -408,8 +408,8 @@ private:
 
 
   ContactsStore& contacts_;
-  CallSessionStore& sessions_;
-  CallMediaKeyStore& media_keys_;
+  ICallSessionStore& sessions_;
+  ICallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
   CallMediaEngine& media_;
   /** Before topology_ / live_calls_: both hold it (ports / media resources). */

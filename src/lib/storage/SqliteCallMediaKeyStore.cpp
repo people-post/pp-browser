@@ -1,4 +1,4 @@
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/storage/SqliteCallMediaKeyStore.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -7,7 +7,7 @@
 #include "foundation/crypto/MessageCipher.h"
 #include "lib/calls/MediaKeyWrap.h"
 #include "foundation/error/AppError.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/storage/SqliteCallSessionStore.h"
 #include "common/Utilities.h"
 
 #include <sodium.h>
@@ -16,15 +16,15 @@
 
 namespace pbr {
 
-CallMediaKeyStore::CallMediaKeyStore(std::string profile_db_path, std::string profile_id)
+SqliteCallMediaKeyStore::SqliteCallMediaKeyStore(std::string profile_db_path, std::string profile_id)
     : profile_db_path_(std::move(profile_db_path)), profile_id_(std::move(profile_id)) {
-  redirectLogger("CallMediaKeyStore");
+  redirectLogger("SqliteCallMediaKeyStore");
   if (profile_id_.empty()) {
     profile_id_ = "default";
   }
 }
 
-Roe<void> CallMediaKeyStore::SetDek(ByteVector dek) {
+Roe<void> SqliteCallMediaKeyStore::SetDek(ByteVector dek) {
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
   }
@@ -36,7 +36,7 @@ Roe<void> CallMediaKeyStore::SetDek(ByteVector dek) {
   return {};
 }
 
-void CallMediaKeyStore::ClearDek() {
+void SqliteCallMediaKeyStore::ClearDek() {
   std::lock_guard lock(mutex_);
   if (!dek_.empty()) {
     sodium_memzero(dek_.data(), dek_.size());
@@ -44,14 +44,14 @@ void CallMediaKeyStore::ClearDek() {
   }
 }
 
-Roe<void> CallMediaKeyStore::RequireDek() const {
+Roe<void> SqliteCallMediaKeyStore::RequireDek() const {
   if (dek_.size() != kDataEncryptionKeySize) {
     return AppError::Pin(Err::Pin::Required, "Call media key store DEK not set (unlock profile vault first)");
   }
   return {};
 }
 
-Roe<sqlite3*> CallMediaKeyStore::OpenDb() const {
+Roe<sqlite3*> SqliteCallMediaKeyStore::OpenDb() const {
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for call media keys");
@@ -59,7 +59,7 @@ Roe<sqlite3*> CallMediaKeyStore::OpenDb() const {
   sqlite3_busy_timeout(db, 5000);
   std::lock_guard<std::mutex> lock(schema_mutex_);
   if (!schema_ready_) {
-    if (auto ensured = CallSessionStore::EnsureSchema(db); !ensured) {
+    if (auto ensured = SqliteCallSessionStore::EnsureSchema(db); !ensured) {
       sqlite3_close(db);
       return ensured.error();
     }
@@ -68,31 +68,7 @@ Roe<sqlite3*> CallMediaKeyStore::OpenDb() const {
   return db;
 }
 
-Roe<ByteVector> CallMediaKeyStore::GenerateEpochKey() const {
-  EnsureSodiumInit();
-  ByteVector key(32);
-  randombytes_buf(key.data(), key.size());
-  return key;
-}
-
-std::string CallMediaKeyStore::BuildWrapAad(const std::string& call_id, const uint32_t media_epoch,
-                                            const std::string& media_key_id) {
-  return MediaKeyWrapAad(kCallMediaKeyWrapLabel, call_id, media_epoch, media_key_id);
-}
-
-Roe<std::string> CallMediaKeyStore::WrapKeyB64(const ByteVector& session_key, const ByteVector& key_bytes,
-                                               const std::string& call_id, const uint32_t media_epoch,
-                                               const std::string& media_key_id) {
-  return WrapMediaKeyB64(kCallMediaKeyWrapLabel, session_key, key_bytes, call_id, media_epoch, media_key_id);
-}
-
-Roe<ByteVector> CallMediaKeyStore::UnwrapKeyB64(const ByteVector& session_key, const std::string& wrapped_key_b64,
-                                                const std::string& call_id, const uint32_t media_epoch,
-                                                const std::string& media_key_id) {
-  return UnwrapMediaKeyB64(kCallMediaKeyWrapLabel, session_key, wrapped_key_b64, call_id, media_epoch, media_key_id);
-}
-
-Roe<std::string> CallMediaKeyStore::PutEpochKey(const std::string& call_id, const uint32_t media_epoch,
+Roe<std::string> SqliteCallMediaKeyStore::PutEpochKey(const std::string& call_id, const uint32_t media_epoch,
                                                const ByteVector& key_bytes) {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
@@ -133,7 +109,7 @@ Roe<std::string> CallMediaKeyStore::PutEpochKey(const std::string& call_id, cons
   return media_key_id;
 }
 
-Roe<std::optional<ByteVector>> CallMediaKeyStore::LoadEpochKey(const std::string& call_id,
+Roe<std::optional<ByteVector>> SqliteCallMediaKeyStore::LoadEpochKey(const std::string& call_id,
                                                               const uint32_t media_epoch) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();

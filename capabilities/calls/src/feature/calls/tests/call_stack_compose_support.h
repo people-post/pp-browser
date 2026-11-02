@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "common/chat/SystemControl.h"
 
 // Shared fixture pieces for multi-CallStack compose tests (dual-stack 1:1, group SFU): one full
@@ -228,8 +229,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   side.psk = side.store.get();
 
   side.stack = std::make_unique<CallStack>();
-  ASSERT_TRUE(side.stack->InitializeStores((side.data_dir / "profile.db").string(), tag));
-  ASSERT_TRUE(side.stack->MediaKeys()->SetDek(TestDek(dek_seed)));
+  ASSERT_TRUE(side.stack->InitializeStores(InMemoryCallStores()));
   side.ui = std::make_unique<CallUiBackend>(*side.stack);
 
   CallStackDeps deps;

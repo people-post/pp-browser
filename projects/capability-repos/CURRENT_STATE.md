@@ -109,14 +109,19 @@
   runs every case on both.
 - **CR024 stage 2b:** `src/lib/storage` (the app) holds the profile database and every SQLite store of delivery and
   messaging; `ProductStack` hands `OpenSqliteProfileStores` to the hub (`ConversationsHub::SetStorage`, the ports in
-  `lib/messaging/ProfileStores.h`); the tables keep their names (`chat_targets` included). Delivery and
+  `lib/messaging/ProfileStores.h`). Delivery and
   messaging hold no SQL; their tests run in memory — the in-memory thread store learned what messaging relies on
   (the catalog row an append moves, the outbox, seq ranges) and "delete for me" became the port's own. The SQLite
-  behaviours (schema, restart, transactions, many connections) are storage's tests.
+  behaviours (schema, restart, transactions, many connections) are storage's tests. The tables keep their names
+  (`chat_targets` included).
+- **CR024 stage 3:** calls' stores are ports (`ICallSessionStore`, `ICallMediaKeyStore`; a fresh key and its wrap
+  are calls', on the port) handed to `CallStack::InitializeStores` as `CallStores`, which `CallsParticipant` opens
+  through storage (`OpenSqliteCallStores`); in-memory ones in `lib/calls/testing`, a contract test on both. Calls
+  holds no SQL and no at-rest encryption.
 
 ## Next
 
-1. CR024 stage 3: calls' stores (`CallSessionStore`, `CallMediaKeyStore`) behind ports.
+1. CR024 stage 4: people's and social's stores (`PeerCardStore`, `PostStore`, `ObjectIndex`) behind ports.
 2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
 3. Contracts repo (CR010) when convenient.
 4. P3's namespaces when a second app needs a capability.

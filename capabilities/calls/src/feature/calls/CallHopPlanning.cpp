@@ -19,7 +19,7 @@ constexpr size_t kOtherProbedHops = 2;
 
 } // namespace
 
-CallHopPlanning::CallHopPlanning(CallSessionStore& sessions, const CallHopRanking& ranking)
+CallHopPlanning::CallHopPlanning(ICallSessionStore& sessions, const CallHopRanking& ranking)
     : sessions_(sessions), ranking_(ranking) {
   redirectLogger("CallHopPlanning");
 }

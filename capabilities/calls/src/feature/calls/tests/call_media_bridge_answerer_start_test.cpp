@@ -1,3 +1,4 @@
+#include "lib/calls/testing/InMemoryCallStores.h"
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "common/runtime/RuntimeOwnerExecutor.h"
@@ -8,8 +9,8 @@
 #include "lib/calls/CallLifecycleTypes.h"
 
 #include "lib/media/CallMediaEngine.h"
-#include "lib/calls/CallMediaKeyStore.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "domain/call_media/ICallMediaTransport.h"
@@ -385,8 +386,8 @@ protected:
     std::filesystem::create_directories(data_dir_);
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
-    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
+    sessions_ = std::make_unique<InMemoryCallSessionStore>();
+    keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
@@ -475,8 +476,8 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
-  std::unique_ptr<CallSessionStore> sessions_;
-  std::unique_ptr<CallMediaKeyStore> keys_;
+  std::unique_ptr<InMemoryCallSessionStore> sessions_;
+  std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeMediaHost> host_;
   std::unique_ptr<FakeDialRegistry> dial_;

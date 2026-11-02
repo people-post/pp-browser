@@ -2,8 +2,8 @@
 
 #include "lib/calls/CallPathPolicy.h"
 #include "lib/media/CallMediaEngine.h"
-#include "lib/calls/CallSessionStore.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "lib/calls/CallMediaSeat.h"
@@ -79,7 +79,7 @@ struct CallDirectSeatPorts {
  */
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
-  CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
+  CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
                         CallMediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
   ~CallMediaBridge();
 
@@ -349,8 +349,8 @@ private:
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
-  CallSessionStore& sessions_;
-  CallMediaKeyStore& media_keys_;
+  ICallSessionStore& sessions_;
+  ICallMediaKeyStore& media_keys_;
   CallMediaEngine& media_;
   ICallMediaTransport& direct_;
   CallDirectArmingPorts arming_;
